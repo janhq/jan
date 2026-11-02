@@ -20,6 +20,7 @@
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
+use crate::core::agent::events::CompactionReport;
 use crate::core::agent::r#loop::ModelInvoker;
 use crate::core::agent::upstream::extract_choice_message;
 
@@ -345,28 +346,29 @@ pub(crate) async fn compact_conversation(
     model_id: &str,
     model: &dyn ModelInvoker,
     keep_recent: usize,
-) -> Result<Vec<Value>, String> {
+) -> Result<(Vec<Value>, Option<CompactionReport>), String> {
     let sys_end = messages.iter().take_while(|m| role(m) == "system").count();
     let (system_msgs, rest) = messages.split_at(sys_end);
 
     if rest.len() <= keep_recent {
-        return Ok(messages.to_vec());
+        return Ok((messages.to_vec(), None));
     }
 
     let Some(cut) = tail_start(rest, rest.len() - keep_recent) else {
-        return Ok(messages.to_vec());
+        return Ok((messages.to_vec(), None));
     };
 
     let kept = &rest[cut..];
     // The interactive `/compact` meters nothing: it is not inside a run's
     // budget, so there is no ceiling for this request to be charged against.
-    let (summary, _usage) = summarize(&rest[..cut], model_id, model).await?;
+    // Its usage still rides on the report, which is what `/agents` shows.
+    let report = summarize(&rest[..cut], model_id, model).await?;
 
     let mut out = Vec::with_capacity(system_msgs.len() + 1 + kept.len());
     out.extend_from_slice(system_msgs);
-    out.push(summary_message(&summary));
+    out.push(summary_message(&report.summary));
     out.extend_from_slice(kept);
-    Ok(out)
+    Ok((out, Some(report)))
 }
 
 /// Summarize a span for a caller that records the replacement itself: the
@@ -374,19 +376,17 @@ pub(crate) async fn compact_conversation(
 /// a rewritten list. The node carries [`SUMMARY_MARKER`], so a later turn reads
 /// it as condensed history instead of mistaking it for a prompt.
 ///
-/// Returns the summarizer's own reported usage alongside the node. A compaction
-/// is a paid request like any other -- a turn can make several of them (the
-/// preflight plus up to `MAX_COMPACTION_ATTEMPTS` overflow retries) -- so the
-/// caller folds it into the run's budget instead of letting the spend go
-/// unrecorded. `None` when the summarizer reported none or never ran.
+/// Returns the summarizer's report alongside the node. Its usage is a paid
+/// request like any other -- a turn can make several of them (the preflight
+/// plus up to `MAX_COMPACTION_ATTEMPTS` overflow retries) -- so the caller
+/// folds it into the run's budget instead of letting the spend go unrecorded.
 pub(crate) async fn summarize_span(
     span: &[Value],
     model_id: &str,
     model: &dyn ModelInvoker,
-) -> Result<(Value, Option<crate::core::agent::events::Usage>), String> {
-    summarize(span, model_id, model)
-        .await
-        .map(|(text, usage)| (summary_message(&text), usage))
+) -> Result<(Value, CompactionReport), String> {
+    let report = summarize(span, model_id, model).await?;
+    Ok((summary_message(&report.summary), report))
 }
 
 /// Flatten a span of wire messages into a plain-text transcript. Rendering
@@ -456,7 +456,7 @@ fn clamp_middle(text: &str, max: usize) -> String {
 /// the caller must block rather than fabricate a fallback note for a
 /// smaller-window model. Every other failure and empty/unreadable completion
 /// stays recoverable and returns [`FALLBACK_NOTE`].
-/// The reported usage rides back with the text so the caller can charge it: see
+/// The reported usage rides back on the report so the caller can charge it: see
 /// [`summarize_span`]. A path that produced no request (an empty span) or a
 /// failure that degraded to [`FALLBACK_NOTE`] reports `None` rather than zeros,
 /// which is the same "nothing to charge" answer without inventing a figure.
@@ -464,10 +464,16 @@ async fn summarize(
     dropped: &[Value],
     model_id: &str,
     model: &dyn ModelInvoker,
-) -> Result<(String, Option<crate::core::agent::events::Usage>), String> {
+) -> Result<CompactionReport, String> {
+    let report = |model: Option<&str>, usage, summary: String| CompactionReport {
+        model: model.map(str::to_string),
+        input_tokens: (dropped.iter().map(json_text_len).sum::<usize>() / 4) as u64,
+        usage,
+        summary,
+    };
     let transcript = clamp_middle(&render_transcript(dropped), SUMMARY_INPUT_CHARS);
     if transcript.trim().is_empty() {
-        return Ok((FALLBACK_NOTE.to_string(), None));
+        return Ok(report(None, None, FALLBACK_NOTE.to_string()));
     }
     // The smol model writes the summary when one is configured: summarizing is
     // the cheap model's job. Any failure there, an overflow of its smaller
@@ -478,7 +484,7 @@ async fn summarize(
     let mut smol_usage = None;
     if let Some((smol_id, smol)) = model.summarizer() {
         match request_summary(&transcript, smol_id, smol).await {
-            Ok((Some(summary), usage)) => return Ok((summary, usage)),
+            Ok((Some(summary), usage)) => return Ok(report(Some(smol_id), usage, summary)),
             Ok((None, usage)) => {
                 smol_usage = usage;
                 log::warn!(
@@ -496,7 +502,10 @@ async fn summarize(
                 (Some(smol), Some(run)) => Some(smol.plus(&run)),
                 (smol, run) => smol.or(run),
             };
-            Ok((summary.unwrap_or_else(|| FALLBACK_NOTE.to_string()), usage))
+            Ok(match summary {
+                Some(summary) => report(Some(model_id), usage, summary),
+                None => report(None, usage, FALLBACK_NOTE.to_string()),
+            })
         }
         Err(e) => {
             // A model-switch compaction targets the (smaller) new model: if the
@@ -505,7 +514,7 @@ async fn summarize(
             if crate::core::agent::upstream::is_context_overflow_error(&e) {
                 Err(e)
             } else {
-                Ok((FALLBACK_NOTE.to_string(), smol_usage))
+                Ok(report(None, smol_usage, FALLBACK_NOTE.to_string()))
             }
         }
     }
@@ -681,7 +690,8 @@ mod tests {
         let input = convo(4);
         let out = compact_conversation(&input, "m", &model, DEFAULT_KEEP_RECENT)
             .await
-            .expect("no-op must not fail");
+            .expect("no-op must not fail")
+            .0;
         assert_eq!(out, input);
         assert_eq!(*model.calls.lock().unwrap(), 0, "no summarization on no-op");
     }
@@ -696,7 +706,8 @@ mod tests {
         let input = convo(20);
         let out = compact_conversation(&input, "m", &model, 4)
             .await
-            .expect("successful summary must not fail");
+            .expect("successful summary must not fail")
+            .0;
 
         assert!(out.len() < input.len());
         assert_eq!(role(&out[0]), "system");
@@ -856,7 +867,8 @@ mod tests {
         let input = convo(20);
         let out = compact_conversation(&input, "m", &FailingModel, 4)
             .await
-            .expect("an ordinary summarizer error must not fail compaction");
+            .expect("an ordinary summarizer error must not fail compaction")
+            .0;
         assert!(out[1]["content"].as_str().unwrap().contains(FALLBACK_NOTE));
         assert!(out.len() < input.len());
     }
@@ -921,7 +933,7 @@ mod tests {
     #[tokio::test]
     async fn a_configured_smol_model_writes_the_summary() {
         let model = WithSmol { run: stub("RUN"), smol: stub("SMOL") };
-        let out = compact_conversation(&convo(20), "m", &model, 4).await.unwrap();
+        let (out, _) = compact_conversation(&convo(20), "m", &model, 4).await.unwrap();
         assert!(out[1]["content"].as_str().unwrap().contains("SMOL"));
         assert_eq!(*model.run.calls.lock().unwrap(), 0);
         assert_eq!(model.smol.requests.lock().await[0]["model"], "smol");
@@ -940,7 +952,7 @@ mod tests {
             compact_conversation(&convo(20), "m", &failing, 4).await,
             compact_conversation(&convo(20), "m", &empty, 4).await,
         ] {
-            assert!(out.unwrap()[1]["content"].as_str().unwrap().contains("RUN"));
+            assert!(out.unwrap().0[1]["content"].as_str().unwrap().contains("RUN"));
         }
         let requests = overflowing.run.requests.lock().await;
         assert_eq!(requests[0]["model"], "m", "the retry is on the run's own model");
@@ -971,17 +983,38 @@ mod tests {
     #[tokio::test]
     async fn an_empty_smol_reply_is_still_charged() {
         let model = WithSmol { run: Billed("RUN", 1_000, 50), smol: Billed(" ", 900, 7) };
-        let (_, usage) = summarize_span(&convo(20)[1..17], "m", &model).await.unwrap();
-        let usage = usage.expect("both requests reported usage");
+        let (_, report) = summarize_span(&convo(20)[1..17], "m", &model).await.unwrap();
+        assert_eq!(report.model.as_deref(), Some("m"), "the run model wrote it");
+        let usage = report.usage.expect("both requests reported usage");
         assert_eq!(usage.prompt_tokens, Some(1_900));
         assert_eq!(usage.completion_tokens, Some(57));
         assert_eq!(usage.total_tokens, Some(1_957));
 
         // Still charged when the run model's retry then fails into the note.
         let model = WithSmol { run: FailingModel, smol: Billed("", 900, 7) };
-        let (note, usage) = summarize_span(&convo(20)[1..17], "m", &model).await.unwrap();
+        let (note, report) = summarize_span(&convo(20)[1..17], "m", &model).await.unwrap();
         assert!(note["content"].as_str().unwrap().contains(FALLBACK_NOTE));
-        assert_eq!(usage.expect("the smol request was billed").completion_tokens, Some(7));
+        assert_eq!(report.usage.expect("the smol request was billed").completion_tokens, Some(7));
+        assert_eq!(report.model, None, "no model wrote the fallback note");
+        assert_eq!(report.summary, FALLBACK_NOTE);
+    }
+
+    /// The report says what the summarizer read, which model answered and what
+    /// it wrote, so `/agents` can show compaction as an agent of its own.
+    #[tokio::test]
+    async fn a_span_summary_reports_its_model_input_and_text() {
+        let span = &convo(20)[1..17];
+        let model = WithSmol { run: Billed("RUN", 1_000, 50), smol: Billed("SMOL", 900, 7) };
+        let (node, report) = summarize_span(span, "m", &model).await.unwrap();
+        assert!(node["content"].as_str().unwrap().contains("SMOL"));
+        assert_eq!(report.model.as_deref(), Some("smol"));
+        assert_eq!(report.summary, "SMOL");
+        assert_eq!(report.usage.and_then(|u| u.prompt_tokens), Some(900));
+        let chars: usize = span
+            .iter()
+            .map(|m| m["role"].as_str().unwrap().len() + m["content"].as_str().unwrap().len())
+            .sum();
+        assert_eq!(report.input_tokens, (chars / 4) as u64);
     }
 
     /// One prompt driving a long agentic run is the normal shape here: a single
@@ -1010,7 +1043,8 @@ mod tests {
         }
         let out = compact_conversation(&input, "m", &model, DEFAULT_KEEP_RECENT)
             .await
-            .expect("successful summary must not fail");
+            .expect("successful summary must not fail")
+            .0;
 
         assert!(out.len() < input.len(), "the run must shrink");
         assert_ne!(
@@ -1065,7 +1099,8 @@ mod tests {
 
         let out = compact_conversation(&input, "m", &model, DEFAULT_KEEP_RECENT)
             .await
-            .expect("successful summary must not fail");
+            .expect("successful summary must not fail")
+            .0;
 
         assert!(
             out.len() < input.len(),
@@ -1097,7 +1132,8 @@ mod tests {
         // advance it so the kept tail does not begin with a tool message.
         let out = compact_conversation(&input, "m", &model, 4)
             .await
-            .expect("successful summary must not fail");
+            .expect("successful summary must not fail")
+            .0;
         let first_kept = &out[2];
         assert_ne!(
             role(first_kept),

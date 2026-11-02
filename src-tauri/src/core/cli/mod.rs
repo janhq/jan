@@ -3356,6 +3356,7 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             phase,
             reason,
             messages,
+            ..
         } => eprintln!("\x1b[2m[compaction] {}\x1b[0m", describe_compaction(phase, reason, messages)),
         StreamEvent::Retry {
             attempt,
@@ -3383,6 +3384,7 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
                 phase,
                 reason,
                 messages,
+                ..
             } => eprintln!(
                 "\x1b[2m[subagent:{name}] [compaction] {}\x1b[0m",
                 describe_compaction(phase, reason, messages)

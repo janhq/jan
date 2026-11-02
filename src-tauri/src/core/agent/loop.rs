@@ -4498,14 +4498,21 @@ impl Drop for SessionEndGuard {
 /// Manually compact `messages` for the given model, resolving the upstream from
 /// `args` and reusing the same summarization path as the reactive loop. Used by
 /// the TUI `/compact` command, which holds `OrchestrationArgs` + a model id but
-/// no `ModelInvoker`.
+/// no `ModelInvoker`. The summarizer's report rides along, `None` when there
+/// was nothing to compact.
 #[cfg(feature = "cli")]
 pub(crate) async fn compact_history(
     args: &OrchestrationArgs,
     model_id: &str,
     messages: &[serde_json::Value],
     keep_recent: usize,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<
+    (
+        Vec<serde_json::Value>,
+        Option<crate::core::agent::events::CompactionReport>,
+    ),
+    String,
+> {
     // `/compact` discards conversation exactly as the in-loop overflow retry
     // does, so it owes PreCompact the same warning. This path has no invoker to
     // hang the hooks off (it holds args and a model id, nothing more), so they
@@ -4808,8 +4815,8 @@ fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Valu
 /// the money ceiling agree with each other while both undercounted.
 ///
 /// Every in-run compaction goes through here, so this is where it is reported:
-/// `Compaction { Started }` before the summarizer call and `Finished` or
-/// `Failed` after it. A plan with nothing to drop sends nothing, since no
+/// `Compaction { Started }` before the summarizer call and `Finished` (with
+/// the summarizer's report) or `Failed` after it. A plan with nothing to drop sends nothing, since no
 /// summarizer call was made.
 async fn compact(
     transcript: &mut Transcript,
@@ -4824,27 +4831,28 @@ async fn compact(
         return Ok(None);
     };
     let summarized = plan.summarize.len();
-    let report = |phase, messages| {
+    let announce = |phase, messages, report| {
         let _ = events.send(StreamEvent::Compaction {
             phase,
             reason,
             messages,
+            report,
         });
     };
-    report(CompactionPhase::Started, None);
-    let (summary, usage) =
+    announce(CompactionPhase::Started, None, None);
+    let (summary, report) =
         match crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model)
             .await
         {
             Ok(done) => done,
             Err(error) => {
-                report(CompactionPhase::Failed, None);
+                announce(CompactionPhase::Failed, None, None);
                 return Err(error);
             }
         };
-    budget.record_side_request(&usage);
+    budget.record_side_request(&report.usage);
     transcript.record_compaction(summary, plan.covers);
-    report(CompactionPhase::Finished, Some(summarized));
+    announce(CompactionPhase::Finished, Some(summarized), Some(report));
     Ok(Some(summarized))
 }
 
@@ -6731,14 +6739,17 @@ mod tests {
 
         drop(tx);
         let mut phases = Vec::new();
+        let mut reports = Vec::new();
         while let Some(ev) = rx.recv().await {
             if let StreamEvent::Compaction {
                 phase,
                 reason: CompactionReason::Preflight,
+                report,
                 ..
             } = ev
             {
                 phases.push(phase);
+                reports.push(report);
             }
         }
         assert_eq!(
@@ -6746,6 +6757,12 @@ mod tests {
             [CompactionPhase::Started, CompactionPhase::Finished],
             "a prefix break the user did not ask for has to be announced"
         );
+        // The finish says what the summarizer did, so `/agents` can list it.
+        assert!(reports[0].is_none(), "nothing is known before the call");
+        let report = reports[1].as_ref().expect("the finish carries its report");
+        assert_eq!(report.summary, "CONDENSED");
+        assert_eq!(report.model.as_deref(), Some("m"));
+        assert!(report.input_tokens > 500, "the folded span: {}", report.input_tokens);
     }
 
     /// The other half of the contract: under the trigger nothing is compacted
@@ -8461,6 +8478,7 @@ mod tests {
                     phase: CompactionPhase::Finished,
                     reason: CompactionReason::ContextOverflow,
                     messages: Some(_),
+                    ..
                 }
             )),
             "the overflow compaction is announced"

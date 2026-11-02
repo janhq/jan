@@ -4925,6 +4925,9 @@ struct App {
     /// Live panels for background subagents currently streaming, one per run.
     /// Several may be active at once; each renders its own rolling window.
     subagents: Vec<SubagentPanel>,
+    /// Agents Jan ran for itself this session (see `InternalAgent`), oldest
+    /// first, for `/agents`.
+    internal_agents: Vec<InternalAgent>,
     /// The session's active file monitors, replaced wholesale by each
     /// `StreamEvent::Monitors` and re-read from `monitor_set` when a run ends.
     /// Docked beside the fan-out; never a transcript row, since a monitor
@@ -5219,6 +5222,16 @@ struct SubagentPanel {
     /// finished summary row's expand. A child's stream never reaches the
     /// parent's transcript, so it is kept here per child.
     transcript: Transcript,
+    /// An agent Jan runs for itself (compaction, memory tidy) rather than one
+    /// the model dispatched: `/agents` marks it, and its end goes to
+    /// `App::internal_agents` instead of a summary row in the transcript.
+    internal: bool,
+    /// The model its latest request went to, as that request reported it.
+    model: Option<String>,
+    /// Completion tokens summed over every request the child reported.
+    output_tokens: u64,
+    /// When it ended, so a finished internal agent keeps the duration it took.
+    ended: Option<Instant>,
 }
 
 /// Most rows a child's transcript keeps. The detail view opens on the tail,
@@ -5266,6 +5279,10 @@ impl SubagentPanel {
             started: None,
             workspace: None,
             transcript: Transcript::for_child(INITIAL_THINK_TAGS),
+            internal: false,
+            model: None,
+            output_tokens: 0,
+            ended: None,
         }
     }
 
@@ -5412,6 +5429,9 @@ fn agent_stats(panel: &SubagentPanel, context_window: u64) -> Vec<Span<'static>>
     if panel.queued || panel.pending {
         return Vec::new();
     }
+    if panel.internal {
+        return internal_agent_stats(panel);
+    }
     let dim = Style::new().fg(theme::muted());
     let (tools, requests) = (panel.calls.len(), panel.requests);
     let mut parts = vec![pluralize("tool", tools), format!("{requests} req")];
@@ -5432,6 +5452,38 @@ fn agent_stats(panel: &SubagentPanel, context_window: u64) -> Vec<Span<'static>>
         let style = if pct == 0.0 { Style::new().red().bold() } else { dim };
         out.push(Span::styled(" \u{b7} ", dim));
         out.push(Span::styled(format!("{pct:.0}% cache hit"), style));
+    }
+    out
+}
+
+/// An internal agent's stats: the model it ran on, the tokens it read and
+/// wrote, and how long it has run or took, e.g. `smol, 9.0K in, 400 out, 5s`
+/// joined by middle dots. Its tool and request counts say little (a compaction
+/// makes one request and no calls), so these stand in for them.
+fn internal_agent_stats(panel: &SubagentPanel) -> Vec<Span<'static>> {
+    let mut parts: Vec<String> = panel.model.iter().cloned().collect();
+    if panel.total_prompt_tokens > 0 {
+        parts.push(format!("{} in", compact_tokens(panel.total_prompt_tokens)));
+    }
+    if panel.output_tokens > 0 {
+        parts.push(format!("{} out", compact_tokens(panel.output_tokens)));
+    }
+    if let Some(started) = panel.started {
+        let end = panel.ended.unwrap_or_else(Instant::now);
+        parts.push(format_elapsed(end.saturating_duration_since(started).as_secs()));
+    }
+    if parts.is_empty() {
+        return Vec::new();
+    }
+    vec![Span::styled(parts.join(" \u{b7} "), Style::new().fg(theme::muted()))]
+}
+
+/// A subagent's name as `/agents` shows it: Jan's own agents carry a dim
+/// `internal` tag, so they read apart from the ones the model dispatched.
+fn agent_name_spans(panel: &SubagentPanel) -> Vec<Span<'static>> {
+    let mut out = vec![agent_label(&panel.name)];
+    if panel.internal {
+        out.push(Span::styled(" internal", Style::new().fg(theme::muted())));
     }
     out
 }
@@ -5472,6 +5524,23 @@ fn agent_activity(panel: &mut SubagentPanel) -> Vec<Span<'static>> {
         Some(last) => vec![Span::styled(last, dim)],
         None => vec![Span::styled("starting\u{2026}", dim)],
     }
+}
+
+/// The name compaction is listed under in `/agents`.
+const COMPACTION_AGENT: &str = "compaction";
+
+/// An agent Jan ran for itself (compaction, memory tidy), kept for `/agents`.
+/// The main transcript only notes it in one line, so this is where its model,
+/// tokens, duration and result stay readable. A running memory tidy is still a
+/// live `SubagentPanel` in `App::subagents` and lands here when it ends; a
+/// compaction is a single model call and lives here from its start.
+struct InternalAgent {
+    panel: SubagentPanel,
+    /// `None` while it runs.
+    outcome: Option<SubagentOutcome>,
+    /// The subagent whose conversation a compaction folds, `None` for the
+    /// main one, so a finish closes the compaction it belongs to.
+    owner: Option<String>,
 }
 
 /// A committed finished-subagent summary row, folded to one line but retaining
@@ -5677,6 +5746,7 @@ impl App {
             should_quit: false,
             exit_armed: false,
             subagents: Vec::new(),
+            internal_agents: Vec::new(),
             monitors: Vec::new(),
             monitor_set: Arc::new(MonitorSet::new()),
             shell_set: Arc::new(crate::core::agent::bg_shell::BackgroundShells::default()),
@@ -5835,6 +5905,7 @@ impl App {
         // conversation they would report into is going away.
         self.stop_subagents();
         self.subagents.clear();
+        self.internal_agents.clear();
         self.stop_monitors();
         // Pings for work whose conversation is gone have no turn to join.
         self.shell_set.take_notices();
@@ -6126,6 +6197,22 @@ impl App {
     /// with it its transcript -- so the row can expand back to the run (like a
     /// tool group) and `/agents` can still open it.
     fn push_subagent_summary(&mut self, mut panel: SubagentPanel, outcome: SubagentOutcome) {
+        // The child's stream is over: nothing it left open will resolve now.
+        panel
+            .transcript
+            .settle(outcome != SubagentOutcome::Finished);
+        panel.active = None;
+        // Jan's own agent reports in its own one-line note (`memory tidied:`),
+        // so it gets no row here and is kept for `/agents` alone.
+        if panel.internal {
+            panel.ended = Some(Instant::now());
+            self.internal_agents.push(InternalAgent {
+                panel,
+                outcome: Some(outcome),
+                owner: None,
+            });
+            return;
+        }
         let name = panel.name.clone();
         self.transcript.log(DisplayEntry::Subagent {
             name: name.clone(),
@@ -6136,11 +6223,6 @@ impl App {
                 _ => None,
             },
         });
-        // The child's stream is over: nothing it left open will resolve now.
-        panel
-            .transcript
-            .settle(outcome != SubagentOutcome::Finished);
-        panel.active = None;
         let state = match &outcome {
             SubagentOutcome::Finished => ToolState::Success,
             SubagentOutcome::Failed(_) => ToolState::Failure,
@@ -8400,6 +8482,7 @@ impl App {
                 name,
                 task,
                 workspace,
+                internal,
             } => {
                 // A child with no model of its own runs on the parent's, so it
                 // starts on the parent's tag setting; its first request moves it
@@ -8414,6 +8497,7 @@ impl App {
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
                     panel.workspace = workspace;
+                    panel.internal = internal;
                 } else if let Some(panel) = self
                     .subagents
                     .iter_mut()
@@ -8425,16 +8509,22 @@ impl App {
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
                     panel.workspace = workspace;
+                    panel.internal = internal;
                     if let Some(t) = task {
                         panel.task = t;
                     }
                 } else {
-                    self.transcript.finalize_tool_group();
-                    self.transcript.flush_assistant();
+                    // Jan's own agent never touches the conversation, so the
+                    // prose it starts beside is not committed early for it.
+                    if !internal {
+                        self.transcript.finalize_tool_group();
+                        self.transcript.flush_assistant();
+                    }
                     let mut panel = SubagentPanel::new(run_id, name, task.unwrap_or_default());
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
                     panel.workspace = workspace;
+                    panel.internal = internal;
                     self.subagents.push(panel);
                 }
             }
@@ -8596,7 +8686,8 @@ impl App {
                 phase,
                 reason,
                 messages,
-            } => self.apply_compaction(phase, reason, messages, None),
+                report,
+            } => self.apply_compaction(phase, reason, messages, report, None),
             StreamEvent::TodoUpdate { list } => {
                 self.todos = list;
                 // A snapshot only arrives on a successful mutation; its absence
@@ -8616,7 +8707,10 @@ impl App {
         // content streams. That is how a child learns its own tag setting: a
         // definition can name a model another provider serves, and its content
         // must follow that provider's default, not the main model's.
-        if let StreamEvent::RequestProvenance { provider, api_type, .. } = &event {
+        if let StreamEvent::RequestProvenance { provider, api_type, model, .. } = &event {
+            if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                panel.model = Some(model.clone());
+            }
             // An unreadable config (another run holds the lock) leaves the
             // child's gate as it was: guessing without the endpoint can read an
             // `openai`-named entry pointed at vLLM as the official API.
@@ -8746,6 +8840,7 @@ impl App {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
                     panel.total_prompt_tokens += usage.prompt_tokens.unwrap_or(0);
                     panel.total_cached_tokens += usage.cached_tokens.unwrap_or(0);
+                    panel.output_tokens += usage.completion_tokens.unwrap_or(0);
                     if usage.cached_tokens.is_some() {
                         panel.cache_reported = true;
                     }
@@ -8784,7 +8879,8 @@ impl App {
                 phase,
                 reason,
                 messages,
-            } => self.apply_compaction(phase, reason, messages, Some(name)),
+                report,
+            } => self.apply_compaction(phase, reason, messages, report, Some(name)),
             StreamEvent::Parked => {
                 if let Some(panel) = panel {
                     panel.parked = true;
@@ -8797,14 +8893,16 @@ impl App {
         }
     }
 
-    /// Show a loop-side compaction: a throbber while the summarizer runs and a
-    /// note when it lands or fails. `child` names the subagent it came from,
-    /// whose compaction gets a note only.
+    /// Show a loop-side compaction: a throbber while the summarizer runs, a
+    /// one-line event when it lands or fails, and the summarizer itself as an
+    /// internal agent in `/agents`. `child` names the subagent it came from,
+    /// whose compaction gets no throbber.
     fn apply_compaction(
         &mut self,
         phase: crate::core::agent::events::CompactionPhase,
         reason: crate::core::agent::events::CompactionReason,
         messages: Option<usize>,
+        report: Option<crate::core::agent::events::CompactionReport>,
         child: Option<&str>,
     ) {
         use crate::core::agent::events::{CompactionPhase, CompactionReason};
@@ -8819,6 +8917,7 @@ impl App {
                 if child.is_none() {
                     self.run_compacting = Some(Instant::now());
                 }
+                self.begin_compaction_agent(child, format!("{who}summarizing older messages: {why}"));
             }
             CompactionPhase::Finished => {
                 if child.is_none() {
@@ -8826,19 +8925,95 @@ impl App {
                     self.pending_compaction_refresh = true;
                     self.refresh_memory_snapshot();
                 }
-                self.transcript.finalize_tool_group();
-                self.transcript.flush_assistant();
-                self.note(&format!(
-                    "{who}compacted {} messages into a summary: {why}",
-                    messages.unwrap_or(0)
+                let folded = messages.unwrap_or(0);
+                self.end_compaction_agent(child, None, SubagentOutcome::Finished, folded, report);
+                self.internal_agent_event(&format!(
+                    "{who}compacted {folded} messages into a summary: {why}"
                 ));
             }
             CompactionPhase::Failed => {
                 if child.is_none() {
                     self.run_compacting = None;
                 }
-                self.note(&format!("{who}compaction failed ({why}); history unchanged"));
+                let failed = SubagentOutcome::Failed(format!("{why}; history unchanged"));
+                self.end_compaction_agent(child, None, failed, 0, None);
+                self.internal_agent_event(&format!("{who}compaction failed ({why}); history unchanged"));
             }
+        }
+    }
+
+    /// The one line an internal agent (compaction, memory tidy) puts in the
+    /// main transcript: its name and a summary. Everything else it did is in
+    /// `/agents`.
+    fn internal_agent_event(&mut self, text: &str) {
+        self.transcript.finalize_tool_group();
+        self.transcript.flush_assistant();
+        self.note(text);
+    }
+
+    /// List a compaction that just started in `/agents`. `owner` is the
+    /// subagent whose conversation it compacts, `None` for the main one.
+    fn begin_compaction_agent(&mut self, owner: Option<&str>, task: String) {
+        let run_id = format!("{COMPACTION_AGENT}-{}", self.internal_agents.len() + 1);
+        let mut panel = SubagentPanel::new(run_id, COMPACTION_AGENT.to_string(), task);
+        panel.internal = true;
+        panel.started = Some(Instant::now());
+        self.internal_agents.push(InternalAgent {
+            panel,
+            outcome: None,
+            owner: owner.map(str::to_string),
+        });
+    }
+
+    /// Close the running compaction `owner` started (or, when its start never
+    /// reached this screen, record one that began at `since`) with what the
+    /// summarizer did: its model, tokens and summary.
+    fn end_compaction_agent(
+        &mut self,
+        owner: Option<&str>,
+        since: Option<Instant>,
+        outcome: SubagentOutcome,
+        folded: usize,
+        report: Option<crate::core::agent::events::CompactionReport>,
+    ) {
+        let open = self.internal_agents.iter().rposition(|a| {
+            a.outcome.is_none() && a.panel.name == COMPACTION_AGENT && a.owner.as_deref() == owner
+        });
+        let at = match open {
+            Some(at) => at,
+            None => {
+                self.begin_compaction_agent(owner, String::new());
+                let at = self.internal_agents.len() - 1;
+                self.internal_agents[at].panel.started = since.or(Some(Instant::now()));
+                at
+            }
+        };
+        let agent = &mut self.internal_agents[at];
+        let panel = &mut agent.panel;
+        panel.ended = Some(Instant::now());
+        if let Some(report) = report {
+            panel.model = report.model;
+            if let Some(usage) = report.usage {
+                panel.total_prompt_tokens = usage.prompt_tokens.unwrap_or(0);
+                panel.output_tokens = usage.completion_tokens.unwrap_or(0);
+            }
+            panel.task = format!(
+                "Summarized {folded} messages (~{} tokens)",
+                compact_tokens(report.input_tokens)
+            );
+            panel.transcript.token(&report.summary);
+            panel.transcript.flush_assistant();
+        }
+        agent.outcome = Some(outcome);
+    }
+
+    /// Take back the main conversation's running compaction from `/agents`:
+    /// it found nothing to fold, so no summarizer ran.
+    fn drop_open_compaction_agent(&mut self) {
+        if let Some(at) = self.internal_agents.iter().rposition(|a| {
+            a.outcome.is_none() && a.panel.name == COMPACTION_AGENT && a.owner.is_none()
+        }) {
+            self.internal_agents.remove(at);
         }
     }
 
@@ -13745,8 +13920,7 @@ async fn chat_loop<B: Backend>(
 
     // Compaction is a summarizing model call, so it runs off the render loop
     // too; `compact_base` is the history length it was computed from.
-    let mut compact_task: Option<tokio::task::JoinHandle<Result<Vec<serde_json::Value>, String>>> =
-        None;
+    let mut compact_task: Option<tokio::task::JoinHandle<CompactResult>> = None;
     let mut compact_base = 0usize;
     // A memory tidy runs as a session-owned subagent; this collects its answer.
     let mut tidy_task: Option<tokio::task::JoinHandle<Result<String, String>>> = None;
@@ -13975,6 +14149,7 @@ async fn chat_loop<B: Backend>(
                 compact_base = history.len();
                 app.compacting = Some(kind);
                 app.compact_started = Some(Instant::now());
+                app.begin_compaction_agent(None, format!("{} the conversation", kind.label()));
                 compact_task = Some(tokio::spawn(async move {
                     crate::core::agent::r#loop::compact_history(
                         &args,
@@ -17778,11 +17953,19 @@ impl CompactKind {
     }
 }
 
+/// What a `/compact` hands back: the compacted history and the summarizer's
+/// report, `None` when there was nothing to compact.
+type CompactResult = Result<
+    (
+        Vec<serde_json::Value>,
+        Option<crate::core::agent::events::CompactionReport>,
+    ),
+    String,
+>;
+
 /// Await an in-flight compaction, parking forever when none is running so this
 /// can sit in the loop's `select!` unconditionally.
-async fn await_compaction(
-    task: &mut Option<tokio::task::JoinHandle<Result<Vec<serde_json::Value>, String>>>,
-) -> Result<Vec<serde_json::Value>, String> {
+async fn await_compaction(task: &mut Option<tokio::task::JoinHandle<CompactResult>>) -> CompactResult {
     let joined = match task.as_mut() {
         Some(h) => h.await,
         None => return pending().await,
@@ -17796,16 +17979,23 @@ async fn await_compaction(
 
 /// Apply a finished compaction. `base_len` is the history length the summary was
 /// computed from: anything appended since (a message submitted while the call was
-/// in flight) is carried over rather than dropped.
-fn finish_compaction(
-    app: &mut App,
-    result: Result<Vec<serde_json::Value>, String>,
-    base_len: usize,
-) {
+/// in flight) is carried over rather than dropped. The summarizer is closed in
+/// `/agents` as an internal agent; a compaction with nothing to fold made no
+/// call, so it leaves no agent behind.
+fn finish_compaction(app: &mut App, result: CompactResult, base_len: usize) {
     let kind = app.compacting.take().unwrap_or(CompactKind::Manual);
-    app.compact_started = None;
+    let since = app.compact_started.take();
     let retrying = std::mem::take(&mut app.retry_after_compact);
-    match result {
+    match &result {
+        Ok((compacted, Some(report))) if compacted.len() < base_len => {
+            let folded = base_len - (compacted.len() - 1);
+            let report = Some(report.clone());
+            app.end_compaction_agent(None, since, SubagentOutcome::Finished, folded, report);
+        }
+        Ok(_) => app.drop_open_compaction_agent(),
+        Err(e) => app.end_compaction_agent(None, since, SubagentOutcome::Failed(e.clone()), 0, None),
+    }
+    match result.map(|(compacted, _)| compacted) {
         Ok(mut compacted) if compacted.len() < base_len => {
             compacted.extend(app.history.split_off(base_len.min(app.history.len())));
             app.history = compacted;
@@ -20661,6 +20851,7 @@ fn open_agents_picker(app: &mut App) {
         items: agent_picker_items(
             &mut app.subagents,
             &app.transcript.subagent_blocks,
+            &app.internal_agents,
             app.context_window,
         ),
         selected: 0,
@@ -20882,19 +21073,21 @@ fn monitor_picker_items(monitors: &[MonitorSnapshot]) -> Vec<PickerItem> {
 
 /// One row per subagent this session can open, live ones first: a bullet
 /// (green while it runs, dim while it waits and once it has finished), its name, its dim stats and
-/// its status -- for a running child, what it is doing now. A single watermark
-/// row stands in when there are none. The row `value` is the child's `run_id`,
-/// which Enter drills into.
+/// its status -- for a running child, what it is doing now. Jan's own agents
+/// (`internal`) follow, marked as internal. A single watermark row stands in
+/// when there are none. The row `value` is the child's `run_id`, which Enter
+/// drills into.
 fn agent_picker_items(
     subagents: &mut [SubagentPanel],
     finished: &[SubagentBlock],
+    internal: &[InternalAgent],
     context_window: u64,
 ) -> Vec<PickerItem> {
     let finished: Vec<&SubagentBlock> = finished
         .iter()
         .filter(|b| !b.panel.run_id.is_empty())
         .collect();
-    if subagents.is_empty() && finished.is_empty() {
+    if subagents.is_empty() && finished.is_empty() && internal.is_empty() {
         return vec![PickerItem {
             label: "no subagents running".to_string(),
             value: String::new(),
@@ -20910,11 +21103,9 @@ fn agent_picker_items(
         } else {
             dim
         };
-        let mut spans = vec![
-            Span::styled(TOOL_BULLET, bullet),
-            agent_label(&p.name),
-            Span::raw("  "),
-        ];
+        let mut spans = vec![Span::styled(TOOL_BULLET, bullet)];
+        spans.extend(agent_name_spans(p));
+        spans.push(Span::raw("  "));
         let stats = agent_stats(p, context_window);
         if !stats.is_empty() {
             spans.extend(stats);
@@ -20939,6 +21130,12 @@ fn agent_picker_items(
         let tail = b.panel.status(Some(&b.outcome)).spans(AGENT_PREVIEW_MAX);
         items.push(row(&b.panel, false, tail));
     }
+    // Newest first: the one that just ran is the one worth a look.
+    for a in internal.iter().rev() {
+        let status = a.panel.status(a.outcome.as_ref());
+        let running = status == AgentStatus::Running;
+        items.push(row(&a.panel, running, status.spans(AGENT_PREVIEW_MAX)));
+    }
     items
 }
 
@@ -20958,10 +21155,9 @@ fn agent_detail_header(
 ) -> Vec<Line<'static>> {
     let dim = Style::new().fg(theme::muted());
     let max = (width.max(8) as usize).saturating_sub(2);
-    let mut out = vec![Line::from(vec![
-        agent_label(&panel.name),
-        Span::styled(format!("  ({})", panel.run_id), dim),
-    ])];
+    let mut name = agent_name_spans(panel);
+    name.push(Span::styled(format!("  ({})", panel.run_id), dim));
+    let mut out = vec![Line::from(name)];
     let mut row = agent_stats(panel, context_window);
     if !row.is_empty() {
         row.push(Span::raw("  "));
@@ -21017,7 +21213,13 @@ fn draw_agent_detail(f: &mut Frame, area: Rect, app: &mut App) {
             .subagent_blocks
             .iter_mut()
             .find(|b| b.panel.run_id == run_id)
-            .map(|b| (&mut b.panel, Some(&b.outcome))),
+            .map(|b| (&mut b.panel, Some(&b.outcome)))
+            .or_else(|| {
+                app.internal_agents
+                    .iter_mut()
+                    .find(|a| a.panel.run_id == run_id)
+                    .map(|a| (&mut a.panel, a.outcome.as_ref()))
+            }),
     };
     let Some((panel, outcome)) = found else {
         let gone = "this subagent is no longer available. Press Esc to go back.";
@@ -23525,6 +23727,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         let items = agent_picker_items(
             &mut app.subagents,
             &app.transcript.subagent_blocks,
+            &app.internal_agents,
             app.context_window,
         );
         if let Some(p) = app.picker.as_mut() {
@@ -26464,7 +26667,7 @@ mod tests {
                 "  \u{2514} builder \u{b7} Waiting on background work \u{b7} 30s",
             ]
         );
-        let items = agent_picker_items(&mut app.subagents, &[], 128_000);
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 128_000);
         assert!(items[0].label.contains("Waiting on background work"), "{}", items[0].label);
         subagent_event(&mut app, "r0", "builder", StreamEvent::Step { index: 2, max: 8 });
         assert_eq!(app.subagents[0].status(None), AgentStatus::Running);
@@ -26632,7 +26835,7 @@ mod tests {
 
     #[test]
     fn agents_picker_shows_a_watermark_when_no_children_run() {
-        let items = agent_picker_items(&mut [], &[], 200_000);
+        let items = agent_picker_items(&mut [], &[], &[], 200_000);
         assert_eq!(items.len(), 1);
         assert!(items[0].value.is_empty(), "watermark row has no run_id to open");
         assert!(items[0].label.contains("no subagents"), "{}", items[0].label);
@@ -26641,7 +26844,7 @@ mod tests {
     #[test]
     fn agents_picker_row_names_the_child_and_flags_a_spin() {
         let mut panels = vec![panel_with_calls("kv-review", vec!["bash {}"; 4])];
-        let items = agent_picker_items(&mut panels, &[], 200_000);
+        let items = agent_picker_items(&mut panels, &[], &[], 200_000);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].value, "sub-kv-review-1");
         assert!(items[0].label.contains("kv-review"), "{}", items[0].label);
@@ -26671,6 +26874,7 @@ mod tests {
             name: "general".into(),
             task: Some("fix it".into()),
             workspace: Some("~/.jan/worktrees/jan-1/general-3f2a (jan/agent/general-3f2a)".into()),
+            internal: false,
         });
         let text = agent_detail_text(&mut app, "sub-general-1", 120, 20);
         assert!(text.contains("workspace ~/.jan/worktrees/jan-1/general-3f2a"), "{text}");
@@ -26711,6 +26915,7 @@ mod tests {
             name: "collector".to_string(),
             task: Some("synthesize".to_string()),
             workspace: None,
+            internal: false,
         });
         assert_eq!(app.subagents.len(), 1, "promoted in place, not duplicated");
         assert!(!app.subagents[0].pending);
@@ -26733,6 +26938,7 @@ mod tests {
             name: "a".to_string(),
             task: Some("do it".to_string()),
             workspace: None,
+            internal: false,
         });
         open_agents_picker(&mut app);
         assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::Agents);
@@ -26754,6 +26960,7 @@ mod tests {
             name: "counter".to_string(),
             task: Some("count things".to_string()),
             workspace: None,
+            internal: false,
         });
         let child = |event: StreamEvent| StreamEvent::Subagent {
             run_id: "sub-counter-1".to_string(),
@@ -26891,7 +27098,7 @@ mod tests {
         assert!(app.subagents.is_empty(), "the live panel is gone");
         let items = {
             let app = &mut *app;
-            agent_picker_items(&mut app.subagents, &app.transcript.subagent_blocks, 200_000)
+            agent_picker_items(&mut app.subagents, &app.transcript.subagent_blocks, &[], 200_000)
         };
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].value, "sub-counter-1");
@@ -26958,6 +27165,7 @@ mod tests {
             name: "counter".to_string(),
             task: Some("count".to_string()),
             workspace: None,
+            internal: false,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
@@ -27006,6 +27214,7 @@ mod tests {
             name: "counter".to_string(),
             task: None,
             workspace: None,
+            internal: false,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
@@ -27030,6 +27239,7 @@ mod tests {
             name: "counter".to_string(),
             task: None,
             workspace: None,
+            internal: false,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
@@ -27054,6 +27264,7 @@ mod tests {
             name: "waster".to_string(),
             task: None,
             workspace: None,
+            internal: false,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
@@ -30318,6 +30529,7 @@ mod tests {
                 phase: CompactionPhase::Finished,
                 reason: CompactionReason::Preflight,
                 messages: Some(9),
+                report: None,
             }),
         });
         let rows = render_rows(&mut app, 80, 20).join("\n");
@@ -33530,6 +33742,7 @@ mod tests {
             name: "a".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         if let Some((provider, model)) = child_on {
             app.apply(child_request_on(provider, model));
@@ -33612,6 +33825,7 @@ mod tests {
                     name: "a".into(),
                     task: None,
                     workspace: None,
+                    internal: false,
                 });
                 app.apply(child_request_on("tokamak", "tk-1"));
                 app.submit_user("go".into());
@@ -33651,6 +33865,7 @@ mod tests {
                     name: "a".into(),
                     task: None,
                     workspace: None,
+                    internal: false,
                 });
                 let rt = tokio::runtime::Runtime::new().expect("runtime");
                 let held = rt.block_on(args.provider_configs.lock());
@@ -33872,6 +34087,7 @@ mod tests {
             name: "reviewer".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         let call = |i: u32, offset: u64| {
             wrap(
@@ -33901,6 +34117,7 @@ mod tests {
             name: "reviewer".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         // Seven calls; only the last SUBAGENT_WINDOW remain visible.
         for i in 0..7 {
@@ -33967,12 +34184,14 @@ mod tests {
             name: "alpha".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "beta".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         app.apply(wrap(
             "r2",
@@ -34018,6 +34237,7 @@ mod tests {
             name: "reviewer".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         assert_eq!(app.subagents.len(), 1, "no duplicate panel on promotion");
         let promoted = app.subagents.iter().find(|p| p.run_id == "r1").unwrap();
@@ -36123,6 +36343,7 @@ mod tests {
             name: "reviewer".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         // More calls than the live window, so expansion reveals ones it hid.
         for i in 0..7 {
@@ -36183,6 +36404,7 @@ mod tests {
             name: "reviewer".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         app.apply(wrap(
             "r1",
@@ -36218,6 +36440,7 @@ mod tests {
             name: "reviewer".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
@@ -36283,6 +36506,7 @@ mod tests {
             name: "reviewer".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         // A wrapped child token is internal and dropped.
         app.apply(wrap(
@@ -36308,6 +36532,7 @@ mod tests {
             name: "reviewer".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         app.apply(wrap(
             "r1",
@@ -36343,12 +36568,14 @@ mod tests {
             name: "reviewer".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "explorer".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         app.apply(wrap(
             "r1",
@@ -36839,6 +37066,7 @@ mod tests {
             name: "reviewer".into(),
             task: None,
             workspace: None,
+            internal: false,
         });
         app.apply(StreamEvent::ToolCall {
             id: "a1".into(),
@@ -40886,7 +41114,7 @@ mod tests {
         let base_len = 4;
         finish_compaction(
             &mut app,
-            Ok(vec![json!({ "role": "user", "content": "summary" })]),
+            Ok((vec![json!({ "role": "user", "content": "summary" })], None)),
             base_len,
         );
         let contents: Vec<String> = app
@@ -40945,6 +41173,7 @@ mod tests {
             name: name.into(),
             task: task.map(str::to_string),
             workspace: None,
+            internal: false,
         });
     }
 
@@ -41011,7 +41240,7 @@ mod tests {
         start_subagent(&mut app, "r0", "alpha");
         child_usage(&mut app, "r0", 1_000, Some(500));
         child_usage(&mut app, "r0", 3_000, Some(2_500));
-        let items = agent_picker_items(&mut app.subagents, &[], 200_000);
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 200_000);
         assert!(items[0].label.contains("75% cache hit"), "{}", items[0].label);
         let detail = agent_detail_text(&mut app, "r0", 80, 20);
         assert!(detail.contains("75% cache hit"), "{detail}");
@@ -41024,7 +41253,7 @@ mod tests {
         let mut app = test_app();
         start_subagent(&mut app, "r0", "alpha");
         child_usage(&mut app, "r0", 1_000, None);
-        let items = agent_picker_items(&mut app.subagents, &[], 200_000);
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 200_000);
         assert!(!items[0].label.contains("cache hit"), "{}", items[0].label);
     }
 
@@ -41035,7 +41264,7 @@ mod tests {
         let mut app = test_app();
         start_subagent(&mut app, "r0", "alpha");
         child_usage(&mut app, "r0", 1_000, Some(0));
-        let items = agent_picker_items(&mut app.subagents, &[], 200_000);
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 200_000);
         let span = items[0]
             .spans
             .iter()
@@ -41071,6 +41300,7 @@ mod tests {
             phase: CompactionPhase::Started,
             reason: CompactionReason::SessionBudget,
             messages: None,
+            report: None,
         });
         assert!(app.run_compacting.is_some());
         let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
@@ -41080,6 +41310,7 @@ mod tests {
             phase: CompactionPhase::Finished,
             reason: CompactionReason::SessionBudget,
             messages: Some(12),
+            report: None,
         });
         assert!(app.run_compacting.is_none());
         let out = transcript_text(&app);
@@ -41212,10 +41443,174 @@ mod tests {
                 phase,
                 reason: CompactionReason::ContextOverflow,
                 messages: None,
+                report: None,
             });
         }
         assert!(app.run_compacting.is_none());
         assert!(transcript_text(&app).contains("compaction failed"));
+    }
+
+    /// The plain text of every `/agents` row.
+    fn agents_list(app: &mut App) -> Vec<String> {
+        agent_picker_items(
+            &mut app.subagents,
+            &app.transcript.subagent_blocks,
+            &app.internal_agents,
+            200_000,
+        )
+        .into_iter()
+        .map(|item| item.label)
+        .collect()
+    }
+
+    /// A compaction is an internal agent: `/agents` lists it while it runs and
+    /// once it lands, marked internal, with its model, tokens, duration, what
+    /// it read and the summary it wrote. The transcript gets one line.
+    #[test]
+    fn a_compaction_is_listed_in_agents_as_an_internal_agent() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason, CompactionReport};
+        let mut app = test_app();
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Started,
+            reason: CompactionReason::Preflight,
+            messages: None,
+            report: None,
+        });
+        let rows = agents_list(&mut app);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert!(rows[0].contains("compaction internal"), "{rows:?}");
+        assert!(rows[0].contains("Running"), "{rows:?}");
+        app.internal_agents[0].panel.started = Some(Instant::now() - Duration::from_secs(5));
+
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Finished,
+            reason: CompactionReason::Preflight,
+            messages: Some(12),
+            report: Some(CompactionReport {
+                model: Some("smol-model".into()),
+                input_tokens: 40_000,
+                usage: Some(Usage {
+                    prompt_tokens: Some(9_000),
+                    completion_tokens: Some(400),
+                    ..Default::default()
+                }),
+                summary: "The user is building a parser.\nIt reads JSON.".into(),
+            }),
+        });
+        let rows = agents_list(&mut app);
+        assert_eq!(rows.len(), 1, "the running record became the finished one: {rows:?}");
+        for part in [
+            "compaction internal",
+            "smol-model",
+            "9.0K in",
+            "400 out",
+            "5s",
+            "Completed - The user is building a parser.",
+        ] {
+            assert!(rows[0].contains(part), "missing {part}: {rows:?}");
+        }
+        let run_id = app.internal_agents[0].panel.run_id.clone();
+        let detail = agent_detail_text(&mut app, &run_id, 100, 24);
+        assert!(detail.contains("Summarized 12 messages (~40K tokens)"), "{detail}");
+        assert!(detail.contains("It reads JSON."), "{detail}");
+
+        let out = transcript_text(&app);
+        assert_eq!(out.lines().count(), 1, "one line in the transcript: {out}");
+        assert!(out.contains("compacted 12 messages into a summary"), "{out}");
+        assert!(!out.contains("parser"), "the summary stays in /agents: {out}");
+    }
+
+    /// A `/compact` is listed the same way, timed from when it was asked for.
+    #[test]
+    fn a_manual_compaction_is_listed_in_agents() {
+        use crate::core::agent::events::CompactionReport;
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Manual);
+        app.compact_started = Some(Instant::now() - Duration::from_secs(3));
+        app.history = (0..5)
+            .map(|i| json!({ "role": "user", "content": format!("m{i}") }))
+            .collect();
+        let report = CompactionReport {
+            model: Some("run-model".into()),
+            input_tokens: 1_200,
+            usage: None,
+            summary: "Short story.".into(),
+        };
+        finish_compaction(
+            &mut app,
+            Ok((vec![json!({ "role": "user", "content": "s" })], Some(report))),
+            5,
+        );
+        let rows = agents_list(&mut app);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        for part in ["compaction internal", "run-model", "3s", "Completed - Short story."] {
+            assert!(rows[0].contains(part), "missing {part}: {rows:?}");
+        }
+        // Nothing to compact made no summarizer call, so there is no agent.
+        app.compacting = Some(CompactKind::Manual);
+        let history = app.history.clone();
+        finish_compaction(&mut app, Ok((history, None)), 1);
+        assert_eq!(agents_list(&mut app).len(), 1);
+    }
+
+    /// Memory tidy is marked internal in `/agents` like compaction, and its
+    /// end leaves no subagent summary row in the main transcript: the
+    /// `memory tidied:` note is its one line.
+    #[test]
+    fn a_memory_tidy_is_an_internal_agent() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-memory-tidy-1".into(),
+            name: "memory-tidy".into(),
+            task: Some("Tidy the memory now.".into()),
+            workspace: None,
+            internal: true,
+        });
+        let tidy = |ev| StreamEvent::Subagent {
+            run_id: "sub-memory-tidy-1".into(),
+            name: "memory-tidy".into(),
+            event: Box::new(ev),
+        };
+        app.apply(tidy(StreamEvent::RequestProvenance {
+            run_id: Some("sub-memory-tidy-1".into()),
+            session_id: None,
+            provider: None,
+            model: "smol-model".into(),
+            api_type: None,
+            request_sha256: String::new(),
+            body_bytes: 0,
+            tools_sha256: None,
+            images: Vec::new(),
+        }));
+        app.apply(tidy(StreamEvent::TurnUsage {
+            usage: Usage {
+                prompt_tokens: Some(2_000),
+                completion_tokens: Some(30),
+                ..Default::default()
+            },
+            execution_id: None,
+        }));
+        let rows = agents_list(&mut app);
+        assert!(rows[0].contains("memory-tidy internal"), "{rows:?}");
+        assert!(rows[0].contains("Running"), "{rows:?}");
+        app.apply(tidy(StreamEvent::Token { text: "archived pr-1".into() }));
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-memory-tidy-1".into(),
+            name: "memory-tidy".into(),
+            error: None,
+        });
+        assert!(app.subagents.is_empty());
+        let rows = agents_list(&mut app);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        for part in ["memory-tidy internal", "smol-model", "2.0K in", "30 out", "Completed - archived pr-1"] {
+            assert!(rows[0].contains(part), "missing {part}: {rows:?}");
+        }
+        assert!(
+            !transcript_text(&app).contains("memory-tidy"),
+            "no subagent row: {}",
+            transcript_text(&app)
+        );
+        assert!(app.transcript.display_log.is_empty(), "nothing journaled");
     }
 
     /// A child's compaction gets a note but not the parent's throbber: the
@@ -41234,6 +41629,7 @@ mod tests {
                     phase,
                     reason: CompactionReason::Preflight,
                     messages,
+                    report: None,
                 },
             );
             assert!(app.run_compacting.is_none());
@@ -41308,7 +41704,7 @@ mod tests {
         let rows = render_rows(&mut app, 100, 24);
         let out = rows.join("\n");
         assert!(out.contains("2 subagents running"), "no consolidated header: {out}");
-        let items = agent_picker_items(&mut app.subagents, &[], 128_000);
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 128_000);
         for (item, pct) in items.iter().zip(["1 tool \u{b7} 1 req \u{b7} 10% ctx", "1 tool \u{b7} 1 req \u{b7} 20% ctx"]) {
             assert!(item.label.contains(pct), "missing {pct}: {}", item.label);
         }
@@ -41512,7 +41908,7 @@ mod tests {
         start_subagent(&mut app, "r1", "alpha");
         let out = render_rows(&mut app, 100, 20).join("\n");
         assert!(out.contains("starting…"), "{out}");
-        let items = agent_picker_items(&mut app.subagents, &[], 128_000);
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 128_000);
         assert!(
             !items[0].label.contains('%'),
             "no share before the first response: {}",
@@ -45113,7 +45509,7 @@ mod tests {
         app.history = (0..5)
             .map(|i| json!({ "role": "user", "content": format!("m{i}") }))
             .collect();
-        finish_compaction(&mut app, Ok(vec![json!({ "role": "user", "content": "s" })]), 5);
+        finish_compaction(&mut app, Ok((vec![json!({ "role": "user", "content": "s" })], None)), 5);
         let start = app.args.as_ref().and_then(|a| a.session_start.clone()).unwrap();
         let root = app.args.as_ref().and_then(|a| a.project_root.clone()).unwrap_or(app.project_root.clone());
         assert_eq!(start, stale.with_fresh_memory(&root));
@@ -49093,7 +49489,7 @@ mod tests {
         app.on_error("upstream_error".into(), overflow_error());
         app.compacting = app.compact_request.take();
         let compacted = vec![serde_json::json!({ "role": "system", "content": "summary" })];
-        finish_compaction(&mut app, Ok(compacted), 7);
+        finish_compaction(&mut app, Ok((compacted, None)), 7);
         assert!(
             app.want_start,
             "a landed compaction resumes the errored turn"
@@ -49111,7 +49507,7 @@ mod tests {
         app.compacting = app.compact_request.take();
         let unchanged = app.history.clone();
         let base = unchanged.len();
-        finish_compaction(&mut app, Ok(unchanged), base);
+        finish_compaction(&mut app, Ok((unchanged, None)), base);
         assert!(!app.want_start);
         assert!(!app.retry_after_compact);
     }
@@ -49125,7 +49521,7 @@ mod tests {
             app.compacting = app.compact_request.take();
             let shorter = app.history[..app.history.len() - 1].to_vec();
             let base = app.history.len();
-            finish_compaction(&mut app, Ok(shorter), base);
+            finish_compaction(&mut app, Ok((shorter, None)), base);
         }
         app.on_error("upstream_error".into(), overflow_error());
         assert_eq!(
@@ -49353,10 +49749,10 @@ mod tests {
 
         finish_compaction(
             &mut app,
-            Ok(vec![
+            Ok((vec![
                 serde_json::json!({ "role": "system", "content": "summary" }),
                 serde_json::json!({ "role": "user", "content": "x".repeat(2_000_000) }),
-            ]),
+            ], None)),
             10,
         );
 

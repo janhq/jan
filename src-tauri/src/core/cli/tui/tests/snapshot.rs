@@ -765,6 +765,7 @@ fn start_kv_review(app: &mut App) {
         name: "kv-review".into(),
         task: Some("Review the key-value store for races.\nThen report.".into()),
         workspace: None,
+        internal: false,
     });
 }
 
