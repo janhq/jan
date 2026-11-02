@@ -260,7 +260,6 @@ describe('MessageItem', () => {
     expect(onContinue).toHaveBeenCalledWith('msg-1')
   })
 
-  // Continue extends partial text; with none there is nothing to resume.
   it('offers Continue on a stopped turn whose tool settled, even with no text', () => {
     // The settled (error-marked) wave is a kept-history resume point: Continue
     // replays it as canonical history instead of regenerating it away.

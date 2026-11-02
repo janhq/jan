@@ -35,11 +35,11 @@ export function resumesFromKeptHistory(
 }
 
 /** Continue eligibility for the message UI, mirroring the route's working
- * paths: a capped turn resumes from any substantive part (tool waves
- * included); a turn the user stopped resumes only from partial
- * text/reasoning. The cap notice itself never qualifies. The route handler
- * does not call this: it stays tolerant of the stop-stamp race and branches
- * only on the cap marker. */
+ * paths: a capped turn resumes from any substantive part, any stopped turn
+ * resumes from settled tool waves (kept history) or partial text/reasoning,
+ * and an in-flight tool is not a resume point. The cap notice itself never
+ * qualifies. The route handler does not call this: it stays tolerant of the
+ * stop-stamp race and branches on resumesFromKeptHistory alone. */
 export function canContinueStoppedTurn(
   metadata: unknown,
   parts: UIMessage['parts']
