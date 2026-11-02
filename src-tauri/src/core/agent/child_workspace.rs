@@ -1497,23 +1497,31 @@ mod git_tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// Make `git status` in the checkout at `path` block for two seconds, so a
-    /// sweep is slow without any test seam: `info/exclude`, which status reads,
-    /// is a FIFO nobody opens until then. `false` where there is no `mkfifo`.
+    /// Make the first `git status` in the checkout at `path` block for two
+    /// seconds from when it starts, so a sweep is slow without any test seam.
+    /// Git only opens an exclude file (it sees a FIFO's size as 0 and never
+    /// reads it), so only the open can block: `info/exclude`, opened first,
+    /// says status has started, and the top-level `.gitignore`, opened next,
+    /// is held two seconds from then. A timer started at setup would run
+    /// alongside the others and make a serial settle look parallel. `false`
+    /// where there is no `mkfifo`.
     #[cfg(unix)]
     fn slow_status(path: &Path) -> bool {
         let exclude = path.join(".git/info/exclude");
+        let ignore = path.join(".gitignore");
         let _ = std::fs::remove_file(&exclude);
-        if !Command::new("mkfifo").arg(&exclude).status().is_ok_and(|s| s.success()) {
+        let fifo = |p: &Path| Command::new("mkfifo").arg(p).status().is_ok_and(|s| s.success());
+        if !fifo(&exclude) || !fifo(&ignore) {
             return false;
         }
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(2));
-            // Opening it for writing is what lets status's read through; a
-            // plain empty file after that serves any later read.
-            let held = std::fs::OpenOptions::new().write(true).open(&exclude);
+            let started = std::fs::OpenOptions::new().write(true).open(&exclude);
             let _ = std::fs::remove_file(&exclude);
             let _ = std::fs::write(&exclude, "");
+            drop(started);
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let held = std::fs::OpenOptions::new().write(true).open(&ignore);
+            let _ = std::fs::remove_file(&ignore);
             drop(held);
         });
         true
