@@ -22,17 +22,12 @@
  *   could classify a just-committed cowork thread as an ordinary chat.
  *   Nothing fetched is ever written back into the store.
  *
- * - An EMPTY fetched list is NOT an authoritative answer. The native
- *   `listThreads` bridge coerces a not-ready/non-array backend response to
- *   `[]`, so `[]` can mean "backend not ready" while persisted cowork
- *   threads exist on disk — resolving `undefined` on it would mount a
- *   writable chat over a hidden cowork thread. An empty list is therefore
- *   treated like a failed attempt: retry within the window, then fail
- *   closed into the typed error (recoverable Retry screen). A genuinely
- *   empty backend is indistinguishable from "not ready" without a
- *   success-only signal, so a deep link into a fresh install pays the
- *   bounded retry window before erroring — accepted. Only a NON-empty list
- *   is authoritative for the existing unknown-id (`undefined`) behavior.
+ * - Before successful store hydration, an empty fallback listing is treated
+ *   conservatively as unknown: it cannot establish that the store's complete
+ *   startup inventory has committed. Retry within the bounded window, then
+ *   show the recoverable error. Once DataProvider commits a validated listing
+ *   (including a genuinely empty array), its success-only flag makes a store
+ *   miss authoritative and avoids the fallback entirely.
  *
  * Hydration signal: `useThreads.threadsHydrated` is a SUCCESS-ONLY flag set
  * by DataProvider's success branch after the service validated an actual
@@ -88,7 +83,7 @@ export interface ResolveThreadForRouteOptions<T extends { id: string }> {
  * Resolves the thread record a route decision needs, retrying backend
  * startup failures over a bounded window. Resolves `undefined` for an id
  * unknown to both the store and a HEALTHY backend — which requires a
- * NON-empty list, since the bridge coerces not-ready responses to `[]`
+ * NON-empty fallback list or successful store hydration
  * (existing unknown-id behavior); throws
  * {@link ThreadClassificationUnavailableError} when the backend never
  * answered (every attempt rejected OR returned an empty list), so the
@@ -128,10 +123,9 @@ export async function resolveThreadForRoute<T extends { id: string }>(
       // Hydration may have succeeded while we awaited (store re-read above
       // found no record), so a miss is authoritative now.
       if (isHydrated()) return undefined
-      // Empty list: the bridge coerces a not-ready backend to [], so this
-      // is indistinguishable from "not ready" and may hide persisted
-      // cowork threads. Treat as a failed attempt — never as a healthy
-      // unknown — and fail closed if the window exhausts.
+      // Before store hydration, an empty fallback does not establish a
+      // committed startup inventory. Keep the route fail-closed until a
+      // record or successful hydration makes classification authoritative.
       lastError = new Error(
         'Thread list fetch returned an empty list; cannot distinguish ' +
           '"backend not ready" from "no threads exist".'
