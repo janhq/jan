@@ -371,3 +371,31 @@ describe('web tools', () => {
     expect(out).toMatchObject({ output: 'no API key', isError: true })
   })
 })
+
+describe('shared client dispatch integration', () => {
+  it.each(['onTodo', 'onAsk', 'onTask'] as const)('normalizes %s rejection once without falling through to native tools', async (handler) => {
+    vi.clearAllMocks()
+    const fn = vi.fn().mockRejectedValue(new Error('client failed'))
+    const toolName = { onTodo: 'todo', onAsk: 'ask', onTask: 'task' }[handler]
+    expect(await dispatchCoworkTool(call(toolName), ctx({ [handler]: fn }))).toEqual({ output: 'client failed', isError: true })
+    expect(fn).toHaveBeenCalledOnce()
+    expect(executeAgentTool).not.toHaveBeenCalled()
+  })
+
+  it('keeps monitor session/folder/network grants in the Cowork adapter', async () => {
+    vi.clearAllMocks()
+    native.startAgentMonitor.mockResolvedValue({ output: 'monitor-1' })
+    const monitors = { update: vi.fn(), started: vi.fn(), stopped: vi.fn() }
+    const input = { op: 'start', script: 'fixture', interval: 5 }
+    await dispatchCoworkTool(call('monitor', input), ctx({ monitors, readOnlyFolder: '/synthetic-scope' }))
+    expect(native.startAgentMonitor).toHaveBeenCalledExactlyOnceWith('s1', input, expect.any(Function), '/synthetic-scope', true, true)
+    expect(monitors.started).toHaveBeenCalledOnce()
+    expect(executeAgentTool).not.toHaveBeenCalled()
+  })
+
+  it('does not give a child a monitor lane', async () => {
+    vi.clearAllMocks()
+    expect(await dispatchCoworkTool(call('monitor', { op: 'start' }), ctx())).toEqual({ output: 'The monitor belongs to the agent that dispatched you.', isError: true })
+    expect(native.startAgentMonitor).not.toHaveBeenCalled()
+  })
+})

@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { UIMessage, UIMessageChunk } from 'ai'
 import type { AskAnswer, CoworkTurn, Usage } from '@/types/coworkSession'
-import type { ToolImage } from '@/lib/agentTools'
+import type { PendingToolCall, ToolOutcome } from '@/lib/clientToolDispatch'
+export type { PendingToolCall, ToolOutcome } from '@/lib/clientToolDispatch'
 import {
   MAX_AGENT_STEPS,
   budgetExceeded,
@@ -24,26 +25,6 @@ import { encodeToolImageSentinel } from '@/lib/tool-image-sentinel'
  * declared without an `execute`, so `streamText` returns after one step and
  * `stopWhen` never evaluates. Every step boundary, and every cap, is explicit.
  */
-
-/** A tool call the model made, awaiting dispatch. */
-export type PendingToolCall = {
-  toolCallId: string
-  toolName: string
-  input: unknown
-}
-
-export type ToolOutcome = {
-  /** Sent to the model. */
-  output: string
-  isError?: boolean
-  /** Display-only unified diff. Never reaches the model. */
-  diff?: string
-  /** Images the tool returned (`read` of an image, `screenshot`). They reach
-   * the model inside the tool result, as `image_url` parts on the `role: tool`
-   * message (see `tool-image-sentinel.ts`), and are never persisted: a
-   * screenshot is megabytes of base64 and the session store is `settings.json`. */
-  images?: ToolImage[]
-}
 
 /** One model turn's worth of stream, folded into a shape the loop can act on. */
 export type StepResult = {
