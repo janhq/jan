@@ -26,10 +26,10 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useMessageErrors } from '@/stores/message-errors'
-import { useServiceHub } from '@/hooks/useServiceHub'
+import { getServiceHub, useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
-import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
+import { SESSION_STORAGE_PREFIX, TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { engineSlotsIdle } from '@janhq/tauri-plugin-llamacpp-api'
@@ -378,13 +378,27 @@ export const Route = createFileRoute('/threads/$threadId')({
   // A Cowork conversation has no chat transcript: its messages live in a
   // sidecar the Cowork view reads. Decide before the chat view mounts (it would
   // create a chat session and fetch an empty message list).
-  beforeLoad: ({ params }) => {
+  beforeLoad: async ({ params }) => {
     const { threadId } = params as { threadId: string }
+    let thread: Thread | undefined = useThreads.getState().threads[threadId]
+    // R3 hydration race: the route can render before the threads store has
+    // hydrated (e.g. a deep link or reload), so a committed cowork thread
+    // would look like an ordinary chat and mount the writable chat view,
+    // forking the transcript. When the record is missing — and the id is not
+    // the temporary chat, which is never persisted — look it up from the
+    // backend directly. The fetched list is NOT written into the store: this
+    // fetch can race a newer hydration, and a stale write would overwrite it.
+    // A rejected fetch (backend not ready) propagates as a route error so no
+    // writable chat mounts over an undecidable thread.
+    if (!thread && threadId !== TEMPORARY_CHAT_ID) {
+      const fetched = await getServiceHub().threads().fetchThreads()
+      thread = fetched.find((t) => t.id === threadId)
+    }
     if (
       shouldRedirectThreadToCowork(
         threadId,
         useCoworkSessions.getState().sessions,
-        useThreads.getState().threads[threadId]
+        thread
       )
     ) {
       throw redirect({

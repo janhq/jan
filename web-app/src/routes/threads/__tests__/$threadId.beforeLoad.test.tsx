@@ -37,16 +37,30 @@ vi.mock('@/lib/webSearchTool', () => ({
   executeWebTool: vi.fn(),
 }))
 
+// beforeLoad falls back to a direct backend lookup when the threads store has
+// no record (R3 hydration race). Default to "backend ready, no threads" so the
+// pre-existing guard tests (which exercise store-seeded paths or unknown ids)
+// keep passing; individual tests override per-case.
+const fetchThreadsMock = vi.fn<() => Promise<unknown[]>>(() =>
+  Promise.resolve([])
+)
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({ threads: () => ({ fetchThreads: fetchThreadsMock }) }),
+  useServiceHub: vi.fn(),
+}))
+
 import { Route } from '../$threadId'
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
 import { useThreads } from '@/hooks/useThreads'
 import type { Thread } from '@janhq/core'
 
-type RouteOpts = { beforeLoad: (a: { params: { threadId: string } }) => void }
+type RouteOpts = {
+  beforeLoad: (a: { params: { threadId: string } }) => void | Promise<void>
+}
 
-const runBeforeLoad = (threadId: string) => {
+const runBeforeLoad = async (threadId: string) => {
   try {
-    ;(Route as unknown as RouteOpts).beforeLoad({ params: { threadId } })
+    await (Route as unknown as RouteOpts).beforeLoad({ params: { threadId } })
     return null
   } catch (e) {
     return (e as { redirect: { to: string; params?: unknown; replace?: boolean } }).redirect
@@ -86,52 +100,111 @@ describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
   beforeEach(() => {
     seedSessions([])
     useThreads.setState({ threads: {} })
+    fetchThreadsMock.mockClear()
+    fetchThreadsMock.mockImplementation(() => Promise.resolve([]))
   })
 
-  it('R2: an id-collision placeholder does NOT steal the route from the real chat', () => {
+  it('R2: an id-collision placeholder does NOT steal the route from the real chat', async () => {
     seedThread('shared-id', {})
     seedSessions([session('shared-id', 'id-collision')])
-    expect(runBeforeLoad('shared-id')).toBeNull()
+    expect(await runBeforeLoad('shared-id')).toBeNull()
   })
 
-  it('a normal cowork session still redirects to /cowork/$sessionId', () => {
+  it('a normal cowork session still redirects to /cowork/$sessionId', async () => {
     seedSessions([session('cw-1')])
-    expect(runBeforeLoad('cw-1')).toMatchObject({
+    expect(await runBeforeLoad('cw-1')).toMatchObject({
       to: '/cowork/$sessionId',
       params: { sessionId: 'cw-1' },
       replace: true,
     })
   })
 
-  it('unavailable placeholders other than id-collision keep redirecting (read-only Cowork view)', () => {
+  it('unavailable placeholders other than id-collision keep redirecting (read-only Cowork view)', async () => {
     seedSessions([
       session('cw-missing', 'missing-sidecar'),
       session('cw-unreadable', 'unreadable-sidecar'),
     ])
-    expect(runBeforeLoad('cw-missing')).toMatchObject({
+    expect(await runBeforeLoad('cw-missing')).toMatchObject({
       to: '/cowork/$sessionId',
       params: { sessionId: 'cw-missing' },
     })
-    expect(runBeforeLoad('cw-unreadable')).toMatchObject({
+    expect(await runBeforeLoad('cw-unreadable')).toMatchObject({
       to: '/cowork/$sessionId',
       params: { sessionId: 'cw-unreadable' },
     })
   })
 
-  it('R3: a cowork-mode thread redirects even with an EMPTY session store (no chat fork)', () => {
+  it('R3: a cowork-mode thread redirects even with an EMPTY session store (no chat fork)', async () => {
     seedThread('cw-orphan', { mode: 'cowork' })
     expect(useCoworkSessions.getState().sessions).toHaveLength(0)
-    expect(runBeforeLoad('cw-orphan')).toMatchObject({
+    expect(await runBeforeLoad('cw-orphan')).toMatchObject({
       to: '/cowork/$sessionId',
       params: { sessionId: 'cw-orphan' },
       replace: true,
     })
   })
 
-  it('an ordinary chat thread with no session never redirects', () => {
+  it('an ordinary chat thread with no session never redirects', async () => {
     seedThread('chat-1', {})
-    expect(runBeforeLoad('chat-1')).toBeNull()
+    expect(await runBeforeLoad('chat-1')).toBeNull()
     // unknown id entirely
-    expect(runBeforeLoad('unknown-id')).toBeNull()
+    expect(await runBeforeLoad('unknown-id')).toBeNull()
+  })
+
+  it('R3 hydration race: BOTH stores empty, persisted cowork thread fetched from backend redirects', async () => {
+    fetchThreadsMock.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'cw-hydrating', title: 'cw', metadata: { mode: 'cowork' } },
+      ])
+    )
+    expect(useCoworkSessions.getState().sessions).toHaveLength(0)
+    expect(useThreads.getState().threads['cw-hydrating']).toBeUndefined()
+    expect(await runBeforeLoad('cw-hydrating')).toMatchObject({
+      to: '/cowork/$sessionId',
+      params: { sessionId: 'cw-hydrating' },
+      replace: true,
+    })
+    expect(fetchThreadsMock).toHaveBeenCalledTimes(1)
+    // The fetched list is NOT written back: a stale fetch must never
+    // overwrite a newer store hydration.
+    expect(useThreads.getState().threads['cw-hydrating']).toBeUndefined()
+  })
+
+  it('R3 hydration race: a fetched ordinary chat thread mounts chat normally (no redirect)', async () => {
+    fetchThreadsMock.mockImplementation(() =>
+      Promise.resolve([{ id: 'chat-hydrating', title: 'chat', metadata: {} }])
+    )
+    expect(await runBeforeLoad('chat-hydrating')).toBeNull()
+    expect(fetchThreadsMock).toHaveBeenCalledTimes(1)
+    expect(useThreads.getState().threads['chat-hydrating']).toBeUndefined()
+  })
+
+  it('a rejected backend lookup propagates as a route error so no writable chat mounts', async () => {
+    fetchThreadsMock.mockImplementation(() =>
+      Promise.reject(new Error('Conversational extension not available yet'))
+    )
+    await expect(
+      (Route as unknown as RouteOpts).beforeLoad({
+        params: { threadId: 'cw-undecidable' },
+      })
+    ).rejects.toThrow('Conversational extension not available yet')
+  })
+
+  it('an id unknown to the backend too keeps the existing unknown-thread behavior', async () => {
+    // fetchThreads resolves [] (default): not found anywhere → no redirect,
+    // same as the pre-existing unknown-id path.
+    expect(await runBeforeLoad('nowhere-id')).toBeNull()
+    expect(fetchThreadsMock).toHaveBeenCalled()
+  })
+
+  it('the temporary chat id never triggers a backend fetch', async () => {
+    expect(await runBeforeLoad('temporary-chat')).toBeNull()
+    expect(fetchThreadsMock).not.toHaveBeenCalled()
+  })
+
+  it('a store-resident thread never triggers a backend fetch', async () => {
+    seedThread('chat-1', {})
+    expect(await runBeforeLoad('chat-1')).toBeNull()
+    expect(fetchThreadsMock).not.toHaveBeenCalled()
   })
 })
