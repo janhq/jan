@@ -389,6 +389,9 @@ describe('coworkSync startup', () => {
     expect(sonner.warning).toHaveBeenCalledTimes(1)
     expect(sonner.warning.mock.calls[0][1]).toMatchObject({ duration: Infinity })
     expect(sonner.warning.mock.calls[0][1].description).toContain('cowork_deleted_ids')
+    // The blocked-deletion claim covers ALL Cowork conversations, not only
+    // imported ones: every removal records intent while migration is unsettled.
+    expect(sonner.warning.mock.calls[0][1].description).toContain('any Cowork conversation')
     // The warning repeats on the next launch until the journal is repaired.
     __resetCoworkSyncForTests()
     useCoworkSessions.setState({ sessions: [], currentId: null })

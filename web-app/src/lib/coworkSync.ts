@@ -133,10 +133,10 @@ async function doStart() {
       description:
         "Jan can't read its deletion record, so conversations imported from an " +
         'older version stay hidden rather than risk restoring ones you already ' +
-        'deleted, and deleting them is temporarily blocked. Your data is ' +
-        "untouched. To recover, fix or remove the 'cowork_deleted_ids' entry in " +
-        "Jan's settings.json — removing it restores every imported conversation, " +
-        'including any you had deleted.',
+        'deleted, and deleting any Cowork conversation is temporarily blocked. ' +
+        "Your data is untouched. To recover, fix or remove the 'cowork_deleted_ids' " +
+        "entry in Jan's settings.json — removing it restores every imported " +
+        'conversation, including any you had deleted.',
     })
   }
 
