@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
 import userEvent from '@testing-library/user-event'
@@ -14,6 +14,8 @@ const h = vi.hoisted(() => ({
   selectedProvider: '',
   search: { threadModel: undefined as any },
   setCurrentThreadId: vi.fn(),
+  setCaps: vi.fn(async () => undefined),
+  prepareOutcome: undefined as unknown,
   useTools: vi.fn(),
   providerHasRemoteApiKeys: vi.fn(() => false),
   predefinedProviders: [
@@ -52,17 +54,21 @@ vi.mock('@/hooks/useModelProvider', () => ({
   }),
 }))
 
-vi.mock('@/hooks/useThreads', () => ({
-  useThreads: () => ({ setCurrentThreadId: h.setCurrentThreadId }),
-}))
+vi.mock('@/hooks/useThreads', () => {
+  const useThreads = () => ({ setCurrentThreadId: h.setCurrentThreadId })
+  ;(useThreads as any).getState = () => ({
+    setConversationCapabilities: h.setCaps,
+  })
+  return { useThreads }
+})
 
 vi.mock('@/hooks/useTools', () => ({
   useTools: h.useTools,
 }))
 
 vi.mock('@/containers/ChatInput', () => ({
-  default: ({ model, initialMessage, onSubmit, surfaceControls, leadingControls, menuWorkspace, menuControls, projectId, scopeKey }: any) => (
-    <div data-testid="chat-input" data-initial={String(initialMessage)} data-project-id={projectId} data-scope-key={scopeKey}>
+  default: ({ model, initialMessage, onSubmit, surfaceControls, leadingControls, menuWorkspace, menuControls, projectId, scopeKey, prepareThreadCreation }: any) => (
+    <div data-testid="chat-input" data-initial={String(initialMessage)} data-project-id={projectId} data-scope-key={scopeKey} data-has-prepare={prepareThreadCreation ? 'true' : undefined}>
       {model ? model.id : 'no-model'}
       <div data-testid="menu-workspace">{menuWorkspace}</div>
       <div data-testid="menu-controls">{menuControls}</div>
@@ -70,6 +76,13 @@ vi.mock('@/containers/ChatInput', () => ({
       <button
         data-testid="submit"
         onClick={() => (onSubmit ?? (() => {}))('do the thing', undefined, undefined, 'do the thing')}
+      />
+      <button
+        data-testid="invoke-prepare"
+        onClick={() => {
+          const apply = prepareThreadCreation?.()
+          if (apply) void apply('created-thread').then((result: unknown) => { h.prepareOutcome = result })
+        }}
       />
     </div>
   ),
@@ -255,6 +268,42 @@ describe('Index route', () => {
       fireEvent.click(await screen.findByText('common:homeMode.removeFolder'))
       fireEvent.click(screen.getByTestId('home-mode-chat'))
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-project-id', 'project-1')
+    })
+
+    it('offers draft conversation permissions only for a tool-capable model in chat mode', () => {
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      h.coworkEnabled = true
+      const view = renderComponent()
+      expect(screen.getByTestId('home-scope-consent-trigger')).toBeInTheDocument()
+      fireEvent.click(screen.getByTestId('home-mode-cowork'))
+      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      view.unmount()
+      useHomeMode.setState({ mode: 'chat' })
+      h.selectedModel = { id: 'model-b', capabilities: [] } as any
+      renderComponent()
+      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+    })
+
+    it('passes prepareThreadCreation only for an elevated draft, applying it through the strict setter', async () => {
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      h.prepareOutcome = undefined
+      renderComponent()
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
+      fireEvent.click(
+        await screen.findByLabelText('Allow shell commands to access the network')
+      )
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+      fireEvent.click(screen.getByTestId('invoke-prepare'))
+      await waitFor(() =>
+        expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
+          version: 1,
+          folderScope: null,
+          shellNetwork: true,
+          memoryWrite: false,
+        })
+      )
+      expect(h.prepareOutcome).toBe(true)
     })
 
     it('is hidden where Cowork is not available', () => {

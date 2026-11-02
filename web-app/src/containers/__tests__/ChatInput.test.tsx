@@ -39,18 +39,29 @@ const rollbackCreatedThreadMock = vi.fn()
 const getCurrentThreadMock = vi.fn(() => undefined)
 let selectedThreadId: string | undefined = 'thread-1'
 
-vi.mock('@/hooks/useThreads', () => ({
-  useThreads: (selector: any) =>
-    selector({
-      currentThreadId: selectedThreadId,
-      getCurrentThread: getCurrentThreadMock,
-      updateCurrentThreadAssistant: updateCurrentThreadAssistantMock,
-      updateCurrentThreadModel: updateCurrentThreadModelMock,
-      createThread: createThreadMock,
-      acceptCreatedThread: vi.fn(),
-      rollbackCreatedThread: rollbackCreatedThreadMock,
-    }),
-}))
+const threadsMockState: Record<string, any> = {}
+const useThreadsMockState = () => ({
+  currentThreadId: selectedThreadId,
+  threads: threadsMockState,
+  getCurrentThread: getCurrentThreadMock,
+  getConversationCapabilities: () => ({
+    version: 1,
+    folderScope: null,
+    shellNetwork: false,
+    memoryWrite: false,
+  }),
+  setConversationCapabilities: vi.fn(async () => undefined),
+  updateCurrentThreadAssistant: updateCurrentThreadAssistantMock,
+  updateCurrentThreadModel: updateCurrentThreadModelMock,
+  createThread: createThreadMock,
+  acceptCreatedThread: vi.fn(),
+  rollbackCreatedThread: rollbackCreatedThreadMock,
+})
+vi.mock('@/hooks/useThreads', () => {
+  const useThreads = (selector: any) => selector(useThreadsMockState())
+  useThreads.getState = () => useThreadsMockState()
+  return { useThreads }
+})
 
 let appStateOverrides: any = {}
 vi.mock('@/hooks/useAppState', () => ({
@@ -405,6 +416,7 @@ const resetAll = () => {
   clearQueueMock.mockClear()
   for (const k of Object.keys(queueState)) delete queueState[k]
   getCurrentThreadMock.mockReturnValue(undefined)
+  for (const key of Object.keys(threadsMockState)) delete threadsMockState[key]
   useImageAttachmentConfig.setState({ maxImageSizeMB: 10 })
 }
 
@@ -418,6 +430,61 @@ const renderInput = (props: any = {}) =>
 describe('ChatInput', () => {
   beforeEach(() => {
     resetAll()
+  })
+
+  describe('conversation scope control', () => {
+    const persistentThread = { id: 'thread-1', title: 'Chat', assistants: [], updated: 1, metadata: {} }
+    beforeEach(() => {
+      for (const key of Object.keys(threadsMockState)) delete threadsMockState[key]
+      getCurrentThreadMock.mockReturnValue(undefined)
+    })
+
+    it('shows the permissions trigger only for a persistent chat thread, and opens the control', async () => {
+      threadsMockState['thread-1'] = persistentThread
+      getCurrentThreadMock.mockReturnValue(persistentThread)
+      renderInput()
+      const trigger = screen.getByTestId('conversation-scope-trigger')
+      fireEvent.click(trigger)
+      expect(
+        await screen.findByText('Conversation permissions', { selector: 'legend' })
+      ).toBeInTheDocument()
+    })
+
+    it('is absent with no current thread', () => {
+      renderInput()
+      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
+    })
+
+    it('is absent on a temporary chat', () => {
+      const temp = { ...persistentThread, id: 'temporary-chat' }
+      threadsMockState['temporary-chat'] = temp
+      getCurrentThreadMock.mockReturnValue(temp)
+      renderInput()
+      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
+    })
+
+    it('is absent on a Cowork session thread', () => {
+      const cowork = { ...persistentThread, metadata: { mode: 'cowork' } }
+      threadsMockState['thread-1'] = cowork
+      getCurrentThreadMock.mockReturnValue(cowork)
+      renderInput()
+      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
+    })
+
+    it('is absent for a model without tool support', () => {
+      threadsMockState['thread-1'] = persistentThread
+      getCurrentThreadMock.mockReturnValue(persistentThread)
+      selectedModelOverride = { id: 'model-a', capabilities: [], provider: 'llamacpp' }
+      renderInput()
+      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
+    })
+
+    it('is absent when the composer does not own the tool set', () => {
+      threadsMockState['thread-1'] = persistentThread
+      getCurrentThreadMock.mockReturnValue(persistentThread)
+      renderInput({ ownsToolSet: false })
+      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
+    })
   })
 
   describe('next-thread preparation', () => {

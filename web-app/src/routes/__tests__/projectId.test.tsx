@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
 
@@ -18,6 +18,8 @@ const h = vi.hoisted(() => ({
   startCoworkConversation: vi.fn(() => 'session-1'),
   toastError: vi.fn(),
   lastSubmitResult: undefined as unknown,
+  setCaps: vi.fn(async () => undefined),
+  prepareOutcome: undefined as unknown,
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -43,10 +45,24 @@ vi.mock('@/hooks/useModelProvider', () => ({
   }),
 }))
 
-vi.mock('@/hooks/useThreads', () => ({
-  useThreads: (selector: any) =>
-    selector({ threads: {}, deleteAllThreadsByProject: vi.fn() }),
+vi.mock('@/hooks/useServiceHub', () => ({
+  useServiceHub: () => ({
+    dialog: () => ({ open: vi.fn(async () => null) }),
+  }),
 }))
+
+vi.mock('@/hooks/useThreads', () => {
+  const useThreads = (selector: any) =>
+    selector({
+      threads: {},
+      deleteAllThreadsByProject: vi.fn(),
+      setCurrentThreadId: vi.fn(),
+    })
+  ;(useThreads as any).getState = () => ({
+    setConversationCapabilities: h.setCaps,
+  })
+  return { useThreads }
+})
 
 vi.mock('@/hooks/useThreadManagement', () => ({
   useThreadManagement: () => ({
@@ -67,6 +83,7 @@ vi.mock('@/containers/ChatInput', () => ({
     scopeKey,
     supportsAssistants,
     ownsToolSet,
+    prepareThreadCreation,
   }: any) => (
     <div
       data-testid="chat-input"
@@ -74,6 +91,7 @@ vi.mock('@/containers/ChatInput', () => ({
       data-scope-key={scopeKey}
       data-supports-assistants={String(supportsAssistants)}
       data-owns-toolset={String(ownsToolSet)}
+      data-has-prepare={prepareThreadCreation ? 'true' : undefined}
     >
       <div data-testid="leading-controls">{leadingControls}</div>
       <button
@@ -85,6 +103,13 @@ vi.mock('@/containers/ChatInput', () => ({
             undefined,
             'project task'
           )
+        }}
+      />
+      <button
+        data-testid="invoke-prepare"
+        onClick={() => {
+          const apply = prepareThreadCreation?.()
+          if (apply) void apply('created-thread').then((result: unknown) => { h.prepareOutcome = result })
         }}
       />
     </div>
@@ -198,6 +223,44 @@ describe('Project route Chat/Cowork selector', () => {
     // An accepted submission must not signal refusal: ChatInput clears the
     // draft unless onSubmit returns false.
     expect(h.lastSubmitResult).not.toBe(false)
+  })
+
+  it('offers draft conversation permissions only for a tool-capable model in chat mode', () => {
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    const view = renderComponent()
+    expect(screen.getByTestId('project-scope-consent-trigger')).toBeInTheDocument()
+    view.unmount()
+    h.coworkEnabled = true
+    useHomeMode.setState({ mode: 'cowork' })
+    const coworkView = renderComponent()
+    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    coworkView.unmount()
+    useHomeMode.setState({ mode: 'chat' })
+    h.selectedModel = { id: 'model-b', capabilities: [] }
+    renderComponent()
+    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+  })
+
+  it('passes prepareThreadCreation only for an elevated draft, applying it through the strict setter', async () => {
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    h.prepareOutcome = undefined
+    renderComponent()
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
+    fireEvent.click(
+      await screen.findByLabelText('Allow shell commands to access the network')
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+    fireEvent.click(screen.getByTestId('invoke-prepare'))
+    await waitFor(() =>
+      expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
+        version: 1,
+        folderScope: null,
+        shellNetwork: true,
+        memoryWrite: false,
+      })
+    )
+    expect(h.prepareOutcome).toBe(true)
   })
 
   it('keeps the draft path when the Cowork handoff cannot be stored', () => {

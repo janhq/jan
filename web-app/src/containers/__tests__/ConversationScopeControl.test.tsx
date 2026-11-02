@@ -203,6 +203,34 @@ describe('ConversationScopeControl', () => {
     expect(screen.getByLabelText(SHELL_LABEL)).not.toBeChecked()
   })
 
+  it('re-renders only for effective-scope changes: unrelated store updates are equality-stable', async () => {
+    const id = freshId()
+    const other = thread('bystander')
+    useThreads.setState({ threads: { [id]: thread(id), bystander: other } })
+    const commits = vi.fn()
+    render(
+      <React.Profiler id="scope" onRender={commits}>
+        <ConversationScopeControl threadId={id} pickFolder={vi.fn(async () => null)} />
+      </React.Profiler>
+    )
+    const after = () => commits.mock.calls.length
+    const baseline = after()
+    // Unrelated store notifications: selection change and another thread's update.
+    act(() => {
+      useThreads.setState({ currentThreadId: 'bystander' })
+      useThreads.setState((state) => ({
+        threads: { ...state.threads, bystander: { ...other, title: 'Renamed' } },
+      }))
+    })
+    expect(after()).toBe(baseline)
+    // An effective change for this thread re-renders through the selector.
+    await act(async () => {
+      await useThreads.getState().setConversationCapabilities(id, elevated)
+    })
+    expect(after()).toBeGreaterThan(baseline)
+    expect(screen.getByLabelText(SHELL_LABEL)).toBeChecked()
+  })
+
   it('reflects an external revocation immediately, before the pending native save settles', async () => {
     const id = freshId()
     useThreads.setState({ threads: { [id]: thread(id) } })

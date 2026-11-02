@@ -35,7 +35,17 @@ import { startCoworkConversation } from '@/lib/startCoworkConversation'
 import { isCoworkEnabled } from '@/lib/version'
 import { basenameOf } from '@/lib/coworkPreview'
 import { COWORK_IDEAS } from '@/lib/coworkIdeas'
-import { Code2, FileText, Folder, LayoutDashboard, X } from 'lucide-react'
+import { Code2, FileText, Folder, LayoutDashboard, ShieldCheck, X } from 'lucide-react'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import { ConversationCapabilitiesConsent } from '@/containers/ConversationCapabilitiesConsent'
+import {
+  defaultConversationCapabilities,
+  type ConversationCapabilitiesV1,
+} from '@/lib/conversationCapabilities'
 import type { Attachment } from '@/types/attachment'
 import { useThreads } from '@/hooks/useThreads'
 
@@ -74,6 +84,31 @@ function Index() {
     const picked = await serviceHub.dialog().open({ directory: true })
     if (typeof picked === 'string') setFolder(picked)
   }, [serviceHub])
+
+  // Draft consent for the NEXT persistent chat. It authorizes nothing by
+  // itself: ChatInput snapshots it through prepareThreadCreation and it is
+  // persisted only through the strict setter after the thread exists. The
+  // draft never carries over to another conversation (route state).
+  const [scopeDraft, setScopeDraft] = useState<ConversationCapabilitiesV1>(
+    defaultConversationCapabilities
+  )
+  const scopeDraftElevated =
+    scopeDraft.shellNetwork ||
+    scopeDraft.memoryWrite ||
+    scopeDraft.folderScope !== null
+  const chatScopeAvailable =
+    mode === 'chat' && (selectedModel?.capabilities?.includes('tools') ?? false)
+  const pickScopeFolder = useCallback(async () => {
+    const picked = await serviceHub.dialog().open({ directory: true })
+    return typeof picked === 'string' ? picked : null
+  }, [serviceHub])
+  const prepareThreadCreation = useCallback(() => {
+    const snapshot = scopeDraft
+    return async (threadId: string) => {
+      await useThreads.getState().setConversationCapabilities(threadId, snapshot)
+      return true
+    }
+  }, [scopeDraft])
 
   // Starting a Cowork conversation: create the session, hand the first prompt
   // to it by session id, and open its own URL. The Cowork view runs it.
@@ -173,8 +208,39 @@ function Index() {
                   <HomeModeToggle mode={mode} onChange={setMode} />
                 ) : undefined
               }
+              prepareThreadCreation={
+                chatScopeAvailable && scopeDraftElevated
+                  ? prepareThreadCreation
+                  : undefined
+              }
             />
           </div>
+          {chatScopeAvailable && (
+            <div className="pt-2" data-testid="home-scope-consent">
+              <Collapsible>
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 rounded-sm p-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    data-testid="home-scope-consent-trigger"
+                  >
+                    <ShieldCheck className="size-4 shrink-0" aria-hidden="true" />
+                    <span>
+                      Conversation permissions
+                      {scopeDraftElevated ? ' (pending)' : ''}
+                    </span>
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pt-2">
+                  <ConversationCapabilitiesConsent
+                    value={scopeDraft}
+                    onChange={setScopeDraft}
+                    onPickFolder={pickScopeFolder}
+                  />
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
+          )}
           {mode === 'chat' && project && (
             <div className="flex items-center gap-2 pt-2 text-sm text-muted-foreground" data-testid="home-chat-project">
               <Folder className="size-4 shrink-0" aria-hidden="true" />

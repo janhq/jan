@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useThreads } from '@/hooks/useThreads'
@@ -18,7 +18,18 @@ import HeaderPage from '@/containers/HeaderPage'
 import ThreadList from '@/containers/ThreadList'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
-import { FolderPenIcon, MessageCircle, MoreHorizontal, PencilIcon, Trash2 } from 'lucide-react'
+import { FolderPenIcon, MessageCircle, MoreHorizontal, PencilIcon, ShieldCheck, Trash2 } from 'lucide-react'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import { ConversationCapabilitiesConsent } from '@/containers/ConversationCapabilitiesConsent'
+import {
+  defaultConversationCapabilities,
+  type ConversationCapabilitiesV1,
+} from '@/lib/conversationCapabilities'
 import ProjectFiles from '@/containers/ProjectFiles'
 import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
 import {
@@ -50,11 +61,43 @@ function ProjectPageContent() {
   const { getFolderById, updateFolder } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
   const deleteAllThreadsByProject = useThreads((state) => state.deleteAllThreadsByProject)
+  const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
+  // Like the home route: the project landing composes a NEW conversation, so
+  // no previous thread stays current here (it would briefly target the
+  // composer's permissions shield at the prior thread).
+  useEffect(() => {
+    setCurrentThreadId(undefined)
+  }, [setCurrentThreadId])
   const { assistants } = useAssistant()
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const serviceHub = useServiceHub()
+
+  // Draft consent for the NEXT persistent chat in this project; applied only
+  // through the strict setter after creation (prepareThreadCreation). A Jan
+  // project grants no filesystem access by itself.
+  const [scopeDraft, setScopeDraft] = useState<ConversationCapabilitiesV1>(
+    defaultConversationCapabilities
+  )
+  const scopeDraftElevated =
+    scopeDraft.shellNetwork ||
+    scopeDraft.memoryWrite ||
+    scopeDraft.folderScope !== null
+  const chatScopeAvailable =
+    mode === 'chat' && (selectedModel?.capabilities?.includes('tools') ?? false)
+  const pickScopeFolder = useCallback(async () => {
+    const picked = await serviceHub.dialog().open({ directory: true })
+    return typeof picked === 'string' ? picked : null
+  }, [serviceHub])
+  const prepareThreadCreation = useCallback(() => {
+    const snapshot = scopeDraft
+    return async (threadId: string) => {
+      await useThreads.getState().setConversationCapabilities(threadId, snapshot)
+      return true
+    }
+  }, [scopeDraft])
 
   // Find the project
   const project = getFolderById(projectId)
@@ -167,7 +210,38 @@ function ProjectPageContent() {
                 }
                 navigate({ to: '/cowork/$sessionId', params: { sessionId: id } })
               } : undefined}
+              prepareThreadCreation={
+                chatScopeAvailable && scopeDraftElevated
+                  ? prepareThreadCreation
+                  : undefined
+              }
             />
+            {chatScopeAvailable && (
+              <div className="pt-2" data-testid="project-scope-consent">
+                <Collapsible>
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 rounded-sm p-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      data-testid="project-scope-consent-trigger"
+                    >
+                      <ShieldCheck className="size-4 shrink-0" aria-hidden="true" />
+                      <span>
+                        Conversation permissions
+                        {scopeDraftElevated ? ' (pending)' : ''}
+                      </span>
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="pt-2">
+                    <ConversationCapabilitiesConsent
+                      value={scopeDraft}
+                      onChange={setScopeDraft}
+                      onPickFolder={pickScopeFolder}
+                    />
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            )}
           </div>
 
           {/* Conversation Section */}

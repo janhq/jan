@@ -34,7 +34,15 @@ import {
   IconWorldSearch,
   IconTerminal2,
   IconBrandChrome,
+  IconShield,
 } from '@tabler/icons-react'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { ConversationScopeControl } from '@/containers/ConversationScopeControl'
+import { isCoworkThread } from '@/lib/threadMode'
 import { generateId } from 'ai'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { QueuedMessageChip } from '@/containers/QueuedMessageBubble'
@@ -414,6 +422,21 @@ const ChatInput = memo(function ChatInput({
   const maxRows = 10
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
+  // Scoped conversation permissions exist only for a persistent Chat thread
+  // on a tool-capable model; temporary chats and Cowork sessions never get a
+  // consent control. The control itself re-checks these guards.
+  const scopeControlThread =
+    showToolControls &&
+    selectedModel?.capabilities?.includes('tools') &&
+    currentThread &&
+    currentThread.id !== TEMPORARY_CHAT_ID &&
+    !isCoworkThread(currentThread)
+      ? currentThread
+      : null
+  const pickScopeFolder = useCallback(async () => {
+    const picked = await serviceHub.dialog().open({ directory: true })
+    return typeof picked === 'string' ? picked : null
+  }, [serviceHub])
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const [message, setMessage] = useState('')
   const [optionsOpen, setOptionsOpen] = useState(false)
@@ -2752,6 +2775,33 @@ const ChatInput = memo(function ChatInput({
                         isStreaming && 'opacity-50 pointer-events-none'
                       )}
                     >
+                      {scopeControlThread && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              aria-label="Conversation permissions"
+                              data-testid="conversation-scope-trigger"
+                              disabled={isStreaming}
+                            >
+                              <IconShield
+                                size={18}
+                                className="text-muted-foreground"
+                              />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            align="start"
+                            className="w-[min(380px,calc(100vw-16px))] p-2"
+                          >
+                            <ConversationScopeControl
+                              threadId={scopeControlThread.id}
+                              pickFolder={pickScopeFolder}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      )}
                       {showToolControls &&
                         hasJanBrowserMCPConfig &&
                         modelSupportsBrowser &&

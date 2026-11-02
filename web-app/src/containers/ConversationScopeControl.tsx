@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useShallow } from 'zustand/shallow'
 import { Button } from '@/components/ui/button'
 import { useThreads } from '@/hooks/useThreads'
 import { ConversationCapabilitiesConsent } from './ConversationCapabilitiesConsent'
@@ -29,23 +30,44 @@ type Props = {
  * overlay-only) stay inactive until explicitly re-applied through the strict
  * setter.
  *
- * MOUNT PRECONDITIONS (scoped-enforcement merge): (1) the restart-
- * reconfirmation display requires the overlay-only getter — while the getter
- * still falls back to persisted metadata, a stale elevated disk grant after a
- * restart would display as active with no reconfirmation notice; (2) the
- * effective scope read below relies on every overlay mutation being paired
- * with a threads-map write — before mounting, subscribe to the merged
- * effective map through a stable Zustand selector instead, so an external
- * revocation with no thread-object change still re-renders.
+ * Both mount preconditions from review are satisfied on the merged
+ * enforcement base: the getter is overlay-only (restart defaults elevated
+ * persisted grants to denied until reconfirmed), and the effective scope is
+ * subscribed below through a stable useShallow selector over flattened
+ * primitives — it re-derives from the overlay on every store notification,
+ * not only when this thread's object identity changes, and cannot
+ * fresh-object loop.
  */
 export function ConversationScopeControl({ threadId, pickFolder, disabled = false }: Props) {
   const thread = useThreads((state) => state.threads[threadId])
+  // Stable subscription to the effective grant: flattened primitives keep
+  // useShallow equality meaningful, so unrelated store updates do not
+  // re-render and every overlay change (always store-notified) does.
+  const effectiveFlat = useThreads(
+    useShallow((state) => {
+      const caps = state.getConversationCapabilities(threadId)
+      return {
+        folderPath: caps.folderScope?.path ?? null,
+        folderAccess: caps.folderScope?.access ?? null,
+        shellNetwork: caps.shellNetwork,
+        memoryWrite: caps.memoryWrite,
+      }
+    })
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   if (!thread || threadId === TEMPORARY_CHAT_ID || isCoworkThread(thread)) return null
 
-  const effective = useThreads.getState().getConversationCapabilities(threadId)
+  const effective: ConversationCapabilitiesV1 = {
+    version: 1,
+    folderScope:
+      effectiveFlat.folderPath !== null && effectiveFlat.folderAccess !== null
+        ? { path: effectiveFlat.folderPath, access: effectiveFlat.folderAccess }
+        : null,
+    shellNetwork: effectiveFlat.shellNetwork,
+    memoryWrite: effectiveFlat.memoryWrite,
+  }
   const persisted = resolveConversationCapabilities(thread.metadata?.conversationCapabilities)
   const unconfirmed =
     (persisted.shellNetwork && !effective.shellNetwork) ||

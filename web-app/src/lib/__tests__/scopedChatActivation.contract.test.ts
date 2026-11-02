@@ -41,15 +41,6 @@ describe('grant-driven advertisement (decided: scratch-safe defaults, folder gra
   it.todo('advertisement recomputes only at turn boundaries; a mid-turn grant change affects dispatch immediately but schemas next turn')
 })
 
-describe('consent mount preconditions', () => {
-  it.todo(
-    'ConversationScopeControl mounts only once the getter is overlay-only: after restart, persisted elevated grants resolve to denied defaults until reconfirmed (no metadata fallback)'
-  )
-  it.todo(
-    'effective scope is subscribed via a stable Zustand selector against the merged effective map (no fresh-object loop): an overlay revocation with no thread-object change still re-renders the active scope'
-  )
-})
-
 describe('temporary chats (scratch only, never persistent consent)', () => {
   it.todo('a temporary chat keeps direct answers and the scratch-sandbox shell baseline')
   it.todo(
@@ -67,4 +58,11 @@ describe('task children (decided: same narrowed context, no Session fallback)', 
   it.todo('child approvals use the same Chat approval stores; no inherited auto-approval from a parent allow-once')
   it.todo('task/ask/todo/monitor/memory are withheld from children')
   it.todo('child completion notices reach the parent only through the existing runTurn inbox')
+})
+
+describe('thread monitor route integration (after the native thread-monitor subtask ships)', () => {
+  it.todo(
+    'monitor start passes only threadId/args/onUpdate — never a caller-supplied effective overlay; consent is resolved natively per poll'
+  )
+  it.todo('monitor pings reach the run only through the existing runTurn inbox lane')
 })
