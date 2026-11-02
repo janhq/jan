@@ -30,16 +30,9 @@ export function unadvertisedToolRefusal(
   }
 }
 
-/** Tools that can mutate something. Withheld, and refused, in plan mode. */
-export const PLAN_DENIED_TOOLS = new Set([
-  'write',
-  'edit',
-  'shell',
-  'skill_write',
-  'task',
-  // Starting one schedules shell scripts, which is exec-class work.
-  MONITOR_TOOL_NAME,
-])
+// Shared advertisement policy; keep the existing export for dispatch callers.
+export { PLAN_DENIED_TOOLS } from './toolCapabilityPolicy'
+import { PLAN_DENIED_TOOLS, resolveToolCapabilities } from './toolCapabilityPolicy'
 
 /** `memory` ops that change the store. Plan mode keeps the tool for its
  * reads (`view`, `search`) and refuses these, as the Rust tool does. */
@@ -284,12 +277,13 @@ export function allowedToolNames(
 export async function buildCoworkTools(
   opts: CoworkToolOptions
 ): Promise<Record<string, Tool>> {
+  const policy = resolveToolCapabilities({ surface: 'cowork', ...opts })
   const schemas = await getAgentToolSchemas()
   const tools: Record<string, Tool> = {}
 
   for (const s of schemas) {
     const name = s.function.name
-    if (opts.planMode && PLAN_DENIED_TOOLS.has(name)) continue
+    if (!policy.allowsNativeTool(name)) continue
     tools[name] = {
       description: s.function.description,
       inputSchema: jsonSchema(
@@ -299,7 +293,7 @@ export async function buildCoworkTools(
   }
 
   // Reads, so plan mode keeps them: research is most of what planning is.
-  if (opts.webSearch) {
+  if (policy.webSearch) {
     tools['web_search'] = {
       description: WEB_SEARCH_DESCRIPTION,
       inputSchema: jsonSchema(WEB_SEARCH_INPUT_SCHEMA as Record<string, unknown>),
@@ -312,10 +306,10 @@ export async function buildCoworkTools(
 
   tools[TODO_TOOL_NAME] = todoTool
   tools[ASK_TOOL_NAME] = askTool
-  if (opts.allowSubagents && !opts.planMode) {
+  if (policy.task) {
     tools[TASK_TOOL_NAME] = taskTool(opts.subagentNames)
   }
-  if (!opts.planMode) {
+  if (policy.monitor) {
     tools[MONITOR_TOOL_NAME] = monitorTool()
   }
   return tools

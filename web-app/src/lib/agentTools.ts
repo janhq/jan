@@ -70,7 +70,7 @@ export const isRecordedShellCall = (toolName: string): boolean =>
  * shell alone, with no network. The full toolset above is Cowork's — chat is a
  * conversation that occasionally runs a command, not an agent surface.
  */
-export const CHAT_AGENT_TOOL_NAMES = new Set(['shell'])
+export { CHAT_AGENT_TOOL_NAMES } from './toolCapabilityPolicy'
 
 /**
  * Tools that only run under an enforcing OS sandbox. They stay in

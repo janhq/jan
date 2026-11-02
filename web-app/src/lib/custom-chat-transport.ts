@@ -43,6 +43,7 @@ import {
   refreshMemoryDigest,
   sandboxEnforces,
 } from '@/lib/agentTools'
+import { resolveToolCapabilities } from './toolCapabilityPolicy'
 import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
@@ -1211,9 +1212,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         console.warn('Failed to load MCP tools:', error)
       }
 
+      const policy = resolveToolCapabilities({
+        surface: 'chat',
+        modelSupportsTools,
+        shellEnabled: useChatShell.getState().shellEnabled,
+        webSearch: useWebSearchConfig.getState().webSearchEnabled,
+      })
+
       // Native web tools, provided by the websearch plugin (not an MCP server).
       // Advertised whenever the user has web search enabled.
-      if (useWebSearchConfig.getState().webSearchEnabled) {
+      if (policy.webSearch) {
         toolsRecord['web_search'] = {
           description: WEB_SEARCH_DESCRIPTION,
           inputSchema: jsonSchema(WEB_SEARCH_INPUT_SCHEMA as Record<string, unknown>),
@@ -1230,9 +1238,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // already withholds shell when no sandbox backend can confine it. A user
       // who switched it off (#9222) gets none of it.
       try {
-        const shellOn = useChatShell.getState().shellEnabled
-        for (const schema of shellOn ? await getAgentToolSchemas() : []) {
-          if (!CHAT_AGENT_TOOL_NAMES.has(schema.function.name)) continue
+        for (const schema of policy.loadNativeTools ? await getAgentToolSchemas() : []) {
+          if (!policy.allowsNativeTool(schema.function.name)) continue
           toolsRecord[schema.function.name] = {
             description: schema.function.description,
             inputSchema: jsonSchema(schema.function.parameters),
