@@ -30,7 +30,26 @@ use std::process::Command;
 
 /// A `git` command, resolved by [`jan_utils::git_program`] so Windows never
 /// runs a `git.exe` from Jan's own folder.
-fn git_command() -> Result<Command, String> {
+///
+/// It never talks to the user's terminal: `GIT_TERMINAL_PROMPT=0` and (unix)
+/// its own session, so neither git nor anything it runs (a credential helper,
+/// ssh asking to trust a host key) can open `/dev/tty`. Under the TUI such a
+/// prompt would wait behind the TUI's screen, with the TUI and git both
+/// reading the same keystrokes; now the command fails with git's own error.
+/// For a git that may prompt, see [`git_command_on_terminal`].
+pub(crate) fn git_command() -> Result<Command, String> {
+    let mut cmd = git_command_on_terminal()?;
+    cmd.stdin(std::process::Stdio::null())
+        .env("GIT_TERMINAL_PROMPT", "0");
+    #[cfg(unix)]
+    tauri_plugin_agent_tools::tools::proc::detach_std_from_terminal(&mut cmd);
+    Ok(cmd)
+}
+
+/// A plain `git` that shares Jan's terminal, so it can ask for credentials
+/// there. Only for a caller that knows nothing else is using the terminal --
+/// a plain `jan plugin install`, never the TUI.
+pub(crate) fn git_command_on_terminal() -> Result<Command, String> {
     jan_utils::git_program()
         .map(Command::new)
         .map_err(|e| format!("failed to launch git: {e}"))
@@ -411,6 +430,23 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    /// git, and whatever it runs (credential helpers, ssh, aliases), cannot
+    /// prompt on the TUI's terminal. The `/dev/tty` probe is only meaningful
+    /// when the test runner has a terminal (it says "opened" for a git that
+    /// shares Jan's session); `GIT_TERMINAL_PROMPT` is checked regardless.
+    #[cfg(unix)]
+    #[test]
+    fn git_never_prompts_on_the_terminal() {
+        let Ok(mut cmd) = git_command() else { return };
+        let probe = "!echo \"prompt=$GIT_TERMINAL_PROMPT\"; \
+                     if (: </dev/tty) 2>/dev/null; then echo opened; else echo denied; fi";
+        let Ok(out) = cmd.args(["-c", &format!("alias.probe={probe}"), "probe"]).output() else {
+            return;
+        };
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "prompt=0\ndenied");
+    }
 
     /// Init a throwaway repo with one commit, or `None` if git is unavailable so
     /// the suite skips instead of failing on a box without git.
