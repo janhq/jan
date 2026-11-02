@@ -11,6 +11,7 @@ vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (options: unknown) => options,
   redirect: (r: unknown) => Object.assign(new Error('redirect'), { redirect: r }),
   useParams: () => ({}),
+  useRouter: () => ({ invalidate: vi.fn() }),
   useSearch: () => ({}),
   Link: () => null,
 }))
@@ -52,6 +53,10 @@ vi.mock('@/hooks/useServiceHub', () => ({
 import { Route } from '../$threadId'
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
 import { useThreads } from '@/hooks/useThreads'
+import {
+  THREAD_LOOKUP_ATTEMPTS,
+  ThreadClassificationUnavailableError,
+} from '@/lib/threadRouteClassification'
 import type { Thread } from '@janhq/core'
 
 type RouteOpts = {
@@ -204,15 +209,80 @@ describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
     expect(Object.keys(useThreads.getState().threads)).toEqual(['cw-racing'])
   })
 
-  it('a rejected backend lookup propagates as a route error so no writable chat mounts', async () => {
+  it('startup failure then recovery: the retry classifies the cowork thread and redirects', async () => {
+    // Normal startup: the Conversational extension registers a beat after the
+    // first route render, so the first fetch rejects and a later one succeeds.
+    fetchThreadsMock
+      .mockImplementationOnce(() =>
+        Promise.reject(new Error('Conversational extension not available yet'))
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve([
+          { id: 'cw-startup', title: 'cw', metadata: { mode: 'cowork' } },
+        ])
+      )
+    vi.useFakeTimers()
+    try {
+      const pending = runBeforeLoad('cw-startup')
+      await vi.runAllTimersAsync()
+      expect(await pending).toMatchObject({
+        to: '/cowork/$sessionId',
+        params: { sessionId: 'cw-startup' },
+        replace: true,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(fetchThreadsMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('an exhausted retry window surfaces the typed recoverable error so no writable chat mounts', async () => {
     fetchThreadsMock.mockImplementation(() =>
       Promise.reject(new Error('Conversational extension not available yet'))
     )
-    await expect(
-      (Route as unknown as RouteOpts).beforeLoad({
-        params: { threadId: 'cw-undecidable' },
+    vi.useFakeTimers()
+    try {
+      const pending = (Route as unknown as RouteOpts)
+        .beforeLoad({ params: { threadId: 'cw-undecidable' } }) as Promise<void>
+      const settled = pending.then(
+        () => null,
+        (e) => e
+      )
+      await vi.runAllTimersAsync()
+      const err = await settled
+      expect(err).toBeInstanceOf(ThreadClassificationUnavailableError)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(fetchThreadsMock).toHaveBeenCalledTimes(THREAD_LOOKUP_ATTEMPTS)
+  })
+
+  it('a hydration landing mid-retry-window wins without waiting out the backend', async () => {
+    // isLoadingThreads is deliberately NOT trusted as a hydration signal; the
+    // only authoritative skip is the record itself appearing in the store.
+    fetchThreadsMock.mockImplementation(() => {
+      // Hydration lands after the first failed attempt.
+      if (fetchThreadsMock.mock.calls.length === 1) {
+        setTimeout(() => seedThread('cw-late', { mode: 'cowork' }), 0)
+      }
+      return Promise.reject(new Error('not ready'))
+    })
+    vi.useFakeTimers()
+    try {
+      const pending = runBeforeLoad('cw-late')
+      await vi.runAllTimersAsync()
+      expect(await pending).toMatchObject({
+        to: '/cowork/$sessionId',
+        params: { sessionId: 'cw-late' },
+        replace: true,
       })
-    ).rejects.toThrow('Conversational extension not available yet')
+    } finally {
+      vi.useRealTimers()
+    }
+    // Resolved from the store, well before the window exhausted.
+    expect(fetchThreadsMock.mock.calls.length).toBeLessThan(
+      THREAD_LOOKUP_ATTEMPTS
+    )
   })
 
   it('an id unknown to the backend too keeps the existing unknown-thread behavior', async () => {

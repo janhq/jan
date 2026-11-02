@@ -12,10 +12,16 @@ import {
   createFileRoute,
   redirect,
   useParams,
+  useRouter,
   useSearch,
 } from '@tanstack/react-router'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { shouldRedirectThreadToCowork } from '@/lib/threadRouteGuard'
+import {
+  resolveThreadForRoute,
+  ThreadClassificationUnavailableError,
+} from '@/lib/threadRouteClassification'
+import GlobalError from '@/containers/GlobalError'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
@@ -373,6 +379,43 @@ type SearchParams = {
   threadModel?: ThreadModel
 }
 
+/**
+ * Route-local error screen. A classification failure (the conversation
+ * backend never answered within the startup retry window) is recoverable:
+ * Retry re-runs `beforeLoad` via router.invalidate(), so the deep link is
+ * not stranded on the root GlobalError, which only offers a full reload.
+ * Unknown errors fall through to the same GlobalError presentation as the
+ * root boundary — this boundary only adds the retry affordance.
+ */
+function ThreadRouteError({ error }: { error: Error }) {
+  const router = useRouter()
+  if (error instanceof ThreadClassificationUnavailableError) {
+    return (
+      <div className="flex h-full w-full items-center justify-center p-5">
+        <div className="max-w-md text-center">
+          <IconAlertCircle className="mx-auto size-8 text-destructive" />
+          <h2 className="mt-3 text-base font-semibold text-main-view-fg">
+            This conversation isn&apos;t ready yet
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {error.message}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => void router.invalidate()}
+          >
+            <IconRefresh className="size-4 mr-2" />
+            Retry
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  return <GlobalError error={error} />
+}
+
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
   // A Cowork conversation has no chat transcript: its messages live in a
@@ -386,19 +429,26 @@ export const Route = createFileRoute('/threads/$threadId')({
     // would look like an ordinary chat and mount the writable chat view,
     // forking the transcript. When the record is missing — and the id is not
     // the temporary chat, which is never persisted — look it up from the
-    // backend directly. The fetched list is NOT written into the store: this
-    // fetch can race a newer hydration, and a stale write would overwrite it.
-    // A rejected fetch (backend not ready) propagates as a route error so no
-    // writable chat mounts over an undecidable thread.
+    // backend directly, retrying over a bounded startup window: on a normal
+    // startup the Conversational extension registers after the first route
+    // render, so a single fetch would throw and strand the deep link. The
+    // fetched list is NOT written into the store (a stale write could
+    // overwrite a newer hydration), and the store is re-read around every
+    // await so a hydration landing mid-fetch wins over the stale snapshot.
+    // When the whole window fails, classification is UNKNOWN and the typed
+    // error below propagates — the route-local errorComponent renders a
+    // Retry screen; a writable chat never mounts over an undecidable thread.
+    //
+    // Not gated on useThreads.isLoadingThreads: DataProvider also flips that
+    // flag false when its own retries exhaust, so it is not an authoritative
+    // hydration signal — trusting it would re-open the race this fetch
+    // closes. Store residency is the only fetch skip.
     if (!thread && threadId !== TEMPORARY_CHAT_ID) {
-      const fetched = await getServiceHub().threads().fetchThreads()
-      // Re-read the store first: a hydration (or a cowork commit) can land
-      // DURING the await, and that record is newer than the fetched backend
-      // snapshot — deciding on the stale snapshot could classify a
-      // just-committed cowork thread as an ordinary chat.
-      thread =
-        useThreads.getState().threads[threadId] ??
-        fetched.find((t) => t.id === threadId)
+      thread = await resolveThreadForRoute<Thread>({
+        threadId,
+        readThread: () => useThreads.getState().threads[threadId],
+        fetchThreads: () => getServiceHub().threads().fetchThreads(),
+      })
     }
     if (
       shouldRedirectThreadToCowork(
@@ -415,6 +465,11 @@ export const Route = createFileRoute('/threads/$threadId')({
     }
   },
   component: ThreadDetail,
+  // Route-LOCAL error boundary: a failed classification (backend still
+  // starting) renders a recoverable Retry screen instead of bubbling to the
+  // root GlobalError, which offers no retry short of a full reload. Any
+  // other beforeLoad error keeps the existing global presentation.
+  errorComponent: ThreadRouteError,
   validateSearch: (search: Record<string, unknown>): SearchParams => {
     return {
       threadModel: search.threadModel as ThreadModel | undefined,
