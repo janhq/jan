@@ -76,6 +76,39 @@ describe('production useChat wrapper with real SDK Chat and runTurn', () => {
     expect(h.send).toHaveBeenCalledTimes(2)
     expect(h.begin).toHaveBeenCalledTimes(2)
   })
+  it('reserves same-tick text admission before SDK conversion yields', async () => {
+    h.send.mockResolvedValue(wave())
+    const dispatch = vi.fn().mockImplementation(() => new Promise(() => {}))
+    const { result } = renderHook(() => useChat({ sessionId: 'fixture', dispatchTool: dispatch }))
+    let accepted!: Promise<void>
+    let rejected!: Promise<void>
+    let regeneration!: Promise<void>
+    act(() => {
+      accepted = result.current.sendMessage({ text: 'first owns admission' })
+      rejected = result.current.sendMessage({ text: 'second must not mutate' })
+      regeneration = result.current.regenerate()
+    })
+    await expect(rejected).rejects.toThrow('already running')
+    await expect(regeneration).rejects.toThrow('Stop the current')
+    await act(async () => { await accepted })
+    await waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1))
+    expect(result.current.messages.filter(m => m.role === 'user')).toHaveLength(1)
+    expect(result.current.messages[0].parts).toEqual([{ type: 'text', text: 'first owns admission' }])
+    expect(h.send).toHaveBeenCalledTimes(1)
+    await act(async () => { await result.current.stop() })
+    await waitFor(() => expect(h.release).toHaveBeenCalledTimes(1))
+    expect(result.current.status).toBe('ready')
+  })
+  it('does not reject accepted admission when the later model send fails', async () => {
+    h.send.mockRejectedValueOnce(new Error('fixture provider failure'))
+    const onError = vi.fn()
+    const { result } = renderHook(() => useChat({ sessionId: 'fixture', dispatchTool: vi.fn(), onError }))
+    await act(async () => { await expect(result.current.sendMessage({ text: 'accepted user' })).resolves.toBeUndefined() })
+    await waitFor(() => expect(result.current.status).toBe('error'))
+    expect(result.current.messages.filter(m => m.role === 'user')).toHaveLength(1)
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(h.release).toHaveBeenCalledTimes(1)
+  })
   it('acknowledges enqueue before a held tool finishes so later composer text survives', async () => {
     h.send.mockResolvedValueOnce(wave()).mockResolvedValueOnce(answer())
     let finish!: (v: { output: string }) => void

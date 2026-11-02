@@ -147,13 +147,22 @@ export function useChat(
         // from an approval or tool still owned by the current turn.
         const send = instance.sendMessage.bind(instance)
         const regenerate = instance.regenerate.bind(instance)
-        const busy = () => instance.status === 'submitted' || instance.status === 'streaming'
-        instance.sendMessage = (...args) => busy()
-          ? Promise.reject(new Error('Chat turn already running'))
-          : send(...args)
-        instance.regenerate = (...args) => busy()
-          ? Promise.reject(new Error('Stop the current Chat turn before regenerating'))
-          : regenerate(...args)
+        let reserved = false
+        const busy = () => reserved || instance.status === 'submitted' || instance.status === 'streaming'
+        const start = (operation: () => Promise<void>, error: string) => {
+          if (busy()) return Promise.reject(new Error(error))
+          // SDK text/FileList conversion may yield before status=submitted.
+          // Reserve synchronously, before invoking any SDK mutation.
+          reserved = true
+          try {
+            return operation().finally(() => { reserved = false })
+          } catch (cause) {
+            reserved = false
+            return Promise.reject(cause)
+          }
+        }
+        instance.sendMessage = (...args) => start(() => send(...args), 'Chat turn already running')
+        instance.regenerate = (...args) => start(() => regenerate(...args), 'Stop the current Chat turn before regenerating')
         trackChat(instance, pending)
         return instance
       },
@@ -220,7 +229,7 @@ export function useChat(
   const sendMessageAccepted = useCallback<typeof chatResult.sendMessage>(async (...args) => {
     const retained = sessionId ? useChatSessions.getState().sessions[sessionId]?.chat : undefined
     const owner = retained ?? chatResult
-    if (owner.status === 'submitted' || owner.status === 'streaming') {
+    if ((retained && admissions.has(retained)) || owner.status === 'submitted' || owner.status === 'streaming') {
       throw new Error('Chat turn already running')
     }
     if (!retained) throw new Error('Chat session unavailable')
