@@ -77,6 +77,8 @@ vi.mock('../model-factory', () => ({
   ModelFactory: { createModel: vi.fn() },
 }))
 
+vi.mock('@/lib/agentTools', () => ({ refreshMemoryDigest: vi.fn(async () => ''), memoryDigestNow: () => '', getAgentToolSchemas: vi.fn(async () => []) }))
+
 import { CustomChatTransport } from '../custom-chat-transport'
 
 describe('CustomChatTransport smart-tool-routing freeze', () => {
@@ -119,6 +121,39 @@ describe('CustomChatTransport smart-tool-routing freeze', () => {
     })
     await transport.refreshTools()
     expect(mcpService.getTools).toHaveBeenCalledTimes(1)
+  })
+
+  it('freezes tools for the entire Chat run then refreshes on the next turn', async () => {
+    const release = transport.beginChatRun()
+    await transport.refreshTools()
+    const original = transport.getTools()
+    h.servers = ['srv', 'new-server']
+    h.disabledTools = ['srv::tool_a']
+    await transport.refreshTools()
+    expect(transport.getTools()).toBe(original)
+    expect(h.getRelevantTools).toHaveBeenCalledTimes(1)
+    release()
+    await transport.refreshTools()
+    expect(h.getRelevantTools).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores discovery started before a run when it completes after the run snapshot', async () => {
+    let finishOld!: (tools: unknown[]) => void
+    mcpService.getTools.mockResolvedValue([
+      { name: 'new_tool', description: '', inputSchema: {}, server: 'srv' },
+      { name: 'stale_tool', description: '', inputSchema: {}, server: 'srv' },
+    ])
+    h.getRelevantTools.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    const stale = transport.refreshTools()
+    await vi.waitFor(() => expect(finishOld).toBeTypeOf('function'))
+    const release = transport.beginChatRun()
+    h.getRelevantTools.mockResolvedValueOnce([{ name: 'new_tool', description: '', inputSchema: {}, server: 'srv' }])
+    await transport.refreshTools()
+    finishOld([{ name: 'stale_tool', description: '', inputSchema: {}, server: 'srv' }])
+    await stale
+    expect(Object.keys(transport.getTools())).toContain('new_tool')
+    expect(Object.keys(transport.getTools())).not.toContain('stale_tool')
+    release()
   })
 
   it('routes once and freezes the set across subsequent turns', async () => {

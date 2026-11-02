@@ -1,4 +1,4 @@
-import { Chat } from '@ai-sdk/react'
+import { Chat, useChat as useSDKChat } from '@ai-sdk/react'
 import { trackChat, quiesceChats, __resetChatCloseForTests } from '@/lib/chatClose'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -154,9 +154,11 @@ const h = vi.hoisted(() => {
   }
   const useMessageQueueMock: any = (_selector: any) => undefined
   useMessageQueueMock.getState = () => messageQueueState
+  useMessageQueueMock.setState = (update: any) => Object.assign(messageQueueState, typeof update === 'function' ? update(messageQueueState) : update)
 
   return {
     // The route's thread id, which the tests move to simulate a thread switch.
+    integrationChat: null as Chat | null,
     routeParams: { threadId: 'thread-1' },
     mockSendMessage,
     mockRegenerate,
@@ -390,7 +392,8 @@ vi.mock('@/types/attachment', () => ({
   createImageAttachment: (x: any) => ({ type: 'image', ...x }),
 }))
 
-vi.mock('ai', () => ({
+vi.mock('ai', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('ai')>()),
   generateId: () => 'gen-id',
   lastAssistantMessageIsCompleteWithToolCalls: () => true,
 }))
@@ -417,15 +420,26 @@ vi.mock('@/hooks/use-chat', () => ({
         : undefined
     ;(h as any).capturedOnFinish = _args?.onFinish
     ;(h as any).capturedOnToolCall = _args?.onToolCall
-    ;(h as any).capturedSendAutomaticallyWhen = _args?.sendAutomaticallyWhen
+    ;(h as any).capturedDispatchTool = _args?.dispatchTool
+    // Integration mode keeps the real SDK's reactive status/messages. The
+    // normal branch remains a lightweight fixture for presentation-only tests.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const live = h.integrationChat ? useSDKChat({ chat: h.integrationChat }) : null
+    if (live) {
+      const threadId = _args.sessionId
+      const session = h.chatSessionsState.sessions[threadId]
+      if (session) session.isStreaming = live.status === 'submitted' || live.status === 'streaming'
+      h.appStateState.busyThreads[threadId] = !!session?.isStreaming
+      h.appStateState.setThreadBusy(threadId, !!session?.isStreaming)
+    }
     return {
-      messages: h.chatState.messages,
-      status: h.chatState.status,
+      messages: h.integrationChat?.messages ?? h.chatState.messages,
+      status: live?.status ?? h.chatState.status,
       error: h.chatState.error,
       sendMessage: h.mockSendMessage,
       regenerate: h.mockRegenerate,
       setMessages: h.mockSetChatMessages,
-      stop: h.mockStop,
+      stop: h.integrationChat ? () => h.integrationChat!.stop() : h.mockStop,
       addToolOutput: h.mockAddToolOutput,
       updateRagToolsAvailability: h.mockUpdateRag,
       setContinueFromContent: h.mockSetContinueFromContent,
@@ -514,6 +528,8 @@ vi.mock('@/hooks/useWebSearchConfig', async (importOriginal) => ({
 // Import component AFTER mocks
 // -----------------------------------------------------------------------------
 import { Route } from '../$threadId'
+import { createChatRunStream } from '@/lib/chatRunTransport'
+import type { UIMessageChunk } from 'ai'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { toolOriginKey, useToolCallRuntime } from '@/hooks/useToolCallRuntime'
@@ -537,6 +553,7 @@ const getMcpTools = vi.fn(async () =>
   }))
 )
 
+
 const renderComponent = () => {
   const Component = Route.component as React.ComponentType
   return render(<Component />)
@@ -550,6 +567,7 @@ describe('ThreadDetail route', () => {
     h.removeChatSession('thread-2')
     h.chatSessionsState.sessions = {}
     vi.clearAllMocks()
+    h.integrationChat = null
     h.chatState.messages = []
     h.chatState.status = 'ready'
     h.chatState.error = null
@@ -583,6 +601,7 @@ describe('ThreadDetail route', () => {
     h.messageQueueState.clearQueue = vi.fn()
     h.agentModeState.agentThreads = {}
     h.modelProviderState.selectedProvider = 'openai'
+    h.appStateState.busyThreads = {}
     h.appStateState.oomError = undefined
     h.appStateState.ragToolNames = new Set<string>()
     h.appStateState.mcpToolNames = new Set<string>()
@@ -681,6 +700,38 @@ describe('ThreadDetail route', () => {
       expect(h.mockSendMessage).toHaveBeenCalled()
     })
     expect(h.messagesState.addMessage).toHaveBeenCalled()
+  })
+
+  it('handles a rejected production submit without phantom persistence or lost draft', async () => {
+    const rejected = new Error('Chat turn already running')
+    h.mockSendMessage.mockRejectedValueOnce(rejected)
+    h.threadsState.currentThreadId = 'thread-1'
+    usePrompt.getState().resetPrompt()
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    renderComponent()
+    await act(async () => { screen.getByTestId('chat-send').click() })
+    await waitFor(() => expect(h.messagesState.deleteMessage).toHaveBeenCalled())
+    const persisted = h.messagesState.addMessage.mock.calls[0][0]
+    expect(h.messagesState.deleteMessage).toHaveBeenCalledWith('thread-1', persisted.id)
+    expect(usePrompt.getState().prompt).toBeTruthy()
+    expect(log).toHaveBeenCalledWith('Chat send was not accepted:', rejected)
+    log.mockRestore()
+    delete h.threadsState.currentThreadId
+    usePrompt.getState().resetPrompt()
+  })
+
+  it('restores a rejected queued send without retaining a phantom user turn', async () => {
+    const queued = { id: 'queued-fixture', text: 'preserve queued', createdAt: 1 }
+    h.messageQueueState.queues = { 'thread-1': [] }
+    h.messageQueueState.dequeue.mockReturnValueOnce(queued)
+    h.mockSendMessage.mockRejectedValueOnce(new Error('Chat turn already running'))
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    renderComponent()
+    await waitFor(() => expect(log).toHaveBeenCalledWith('Failed to send queued message:', expect.any(Error)))
+    expect(h.messageQueueState.queues['thread-1']).toEqual([queued])
+    const persisted = h.messagesState.addMessage.mock.calls[0][0]
+    expect(h.messagesState.deleteMessage).toHaveBeenCalledWith('thread-1', persisted.id)
+    log.mockRestore()
   })
 
   it('keeps the thread in its project when attachments are embedded', async () => {
@@ -911,36 +962,36 @@ describe('ThreadDetail route', () => {
     expect(h.mockStop).toHaveBeenCalled()
   })
 
-  it('regenerate from a user message calls regenerate with its id', () => {
+  it('regenerate from a user message calls regenerate with its id', async () => {
     h.chatState.messages = [
       { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
       { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'hello' }] },
     ]
     renderComponent()
-    screen.getByTestId('regen-u1').click()
+    await act(async () => { screen.getByTestId('regen-u1').click() })
     expect(h.mockRegenerate).toHaveBeenCalledWith({ messageId: 'u1' })
   })
 
-  it('regenerate from an assistant message keeps the prior version (no delete)', () => {
+  it('regenerate from an assistant message keeps the prior version (no delete)', async () => {
     h.chatState.messages = [
       { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
       { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'hello' }] },
     ]
     renderComponent()
-    screen.getByTestId('regen-a1').click()
+    await act(async () => { screen.getByTestId('regen-a1').click() })
     // Versioning: the old reply is preserved, parent links are backfilled.
     expect(h.messagesState.deleteMessage).not.toHaveBeenCalled()
     expect(h.messagesState.updateMessage).toHaveBeenCalled()
     expect(h.mockRegenerate).toHaveBeenCalledWith({ messageId: 'a1' })
   })
 
-  it('edit on a user message forks a new version and regenerates', () => {
+  it('edit on a user message forks a new version and regenerates', async () => {
     h.chatState.messages = [
       { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
       { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'hello' }] },
     ]
     renderComponent()
-    screen.getByTestId('edit-u1').click()
+    await act(async () => { screen.getByTestId('edit-u1').click() })
     // A new sibling version is added; the original branch is not deleted.
     expect(h.messagesState.addMessage).toHaveBeenCalled()
     expect(h.messagesState.updateMessage).toHaveBeenCalled()
@@ -951,13 +1002,13 @@ describe('ThreadDetail route', () => {
     )
   })
 
-  it('edit on an assistant message updates without regenerating', () => {
+  it('edit on an assistant message updates without regenerating', async () => {
     h.chatState.messages = [
       { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
       { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'hello' }] },
     ]
     renderComponent()
-    screen.getByTestId('edit-a1').click()
+    await act(async () => { screen.getByTestId('edit-a1').click() })
     expect(h.messagesState.updateMessage).toHaveBeenCalled()
     expect(h.mockRegenerate).not.toHaveBeenCalled()
   })
@@ -1145,7 +1196,7 @@ describe('ThreadDetail route', () => {
       const setContinueFromContent = vi.fn()
       h.chatSessionsState.sessions = {
         'thread-1': {
-          transport: { getTurnModelSelection: () => null, setContinueFromContent },
+          transport: { getTurnModelSelection: () => null, setContinueFromContent, cancelChatRun: vi.fn().mockResolvedValue(undefined) },
         },
       }
       const realModels = hub.models as () => Record<string, unknown>
@@ -1547,534 +1598,48 @@ describe('ThreadDetail route', () => {
     })
   })
 
-  // #9222: the shell switch is enforced where the command would run, so a call
-  // that still arrives while it is off (replayed history, a turn in flight when
-  // the switch flipped) is refused rather than auto-approved.
-  describe('the chat shell switch at execution time', () => {
-    const shellCall = (id: string) => ({
-      toolCall: { toolCallId: id, toolName: 'shell', input: { command: 'ls' } },
+  describe('adapter tool dispatch', () => {
+    type Call = { toolCallId: string; toolName: string; input: Record<string, unknown> }
+    type Outcome = { output: unknown; isError?: boolean }
+    type Dispatch = (call: Call, signal: AbortSignal) => Promise<Outcome>
+    const call = (id = 'tc1', toolName = 'fetch', input: Record<string, unknown> = { url: 'x' }): Call => ({
+      toolCallId: id, toolName, input,
     })
-    const finish = () =>
-      (h as any).capturedOnFinish({
-        message: {
-          id: 'a-sh',
-          role: 'assistant',
-          parts: [{ type: 'text', text: '' }],
-          metadata: { finishReason: 'tool-calls' },
-        },
-        isAbort: false,
-      })
+    const arrive = (toolCall: Call) => (h as any).capturedOnToolCall({ toolCall })
+    const dispatch = (toolCall: Call, signal = new AbortController().signal) =>
+      ((h as any).capturedDispatchTool as Dispatch)(toolCall, signal)
+    const serveMcp = () => {
+      const run = vi.fn().mockResolvedValue({ error: '', content: ['result'] })
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: cancellable(run) }) as never
+      return run
+    }
+    const finish = () => (h as any).capturedOnFinish({
+      message: { id: 'a-tc', role: 'assistant', parts: [{ type: 'text', text: '' }], metadata: { finishReason: 'tool-calls' } },
+      isAbort: false,
+    })
 
     beforeEach(() => {
+      // The adapter creates and retains a session before invoking dispatchTool.
+      h.chatSessionsState.sessions = { 'thread-1': { transport: { getTurnModelSelection: () => null, cancelChatRun: vi.fn().mockResolvedValue(undefined) }, chat: { messages: [], stop: vi.fn() } } }
+      h.appStateState.mcpToolNames = new Set(['fetch'])
       shell.enabled = true
       shell.execute.mockClear()
-      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
-    })
-
-    it('runs the advertised native shell without a prompt even with a same-name MCP tool', async () => {
-      h.appStateState.mcpToolNames = new Set(['shell'])
-      h.chatSessionsState.sessions['thread-1'] = {
-        transport: { getTurnModelSelection: () => null, getMcpServerForTool: () => undefined },
-      }
-      renderComponent()
-      await act(async () => {
-        await (h as any).capturedOnToolCall(shellCall('sh1'))
-      })
-      await act(async () => {
-        await finish()
-      })
-      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
-      expect(shell.execute).toHaveBeenCalledTimes(1)
-      expect(useToolCallRuntime.getState().origins[toolOriginKey('thread-1', 'sh1')]).toBeNull()
-    })
-
-    it('does not run the shell, and says why, once the switch is off', async () => {
-      shell.enabled = false
-      renderComponent()
-      await act(async () => {
-        await (h as any).capturedOnToolCall(shellCall('sh2'))
-      })
-      await act(async () => {
-        await finish()
-      })
-      expect(shell.execute).not.toHaveBeenCalled()
-      expect(h.mockAddToolOutput).toHaveBeenCalledWith(
-        expect.objectContaining({
-          toolCallId: 'sh2',
-          tool: 'shell',
-          state: 'output-error',
-          // What the model reads on its next turn: why the call did not run, and
-          // that calling it again cannot succeed.
-          errorText: expect.stringMatching(/turned off.*Do not call the shell again/s),
-        })
-      )
-    })
-
-    // A prompt for a tool the user turned off is itself wrong: an "always allow"
-    // answer could save a permission for it. It is refused before any prompt,
-    // on both paths that can open one.
-    it('never prompts for a shell call while the switch is off', async () => {
-      shell.enabled = false
-      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
-      renderComponent()
-      await act(async () => {
-        await (h as any).capturedOnToolCall(shellCall('sh3'))
-      })
-      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
-      await act(async () => {
-        await finish()
-      })
-      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
-      expect(shell.execute).not.toHaveBeenCalled()
-    })
-
-    // Turning the built-in off must not break a user's own MCP tool that happens
-    // to be called `shell`: it is not offered by the built-in any more, so the
-    // call is served by the MCP server and prompts like any MCP call.
-    it.each([false, true])('serves the advertised MCP shell with native switch %s (no native schema)', async (enabled) => {
-      shell.enabled = enabled
-      h.appStateState.mcpToolNames = new Set(['shell'])
-      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
-      const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
-      hub.mcp = () =>
-        ({
-          getTools: getMcpTools,
-          callToolWithCancellation: (args: unknown) => ({
-            promise: callTool(args),
-            cancel: vi.fn().mockResolvedValue(undefined),
-            token: 't',
-          }),
-        }) as never
-      renderComponent()
-      await act(async () => {
-        await (h as any).capturedOnToolCall(shellCall('sh4'))
-      })
-      await act(async () => {
-        await finish()
-      })
-      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
-        'sh4', 'shell', 'thread-1', 'test-server', expect.any(Function)
-      )
-      expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-        toolName: 'shell', serverName: 'test-server',
-      }))
-      expect(shell.execute).not.toHaveBeenCalled()
-      expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(
-        expect.objectContaining({ toolCallId: 'sh4', state: 'output-error' })
-      )
-    })
-  })
-
-  // #9458: search servers such as Parallel Search expose tools named
-  // `web_search` / `web_fetch`, the built-ins' own names. Execution used to
-  // route on the name alone, so the built-in provider answered (and failed)
-  // even after the user switched web search off to use their own server.
-  describe('built-in web tool names at execution time', () => {
-    interface WebCall {
-      toolCall: {
-        toolCallId: string
-        toolName: string
-        input: { query: string }
-      }
-    }
-    const webCall = (id: string, toolName = 'web_search'): WebCall => ({
-      toolCall: { toolCallId: id, toolName, input: { query: 'jan' } },
-    })
-    const finish = () =>
-      (h as any).capturedOnFinish({
-        message: {
-          id: 'a-web',
-          role: 'assistant',
-          parts: [{ type: 'text', text: '' }],
-          metadata: { finishReason: 'tool-calls' },
-        },
-        isAbort: false,
-      })
-    const run = async (call: WebCall) => {
-      renderComponent()
-      await act(async () => {
-        await (h as any).capturedOnToolCall(call)
-      })
-      await act(async () => {
-        await finish()
-      })
-    }
-    const serveMcp = () => {
-      const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
-      hub.mcp = () =>
-        ({
-          getTools: getMcpTools,
-          callToolWithCancellation: (args: unknown) => ({
-            promise: callTool(args),
-            cancel: vi.fn().mockResolvedValue(undefined),
-            token: 't',
-          }),
-        }) as never
-      return callTool
-    }
-
-    beforeEach(() => {
       webConfig.enabled = true
       webTool.executeWebTool.mockReset()
       webTool.executeWebTool.mockResolvedValue({ content: 'page' })
-      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
     })
     afterEach(() => {
+      // A retained adapter emits a terminal finish on cancellation/deletion too.
+      finish()
+      h.chatSessionsState.sessions = {}
+      shell.enabled = true
       webConfig.enabled = true
-    })
-
-    it('serves the call with the built-in, without a prompt, while web search is on', async () => {
-      await run(webCall('w1'))
-      expect(webTool.executeWebTool).toHaveBeenCalledTimes(1)
-      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
-    })
-
-    it.each(['web_search', 'web_fetch'])(
-      'serves an MCP tool named %s through MCP, with a prompt, while web search is off',
-      async (name) => {
-        webConfig.enabled = false
-        h.appStateState.mcpToolNames = new Set([name])
-        const callTool = serveMcp()
-        await run(webCall('w2', name))
-        expect(webTool.executeWebTool).not.toHaveBeenCalled()
-        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-        expect(callTool).toHaveBeenCalledTimes(1)
-        expect(callTool.mock.calls[0][0]).toMatchObject({ toolName: name })
-      }
-    )
-
-    it('refuses an advertised MCP web_search if native web search is enabled during approval', async () => {
-      webConfig.enabled = false
-      h.appStateState.mcpToolNames = new Set(['web_search'])
-      h.chatSessionsState.sessions['thread-1'] = {
-        transport: {
-          getTurnModelSelection: () => null,
-          getMcpServerForTool: vi.fn(() => 'search-server'),
-        },
-      }
-      getMcpTools.mockResolvedValue([{ name: 'web_search', server: 'search-server' }])
-      let approve!: (allowed: boolean) => void
-      h.toolApprovalState.requestApproval = vi.fn(() =>
-        new Promise<boolean>((resolve) => { approve = resolve })
-      )
-      const callTool = serveMcp()
-      await run(webCall('web-identity-change'))
-      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
-        'web-identity-change', 'web_search', 'thread-1', 'search-server', expect.any(Function)
-      )
-      expect(callTool).not.toHaveBeenCalled()
-      expect(webTool.executeWebTool).not.toHaveBeenCalled()
-
-      webConfig.enabled = true
-      await act(async () => { approve(true) })
-
-      expect(callTool).not.toHaveBeenCalled()
-      expect(webTool.executeWebTool).not.toHaveBeenCalled()
-      expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
-        toolCallId: 'web-identity-change', state: 'output-error',
-        errorText: expect.stringMatching(/identity changed/i),
-      }))
-    })
-
-    it('approves and dispatches advertised MCP retrieve rather than an unadvertised RAG tool', async () => {
-      h.appStateState.ragToolNames = new Set(['retrieve'])
-      h.chatSessionsState.sessions['thread-1'] = {
-        transport: {
-          getTurnModelSelection: () => null,
-          getMcpServerForTool: vi.fn(() => 'retrieval-server'),
-        },
-      }
-      getMcpTools.mockResolvedValue([{ name: 'retrieve', server: 'retrieval-server' }])
-      let approve!: (allowed: boolean) => void
-      h.toolApprovalState.requestApproval = vi.fn(() =>
-        new Promise<boolean>((resolve) => { approve = resolve })
-      )
-      const callTool = serveMcp()
-      const originalRag = hub.rag
-      const ragCallTool = vi.fn()
-      hub.rag = () => ({ callTool: ragCallTool })
-      try {
-        await run(webCall('mcp-retrieve', 'retrieve'))
-        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
-          'mcp-retrieve', 'retrieve', 'thread-1', 'retrieval-server', expect.any(Function)
-        )
-        expect(useToolCallRuntime.getState().origins[toolOriginKey('thread-1', 'mcp-retrieve')]).toBe('retrieval-server')
-        expect(callTool).not.toHaveBeenCalled()
-        expect(ragCallTool).not.toHaveBeenCalled()
-
-        await act(async () => { approve(true) })
-
-        expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-          toolName: 'retrieve', serverName: 'retrieval-server', arguments: { query: 'jan' },
-        }))
-        expect(ragCallTool).not.toHaveBeenCalled()
-        expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
-          toolCallId: 'mcp-retrieve', output: [],
-        }))
-      } finally {
-        hub.rag = originalRag
-      }
-    })
-
-    it('refuses the call, before any prompt, when web search is off and no server provides the tool', async () => {
-      webConfig.enabled = false
-      h.appStateState.mcpToolNames = new Set(['fetch'])
-      await run(webCall('w3'))
-      expect(webTool.executeWebTool).not.toHaveBeenCalled()
-      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
-      expect(h.mockAddToolOutput).toHaveBeenCalledWith(
-        expect.objectContaining({
-          toolCallId: 'w3',
-          state: 'output-error',
-          errorText: expect.stringMatching(/turned off.*Do not call web_search/s),
-        })
-      )
-    })
-  })
-
-  describe('tool-call approval requested early, execution stays in onFinish', () => {
-    const toolCall = (id: string) => ({
-      toolCall: { toolCallId: id, toolName: 'fetch', input: { url: 'x' } },
-    })
-    const finishWithToolCalls = () =>
-      (h as any).capturedOnFinish({
-        message: {
-          id: 'a-tc',
-          role: 'assistant',
-          parts: [{ type: 'text', text: '' }],
-          metadata: { finishReason: 'tool-calls' },
-        },
-        isAbort: false,
-      })
-
-    describe('advertised MCP identity stays paired with approval and execution', () => {
-      const advertisedServer = 'advertised-server'
-      const otherServer = 'menu-server'
-      let approve: (allowed: boolean) => void
-      let callTool: ReturnType<typeof vi.fn>
-
-      beforeEach(() => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        // A stale/live menu must not choose the identity for this turn.
-        h.appStateState.tools = [{ name: 'fetch', server: otherServer }, { name: 'fetch', server: advertisedServer, inputSchema: { type: 'object' } }]
-        h.chatSessionsState.sessions['thread-1'] = {
-          transport: {
-            getTurnModelSelection: () => null,
-            getMcpServerForTool: vi.fn(() => advertisedServer),
-          },
-        }
-        getMcpTools.mockResolvedValue([{ name: 'fetch', server: advertisedServer }])
-        h.toolApprovalState.requestApproval = vi.fn(() =>
-          new Promise<boolean>((resolve) => { approve = resolve })
-        )
-        callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
-        hub.mcp = () => ({
-          getTools: getMcpTools,
-          callToolWithCancellation: cancellable(callTool),
-        })
-      })
-
-      const waitForApproval = async () => {
-        renderComponent()
-        await act(async () => {
-          await (h as any).capturedOnToolCall(toolCall('bound-call'))
-          await finishWithToolCalls()
-        })
-        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
-          'bound-call', 'fetch', 'thread-1', advertisedServer, expect.any(Function)
-        )
-        expect(callTool).not.toHaveBeenCalled()
-        expect(getMcpTools).toHaveBeenCalledTimes(1)
-      }
-
-      it('supplies the request-bound validator to early approval before onFinish', async () => {
-        renderComponent()
-        await act(async () => { await (h as any).capturedOnToolCall(toolCall('validator-call')) })
-        const validate = h.toolApprovalState.requestApproval.mock.calls[0][4]
-        await expect(validate()).resolves.toBeUndefined()
-        getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }])
-        h.appStateState.tools = [{ name: 'fetch', server: otherServer }]
-        await expect(validate()).rejects.toThrow(/stale|ambiguous|unavailable|changed/)
-        expect(callTool).not.toHaveBeenCalled()
-      })
-
-      it('keeps A approval valid while B config and tool inventory refresh', async () => {
-        await waitForApproval()
-        useMCPServers.setState({ mcpServers: { ...useMCPServers.getState().mcpServers, unrelated: { command: 'fixture', args: [], env: {} } } })
-        h.appStateState.tools = [{ name: 'fetch', server: advertisedServer, inputSchema: { type: 'object' } }, { name: 'unrelated-tool', server: 'unrelated' }]
-        await act(async () => { approve(true) })
-        expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ serverName: advertisedServer }))
-        expect(getMcpTools).toHaveBeenCalledTimes(1)
-      })
-
-      it('refuses a changed target configuration without blaming user denial', async () => {
-        await waitForApproval()
-        useMCPServers.setState({ mcpServers: { ...useMCPServers.getState().mcpServers, [advertisedServer]: { command: 'replacement', args: [], env: {} } } })
-        await act(async () => { approve(true) })
-        expect(callTool).not.toHaveBeenCalled()
-        expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({ errorText: expect.stringMatching(/changed/) }))
-      })
-
-      it('executes only the server advertised by the session, even if the menu disagrees', async () => {
-        await waitForApproval()
-        // Even a transport refresh after arrival cannot rebind this call.
-        h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool
-          .mockReturnValue(otherServer)
-        await act(async () => { approve(true) })
-        expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-          toolName: 'fetch', serverName: advertisedServer, arguments: { url: 'x' },
-        }))
-        expect(getMcpTools).toHaveBeenCalledTimes(1)
-        expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
-          toolCallId: 'bound-call', output: [],
-        }))
-      })
-
-      it.each(['revoked', 'disconnected', 'replaced'] as const)(
-        'does not dispatch when the advertised pair is %s while approval is pending',
-        async (change) => {
-          await waitForApproval()
-          if (change === 'revoked') h.toolAvailableState.isToolDisabled.mockReturnValue(true)
-          if (change === 'disconnected') { getMcpTools.mockResolvedValue([]); h.appStateState.tools = [] }
-          if (change === 'replaced') { getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }]); h.appStateState.tools = [{ name: 'fetch', server: otherServer }] }
-          await act(async () => { approve(true) })
-          expect(callTool).not.toHaveBeenCalled()
-          expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
-            toolCallId: 'bound-call', state: 'output-error',
-            errorText: expect.stringMatching(/unavailable|disabled|ambiguous|changed/g),
-          }))
-          expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-        }
-      )
-
-      it('dispatches only the bound server despite a newly advertised same-name rival', async () => {
-        await waitForApproval()
-        getMcpTools.mockResolvedValue([{ name: 'fetch', server: advertisedServer }, { name: 'fetch', server: otherServer }])
-        await act(async () => { approve(true) })
-        expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ serverName: advertisedServer }))
-      })
-
-      it('Stop releases the thread while inventory is unresolved and ignores a late inventory result', async () => {
-        let resolveInventory!: (tools: Array<{ name: string; server: string }>) => void
-        getMcpTools.mockImplementation(() => new Promise((resolve) => {
-          resolveInventory = resolve
-        }))
-        renderComponent()
-        await act(async () => {
-          await (h as any).capturedOnToolCall(toolCall('bound-call'))
-          await finishWithToolCalls()
-        })
-        expect(getMcpTools).toHaveBeenCalledTimes(1)
-        const earlyPrompts = h.toolApprovalState.requestApproval.mock.calls.length
-        await act(async () => { screen.getByTestId('chat-stop').click() })
-        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
-        expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledWith('bound-call', 'thread-1')
-        await act(async () => {
-          resolveInventory([{ name: 'fetch', server: advertisedServer }])
-          approve(true)
-        })
-        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(earlyPrompts)
-        expect(callTool).not.toHaveBeenCalled()
-        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
-      })
-
-      it('dismisses the early approval when inventory rejects the advertised identity before approval', async () => {
-        getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }])
-        renderComponent()
-        await act(async () => {
-          await (h as any).capturedOnToolCall(toolCall('bound-call'))
-          await finishWithToolCalls()
-        })
-        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
-          'bound-call', 'fetch', 'thread-1', advertisedServer, expect.any(Function)
-        )
-        expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledExactlyOnceWith('bound-call', 'thread-1')
-        expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
-          toolCallId: 'bound-call', state: 'output-error',
-          errorText: expect.stringMatching(/unavailable|stale|ambiguous/),
-        }))
-        await act(async () => { approve(true) })
-        expect(callTool).not.toHaveBeenCalled()
-        expect(h.toolApprovalState.approveToolForThread).not.toHaveBeenCalled()
-      })
-
-      it('does not execute a late approval after Stop', async () => {
-        await waitForApproval()
-        await act(async () => { screen.getByTestId('chat-stop').click() })
-        await act(async () => { approve(true) })
-        expect(callTool).not.toHaveBeenCalled()
-        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
-        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
-      })
-
-      it('cancels the running bound call and ignores its late result after Stop', async () => {
-        let resolveResult!: (result: unknown) => void
-        const cancel = vi.fn().mockResolvedValue(undefined)
-        const dispatch = vi.fn(() => ({
-          promise: new Promise((resolve) => { resolveResult = resolve }),
-          cancel,
-          token: 'bound-token',
-        }))
-        hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: dispatch })
-        await waitForApproval()
-        await act(async () => { approve(true) })
-        expect(dispatch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-          toolName: 'fetch', serverName: advertisedServer,
-        }))
-        await act(async () => { screen.getByTestId('chat-stop').click() })
-        expect(cancel).toHaveBeenCalledTimes(1)
-        await act(async () => { resolveResult({ error: '', content: [{ text: 'late' }] }) })
-        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
-        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
-      })
-    })
-
-    it('requests approval as soon as a tool call arrives, before onFinish', async () => {
-      h.appStateState.mcpToolNames = new Set(['fetch'])
-      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
-      renderComponent()
-
-      expect((h as any).capturedOnToolCall).toBeTypeOf('function')
-
-      await act(async () => {
-        await (h as any).capturedOnToolCall(toolCall('tc1'))
-      })
-
-      // Popup is requested purely from the tool-call arrival, decoupled from onFinish.
-      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
-        'tc1',
-        'fetch',
-        'thread-1',
-        'test-server',
-        expect.any(Function)
-      )
-    })
-
-    // The prompt offers to trust the whole server, so it needs to know which.
-    it('passes the tool server along with the approval request', async () => {
-      h.appStateState.mcpToolNames = new Set(['fetch'])
-      h.appStateState.tools = [{ name: 'fetch', server: 'fetch-server' }]
-      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
-      renderComponent()
-
-      await act(async () => {
-        await (h as any).capturedOnToolCall(toolCall('tc-server'))
-      })
-
-      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
-        'tc-server',
-        'fetch',
-        'thread-1',
-        'fetch-server',
-        expect.any(Function)
-      )
     })
 
     it('persists only this message’s captured tool identities in minimal metadata', async () => {
       h.appStateState.mcpToolNames = new Set(['fetch'])
       renderComponent()
-      await act(async () => { await (h as any).capturedOnToolCall(toolCall('origin-persist')) })
+      await act(async () => { await (h as any).capturedOnToolCall({ toolCall: call('origin-persist') }) })
       useToolCallRuntime.getState().recordOrigin('other-message-call', 'unrelated')
       await act(async () => {
         await (h as any).capturedOnFinish({
@@ -2096,20 +1661,17 @@ describe('ThreadDetail route', () => {
       h.appStateState.mcpToolNames = new Set(['fetch'])
       h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue({ kind: 'validation-error', errorText: 'MCP target unavailable during approval' })
       renderComponent()
-      await act(async () => {
-        await (h as any).capturedOnToolCall(toolCall('validation-error'))
-        await finishWithToolCalls()
-      })
-      expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
-        toolCallId: 'validation-error', state: 'output-error', errorText: expect.stringContaining('MCP target unavailable during approval'),
-      }))
-      expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(expect.objectContaining({ errorText: 'Tool execution denied by user' }))
+      await arrive(call('validation-error'))
+      const result = await dispatch(call('validation-error'))
+      expect(result).toMatchObject({ isError: true, output: expect.stringContaining('MCP target unavailable during approval') })
+      expect(result.output).not.toBe('Tool execution denied by user')
+      expect(h.mockAddToolOutput).not.toHaveBeenCalled()
     })
 
     it('streaming Stop releases pre-enqueue origins after persisting serializer metadata', async () => {
       h.appStateState.mcpToolNames = new Set(['fetch'])
       renderComponent()
-      await act(async () => { await (h as any).capturedOnToolCall(toolCall('stream-stop-origin')) })
+      await act(async () => { await (h as any).capturedOnToolCall({ toolCall: call('stream-stop-origin') }) })
       useToolCallRuntime.getState().recordOrigin('stream-stop-origin', 'sibling', 'other-thread')
       await act(async () => {
         await (h as any).capturedOnFinish({
@@ -2146,555 +1708,798 @@ describe('ThreadDetail route', () => {
       expect(JSON.parse(JSON.stringify(record)).metadata.toolOrigins).toEqual({ old: 'alpha', internal: null, new: 'beta' })
     })
 
-    it('does NOT execute the tool from onToolCall (execution deferred to onFinish)', async () => {
-      // Executing during streaming lands addToolResult on an incomplete message,
-      // which suppresses auto-resubmit and makes the model appear to "stop".
-      h.appStateState.mcpToolNames = new Set(['fetch'])
-      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
-      renderComponent()
+    describe('advertised MCP identity stays paired with approval and execution', () => {
+      const advertisedServer = 'advertised-server'
+      const otherServer = 'menu-server'
+      let pending: Promise<Outcome>
+      let controller: AbortController
+      let approve: (allowed: boolean) => void
+      let callTool: ReturnType<typeof vi.fn>
 
-      await act(async () => {
-        await (h as any).capturedOnToolCall(toolCall('tc1'))
+      beforeEach(() => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        // A stale/live menu must not choose the identity for this turn.
+        h.appStateState.tools = [{ name: 'fetch', server: otherServer }, { name: 'fetch', server: advertisedServer, inputSchema: { type: 'object' } }]
+        h.chatSessionsState.sessions['thread-1'] = {
+          transport: {
+            getTurnModelSelection: () => null,
+            getMcpServerForTool: vi.fn(() => advertisedServer),
+          },
+        }
+        getMcpTools.mockResolvedValue([{ name: 'fetch', server: advertisedServer }])
+        h.toolApprovalState.requestApproval = vi.fn(() =>
+          new Promise<boolean>((resolve) => { approve = resolve })
+        )
+        controller = new AbortController()
+        callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
+        hub.mcp = () => ({
+          getTools: getMcpTools,
+          callToolWithCancellation: cancellable(callTool),
+        })
       })
 
+      const waitForApproval = async () => {
+        renderComponent()
+        await act(async () => {
+          await arrive(call('bound-call'))
+          pending = dispatch(call('bound-call'), controller.signal)
+        })
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
+          'bound-call', 'fetch', 'thread-1', advertisedServer, expect.any(Function)
+        )
+        expect(callTool).not.toHaveBeenCalled()
+        await waitFor(() => expect(getMcpTools).toHaveBeenCalledTimes(1))
+      }
+
+      it('supplies the request-bound validator to early approval before onFinish', async () => {
+        renderComponent()
+        await act(async () => { await arrive(call('validator-call')) })
+        const validate = h.toolApprovalState.requestApproval.mock.calls[0][4]
+        await expect(validate()).resolves.toBeUndefined()
+        getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }])
+        h.appStateState.tools = [{ name: 'fetch', server: otherServer }]
+        await expect(validate()).rejects.toThrow(/stale|ambiguous|unavailable|changed/)
+        expect(callTool).not.toHaveBeenCalled()
+      })
+
+      it('keeps A approval valid while B config and tool inventory refresh', async () => {
+        await waitForApproval()
+        useMCPServers.setState({ mcpServers: { ...useMCPServers.getState().mcpServers, unrelated: { command: 'fixture', args: [], env: {} } } })
+        h.appStateState.tools = [{ name: 'fetch', server: advertisedServer, inputSchema: { type: 'object' } }, { name: 'unrelated-tool', server: 'unrelated' }]
+        await act(async () => { approve(true); await pending })
+        expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ serverName: advertisedServer }))
+        await waitFor(() => expect(getMcpTools).toHaveBeenCalledTimes(1))
+      })
+
+      it('refuses a changed target configuration without blaming user denial', async () => {
+        await waitForApproval()
+        useMCPServers.setState({ mcpServers: { ...useMCPServers.getState().mcpServers, [advertisedServer]: { command: 'replacement', args: [], env: {} } } })
+        await act(async () => { approve(true); await pending })
+        expect(callTool).not.toHaveBeenCalled()
+        expect(await pending).toMatchObject({ isError: true, output: expect.stringMatching(/changed/) })
+      })
+
+      it('executes only the server advertised by the session, even if the menu disagrees', async () => {
+        await waitForApproval()
+        // Even a transport refresh after arrival cannot rebind this call.
+        h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool
+          .mockReturnValue(otherServer)
+        await act(async () => { approve(true); await pending })
+        expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          toolName: 'fetch', serverName: advertisedServer, arguments: { url: 'x' },
+        }))
+        expect(getMcpTools).toHaveBeenCalledTimes(1)
+        expect(await pending).toEqual({ output: [] })
+      })
+
+      it.each(['revoked', 'disconnected', 'replaced'] as const)(
+        'does not dispatch when the advertised pair is %s while approval is pending',
+        async (change) => {
+          await waitForApproval()
+          if (change === 'revoked') h.toolAvailableState.isToolDisabled.mockReturnValue(true)
+          if (change === 'disconnected') { getMcpTools.mockResolvedValue([]); h.appStateState.tools = [] }
+          if (change === 'replaced') { getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }]); h.appStateState.tools = [{ name: 'fetch', server: otherServer }] }
+          await act(async () => { approve(true); await pending })
+          expect(callTool).not.toHaveBeenCalled()
+          expect(await pending).toMatchObject({ isError: true, output: expect.stringMatching(/unavailable|disabled|ambiguous|changed/g) })
+          expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+        }
+      )
+
+      it('dispatches only the bound server despite a newly advertised same-name rival', async () => {
+        await waitForApproval()
+        getMcpTools.mockResolvedValue([{ name: 'fetch', server: advertisedServer }, { name: 'fetch', server: otherServer }])
+        await act(async () => { approve(true); await pending })
+        expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ serverName: advertisedServer }))
+      })
+
+      it('Stop releases the thread while inventory is unresolved and ignores a late inventory result', async () => {
+        let resolveInventory!: (tools: Array<{ name: string; server: string }>) => void
+        getMcpTools.mockImplementation(() => new Promise((resolve) => {
+          resolveInventory = resolve
+        }))
+        renderComponent()
+        await act(async () => {
+          await arrive(call('bound-call'))
+          pending = dispatch(call('bound-call'), controller.signal)
+        })
+        expect(getMcpTools).toHaveBeenCalledTimes(1)
+        const earlyPrompts = h.toolApprovalState.requestApproval.mock.calls.length
+        await act(async () => { screen.getByTestId('chat-stop').click(); controller.abort(); await pending; finish() })
+        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+        expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledWith('bound-call', 'thread-1')
+        await act(async () => {
+          resolveInventory([{ name: 'fetch', server: advertisedServer }])
+          approve(true)
+          await pending
+        })
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(earlyPrompts)
+        expect(callTool).not.toHaveBeenCalled()
+        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+      })
+
+      it('dismisses the early approval when inventory rejects the advertised identity before approval', async () => {
+        getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }])
+        renderComponent()
+        await act(async () => {
+          await arrive(call('bound-call'))
+          pending = dispatch(call('bound-call'), controller.signal)
+        })
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
+          'bound-call', 'fetch', 'thread-1', advertisedServer, expect.any(Function)
+        )
+        await pending
+        expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledExactlyOnceWith('bound-call', 'thread-1')
+        expect(await pending).toMatchObject({ isError: true, output: expect.stringMatching(/unavailable|stale|ambiguous/) })
+        await act(async () => { approve(true); await pending })
+        expect(callTool).not.toHaveBeenCalled()
+        expect(h.toolApprovalState.approveToolForThread).not.toHaveBeenCalled()
+      })
+
+      it('does not execute a late approval after Stop', async () => {
+        await waitForApproval()
+        await act(async () => { screen.getByTestId('chat-stop').click(); controller.abort(); await pending; finish() })
+        await act(async () => { approve(true); await pending })
+        expect(callTool).not.toHaveBeenCalled()
+        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+      })
+
+      it('cancels the running bound call and ignores its late result after Stop', async () => {
+        let resolveResult!: (result: unknown) => void
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        const backendDispatch = vi.fn(() => ({
+          promise: new Promise((resolve) => { resolveResult = resolve }),
+          cancel,
+          token: 'bound-token',
+        }))
+        hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: backendDispatch })
+        await waitForApproval()
+        await act(async () => { approve(true) })
+        await waitFor(() => expect(backendDispatch).toHaveBeenCalledTimes(1))
+        expect(backendDispatch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          toolName: 'fetch', serverName: advertisedServer,
+        }))
+        await act(async () => { screen.getByTestId('chat-stop').click(); controller.abort(); await pending; finish() })
+        expect(cancel).toHaveBeenCalledTimes(1)
+        await act(async () => { resolveResult({ error: '', content: [{ text: 'late' }] }) })
+        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+      })
+    })
+
+    it('runs the advertised native shell without a prompt even with a same-name MCP tool', async () => {
+      h.appStateState.mcpToolNames = new Set(['shell'])
+      h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = () => undefined
+      renderComponent()
+      const toolCall = call('native-shell', 'shell')
+      await arrive(toolCall)
+      await dispatch(toolCall)
+      expect(shell.execute).toHaveBeenCalledTimes(1)
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(useToolCallRuntime.getState().origins[toolOriginKey('thread-1', 'native-shell')]).toBeNull()
+    })
+
+    it('refuses an advertised MCP web_search if native web search is enabled during approval', async () => {
+      webConfig.enabled = false
+      h.appStateState.mcpToolNames = new Set(['web_search'])
+      h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = () => 'search-server'
+      getMcpTools.mockResolvedValue([{ name: 'web_search', server: 'search-server' }])
+      let approve!: (allowed: boolean) => void
+      h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>(resolve => { approve = resolve }))
+      const run = serveMcp()
+      renderComponent()
+      const toolCall = call('web-identity-change', 'web_search', { query: 'jan' })
+      await arrive(toolCall)
+      const pending = dispatch(toolCall)
+      await waitFor(() => expect(getMcpTools).toHaveBeenCalledTimes(1))
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith('web-identity-change', 'web_search', 'thread-1', 'search-server', expect.any(Function))
+      expect(run).not.toHaveBeenCalled()
+      expect(webTool.executeWebTool).not.toHaveBeenCalled()
+      webConfig.enabled = true
+      approve(true)
+      expect(await pending).toMatchObject({ isError: true, output: expect.stringMatching(/identity changed/i) })
+      expect(run).not.toHaveBeenCalled()
+      expect(webTool.executeWebTool).not.toHaveBeenCalled()
+    })
+
+    it('approves and dispatches advertised MCP retrieve rather than an unadvertised RAG tool', async () => {
+      h.appStateState.ragToolNames = new Set(['retrieve'])
+      h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = () => 'retrieval-server'
+      getMcpTools.mockResolvedValue([{ name: 'retrieve', server: 'retrieval-server' }])
+      let approve!: (allowed: boolean) => void
+      h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>(resolve => { approve = resolve }))
+      const run = serveMcp().mockResolvedValue({ content: [] })
+      const originalRag = hub.rag
+      const ragCallTool = vi.fn()
+      hub.rag = () => ({ callTool: ragCallTool })
+      try {
+        renderComponent()
+        const toolCall = call('mcp-retrieve', 'retrieve', { query: 'jan' })
+        await arrive(toolCall)
+        const pending = dispatch(toolCall)
+        await waitFor(() => expect(getMcpTools).toHaveBeenCalledTimes(1))
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith('mcp-retrieve', 'retrieve', 'thread-1', 'retrieval-server', expect.any(Function))
+        expect(useToolCallRuntime.getState().origins[toolOriginKey('thread-1', 'mcp-retrieve')]).toBe('retrieval-server')
+        expect(run).not.toHaveBeenCalled()
+        expect(ragCallTool).not.toHaveBeenCalled()
+        approve(true)
+        expect(await pending).toEqual({ output: [] })
+        expect(run).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ toolName: 'retrieve', serverName: 'retrieval-server', arguments: { query: 'jan' } }))
+        expect(ragCallTool).not.toHaveBeenCalled()
+      } finally { hub.rag = originalRag }
+    })
+
+    it('requests approval on arrival without executing, including the server to trust', async () => {
+      const run = serveMcp()
+      h.appStateState.tools = [{ name: 'fetch', server: 'fetch-server' }]
+      renderComponent()
+      await act(async () => { await arrive(call()) })
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith('tc1', 'fetch', 'thread-1', 'fetch-server', expect.any(Function))
+      expect(run).not.toHaveBeenCalled()
       expect(h.mockAddToolOutput).not.toHaveBeenCalled()
     })
 
-    it('executes approved tools in onFinish so the completed message can auto-resubmit', async () => {
-      h.appStateState.mcpToolNames = new Set(['fetch'])
-      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+    it('onFinish persists the turn but never executes tools or injects results', async () => {
+      const run = serveMcp()
       renderComponent()
-
-      await act(async () => {
-        await (h as any).capturedOnToolCall(toolCall('tc2'))
-      })
-      await act(async () => {
-        await finishWithToolCalls()
-      })
-
-      // Global setup mock resolves callTool to { error: '', content: [] }.
-      expect(h.mockAddToolOutput).toHaveBeenCalledWith(
-        expect.objectContaining({ toolCallId: 'tc2', tool: 'fetch' })
-      )
+      await act(async () => { await arrive(call()); await finish() })
+      expect(run).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).not.toHaveBeenCalled()
     })
 
-    it('reuses the early approval instead of prompting twice', async () => {
-      h.appStateState.mcpToolNames = new Set(['fetch'])
-      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+    it('dispatches exactly one approved call, reusing early approval and returning its outcome to the adapter', async () => {
+      const run = serveMcp()
       renderComponent()
+      await act(async () => { await arrive(call()); await arrive(call()); await arrive(call('tc2')) })
+      expect(await dispatch(call())).toEqual({ output: ['result'] })
+      expect(run).toHaveBeenCalledTimes(1)
+      // tc2 remains approval-only: dispatch never drains a route-owned loop.
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(2)
+      expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+    })
 
-      await act(async () => {
-        await (h as any).capturedOnToolCall(toolCall('tc4'))
-      })
-      await act(async () => {
-        await finishWithToolCalls()
-      })
+    it('requests approval at dispatch if no early event arrived', async () => {
+      const run = serveMcp()
+      renderComponent()
+      expect(await dispatch(call())).toEqual({ output: ['result'] })
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+      expect(run).toHaveBeenCalledTimes(1)
+    })
 
+    it('awaits approval and records runtime only while the tool is actually running', async () => {
+      let decide!: (approved: boolean) => void
+      let complete!: (value: unknown) => void
+      h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>((r) => { decide = r }))
+      const run = vi.fn(() => new Promise((r) => { complete = r }))
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: cancellable(run) }) as never
+      renderComponent()
+      await arrive(call())
+      const pending = dispatch(call())
+      expect(run).not.toHaveBeenCalled()
+      expect(useToolCallRuntime.getState().timings.tc1?.startedAt).toBeUndefined()
+      decide(true)
+      await waitFor(() => expect(run).toHaveBeenCalledTimes(1))
+      expect(useToolCallRuntime.getState().timings.tc1?.startedAt).toBeDefined()
+      complete({ content: 'done' })
+      expect(await pending).toEqual({ output: 'done' })
+      expect(useToolCallRuntime.getState().queue).toEqual([])
+      expect(useToolCallRuntime.getState().timings.tc1?.endedAt).toBeDefined()
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
     })
 
-    // A tool result is injected into conversation history verbatim, so an
-    // uncapped one can exhaust the context on its own (#8557). The budget the
-    // model's own window affords is handed to the backend, which enforces it.
-    it('caps the tool result against the active model context window', async () => {
-      h.appStateState.mcpToolNames = new Set(['fetch'])
-      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
-      const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
-      hub.mcp = () =>
-        ({ getTools: getMcpTools, callToolWithCancellation: cancellable(callTool) }) as never
+    it('denies one call without blocking the next adapter dispatch', async () => {
+      const run = serveMcp()
+      h.toolApprovalState.requestApproval = vi.fn((id) => Promise.resolve(id !== 'tc1'))
       renderComponent()
-
-      const onToolCall = (
-        h as { capturedOnToolCall: (arg: unknown) => Promise<void> }
-      ).capturedOnToolCall
-      await act(async () => {
-        await onToolCall(toolCall('tc5'))
-      })
-      await act(async () => {
-        await finishWithToolCalls()
-      })
-
-      const { maxOutputChars } = callTool.mock.calls[0][0]
-      // 4096-token window in the harness: a fraction of it, not the whole thing.
-      expect(maxOutputChars).toBeGreaterThan(0)
-      expect(maxOutputChars).toBeLessThan(4096 * 3.5)
+      expect(await dispatch(call())).toEqual({ output: 'Tool execution denied by user', isError: true })
+      expect(useToolCallRuntime.getState().timings.tc1?.startedAt).toBeUndefined()
+      expect(useToolCallRuntime.getState().timings.tc1?.endedAt).toBeDefined()
+      expect(await dispatch(call('tc2'))).toEqual({ output: ['result'] })
+      expect(run).toHaveBeenCalledTimes(1)
+      expect(useToolCallRuntime.getState().queue).toEqual([])
     })
 
-    it('omits the cap when the model reports no context window', async () => {
-      // Remote providers often don't; the user's configured ceiling then governs
-      // alone rather than an invented budget silently clipping output.
-      h.appStateState.mcpToolNames = new Set(['fetch'])
-      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
-      const previousSettings = h.modelProviderState.selectedModel.settings
-      h.modelProviderState.selectedModel.settings = {}
-      const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
-      hub.mcp = () =>
-        ({ getTools: getMcpTools, callToolWithCancellation: cancellable(callTool) }) as never
-
+    it.each([true, false])('hands MCP the context budget (known window: %s)', async (known) => {
+      const run = serveMcp()
+      const settings = h.modelProviderState.selectedModel.settings
+      if (!known) h.modelProviderState.selectedModel.settings = {}
       try {
         renderComponent()
-        const onToolCall = (
-          h as { capturedOnToolCall: (arg: unknown) => Promise<void> }
-        ).capturedOnToolCall
-        await act(async () => {
-          await onToolCall(toolCall('tc6'))
-        })
-        await act(async () => {
-          await finishWithToolCalls()
-        })
-
-        expect(callTool.mock.calls[0][0].maxOutputChars).toBeUndefined()
-      } finally {
-        h.modelProviderState.selectedModel.settings = previousSettings
-      }
+        await dispatch(call())
+        const args = run.mock.calls[0][0]
+        expect(args).toMatchObject({ toolName: 'fetch', arguments: { url: 'x' } })
+        if (known) {
+          expect(args.maxOutputChars).toBeGreaterThan(0)
+          expect(args.maxOutputChars).toBeLessThan(4096 * 3.5)
+        } else expect(args.maxOutputChars).toBeUndefined()
+      } finally { h.modelProviderState.selectedModel.settings = settings }
     })
 
-    // A page is a tool result like any other: held to the budget the window
-    // affords, not the 40,000 characters it used to be allowed (#9170).
-    it('hands a built-in web tool the budget of the active model context window', async () => {
-      webTool.executeWebTool.mockReset()
-      webTool.executeWebTool.mockResolvedValue({ content: 'page' })
-      renderComponent()
-
-      const onToolCall = (
-        h as { capturedOnToolCall: (arg: unknown) => Promise<void> }
-      ).capturedOnToolCall
-      await act(async () => {
-        await onToolCall({
-          toolCall: {
-            toolCallId: 'tcw',
-            toolName: 'web_fetch',
-            input: { url: 'https://example.com' },
-          },
+    it.each([undefined, 'project-1'])('dispatches RAG against the correct document scope (%s)', async (projectId) => {
+      const originalRag = hub.rag
+      const run = vi.fn().mockResolvedValue({ content: 'document excerpt' })
+      hub.rag = () => ({ callTool: run }) as never
+      h.appStateState.ragToolNames = new Set(['rag_search'])
+      if (projectId) h.threadsState.threads['thread-1'].metadata = { project: { id: projectId } }
+      try {
+        renderComponent()
+        const toolCall = call('rag', 'rag_search', { query: 'document' })
+        await arrive(toolCall)
+        expect(await dispatch(toolCall)).toEqual({ output: 'document excerpt' })
+        expect(run).toHaveBeenCalledExactlyOnceWith({
+          toolName: 'rag_search', arguments: { query: 'document' },
+          threadId: 'thread-1', projectId, scope: projectId ? 'project' : 'thread',
         })
-      })
-      await act(async () => {
-        await finishWithToolCalls()
-      })
+        expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      } finally { hub.rag = originalRag }
+    })
 
+    it('returns backend errors and settles runtime on failure', async () => {
+      const run = serveMcp().mockResolvedValue({ error: 'server failed' })
+      renderComponent()
+      expect(await dispatch(call())).toEqual({ output: 'Error: server failed', isError: true })
+      expect(run).toHaveBeenCalledTimes(1)
+      expect(useToolCallRuntime.getState().queue).toEqual([])
+    })
+
+    it('returns an error for an unavailable tool', async () => {
+      renderComponent()
+      expect(await dispatch(call('missing', 'unknown'))).toEqual({ output: "Error: Tool 'unknown' not found in any service", isError: true })
+    })
+
+    it('Stop signal cancels a hung MCP call exactly once and drains runtime', async () => {
+      const cancel = vi.fn().mockResolvedValue(undefined)
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: () => ({ promise: new Promise(() => {}), cancel, token: 't' }) }) as never
+      renderComponent()
+      const controller = new AbortController()
+      const pending = dispatch(call(), controller.signal)
+      await waitFor(() => expect(useToolCallRuntime.getState().timings.tc1?.startedAt).toBeDefined())
+      controller.abort()
+      expect(await pending).toMatchObject({ isError: true })
+      controller.abort()
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(useToolCallRuntime.getState().queue).toEqual([])
+      expect(useToolCallRuntime.getState().timings.tc1?.endedAt).toBeDefined()
+      expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+    })
+
+    it('does not execute an already aborted call or a call for a deleted session', async () => {
+      const run = serveMcp()
+      renderComponent()
+      const controller = new AbortController()
+      controller.abort()
+      expect(await dispatch(call(), controller.signal)).toMatchObject({ isError: true, output: expect.stringContaining('chat was closed') })
+      h.removeChatSession('thread-1')
+      expect(await dispatch(call('tc2'))).toMatchObject({ isError: true, output: expect.stringContaining('chat was closed') })
+      expect(run).not.toHaveBeenCalled()
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+    })
+
+    it('deletion with adapter abort reports chat closing, not user denial', async () => {
+      const run = serveMcp()
+      let decide!: (approved: boolean) => void
+      h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>((r) => { decide = r }))
+      renderComponent()
+      await arrive(call())
+      const controller = new AbortController()
+      const pending = dispatch(call(), controller.signal)
+      h.removeChatSession('thread-1')
+      controller.abort()
+      expect(await pending).toMatchObject({ isError: true, output: '(interrupted)' })
+      decide(false) // A late answer cannot restart the cancelled dispatch.
+      expect(run).not.toHaveBeenCalled()
+      expect(useToolCallRuntime.getState().queue).toEqual([])
+      expect(await dispatch(call('queued'), controller.signal)).toMatchObject({ isError: true })
+      expect(run).not.toHaveBeenCalled()
+    })
+
+    it('a retained dispatch survives navigation and does not consume the other thread approval', async () => {
+      const run = serveMcp()
+      let decide!: (approved: boolean) => void
+      h.toolApprovalState.requestApproval = vi.fn((id) => id === 'tc1' ? new Promise<boolean>((r) => { decide = r }) : Promise.resolve(true))
+      const { rerender } = renderComponent()
+      const dispatchA = (h as any).capturedDispatchTool as Dispatch
+      await arrive(call())
+      const pendingA = dispatchA(call(), new AbortController().signal)
+      const Component = Route.component as React.ComponentType
+      try {
+        h.routeParams.threadId = 'thread-2'
+        h.chatSessionsState.sessions['thread-2'] = { transport: { getTurnModelSelection: () => null, cancelChatRun: vi.fn().mockResolvedValue(undefined) }, chat: { messages: [], stop: vi.fn() } }
+        rerender(<Component />)
+        await arrive(call('tcB'))
+        expect(h.toolApprovalState.clearPendingForThread).not.toHaveBeenCalled()
+        decide(true)
+        expect(await pendingA).toEqual({ output: ['result'] })
+        expect(await dispatch(call('tcB'))).toEqual({ output: ['result'] })
+        expect(run).toHaveBeenCalledTimes(2)
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(2)
+      } finally { h.routeParams.threadId = 'thread-1' }
+    })
+
+    it('unmounting does not cancel a retained running dispatch', async () => {
+      let complete!: (value: unknown) => void
+      const cancel = vi.fn().mockResolvedValue(undefined)
+      const run = vi.fn(() => ({ promise: new Promise((r) => { complete = r }), cancel, token: 't' }))
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: run }) as never
+      const { unmount } = renderComponent()
+      const pending = dispatch(call())
+      await waitFor(() => expect(run).toHaveBeenCalledTimes(1))
+      unmount()
+      expect(cancel).not.toHaveBeenCalled()
+      complete({ content: 'retained result' })
+      expect(await pending).toEqual({ output: 'retained result' })
+    })
+
+    it.each([true, false])('enforces the built-in shell switch at dispatch (enabled: %s)', async (enabled) => {
+      shell.enabled = enabled
+      renderComponent()
+      const toolCall = call('sh1', 'shell', { url: 'unused' })
+      await arrive(toolCall)
+      const outcome = await dispatch(toolCall)
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).toHaveBeenCalledTimes(enabled ? 1 : 0)
+      if (!enabled) expect(outcome).toMatchObject({ isError: true, output: expect.stringMatching(/turned off.*Do not call the shell again/s) })
+    })
+
+    it.each([false, true])('serves the advertised MCP shell with native switch %s (no native schema)', async (enabled) => {
+      shell.enabled = enabled
+      h.appStateState.mcpToolNames = new Set(['shell'])
+      const run = serveMcp()
+      renderComponent()
+      const toolCall = call('sh-mcp', 'shell')
+      await arrive(toolCall)
+      expect(await dispatch(toolCall)).toEqual({ output: ['result'] })
+      expect(run).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ toolName: 'shell', serverName: 'test-server' }))
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith('sh-mcp', 'shell', 'thread-1', 'test-server', expect.any(Function))
+      expect(shell.execute).not.toHaveBeenCalled()
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+    })
+
+    it('runs the built-in web tool without approval and with the context budget', async () => {
+      renderComponent()
+      const toolCall = call('web', 'web_fetch')
+      await arrive(toolCall)
+      expect(await dispatch(toolCall)).toEqual({ output: 'page' })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
       expect(webTool.executeWebTool).toHaveBeenCalledTimes(1)
       const [name, input, options] = webTool.executeWebTool.mock.calls[0]
       expect(name).toBe('web_fetch')
-      expect(input).toEqual({ url: 'https://example.com' })
-      // 4096-token window in the harness: a fraction of it, not the whole thing.
+      expect(input).toEqual({ url: 'x' })
       expect(options.maxOutputChars).toBeGreaterThan(0)
       expect(options.maxOutputChars).toBeLessThan(4096 * 3.5)
     })
 
-    // A model can request several tools in one turn. They arrive together but
-    // are executed one at a time, which is what the queue display depends on.
-    describe('several tool calls in one turn', () => {
-      const arrive = async (...ids: string[]) => {
-        for (const id of ids) {
-          await act(async () => {
-            await (h as any).capturedOnToolCall(toolCall(id))
-          })
-        }
-      }
+    it.each(['web_search', 'web_fetch'])('uses MCP for %s when built-in web is disabled', async (name) => {
+      webConfig.enabled = false
+      h.appStateState.mcpToolNames = new Set([name])
+      const run = serveMcp()
+      renderComponent()
+      const toolCall = call('web-mcp', name)
+      await arrive(toolCall)
+      expect(await dispatch(toolCall)).toEqual({ output: ['result'] })
+      expect(run).toHaveBeenCalledTimes(1)
+      expect(run.mock.calls[0][0]).toMatchObject({ toolName: name })
+      expect(webTool.executeWebTool).not.toHaveBeenCalled()
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+    })
 
-      it('executes every call in the turn', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        renderComponent()
-        await arrive('tcA', 'tcB', 'tcC')
-        await act(async () => {
-          await finishWithToolCalls()
-        })
+    it('refuses disabled web tools before prompting when no MCP provides them', async () => {
+      webConfig.enabled = false
+      renderComponent()
+      const toolCall = call('disabled-web', 'web_search')
+      await arrive(toolCall)
+      expect(await dispatch(toolCall)).toMatchObject({ isError: true, output: expect.stringMatching(/turned off.*Do not call web_search/s) })
+      expect(webTool.executeWebTool).not.toHaveBeenCalled()
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+    })
+  })
 
-        const ids = h.mockAddToolOutput.mock.calls.map(
-          (c: any[]) => c[0].toolCallId
-        )
-        expect(ids).toEqual(['tcA', 'tcB', 'tcC'])
-      })
-
-      it('runs them one at a time, not concurrently', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        const started: string[] = []
-        let releaseFirst: (() => void) | undefined
-        const callTool = vi.fn(({ arguments: args }: any) => {
-          started.push(args.id)
-          if (started.length === 1) {
-            return new Promise((resolve) => {
-              releaseFirst = () => resolve({ error: '', content: [] })
+  describe('mounted route with the real Chat runner adapter', () => {
+    const chunks = (items: UIMessageChunk[]) => new ReadableStream<UIMessageChunk>({
+      start(controller) { for (const item of items) controller.enqueue(item); controller.close() },
+    })
+    const toolStep = (...ids: string[]): UIMessageChunk[] => [
+      { type: 'start', messageId: 'provider-id' },
+      ...ids.map(toolCallId => ({ type: 'tool-input-available' as const, toolCallId, toolName: 'fetch', input: { id: toolCallId } })),
+      { type: 'finish', finishReason: 'tool-calls' },
+    ]
+    const textStep: UIMessageChunk[] = [
+      { type: 'start', messageId: 'provider-final' },
+      { type: 'text-start', id: 'text' },
+      { type: 'text-delta', id: 'text', delta: 'continued' },
+      { type: 'text-end', id: 'text' },
+      { type: 'finish', finishReason: 'stop' },
+    ]
+    const setup = (ids = ['tcA', 'tcB'], threadId = 'thread-1') => {
+      let args: any
+      let controller: AbortController | undefined
+      let drain: Promise<void> = Promise.resolve()
+      let finishDrain: (() => void) | undefined
+      const steps = vi.fn(async () => chunks(steps.mock.calls.length === 1 ? toolStep(...ids) : textStep))
+      const cancelChatRun = vi.fn(async () => { controller?.abort(); await drain })
+      const chat = new Chat({
+        id: threadId,
+        transport: {
+          sendMessages: async (request) => {
+            controller = new AbortController()
+            const abort = () => controller?.abort()
+            request.abortSignal?.addEventListener('abort', abort, { once: true })
+            drain = new Promise<void>(resolve => { finishDrain = resolve })
+            return createChatRunStream({
+              messages: request.messages, messageId: 'a-integration-' + threadId,
+              signal: controller.signal,
+              sendStep: steps,
+              dispatch: args.dispatchTool,
+              onFinally: () => {
+                request.abortSignal?.removeEventListener('abort', abort)
+                finishDrain?.()
+              },
             })
-          }
-          return Promise.resolve({ error: '', content: [] })
-        })
-        hub.mcp = () =>
-          ({ getTools: getMcpTools, callToolWithCancellation: cancellable(callTool) }) as never
-
-        renderComponent()
-        await act(async () => {
-          await (h as any).capturedOnToolCall({
-            toolCall: {
-              toolCallId: 'tcA',
-              toolName: 'fetch',
-              input: { id: 'tcA' },
-            },
-          })
-          await (h as any).capturedOnToolCall({
-            toolCall: {
-              toolCallId: 'tcB',
-              toolName: 'fetch',
-              input: { id: 'tcB' },
-            },
-          })
-        })
-        await act(async () => {
-          await finishWithToolCalls()
-        })
-
-        // Second call must not have been dispatched while the first is pending.
-        expect(started).toEqual(['tcA'])
-        await act(async () => {
-          releaseFirst?.()
-        })
-        expect(started).toEqual(['tcA', 'tcB'])
+          },
+          reconnectToStream: async () => null,
+        },
+        // As in production, only the presentation stream requests approval.
+        onToolCall: event => args.onToolCall(event),
+        onFinish: event => args.onFinish(event),
       })
+      h.integrationChat = chat
+      h.chatSessionsState.sessions[threadId] = {
+        chat, transport: { getTurnModelSelection: () => null, cancelChatRun },
+      }
+      const view = renderComponent()
+      args = {
+        onToolCall: (h as any).capturedOnToolCall,
+        onFinish: (h as any).capturedOnFinish,
+        dispatchTool: (h as any).capturedDispatchTool,
+      }
+      return { ...view, chat, steps, cancelChatRun }
+    }
+    beforeEach(() => {
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      h.chatSessionsState.sessions = {}
+    })
+    afterEach(() => { h.integrationChat = null; h.chatSessionsState.sessions = {} })
 
-      // A call that never returns must not hold the loop, the thread, or the
-      // backend: Stop ends all three, and the stopped call's output is dropped.
-      it('Stop cancels a running MCP call and frees the thread', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        const cancel = vi.fn().mockResolvedValue(undefined)
-        const never = new Promise(() => {})
-        hub.mcp = () =>
-          ({
-            getTools: getMcpTools,
-            callToolWithCancellation: () => ({
-              promise: never,
-              cancel,
-              token: 't',
-            }),
-          }) as never
-        h.appStateState.setThreadBusy.mockClear()
-        h.mockAddToolOutput.mockClear()
+    it('runs multiple calls serially, injects each result once, continues once, and clears busy after drain', async () => {
+      let release!: (value: unknown) => void
+      const run = vi.fn((args: any) => args.arguments.id === 'tcA'
+        ? new Promise(resolve => { release = resolve })
+        : Promise.resolve({ content: 'B' }))
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: cancellable(run) }) as never
+      const { chat, steps } = setup()
+      const pending = chat.sendMessage({ text: 'go' })
+      await waitFor(() => expect(run).toHaveBeenCalledTimes(1))
+      expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', true)
+      expect(run.mock.calls[0][0].arguments.id).toBe('tcA')
+      release({ content: 'A' })
+      await act(async () => { await pending })
+      expect(run).toHaveBeenCalledTimes(2)
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(2)
+      expect(steps).toHaveBeenCalledTimes(2)
+      const assistant = chat.messages.find(m => m.role === 'assistant')!
+      const outputs = assistant.parts.filter(p => 'toolCallId' in p)
+      expect(outputs).toMatchObject([
+        { toolCallId: 'tcA', state: 'output-available', output: 'A' },
+        { toolCallId: 'tcB', state: 'output-available', output: 'B' },
+      ])
+      expect(assistant.parts).toContainEqual(expect.objectContaining({ type: 'text', text: 'continued' }))
+      expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+      expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+      expect(useToolCallRuntime.getState().queue).toEqual([])
+      for (const id of ['tcA', 'tcB']) {
+        expect(useToolCallRuntime.getState().timings[id]?.startedAt).toBeDefined()
+        expect(useToolCallRuntime.getState().timings[id]?.endedAt).toBeDefined()
+      }
+    })
 
-        renderComponent()
-        await arrive('tcA')
-        await act(async () => {
-          await finishWithToolCalls()
-        })
-        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith(
-          'thread-1',
-          true
-        )
-
-        await act(async () => {
-          screen.getByTestId('chat-stop').click()
-        })
-
-        expect(cancel).toHaveBeenCalledTimes(1)
-        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith(
-          'thread-1',
-          false
-        )
-        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
-      })
-
-      // Edit and regenerate stay available while tools run (the status is
-      // `ready`). The new reply replaces the turn it answers, so the call that
-      // turn still has running must be ended first, or the new turn's loop would
-      // take over the controllers and Stop could no longer reach it.
-      it.each([
-        ['editing a message', 'edit-u1'],
-        ['regenerating a reply', 'regen-a-tc'],
-      ])('%s ends the tool call the replaced turn still has running', async (_name, button) => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        const cancel = vi.fn().mockResolvedValue(undefined)
-        hub.mcp = () =>
-          ({
-            getTools: getMcpTools,
-            callToolWithCancellation: () => ({
-              promise: new Promise(() => {}),
-              cancel,
-              token: 't',
-            }),
-          }) as never
-        h.chatState.messages = [
-          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'go' }] },
-          { id: 'a-tc', role: 'assistant', parts: [{ type: 'text', text: 'ok' }] },
-        ]
-
-        renderComponent()
-        await arrive('tcA')
-        await act(async () => {
-          await finishWithToolCalls()
-        })
-        await act(async () => {
-          screen.getByTestId(button).click()
-        })
-
-        expect(cancel).toHaveBeenCalledTimes(1)
-        expect(h.mockRegenerate).toHaveBeenCalled()
-      })
-
-      // A reply with no tool calls has no loop. If it registered one anyway it
-      // would take the controllers of an earlier turn whose call is still
-      // running, and its empty loop would delete them: Stop could no longer end
-      // that call.
-      it('a reply without tool calls leaves an earlier running call stoppable', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        const cancel = vi.fn().mockResolvedValue(undefined)
-        hub.mcp = () =>
-          ({
-            getTools: getMcpTools,
-            callToolWithCancellation: () => ({
-              promise: new Promise(() => {}),
-              cancel,
-              token: 't',
-            }),
-          }) as never
+    it.each(['Stop', 'delete', 'edit', 'regenerate'])('%s cancels a running backend call without executing queued calls or following up', async action => {
+      const cancel = vi.fn().mockResolvedValue(undefined)
+      const run = vi.fn(() => ({ promise: new Promise(() => {}), cancel, token: 't' }))
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: run }) as never
+      const { chat, steps, cancelChatRun, rerender } = setup()
+      const pending = chat.sendMessage({ text: 'go' })
+      await waitFor(() => expect(run).toHaveBeenCalledTimes(1))
+      h.chatState.messages = chat.messages
+      if (action === 'delete') {
+        // Session store owns drain-before-removal, not the route callback.
+        await act(async () => { await cancelChatRun(); h.removeChatSession('thread-1') })
+      } else if (action === 'Stop') {
+        await act(async () => { screen.getByTestId('chat-stop').click() })
+      } else {
         const Component = Route.component as React.ComponentType
-
-        const { rerender } = renderComponent()
-        await arrive('tcA')
-        await act(async () => {
-          await finishWithToolCalls()
-        })
-
-        // A newer reply with no tool calls finishes (a fresh render, so a fresh
-        // tool list).
         rerender(<Component />)
         await act(async () => {
-          await finishWithToolCalls()
+          screen.getByTestId(action === 'edit' ? 'edit-' + chat.messages[0].id : 'regen-a-integration-thread-1').click()
         })
+        expect(cancelChatRun).toHaveBeenCalledTimes(1)
+      }
+      await act(async () => { await pending })
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(run).toHaveBeenCalledTimes(1)
+      expect(steps).toHaveBeenCalledTimes(1)
+      expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+    })
 
-        await act(async () => {
-          screen.getByTestId('chat-stop').click()
-        })
-        expect(cancel).toHaveBeenCalledTimes(1)
-      })
+    it('Stop during approval never executes, settles queued cards, and ignores a late approval', async () => {
+      let decide!: (value: boolean) => void
+      h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>(resolve => { decide = resolve }))
+      const run = vi.fn()
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: cancellable(run) }) as never
+      const { chat, steps } = setup()
+      const pending = chat.sendMessage({ text: 'go' })
+      await waitFor(() => expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(2))
+      await act(async () => { screen.getByTestId('chat-stop').click(); await pending })
+      decide(true)
+      expect(run).not.toHaveBeenCalled()
+      expect(steps).toHaveBeenCalledTimes(1)
+      const tools = chat.messages.flatMap(m => m.parts).filter(p => 'toolCallId' in p)
+      expect(tools).toHaveLength(2)
+      expect(tools).toEqual(expect.arrayContaining([
+        expect.objectContaining({ toolCallId: 'tcA', state: 'output-error' }),
+        expect.objectContaining({ toolCallId: 'tcB', state: 'output-error' }),
+      ]))
+      expect(h.toolApprovalState.clearPendingForThread).toHaveBeenCalledWith('thread-1')
+      expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+    })
 
-      // Leaving the thread ends the loop but is not a Stop: a call already
-      // running keeps going and its result still lands in the retained session.
-      it('leaving the thread does not cancel a running MCP call', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        const cancel = vi.fn().mockResolvedValue(undefined)
-        hub.mcp = () =>
-          ({
-            getTools: getMcpTools,
-            callToolWithCancellation: () => ({
-              promise: new Promise(() => {}),
-              cancel,
-              token: 't',
-            }),
-          }) as never
+    it('a denied first call still executes the next call and continues once', async () => {
+      h.toolApprovalState.requestApproval = vi.fn(id => Promise.resolve(id !== 'tcA'))
+      const run = vi.fn().mockResolvedValue({ content: 'allowed B' })
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: cancellable(run) }) as never
+      const { chat, steps } = setup()
+      await act(async () => { await chat.sendMessage({ text: 'go' }) })
+      expect(run).toHaveBeenCalledTimes(1)
+      expect(run.mock.calls[0][0].arguments.id).toBe('tcB')
+      expect(steps).toHaveBeenCalledTimes(2)
+      expect(chat.messages.flatMap(m => m.parts)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ toolCallId: 'tcA', state: 'output-error', errorText: expect.stringContaining('denied') }),
+        expect.objectContaining({ toolCallId: 'tcB', state: 'output-available', output: 'allowed B' }),
+      ]))
+      expect(useToolCallRuntime.getState().queue).toEqual([])
+    })
 
-        const { unmount } = renderComponent()
-        await arrive('tcA')
-        await act(async () => {
-          await finishWithToolCalls()
-        })
-        unmount()
-
+    it('Stop after returning cancels only the retained thread and preserves completed output', async () => {
+      const cancel = vi.fn().mockResolvedValue(undefined)
+      const run = vi.fn((args: any) => ({
+        promise: args.arguments.id === 'tcA' ? Promise.resolve({ content: 'A survives' }) : new Promise(() => {}),
+        cancel, token: 't',
+      }))
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: run }) as never
+      const { chat, rerender, steps } = setup()
+      const pending = chat.sendMessage({ text: 'go' })
+      await waitFor(() => expect(run).toHaveBeenCalledTimes(2))
+      const Component = Route.component as React.ComponentType
+      try {
+        h.routeParams.threadId = 'thread-2'
+        h.integrationChat = new Chat({ id: 'thread-2' })
+        h.chatSessionsState.sessions['thread-2'] = { chat: h.integrationChat }
+        rerender(<Component />)
+        await act(async () => { screen.getByTestId('chat-stop').click() })
         expect(cancel).not.toHaveBeenCalled()
-      })
-
-      // Deleting the thread is the one other way a running call ends: its result
-      // would have nowhere to go.
-      it('deleting the thread cancels its running MCP call', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        const cancel = vi.fn().mockResolvedValue(undefined)
-        hub.mcp = () =>
-          ({
-            getTools: getMcpTools,
-            callToolWithCancellation: () => ({
-              promise: new Promise(() => {}),
-              cancel,
-              token: 't',
-            }),
-          }) as never
-
-        renderComponent()
-        await arrive('tcA')
-        await act(async () => {
-          await finishWithToolCalls()
-        })
-        expect(cancel).not.toHaveBeenCalled()
-        await act(async () => {
-          h.removeChatSession('thread-1')
-        })
-
+        h.routeParams.threadId = 'thread-1'; h.integrationChat = chat
+        rerender(<Component />)
+        await act(async () => { screen.getByTestId('chat-stop').click(); await pending })
         expect(cancel).toHaveBeenCalledTimes(1)
-      })
+        expect(steps).toHaveBeenCalledTimes(1)
+        expect(chat.messages.flatMap(m => m.parts)).toEqual(expect.arrayContaining([
+          expect.objectContaining({ toolCallId: 'tcA', state: 'output-available', output: 'A survives' }),
+          expect.objectContaining({ toolCallId: 'tcB', state: 'output-error' }),
+        ]))
+      } finally { h.routeParams.threadId = 'thread-1' }
+    })
 
-      // The left thread's finished cards unmount, so their runtime state goes;
-      // a call its loop is still running stays for its return, and another
-      // thread's state is not touched.
-      it("leaving a thread releases only its own settled runtime state", async () => {
-        const runtime = useToolCallRuntime.getState()
-        runtime.enqueue(['a-done', 'a-running'], 'thread-1')
-        runtime.markRunning('a-done')
-        runtime.markSettled('a-done')
-        runtime.markRunning('a-running')
-        runtime.enqueue(['b-done'], 'thread-3')
-        runtime.markRunning('b-done')
-        runtime.markSettled('b-done')
-        const Component = Route.component as React.ComponentType
+    it('a pending approval survives navigation and another thread terminal finish', async () => {
+      const decisions: Array<(approved: boolean) => void> = []
+      h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>(resolve => decisions.push(resolve)))
+      const run = vi.fn().mockResolvedValue({ content: 'approved on return' })
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: cancellable(run) }) as never
+      const { chat, rerender, steps } = setup(['tcA'])
+      const pending = chat.sendMessage({ text: 'go' })
+      await waitFor(() => expect(decisions).toHaveLength(1))
+      const Component = Route.component as React.ComponentType
+      try {
+        h.routeParams.threadId = 'thread-2'; h.integrationChat = new Chat({ id: 'thread-2' })
+        h.chatSessionsState.sessions['thread-2'] = { chat: h.integrationChat }
+        rerender(<Component />)
+        await act(async () => { (h as any).capturedOnFinish({ message: { id: 'b', role: 'assistant', parts: [{ type: 'text', text: 'B' }] }, isAbort: true }) })
+        expect(h.toolApprovalState.clearPendingForThread).not.toHaveBeenCalledWith('thread-1')
+        h.routeParams.threadId = 'thread-1'; h.integrationChat = chat; rerender(<Component />)
+        await act(async () => { decisions[0](true); await pending })
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+        expect(run).toHaveBeenCalledTimes(1)
+        expect(steps).toHaveBeenCalledTimes(2)
+      } finally { h.routeParams.threadId = 'thread-1' }
+    })
 
-        try {
-          const { rerender } = renderComponent()
-          h.routeParams.threadId = 'thread-2'
-          rerender(<Component />)
-        } finally {
-          h.routeParams.threadId = 'thread-1'
-        }
+    it('completion of a left thread does not disrupt the current running thread continuation', async () => {
+      const release: Record<string, (value: unknown) => void> = {}
+      const run = vi.fn((args: any) => ({
+        promise: new Promise(resolve => { release[args.arguments.id] = resolve }),
+        cancel: vi.fn().mockResolvedValue(undefined), token: args.arguments.id,
+      }))
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: run }) as never
+      const a = setup(['tcA'])
+      const pendingA = a.chat.sendMessage({ text: 'A' })
+      await waitFor(() => expect(release.tcA).toBeTypeOf('function'))
+      a.unmount()
+      try {
+        h.routeParams.threadId = 'thread-2'
+        const b = setup(['tcB'], 'thread-2')
+        const pendingB = b.chat.sendMessage({ text: 'B' })
+        await waitFor(() => expect(release.tcB).toBeTypeOf('function'))
+        await act(async () => { release.tcA({ content: 'A result' }); await pendingA })
+        expect(a.steps).toHaveBeenCalledTimes(2)
+        expect(b.steps).toHaveBeenCalledTimes(1)
+        expect(b.chat.status).toBe('streaming')
+        await act(async () => { release.tcB({ content: 'B result' }); await pendingB })
+        expect(b.steps).toHaveBeenCalledTimes(2)
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(2)
+        expect(b.chat.messages.flatMap(m => m.parts)).toContainEqual(expect.objectContaining({ toolCallId: 'tcB', state: 'output-available', output: 'B result' }))
+      } finally { h.routeParams.threadId = 'thread-1' }
+    })
 
-        const { timings } = useToolCallRuntime.getState()
-        expect(timings['a-done']).toBeUndefined()
-        expect(timings['a-running']?.startedAt).toBeDefined()
-        expect(timings['b-done']).toBeDefined()
-      })
+    it('navigation and Stop in another thread leave the retained run and its follow-up intact', async () => {
+      let release!: (value: unknown) => void
+      const cancel = vi.fn().mockResolvedValue(undefined)
+      const run = vi.fn(() => ({ promise: new Promise(resolve => { release = resolve }), cancel, token: 't' }))
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: run }) as never
+      const { chat, steps, rerender } = setup(['tcA'])
+      const pending = chat.sendMessage({ text: 'go' })
+      await waitFor(() => expect(run).toHaveBeenCalledTimes(1))
+      const Component = Route.component as React.ComponentType
+      try {
+        h.routeParams.threadId = 'thread-2'
+        h.integrationChat = new Chat({ id: 'thread-2' })
+        h.chatSessionsState.sessions['thread-2'] = { chat: h.integrationChat }
+        rerender(<Component />)
+        await act(async () => { screen.getByTestId('chat-stop').click() })
+        expect(cancel).not.toHaveBeenCalled()
+        release({ content: 'retained' })
+        await act(async () => { await pending })
+        expect(steps).toHaveBeenCalledTimes(2)
+        expect(chat.messages.flatMap(m => m.parts)).toContainEqual(expect.objectContaining({ toolCallId: 'tcA', state: 'output-available', output: 'retained' }))
+        expect(chat.status).toBe('ready')
+      } finally { h.routeParams.threadId = 'thread-1' }
+    })
+  })
 
-      // A turn of a thread that was left can finish in the background, after
-      // another thread is shown. A Stop there is that thread's, and must not end
-      // the background thread's loop: its queued calls still run.
-      it('Stop in the thread in front does not end another thread\'s loop', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
-        const started: string[] = []
-        const finish: Array<(r: unknown) => void> = []
-        hub.mcp = () =>
-          ({
-            getTools: getMcpTools,
-            callToolWithCancellation: (args: any) => {
-              started.push(args.arguments.id)
-              return {
-                promise: new Promise((resolve) => finish.push(resolve)),
-                cancel: vi.fn().mockResolvedValue(undefined),
-                token: 't',
-              }
-            },
-          }) as never
-        h.mockAddToolOutput.mockClear()
-        const Component = Route.component as React.ComponentType
-        const call = (id: string) => ({
-          toolCall: { toolCallId: id, toolName: 'fetch', input: { id } },
-        })
+  it('leaving a thread releases only its own settled runtime state', () => {
+    const runtime = useToolCallRuntime.getState()
+    runtime.enqueue(['a-done', 'a-running'], 'thread-1')
+    runtime.markRunning('a-done'); runtime.markSettled('a-done'); runtime.markRunning('a-running')
+    runtime.enqueue(['b-done'], 'thread-3'); runtime.markRunning('b-done'); runtime.markSettled('b-done')
+    const { rerender } = renderComponent()
+    const Component = Route.component as React.ComponentType
+    try { h.routeParams.threadId = 'thread-2'; rerender(<Component />) }
+    finally { h.routeParams.threadId = 'thread-1' }
+    const { timings } = useToolCallRuntime.getState()
+    expect(timings['a-done']).toBeUndefined()
+    expect(timings['a-running']?.startedAt).toBeDefined()
+    expect(timings['b-done']).toBeDefined()
+  })
 
-        try {
-          const { rerender } = renderComponent()
-          const onToolCallA = (h as any).capturedOnToolCall
-          const onFinishA = (h as any).capturedOnFinish
-          await act(async () => {
-            await onToolCallA(call('tcA'))
-            await onToolCallA(call('tcB'))
-          })
-
-          h.routeParams.threadId = 'thread-2'
-          rerender(<Component />)
-          await act(async () => {
-            await onFinishA({
-              message: {
-                id: 'a-tc',
-                role: 'assistant',
-                parts: [{ type: 'text', text: '' }],
-                metadata: { finishReason: 'tool-calls' },
-              },
-              isAbort: false,
-            })
-          })
-          expect(started).toEqual(['tcA'])
-
-          await act(async () => {
-            screen.getByTestId('chat-stop').click()
-          })
-          await act(async () => {
-            finish[0]({ error: '', content: [] })
-          })
-
-          expect(started).toEqual(['tcA', 'tcB'])
-        } finally {
-          h.routeParams.threadId = 'thread-1'
-        }
-      })
-
-      // A loop left behind by a thread switch finishes later. It must not take
-      // the controller of the thread now in front with it, or that thread's reply
-      // would never continue after its tool result.
-      it('a left thread\'s loop ending does not stop the current thread continuing', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        const results: Array<(r: unknown) => void> = []
-        hub.mcp = () =>
-          ({
-            getTools: getMcpTools,
-            callToolWithCancellation: () => ({
-              promise: new Promise((resolve) => results.push(resolve)),
-              cancel: vi.fn().mockResolvedValue(undefined),
-              token: 't',
-            }),
-          }) as never
-        const Component = Route.component as React.ComponentType
-
-        try {
-          const { rerender } = renderComponent()
-          await arrive('tcA')
-          await act(async () => {
-            await finishWithToolCalls()
-          })
-
-          h.routeParams.threadId = 'thread-2'
-          rerender(<Component />)
-          await arrive('tcB')
-          await act(async () => {
-            await finishWithToolCalls()
-          })
-
-          // Thread 1's call, left running, now completes.
-          await act(async () => {
-            results[0]({ error: '', content: [] })
-          })
-
-          const followUp = (h as any).capturedSendAutomaticallyWhen
-          expect(followUp({ messages: [] })).toBe(true)
-        } finally {
-          h.routeParams.threadId = 'thread-1'
-        }
-      })
-
-      // The route component is reused across thread switches, so a Stop must
-      // reach only the thread it is pressed in, and still work after returning.
-      it('Stop reaches only its own thread\'s running call, also after returning', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        const cancel = vi.fn().mockResolvedValue(undefined)
-        hub.mcp = () =>
-          ({
-            getTools: getMcpTools,
-            callToolWithCancellation: () => ({
-              promise: new Promise(() => {}),
-              cancel,
-              token: 't',
-            }),
-          }) as never
-        const Component = Route.component as React.ComponentType
-
-        try {
-          const { rerender } = renderComponent()
-          await arrive('tcA')
-          await act(async () => {
-            await finishWithToolCalls()
-          })
-
-          h.routeParams.threadId = 'thread-2'
-          rerender(<Component />)
-          await act(async () => {
-            screen.getByTestId('chat-stop').click()
-          })
-          expect(cancel).not.toHaveBeenCalled()
-
-          h.routeParams.threadId = 'thread-1'
-          rerender(<Component />)
-          await act(async () => {
-            screen.getByTestId('chat-stop').click()
-          })
-          expect(cancel).toHaveBeenCalledTimes(1)
-        } finally {
-          h.routeParams.threadId = 'thread-1'
-        }
-      })
-
-      // The turn was stored before any tool ran, so a call that finished while
-      // another was still running has its output only in the rendered message.
+  describe('Stop persists tool state', () => {
       it('Stop keeps a finished call\'s output and settles only the running one', async () => {
         const part = (id: string, state: string, extra: object = {}) => ({
           type: 'tool-fetch',
@@ -2742,148 +2547,7 @@ describe('ThreadDetail route', () => {
         expect(rewritten.metadata.toolErrors).not.toHaveProperty('tcA')
       })
 
-      // Leaving the thread deletes the loop controller but leaves the call
-      // running. A Stop after coming back, with a newer turn sent since, must
-      // still settle the turn that owns the call.
-      it('Stop after returning to the thread still settles the turn that owns the call', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
-        hub.mcp = () =>
-          ({
-            getTools: getMcpTools,
-            callToolWithCancellation: () => ({
-              promise: new Promise(() => {}),
-              cancel: vi.fn().mockResolvedValue(undefined),
-              token: 't',
-            }),
-          }) as never
-        h.messagesState.getMessages = vi.fn(() => [
-          { id: 'a-tc', role: 'assistant', content: [], metadata: {} },
-        ])
-        h.chatSessionsState.sessions = {
-          'thread-1': {
-            transport: { getTurnModelSelection: () => null },
-            chat: {
-              stop: vi.fn(),
-              messages: [
-                {
-                  id: 'a-tc',
-                  role: 'assistant',
-                  parts: [
-                    {
-                      type: 'tool-fetch',
-                      toolCallId: 'tcA',
-                      input: {},
-                      state: 'input-available',
-                    },
-                  ],
-                },
-                { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'again' }] },
-                {
-                  id: 'a-newer',
-                  role: 'assistant',
-                  parts: [{ type: 'text', text: 'a newer turn' }],
-                },
-              ],
-            },
-          },
-        }
-        h.messagesState.updateMessage.mockClear()
-        const Component = Route.component as React.ComponentType
 
-        try {
-          const { rerender } = renderComponent()
-          await arrive('tcA')
-          await act(async () => {
-            await finishWithToolCalls()
-          })
-
-          h.routeParams.threadId = 'thread-2'
-          rerender(<Component />)
-          h.routeParams.threadId = 'thread-1'
-          rerender(<Component />)
-
-          await act(async () => {
-            screen.getByTestId('chat-stop').click()
-          })
-        } finally {
-          h.routeParams.threadId = 'thread-1'
-          h.chatSessionsState.sessions = {}
-        }
-
-        const stored = h.messagesState.updateMessage.mock.calls
-          .map((c: any[]) => c[0])
-          .find((m: any) => m.id === 'a-tc')
-        expect(stored.metadata.toolErrors).toEqual({
-          tcA: expect.stringContaining('Stopped'),
-        })
-      })
-
-      // The composer still sends while tools run, so the last message can be a
-      // newer turn. Stop ends the older turn's loop, and that is the turn whose
-      // call must be settled.
-      it('Stop settles the turn whose loop it aborts, not just the last message', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        h.toolApprovalState.requestApproval = vi.fn(
-          () => new Promise<boolean>(() => {})
-        )
-        h.messagesState.getMessages = vi.fn(() => [
-          { id: 'a-tc', role: 'assistant', content: [], metadata: {} },
-        ])
-        h.chatSessionsState.sessions = {
-          'thread-1': {
-            transport: { getTurnModelSelection: () => null },
-            chat: {
-              stop: vi.fn(),
-              messages: [
-                {
-                  id: 'a-tc',
-                  role: 'assistant',
-                  parts: [
-                    {
-                      type: 'tool-fetch',
-                      toolCallId: 'tcA',
-                      input: {},
-                      state: 'input-available',
-                    },
-                  ],
-                },
-                { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'again' }] },
-                {
-                  id: 'a-newer',
-                  role: 'assistant',
-                  parts: [{ type: 'text', text: 'a newer turn' }],
-                },
-              ],
-            },
-          },
-        }
-        h.messagesState.updateMessage.mockClear()
-
-        try {
-          renderComponent()
-          await arrive('tcA')
-          await act(async () => {
-            await finishWithToolCalls()
-          })
-          await act(async () => {
-            screen.getByTestId('chat-stop').click()
-          })
-        } finally {
-          h.chatSessionsState.sessions = {}
-        }
-
-        const stored = h.messagesState.updateMessage.mock.calls
-          .map((c: any[]) => c[0])
-          .find((m: any) => m.id === 'a-tc')
-        expect(stored.metadata.toolErrors).toEqual({
-          tcA: expect.stringContaining('Stopped'),
-        })
-      })
-
-      // The rendered messages are throttled; the SDK's chat state is current.
-      // A result that landed inside the throttle window must not be saved as a
-      // stopped call while the live copy holds it.
       it('Stop saves from the live chat state, not the throttled snapshot', async () => {
         const part = (state: string, extra: object = {}) => ({
           type: 'tool-fetch',
@@ -2903,7 +2567,7 @@ describe('ThreadDetail route', () => {
         // Live: the result has just landed, and a second call is unfinished.
         h.chatSessionsState.sessions = {
           'thread-1': {
-            transport: { getTurnModelSelection: () => null },
+            transport: { getTurnModelSelection: () => null, cancelChatRun: vi.fn().mockResolvedValue(undefined) },
             chat: {
               stop: vi.fn(),
               messages: [
@@ -2942,280 +2606,6 @@ describe('ThreadDetail route', () => {
         })
       })
 
-      it('drains the runtime queue and times every call', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        renderComponent()
-        await arrive('tcA', 'tcB')
-        await act(async () => {
-          await finishWithToolCalls()
-        })
-
-        const runtime = useToolCallRuntime.getState()
-        expect(runtime.queue).toEqual([])
-        for (const id of ['tcA', 'tcB']) {
-          expect(runtime.timings[id]?.startedAt).toBeDefined()
-          expect(runtime.timings[id]?.endedAt).toBeDefined()
-        }
-      })
-
-      // Deleting the thread resolves a pending approval as denied. It must be
-      // recorded, or the call stays "Running" with nothing running, but not as a
-      // refusal by the user.
-      it('records a cut-short approval as the chat closing, not a user denial', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        let decide: (approved: boolean) => void = () => {}
-        h.toolApprovalState.requestApproval = vi.fn(
-          () => new Promise<boolean>((resolve) => (decide = resolve))
-        )
-        h.mockAddToolOutput.mockClear()
-
-        renderComponent()
-        await arrive('tcA')
-        await act(async () => {
-          await finishWithToolCalls()
-        })
-        await act(async () => {
-          h.removeChatSession('thread-1')
-        })
-        expect(h.toolApprovalState.clearPendingForThread).toHaveBeenCalledWith(
-          'thread-1'
-        )
-        await act(async () => {
-          decide(false)
-        })
-
-        expect(h.mockAddToolOutput).toHaveBeenCalledWith(
-          expect.objectContaining({
-            toolCallId: 'tcA',
-            state: 'output-error',
-            errorText: expect.stringContaining('chat was closed'),
-          })
-        )
-      })
-
-      // #9311: leaving a thread while its tool call runs must not end the turn.
-      // The call's result lands and the reply continues: the follow-up check,
-      // which the SDK runs as the result lands, still says to send.
-      it('leaving the thread lets the turn continue after its tool call', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        let finish: (r: unknown) => void = () => {}
-        hub.mcp = () =>
-          ({
-            getTools: getMcpTools,
-            callToolWithCancellation: () => ({
-              promise: new Promise((resolve) => (finish = resolve)),
-              cancel: vi.fn().mockResolvedValue(undefined),
-              token: 't',
-            }),
-          }) as never
-        const Component = Route.component as React.ComponentType
-
-        try {
-          const { rerender } = renderComponent()
-          const followUpA = (h as any).capturedSendAutomaticallyWhen
-          const followUps: boolean[] = []
-          h.mockAddToolOutput.mockImplementation(() => {
-            followUps.push(followUpA({ messages: [] }))
-          })
-          await arrive('tcA')
-          await act(async () => {
-            await finishWithToolCalls()
-          })
-
-          h.routeParams.threadId = 'thread-2'
-          rerender(<Component />)
-          await act(async () => {
-            finish({ error: '', content: [{ type: 'text', text: 'ok' }] })
-          })
-
-          expect(h.mockAddToolOutput).toHaveBeenCalledWith(
-            expect.objectContaining({ toolCallId: 'tcA', output: expect.anything() })
-          )
-          expect(followUps).toEqual([true])
-        } finally {
-          h.routeParams.threadId = 'thread-1'
-          h.mockAddToolOutput.mockReset()
-        }
-      })
-
-      // An approval the left thread waits on stays pending, so the user can
-      // answer it on return; the call then runs and the reply continues.
-      it('leaving the thread keeps its pending approval answerable', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        let decide: (approved: boolean) => void = () => {}
-        h.toolApprovalState.requestApproval = vi.fn(
-          () => new Promise<boolean>((resolve) => (decide = resolve))
-        )
-        const started: string[] = []
-        hub.mcp = () =>
-          ({
-            getTools: getMcpTools,
-            callToolWithCancellation: (call: any) => {
-              started.push(call.toolName)
-              return {
-                promise: Promise.resolve({ error: '', content: [] }),
-                cancel: vi.fn().mockResolvedValue(undefined),
-                token: 't',
-              }
-            },
-          }) as never
-        h.mockAddToolOutput.mockClear()
-        const Component = Route.component as React.ComponentType
-
-        try {
-          const { rerender } = renderComponent()
-          await arrive('tcA')
-          await act(async () => {
-            await finishWithToolCalls()
-          })
-
-          h.routeParams.threadId = 'thread-2'
-          rerender(<Component />)
-          expect(h.toolApprovalState.clearPendingForThread).not.toHaveBeenCalled()
-
-          h.routeParams.threadId = 'thread-1'
-          rerender(<Component />)
-          await act(async () => {
-            decide(true)
-          })
-
-          expect(started).toEqual(['fetch'])
-          expect(h.mockAddToolOutput).toHaveBeenCalledWith(
-            expect.objectContaining({ toolCallId: 'tcA' })
-          )
-          expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(
-            expect.objectContaining({ state: 'output-error' })
-          )
-        } finally {
-          h.routeParams.threadId = 'thread-1'
-        }
-      })
-
-      // The approval promises are shared by every thread's loop. A thread whose
-      // turn is cut off must forget only its own, or the thread in front would
-      // be asked again about a call the user may already have allowed.
-      it('another thread ending does not drop the approval in flight here', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        h.toolApprovalState.requestApproval = vi.fn(
-          () => new Promise<boolean>(() => {})
-        )
-        const Component = Route.component as React.ComponentType
-
-        try {
-          const { rerender } = renderComponent()
-          const onFinishA = (h as any).capturedOnFinish
-
-          h.routeParams.threadId = 'thread-2'
-          rerender(<Component />)
-          await arrive('tcB')
-          expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-
-          // Thread 1's turn is cut off in the background.
-          await act(async () => {
-            await onFinishA({
-              message: {
-                id: 'a-bg',
-                role: 'assistant',
-                parts: [{ type: 'text', text: '' }],
-                metadata: {},
-              },
-              isAbort: true,
-            })
-          })
-          await act(async () => {
-            await finishWithToolCalls()
-          })
-
-          expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-        } finally {
-          h.routeParams.threadId = 'thread-1'
-        }
-      })
-
-      // The calls queued behind the one awaiting approval are cut short too.
-      it('settles the calls queued behind one whose approval was cut short', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        const decide: Record<string, (approved: boolean) => void> = {}
-        h.toolApprovalState.requestApproval = vi.fn(
-          (id: string) =>
-            new Promise<boolean>((resolve) => (decide[id] = resolve))
-        )
-        h.mockAddToolOutput.mockClear()
-
-        renderComponent()
-        await arrive('tcA', 'tcB')
-        await act(async () => {
-          await finishWithToolCalls()
-        })
-        await act(async () => {
-          h.removeChatSession('thread-1')
-        })
-        await act(async () => {
-          decide.tcA(false)
-        })
-
-        const settled = h.mockAddToolOutput.mock.calls.map(
-          (c: any[]) => c[0].toolCallId
-        )
-        expect(settled).toEqual(['tcA', 'tcB'])
-        expect(h.mockAddToolOutput).toHaveBeenLastCalledWith(
-          expect.objectContaining({ toolCallId: 'tcB', state: 'output-error' })
-        )
-      })
-
-      it('keeps going when one call is denied', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        h.toolApprovalState.requestApproval = vi.fn((id: string) =>
-          Promise.resolve(id !== 'tcA')
-        )
-        renderComponent()
-        await arrive('tcA', 'tcB')
-        await act(async () => {
-          await finishWithToolCalls()
-        })
-
-        const outputs = h.mockAddToolOutput.mock.calls.map((c: any[]) => c[0])
-        expect(outputs[0]).toMatchObject({
-          toolCallId: 'tcA',
-          state: 'output-error',
-        })
-        expect(outputs[1]).toMatchObject({ toolCallId: 'tcB' })
-        expect(outputs[1].state).not.toBe('output-error')
-      })
-
-      // A denied call never runs, so it has no duration -- but leaving it in
-      // the queue would keep its card claiming it is waiting its turn.
-      it('leaves nothing queued after a denied call', async () => {
-        h.appStateState.mcpToolNames = new Set(['fetch'])
-        h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
-        renderComponent()
-        await arrive('tcA', 'tcB')
-        await act(async () => {
-          await finishWithToolCalls()
-        })
-
-        const runtime = useToolCallRuntime.getState()
-        expect(runtime.queue).toEqual([])
-        expect(runtime.timings['tcA']?.startedAt).toBeUndefined()
-        expect(runtime.timings['tcA']?.endedAt).toBeDefined()
-      })
-    })
-
-    it('marks the thread busy during onFinish execution and clears it when tools drain', async () => {
-      h.appStateState.mcpToolNames = new Set(['fetch'])
-      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
-      renderComponent()
-
-      await act(async () => {
-        await (h as any).capturedOnToolCall(toolCall('tc5'))
-      })
-      await act(async () => {
-        await finishWithToolCalls()
-      })
-
-      expect(h.appStateState.setThreadBusy).toHaveBeenCalledWith('thread-1', true)
-      expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
-    })
   })
 
   it('delete removes message from store and chat list', () => {

@@ -872,6 +872,29 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   getMcpServerForTool(name: string): string | undefined {
     return (this.turnMcpIdentities ?? this.mcpIdentities).get(name)
   }
+  private chatRunSnapshot: { tools?: Record<string, Tool>; system?: string; systemReady?: boolean } | null = null
+
+  /** Bracket one runTurn, not each model step. Refresh events during a run
+   * must not mutate its advertised schemas or system prefix. */
+  private chatRunAbort?: () => void
+  private chatRunDone: Promise<void> = Promise.resolve()
+  private finishChatRun?: () => void
+  async cancelChatRun(): Promise<void> { this.chatRunAbort?.(); await this.chatRunDone }
+  beginChatRun(abort?: () => void): () => void {
+    if (this.chatRunSnapshot) throw new Error('Chat turn already running')
+    const snapshot = {}
+    this.chatRunSnapshot = snapshot
+    this.chatRunAbort = abort
+    this.chatRunDone = new Promise(resolve => { this.finishChatRun = resolve })
+    return () => {
+      if (this.chatRunSnapshot === snapshot) {
+        this.chatRunSnapshot = null
+        this.chatRunAbort = undefined
+        this.finishChatRun?.()
+        this.finishChatRun = undefined
+      }
+    }
+  }
   // Smart tool routing selects tools from the latest user message, which would
   // change the tool set (and thus the cached prompt prefix) every turn. Freeze
   // the routed set for the thread's lifetime so the prefix stays stable;
@@ -931,8 +954,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   ): ModelSelection {
     const continuesTurn =
       this.turnModelSelection !== null &&
-      trigger === 'submit-message' &&
-      lastAssistantMessageIsCompleteWithToolCalls({ messages })
+      ((this.chatRunSnapshot?.systemReady ?? false) ||
+        (trigger === 'submit-message' && lastAssistantMessageIsCompleteWithToolCalls({ messages })))
     if (!continuesTurn) {
       const { selectedProvider, selectedModel } = this.getModelSelection()
       this.turnModelSelection = { selectedProvider, selectedModel }
@@ -1070,6 +1093,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     abortSignal?: AbortSignal,
     modelSelection: ModelSelection = this.getModelSelection()
   ) {
+    if (this.chatRunSnapshot?.tools) return
+    const owningSnapshot = this.chatRunSnapshot
     // Resolve the memory digest before the prompt is built: the builder is
     // sync, so it reads the snapshot this await guarantees. Error-safe and
     // cached inside agentTools, so this is one IPC round-trip per store change.
@@ -1268,8 +1293,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
     }
 
+    // Never let discovery started outside this run, or a slower competing
+    // discovery, overwrite its first committed advertised record.
+    if (this.chatRunSnapshot !== owningSnapshot || owningSnapshot?.tools) return
     this.mcpIdentities = mcpIdentities
     this.tools = toolsRecord
+    if (owningSnapshot) owningSnapshot.tools = toolsRecord
   }
 
   private async resolveRouterModel(settings: {
@@ -1528,7 +1557,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const inferenceParams = this.getActiveInferenceParams()
 
 
-    const effectiveSystem = this.buildSystemPrompt(messagesToConvert)
+    const snapshot = this.chatRunSnapshot
+    const effectiveSystem = snapshot?.systemReady ? snapshot.system : this.buildSystemPrompt(messagesToConvert)
+    if (snapshot && !snapshot.systemReady) {
+      snapshot.system = effectiveSystem
+      snapshot.systemReady = true
+    }
 
     const maxOutputTokens: number | undefined = (() => {
       const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens

@@ -1,4 +1,8 @@
-import { trackChat, observeChatWork, isChatClosing } from '@/lib/chatClose'
+import { createChatRunStream, type ChatToolOutcome } from '@/lib/chatRunTransport'
+import type { PendingToolCall } from '@/lib/coworkRunner'
+import { generateId } from 'ai'
+import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { trackChat, observeChatWork } from '@/lib/chatClose'
 import {
   CustomChatTransport,
   type ContinuationContent,
@@ -19,6 +23,7 @@ import { useAppState } from '@/hooks/useAppState'
 
 type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
+    dispatchTool?: (call: PendingToolCall, signal: AbortSignal) => Promise<ChatToolOutcome>
     sessionId?: string
     sessionTitle?: string
     systemMessage?: string
@@ -38,6 +43,7 @@ export function useChat(
   const transportSessionRef = useRef<string | undefined>(undefined)
   const {
     sessionId,
+    dispatchTool,
     sessionTitle,
     systemMessage,
     onTokenUsage,
@@ -89,12 +95,55 @@ export function useChat(
         const pending = new Set<Promise<unknown>>()
         const instance = new Chat({
           ...chatInitOptions,
-          transport: transportRef.current,
+          transport: {
+            reconnectToStream: (request) => transport.reconnectToStream(request),
+            sendMessages: async (request) => {
+              const abort = new AbortController()
+              const releaseSnapshot = transport.beginChatRun(() => abort.abort('Turn replaced'))
+              const stop = () => {
+                abort.abort(request.abortSignal?.reason)
+                useToolApprovalRequests.getState().clearPendingForThread(sessionId)
+              }
+              request.abortSignal?.addEventListener('abort', stop, { once: true })
+              if (request.abortSignal?.aborted) stop()
+              const unwatch = useChatSessions.subscribe(state => {
+                if (!state.sessions[sessionId]) {
+                  abort.abort('Thread deleted')
+                  useToolApprovalRequests.getState().clearPendingForThread(sessionId)
+                }
+              })
+              return createChatRunStream({
+                messages: request.messages,
+                messageId: generateId(),
+                signal: abort.signal,
+                sendStep: (messages, signal) => transport.sendMessages({ ...request, messages, abortSignal: signal }),
+                dispatch: dispatchTool ?? (async () => ({ output: 'Chat tool executor unavailable', isError: true })),
+                onFinally: () => {
+                  releaseSnapshot()
+                  useToolApprovalRequests.getState().clearPendingForThread(sessionId)
+                  unwatch()
+                  request.abortSignal?.removeEventListener('abort', stop)
+                },
+              })
+            },
+          },
           onFinish: (event) => observeChatWork(pending, () => chatInitOptions.onFinish?.(event)),
-          sendAutomaticallyWhen: chatInitOptions.sendAutomaticallyWhen
-            ? async (event) => !isChatClosing() && await chatInitOptions.sendAutomaticallyWhen!(event) && !isChatClosing()
-            : undefined,
+          // runTurn is the sole follow-up authority; SDK auto-send would
+          // execute a second model request for the same settled tool wave.
+          sendAutomaticallyWhen: undefined,
         })
+        // SDK serializes state updates, not whole requests. Guard BEFORE it
+        // mutates messages/activeResponse so a queued send cannot steal Stop
+        // from an approval or tool still owned by the current turn.
+        const send = instance.sendMessage.bind(instance)
+        const regenerate = instance.regenerate.bind(instance)
+        const busy = () => instance.status === 'submitted' || instance.status === 'streaming'
+        instance.sendMessage = (...args) => busy()
+          ? Promise.reject(new Error('Chat turn already running'))
+          : send(...args)
+        instance.regenerate = (...args) => busy()
+          ? Promise.reject(new Error('Stop the current Chat turn before regenerating'))
+          : regenerate(...args)
         trackChat(instance, pending)
         return instance
       },
