@@ -343,6 +343,53 @@ describe('CoworkPage todo rewind authority', () => {
     })
   }
 
+  it('bounds committed todo parsing across mounted live text deltas and prefers the latest live snapshot, even empty', async () => {
+    const history = Array.from({ length: 48 }, (_, index) => snapshot(`Parse-bound history task ${index}`))
+    const fixtureStrings = new Set(history.map((list) => JSON.stringify(list)))
+    seed(history.flatMap((list, index): CoworkTurn[] => [
+      { role: 'user', content: `Historical question ${index}` },
+      todo(list, `history-${index}`),
+      { role: 'assistant', content: `Historical answer ${index}` },
+    ]))
+    useCoworkRun.setState({ runId: { test: 'parse-bound-run' }, liveTurns: { test: [] } })
+    const parse = vi.spyOn(JSON, 'parse')
+    // Ignore framework/store parsing: count only this test's unique committed
+    // snapshot strings, not the live snapshots which legitimately reparse.
+    const committedParses = () => parse.mock.calls.filter(([value]) => fixtureStrings.has(value)).length
+    try {
+      mountRail()
+      await act(async () => {})
+      expectRail(history.at(-1)!) // Transcript wins over the stale legacy sidecar.
+      const initialParses = committedParses()
+      expect(initialParses).toBe(history.length)
+      const publish = async (snapshots: TodoList[], delta: number) => {
+        await act(async () => {
+          useCoworkRun.setState({ liveTurns: { test: [
+            ...snapshots.map((list, index) => todo(list, `live-${index}`)),
+            { role: 'assistant', content: `Live text delta ${delta}` },
+          ] } })
+        })
+      }
+      for (let delta = 0; delta < 16; delta++) {
+        await publish([], delta)
+        expectRail(history.at(-1)!)
+        expect(committedParses()).toBe(initialParses)
+      }
+      const liveFirst = snapshot('Parse-bound first live task')
+      const liveLatest = snapshot('Parse-bound latest live task')
+      await publish([liveFirst, liveLatest], 16)
+      expectRail(liveLatest)
+      await publish([liveFirst, liveLatest, empty], 17)
+      expectRail(empty) // An explicit clear must not fall back to history.
+      await publish([liveFirst, liveLatest, empty], 18)
+      expectRail(empty)
+      expect(committedParses()).toBe(initialParses)
+      expect(mocks.run).not.toHaveBeenCalled()
+    } finally {
+      parse.mockRestore()
+    }
+  })
+
   it('publishes live todo progress before a same-step ask suspends', async () => {
     seed([{ role: 'user', content: 'Previous' }, todo(earlier, 'old'), { role: 'assistant', content: 'Previous answer' }], earlier)
     let answer!: () => void

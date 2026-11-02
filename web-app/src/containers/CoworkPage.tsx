@@ -99,7 +99,7 @@ import { CoworkChatTransport } from '@/lib/coworkTransport'
 import { getCoworkEnvironment } from '@/lib/coworkEnv'
 import { dispatchCoworkTool } from '@/lib/coworkDispatch'
 import { createConversationToolHandlers } from '@/lib/conversationToolHandlers'
-import { resolveConversationTodos } from '@/lib/conversationTaskPresentation'
+import { conversationTodos, resolveConversationTodos } from '@/lib/conversationTaskPresentation'
 import { TODO_TOOL_NAME } from '@/lib/coworkTools'
 import {
   EXECUTE_PLAN_LABEL,
@@ -367,10 +367,17 @@ export function CoworkPage() {
         : committedMessages,
     [viewingRun, committedMessages, liveMessages]
   )
-  const contextualTodos = useMemo(
-    () => resolveConversationTodos(uiMessages, session?.todos),
-    [uiMessages, session?.todos]
+  // Committed history does not change on a live text delta. Parse it once per
+  // history identity (including rewind); only scan the live tail on sync.
+  const committedTodos = useMemo(
+    () => conversationTodos(committedMessages),
+    [committedMessages]
   )
+  const liveTodos = useMemo(
+    () => conversationTodos(liveMessages),
+    [liveMessages]
+  )
+  const contextualTodos = liveTodos ?? committedTodos ?? session?.todos
   // Where the live tail begins. Every message from here on is mid-run: its
   // write parts may yet be rewritten, and a <SYSTEM> note (a subagent finishing,
   // a monitor matching) can split the turn so an earlier fragment is not the
