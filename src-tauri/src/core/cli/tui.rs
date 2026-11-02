@@ -5231,14 +5231,18 @@ const CHILD_ROWS_MAX: usize = 400;
 const CHILD_RESULT_MAX: usize = 64 * 1024;
 
 /// Cut `s` to at most `max` bytes, keeping its head and ending on a char
-/// boundary.
+/// boundary, then say so: a cut result is never passed off as a whole one.
 fn truncate_head(s: &mut String, max: usize) {
     if s.len() > max {
+        let total = s.len();
         let mut cut = max;
         while !s.is_char_boundary(cut) {
             cut -= 1;
         }
         s.truncate(cut);
+        s.push_str(&format!(
+            "\n[tool result truncated in this view: kept the first {cut} of {total} bytes]"
+        ));
     }
 }
 
@@ -5267,6 +5271,39 @@ impl SubagentPanel {
             workspace: None,
             transcript: Transcript::for_child(INITIAL_THINK_TAGS),
         }
+    }
+
+    /// Replace this child's rows with its run as its session file records it
+    /// (see `run_record`): the whole run, where the live rows were capped. The
+    /// task is the detail header's, so the record's `prompt` is not repeated.
+    fn replay_record(&mut self, doc: &crate::core::agent::run_record::Transcript) {
+        use crate::core::agent::run_record::{Entry, Status};
+        let fresh = Transcript {
+            show_reasoning: self.transcript.show_reasoning,
+            stream_reasoning: self.transcript.stream_reasoning,
+            ..Transcript::for_child(self.transcript.parse_think_tags)
+        };
+        let t = &mut self.transcript;
+        *t = fresh;
+        for entry in &doc.transcript {
+            match entry {
+                Entry::User { text } => {
+                    t.flush_assistant();
+                    t.finalize_tool_group();
+                    t.push_user_line(text, &[]);
+                }
+                Entry::Prose { text } => t.token(text),
+                Entry::Reasoning { text } => t.reasoning(text.clone()),
+                Entry::ToolCall { id, name, args } => t.tool_call(id.clone(), name, args),
+                Entry::ToolResult {
+                    id,
+                    content,
+                    is_error,
+                } => t.tool_result(id.clone(), content.clone(), *is_error, None),
+            }
+        }
+        t.settle(doc.status != Status::Finished);
+        self.active = None;
     }
 
     /// A finished child rebuilt from its journal entry, which keeps only the
@@ -15716,6 +15753,7 @@ async fn handle_key_input(
                     return;
                 }
                 picker.kind = PickerKind::AgentDetail;
+                replay_finished_agent(app, &run_id);
                 app.agent_detail = Some(run_id);
                 app.agent_detail_scroll = 0;
             }
@@ -20940,6 +20978,38 @@ fn agent_picker_items(
         items.push(row(&b.panel, false, tail));
     }
     items
+}
+
+/// Load a finished child's run from its session file in the session scratch
+/// and lay it out in place of the rows this screen kept, which are capped
+/// (`CHILD_ROWS_MAX`, `CHILD_RESULT_MAX`). The one path `/agents` replays
+/// through. A child still running, a run with no session, a missing or
+/// unreadable file, or a file another run of the same name left behind keeps
+/// the rows as they are.
+fn replay_finished_agent(app: &mut App, run_id: &str) {
+    let Some(session) = app.args.as_ref().and_then(|a| a.session_id.clone()) else {
+        return;
+    };
+    let Some(block) = app
+        .transcript
+        .subagent_blocks
+        .iter_mut()
+        .find(|b| b.panel.run_id == run_id)
+    else {
+        return;
+    };
+    let path = crate::core::agent::run_record::session_path(
+        &tauri_plugin_agent_tools::workspace::scratch_dir(&session),
+        &block.panel.name,
+    );
+    match crate::core::agent::run_record::load(&path) {
+        Ok(doc) if doc.run_id == run_id => {
+            block.panel.replay_record(&doc);
+            block.flat = std::cell::OnceCell::new();
+        }
+        Ok(_) => {}
+        Err(e) => log::debug!("/agents: no session file for {run_id}: {e}"),
+    }
 }
 
 /// Widest a one-line reply preview runs in the `/agents` list, which does not
@@ -39216,7 +39286,85 @@ mod tests {
         ));
         let group = app.subagents[0].transcript.tool_group.as_ref().unwrap();
         let kept = group.calls[0].content.as_deref().unwrap();
-        assert!(kept.starts_with("first line") && kept.len() <= CHILD_RESULT_MAX);
+        assert!(kept.starts_with("first line"));
+        assert!(
+            kept.contains("[tool result truncated in this view: kept the first"),
+            "a cut result says so: {}",
+            &kept[kept.len().saturating_sub(200)..]
+        );
+        assert!(kept.len() <= CHILD_RESULT_MAX + 200);
+    }
+
+    /// A finished child's session file, as its run would have left it in the
+    /// session scratch, for the `/agents` replay tests.
+    fn app_with_finished_child_file(record_run_id: &str) -> (TestApp, std::path::PathBuf) {
+        use crate::core::agent::run_record::{session_path, write_atomic, Entry, Transcript};
+        let mut app = test_app();
+        let session = format!(
+            "replay-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut args = (*test_args(&app, HashMap::new())).clone();
+        args.session_id = Some(session.clone());
+        app.args = Some(Arc::new(args));
+        start_subagent(&mut app, "sub-alpha-1", "alpha");
+        app.apply(wrap("sub-alpha-1", "alpha", StreamEvent::Token { text: "live only".into() }));
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-alpha-1".into(),
+            name: "alpha".into(),
+            error: None,
+        });
+        let scratch = tauri_plugin_agent_tools::workspace::scratch_dir(&session);
+        std::fs::create_dir_all(scratch.join("subagents")).unwrap();
+        let mut doc = Transcript::new("alpha", record_run_id, "the brief");
+        doc.transcript = vec![
+            Entry::Reasoning { text: "weighing it".into() },
+            Entry::Prose { text: "Reading the record.".into() },
+            Entry::ToolCall {
+                id: "c1".into(),
+                name: "read".into(),
+                args: json!({ "path": "notes.txt" }),
+            },
+            Entry::ToolResult { id: "c1".into(), content: "notes".into(), is_error: false },
+            Entry::User { text: "also check b".into() },
+            Entry::Prose { text: "From the record file.".into() },
+        ];
+        doc.finish(&Ok("From the record file.".into()));
+        write_atomic(&session_path(&scratch, "alpha"), &doc).unwrap();
+        (app, scratch)
+    }
+
+    /// Enter on a finished child in `/agents` replays it from its session
+    /// file, which holds the whole run, rather than the capped live rows.
+    #[tokio::test]
+    async fn agents_detail_replays_a_finished_child_from_its_session_file() {
+        let (mut app, scratch) = app_with_finished_child_file("sub-alpha-1");
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::AgentDetail);
+        let text = render_rows(&mut app, 100, 40).join("\n");
+        let _ = std::fs::remove_dir_all(&scratch);
+        for want in ["Reading the record.", "also check b", "From the record file."] {
+            assert!(text.contains(want), "{want:?} missing in:\n{text}");
+        }
+        assert!(!text.contains("live only"), "the file replaced the live rows:\n{text}");
+    }
+
+    /// A file that belongs to another run under the same name is not this
+    /// child's: the detail keeps the rows the screen saw.
+    #[tokio::test]
+    async fn agents_detail_ignores_a_session_file_from_another_run() {
+        let (mut app, scratch) = app_with_finished_child_file("sub-alpha-9");
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        let text = render_rows(&mut app, 100, 40).join("\n");
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert!(text.contains("live only"), "{text}");
+        assert!(!text.contains("From the record file."), "{text}");
     }
 
     #[test]
