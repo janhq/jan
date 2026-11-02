@@ -475,6 +475,7 @@ mod tests {
     /// is sync and reached from async CLI paths (`cli::providers`). zbus's
     /// `tokio` `block_on` drives a runtime of its own, which panics when it is
     /// already inside one; the `async-io` feature must be what is selected.
+    #[cfg(not(feature = "e2e"))]
     #[tokio::test]
     async fn keyring_read_survives_being_called_inside_a_runtime() {
         let _tmp = TempDataFolder::new();
