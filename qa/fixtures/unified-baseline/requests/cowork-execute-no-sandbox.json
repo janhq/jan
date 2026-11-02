@@ -1,0 +1,423 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are Jan, an agent working on the user’s behalf inside the Jan desktop app. Work autonomously: investigate with your tools before answering, and prefer acting over asking. Be concise; the user sees your tool calls, so do not narrate them.\n\n# Guidelines\n\n- Read before you write. Never edit a file you have not read in this session.\n- Prefer targeted edits over rewriting a whole file.\n- Verify your work: run it, or read back what you wrote.\n- If a tool fails, read the error and adapt. Do not retry an identical call.\n- Use the `todo` tool for any task with more than a couple of steps, and keep it current.\n- Use `ask` only when the answer materially changes the work.\n\n# Environment\n\n- OS: linux (x86_64)\n- App: Jan vfixture (desktop)\n- Today's date: Thu Jan 01 2026\n- User locale: en-US\n\nTrust these over your own assumptions for anything platform- or\ntime-sensitive.\n\n# Workspace\n\nYou have one writable directory, your workspace: `/fixture/workspace`.\nRelative paths resolve against it. Everything you create must live here.\n\nNo project folder is attached, so there is nothing outside the workspace to read.\n\nShell commands are unavailable on this machine: no OS sandbox is present to\nconfine them, so the `shell` tool is not offered. Use the file tools instead."
+    },
+    {
+      "role": "user",
+      "content": "Reply with OK."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read",
+        "description": "Read the contents of a UTF-8 text file. Output is truncated to 2000 lines or 64KB (whichever is hit first). Use offset/limit for large files. Image files (png/jpeg/gif/webp, detected by signature or extension) are returned as a vision image instead of text.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the project root (or absolute)."
+            },
+            "offset": {
+              "type": "integer",
+              "description": "Line number to start reading from (1-indexed)."
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum number of lines to read."
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "screenshot",
+        "description": "Render a local HTML or SVG file and return a PNG screenshot of it, so you can see what you built and iterate on the visual result. Use after writing an HTML/SVG artifact to check its appearance; the returned image is what a viewer would see. Relative assets (images, css, js) resolve against the file's own directory. Non-HTML/SVG files are rejected.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Project-relative or absolute path to the .html/.htm/.svg file to render."
+            },
+            "width": {
+              "type": "integer",
+              "description": "Viewport width in pixels (default 1280)."
+            },
+            "height": {
+              "type": "integer",
+              "description": "Viewport height in pixels (default 960)."
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "write",
+        "description": "Create or overwrite a file relative to the project root.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the project root."
+            },
+            "content": {
+              "type": "string",
+              "description": "Full file contents to write."
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "edit",
+        "description": "Edit a file using one or more exact text replacements applied in order. Each old_string must match exactly once in the current file state.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the project root."
+            },
+            "edits": {
+              "type": "array",
+              "description": "Targeted replacements applied in order.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "old_string": {
+                    "type": "string",
+                    "description": "Exact text to replace (must be unique at apply time)."
+                  },
+                  "new_string": {
+                    "type": "string",
+                    "description": "Replacement text."
+                  }
+                },
+                "required": [
+                  "old_string",
+                  "new_string"
+                ]
+              }
+            }
+          },
+          "required": [
+            "path",
+            "edits"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "memory",
+        "description": "Your long-term memory: durable facts (decisions, conventions, preferences, gotchas) kept across sessions. It is yours to curate; no op asks the user. Before writing, `search` or `view` for an existing note on the topic and update it (`edit`, or `write` over it) rather than adding another. When a new fact supersedes a note, `delete` the old one. When work a note tracks is finished, archive it by adding front matter `status: done` (it stays readable and searchable but leaves the index). Group related notes in a folder with `move` (`name` to `tui/scroll`); never write an index or overview note, the index is built for you. Keep notes short; never store secrets or session-only state.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "view",
+                "search",
+                "write",
+                "edit",
+                "delete",
+                "move"
+              ],
+              "description": "view: the index (no name), a folder's notes (`folder/`), or a note's content. search: keyword search over titles and bodies, archived notes included. write: create or overwrite. edit: replace one exact, unique `old` with `new`. delete: remove a note. move: rename `name` to `to` (e.g. into a folder), keeping its content."
+            },
+            "name": {
+              "type": "string",
+              "description": "Note name without .md: `note` or `folder/note` (this project), `user:note` (every project), `project:<slug>` or `project:<slug>/note` (another project, read-only). Required for write, edit, delete and move. `index` and `MEMORY` are reserved: the index is built for you."
+            },
+            "to": {
+              "type": "string",
+              "description": "move: the new name, `note` or `folder/note`; must not exist yet."
+            },
+            "query": {
+              "type": "string",
+              "description": "search: words that must all appear in the note."
+            },
+            "title": {
+              "type": "string",
+              "description": "write: one-line title, stored as the note's first line and shown in the index."
+            },
+            "content": {
+              "type": "string",
+              "description": "write: the note's Markdown body. Front matter `status: done` archives it."
+            },
+            "old": {
+              "type": "string",
+              "description": "edit: exact text to replace; must occur exactly once."
+            },
+            "new": {
+              "type": "string",
+              "description": "edit: replacement text."
+            }
+          },
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "skill_list",
+        "description": "List the available skills (reusable procedures) with a one-line description of each. No arguments.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "skill_read",
+        "description": "Load a skill's full instructions by name. The system prompt lists each skill's name and purpose; call this to read the complete procedure before applying a skill.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Skill name (without the .md extension)."
+            }
+          },
+          "required": [
+            "name"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "skill_write",
+        "description": "Create or update a skill (a reusable procedure). Keep it concise.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Skill name (without the .md extension); becomes the skill title."
+            },
+            "content": {
+              "type": "string",
+              "description": "Full Markdown content of the skill."
+            },
+            "scope": {
+              "type": "string",
+              "enum": [
+                "project",
+                "user"
+              ],
+              "description": "Where to store it: `project` (default) for this project only, `user` for every project."
+            }
+          },
+          "required": [
+            "name",
+            "content"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "todo",
+        "description": "Manage the canonical session todo list: init/start/done/drop/rm/append/view. One call applies one operation. Tasks advance automatically in phase and task order after done or drop; start only confirms the current task. init takes `list` or `items`, never `phase`/`task` directly.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "init",
+                "start",
+                "done",
+                "drop",
+                "rm",
+                "append",
+                "view"
+              ]
+            },
+            "list": {
+              "type": "array",
+              "description": "For init: [{phase, items}]",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "phase": {
+                    "type": "string"
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "phase",
+                  "items"
+                ]
+              }
+            },
+            "items": {
+              "type": "array",
+              "description": "For init (flat, single unnamed phase) or append.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "task": {
+              "type": "string"
+            },
+            "phase": {
+              "type": "string"
+            },
+            "all": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "ask",
+        "description": "Ask the user one or more structured questions. Use only when the answer materially changes the work. To suggest an option, list it first and set `recommended` to its index rather than writing \"(Recommended)\" into the label.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "questions": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "question": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 5,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "label"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "multi": {
+                    "type": "boolean"
+                  },
+                  "recommended": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "id",
+                  "question",
+                  "options"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "questions"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "monitor",
+        "description": "Wait in the background for a condition and be told when it happens. start polls a shell script from the project root every interval; the first poll that exits 0 ends the monitor and hands you its stdout as a <SYSTEM> note while you keep working (a nonzero exit means not yet), e.g. \"grep -m1 'BUILD FAILED' build.log\" or \"test -f done.flag\". A monitor also ends on its timeout. stop ends one early by its id once you no longer need it, and list shows active monitors and their ids. Start one monitor per thing you are waiting for.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "start",
+                "stop",
+                "list"
+              ]
+            },
+            "script": {
+              "type": "string",
+              "description": "For start: a cheap shell check that exits 0 once the thing has happened; its stdout is what you get back."
+            },
+            "name": {
+              "type": "string",
+              "description": "For start: optional short label quoted back to you when it matches (defaults to the script)."
+            },
+            "interval": {
+              "type": "integer",
+              "description": "For start: seconds between polls (default 5, min 1, max 300)."
+            },
+            "timeout": {
+              "type": "integer",
+              "description": "For start: seconds before the monitor gives up (default 1800, max 7200)."
+            },
+            "monitor_id": {
+              "type": "string",
+              "description": "The monitor's id, from start's result (or list); required for stop."
+            }
+          },
+          "required": [
+            "op"
+          ]
+        }
+      }
+    }
+  ]
+}
