@@ -3,6 +3,7 @@ import { memo, useState, useCallback, useEffect, useMemo } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
+import { canContinueStoppedTurn } from '@/lib/chatRunTransport'
 import { usedSkillNames } from '@/lib/agentActivity'
 
 import { ChainOfThoughtGroup } from './message/ChainOfThoughtGroup'
@@ -149,16 +150,10 @@ export const MessageItem = memo(
       onContinue?.(message.id)
     }, [onContinue, message.id])
 
-    const isStopped = metadata?.stopped === true
-    // Continue extends partial text; a turn stopped before it wrote any (a tool
-    // call was all it had) has nothing to resume, so offering it would do
-    // nothing.
-    const canContinue =
-      isStopped &&
-      message.parts.some(
-        (p) =>
-          (p.type === 'text' || p.type === 'reasoning') && !!p.text?.trim()
-      )
+    // Shared with the route's working paths: a capped turn resumes from its
+    // kept history (tool-only included); a user-stopped turn resumes only from
+    // partial text/reasoning. The cap notice itself never qualifies.
+    const canContinue = canContinueStoppedTurn(metadata, message.parts)
 
     const handleEdit = useCallback(
       (newText: string) => {

@@ -444,7 +444,7 @@ vi.mock('@/hooks/use-chat', () => ({
       messages: h.integrationChat?.messages ?? h.chatState.messages,
       status: live?.status ?? h.chatState.status,
       error: h.chatState.error,
-      sendMessage: h.mockSendMessage,
+      sendMessage: h.integrationChat ? (...args: Parameters<Chat['sendMessage']>) => h.integrationChat!.sendMessage(...args) : h.mockSendMessage,
       regenerate: h.integrationChat ? (...args: Parameters<Chat['regenerate']>) => h.integrationChat!.regenerate(...args) : h.mockRegenerate,
       setMessages: h.integrationChat ? (update: any) => {
         h.integrationChat!.messages = typeof update === 'function' ? update(h.integrationChat!.messages) : update
@@ -2242,6 +2242,7 @@ describe('ThreadDetail route', () => {
       { type: 'text-end', id: 'text' },
       { type: 'finish', finishReason: 'stop' },
     ]
+    let integrationMaxSteps: number | undefined
     const setup = (ids = ['tcA', 'tcB'], threadId = 'thread-1', partialText = false) => {
       let args: any
       let controller: AbortController | undefined
@@ -2287,6 +2288,7 @@ describe('ThreadDetail route', () => {
             return createChatRunStream({
               messages: request.messages, messageId: requests.length === 1 ? 'a-integration-' + threadId : 'replacement-' + threadId,
               signal: controller.signal,
+              maxSteps: integrationMaxSteps,
               sendStep: steps,
               dispatch: args.dispatchTool,
               onFinally: () => {
@@ -2331,6 +2333,7 @@ describe('ThreadDetail route', () => {
     beforeEach(() => {
       h.appStateState.mcpToolNames = new Set(['fetch'])
       h.chatSessionsState.sessions = {}
+      integrationMaxSteps = undefined
     })
     afterEach(() => { h.integrationChat = null; h.chatSessionsState.sessions = {} })
 
@@ -2436,6 +2439,46 @@ describe('ThreadDetail route', () => {
         expect(h.messagesState.deleteMessage).toHaveBeenCalledExactlyOnceWith('thread-1', originalAssistant)
         expect(h.messagesState.addMessage).toHaveBeenCalledWith(expect.objectContaining({ id: 'replacement-thread-1', role: 'assistant' }))
       }
+    })
+
+    it('Continue on a tool-only capped turn resumes from kept history without re-executing tools', async () => {
+      integrationMaxSteps = 1
+      const run = vi.fn(() => Promise.resolve({ content: 'A' }))
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: cancellable(run) }) as never
+      const { chat, steps, rerender } = setup(['tcA'])
+      await act(async () => { await chat.sendMessage({ text: 'go' }) })
+      await waitFor(() => expect(chat.status).toBe('ready'))
+      const capped = chat.messages.find(message => message.role === 'assistant')!
+      expect(capped.metadata).toMatchObject({ stopped: true, runStopReason: 'steps' })
+      expect(capped.parts).toContainEqual(expect.objectContaining({ toolCallId: 'tcA', state: 'output-available' }))
+      expect(run).toHaveBeenCalledTimes(1)
+
+      const Component = Route.component as React.ComponentType
+      rerender(<Component />)
+      await act(async () => { screen.getByTestId(`continue-${capped.id}`).click() })
+      await waitFor(() => expect(steps).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(chat.status).toBe('ready'))
+
+      // The capped assistant (tool call and result) stays canonical history in
+      // the next model request; the tool is not executed again.
+      expect(run).toHaveBeenCalledTimes(1)
+      const history = steps.mock.calls[1][0]
+      const keptAssistant = history.find((message: any) => message.role === 'assistant')
+      expect(keptAssistant).toBeDefined()
+      expect(keptAssistant.parts).toContainEqual(
+        expect.objectContaining({ toolCallId: 'tcA', state: 'output-available', output: 'A' })
+      )
+      // The continuation enters through the normal send path as a user turn.
+      const lastUser = history.filter((message: any) => message.role === 'user').at(-1)
+      expect(lastUser.parts).toEqual([{ type: 'text', text: 'Continue.' }])
+      // Not the regenerate/prefill path: nothing is deleted or prefilled.
+      expect(h.mockSetContinueFromContent).not.toHaveBeenCalled()
+      expect(h.messagesState.deleteMessage).not.toHaveBeenCalled()
+      // The capped turn keeps its record; the continuation persists as its own
+      // assistant reply.
+      expect(chat.messages.filter(message => message.role === 'assistant')).toHaveLength(2)
+      expect(chat.messages.at(-1)!.parts).toContainEqual(expect.objectContaining({ type: 'text', text: 'continued' }))
+      expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
     })
 
     it('Stop during approval never executes, settles queued cards, and ignores a late approval', async () => {

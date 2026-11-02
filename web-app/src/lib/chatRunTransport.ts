@@ -1,10 +1,37 @@
 import { readUIMessageStream, type UIMessage, type UIMessageChunk } from 'ai'
 import { runTurn, type PendingToolCall, type ToolOutcome, type RunOutcome } from './coworkRunner'
 import { STOPPED_TOOL_ERROR, untilAborted } from './stopped-tool-calls'
-import { CHAT_RUN_NOTICE_METADATA } from './chatRunNotice'
+import { CHAT_RUN_NOTICE_METADATA, isChatRunNotice } from './chatRunNotice'
 import { encodeToolImageSentinel } from './tool-image-sentinel'
 
 export type ChatToolOutcome = Omit<ToolOutcome, 'output'> & { output: unknown }
+
+/** The user turn a capped run resumes with. The capped assistant (tool calls
+ * and results included) stays canonical history, so nothing re-executes. */
+export const CAPPED_CONTINUE_INSTRUCTION = 'Continue.'
+
+/** Whether a stopped turn ended on this adapter's step/token cap. */
+export function isCappedTurn(metadata: unknown): boolean {
+  const reason = (metadata as { runStopReason?: unknown } | undefined)?.runStopReason
+  return reason === 'steps' || reason === 'tokens'
+}
+
+/** Continue gating, shared by the message UI and the route's working paths: a
+ * capped turn resumes from any substantive part (tool waves included); a turn
+ * the user stopped resumes only from partial text/reasoning. The cap notice
+ * itself never qualifies. */
+export function canContinueStoppedTurn(
+  metadata: unknown,
+  parts: UIMessage['parts']
+): boolean {
+  if ((metadata as { stopped?: unknown } | undefined)?.stopped !== true) return false
+  const capped = isCappedTurn(metadata)
+  return parts.some((part) => {
+    if (isChatRunNotice(part)) return false
+    if (part.type === 'text' || part.type === 'reasoning') return !!part.text?.trim()
+    return capped && 'toolCallId' in part
+  })
+}
 
 /** A turn-local adapter. It owns no grants or discovery: the caller supplies
  * the existing Chat executor and a transport whose prompt/schema are frozen.

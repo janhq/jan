@@ -3,7 +3,7 @@ import type { ThreadMessage } from '@janhq/core'
 import { assistantRecordFields, convertThreadMessageToUIMessage } from '../messages'
 import { describe, it, expect, vi } from 'vitest'
 import { convertToModelMessages, readUIMessageStream, type UIMessageChunk, type UIMessage } from 'ai'
-import { createChatRunStream } from '../chatRunTransport'
+import { canContinueStoppedTurn, createChatRunStream } from '../chatRunTransport'
 
 const stream = (chunks: UIMessageChunk[]) => new ReadableStream<UIMessageChunk>({ start(c) { chunks.forEach(v => c.enqueue(v)); c.close() } })
 const user: UIMessage = { id: 'u', role: 'user', parts: [{ type: 'text', text: 'fixture' }] }
@@ -159,6 +159,23 @@ describe('Chat runTurn stream adapter (real SDK reader and runner)', () => {
     const reloaded = convertThreadMessageToUIMessage(stored)
     expect(isChatRunNotice(reloaded.parts.at(-1)!)).toBe(true)
     expect(withoutChatRunNotices([reloaded])[0].parts).toEqual(message.parts.slice(0, -1))
+  })
+  it('gates Continue like the route: capped turns resume from tool history, stopped turns need partial text', () => {
+    const notice = { type: 'text' as const, text: 'Stopped at the step limit.', providerMetadata: { jan: { chatRunNotice: true } } }
+    const tool = { type: 'tool-fixture', toolCallId: 'c', state: 'output-available', input: {}, output: 'done' } as unknown as UIMessage['parts'][number]
+    const text = { type: 'text' as const, text: 'partial' }
+    const capped = { stopped: true, runStopReason: 'steps' }
+    // Capped tool-only turns must offer Continue — the working path resumes
+    // them from kept history. The notice alone never qualifies.
+    expect(canContinueStoppedTurn(capped, [tool, notice])).toBe(true)
+    expect(canContinueStoppedTurn(capped, [notice])).toBe(false)
+    expect(canContinueStoppedTurn({ stopped: true, runStopReason: 'tokens' }, [tool, notice])).toBe(true)
+    // User-stopped turns keep the old rule: only partial text/reasoning resumes.
+    expect(canContinueStoppedTurn({ stopped: true }, [tool])).toBe(false)
+    expect(canContinueStoppedTurn({ stopped: true }, [text])).toBe(true)
+    expect(canContinueStoppedTurn({ stopped: true }, [{ type: 'text', text: '  ' }])).toBe(false)
+    expect(canContinueStoppedTurn(undefined, [text])).toBe(false)
+    expect(canContinueStoppedTurn({ stopped: true, runStopReason: 'steps' }, [text, notice])).toBe(true)
   })
   it('surfaces token exhaustion as a stopped turn with continuation text', async () => {
     const send = vi.fn().mockResolvedValue(stream([{ type: 'tool-input-available', toolCallId: 'c', toolName: 'fixture', input: {} }, { type: 'finish', messageMetadata: { usage: { inputTokens: 250000, outputTokens: 1001, totalTokens: 251001 } } }]))

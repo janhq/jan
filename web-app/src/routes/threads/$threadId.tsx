@@ -1,5 +1,9 @@
 import { isChatRunNotice } from '@/lib/chatRunNotice'
 import type { ChatToolOutcome } from '@/lib/chatRunTransport'
+import {
+  CAPPED_CONTINUE_INSTRUCTION,
+  isCappedTurn,
+} from '@/lib/chatRunTransport'
 import { assertMcpIdentityAvailable, memoizeMcpValidation } from '@/lib/chatMcpIdentity'
 import { isChatClosing, setChatCloseStop } from '@/lib/chatClose'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -1930,12 +1934,24 @@ function ThreadDetail() {
     async (messageId: string) => {
       const msg = chatMessages.find((m) => m.id === messageId)
       if (!msg) return
+      if (isCappedTurn(msg.metadata)) {
+        // A capped run resumes as a new turn through the normal send path: the
+        // capped assistant (tool calls and results) stays canonical history,
+        // so nothing is re-dispatched. Regenerate-plus-prefill would drop the
+        // tool waves from the request and the model would re-issue them.
+        try {
+          await sendQueuedMessage(CAPPED_CONTINUE_INSTRUCTION)
+        } catch (error) {
+          console.error('Capped Continue was not accepted:', error)
+        }
+        return
+      }
       const { text, reasoning } = partialOf(msg)
       if (!text && !reasoning) return
       // Publish only after handleRegenerate drains the original onFinish.
       await handleRegenerate(messageId, { text, reasoning })
     },
-    [chatMessages, handleRegenerate]
+    [chatMessages, handleRegenerate, sendQueuedMessage]
   )
 
   // Editing forks a new sibling version (the original + its subtree are kept).
