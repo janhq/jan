@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
+import { createFileRoute, useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -7,13 +7,7 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import ChatInput from '@/containers/ChatInput'
-import { HomeModeToggle } from '@/containers/HomeModeToggle'
-import { useHomeMode } from '@/hooks/useHomeMode'
-import { isCoworkEnabled } from '@/lib/version'
-import { startCoworkConversation } from '@/lib/startCoworkConversation'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { toast } from 'sonner'
-import type { Attachment } from '@/types/attachment'
 import HeaderPage from '@/containers/HeaderPage'
 import ThreadList from '@/containers/ThreadList'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
@@ -51,12 +45,7 @@ export const Route = createFileRoute('/project/$projectId')({
 
 function ProjectPageContent() {
   const { t, i18n } = useTranslation()
-  const navigate = useNavigate()
-  const { selectedModel, selectedProvider } = useModelProvider()
-  const storedMode = useHomeMode((s) => s.mode)
-  const setMode = useHomeMode((s) => s.setMode)
-  const coworkAvailable = isCoworkEnabled()
-  const mode = coworkAvailable ? storedMode : 'chat'
+  const { selectedModel } = useModelProvider()
   const { projectId } = useParams({ from: '/project/$projectId' })
   const { getFolderById, updateFolder } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
@@ -107,8 +96,16 @@ function ProjectPageContent() {
     scopeDraft.shellNetwork ||
     scopeDraft.memoryWrite ||
     scopeDraft.folderScope !== null
-  const chatScopeAvailable =
-    mode === 'chat' && (selectedModel?.capabilities?.includes('tools') ?? false)
+  // Single flow: every NEW conversation from a project is an ordinary Chat
+  // thread; a Jan project grants no filesystem access by itself and elevated
+  // capability only comes from the explicit consent draft below.
+  const modelSupportsTools =
+    selectedModel?.capabilities?.includes('tools') ?? false
+  const chatScopeAvailable = modelSupportsTools
+  // Truthful unsupported reason; ordinary direct chat is never refused.
+  const scopeUnsupportedReason = !modelSupportsTools
+    ? 'The selected model does not support tools, so this conversation cannot be granted folder, shell network or memory access. Ordinary chat still works.'
+    : null
   const pickScopeFolder = useCallback(async () => {
     const picked = await serviceHub.dialog().open({ directory: true })
     return typeof picked === 'string' ? picked : null
@@ -207,31 +204,7 @@ function ProjectPageContent() {
               initialMessage={true}
               projectId={projectId}
               projectAssistantId={project.assistantId}
-              leadingControls={coworkAvailable ? <HomeModeToggle mode={mode} onChange={setMode} /> : undefined}
-              supportsAssistants={mode === 'chat'}
-              ownsToolSet={mode === 'cowork' ? false : undefined}
-              scopeKey={mode === 'cowork' ? `project-cowork:${projectId}` : undefined}
-              onSubmit={mode === 'cowork' ? (
-                text: string,
-                files?: Array<{ type: 'file'; mediaType: string; url: string }>,
-                documents?: Attachment[],
-                draft?: string
-              ) => {
-                let id: string
-                try {
-                  id = startCoworkConversation({
-                    model: selectedModel ? { id: selectedModel.id, provider: selectedProvider } : undefined,
-                    folder: null,
-                    project,
-                    handoff: { text, files, documents, draft },
-                  })
-                } catch (e) {
-                  console.warn('[cowork] could not store the first prompt:', e)
-                  toast.error(t('common:error'))
-                  return false
-                }
-                navigate({ to: '/cowork/$sessionId', params: { sessionId: id } })
-              } : undefined}
+              supportsAssistants={true}
               prepareThreadCreation={
                 chatScopeAvailable && scopeDraftElevated
                   ? prepareThreadCreation
@@ -263,6 +236,14 @@ function ProjectPageContent() {
                   </CollapsibleContent>
                 </Collapsible>
               </div>
+            )}
+            {scopeUnsupportedReason && (
+              <p
+                className="pt-2 text-xs leading-5 text-muted-foreground"
+                data-testid="project-scope-unsupported"
+              >
+                {scopeUnsupportedReason}
+              </p>
             )}
           </div>
 

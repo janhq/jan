@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
-import userEvent from '@testing-library/user-event'
 
 const h = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -16,6 +15,8 @@ const h = vi.hoisted(() => ({
   setCurrentThreadId: vi.fn(),
   setCaps: vi.fn(async () => undefined),
   prepareOutcome: undefined as unknown,
+  toastError: vi.fn(),
+  toastInfo: vi.fn(),
   useTools: vi.fn(),
   providerHasRemoteApiKeys: vi.fn(() => false),
   predefinedProviders: [
@@ -36,11 +37,11 @@ vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.coworkEnabled }))
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({ dialog: () => ({ open: h.pickFolder }) }),
 }))
-vi.mock('@/hooks/useCoworkRun', () => ({
-  useCoworkRun: { getState: () => ({ runId: {} }) },
-}))
-vi.mock('@/hooks/usePrompt', () => ({
-  usePrompt: { getState: () => ({ setPrompt: vi.fn() }) },
+vi.mock('sonner', () => ({
+  toast: {
+    error: (...args: any[]) => h.toastError(...args),
+    info: (...args: any[]) => h.toastInfo(...args),
+  },
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -69,7 +70,7 @@ vi.mock('@/hooks/useTools', () => ({
 
 vi.mock('@/containers/ChatInput', () => ({
   default: ({ model, initialMessage, onSubmit, surfaceControls, leadingControls, menuWorkspace, menuControls, projectId, scopeKey, prepareThreadCreation }: any) => (
-    <div data-testid="chat-input" data-initial={String(initialMessage)} data-project-id={projectId} data-scope-key={scopeKey} data-has-prepare={prepareThreadCreation ? 'true' : undefined}>
+    <div data-testid="chat-input" data-initial={String(initialMessage)} data-project-id={projectId} data-scope-key={scopeKey} data-has-prepare={prepareThreadCreation ? 'true' : undefined} data-has-onsubmit={onSubmit ? 'true' : undefined}>
       {model ? model.id : 'no-model'}
       <div data-testid="menu-workspace">{menuWorkspace}</div>
       <div data-testid="menu-controls">{menuControls}</div>
@@ -132,11 +133,8 @@ vi.mock('@/hooks/useThreadManagement', () => ({
   useThreadManagement: () => ({ addFolder: vi.fn(), folders: [] }),
 }))
 
-import { useChatAttachments, NEW_THREAD_ATTACHMENT_KEY } from '@/hooks/useChatAttachments'
 import { Route } from '../index'
-import { useHomeMode } from '@/hooks/useHomeMode'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
-import { COWORK_HANDOFF_PREFIX } from '@/lib/coworkHandoff'
 
 const renderComponent = () => {
   const Component = Route.component as React.ComponentType
@@ -159,8 +157,6 @@ describe('Index route', () => {
     h.coworkEnabled = false
     h.navigate.mockClear()
     sessionStorage.clear()
-    useHomeMode.setState({ mode: 'chat' })
-    useChatAttachments.setState({ attachmentsByThread: {} })
     useCoworkSessions.setState({ sessions: [], currentId: null })
   })
 
@@ -242,52 +238,52 @@ describe('Index route', () => {
     expect(h.useTools).toHaveBeenCalled()
   })
 
-  describe('Chat | Cowork selector', () => {
+  describe('Single home flow', () => {
     beforeEach(() => {
       h.providers = [{ provider: 'llamacpp', models: [{ id: 'x' }] }]
     })
 
-    it('keeps attachments in one home draft when switching existing workflows', async () => {
+    it('shows no mode selector and an ordinary submit never starts a legacy Cowork session', () => {
+      // Even where Cowork is available: the home composer is one Chat flow.
       h.coworkEnabled = true
-      const image = { type: 'image', name: 'fixture.png' } as any
-      const document = { type: 'document', name: 'fixture.txt' } as any
-      useChatAttachments.getState().setAttachments(NEW_THREAD_ATTACHMENT_KEY, [image, document])
       renderComponent()
-      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-scope-key')
-      fireEvent.click(screen.getByTestId('home-mode-cowork'))
-      expect(screen.getByTestId('home-mode-cowork')).toHaveAttribute('aria-checked', 'true')
-      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-scope-key')
-      expect(useChatAttachments.getState().getAttachments(NEW_THREAD_ATTACHMENT_KEY)).toEqual([image, document])
-      expect(screen.getAllByTestId('chat-input')).toHaveLength(1)
+      expect(screen.queryByTestId('home-mode-toggle')).not.toBeInTheDocument()
+      const input = screen.getByTestId('chat-input')
+      // No onSubmit override: ChatInput keeps its own create-thread send path.
+      expect(input).not.toHaveAttribute('data-has-onsubmit')
+      expect(input).not.toHaveAttribute('data-scope-key')
+      fireEvent.click(screen.getByTestId('submit'))
+      expect(useCoworkSessions.getState().sessions).toHaveLength(0)
+      expect(h.navigate).not.toHaveBeenCalled()
     })
 
-    it('removes the folder without losing project intent and discloses writable scope', async () => {
-      h.coworkEnabled = true
-      h.pickFolder.mockResolvedValue('/synthetic/workspace')
-      renderComponent()
-      fireEvent.click(screen.getByTestId('home-mode-cowork'))
-      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
-      await screen.findByText('workspace')
-      fireEvent.click(screen.getByRole('button', { name: 'Menu project' }))
-      expect(screen.getByRole('status')).toHaveTextContent('common:conversationScope.writable')
-      await userEvent.click(screen.getByTestId('home-cowork-folder'))
-      fireEvent.click(await screen.findByText('common:homeMode.removeFolder'))
-      fireEvent.click(screen.getByTestId('home-mode-chat'))
-      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-project-id', 'project-1')
-    })
-
-    it('offers draft conversation permissions only for a tool-capable model in chat mode', () => {
+    it('offers draft conversation permissions only for a tool-capable model', () => {
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
-      h.coworkEnabled = true
       const view = renderComponent()
       expect(screen.getByTestId('home-scope-consent-trigger')).toBeInTheDocument()
-      fireEvent.click(screen.getByTestId('home-mode-cowork'))
-      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('home-scope-unsupported')).not.toBeInTheDocument()
       view.unmount()
-      useHomeMode.setState({ mode: 'chat' })
       h.selectedModel = { id: 'model-b', capabilities: [] } as any
       renderComponent()
       expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+    })
+
+    it('states a truthful unsupported reason without refusing ordinary direct chat', () => {
+      h.selectedModel = { id: 'model-b', capabilities: [] } as any
+      renderComponent()
+      expect(screen.getByTestId('home-scope-unsupported')).toHaveTextContent(
+        'does not support tools'
+      )
+      expect(screen.getByTestId('home-scope-unsupported')).toHaveTextContent(
+        'Ordinary chat still works.'
+      )
+      // The composer stays fully usable: no send-time refusal, no prepare
+      // path, no hidden session start for a one-call non-tool model.
+      const input = screen.getByTestId('chat-input')
+      expect(input).not.toHaveAttribute('data-has-onsubmit')
+      expect(input).not.toHaveAttribute('data-has-prepare')
+      fireEvent.click(screen.getByTestId('submit'))
+      expect(useCoworkSessions.getState().sessions).toHaveLength(0)
     })
 
     it('passes prepareThreadCreation only for an elevated draft, applying it through the strict setter', async () => {
@@ -337,39 +333,79 @@ describe('Index route', () => {
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     })
 
-    it('an elevated draft hidden by a mode switch cannot apply and resurfaces visibly pending', async () => {
+    it('temporary mode keeps the workspace folder action grant-free with a truthful note', async () => {
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
-      h.coworkEnabled = true
+      window.history.replaceState({}, '', '/?temporary-chat=true')
       renderComponent()
-      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
-      fireEvent.click(
-        await screen.findByLabelText('Allow shell commands to access the network')
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      await waitFor(() =>
+        expect(h.toastInfo).toHaveBeenCalledWith('A temporary chat keeps no folder access.')
       )
-      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
-      // Hidden in cowork mode: no consent UI and no prepare path at all.
-      fireEvent.click(screen.getByTestId('home-mode-cowork'))
-      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(h.pickFolder).not.toHaveBeenCalled()
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
-      // Switching back resurfaces the draft with an explicit pending label.
-      fireEvent.click(screen.getByTestId('home-mode-chat'))
+    })
+
+    it('routes the workspace folder action through the consent draft as a read-only narrow grant', async () => {
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      h.pickFolder.mockResolvedValue('/synthetic/workspace')
+      renderComponent()
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      await waitFor(() =>
+        expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+      )
+      // No legacy Session was started: the folder is a pending Chat grant.
+      expect(useCoworkSessions.getState().sessions).toHaveLength(0)
       expect(screen.getByTestId('home-scope-consent-trigger')).toHaveTextContent(
         'Conversation permissions (pending)'
       )
-      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Read only: /synthetic/workspace'
+      )
+      fireEvent.click(screen.getByTestId('invoke-prepare'))
+      await waitFor(() =>
+        expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
+          version: 1,
+          folderScope: { path: '/synthetic/workspace', access: 'read' },
+          shellNetwork: false,
+          memoryWrite: false,
+        })
+      )
     })
 
-    it('is hidden where Cowork is not available', () => {
-      h.coworkEnabled = false
+    it('denies an unsupported folder path on both folder entry points and grants nothing', async () => {
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      h.pickFolder.mockResolvedValue('not-absolute')
       renderComponent()
-      expect(screen.queryByTestId('home-mode-toggle')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      await waitFor(() =>
+        expect(h.toastError).toHaveBeenCalledWith(
+          'This folder path is not supported. Choose another folder.'
+        )
+      )
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
+      fireEvent.click(await screen.findByRole('button', { name: 'Choose folder to read' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'This folder path is not supported. Choose another folder.'
+      )
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+      fireEvent.click(screen.getByTestId('invoke-prepare'))
+      expect(h.setCaps).not.toHaveBeenCalled()
     })
 
-    it('is shown where Cowork is available, defaulting to Chat with no Cowork extras', () => {
-      h.coworkEnabled = true
+    it('explains instead of silently ignoring the folder action for a non-tool model', async () => {
+      h.selectedModel = { id: 'model-b', capabilities: [] } as any
       renderComponent()
-      expect(screen.getByTestId('home-mode-toggle')).toBeInTheDocument()
-      expect(screen.getByTestId('home-mode-chat')).toHaveAttribute('aria-checked', 'true')
-      expect(screen.queryByTestId('home-cowork-folder')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      await waitFor(() =>
+        expect(h.toastInfo).toHaveBeenCalledWith(
+          'The selected model does not support tools, so folder access cannot be granted. Ordinary chat still works.'
+        )
+      )
+      expect(h.pickFolder).not.toHaveBeenCalled()
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     })
 
     it('associates the Chat draft with its visibly selected project without a folder action', () => {
@@ -384,116 +420,6 @@ describe('Index route', () => {
       fireEvent.click(screen.getByRole('button', { name: 'common:homeMode.removeFolder' }))
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-project-id')
       expect(screen.queryByTestId('home-chat-project')).not.toBeInTheDocument()
-    })
-
-    it('keeps workspace actions draft-only until submission, alongside the workspace picker', async () => {
-      h.coworkEnabled = true
-      h.pickFolder.mockResolvedValue('/tmp/workspace')
-      useHomeMode.setState({ mode: 'cowork' })
-      renderComponent()
-      expect(screen.getByTestId('home-cowork-folder')).toBeInTheDocument()
-      expect(screen.getByTestId('menu-controls')).toBeEmptyDOMElement()
-      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
-      await screen.findByText('workspace')
-      fireEvent.click(screen.getByRole('button', { name: 'Menu project' }))
-      expect(useCoworkSessions.getState().sessions).toHaveLength(0)
-      fireEvent.click(screen.getByTestId('submit'))
-      const [session] = useCoworkSessions.getState().sessions
-      expect(session.folder).toBe('/tmp/workspace')
-      expect(session.project).toEqual({ id: 'project-1', name: 'Project' })
-    })
-
-    it('Cowork mode shows the folder control and the ideas', () => {
-      h.coworkEnabled = true
-      useHomeMode.setState({ mode: 'cowork' })
-      renderComponent()
-      expect(screen.getByTestId('home-cowork-folder')).toBeInTheDocument()
-      expect(screen.getByText('common:homeMode.ideas')).toBeInTheDocument()
-    })
-
-    it('places the workspace below and outside the composer before ideas', () => {
-      h.coworkEnabled = true
-      useHomeMode.setState({ mode: 'cowork' })
-      renderComponent()
-      const picker = screen.getByTestId('home-cowork-folder')
-      const composer = screen.getByTestId('chat-input')
-      const ideas = screen.getByText('common:homeMode.ideas')
-      expect(composer.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      expect(composer).not.toContainElement(picker)
-      expect(picker.compareDocumentPosition(ideas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      expect(screen.getByRole('region', { name: 'common:conversationScope.label' }).parentElement).toHaveClass('pt-2')
-      expect(screen.getByTestId('surface-controls')).toContainElement(screen.getByTestId('home-mode-toggle'))
-    })
-
-    it('submitting in Cowork mode creates a session, hands off the prompt and opens its URL', () => {
-      h.coworkEnabled = true
-      useHomeMode.setState({ mode: 'cowork' })
-      renderComponent()
-      fireEvent.click(screen.getByTestId('submit'))
-      const [session] = useCoworkSessions.getState().sessions
-      expect(session).toBeTruthy()
-      expect(JSON.parse(sessionStorage.getItem(`${COWORK_HANDOFF_PREFIX}${session.id}`)!).text).toBe('do the thing')
-      expect(h.navigate).toHaveBeenCalledWith({
-        to: '/cowork/$sessionId',
-        params: { sessionId: session.id },
-      })
-    })
-
-    it('uses the current model selection instead of the initial URL model on Cowork submit', () => {
-      h.coworkEnabled = true
-      useHomeMode.setState({ mode: 'cowork' })
-      h.search = { threadModel: { id: 'model-a', provider: 'provider-a' } }
-      h.selectedModel = { id: 'model-a' }
-      h.selectedProvider = 'provider-a'
-      const { rerender } = renderComponent()
-
-      // The picker initialized A from the URL, then the user manually picked B.
-      h.selectedModel = { id: 'model-b' }
-      h.selectedProvider = 'provider-b'
-      const Component = Route.component as React.ComponentType
-      rerender(<Component />)
-      fireEvent.click(screen.getByTestId('submit'))
-
-      expect(useCoworkSessions.getState().sessions[0].model).toEqual({
-        id: 'model-b', provider: 'provider-b',
-      })
-    })
-
-    it('keeps the initialized URL model when it is still selected on Cowork submit', () => {
-      h.coworkEnabled = true
-      useHomeMode.setState({ mode: 'cowork' })
-      h.search = { threadModel: { id: 'model-a', provider: 'provider-a' } }
-      h.selectedModel = { id: 'model-a' }
-      h.selectedProvider = 'provider-a'
-      renderComponent()
-      fireEvent.click(screen.getByTestId('submit'))
-      expect(useCoworkSessions.getState().sessions[0].model).toEqual(h.search.threadModel)
-    })
-
-    it('falls back to the URL model when no current model is selected', () => {
-      h.coworkEnabled = true
-      useHomeMode.setState({ mode: 'cowork' })
-      h.search = { threadModel: { id: 'model-a', provider: 'provider-a' } }
-      renderComponent()
-      fireEvent.click(screen.getByTestId('submit'))
-      expect(useCoworkSessions.getState().sessions[0].model).toEqual(h.search.threadModel)
-    })
-
-    it('leaves the Cowork model unset without a current selection or URL model', () => {
-      h.coworkEnabled = true
-      useHomeMode.setState({ mode: 'cowork' })
-      renderComponent()
-      fireEvent.click(screen.getByTestId('submit'))
-      expect(useCoworkSessions.getState().sessions[0].model).toBeUndefined()
-    })
-
-    it('ignores a stored Cowork mode where Cowork is not available', () => {
-      h.coworkEnabled = false
-      useHomeMode.setState({ mode: 'cowork' })
-      renderComponent()
-      fireEvent.click(screen.getByTestId('submit'))
-      expect(h.navigate).not.toHaveBeenCalled()
-      expect(useCoworkSessions.getState().sessions).toHaveLength(0)
     })
   })
 })

@@ -138,14 +138,13 @@ vi.mock('@/lib/utils', () => ({
 }))
 
 import { Route } from '../project/$projectId'
-import { useHomeMode } from '@/hooks/useHomeMode'
 
 const renderComponent = () => {
   const Component = Route.component as React.ComponentType
   return render(<Component />)
 }
 
-describe('Project route Chat/Cowork selector', () => {
+describe('Project route single Chat flow', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     h.coworkEnabled = false
@@ -154,93 +153,49 @@ describe('Project route Chat/Cowork selector', () => {
     h.startCoworkConversation.mockReturnValue('session-1')
     h.lastSubmitResult = undefined
     h.projectId = 'project-1'
-    useHomeMode.setState({ mode: 'chat' })
   })
 
-  it('hides the selector and keeps the Chat contract where Cowork is unavailable', () => {
-    renderComponent()
-    expect(screen.queryByTestId('home-mode-toggle')).not.toBeInTheDocument()
-    const input = screen.getByTestId('chat-input')
-    expect(input).toHaveAttribute('data-supports-assistants', 'true')
-    expect(input).toHaveAttribute('data-owns-toolset', 'undefined')
-    expect(input).not.toHaveAttribute('data-scope-key')
-  })
+  it.each([false, true])(
+    'shows no mode selector and keeps the ordinary Chat contract (coworkEnabled=%s)',
+    (coworkEnabled) => {
+      h.coworkEnabled = coworkEnabled
+      renderComponent()
+      expect(screen.queryByTestId('home-mode-toggle')).not.toBeInTheDocument()
+      const input = screen.getByTestId('chat-input')
+      expect(input).toHaveAttribute('data-supports-assistants', 'true')
+      expect(input).toHaveAttribute('data-owns-toolset', 'undefined')
+      expect(input).not.toHaveAttribute('data-scope-key')
+      // No onSubmit override: a submit never starts a legacy Cowork session.
+      fireEvent.click(screen.getByTestId('submit'))
+      expect(h.startCoworkConversation).not.toHaveBeenCalled()
+      expect(h.navigate).not.toHaveBeenCalled()
+    }
+  )
 
-  it('forces Chat mode when Cowork is unavailable even with a stored cowork mode', () => {
-    useHomeMode.setState({ mode: 'cowork' })
-    renderComponent()
-    const input = screen.getByTestId('chat-input')
-    expect(input).toHaveAttribute('data-supports-assistants', 'true')
-    expect(input).not.toHaveAttribute('data-scope-key')
-    fireEvent.click(screen.getByTestId('submit'))
-    expect(h.startCoworkConversation).not.toHaveBeenCalled()
-    expect(h.navigate).not.toHaveBeenCalled()
-  })
-
-  it('shows the selector defaulting to Chat where Cowork is available', () => {
-    h.coworkEnabled = true
-    renderComponent()
-    expect(screen.getByTestId('home-mode-toggle')).toBeInTheDocument()
-    expect(screen.getByTestId('home-mode-chat')).toHaveAttribute(
-      'aria-checked',
-      'true'
-    )
-    const input = screen.getByTestId('chat-input')
-    expect(input).toHaveAttribute('data-supports-assistants', 'true')
-    expect(input).not.toHaveAttribute('data-scope-key')
-  })
-
-  it('switches ChatInput to the Cowork contract with a project-scoped draft key', () => {
-    h.coworkEnabled = true
-    useHomeMode.setState({ mode: 'cowork' })
-    renderComponent()
-    const input = screen.getByTestId('chat-input')
-    expect(input).toHaveAttribute('data-supports-assistants', 'false')
-    expect(input).toHaveAttribute('data-owns-toolset', 'false')
-    expect(input).toHaveAttribute('data-scope-key', 'project-cowork:project-1')
-  })
-
-  it('Cowork submit starts a project session with no folder and opens its URL', () => {
-    h.coworkEnabled = true
-    h.selectedModel = { id: 'model-a' }
-    h.selectedProvider = 'llamacpp'
-    useHomeMode.setState({ mode: 'cowork' })
-    renderComponent()
-    fireEvent.click(screen.getByTestId('submit'))
-    expect(h.startCoworkConversation).toHaveBeenCalledWith({
-      model: { id: 'model-a', provider: 'llamacpp' },
-      folder: null,
-      project: h.project,
-      handoff: {
-        text: 'project task',
-        files: undefined,
-        documents: undefined,
-        draft: 'project task',
-      },
-    })
-    expect(h.navigate).toHaveBeenCalledWith({
-      to: '/cowork/$sessionId',
-      params: { sessionId: 'session-1' },
-    })
-    // An accepted submission must not signal refusal: ChatInput clears the
-    // draft unless onSubmit returns false.
-    expect(h.lastSubmitResult).not.toBe(false)
-  })
-
-  it('offers draft conversation permissions only for a tool-capable model in chat mode', () => {
+  it('offers draft conversation permissions only for a tool-capable model', () => {
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     const view = renderComponent()
     expect(screen.getByTestId('project-scope-consent-trigger')).toBeInTheDocument()
+    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
     view.unmount()
-    h.coworkEnabled = true
-    useHomeMode.setState({ mode: 'cowork' })
-    const coworkView = renderComponent()
-    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
-    coworkView.unmount()
-    useHomeMode.setState({ mode: 'chat' })
     h.selectedModel = { id: 'model-b', capabilities: [] }
     renderComponent()
     expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+  })
+
+  it('states a truthful unsupported reason without refusing ordinary direct chat', () => {
+    h.selectedModel = { id: 'model-b', capabilities: [] }
+    renderComponent()
+    expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
+      'does not support tools'
+    )
+    expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
+      'Ordinary chat still works.'
+    )
+    const input = screen.getByTestId('chat-input')
+    expect(input).not.toHaveAttribute('data-has-prepare')
+    fireEvent.click(screen.getByTestId('submit'))
+    expect(h.startCoworkConversation).not.toHaveBeenCalled()
   })
 
   it('passes prepareThreadCreation only for an elevated draft, applying it through the strict setter', async () => {
@@ -309,18 +264,4 @@ describe('Project route Chat/Cowork selector', () => {
     expect(h.setCaps).not.toHaveBeenCalled()
   })
 
-  it('keeps the draft path when the Cowork handoff cannot be stored', () => {
-    h.coworkEnabled = true
-    useHomeMode.setState({ mode: 'cowork' })
-    h.startCoworkConversation.mockImplementation(() => {
-      throw new Error('storage unavailable')
-    })
-    renderComponent()
-    fireEvent.click(screen.getByTestId('submit'))
-    expect(h.toastError).toHaveBeenCalled()
-    expect(h.navigate).not.toHaveBeenCalled()
-    // The route must tell ChatInput the submission was refused, or the real
-    // composer would clear the draft and attachments despite the failure.
-    expect(h.lastSubmitResult).toBe(false)
-  })
 })

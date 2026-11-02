@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createFileRoute, useLocation, useNavigate, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useLocation, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { motion, useReducedMotion } from 'motion/react'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useTools } from '@/hooks/useTools'
@@ -25,17 +25,9 @@ import { toast } from 'sonner'
 import { CoworkComposerMenu } from '@/containers/CoworkComposerMenu'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
-import { HomeModeToggle } from '@/containers/HomeModeToggle'
 import { useHomeScope } from '@/hooks/useHomeScope'
-import { UnifiedHomeScope } from '@/containers/UnifiedHomeScope'
-import { useHomeMode } from '@/hooks/useHomeMode'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { usePrompt } from '@/hooks/usePrompt'
-import { startCoworkConversation } from '@/lib/startCoworkConversation'
-import { isCoworkEnabled } from '@/lib/version'
-import { basenameOf } from '@/lib/coworkPreview'
-import { COWORK_IDEAS } from '@/lib/coworkIdeas'
-import { Code2, FileText, Folder, LayoutDashboard, ShieldCheck, X } from 'lucide-react'
+import { Folder, ShieldCheck, X } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -44,10 +36,10 @@ import {
 import { ConversationCapabilitiesConsent } from '@/containers/ConversationCapabilitiesConsent'
 import {
   defaultConversationCapabilities,
+  isConversationFolderPath,
   type ConversationCapabilitiesV1,
 } from '@/lib/conversationCapabilities'
 import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
-import type { Attachment } from '@/types/attachment'
 import { useThreads } from '@/hooks/useThreads'
 
 export const Route = createFileRoute(route.home as any)({
@@ -64,27 +56,21 @@ export const Route = createFileRoute(route.home as any)({
 function Index() {
   const { t } = useTranslation()
   const reduceMotion = useReducedMotion()
-  const { providers, selectedModel, selectedProvider } = useModelProvider()
+  const { providers, selectedModel } = useModelProvider()
   const search = useSearch({ from: route.home as any })
   const threadModel = search.threadModel
   const { setCurrentThreadId } = useThreads()
-  const navigate = useNavigate()
   const serviceHub = useServiceHub()
-  const coworkAvailable = isCoworkEnabled()
-  const storedMode = useHomeMode((s) => s.mode)
-  const setMode = useHomeMode((s) => s.setMode)
-  // The selector is hidden where Cowork is not available; the mode is then Chat
-  // whatever was stored.
-  const mode = coworkAvailable ? storedMode : 'chat'
-  const { folder, setFolder, project, setProject } = useHomeScope()
+  // Single home flow: every NEW conversation is an ordinary Chat thread. There
+  // is no mode selector and no hidden classifier choosing a privileged path:
+  // elevated capability is only ever the explicit consent draft below, applied
+  // through prepareThreadCreation's narrow grant. Existing Cowork sessions keep
+  // their own routes (/cowork, /cowork/$sessionId) and sidebar entries; the
+  // home composer never creates a new legacy Session.
+  const { project, setProject } = useHomeScope()
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
   const { addFolder, folders: projects } = useThreadManagement()
   useTools()
-
-  const pickFolder = useCallback(async () => {
-    const picked = await serviceHub.dialog().open({ directory: true })
-    if (typeof picked === 'string') setFolder(picked)
-  }, [serviceHub])
 
   // Draft consent for the NEXT persistent chat. It authorizes nothing by
   // itself: ChatInput snapshots it through prepareThreadCreation and it is
@@ -107,14 +93,45 @@ function Index() {
   // sends are unchanged.
   const searchStr = useLocation({ select: (location) => location.searchStr })
   const isTemporaryChat = searchStr.includes(`${TEMPORARY_CHAT_QUERY_ID}=true`)
-  const chatScopeAvailable =
-    mode === 'chat' &&
-    !isTemporaryChat &&
-    (selectedModel?.capabilities?.includes('tools') ?? false)
+  const modelSupportsTools =
+    selectedModel?.capabilities?.includes('tools') ?? false
+  const chatScopeAvailable = !isTemporaryChat && modelSupportsTools
+  // Truthful unsupported reason: the capability control disappears only with
+  // an explanation. Ordinary direct chat is never refused — a model without
+  // tool support still answers one-call questions through the same composer.
+  const scopeUnsupportedReason =
+    !isTemporaryChat && !modelSupportsTools
+      ? 'The selected model does not support tools, so this conversation cannot be granted folder, shell network or memory access. Ordinary chat still works.'
+      : null
   const pickScopeFolder = useCallback(async () => {
     const picked = await serviceHub.dialog().open({ directory: true })
     return typeof picked === 'string' ? picked : null
   }, [serviceHub])
+  // The workspace menu's folder action feeds the SAME consent draft (read-only
+  // narrow grant) instead of a legacy Session folder. Unsupported states get a
+  // truthful reason; unsupported paths are denied with the consent wording.
+  const attachScopeFolder = useCallback(async () => {
+    if (isTemporaryChat) {
+      toast.info('A temporary chat keeps no folder access.')
+      return
+    }
+    if (!modelSupportsTools) {
+      toast.info(
+        'The selected model does not support tools, so folder access cannot be granted. Ordinary chat still works.'
+      )
+      return
+    }
+    const picked = await pickScopeFolder()
+    if (picked === null) return
+    if (!isConversationFolderPath(picked)) {
+      toast.error('This folder path is not supported. Choose another folder.')
+      return
+    }
+    setScopeDraft((draft) => ({
+      ...draft,
+      folderScope: { path: picked, access: 'read' },
+    }))
+  }, [isTemporaryChat, modelSupportsTools, pickScopeFolder])
   const prepareThreadCreation = useCallback(() => {
     const snapshot = scopeDraft
     return async (threadId: string) => {
@@ -122,37 +139,6 @@ function Index() {
       return true
     }
   }, [scopeDraft])
-
-  // Starting a Cowork conversation: create the session, hand the first prompt
-  // to it by session id, and open its own URL. The Cowork view runs it.
-  const startCowork = useCallback(
-    (
-      text: string,
-      files?: Array<{ type: 'file'; mediaType: string; url: string }>,
-      documents?: Attachment[],
-      draft?: string
-    ) => {
-      let id: string
-      try {
-        id = startCoworkConversation({
-          model: selectedModel
-            ? { id: selectedModel.id, provider: selectedProvider }
-            : threadModel,
-          folder,
-          project: project ?? undefined,
-          handoff: { text, draft, files, documents },
-        })
-      } catch (e) {
-        console.warn('[cowork] could not store the first prompt:', e)
-        toast.error(t('common:error'))
-        return false
-      }
-      setFolder(null)
-      setProject(null)
-      navigate({ to: route.coworkSession, params: { sessionId: id } })
-    },
-    [folder, project, threadModel, selectedModel, selectedProvider, navigate, t]
-  )
 
   const hasValidProviders = hasUsableProvider(providers)
 
@@ -201,26 +187,19 @@ function Index() {
               showSpeedToken={false}
               model={threadModel}
               initialMessage={true}
-              projectId={mode === 'chat' ? project?.id : undefined}
-              projectAssistantId={mode === 'chat' ? project?.assistantId : undefined}
-              onSubmit={mode === 'cowork' ? startCowork : undefined}
-              supportsAssistants={mode === 'chat'}
-              ownsToolSet={mode === 'cowork' ? false : undefined}
+              projectId={project?.id}
+              projectAssistantId={project?.assistantId}
+              supportsAssistants={true}
               menuWorkspace={(
                 <CoworkComposerMenu
                   section="workspace"
                   projects={projects}
                   projectId={project?.id}
-                  onAttachFolder={mode === 'cowork' ? () => void pickFolder() : undefined}
+                  onAttachFolder={() => void attachScopeFolder()}
                   onSelectProject={setProject}
                   onAddProject={() => setProjectDialogOpen(true)}
                 />
               )}
-              leadingControls={
-                coworkAvailable ? (
-                  <HomeModeToggle mode={mode} onChange={setMode} />
-                ) : undefined
-              }
               prepareThreadCreation={
                 chatScopeAvailable && scopeDraftElevated
                   ? prepareThreadCreation
@@ -254,7 +233,15 @@ function Index() {
               </Collapsible>
             </div>
           )}
-          {mode === 'chat' && project && (
+          {scopeUnsupportedReason && (
+            <p
+              className="pt-2 text-xs leading-5 text-muted-foreground"
+              data-testid="home-scope-unsupported"
+            >
+              {scopeUnsupportedReason}
+            </p>
+          )}
+          {project && (
             <div className="flex items-center gap-2 pt-2 text-sm text-muted-foreground" data-testid="home-chat-project">
               <Folder className="size-4 shrink-0" aria-hidden="true" />
               <span className="min-w-0 truncate">{project.name}</span>
@@ -268,69 +255,6 @@ function Index() {
               </button>
             </div>
           )}
-          <AnimatePresence initial={false}>
-            {mode === 'cowork' && (
-              <motion.div
-                key="cowork-workspace"
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: reduceMotion ? 0 : 0.25, ease: [0.22, 1, 0.36, 1] }}
-                className="-mx-3 overflow-hidden px-3"
-              >
-                <div className="pt-2">
-                  <UnifiedHomeScope
-                    folder={folder}
-                    project={project}
-                    projects={projects}
-                    onSelectProject={setProject}
-                    onAddFolder={() => void pickFolder()}
-                    onAddProject={() => setProjectDialogOpen(true)}
-                    onRemove={() => folder ? setFolder(null) : setProject(null)}
-                  />
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <AnimatePresence initial={false}>
-          {mode === 'cowork' && (
-            <motion.div
-              key="cowork-options"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: reduceMotion ? 0 : 0.25, ease: [0.22, 1, 0.36, 1] }}
-              className="-mx-3 overflow-hidden px-3"
-            >
-            <div className="pt-4 pb-2">
-              <div className="w-full">
-                <h2 className="text-lg font-semibold tracking-tight text-foreground">{t('common:homeMode.ideas')}</h2>
-                <div className="mt-3 -mx-3 flex flex-col gap-1">
-                  {COWORK_IDEAS.map((key) => {
-                    const Icon = key === 'first' ? Code2 : key === 'second' ? LayoutDashboard : FileText
-                    const name = folder ? basenameOf(folder) : null
-                    const text = t(
-                      `common:coworkEmpty.${folder ? 'folder' : 'sandbox'}.${key}`,
-                      { folder: name }
-                    )
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => usePrompt.getState().setPrompt(text)}
-                        className="group flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left text-base leading-6 text-muted-foreground transition-colors duration-150 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
-                      >
-                        <Icon aria-hidden="true" strokeWidth={1.6} className="mt-0.5 size-5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
-                        <span className="min-w-0 break-words">{text}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-            </motion.div>
-          )}
-          </AnimatePresence>
         </motion.div>
       </div>
     </div>
