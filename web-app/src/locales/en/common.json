@@ -757,6 +757,12 @@
     "noFiles": "Files will appear here.",
     "agentCount": "{{count}} agents"
   },
+  "conversationScope": {
+    "label": "Conversation scope",
+    "writable": "Task tools can read and write files in the selected folder. Your existing task permissions still apply.",
+    "optional": "Optional folder for read/write task access. Without a folder, tasks use their managed workspace.",
+    "permissions": "Folder selection does not change network or persistent memory settings."
+  },
   "homeMode": {
     "label": "Conversation type",
     "chat": "Chat",
