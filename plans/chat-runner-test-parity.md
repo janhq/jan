@@ -48,7 +48,7 @@ Harness boundary: integration mounts actual Route, uses real SDK Chat/useSDKChat
 | leaves nothing queued after a denied call | denies one call without blocking | no duration for denial/endedAt defined/queue empty |
 | marks the thread busy during onFinish execution and clears it when tools drain | runs multiple calls serially | SDK status-driven busy true while held / false after terminal |
 | parameterized MCP web_search/web_fetch collision | uses MCP for %s when built-in web is disabled | both names, one prompt/one MCP/no built-in |
-| parameterized edit/regenerate cancellation | %s cancels a running backend call | both route buttons await transport cancellation; backend cancelled once/no queued calls/no follow-up |
+| parameterized edit/regenerate cancellation | %s settles the original SDK operation then starts exactly one replacement during a held tool | edit/regenerate/Continue variants: original SDK operation settles before exactly one guarded replacement request; held tool cancelled, no queued calls |
 
 ## Ownership boundaries and follow-up verification
 - Closed after initial matrix: mounted route concurrent A+B regression now verifies independent completion/continuation.
