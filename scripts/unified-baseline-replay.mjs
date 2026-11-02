@@ -163,6 +163,11 @@ export async function replay(opts) {
   const baseUrl = assertLoopback(opts.baseUrl)
   const scenarios = loadScenarios(opts.fixtureDir, opts.scenarios)
   if (!scenarios.length) throw new Error('No matching scenarios')
+  if (opts.pid && (await rssKiB(opts.pid)) == null) {
+    // Report "not measured" honestly instead of a column of blanks.
+    if (process.platform !== 'win32') throw new Error(`--pid ${opts.pid}: no such process`)
+    console.warn('Peak RSS is not sampled on Windows; record memory separately.')
+  }
   const results = []
   for (const s of scenarios) {
     const args = { ...opts, baseUrl, request: s.request }
@@ -237,7 +242,8 @@ async function main() {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((e) => {
-    console.error(e.message)
+    // fetch hides the reason (refused connection, refused redirect) in `cause`.
+    console.error(e.cause?.message ? `${e.message}: ${e.cause.message}` : e.message)
     process.exit(1)
   })
 }

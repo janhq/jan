@@ -87,3 +87,10 @@ test('refuses redirects and non-SSE replies instead of following or misparsing',
     server.close()
   }
 })
+
+test('fails fast on a --pid that does not exist rather than reporting blank memory', { skip: process.platform === 'win32' }, async () => {
+  await assert.rejects(
+    replay({ baseUrl: 'http://127.0.0.1:9/v1', model: 'x', runs: 1, warmup: 0, maxTokens: 1, cachePrompt: false, pid: 2 ** 22 + 12345, scenarios: ['chat-bare'] }),
+    /no such process/
+  )
+})
