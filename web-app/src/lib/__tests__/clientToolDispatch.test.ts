@@ -47,6 +47,24 @@ describe('dispatchClientTool', () => {
     for (const fn of Object.values(ctx)) expect(fn).not.toHaveBeenCalled()
   })
 
+  it.each(['todo', 'ask', 'task', 'monitor'])('fails closed for an undefined %s outcome without reaching native fallback', async (toolName) => {
+    const empty = vi.fn().mockResolvedValue(undefined)
+    const ctx = { onTodo: empty, onAsk: empty, onTask: empty, onMonitor: empty }
+    const nativeFallback = vi.fn()
+    // Same normalization/fallback boundary as the consuming surface adapter.
+    const dispatch = async () => {
+      try {
+        const outcome = await dispatchClientTool({ toolName, toolCallId: 'bad-handler', input: {} }, ctx)
+        return outcome !== undefined ? outcome : nativeFallback()
+      } catch (error) {
+        return { output: (error as Error).message, isError: true }
+      }
+    }
+    expect(await dispatch()).toEqual({ output: `The \`${toolName}\` client handler returned no outcome.`, isError: true })
+    expect(empty).toHaveBeenCalledOnce()
+    expect(nativeFallback).not.toHaveBeenCalled()
+  })
+
   it('does not swallow or retry a handler failure', async () => {
     const ctx = handlers()
     const error = new Error('fixture failure')

@@ -31,17 +31,24 @@ export type ClientToolHandlers = {
   onMonitor: (input: unknown) => Promise<ToolOutcome>
 }
 
-/** undefined means unhandled, not a successful empty result. Exceptions remain
- * owned by the surface adapter's existing tool-error normalization boundary. */
+/** undefined means an unknown name ONLY. A malformed known handler fails closed;
+ * exceptions remain owned by the adapter's existing error-normalization boundary. */
 export async function dispatchClientTool(
   call: PendingToolCall,
   handlers: ClientToolHandlers
 ): Promise<ToolOutcome | undefined> {
+  let outcome: ToolOutcome
   switch (call.toolName) {
-    case 'todo': return handlers.onTodo(call.input)
-    case 'ask': return handlers.onAsk(call.toolCallId, call.input)
-    case 'task': return handlers.onTask(call.toolCallId, call.input)
-    case 'monitor': return handlers.onMonitor(call.input)
+    case 'todo': outcome = await handlers.onTodo(call.input); break
+    case 'ask': outcome = await handlers.onAsk(call.toolCallId, call.input); break
+    case 'task': outcome = await handlers.onTask(call.toolCallId, call.input); break
+    case 'monitor': outcome = await handlers.onMonitor(call.input); break
     default: return undefined
   }
+  // JS handlers/mocks can violate the TS contract. Never let a handled name
+  // become the unknown-name sentinel and execute a second/native side effect.
+  if (outcome === undefined) {
+    throw new Error(`The \`${call.toolName}\` client handler returned no outcome.`)
+  }
+  return outcome
 }

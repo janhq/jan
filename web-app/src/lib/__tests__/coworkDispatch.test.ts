@@ -399,3 +399,16 @@ describe('shared client dispatch integration', () => {
     expect(native.startAgentMonitor).not.toHaveBeenCalled()
   })
 })
+
+
+it.each(['onTodo', 'onAsk', 'onTask'] as const)('fails closed when Cowork %s resolves undefined', async (handler) => {
+  vi.clearAllMocks()
+  const fn = vi.fn().mockResolvedValue(undefined)
+  const toolName = { onTodo: 'todo', onAsk: 'ask', onTask: 'task' }[handler]
+  expect(await dispatchCoworkTool(call(toolName), ctx({ [handler]: fn }))).toEqual({
+    output: `The \`${toolName}\` client handler returned no outcome.`, isError: true,
+  })
+  expect(fn).toHaveBeenCalledOnce()
+  for (const nativeFn of Object.values(native)) expect(nativeFn).not.toHaveBeenCalled()
+  expect(executeWebTool).not.toHaveBeenCalled()
+})
