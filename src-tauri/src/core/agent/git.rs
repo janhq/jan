@@ -159,16 +159,12 @@ fn run_limited(repo: &Path, args: &[&str], limit: std::time::Duration) -> Result
     outcome(&out, args)
 }
 
-/// Kill `child` and the process group it leads, then reap it.
+/// Kill `child` and every helper it spawned (its process group on Unix, its
+/// process tree on Windows, where `git-remote-https` would otherwise outlive a
+/// timed-out fetch), then reap it.
 #[cfg(feature = "cli")]
 fn kill_tree(child: &mut std::process::Child) {
-    #[cfg(unix)]
-    if let Ok(id) = i32::try_from(child.id()) {
-        let _ = nix::sys::signal::killpg(
-            nix::unistd::Pid::from_raw(id),
-            nix::sys::signal::Signal::SIGKILL,
-        );
-    }
+    tauri_plugin_agent_tools::tools::proc::kill_tree(child.id());
     let _ = child.kill();
     let _ = child.wait();
 }
