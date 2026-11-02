@@ -4710,17 +4710,17 @@ mod tests {
             ceiling.clone(),
             serde_json::json!({ "role": "assistant", "content": "Done." }),
         ];
-        // The live system prompt is the agent's, rebuilt on every run.
-        let expected: Vec<serde_json::Value> = history[1..].to_vec();
+        // Stored verbatim, system prompt included: the loop swaps in the live
+        // prompt itself, and a verbatim prefix is what keeps the prompt cache warm.
         let id = cli_save_thread(base, None, "m", &history, None).unwrap();
         let first =
             load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest)).unwrap();
-        assert_eq!(first.history, expected);
+        assert_eq!(first.history, history);
         cli_save_thread(base, Some(&id), "m", &first.history, None).unwrap();
         let second =
             load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest)).unwrap();
         assert_eq!(second.history, first.history);
-        assert!(crate::core::agent::compaction::is_compaction_summary(&second.history[0]));
+        assert!(crate::core::agent::compaction::is_compaction_summary(&second.history[1]));
     }
 
     /// A summary is placed first, whatever order the saved records came in.
