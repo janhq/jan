@@ -9,9 +9,11 @@ import { assertLoopback, loadScenarios, replay, toMarkdown } from './unified-bas
 const sse = (o) => `data: ${JSON.stringify(o)}\n\n`
 
 test('refuses anything but loopback', () => {
-  assert.throws(() => assertLoopback('https://api.openai.com/v1'), /non-loopback/)
-  assert.throws(() => assertLoopback('http://10.0.0.5:8080/v1'), /non-loopback/)
+  assert.throws(() => assertLoopback('https://api.openai.com/v1'), /Refusing base URL host/)
+  assert.throws(() => assertLoopback('http://10.0.0.5:8080/v1'), /Refusing base URL host/)
+  assert.throws(() => assertLoopback('http://localhost:1/v1'), /use 127.0.0.1/)
   assert.equal(assertLoopback('http://127.0.0.1:1/v1/'), 'http://127.0.0.1:1/v1')
+  assert.equal(assertLoopback('http://[::1]:1/v1'), 'http://[::1]:1/v1')
 })
 
 test('committed fixtures are loadable OpenAI-style requests', () => {
@@ -93,4 +95,26 @@ test('fails fast on a --pid that does not exist rather than reporting blank memo
     replay({ baseUrl: 'http://127.0.0.1:9/v1', model: 'x', runs: 1, warmup: 0, maxTokens: 1, cachePrompt: false, pid: 2 ** 22 + 12345, scenarios: ['chat-bare'] }),
     /no such process/
   )
+})
+
+test('redacts an echoed key and rejects truncated streams', async () => {
+  const server = createServer((req, res) => {
+    req.resume()
+    if (req.url.startsWith('/echo')) {
+      res.writeHead(401, { 'content-type': 'text/plain' })
+      return res.end(`bad key: ${req.headers.authorization}`)
+    }
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    res.end(sse({ choices: [{ delta: { content: 'O' } }] })) // no finish_reason, no [DONE]
+  })
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  const base = `http://127.0.0.1:${server.address().port}`
+  const opts = { model: 'x', runs: 1, warmup: 0, maxTokens: 1, cachePrompt: false, scenarios: ['chat-bare'], apiKey: 'sekrit-key-42' }
+  try {
+    await assert.rejects(replay({ ...opts, baseUrl: `${base}/echo/v1` }), (e) =>
+      !e.message.includes('sekrit-key-42') && e.message.includes('<redacted>'))
+    await assert.rejects(replay({ ...opts, baseUrl: `${base}/v1` }), /without a finish_reason/)
+  } finally {
+    server.close()
+  }
 })

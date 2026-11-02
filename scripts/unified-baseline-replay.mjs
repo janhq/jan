@@ -20,12 +20,14 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 
 const FIXTURE_DIR = new URL('../qa/fixtures/unified-baseline/requests/', import.meta.url)
-const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
+// Literal addresses only: a name like `localhost` goes through the resolver,
+// which a hosts file can point anywhere.
+const LOOPBACK = new Set(['127.0.0.1', '[::1]'])
 
 export function assertLoopback(baseUrl) {
   const url = new URL(baseUrl)
   if (!LOOPBACK.has(url.hostname)) {
-    throw new Error(`Refusing non-loopback base URL ${url.host}: local models only`)
+    throw new Error(`Refusing base URL host ${url.host}: use 127.0.0.1 or [::1] (local models only)`)
   }
   return url.toString().replace(/\/$/, '')
 }
@@ -96,9 +98,12 @@ export async function runOnce({ baseUrl, apiKey, model, request, maxTokens, cach
     // measures a cache hit. Other servers ignore unknown fields.
     cache_prompt: cachePrompt,
   }
+  // A local server can echo headers back; never print the key.
+  const scrub = (text) => (apiKey ? text.split(apiKey).join('<redacted>') : text)
   const sampler = startRssSampler(pid)
   const t0 = performance.now()
-  let ttftMs = null, usage = null, timings = null, finishReason = null
+  let ttftMs = null, totalMs = null, usage = null, timings = null, finishReason = null
+  let sawDone = false
   const toolCalls = new Set()
   let peakRssKiB = null
   try {
@@ -112,10 +117,10 @@ export async function runOnce({ baseUrl, apiKey, model, request, maxTokens, cach
       // A loopback listener must not bounce fixtures or keys elsewhere.
       redirect: 'error',
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`)
+    if (!res.ok) throw new Error(scrub(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`))
     const type = res.headers.get('content-type') ?? ''
     if (!type.includes('text/event-stream'))
-      throw new Error(`Expected an SSE stream, got "${type}": ${(await res.text()).slice(0, 300)}`)
+      throw new Error(scrub(`Expected an SSE stream, got "${type}": ${(await res.text()).slice(0, 300)}`))
     const decoder = new TextDecoder()
     let buffer = ''
     for await (const bytes of res.body) {
@@ -126,8 +131,16 @@ export async function runOnce({ baseUrl, apiKey, model, request, maxTokens, cach
         buffer = buffer.slice(nl + 1)
         if (!line.startsWith('data:')) continue
         const data = line.slice(5).trim()
-        if (data === '[DONE]') continue
-        const chunk = JSON.parse(data)
+        if (data === '[DONE]') {
+          sawDone = true
+          continue
+        }
+        let chunk
+        try {
+          chunk = JSON.parse(data)
+        } catch {
+          throw new Error(scrub(`Malformed SSE data: ${data.slice(0, 200)}`))
+        }
         const choice = chunk.choices?.[0]
         if (ttftMs == null && hasDelta(choice?.delta)) ttftMs = performance.now() - t0
         for (const call of choice?.delta?.tool_calls ?? [])
@@ -137,11 +150,15 @@ export async function runOnce({ baseUrl, apiKey, model, request, maxTokens, cach
         if (chunk.timings) timings = chunk.timings
       }
     }
+    // Stamp the end before stopping the sampler so its work is not counted.
+    totalMs = performance.now() - t0
+    if (!sawDone && !finishReason)
+      throw new Error('Stream ended without a finish_reason or [DONE]; run not counted')
   } finally {
     peakRssKiB = await sampler.stop()
   }
   return {
-    ttftMs, totalMs: performance.now() - t0,
+    ttftMs, totalMs,
     promptTokens: usage?.prompt_tokens ?? null,
     completionTokens: usage?.completion_tokens ?? null,
     // llama.cpp server-side timings, when the server reports them.

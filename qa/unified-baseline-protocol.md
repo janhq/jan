@@ -18,7 +18,7 @@ prompt, and the extra model requests a tool-using turn makes.
 | `web-app/src/lib/__tests__/unifiedBaseline.test.ts` | Builds the first-turn request for each scenario with the production code paths (chat transport, Cowork tool and prompt builders, `getAgentToolSchemas` filtering). Only the native IPC boundary and app-state stores are stubbed. Writes `requests/*.json` and `summary.json` as file snapshots. Also checks how many model requests the current Cowork loop makes for scripted task shapes. |
 | `qa/fixtures/unified-baseline/requests/*.json` | Replayable OpenAI-compatible `messages` + `tools` per scenario. |
 | `qa/fixtures/unified-baseline/summary.json` | UTF-8 byte sizes of the system prompt, tools JSON and whole request per scenario. |
-| `scripts/unified-baseline-replay.mjs` | Replays the request fixtures against a **loopback** server and records server-counted prompt tokens, TTFT, total latency and peak RSS of one PID. Refuses non-loopback URLs. |
+| `scripts/unified-baseline-replay.mjs` | Replays the request fixtures against a **loopback** server (literal `127.0.0.1` or `[::1]`) and records server-counted prompt tokens, TTFT, total latency and peak RSS of one PID. Refuses non-loopback URLs and redirects, redacts the key from errors, and rejects truncated streams. |
 | `scripts/unified-baseline-replay.test.mjs` | Checks the replay mechanics against a fake loopback server only. |
 
 Scenarios (one user turn `Reply with OK.`, no memory notes, no files, no
@@ -43,7 +43,7 @@ model behaviour; a real model may take more or fewer steps.
 
 ```sh
 node scripts/capture-cowork-schema-fixture.mjs          # after schema.rs changes
-cd web-app && npx vitest run src/lib/__tests__/unifiedBaseline.test.ts -u
+(cd web-app && npx vitest run src/lib/__tests__/unifiedBaseline.test.ts -u)
 node --test scripts/unified-baseline-replay.test.mjs
 ```
 

@@ -1,0 +1,176 @@
+# Unified baseline harness: manual QA record (2026-11-02)
+
+Manual verification of the jan-internal#506 preparation (janhq/jan#9532),
+beyond its unit tests. **Every server here is a synthetic loopback fake. The
+token, TTFT and RSS values below only prove the CLI records what a server
+sends, and that its timing works. They say nothing about any real model.** No
+real model, provider, credential or Jan data was used.
+
+Host: macOS 26 (Darwin 25.6.0) arm64, Node v24.18.0. First pass on `f1fc21a7f`;
+rows marked † were re-run after the review fixes (next commit).
+
+## Harness
+
+A synthetic OpenAI-compatible SSE server on `127.0.0.1:18901`, with a "trap"
+server on `:18902`. The CLI runs with a preload that logs every *established*
+outbound TCP connection and every `dns.lookup` call (the path `fetch` uses).
+Failed connection attempts are not logged; trap hit counts on the server side
+cover redirects. Sources are at the end of this file. The server sends
+a role-only delta at t=0, the first content or tool-call delta at about 300 ms
+and the end at about 500 ms. It returns `usage.prompt_tokens = 1000 + tool
+count` and llama.cpp-style `timings` (`prompt_n` 1000, `prompt_ms` 42.5),
+except in `nousage` mode.
+
+```sh
+node fake-server.mjs 18901 18902 server.log &
+NETLOG=net.log node --import ./netlog.mjs scripts/unified-baseline-replay.mjs <args>
+```
+
+## Results
+
+| Case | Command (after `--model synthetic`) | Result |
+|---|---|---|
+| Success, all scenarios | `--base-url http://127.0.0.1:18901/ok/v1 --api-key qa-dummy-key-123 --pid <server pid> --runs 3 --warmup 1 --out ok.json` | exit 0; 6 scenarios × 4 requests = 24 server hits; TTFT 305–306 ms (role-only chunk correctly ignored), total 512–518 ms, prompt tokens 1000–1012 as sent, peak RSS 60–61 MiB of the server PID; only socket `127.0.0.1:18901` |
+| Body sent | same | every request had `stream:true`, `stream_options.include_usage`, `temperature:0`, `max_tokens:256`, `cache_prompt:false`, `Authorization` present; tools 0/1/7/11/12 per fixture; no extra fields |
+| Key hygiene | same | `qa-dummy-key-123` absent from stdout, stderr and `ok.json` |
+| `--cache-prompt` | `... --cache-prompt` | server received `cache_prompt:true` |
+| No usage/timings | `/nousage/v1` | prompt tokens and server prompt ms printed as `—` (null in JSON), not invented |
+| No `--pid` | `/tool/v1` (first pass via `localhost`) | peak RSS `—`; `toolCalls:["read"]`, `finishReason:"tool_calls"`; one DNS lookup `localhost`, socket `127.0.0.1:18901` |
+| `localhost` † | `http://localhost:18901/ok/v1` | now refused before any lookup: literal `127.0.0.1` / `[::1]` only (review finding) |
+| `[::1]` † | `http://[::1]:18901/ok/v1` | accepted by the guard; `ECONNREFUSED ::1:18901` because the fake listens on IPv4 only |
+| Success after fixes † | `/ok/v1 --scenarios cowork-execute --pid <server pid>` | exit 0; TTFT 312 ms, total 515 ms, peak RSS 54 MiB; 0 trap hits overall |
+| Redirect | `/redirect/v1` (307 to trap `:18902`) | exit 1 `fetch failed: unexpected redirect`; **0 trap hits**; only socket `:18901` |
+| Non-SSE 200 | `/html/v1` | exit 1 `Expected an SSE stream, got "text/html": ...` |
+| HTTP 500 | `/err500/v1` | exit 1 `HTTP 500: {"error":"synthetic failure"}` |
+| Server down | `http://127.0.0.1:18999/v1` | exit 1 `fetch failed: connect ECONNREFUSED 127.0.0.1:18999` |
+| Non-loopback | `https://api.openai.com/v1`, `127.0.0.1.nip.io`, `127.0.0.1@example.com`, `[::ffff:127.0.0.1]`, `0.0.0.0` | all refused before any socket or DNS lookup (net log empty for these) |
+| Loopback aliases | `127.1`, `2130706433` | accepted: the URL parser normalizes both to `127.0.0.1`, and the net log confirms the connection went there |
+| Bad args | `--runs 0`, `--runs abc`, `--warmup=-1`, `--max-tokens 1.5`, `--pid 0` | exit 1 with `--<name> must be an integer >= N` |
+| Missing model / unknown scenario | no `--model`; `--scenarios nope` | exit 2 usage; exit 1 `No matching scenarios` |
+| Nonexistent PID | `--pid 999999` | exit 1 `--pid 999999: no such process` |
+
+Findings fixed during this QA. In `f1fc21a7f`: A nonexistent `--pid`
+had silently produced a blank memory column. Redirect and connection failures
+had printed only `fetch failed`, with no reason. Before the fix the redirect
+was already refused, with 0 trap hits.
+
+## Independent review
+
+Reviewer: the Jan Agent (`jan 0.8.8-69`, `jan cli agent run --sandbox`) with
+its default config. The default model is Claude Fable, not Codex. It ran
+read-only on a detached snapshot of `f1fc21a7f` plus this harness and its
+outputs. It confirmed:
+
+- TTFT of 304–317 ms ignores the role-only chunk.
+- The request body fields are as specified.
+- There were 0 trap hits.
+- Missing usage and RSS stay null.
+- Medians and fixture hashes match.
+- Bytes are not presented as tokens or performance, and no budgets are set.
+
+Two of its replay tests failed because its sandbox denied spawning `ps`
+(EPERM). That is the reviewer's environment, not the code. Its findings, all
+fixed in the follow-up commit († rows above):
+
+| Severity | Finding | Fix |
+|---|---|---|
+| Medium | A local server that echoes the `Authorization` header could put the key into error output | The key is redacted from all error text; regression test added |
+| Medium | `localhost` is resolved through the hosts file | Only literal `127.0.0.1` / `[::1]` are accepted |
+| Medium | `totalMs` included sampler shutdown | Total is stamped before the sampler stops |
+| Medium | A truncated or empty stream counted as a run | Rejected unless there is a `finish_reason` or `[DONE]`; regression test added |
+| Low | Regeneration commands in the protocol used the wrong cwd | Vitest runs in a subshell |
+| Low | The net log claim overstated coverage | Narrowed (see Harness) |
+
+An earlier Claude (Fable) subagent review, before the PR opened, found 8
+low/medium items. Those were fixed in `47b42c703`.
+
+## Fixture stability and drift
+
+- `node scripts/capture-cowork-schema-fixture.mjs` (regenerate), then the
+  baseline vitest twice and once under `TZ=Asia/Kolkata`: 8/8 each. All 8
+  fixture files are byte-identical (sha256) to the committed ones. Earlier runs
+  also passed under `TZ=Pacific/Kiritimati` and `TZ=Pacific/Pago_Pago`.
+- Drift: one description in `schema.rs` was edited temporarily.
+  `capture --check` exited 1 with "Schema fixture drift", and the vitest
+  provenance test failed (1 failed, 7 passed). After `git checkout` of the file,
+  both were clean again.
+
+## Unit and regression checks at this commit
+
+`node --test scripts/unified-baseline-replay.test.mjs` 6/6 after the review fixes. The baseline
+vitest is 8/8; related chat and Cowork suites are 139/139. `yarn tsc -b`
+is clean. `yarn test:web`: 4871/4871 tests. One file
+(`services/core/__tests__/tauri.test.ts`) fails to load because the bundled
+`@janhq/assistant-extension` package is not built in this checkout. That is
+an environment issue, not something this change touches.
+
+## Not covered (real-model QA still open)
+
+- No real local model was run. Real prompt tokens, TTFT, latency, peak
+  memory, tool reliability and completion rate per
+  `qa/unified-baseline-protocol.md` layers 1 and 2 are still to be measured on
+  named hardware.
+- RSS sampling on Windows (unsupported by design; the CLI warns), Linux, and
+  the real `jan-llama-worker` process; IPv6 loopback against a real server; VRAM; the Local API proxy forwarding of
+  `cache_prompt`.
+- Remote providers (out of scope), migration, resume and rollback QA, and
+  budgets.
+
+<details><summary>Harness sources</summary>
+
+`fake-server.mjs`
+
+```js
+// Controlled synthetic OpenAI-compatible SSE server for manual QA. Loopback only.
+import { createServer } from 'node:http'
+import { appendFileSync } from 'node:fs'
+const [, , port, trapPort, log] = process.argv
+const sse = (o) => `data: ${JSON.stringify(o)}\n\n`
+const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+const rec = (o) => appendFileSync(log, JSON.stringify({ t: Date.now(), ...o }) + '\n')
+createServer((req, res) => {
+  let raw = ''
+  req.on('data', (c) => (raw += c))
+  req.on('end', async () => {
+    const mode = req.url.split('/')[1]
+    let body = {}
+    try { body = JSON.parse(raw) } catch {}
+    rec({ server: 'main', mode, method: req.method, url: req.url, host: req.headers.host,
+      auth: req.headers.authorization ? 'present' : 'absent',
+      model: body.model, stream: body.stream, temperature: body.temperature, max_tokens: body.max_tokens,
+      cache_prompt: body.cache_prompt, stream_options: body.stream_options,
+      messages: body.messages?.length, tools: body.tools?.length ?? 0, sampleKeys: Object.keys(body).sort() })
+    if (mode === 'redirect') { res.writeHead(307, { location: `http://127.0.0.1:${trapPort}/v1/chat/completions` }); return res.end() }
+    if (mode === 'html') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<html>proxy page</html>') }
+    if (mode === 'err500') { res.writeHead(500, { 'content-type': 'application/json' }); return res.end('{"error":"synthetic failure"}') }
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    res.write(sse({ choices: [{ delta: { role: 'assistant' } }] }))   // role-only: must NOT count as first token
+    await wait(300)
+    if (mode === 'tool') res.write(sse({ choices: [{ delta: { tool_calls: [{ index: 0, function: { name: 'read', arguments: '{"path":"a"}' } }] } }] }))
+    else res.write(sse({ choices: [{ delta: { content: 'OK' } }] }))
+    await wait(200)
+    res.write(sse({ choices: [{ delta: {}, finish_reason: mode === 'tool' ? 'tool_calls' : 'stop' }] }))
+    if (mode !== 'nousage') res.write(sse({ choices: [], usage: { prompt_tokens: 1000 + (body.tools?.length ?? 0), completion_tokens: 1 }, timings: { prompt_n: 1000, prompt_ms: 42.5, predicted_per_second: 10 } }))
+    res.end('data: [DONE]\n\n')
+  })
+}).listen(Number(port), '127.0.0.1', () => rec({ server: 'main', listening: port }))
+// Trap: any hit here means a redirect was followed.
+createServer((req, res) => { rec({ server: 'TRAP', url: req.url }); res.writeHead(200); res.end() })
+  .listen(Number(trapPort), '127.0.0.1', () => rec({ server: 'TRAP', listening: trapPort }))
+```
+
+`netlog.mjs`
+
+```js
+// Preload: log every outbound TCP socket and DNS lookup made by the CLI process.
+import dc from 'node:diagnostics_channel'
+import dns from 'node:dns'
+import { appendFileSync } from 'node:fs'
+const log = process.env.NETLOG
+const w = (o) => appendFileSync(log, JSON.stringify({ pid: process.pid, ...o }) + '\n')
+dc.subscribe('net.client.socket', ({ socket }) => socket.once('connect', () => w({ connect: `${socket.remoteAddress}:${socket.remotePort}` })))
+const orig = dns.lookup
+dns.lookup = function (host, ...rest) { w({ dnsLookup: host }); return orig.call(this, host, ...rest) }
+```
+
+</details>
