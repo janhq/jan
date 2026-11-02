@@ -33,7 +33,7 @@ describe('dispatchClientTool', () => {
     ctx[key] = handler
     let done = false
     const pending = dispatchClientTool({ toolName, toolCallId: 'call-1', input }, ctx).then((value) => { done = true; return value })
-    expect(handler).toHaveBeenCalledExactlyOnceWith(...(['ask', 'task'].includes(toolName) ? ['call-1', input] : [input]))
+    expect(handler).toHaveBeenCalledExactlyOnceWith(...(['ask', 'task'].includes(toolName) ? ['call-1', input] : toolName === 'todo' ? [input, 'call-1'] : [input]))
     await Promise.resolve()
     expect(done).toBe(false)
     settle(outcome)

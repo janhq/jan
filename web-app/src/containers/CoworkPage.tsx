@@ -98,8 +98,9 @@ import { CoworkAskCard } from '@/containers/CoworkAskCard'
 import { CoworkChatTransport } from '@/lib/coworkTransport'
 import { getCoworkEnvironment } from '@/lib/coworkEnv'
 import { dispatchCoworkTool } from '@/lib/coworkDispatch'
-import { applyTodoOp, renderTodoResult } from '@/lib/coworkTodo'
-import { parseAskRequest, renderAskResult } from '@/lib/coworkAsk'
+import { createConversationToolHandlers } from '@/lib/conversationToolHandlers'
+import { conversationTodos, resolveConversationTodos } from '@/lib/conversationTaskPresentation'
+import { TODO_TOOL_NAME } from '@/lib/coworkTools'
 import {
   EXECUTE_PLAN_LABEL,
   EXIT_PLAN_LABEL,
@@ -130,7 +131,6 @@ import {
   runTurn,
   type RunOutcome,
   type StreamSink,
-  type ToolOutcome,
 } from '@/lib/coworkRunner'
 import { useCoworkRun, registerCoworkRunForClose, isCoworkClosing } from '@/hooks/useCoworkRun'
 import {
@@ -367,6 +367,17 @@ export function CoworkPage() {
         : committedMessages,
     [viewingRun, committedMessages, liveMessages]
   )
+  // Committed history does not change on a live text delta. Parse it once per
+  // history identity (including rewind); only scan the live tail on sync.
+  const committedTodos = useMemo(
+    () => conversationTodos(committedMessages),
+    [committedMessages]
+  )
+  const liveTodos = useMemo(
+    () => conversationTodos(liveMessages),
+    [liveMessages]
+  )
+  const contextualTodos = liveTodos ?? committedTodos ?? session?.todos
   // Where the live tail begins. Every message from here on is mid-run: its
   // write parts may yet be rewritten, and a <SYSTEM> note (a subagent finishing,
   // a monitor matching) can split the turn so an earlier fragment is not the
@@ -674,6 +685,63 @@ export function CoworkPage() {
         // answered, and its pings are drained by whichever run is up next.
         const monitorLane = sessionMonitorLane(sid)
 
+        const conversationTools = createConversationToolHandlers({
+          signal: controller.signal,
+          // Transcript results are authoritative; legacy snapshots are only a
+          // fallback for old sessions with no recorded todo result.
+          getTodo: () => resolveConversationTodos([
+            ...coworkTurnsToUIMessages(current?.turns ?? []),
+            ...coworkTurnsToUIMessages(runTurns),
+          ], useCoworkSessions.getState().sessions.find((s) => s.id === sid)?.todos),
+          onTodo: (list, callId) => {
+            const row = typeof callId === 'string' && callId.trim().length > 0
+              ? runTurns.find((turn) => turn.role === 'tool' && turn.name === TODO_TOOL_NAME && turn.callId === callId)
+              : undefined
+            if (row) {
+              row.result = JSON.stringify(list)
+              row.status = 'done'
+              syncLive()
+            }
+            // Compatibility projection for the existing rail, not authority.
+            useCoworkSessions.getState().setTodos(sid, list)
+          },
+          pendingAsks: handle.pendingAsks,
+          showAsk: (id, request) => useCoworkRun.getState().addPendingAsk(sid, id, request),
+          hideAsk: (id) => useCoworkRun.getState().removePendingAsk(sid, id),
+          onAnswer: (parsed, answers) => {
+            const planReview =
+              runConfig.planMode &&
+              parsed.questions.length === 1 &&
+              parsed.questions[0].id === PLAN_REVIEW_QUESTION_ID
+            const selection =
+              answers?.length === 1 &&
+              answers[0].id === PLAN_REVIEW_QUESTION_ID &&
+              answers[0].selected.length === 1
+                ? answers[0].selected[0]
+                : undefined
+            if (
+              planReview &&
+              (selection === EXECUTE_PLAN_LABEL ||
+                selection === EXIT_PLAN_LABEL)
+            ) {
+              runConfig.planMode = false
+              useCoworkSessions.getState().setPlanMode(sid, false)
+              // Approval is a deliberate run boundary: refresh the
+              // prompt and tools together before the next model step.
+              transport.setConfig(runConfig)
+              transport.unfreezeTools()
+              failedReadPaths?.clear()
+            }
+            if (
+              planReview &&
+              (answers === null || selection === EXIT_PLAN_LABEL) &&
+              !controller.signal.aborted
+            ) {
+              abortRun(sid)
+            }
+          },
+        })
+
         const sink: StreamSink = {
           onText: (delta) => {
             const last = runTurns[runTurns.length - 1]
@@ -755,62 +823,7 @@ export function CoworkPage() {
                   failedReadPaths,
                   webSearch,
                   monitors: monitorLane,
-                  onTodo: async (input) => {
-                    const result = applyTodoOp(
-                      useCoworkSessions
-                        .getState()
-                        .sessions.find((s) => s.id === sid)?.todos,
-                      input
-                    )
-                    if (result.error) {
-                      return { output: `ERROR: ${result.error}`, isError: true }
-                    }
-                    useCoworkSessions.getState().setTodos(sid, result.list)
-                    return { output: renderTodoResult(result.list) }
-                  },
-                  onAsk: (callId, input) =>
-                    new Promise<ToolOutcome>((resolve) => {
-                      const parsed = parseAskRequest(input)
-                      if (typeof parsed === 'string') {
-                        resolve({ output: `ERROR: ${parsed}`, isError: true })
-                        return
-                      }
-                      useCoworkRun.getState().addPendingAsk(sid, callId, parsed)
-                      handle.pendingAsks.set(callId, (answers) => {
-                        useCoworkRun.getState().removePendingAsk(sid, callId)
-                        const planReview =
-                          runConfig.planMode &&
-                          parsed.questions.length === 1 &&
-                          parsed.questions[0].id === PLAN_REVIEW_QUESTION_ID
-                        const selection =
-                          answers?.length === 1 &&
-                          answers[0].id === PLAN_REVIEW_QUESTION_ID &&
-                          answers[0].selected.length === 1
-                            ? answers[0].selected[0]
-                            : undefined
-                        if (
-                          planReview &&
-                          (selection === EXECUTE_PLAN_LABEL ||
-                            selection === EXIT_PLAN_LABEL)
-                        ) {
-                          runConfig.planMode = false
-                          useCoworkSessions.getState().setPlanMode(sid, false)
-                          // Approval is a deliberate run boundary: refresh the
-                          // prompt and tools together before the next model step.
-                          transport.setConfig(runConfig)
-                          transport.unfreezeTools()
-                          failedReadPaths?.clear()
-                        }
-                        resolve(renderAskResult(answers))
-                        if (
-                          planReview &&
-                          (answers === null || selection === EXIT_PLAN_LABEL) &&
-                          !controller.signal.aborted
-                        ) {
-                          abortRun(sid)
-                        }
-                      })
-                    }),
+                  ...conversationTools,
                   onTask: async (callId, input) => {
                     const plan = parseDispatchPlan(input)
                     if (typeof plan === 'string') {
@@ -1926,7 +1939,7 @@ export function CoworkPage() {
         )}
         {rail?.kind === 'todos' && (
           <CoworkTodoPanel
-            todos={session?.todos}
+            todos={contextualTodos}
             onClose={() => setRail(null)}
           />
         )}
@@ -1954,7 +1967,7 @@ export function CoworkPage() {
         <AnimatePresence initial={false}>
         {overviewOpen && !dockedRail && (desktopOverview || overviewRequested) && (
           <CoworkOverviewPanel
-            todos={session?.todos}
+            todos={contextualTodos}
             attachments={attachments}
             artifacts={artifacts}
             files={fileDiffs}

@@ -1,5 +1,6 @@
 import type { UIMessage } from 'ai'
 import { create } from 'zustand'
+import { todosFromTurns } from '@/lib/coworkTodo'
 import { isPingOnly } from '@/lib/coworkPing'
 import type {
   CoworkTurn,
@@ -55,7 +56,7 @@ export type CoworkSession = {
   lastUsage?: Usage
   /** `/goal` state: checked after each turn, cleared when met. */
   goal?: CoworkGoal
-  /** Canonical session todo list, updated by the `todo_write` tool. */
+  /** Legacy fallback / rail projection. Recorded todo results are authoritative. */
   todos?: TodoList
   /** Plan mode: the agent reads and proposes, without writing. Absent means off. */
   planMode?: boolean
@@ -275,6 +276,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
             return {
               ...x,
               // The question survives; the run it produced does not.
+              todos: todosFromTurns(x.turns.slice(0, lastTurn + 1)) ?? { phases: [] },
               turns: x.turns.slice(0, lastTurn + 1),
               messages: x.messages.slice(0, lastMessage + 1),
               updated: now(),
@@ -300,6 +302,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
             if (cut < 0) return x
             return {
               ...x,
+              todos: todosFromTurns(x.turns.slice(0, turnIndex)) ?? { phases: [] },
               turns: x.turns.slice(0, turnIndex),
               messages: x.messages.slice(0, cut),
               updated: now(),
@@ -315,6 +318,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
                   ...x,
                   turns: [],
                   messages: [],
+                  todos: { phases: [] },
                   subagents: [],
                   lastUsage: undefined,
                   updated: now(),

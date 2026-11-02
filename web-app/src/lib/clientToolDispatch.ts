@@ -25,7 +25,7 @@ export type ToolOutcome = {
  * A Chat adapter must supply Chat-scoped handlers, never Cowork's grant context.
  */
 export type ClientToolHandlers = {
-  onTodo: (input: unknown) => Promise<ToolOutcome>
+  onTodo: (input: unknown, toolCallId?: string) => Promise<ToolOutcome>
   onAsk: (toolCallId: string, input: unknown) => Promise<ToolOutcome>
   onTask: (toolCallId: string, input: unknown) => Promise<ToolOutcome>
   onMonitor: (input: unknown) => Promise<ToolOutcome>
@@ -39,7 +39,7 @@ export async function dispatchClientTool(
 ): Promise<ToolOutcome | undefined> {
   let outcome: ToolOutcome
   switch (call.toolName) {
-    case 'todo': outcome = await handlers.onTodo(call.input); break
+    case 'todo': outcome = await handlers.onTodo(call.input, call.toolCallId); break
     case 'ask': outcome = await handlers.onAsk(call.toolCallId, call.input); break
     case 'task': outcome = await handlers.onTask(call.toolCallId, call.input); break
     case 'monitor': outcome = await handlers.onMonitor(call.input); break
