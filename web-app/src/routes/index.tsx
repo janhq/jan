@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import HeaderPage from '@/containers/HeaderPage'
@@ -97,14 +97,16 @@ function Index() {
     scopeDraft.shellNetwork ||
     scopeDraft.memoryWrite ||
     scopeDraft.folderScope !== null
-  // Same temporary-mode source ChatInput's send path reads. useSearch above
-  // subscribes this component to location changes, so toggling temporary chat
-  // re-renders and this stays current. A temporary chat gets no consent
-  // control, not even a draft: the pending draft is preserved but the prepare
-  // path is removed, so ordinary temporary scratch sends are unchanged.
-  const isTemporaryChat =
-    typeof window !== 'undefined' &&
-    window.location.search.includes(`${TEMPORARY_CHAT_QUERY_ID}=true`)
+  // Same temporary-mode flag ChatInput's send path reads, but taken from the
+  // router-subscribed raw search string: this route's validateSearch keeps
+  // only threadModel, so the VALIDATED search can stay structurally equal
+  // when the flag toggles — searchStr is a plain string the router always
+  // updates, so the subscription re-renders deterministically. A temporary
+  // chat gets no consent control, not even a draft: the pending draft is
+  // preserved but the prepare path is removed, so ordinary temporary scratch
+  // sends are unchanged.
+  const searchStr = useLocation({ select: (location) => location.searchStr })
+  const isTemporaryChat = searchStr.includes(`${TEMPORARY_CHAT_QUERY_ID}=true`)
   const chatScopeAvailable =
     mode === 'chat' &&
     !isTemporaryChat &&

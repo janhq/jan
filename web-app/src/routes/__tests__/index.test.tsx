@@ -29,6 +29,7 @@ vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: any) => ({ ...config, id: '/' }),
   useSearch: () => h.search,
   useNavigate: () => h.navigate,
+  useLocation: (opts: any) => opts.select({ searchStr: window.location.search }),
 }))
 
 vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.coworkEnabled }))
