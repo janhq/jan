@@ -1,4 +1,4 @@
-import { assertMcpIdentityAvailable, memoizeMcpValidation, mcpValidationRevision } from '@/lib/chatMcpIdentity'
+import { assertMcpIdentityAvailable, memoizeMcpValidation } from '@/lib/chatMcpIdentity'
 import { isChatClosing, setChatCloseStop, trackChatFinalization } from '@/lib/chatClose'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -400,11 +400,13 @@ function ThreadDetail() {
       (server, name) => useToolAvailable.getState().isToolDisabled(server, name), signal,
       useMCPServers.getState().settings.toolCallTimeoutSeconds
     ),
-    () => [mcpValidationRevision(), useMCPServers.getState().settings, useMCPServers.getState().mcpServers,
-      useToolAvailable.getState().disabledTools,
+    () => [
+      JSON.stringify(serverName ? useMCPServers.getState().mcpServers[serverName] : undefined),
       serverName ? useToolAvailable.getState().isToolDisabled(serverName, toolName) : true,
-      useAppState.getState().tools,
-      useToolApproval.getState().allowAllMCPPermissions]
+      JSON.stringify(useAppState.getState().tools
+        .filter((tool) => tool.server === serverName && tool.name === toolName)
+        .map((tool) => tool.inputSchema)),
+    ]
   )
 
   const { threadId } = useParams({ from: Route.id })
@@ -643,16 +645,22 @@ function ThreadDetail() {
       ) {
         // Only this message's request-bound identities accompany the shared
         // serializer metadata; keep the foundation codec as persistence owner.
+        const storedMessage = useMessages.getState().getMessages(threadId).find((item) => item.id === message.id)
+        const priorOrigins = {
+          ...((message.metadata as { toolOrigins?: Record<string, string | null> } | undefined)?.toolOrigins),
+          ...((storedMessage?.metadata as { toolOrigins?: Record<string, string | null> } | undefined)?.toolOrigins),
+        }
         const toolOrigins = Object.fromEntries(message.parts.flatMap((part) => {
           if (!('toolCallId' in part) || typeof part.toolCallId !== 'string') return []
-          const origin = useToolCallRuntime.getState().origins[toolOriginKey(threadId, part.toolCallId)]
+          const live = useToolCallRuntime.getState().origins[toolOriginKey(threadId, part.toolCallId)]
+          const origin = live === undefined ? priorOrigins[part.toolCallId] : live
           return origin === undefined ? [] : [[part.toolCallId, origin]]
         }))
         const { content: contentParts, metadata: messageMetadata } =
           assistantRecordFields(
             message,
             { ...((message.metadata || {}) as Record<string, unknown>),
-              ...(Object.keys(toolOrigins).length ? { toolOrigins } : {}) },
+              toolOrigins },
             { stopped: isStoppedTurn }
           )
 

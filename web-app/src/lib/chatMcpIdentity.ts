@@ -80,9 +80,3 @@ export function memoizeMcpValidation(
     }
   }
 }
-
-// Invalidated synchronously when the existing MCP_UPDATE refresh begins, before
-// potentially slow advertisement discovery returns.
-let inventoryRevision = 0
-export const mcpValidationRevision = () => inventoryRevision
-export const invalidateMcpValidation = () => { inventoryRevision += 1 }

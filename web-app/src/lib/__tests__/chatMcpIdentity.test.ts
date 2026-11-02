@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MCPTool } from '@/types/completion'
-import { assertMcpIdentityAvailable, uniqueMcpTools, memoizeMcpValidation, mcpValidationRevision, invalidateMcpValidation } from '../chatMcpIdentity'
+import { assertMcpIdentityAvailable, uniqueMcpTools, memoizeMcpValidation } from '../chatMcpIdentity'
 
 const tool = (name: string, server: string): MCPTool => ({
   name, server, description: `${server}/${name}`, inputSchema: { type: 'object' },
@@ -127,13 +127,6 @@ describe('chat MCP identity', () => {
     expect(fresh).toHaveBeenCalledTimes(1)
   })
 
-  it('invalidates a call snapshot immediately on MCP refresh/disconnect events', async () => {
-    const fresh = vi.fn().mockResolvedValue(undefined)
-    const validate = memoizeMcpValidation(fresh, () => [mcpValidationRevision()])
-    await validate()
-    invalidateMcpValidation()
-    await expect(validate()).rejects.toThrow(/changed/)
-    expect(fresh).toHaveBeenCalledTimes(1)
-  })
+
 
 })

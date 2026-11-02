@@ -54,7 +54,7 @@ const h = vi.hoisted(() => {
   const appStateState = {
     ragToolNames: new Set<string>(),
     mcpToolNames: new Set<string>(),
-    tools: [] as Array<{ name: string; server?: string }>,
+    tools: [] as Array<{ name: string; server?: string; inputSchema?: unknown }>,
     setOomError: vi.fn(),
     setBackendError: vi.fn(),
     busyThreads: {} as Record<string, boolean>,
@@ -515,6 +515,7 @@ vi.mock('@/hooks/useWebSearchConfig', async (importOriginal) => ({
 // -----------------------------------------------------------------------------
 import { Route } from '../$threadId'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { useMCPServers } from '@/hooks/useMCPServers'
 import { toolOriginKey, useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { useMessageErrors } from '@/stores/message-errors'
 import {
@@ -1856,7 +1857,7 @@ describe('ThreadDetail route', () => {
       beforeEach(() => {
         h.appStateState.mcpToolNames = new Set(['fetch'])
         // A stale/live menu must not choose the identity for this turn.
-        h.appStateState.tools = [{ name: 'fetch', server: otherServer }]
+        h.appStateState.tools = [{ name: 'fetch', server: otherServer }, { name: 'fetch', server: advertisedServer, inputSchema: { type: 'object' } }]
         h.chatSessionsState.sessions['thread-1'] = {
           transport: {
             getTurnModelSelection: () => null,
@@ -1896,6 +1897,23 @@ describe('ThreadDetail route', () => {
         h.appStateState.tools = [{ name: 'fetch', server: otherServer }]
         await expect(validate()).rejects.toThrow(/stale|ambiguous|unavailable|changed/)
         expect(callTool).not.toHaveBeenCalled()
+      })
+
+      it('keeps A approval valid while B config and tool inventory refresh', async () => {
+        await waitForApproval()
+        useMCPServers.setState({ mcpServers: { ...useMCPServers.getState().mcpServers, unrelated: { command: 'fixture', args: [], env: {} } } })
+        h.appStateState.tools = [{ name: 'fetch', server: advertisedServer, inputSchema: { type: 'object' } }, { name: 'unrelated-tool', server: 'unrelated' }]
+        await act(async () => { approve(true) })
+        expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ serverName: advertisedServer }))
+        expect(getMcpTools).toHaveBeenCalledTimes(1)
+      })
+
+      it('refuses a changed target configuration without blaming user denial', async () => {
+        await waitForApproval()
+        useMCPServers.setState({ mcpServers: { ...useMCPServers.getState().mcpServers, [advertisedServer]: { command: 'replacement', args: [], env: {} } } })
+        await act(async () => { approve(true) })
+        expect(callTool).not.toHaveBeenCalled()
+        expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({ errorText: expect.stringMatching(/changed/) }))
       })
 
       it('executes only the server advertised by the session, even if the menu disagrees', async () => {
@@ -2106,6 +2124,26 @@ describe('ThreadDetail route', () => {
       }))
       expect(useToolCallRuntime.getState().origins[toolOriginKey('thread-1', 'stream-stop-origin')]).toBeUndefined()
       expect(useToolCallRuntime.getState().origins[toolOriginKey('other-thread', 'stream-stop-origin')]).toBe('sibling')
+    })
+
+    it('retains prior step origins across leave/prune/resave and filters edited-away calls', async () => {
+      const saved = { id: 'multi-step', role: 'assistant', metadata: { toolOrigins: { old: 'alpha', removed: 'stale', internal: null } } }
+      h.messagesState.getMessages.mockImplementation((id: string) => id === 'thread-1' ? [saved] : [{ ...saved, metadata: { toolOrigins: { old: 'sibling' } } }])
+      useToolCallRuntime.getState().recordOrigin('old', 'alpha', 'thread-1')
+      useToolCallRuntime.getState().enqueue(['old'], 'thread-1')
+      useToolCallRuntime.getState().markSettled('old')
+      useToolCallRuntime.getState().releaseSettled('thread-1')
+      useToolCallRuntime.getState().recordOrigin('new', 'beta', 'thread-1')
+      useToolCallRuntime.getState().recordOrigin('old', 'sibling', 'other-thread')
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnFinish({ message: { id: 'multi-step', role: 'assistant', parts: [
+          { type: 'text', text: 'step N' },
+          ...['old', 'internal', 'new'].map((id) => ({ type: 'tool-fetch', toolCallId: id, input: {}, state: 'output-available', output: 'fixture' })),
+        ] }, isAbort: false })
+      })
+      const record = h.messagesState.updateMessage.mock.calls.map(([item]: any[]) => item).find((item: any) => item.id === 'multi-step')
+      expect(JSON.parse(JSON.stringify(record)).metadata.toolOrigins).toEqual({ old: 'alpha', internal: null, new: 'beta' })
     })
 
     it('does NOT execute the tool from onToolCall (execution deferred to onFinish)', async () => {
