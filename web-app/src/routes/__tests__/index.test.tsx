@@ -271,12 +271,11 @@ describe('Index route', () => {
     it('states a truthful unsupported reason without refusing ordinary direct chat', () => {
       h.selectedModel = { id: 'model-b', capabilities: [] } as any
       renderComponent()
-      expect(screen.getByTestId('home-scope-unsupported')).toHaveTextContent(
-        'does not support tools'
-      )
-      expect(screen.getByTestId('home-scope-unsupported')).toHaveTextContent(
-        'Ordinary chat still works.'
-      )
+      const notice = screen.getByTestId('home-scope-unsupported')
+      expect(notice).toHaveTextContent('common:conversationScope.unsupported')
+      expect(notice).not.toHaveTextContent('common:conversationScope.pendingKept')
+      expect(notice).toHaveAttribute('role', 'status')
+      expect(notice).toHaveAttribute('aria-live', 'polite')
       // The composer stays fully usable: no send-time refusal, no prepare
       // path, no hidden session start for a one-call non-tool model.
       const input = screen.getByTestId('chat-input')
@@ -333,13 +332,39 @@ describe('Index route', () => {
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     })
 
+    it('announces a hidden pending draft when the model loses tool support', async () => {
+      const Component = Route.component as React.ComponentType
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      const view = renderComponent()
+      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
+      fireEvent.click(
+        await screen.findByLabelText('Allow shell commands to access the network')
+      )
+      h.selectedModel = { id: 'model-b', capabilities: [] } as any
+      view.rerender(<Component />)
+      expect(screen.getByTestId('home-scope-unsupported')).toHaveTextContent(
+        'common:conversationScope.pendingKept'
+      )
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    })
+
+    it.each(['/?x-temporary-chat=true', '/?temporary-chat=truex', '/?temporary-chat=false', '/?other=temporary-chat%3Dtrue'])(
+      'does not treat %s as temporary mode',
+      (url) => {
+        h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+        window.history.replaceState({}, '', url)
+        renderComponent()
+        expect(screen.getByTestId('home-scope-consent-trigger')).toBeInTheDocument()
+      }
+    )
+
     it('temporary mode keeps the workspace folder action grant-free with a truthful note', async () => {
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
       window.history.replaceState({}, '', '/?temporary-chat=true')
       renderComponent()
       fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
       await waitFor(() =>
-        expect(h.toastInfo).toHaveBeenCalledWith('A temporary chat keeps no folder access.')
+        expect(h.toastInfo).toHaveBeenCalledWith('common:conversationScope.temporary')
       )
       expect(h.pickFolder).not.toHaveBeenCalled()
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
@@ -380,9 +405,7 @@ describe('Index route', () => {
       renderComponent()
       fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
       await waitFor(() =>
-        expect(h.toastError).toHaveBeenCalledWith(
-          'This folder path is not supported. Choose another folder.'
-        )
+        expect(h.toastError).toHaveBeenCalledWith('common:conversationScope.invalidFolder')
       )
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
       fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
@@ -400,9 +423,7 @@ describe('Index route', () => {
       renderComponent()
       fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
       await waitFor(() =>
-        expect(h.toastInfo).toHaveBeenCalledWith(
-          'The selected model does not support tools, so folder access cannot be granted. Ordinary chat still works.'
-        )
+        expect(h.toastInfo).toHaveBeenCalledWith('common:conversationScope.folderUnsupported')
       )
       expect(h.pickFolder).not.toHaveBeenCalled()
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
@@ -417,7 +438,7 @@ describe('Index route', () => {
       expect(useCoworkSessions.getState().sessions).toHaveLength(0)
       fireEvent.click(screen.getByTestId('submit'))
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-project-id', 'project-1')
-      fireEvent.click(screen.getByRole('button', { name: 'common:homeMode.removeFolder' }))
+      fireEvent.click(screen.getByRole('button', { name: 'common:conversationScope.removeProject' }))
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-project-id')
       expect(screen.queryByTestId('home-chat-project')).not.toBeInTheDocument()
     })

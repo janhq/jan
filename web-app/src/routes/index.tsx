@@ -92,7 +92,7 @@ function Index() {
   // preserved but the prepare path is removed, so ordinary temporary scratch
   // sends are unchanged.
   const searchStr = useLocation({ select: (location) => location.searchStr })
-  const isTemporaryChat = searchStr.includes(`${TEMPORARY_CHAT_QUERY_ID}=true`)
+  const isTemporaryChat = new URLSearchParams(searchStr).get(TEMPORARY_CHAT_QUERY_ID) === 'true'
   const modelSupportsTools =
     selectedModel?.capabilities?.includes('tools') ?? false
   const chatScopeAvailable = !isTemporaryChat && modelSupportsTools
@@ -101,7 +101,7 @@ function Index() {
   // tool support still answers one-call questions through the same composer.
   const scopeUnsupportedReason =
     !isTemporaryChat && !modelSupportsTools
-      ? 'The selected model does not support tools, so this conversation cannot be granted folder, shell network or memory access. Ordinary chat still works.'
+      ? t('common:conversationScope.unsupported') + (scopeDraftElevated ? ` ${t('common:conversationScope.pendingKept')}` : '')
       : null
   const pickScopeFolder = useCallback(async () => {
     const picked = await serviceHub.dialog().open({ directory: true })
@@ -112,26 +112,27 @@ function Index() {
   // truthful reason; unsupported paths are denied with the consent wording.
   const attachScopeFolder = useCallback(async () => {
     if (isTemporaryChat) {
-      toast.info('A temporary chat keeps no folder access.')
+      toast.info(t('common:conversationScope.temporary'))
       return
     }
     if (!modelSupportsTools) {
       toast.info(
-        'The selected model does not support tools, so folder access cannot be granted. Ordinary chat still works.'
+        t('common:conversationScope.folderUnsupported')
       )
       return
     }
     const picked = await pickScopeFolder()
     if (picked === null) return
     if (!isConversationFolderPath(picked)) {
-      toast.error('This folder path is not supported. Choose another folder.')
+      toast.error(t('common:conversationScope.invalidFolder'))
       return
     }
+    if (scopeDraft.folderScope) toast.info(t('common:conversationScope.folderReplaced'))
     setScopeDraft((draft) => ({
       ...draft,
       folderScope: { path: picked, access: 'read' },
     }))
-  }, [isTemporaryChat, modelSupportsTools, pickScopeFolder])
+  }, [isTemporaryChat, modelSupportsTools, pickScopeFolder, scopeDraft.folderScope, t])
   const prepareThreadCreation = useCallback(() => {
     const snapshot = scopeDraft
     return async (threadId: string) => {
@@ -236,7 +237,7 @@ function Index() {
           {scopeUnsupportedReason && (
             <p
               className="pt-2 text-xs leading-5 text-muted-foreground"
-              data-testid="home-scope-unsupported"
+              role="status" aria-live="polite" data-testid="home-scope-unsupported"
             >
               {scopeUnsupportedReason}
             </p>
@@ -248,7 +249,7 @@ function Index() {
               <button
                 type="button"
                 className="rounded-sm p-1 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={t('common:homeMode.removeFolder')}
+                aria-label={t('common:conversationScope.removeProject')}
                 onClick={() => setProject(null)}
               >
                 <X className="size-4" aria-hidden="true" />

@@ -1,4 +1,5 @@
-import { createFileRoute, useParams } from '@tanstack/react-router'
+import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
+import { createFileRoute, useLocation, useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -101,10 +102,12 @@ function ProjectPageContent() {
   // capability only comes from the explicit consent draft below.
   const modelSupportsTools =
     selectedModel?.capabilities?.includes('tools') ?? false
-  const chatScopeAvailable = modelSupportsTools
+  const searchStr = useLocation({ select: (location) => location.searchStr })
+  const isTemporaryChat = new URLSearchParams(searchStr).get(TEMPORARY_CHAT_QUERY_ID) === 'true'
+  const chatScopeAvailable = modelSupportsTools && !isTemporaryChat
   // Truthful unsupported reason; ordinary direct chat is never refused.
   const scopeUnsupportedReason = !modelSupportsTools
-    ? 'The selected model does not support tools, so this conversation cannot be granted folder, shell network or memory access. Ordinary chat still works.'
+    ? t('common:conversationScope.unsupported') + (scopeDraftElevated ? ` ${t('common:conversationScope.pendingKept')}` : '')
     : null
   const pickScopeFolder = useCallback(async () => {
     const picked = await serviceHub.dialog().open({ directory: true })
@@ -240,7 +243,7 @@ function ProjectPageContent() {
             {scopeUnsupportedReason && (
               <p
                 className="pt-2 text-xs leading-5 text-muted-foreground"
-                data-testid="project-scope-unsupported"
+                role="status" aria-live="polite" data-testid="project-scope-unsupported"
               >
                 {scopeUnsupportedReason}
               </p>

@@ -26,6 +26,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: any) => ({ ...config, id: '/project/$projectId' }),
   useNavigate: () => h.navigate,
+  useLocation: (opts: any) => opts.select({ searchStr: window.location.search }),
   useParams: () => ({ projectId: h.projectId }),
 }))
 
@@ -186,12 +187,11 @@ describe('Project route single Chat flow', () => {
   it('states a truthful unsupported reason without refusing ordinary direct chat', () => {
     h.selectedModel = { id: 'model-b', capabilities: [] }
     renderComponent()
-    expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
-      'does not support tools'
-    )
-    expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
-      'Ordinary chat still works.'
-    )
+    const notice = screen.getByTestId('project-scope-unsupported')
+    expect(notice).toHaveTextContent('common:conversationScope.unsupported')
+    expect(notice).not.toHaveTextContent('common:conversationScope.pendingKept')
+    expect(notice).toHaveAttribute('role', 'status')
+    expect(notice).toHaveAttribute('aria-live', 'polite')
     const input = screen.getByTestId('chat-input')
     expect(input).not.toHaveAttribute('data-has-prepare')
     fireEvent.click(screen.getByTestId('submit'))
@@ -234,6 +234,10 @@ describe('Project route single Chat flow', () => {
     view.rerender(<Component />)
     expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    // The hidden pending draft is announced, not silently dropped.
+    expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
+      'common:conversationScope.pendingKept'
+    )
     // Back on a tool-capable model the draft resurfaces explicitly pending.
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     view.rerender(<Component />)
