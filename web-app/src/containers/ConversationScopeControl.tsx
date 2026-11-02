@@ -20,23 +20,25 @@ type Props = {
 
 /** Active-scope control for one existing persistent Chat thread.
  *
- * Not mounted anywhere yet: mount only on a dispatch-enforced Chat path,
- * together with grant-aware advertisement. Temporary chats and Cowork
- * sessions never get a consent control, not even as a pending draft.
+ * Mounted from ChatInput's footer permissions popover for a persistent chat
+ * thread on a tool-capable composer surface; the scoped native dispatch for
+ * that thread surface is live (every native call re-reads the grant through
+ * dispatchThreadTool and native intersects it with locked stored consent).
+ * Chat tool ADVERTISEMENT is unchanged by this control — grant-driven
+ * advertisement is a separate later slice. Temporary chats and Cowork
+ * sessions never get a consent control, not even as a pending draft; this
+ * component re-checks those guards itself.
  *
  * Authority displayed is the overlay-aware getter, never raw metadata.
  * Elevated grants that are persisted but not confirmed in this process
- * (stale disk snapshots after a revoke, or after restart once the getter is
- * overlay-only) stay inactive until explicitly re-applied through the strict
- * setter.
+ * (stale disk snapshots after a revoke, or after a restart, since the getter
+ * is overlay-only) stay inactive until explicitly re-applied through the
+ * strict setter.
  *
- * Both mount preconditions from review are satisfied on the merged
- * enforcement base: the getter is overlay-only (restart defaults elevated
- * persisted grants to denied until reconfirmed), and the effective scope is
- * subscribed below through a stable useShallow selector over flattened
- * primitives — it re-derives from the overlay on every store notification,
- * not only when this thread's object identity changes, and cannot
- * fresh-object loop.
+ * The effective scope is subscribed below through a stable useShallow
+ * selector over flattened primitives — it re-derives from the overlay on
+ * every store notification, not only when this thread's object identity
+ * changes, and cannot fresh-object loop.
  */
 export function ConversationScopeControl({ threadId, pickFolder, disabled = false }: Props) {
   const thread = useThreads((state) => state.threads[threadId])
