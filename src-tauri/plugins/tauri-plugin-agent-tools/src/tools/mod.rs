@@ -782,18 +782,18 @@ pub fn renamed_shell_notice(name: &str, where_: &str) -> Option<String> {
 /// The memory tools' names before they became the one [`MEMORY_TOOL`].
 const LEGACY_MEMORY_TOOLS: [&str; 3] = ["memory_write", "memory_read", "memory_list"];
 
-/// Whether a user-written tool name or glob meant the old memory tools: it
-/// starts with `memory_` (any case) and matches one of their names. Unlike
+/// Whether a user-written tool name or glob covered the old memory tools: it
+/// matches one of their names (any case) but not `memory` itself. Unlike
 /// `bash`, such an entry is carried over to `memory` -- a deny on
 /// `memory_write` that stopped matching would hand the agent every op it used
 /// to refuse -- and the whole tool is meant, since one tool now does what the
-/// three did. A glob that merely happened to catch one (`*write*`) is left as
-/// written.
+/// three did. That includes a broad glob such as `*write*`: a user who denied
+/// every write with it would otherwise lose memory's coverage silently.
 pub fn names_legacy_memory(pattern: &str) -> bool {
     let lower = pattern.trim().to_ascii_lowercase();
-    lower.starts_with("memory_")
-        && glob::Pattern::new(&lower)
-            .is_ok_and(|p| LEGACY_MEMORY_TOOLS.iter().any(|name| p.matches(name)))
+    glob::Pattern::new(&lower).is_ok_and(|p| {
+        !p.matches(MEMORY_TOOL) && LEGACY_MEMORY_TOOLS.iter().any(|name| p.matches(name))
+    })
 }
 
 /// The notice for a user-written tool name or pattern that names a tool by a
@@ -803,11 +803,18 @@ pub fn names_legacy_memory(pattern: &str) -> bool {
 pub fn renamed_tool_notice(name: &str, where_: &str) -> Option<String> {
     renamed_shell_notice(name, where_).or_else(|| {
         names_legacy_memory(name).then(|| {
-            format!(
-                "{where_} names `{}`, an old memory tool name: it now applies to the whole \
-                 `{MEMORY_TOOL}` tool (every op). Rename it to `{MEMORY_TOOL}`.",
-                name.trim()
-            )
+            let name = name.trim();
+            if name.to_ascii_lowercase().starts_with("memory_") {
+                format!(
+                    "{where_} names `{name}`, an old memory tool name: it now applies to the \
+                     whole `{MEMORY_TOOL}` tool (every op). Rename it to `{MEMORY_TOOL}`."
+                )
+            } else {
+                format!(
+                    "{where_} has `{name}`, which matched an old memory tool name: it now \
+                     also applies to the whole `{MEMORY_TOOL}` tool (every op)."
+                )
+            }
         })
     })
 }
@@ -865,7 +872,13 @@ mod tests {
             assert!(notice.contains(&format!("[tools] deny names `{}`", old.trim())), "{notice}");
             assert!(notice.contains("`memory`"), "{notice}");
         }
-        for other in ["memory", "memory*", "*", "*write*", "skill_write", "mcp__x__memory_write", "read"] {
+        // A broad glob that caught an old name keeps covering memory, and says so.
+        for broad in ["*write*", "*_read", "*_LIST"] {
+            assert!(names_legacy_memory(broad), "{broad}");
+            let notice = renamed_tool_notice(broad, "[tools] deny").expect("flagged");
+            assert!(notice.contains(&format!("`{broad}`, which matched")), "{notice}");
+        }
+        for other in ["memory", "memory*", "*", "skill_write", "mcp__x__memory_write", "read"] {
             assert!(!names_legacy_memory(other), "{other}");
             assert!(renamed_tool_notice(other, "x").is_none(), "{other}");
         }

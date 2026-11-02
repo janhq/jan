@@ -140,8 +140,11 @@ mod tests {
             let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &s(&[old]));
             assert!(perms.is_allowed("memory"), "allow_write {old}");
         }
+        // A broad deny that used to catch `memory_write` keeps covering memory.
         let broad = ToolPermissions::new(PermissionDefault::Allow, &[], &s(&["*write*"]), &[]);
-        assert!(!broad.is_denied("memory"), "a glob that never named memory is left alone");
+        assert!(broad.is_denied("memory"), "a deny on every write still reaches memory");
+        let other = ToolPermissions::new(PermissionDefault::Allow, &[], &s(&["web_*"]), &[]);
+        assert!(!other.is_denied("memory"), "a glob that never matched memory is left alone");
     }
 
     #[test]

@@ -96,8 +96,9 @@ says so too.
 
 The memory tools `memory_write`, `memory_read` and `memory_list` are now one tool, `memory`. An old
 name in `allow`, `deny` or a hook matcher keeps applying, to the whole `memory` tool: a
-`deny = ["memory_write"]` now denies every memory op, reads included. The `jan` CLI reports each
-such entry when a run starts; rename it to `memory`.
+`deny = ["memory_write"]` now denies every memory op, reads included. The same holds for a broader
+glob that used to catch an old name: `deny = ["*write*"]` still denies `memory`. The `jan` CLI
+reports each such entry when a run starts; rename an old name to `memory`.
 
 ## The shell sandbox
 

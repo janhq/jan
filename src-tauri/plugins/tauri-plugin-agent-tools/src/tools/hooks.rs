@@ -746,15 +746,18 @@ mod tests {
             vec![
                 entry("PreToolUse", Some("memory_write"), "guard"),
                 entry("PostToolUse", Some("*write*"), "log"),
+                entry("PostToolUse", Some("web_*"), "net"),
             ],
             Path::new("hooks.json"),
         );
         assert_eq!(set.matching(HookEvent::PreToolUse, Some("memory")).len(), 1);
-        assert!(set.matching(HookEvent::PostToolUse, Some("memory")).is_empty());
-        assert_eq!(set.load_notices().len(), 1, "{:?}", set.load_notices());
+        // A broad guard that caught `memory_write` keeps firing for memory.
+        assert_eq!(set.matching(HookEvent::PostToolUse, Some("memory")).len(), 1);
+        assert_eq!(set.load_notices().len(), 2, "{:?}", set.load_notices());
         let notice = &set.load_notices()[0];
         assert!(notice.contains("PreToolUse matcher in hooks.json names `memory_write`"), "{notice}");
-        assert_eq!(set.renamed_notices("memory"), vec![notice.as_str()]);
+        assert!(set.load_notices()[1].contains("`*write*`, which matched"), "{:?}", set.load_notices());
+        assert_eq!(set.renamed_notices("memory").len(), 2);
         assert!(set.renamed_notices("shell").is_empty());
     }
 

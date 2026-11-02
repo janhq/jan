@@ -482,8 +482,9 @@ fn change_lock(store: &Path) -> std::sync::Arc<tokio::sync::Mutex<()>> {
 ///
 /// Another process updates the side file too, so the in-process lock is
 /// paired with a lock file of its own, not the change lock: reads update the
-/// side file and must not wait out a long change. Held only for this small
-/// read-modify-write, so waiting on it in place is brief.
+/// side file and must not wait out a long change. How long another process
+/// holds it is out of this one's hands, so async callers go through
+/// [`update_meta_async`], which waits on the blocking pool.
 fn update_meta(store: &Path, update: impl FnOnce(&mut Meta) -> bool) {
     let lock = meta_lock(store);
     let _held = lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -496,16 +497,15 @@ fn update_meta(store: &Path, update: impl FnOnce(&mut Meta) -> bool) {
     }
 }
 
-/// Update one note's recency.
-fn touch_meta(store: &Path, name: &str, update: impl FnOnce(&mut NoteMeta)) {
-    update_meta(store, |meta| {
-        update(meta.notes.entry(name.to_string()).or_default());
-        true
-    });
-}
-
-fn forget_meta(store: &Path, name: &str) {
-    update_meta(store, |meta| meta.notes.remove(name).is_some());
+/// [`update_meta`] off the async runtime: the lock file may be held by another
+/// process (a suspended one, or one on a slow network filesystem), and a
+/// worker parked on it would stall every task scheduled there.
+async fn update_meta_async(
+    store: &Path,
+    update: impl FnOnce(&mut Meta) -> bool + Send + 'static,
+) {
+    let store = store.to_path_buf();
+    let _ = tokio::task::spawn_blocking(move || update_meta(&store, update)).await;
 }
 
 /// Write the side file through a temp file in the same directory and a
@@ -628,7 +628,12 @@ pub async fn read(store: &Path, name: &str) -> Result<String, String> {
         .await
         .map_err(|e| format!("ERROR: {e}"))?;
     let now = now_ms();
-    touch_meta(store, &canonical(name), |m| m.read_ms = Some(now));
+    let name = canonical(name);
+    update_meta_async(store, move |meta| {
+        meta.notes.entry(name).or_default().read_ms = Some(now);
+        true
+    })
+    .await;
     Ok(content)
 }
 
@@ -679,7 +684,12 @@ pub async fn write(store: &Path, name: &str, content: &str) -> Result<String, St
         .await
         .map_err(|e| format!("ERROR: {e}"))?;
     let now = now_ms();
-    touch_meta(store, &canonical(name), |m| m.written_ms = Some(now));
+    let name = canonical(name);
+    update_meta_async(store, move |meta| {
+        meta.notes.entry(name).or_default().written_ms = Some(now);
+        true
+    })
+    .await;
     write_index(store);
     Ok(rel.to_string_lossy().replace('\\', "/"))
 }
@@ -694,7 +704,8 @@ pub async fn delete(store: &Path, name: &str) -> Result<(), String> {
                 // Fails while anything is left in it, which is the point.
                 let _ = tokio::fs::remove_dir(parent).await;
             }
-            forget_meta(store, &canonical(name));
+            let name = canonical(name);
+            update_meta_async(store, move |meta| meta.notes.remove(&name).is_some()).await;
             write_index(store);
             Ok(())
         }
@@ -732,13 +743,15 @@ pub async fn rename(store: &Path, from: &str, to: &str) -> Result<String, String
         // Fails while anything is left in it, which is the point.
         let _ = tokio::fs::remove_dir(parent).await;
     }
-    update_meta(store, |meta| match meta.notes.remove(&canonical(from)) {
+    let (from, to) = (canonical(from), canonical(to));
+    update_meta_async(store, move |meta| match meta.notes.remove(&from) {
         Some(recency) => {
-            meta.notes.insert(canonical(to), recency);
+            meta.notes.insert(to, recency);
             true
         }
         None => false,
-    });
+    })
+    .await;
     write_index(store);
     Ok(rel.to_string_lossy().replace('\\', "/"))
 }
@@ -1483,6 +1496,14 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    /// Update one note's recency, synchronously.
+    fn touch_meta(store: &Path, name: &str, update: impl FnOnce(&mut NoteMeta)) {
+        update_meta(store, |meta| {
+            update(meta.notes.entry(name.to_string()).or_default());
+            true
+        });
+    }
+
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     fn unique_root() -> PathBuf {
@@ -2002,6 +2023,33 @@ mod tests {
         drop(other);
         waiting.join().unwrap();
         assert_eq!(load_meta(&root).unwrap().notes["a"].read_ms, Some(1));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A read waiting on another process's recency lock must not park the
+    /// runtime: on a single-threaded one, every other task would stall too.
+    #[test]
+    fn a_read_waiting_on_another_process_leaves_the_runtime_free() {
+        let root = unique_root();
+        put(&root, "a", "A");
+        let other = hold_as_another_process(&root, META_LOCK_FILE);
+        let (ticked, tick) = std::sync::mpsc::channel();
+        let runtime = std::thread::spawn({
+            let root = root.clone();
+            move || {
+                let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+                rt.block_on(async {
+                    let reading = tokio::spawn(async move { read(&root, "a").await });
+                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                    let _ = ticked.send(());
+                    reading.await.unwrap()
+                })
+            }
+        });
+        let free = tick.recv_timeout(std::time::Duration::from_secs(5)).is_ok();
+        drop(other);
+        assert_eq!(runtime.join().unwrap().unwrap(), "A");
+        assert!(free, "the read parked the runtime on another process's lock");
         let _ = std::fs::remove_dir_all(&root);
     }
 

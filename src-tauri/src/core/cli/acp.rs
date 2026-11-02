@@ -995,8 +995,12 @@ fn tool_kind(name: &str, args: &Value) -> ToolKind {
             Some("write" | "edit" | "delete" | "move") => ToolKind::Edit,
             _ => ToolKind::Other,
         },
-        "read" | "ls" | "skill_read" | "skill_list" => ToolKind::Read,
-        "edit" | "write" | "skill_write" => ToolKind::Edit,
+        // `memory_read`/`memory_list`/`memory_write` are the memory tool's
+        // pre-rename names, still in replayed history.
+        "read" | "ls" | "skill_read" | "skill_list" | "memory_read" | "memory_list" => {
+            ToolKind::Read
+        }
+        "edit" | "write" | "skill_write" | "memory_write" => ToolKind::Edit,
         "grep" | "find" => ToolKind::Search,
         // `bash` is the shell's pre-rename name, still in replayed history.
         "bash" | tauri_plugin_agent_tools::tools::SHELL_TOOL => ToolKind::Execute,
@@ -1079,6 +1083,10 @@ mod tests {
         assert_eq!(kind(Value::Null), ToolKind::Other);
         assert_eq!(tool_kind("write", &Value::Null), ToolKind::Edit);
         assert_eq!(tool_kind("read", &Value::Null), ToolKind::Read);
+        // A thread recorded before the rename replays its old memory calls.
+        assert_eq!(tool_kind("memory_read", &Value::Null), ToolKind::Read);
+        assert_eq!(tool_kind("memory_list", &Value::Null), ToolKind::Read);
+        assert_eq!(tool_kind("memory_write", &Value::Null), ToolKind::Edit);
     }
 
     #[test]
