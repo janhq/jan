@@ -1379,17 +1379,16 @@ fn event_background_notices() {
 
 #[test]
 fn event_messages_between_agents() {
-    use crate::core::agent::events::MAIN_AGENT;
     event_kind_snapshot("event_messages_between_agents", |app| {
-        general_4(app, StreamEvent::AgentMessage {
-            from: MAIN_AGENT.into(),
-            to: "general-4".into(),
-            text: "Narrow it to the parser.\nSkip the lexer: it is covered.".into(),
-        });
-        app.apply(StreamEvent::AgentMessage {
-            from: "general-4".into(),
-            to: MAIN_AGENT.into(),
-            text: "Found the bug in parse_command.\nIt drops the last token.".into(),
+        tool_call(app, "m1", "message_subagent", json!({
+            "name": "general-4",
+            "message": "Narrow it to the parser.\nSkip the lexer: it is covered.",
+        }));
+        tool_result(app, "m1", "Queued for subagent 'general-4'", false, None);
+        general_4(app, StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "message_main_agent".into(),
+            args: json!({ "message": "Found the bug in parse_command.\nIt drops the last token." }),
         });
     });
 }

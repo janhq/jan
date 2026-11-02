@@ -115,9 +115,10 @@ pub enum DisplayEntry {
     /// A system note the transcript showed (an acknowledgement, a warning, a
     /// failure), so a resumed transcript reads the way the live one did.
     Note { text: String, level: NoteLevel },
-    /// A message between the main agent and a subagent, as delivered (see
-    /// `StreamEvent::AgentMessage`). Part of the conversation, not a note: the
-    /// main agent's next move may answer it, so a resume must show it.
+    /// A message between the main agent and a subagent, recorded once where
+    /// the TUI showed it (see `Transcript::agent_message`). Part of the
+    /// conversation, not a note: the main agent's next move may answer it,
+    /// so a resume must show it.
     AgentMessage { from: String, to: String, text: String },
     /// A note one subagent's run raised on the main transcript (a notice, a
     /// retry, a compaction), drawn with the agent as its title and `text`

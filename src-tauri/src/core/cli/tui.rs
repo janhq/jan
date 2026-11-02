@@ -2609,9 +2609,15 @@ const STATUS_PREVIEW_WIDTH: usize = 72;
 /// transcript holds it: `Message to <name>` for one it sent, `Message from
 /// <name>` for one it received, the first line as its summary and the whole
 /// text as its detail. Live, so it reads in full while the step that
-/// delivered it is in progress, then folds with that step.
+/// sent or took it is in progress, then folds with that step.
 fn agent_message_row(me: &str, from: &str, to: &str, text: &str) -> EventRow {
     let (verb, other) = if from == me { ("Message to", to) } else { ("Message from", from) };
+    message_row(verb, other, text)
+}
+
+/// `agent_message_row` once its direction is known: `verb` and the agent at
+/// the other end title it.
+fn message_row(verb: &str, other: &str, text: &str) -> EventRow {
     let dim = Style::new().dim();
     let mut lines = text.lines().map(str::trim_end).skip_while(|l| l.trim().is_empty());
     let first = lines.next().unwrap_or("").trim().to_string();
@@ -3207,6 +3213,26 @@ impl Transcript {
         // is drawn at, so they survive a resize either way.
         let label = tool_activity(name, args);
         let done = tool_finished(name, args);
+        // A message is shown as what was said, at the call that sent it: the
+        // reader taking it later adds nothing (see `StreamEvent::AgentMessage`).
+        let arg = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
+        let to = match name {
+            "message_subagent" => Some(arg("name")),
+            "message_main_agent" => Some(MAIN_AGENT),
+            _ => None,
+        };
+        if let Some(to) = to {
+            self.finalize_tool_group();
+            self.gap(Kind::Meta);
+            self.push_event(message_row("Message to", to, arg("message")));
+            self.pending_rows.push(PendingToolRow {
+                id,
+                idx: self.rows.len() - 1,
+                label,
+                done,
+            });
+            return;
+        }
         if matches!(name, "edit" | "write" | "dispatch_subagent") {
             if let Some(p) = args.get("path").and_then(|v| v.as_str()) {
                 self.diff_paths.insert(id.clone(), p.to_string());
@@ -3601,6 +3627,9 @@ impl Transcript {
                         state: ToolState::Interrupted,
                         ..(**agent).clone()
                     })),
+                    // A message was queued when its call was made; the run
+                    // ending before its receipt does not unsend it.
+                    RowKind::Event(_) => continue,
                     _ => RowKind::Tool {
                         state: ToolState::Interrupted,
                         label: row.label,
@@ -4147,6 +4176,19 @@ impl Transcript {
                 }
                 call
             }
+            // A message that went out says nothing more; one that could not
+            // be sent turns red and says why under what it would have said.
+            RowKind::Event(event) => {
+                if is_error {
+                    let mut event = (**event).clone();
+                    event.event.marker = ToolState::Failure.bullet();
+                    if let RowKind::Result { content: Some(why), .. } = result {
+                        event.event.children.push(Child::text(why, result_style(true)));
+                    }
+                    self.rows[row.idx] = RowKind::Event(Box::new(event)).into();
+                }
+                return None;
+            }
             _ => RowKind::Tool {
                 state: ToolState::of(is_error),
                 label,
@@ -4420,8 +4462,10 @@ impl Transcript {
         self.push_event(row);
     }
 
-    /// A message between agents as it was delivered, journaled so a resume
-    /// shows it. `me` names the agent this transcript belongs to.
+    /// A message between agents, journaled so a resume shows it. The main
+    /// transcript records one when it is sent (a child's `message_main_agent`,
+    /// steering from `/agents`); a child's records one when it takes it. `me`
+    /// names the agent this transcript belongs to.
     fn agent_message(&mut self, me: &str, from: &str, to: &str, text: &str) {
         self.flush_assistant();
         self.finalize_tool_group();
@@ -6867,9 +6911,6 @@ impl App {
             crate::core::agent::reminder::attach(&mut self.history, &notice.text);
         }
         for notice in &subagents {
-            if let Some((from, text)) = &notice.message {
-                self.transcript.agent_message(MAIN_AGENT, from, MAIN_AGENT, text);
-            }
             crate::core::agent::reminder::attach(&mut self.history, &notice.text);
         }
         self.begin_turn();
@@ -9038,10 +9079,10 @@ impl App {
                 self.transcript.flush_assistant();
                 self.notice(&text, None);
             }
-            StreamEvent::AgentMessage { from, to, text } => {
-                self.scrollback = 0;
-                self.transcript.agent_message(MAIN_AGENT, &from, &to, &text);
-            }
+            // A subagent's message reaching the main agent: already shown when
+            // the child sent it (its `message_main_agent` call), so the
+            // delivery adds nothing.
+            StreamEvent::AgentMessage { .. } => {}
             StreamEvent::Monitors { monitors } => self.monitors = monitors,
             // The live countdown carries every attempt; the transcript notes
             // only the first, so a flaky link leaves one line, not ten.
@@ -9191,6 +9232,13 @@ impl App {
                 name: tool,
                 args,
             } => {
+                // A message to the main agent is the main transcript's one
+                // entry for it, made when the child sends it.
+                if tool == crate::core::agent::subagent::MESSAGE_MAIN_AGENT_TOOL {
+                    let text = args.get("message").and_then(|v| v.as_str()).unwrap_or("");
+                    self.scrollback = 0;
+                    self.transcript.agent_message(MAIN_AGENT, name, MAIN_AGENT, text);
+                }
                 if let Some(panel) = panel {
                     // The completed call supersedes its in-progress view.
                     if panel.active.as_ref().is_some_and(|c| c.id == id) {
@@ -9313,15 +9361,14 @@ impl App {
                 let key = self.usage_key();
                 self.session_usage.entry(key).or_default().add(&usage);
             }
-            // The parent's message, as the child took it: in the child's own
-            // run and in the main transcript, which is where the sender is.
+            // The parent's message, as the child took it, in the child's own
+            // run. The main transcript showed it when it was sent, so the
+            // delivery adds nothing there.
             StreamEvent::AgentMessage { from, to, text } => {
                 if let Some(panel) = panel {
                     panel.transcript.agent_message(name, &from, &to, &text);
                     panel.transcript.cap_rows(CHILD_ROWS_MAX);
                 }
-                self.scrollback = 0;
-                self.transcript.agent_message(MAIN_AGENT, &from, &to, &text);
             }
             // A child's headline (a compaction, a monitor match) is as much the
             // user's business as the parent's: dropping it made a child's
@@ -18750,11 +18797,10 @@ fn handle_agent_message_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                 Ok(_) => {
                     let name = prompt.name.clone();
                     app.agent_message = None;
-                    // The message itself shows once the child takes it (an
-                    // `AgentMessage` from its run); queued is not read.
-                    app.note(&format!(
-                        "message queued for subagent {name}; it reads it at its next step"
-                    ));
+                    // One entry, when the user sends it: the child taking it
+                    // later adds nothing to this transcript.
+                    app.scrollback = 0;
+                    app.transcript.agent_message(MAIN_AGENT, MAIN_AGENT, &name, &text);
                 }
                 Err(e) => prompt.error = Some(e.to_string()),
             }
@@ -27747,13 +27793,16 @@ mod tests {
             vec![json!({ "role": "user", "content": "also say BANANA" })],
             "queued exactly as a parent message is"
         );
-        // Queued is not read: nothing shows as delivered yet.
+        // The sender's transcript shows it once, as sent; the child's run
+        // shows it once the child takes it.
+        let sent = "\u{2022} Message to counter\n  \u{2514} also say BANANA";
+        assert!(transcript_text(&app).contains(sent), "{}", transcript_text(&app));
         let child = |app: &App| -> String {
             app.subagents[0].transcript.rows.iter().map(row_text).collect::<Vec<_>>().join("\n")
         };
         assert!(!child(&app).contains("BANANA"), "{}", child(&app));
 
-        // The child takes it at its next boundary: both sides show it.
+        // The child takes it at its next boundary.
         subagent_event(
             &mut app,
             "sub-counter-1",
@@ -27767,7 +27816,179 @@ mod tests {
         let seen = child(&app);
         assert!(seen.contains("\u{2022} Message from main\n  \u{2514} also say BANANA"), "{seen}");
         let parent = transcript_text(&app);
-        assert!(parent.contains("\u{2022} Message to counter\n  \u{2514} also say BANANA"), "{parent}");
+        assert_eq!(parent.matches("BANANA").count(), 1, "{parent}");
+    }
+
+    /// A message is one entry, at the moment its sender acts: the main
+    /// agent's `message_subagent` call reads as `Message to <name>` with the
+    /// text under it, and the child taking it later (after the turn ended)
+    /// appends nothing. A child's `message_main_agent` is likewise one
+    /// `Message from <name>` at its call. A resume shows the same.
+    #[test]
+    fn a_message_between_agents_is_one_entry_at_the_call() {
+        use super::MAIN_AGENT;
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-debug-1".into(),
+            name: "debug".into(),
+            task: Some("look".into()),
+            workspace: None,
+            internal: false,
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "m1".into(),
+            name: "message_subagent".into(),
+            args: json!({ "name": "debug", "message": "Narrow it to the parser.\nSkip the lexer." }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "m1".into(),
+            content: "Queued for subagent 'debug'".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token { text: "Asked it to narrow.".into() });
+        app.transcript.settle(false);
+        let at_call = transcript_text(&app);
+        let sent = "\u{2022} Message to debug\n  \u{2514} Narrow it to the parser.";
+        assert_eq!(at_call.matches("debug").count(), 1, "{at_call}");
+        assert!(at_call.contains(sent), "{at_call}");
+        assert!(
+            at_call.find(sent) < at_call.find("Asked it to narrow."),
+            "in call order: {at_call}"
+        );
+        // The child takes it at its next boundary, after the turn ended.
+        subagent_event(&mut app, "sub-debug-1", "debug", StreamEvent::AgentMessage {
+            from: MAIN_AGENT.into(),
+            to: "debug".into(),
+            text: "Narrow it to the parser.\nSkip the lexer.".into(),
+        });
+        assert_eq!(transcript_text(&app), at_call, "nothing is appended on delivery");
+        // The child writes back: one entry at its call, none at delivery.
+        subagent_event(&mut app, "sub-debug-1", "debug", StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "message_main_agent".into(),
+            args: json!({ "message": "Found it in parse_command." }),
+        });
+        app.apply(StreamEvent::AgentMessage {
+            from: "debug".into(),
+            to: MAIN_AGENT.into(),
+            text: "Found it in parse_command.".into(),
+        });
+        let both = transcript_text(&app);
+        let got = "\u{2022} Message from debug\n  \u{2514} Found it in parse_command.";
+        assert_eq!(both.matches("Found it").count(), 1, "{both}");
+        assert!(both.contains(got), "{both}");
+        let child: String = app.subagents[0].transcript.rows.iter().map(row_text).collect();
+        assert!(child.contains("\u{2022} Message to main"), "{child}");
+        assert!(child.contains("\u{2022} Message from main"), "{child}");
+        let mut resumed = test_app();
+        replay_display_log(&mut resumed, app.transcript.display_log.clone());
+        resumed.transcript.settle(false);
+        let replayed = transcript_text(&resumed);
+        assert_eq!(replayed.matches("Narrow it").count(), 1, "{replayed}");
+        assert!(replayed.contains(sent) && replayed.contains(got), "{replayed}");
+        assert!(!replayed.contains("Messaged"), "{replayed}");
+    }
+
+    /// Every action that is both a tool call and an event of its own shows
+    /// once: whatever the event adds lands on the call's entry, never beside it.
+    #[test]
+    fn every_action_is_one_transcript_entry() {
+        use super::MAIN_AGENT;
+        let mut app = test_app();
+        let entries = |app: &App| app.transcript.rows.iter().filter(|r| !r.is_blank()).count();
+        let call = |app: &mut App, id: &str, name: &str, args: serde_json::Value, out: &str| {
+            app.apply(StreamEvent::ToolCall { id: id.into(), name: name.into(), args });
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: out.into(),
+                is_error: false,
+                diff: None,
+            });
+        };
+        let step = |app: &mut App, what: &str, act: &dyn Fn(&mut App)| {
+            app.transcript.finalize_tool_group();
+            let before = entries(app);
+            act(app);
+            app.transcript.finalize_tool_group();
+            assert_eq!(entries(app), before + 1, "{what}: {}", transcript_text(app));
+        };
+        step(&mut app, "dispatch", &|app| {
+            app.apply(StreamEvent::ToolCall {
+                id: "d1".into(),
+                name: "dispatch_subagent".into(),
+                args: json!({ "subagents": [
+                    { "agent": "debug", "task": "look" },
+                    { "agent": "general", "task": "docs" },
+                ] }),
+            });
+            app.apply(StreamEvent::SubagentStart {
+                run_id: "sub-debug-1".into(),
+                name: "debug".into(),
+                task: Some("look".into()),
+                workspace: None,
+                internal: false,
+            });
+            app.apply(StreamEvent::SubagentQueued {
+                run_id: "sub-general-2".into(),
+                name: "general".into(),
+                task: Some("docs".into()),
+                waiting: 1,
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: "d1".into(),
+                content: "dispatched".into(),
+                is_error: false,
+                diff: None,
+            });
+        });
+        step(&mut app, "message_subagent", &|app| {
+            call(app, "m1", "message_subagent", json!({ "name": "debug", "message": "hi" }), "Queued");
+            subagent_event(app, "sub-debug-1", "debug", StreamEvent::AgentMessage {
+                from: MAIN_AGENT.into(),
+                to: "debug".into(),
+                text: "hi".into(),
+            });
+        });
+        step(&mut app, "message_main_agent", &|app| {
+            subagent_event(app, "sub-debug-1", "debug", StreamEvent::ToolCall {
+                id: "c1".into(),
+                name: "message_main_agent".into(),
+                args: json!({ "message": "found it" }),
+            });
+            app.apply(StreamEvent::AgentMessage {
+                from: "debug".into(),
+                to: MAIN_AGENT.into(),
+                text: "found it".into(),
+            });
+        });
+        step(&mut app, "stop_subagent", &|app| {
+            call(app, "s1", "stop_subagent", json!({ "name": "general" }), "Stopped");
+            app.apply(StreamEvent::SubagentEnd {
+                run_id: "sub-general-2".into(),
+                name: "general".into(),
+                error: Some("stopped by the parent agent".into()),
+            });
+        });
+        step(&mut app, "await_subagent and the child ending", &|app| {
+            call(app, "a1", "await_subagent", json!({ "run_id": "sub-debug-1" }), "the answer");
+            app.apply(StreamEvent::SubagentEnd {
+                run_id: "sub-debug-1".into(),
+                name: "debug".into(),
+                error: None,
+            });
+        });
+        step(&mut app, "todo", &|app| {
+            call(app, "t1", "todo", json!({ "op": "init", "list": [] }), "ok");
+            app.apply(StreamEvent::TodoUpdate { list: Default::default() });
+        });
+        step(&mut app, "ask", &|app| {
+            call(app, "q1", "ask", json!({ "questions": [] }), "answered");
+            app.apply(StreamEvent::AskResolved { request_id: "ask-1".into() });
+        });
+        step(&mut app, "memory write", &|app| {
+            call(app, "w1", "memory", json!({ "op": "write", "name": "decisions" }), "ok");
+        });
     }
 
     /// The dock opens over the `/agents` inspector, whose draw path returns
