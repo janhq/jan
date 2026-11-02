@@ -79,6 +79,14 @@ const capabilityRequests = new Map<string, symbol>()
 // on disk. Background fetches must never confirm or restore that authority.
 const effectiveCapabilities = new Map<string, ConversationCapabilitiesV1>()
 
+/** Threads whose last revoke the host never acknowledged while a grant may
+ * still be live there. Sticky on purpose: the setter's own synchronous deny
+ * erases the store state a RETRY would otherwise read, so without this a
+ * second failure would look like "nothing was granted" and surfaces would
+ * drop the background warning. Cleared only by a save the host acknowledged
+ * end to end. */
+const hostUncertainGrants = new Set<string>()
+
 // Helper function to clean up vector DB collection for a thread
 const cleanupVectorDB = async (threadId: string) => {
   try {
@@ -757,6 +765,14 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     }
     const original = assertChatThread()
     const capabilities = resolveConversationCapabilities(value)
+    // Whether anything is granted BEFORE this change, captured ahead of the
+    // synchronous deny below, which erases both sources it reads.
+    const elevatedIn = (c: ConversationCapabilitiesV1) =>
+      c.shellNetwork || c.memoryWrite || c.folderScope !== null
+    const priorGrant =
+      hostUncertainGrants.has(threadId) ||
+      elevatedIn(resolveConversationCapabilities(effectiveCapabilities.get(threadId))) ||
+      elevatedIn(resolveConversationCapabilities(original.metadata?.conversationCapabilities))
     const request = Symbol(threadId)
     capabilityRequests.set(threadId, request)
     effectiveCapabilities.set(threadId, defaultConversationCapabilities())
@@ -786,7 +802,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         // truth; nothing is persisted and the denied overlay above stays.
         // Grants are never restored.
         await stopAllThreadAgentMonitors(threadId)
-        throw new HostRevokeUnconfirmedError(threadId, cause)
+        if (priorGrant) hostUncertainGrants.add(threadId)
+        throw new HostRevokeUnconfirmedError(threadId, priorGrant, cause)
       }
       if (previous) await previous.catch(() => {})
       assertChatThread()
@@ -798,6 +815,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         ...state.threads[threadId],
         metadata: { ...state.threads[threadId].metadata, conversationCapabilities: capabilities },
       } } }))
+      // The host acknowledged this save end to end (narrow + persist), so any
+      // earlier unacknowledged revoke is resolved.
+      hostUncertainGrants.delete(threadId)
     })()
     capabilityWrites.set(threadId, write)
     try {

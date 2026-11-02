@@ -98,12 +98,35 @@ describe('useThreads conversation capabilities', () => {
     revokeHost.mockRejectedValueOnce(new Error('ipc bridge down'))
     await expect(save(granted)).rejects.toMatchObject({
       name: 'HostRevokeUnconfirmedError',
+      // Granting from default: nothing existed for background work to keep.
+      backgroundMayPersist: false,
     })
     expect(calls).toEqual(['stopAll:chat'])
     expect(useThreads.getState().getConversationCapabilities('chat').shellNetwork).toBe(false)
     expect(
       useThreads.getState().threads.chat.metadata?.conversationCapabilities
     ).toEqual({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false })
+  })
+
+  // The first failed revoke erases the overlay and the optimistic metadata --
+  // the exact state a retry would read -- so the prior-grant fact must be
+  // sticky until the host acknowledges a save end to end.
+  it('host uncertainty is sticky across retries and cleared by an acknowledged save', async () => {
+    const id = 'sticky'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    await save(granted, id)
+    revokeHost.mockRejectedValueOnce(new Error('bridge down'))
+    await expect(save(null, id)).rejects.toMatchObject({ backgroundMayPersist: true })
+    // Retry from the already-erased state: still uncertain.
+    revokeHost.mockRejectedValueOnce(new Error('still down'))
+    await expect(save(null, id)).rejects.toMatchObject({ backgroundMayPersist: true })
+    // An acknowledged save resolves it...
+    await save(null, id)
+    // ...so a later failure with nothing granted is plain again.
+    revokeHost.mockRejectedValueOnce(new Error('down again'))
+    await expect(save(granted, id)).rejects.toMatchObject({ backgroundMayPersist: false })
   })
 
   it('narrows the host before it persists', async () => {

@@ -191,6 +191,26 @@ describe('ConversationScopeControl', () => {
     expect(useThreads.getState().getConversationCapabilities(id).shellNetwork).toBe(false)
   })
 
+  it('the background warning survives a retry after a failed revoke', async () => {
+    const id = freshId()
+    useThreads.setState({ threads: { [id]: thread(id) } })
+    await useThreads.getState().setConversationCapabilities(id, elevated)
+    // Every host ACK fails from here on.
+    revokeHost.mockRejectedValue(new Error('bridge down'))
+    mount(id)
+    fireEvent.click(screen.getByLabelText(SHELL_LABEL))
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('previous access')
+    )
+    // The failed attempt erased the overlay and the optimistic metadata, so a
+    // naive re-read would see "nothing granted". The retry must keep warning,
+    // never degrade to the plain copy while the host may still be elevated.
+    fireEvent.click(screen.getByLabelText(SHELL_LABEL))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(screen.getByRole('alert')).toHaveTextContent('previous access')
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Elevated access stays off')
+  })
+
   it('offers reconfirmation for a stale elevated snapshot and activates it only via the setter', async () => {
     const id = freshId()
     useThreads.setState({ threads: { [id]: thread(id) } })

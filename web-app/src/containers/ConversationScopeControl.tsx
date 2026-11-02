@@ -95,18 +95,6 @@ export function ConversationScopeControl({ threadId, pickFolder, disabled = fals
 
   const apply = async (next: ConversationCapabilitiesV1) => {
     const seq = ++applySeq.current
-    // Captured BEFORE the setter's synchronous deny overwrites the store: the
-    // ACK-failure copy depends on what was live or persisted before this
-    // change. Conservative on purpose -- a persisted grant counts even when
-    // the overlay already denies it (host confirmation state unknown), so a
-    // failed revoke of a stale snapshot still warns.
-    const hadElevated =
-      effective.shellNetwork ||
-      effective.memoryWrite ||
-      effective.folderScope !== null ||
-      persisted.shellNetwork ||
-      persisted.memoryWrite ||
-      persisted.folderScope !== null
     setSaving(true)
     setError('')
     try {
@@ -118,9 +106,13 @@ export function ConversationScopeControl({ threadId, pickFolder, disabled = fals
         // grant means neither narrow path ran: background agent tasks may
         // still hold that access, and claiming "off" would be false. A
         // failed host ACK with NO prior grant left nothing running to warn
-        // about -- the plain save-failure copy is the whole truth.
+        // about -- the plain save-failure copy is the whole truth. The
+        // prior-grant fact rides on the error because the setter computes it
+        // before its own deny erases the store, and keeps it sticky across
+        // retries -- this component re-reading the store here would get the
+        // already-erased state and degrade the warning on the second failure.
         setError(
-          error instanceof HostRevokeUnconfirmedError && hadElevated
+          error instanceof HostRevokeUnconfirmedError && error.backgroundMayPersist
             ? 'The app did not confirm this permission change. Background agent tasks may ' +
               'still have the previous access; stopping them was attempted but is not ' +
               'confirmed. Retry, or quit Jan to guarantee they stop.'

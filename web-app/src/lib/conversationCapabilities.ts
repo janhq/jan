@@ -23,11 +23,18 @@ export function defaultConversationCapabilities(): ConversationCapabilitiesV1 {
  * does not survive a restart. */
 export class HostRevokeUnconfirmedError extends Error {
   readonly hostCause: unknown
-  constructor(threadId: string, cause?: unknown) {
+  /** True when something was granted before this change -- live, persisted,
+   * or left uncertain by an EARLIER unacknowledged revoke of this thread --
+   * so background work may still hold that access. The setter computes it
+   * before its own synchronous deny erases the store state, and keeps it
+   * sticky across retries; surfaces must warn exactly when it is true. */
+  readonly backgroundMayPersist: boolean
+  constructor(threadId: string, backgroundMayPersist: boolean, cause?: unknown) {
     super(
       `The host did not confirm the permission change for ${threadId}; background agent access may still be active`
     )
     this.name = 'HostRevokeUnconfirmedError'
+    this.backgroundMayPersist = backgroundMayPersist
     this.hostCause = cause
   }
 }
