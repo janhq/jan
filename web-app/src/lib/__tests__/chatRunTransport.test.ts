@@ -160,7 +160,7 @@ describe('Chat runTurn stream adapter (real SDK reader and runner)', () => {
     expect(isChatRunNotice(reloaded.parts.at(-1)!)).toBe(true)
     expect(withoutChatRunNotices([reloaded])[0].parts).toEqual(message.parts.slice(0, -1))
   })
-  it('gates Continue like the route: capped turns resume from tool history, stopped turns need partial text', () => {
+  it('gates Continue: stopped turns resume from settled tool waves or partial text; notices and in-flight tools never qualify', () => {
     const notice = { type: 'text' as const, text: 'Stopped at the step limit.', providerMetadata: { jan: { chatRunNotice: true } } }
     const tool = { type: 'tool-fixture', toolCallId: 'c', state: 'output-available', input: {}, output: 'done' } as unknown as UIMessage['parts'][number]
     const text = { type: 'text' as const, text: 'partial' }

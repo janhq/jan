@@ -1960,7 +1960,7 @@ function ThreadDetail() {
         try {
           await sendQueuedMessage(CAPPED_CONTINUE_INSTRUCTION)
         } catch (error) {
-          console.error('Capped Continue was not accepted:', error)
+          console.error('History Continue was not accepted:', error)
         }
         return
       }
