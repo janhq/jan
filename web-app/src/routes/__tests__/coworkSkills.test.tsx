@@ -16,7 +16,7 @@ const backend = vi.hoisted(() => ({
     | null
     | ((deps: CoworkRunner.RunDeps, signal: AbortSignal) => Promise<void>),
   files: new Map<string, string>(),
-  transport: null as null | { refreshTools: () => Promise<void> },
+  transports: new Map<string, { refreshTools: () => Promise<void> }>(),
   runs: [] as {
     signal: AbortSignal
     sink: CoworkRunner.StreamSink
@@ -68,6 +68,8 @@ vi.mock('@/lib/coworkTransport', async () => {
   // Mirrors the real freeze: `refreshTools` snapshots the record for the
   // current config, `unfreezeTools` drops it at a run boundary, and dispatch
   // checks calls against `advertisedTools`. Plan mode withholds mutating tools.
+  // Only the tools these tests dispatch are listed: a test that dispatches any
+  // other tool must add it here, or the call is refused as unadvertised.
   const build = (planMode: boolean) =>
     Object.fromEntries(
       ['read', 'write', 'ask', 'todo']
@@ -79,10 +81,10 @@ vi.mock('@/lib/coworkTransport', async () => {
       private frozen: Record<string, Tool> | null = null
       private tools: Record<string, Tool> = {}
       constructor(
-        _sid: string,
+        sid: string,
         private config: { planMode: boolean }
       ) {
-        backend.transport = this
+        backend.transports.set(sid, this)
       }
       setConfig(config: { planMode: boolean }) {
         this.config = config
@@ -304,7 +306,7 @@ beforeEach(() => {
   backend.runs = []
   backend.exercise = null
   backend.files.clear()
-  backend.transport = null
+  backend.transports.clear()
   const browserStorage = new Map<string, string>()
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => browserStorage.get(key) ?? null,
@@ -556,7 +558,7 @@ it('requires plan approval before a failed-read loop can create the requested fi
     )
     // The next model step: the real transport refreshes the record here, so
     // the approved run now advertises `write`.
-    await backend.transport?.refreshTools()
+    await backend.transports.get(sid)?.refreshTools()
     writeResult = await deps.dispatch(
       {
         toolCallId: 'w1',
