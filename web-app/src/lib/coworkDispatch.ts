@@ -37,7 +37,7 @@ export type DispatchContext = {
    * never advertised cannot reach the network the user switched off. */
   webSearch: boolean
   /** Applies one `todo` operation and persists the result. */
-  onTodo: (input: unknown) => Promise<ToolOutcome>
+  onTodo: (input: unknown, toolCallId?: string) => Promise<ToolOutcome>
   /** Suspends until the user answers, or the run is aborted. */
   onAsk: (toolCallId: string, input: unknown) => Promise<ToolOutcome>
   /** Runs a nested subagent to completion. */
