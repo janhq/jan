@@ -196,17 +196,24 @@ mod write_file_atomic_tests {
         let mut read_only = fs::metadata(&dir).unwrap().permissions();
         read_only.set_mode(0o555);
         fs::set_permissions(&dir, read_only).unwrap();
+        // Probe whether the read-only bit is actually enforced (root ignores
+        // it). Deciding from the probe, not from the result under test, keeps
+        // a regression to in-place writes from hiding behind the skip.
+        let enforced = File::create(dir.join("probe")).is_err();
         let result = write_file_atomic(&target, b"replacement");
         let mut writable = fs::metadata(&dir).unwrap().permissions();
         writable.set_mode(0o755);
         fs::set_permissions(&dir, writable).unwrap();
 
-        // Root ignores permission bits; skip rather than assert a vacuous pass.
-        if result.is_ok() {
+        if !enforced {
             eprintln!("skipping: permissions not enforced (running as root?)");
             fs::remove_dir_all(&dir).unwrap();
             return;
         }
+        assert!(
+            result.is_err(),
+            "write must fail when the sibling temp file cannot be created"
+        );
         assert_eq!(fs::read(&target).unwrap(), b"original contents");
         let leftovers: Vec<_> = fs::read_dir(&dir)
             .unwrap()
