@@ -815,14 +815,15 @@ const ChatInput = memo(function ChatInput({
 
         setCurrentAssistant(assistant)
 
+        const threadModel = {
+          id: selectedModel?.id ?? defaultModel(selectedProvider),
+          provider: selectedProvider,
+        }
         let newThread: Thread
         try {
           if (finishThreadCreation) {
             newThread = await createThread(
-              {
-                id: selectedModel?.id ?? defaultModel(selectedProvider),
-                provider: selectedProvider,
-              },
+              threadModel,
               prompt, // Use prompt as thread title
               assistant,
               projectMetadata,
@@ -831,10 +832,7 @@ const ChatInput = memo(function ChatInput({
             )
           } else {
             newThread = await createThread(
-              {
-                id: selectedModel?.id ?? defaultModel(selectedProvider),
-                provider: selectedProvider,
-              },
+              threadModel,
               prompt, // Use prompt as thread title
               assistant,
               projectMetadata

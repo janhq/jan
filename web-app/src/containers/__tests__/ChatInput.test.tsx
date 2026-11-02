@@ -5,6 +5,7 @@ import {
   fireEvent,
   act,
   waitFor,
+  cleanup,
 } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import userEvent from '@testing-library/user-event'
@@ -467,6 +468,39 @@ describe('ChatInput', () => {
       expect(JSON.parse(sessionStorage.getItem(initialMessageKey)!)).toMatchObject({ text: 'Keep this draft' })
       expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({ params: { threadId: 'created-thread' } }))
       expect(setPromptMock).toHaveBeenCalledWith('')
+    })
+
+    it('passes the same model and title arguments to both creation branches', async () => {
+      // Guards the hoisted threadModel: the strict (prepared) and legacy
+      // branches must not drift apart in the model/title/assistant arguments.
+      selectedProviderOverride = 'llamacpp'
+      // The title must be the raw draft, not the reference-expanded text.
+      expandPromptReferencesMock.mockImplementation(async (text: string) => ({
+        text: `${text} [expanded]`,
+        resolvedContents: '',
+      }))
+      renderInput({ prepareThreadCreation: () => async () => true })
+      send()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      const strictCall = createThreadMock.mock.calls[0]
+      expect(strictCall).toHaveLength(6)
+      expect(strictCall[4]).toBe(false)
+      expect(strictCall[5]).toEqual({ strict: true })
+
+      cleanup()
+      createThreadMock.mockClear()
+      createThreadMock.mockResolvedValue({ id: 'created-thread' })
+      promptState = 'Keep this draft'
+      renderInput()
+      send()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      const legacyCall = createThreadMock.mock.calls[0]
+      expect(legacyCall).toHaveLength(4)
+
+      expect(strictCall[0]).toEqual({ id: 'model-a', provider: 'llamacpp' })
+      expect(strictCall[1]).toBe('Keep this draft')
+      expect(legacyCall[0]).toEqual(strictCall[0])
+      expect(legacyCall.slice(1, 4)).toEqual(strictCall.slice(1, 4))
     })
 
     it('snapshots before reference expansion and project loading, not from a newer draft', async () => {
