@@ -2,7 +2,7 @@
   "messages": [
     {
       "role": "system",
-      "content": "You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.\n\nWhen handling user queries:\n\n1. Think step by step about the query:\n   - Break complex questions into smaller, searchable parts\n   - Identify key search terms and parameters\n   - Consider what information is needed to provide a complete answer\n\n2. Mandatory logical analysis:\n   - Before engaging any tools, articulate your complete thought process in natural language. You must act as a \"professional tool caller,\" demonstrating rigorous logic.\n   - Analyze the information gap: explicitly state what data is missing.\n   - Derive the strategy: explain why a specific tool is the logical next step.\n   - Justify parameters: explain why you chose those specific search keywords or that specific URL.\n\nYou have tools to search for and access real-time, up-to-date data. Use them. Search before stating that you can't or don't know.\n\nCurrent date: January 1, 2026\n\n# Shell shell runs commands in an isolated scratch workspace under an OS sandbox: it starts there, can only write there, and cannot read files in the user's home directory. The workspace belongs to this conversation alone and is deleted with it, so do not keep anything there that should last. It has no network access, so commands that download or upload will fail."
+      "content": "You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.\n\nWhen handling user queries:\n\n1. Think step by step about the query:\n   - Break complex questions into smaller, searchable parts\n   - Identify key search terms and parameters\n   - Consider what information is needed to provide a complete answer\n\n2. Mandatory logical analysis:\n   - Before engaging any tools, articulate your complete thought process in natural language. You must act as a \"professional tool caller,\" demonstrating rigorous logic.\n   - Analyze the information gap: explicitly state what data is missing.\n   - Derive the strategy: explain why a specific tool is the logical next step.\n   - Justify parameters: explain why you chose those specific search keywords or that specific URL.\n\nYou have tools to search for and access real-time, up-to-date data. Use them. Search before stating that you can't or don't know.\n\nCurrent date: January 1, 2026\n\n# Workspace files read, write, edit work inside an isolated scratch workspace that belongs to this conversation alone and is deleted with it, so do not keep anything there that should last. Folders outside it are reachable only if the user granted them to this conversation. # Shell shell runs commands in an isolated scratch workspace under an OS sandbox: it starts there, can only write there, and cannot read files in the user's home directory. The workspace belongs to this conversation alone and is deleted with it, so do not keep anything there that should last. It has no network access, so commands that download or upload will fail. # Skills skill_list, skill_read manage reusable skills. # Memory memory can only view and search saved notes in this conversation; it cannot change them."
     },
     {
       "role": "user",
@@ -10,6 +10,98 @@
     }
   ],
   "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read",
+        "description": "Read the contents of a UTF-8 text file. Output is truncated to 2000 lines or 64KB (whichever is hit first). Use offset/limit for large files. Image files (png/jpeg/gif/webp, detected by signature or extension) are returned as a vision image instead of text.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the project root (or absolute)."
+            },
+            "offset": {
+              "type": "integer",
+              "description": "Line number to start reading from (1-indexed)."
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum number of lines to read."
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "write",
+        "description": "Create or overwrite a file relative to the project root.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the project root."
+            },
+            "content": {
+              "type": "string",
+              "description": "Full file contents to write."
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "edit",
+        "description": "Edit a file using one or more exact text replacements applied in order. Each old_string must match exactly once in the current file state.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the project root."
+            },
+            "edits": {
+              "type": "array",
+              "description": "Targeted replacements applied in order.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "old_string": {
+                    "type": "string",
+                    "description": "Exact text to replace (must be unique at apply time)."
+                  },
+                  "new_string": {
+                    "type": "string",
+                    "description": "Replacement text."
+                  }
+                },
+                "required": [
+                  "old_string",
+                  "new_string"
+                ]
+              }
+            }
+          },
+          "required": [
+            "path",
+            "edits"
+          ]
+        }
+      }
+    },
     {
       "type": "function",
       "function": {
@@ -29,6 +121,84 @@
           },
           "required": [
             "command"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "memory",
+        "description": "Your long-term memory: durable facts (decisions, conventions, preferences, gotchas) kept across sessions. It is yours to curate; no op asks the user. Before writing, `search` or `view` for an existing note on the topic and update it (`edit`, or `write` over it) rather than adding another. When a new fact supersedes a note, `delete` the old one. When work a note tracks is finished, archive it by adding front matter `status: done` (it stays readable and searchable but leaves the index). Group related notes in a folder with `move` (`name` to `tui/scroll`); never write an index or overview note, the index is built for you. Keep notes short; never store secrets or session-only state.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "view",
+                "search"
+              ],
+              "description": "view: the index (no name), a folder's notes (`folder/`), or a note's content. search: keyword search over titles and bodies, archived notes included. write: create or overwrite. edit: replace one exact, unique `old` with `new`. delete: remove a note. move: rename `name` to `to` (e.g. into a folder), keeping its content."
+            },
+            "name": {
+              "type": "string",
+              "description": "Note name without .md: `note` or `folder/note` (this project), `user:note` (every project), `project:<slug>` or `project:<slug>/note` (another project, read-only). Required for write, edit, delete and move. `index` and `MEMORY` are reserved: the index is built for you."
+            },
+            "query": {
+              "type": "string",
+              "description": "search: words that must all appear in the note."
+            },
+            "title": {
+              "type": "string",
+              "description": "write: one-line title, stored as the note's first line and shown in the index."
+            },
+            "content": {
+              "type": "string",
+              "description": "write: the note's Markdown body. Front matter `status: done` archives it."
+            },
+            "old": {
+              "type": "string",
+              "description": "edit: exact text to replace; must occur exactly once."
+            },
+            "new": {
+              "type": "string",
+              "description": "edit: replacement text."
+            }
+          },
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "skill_list",
+        "description": "List the available skills (reusable procedures) with a one-line description of each. No arguments.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "skill_read",
+        "description": "Load a skill's full instructions by name. The system prompt lists each skill's name and purpose; call this to read the complete procedure before applying a skill.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Skill name (without the .md extension)."
+            }
+          },
+          "required": [
+            "name"
           ]
         }
       }

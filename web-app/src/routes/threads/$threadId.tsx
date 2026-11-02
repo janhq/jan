@@ -123,7 +123,8 @@ import { useToolApprovalRequests, throwIfApprovalValidationFailed, type Approval
 import { toolOriginKey, useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
-import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
+import { executeAgentTool } from '@/lib/agentTools'
+import { isElevatedThreadCall, isScopedThreadTool } from '@/lib/scopedToolDispatch'
 import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -316,7 +317,11 @@ function chatShellRoute(toolName: string, serverName?: string): 'builtin' | 'dis
   // A bound MCP identity means the native schema was not advertised for this
   // request (e.g. shell is on but no sandbox can enforce it). Never substitute
   // a native shell for that approved server, even if availability changes.
-  if (serverName || !CHAT_AGENT_TOOL_NAMES.has(toolName)) return 'other'
+  if (serverName || !isScopedThreadTool(toolName)) return 'other'
+  // Only shell has a user switch. Every other scoped native name is served by
+  // the dispatch boundary, which refuses it with a reason when the current
+  // grant does not allow it (advertisement is not authority).
+  if (toolName !== 'shell') return useAppState.getState().mcpToolNames.has(toolName) ? 'other' : 'builtin'
   if (useChatShell.getState().shellEnabled) return 'builtin'
   return useAppState.getState().mcpToolNames.has(toolName) ? 'other' : 'disabled'
 }
@@ -342,11 +347,24 @@ function webRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
 // Internal tools never prompt: RAG and the native web tools are Jan's own, and
 // the built-in shell is gated in Rust (execute_tool refuses anything needing
 // approval), so only workspace-confined calls ever reach here.
-function isAutoAllowedTool(toolName: string): boolean {
+// Native scoped calls auto-allow only while they stay inside the conversation
+// scratch root under the CURRENT grant; elevated ones (network/folder shell,
+// folder writes, memory or skill mutation) take the normal per-call approval.
+function isAutoAllowedTool(toolName: string, threadId: string, input: unknown): boolean {
+  if (chatShellRoute(toolName) === 'builtin') {
+    const args =
+      input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
+    let grant: unknown
+    try {
+      grant = useThreads.getState().getConversationCapabilities(threadId)
+    } catch {
+      return false
+    }
+    return !isElevatedThreadCall(toolName, args, grant)
+  }
   return (
     useAppState.getState().ragToolNames.has(toolName) ||
-    webRoute(toolName) === 'builtin' ||
-    chatShellRoute(toolName) === 'builtin'
+    webRoute(toolName) === 'builtin'
   )
 }
 
@@ -545,10 +563,6 @@ function ThreadDetail() {
   const setAttachmentsForThread = useChatAttachments(
     (state) => state.setAttachments
   )
-
-  // Session data for tool call tracking
-  const getSessionData = useChatSessions((state) => state.getSessionData)
-  const sessionData = getSessionData(threadId)
 
   // The thread on screen. onFinish is a closure of the render that created its
   // chat, so this is how a turn finishing in the background tells it is not.
@@ -872,14 +886,12 @@ function ThreadDetail() {
       // Stopped: none of this turn's tools will run. Left alone, their approval
       // prompts stay up, and a late "Allow" would run the tool and resume the
       // reply the user just stopped.
-      if (isAbort) {
-        // Origins are persisted above before a stopped stream releases them.
-        useToolCallRuntime.getState().releaseOrigins(
-          [...(callMcpIdentities.get(threadId)?.keys() ?? [])], threadId
-        )
-      }
+      // Persisted above before cleanup on every terminal, including a provider
+      // error after tool input arrived but before the runner dispatched it.
+      useToolCallRuntime.getState().releaseOrigins(
+        [...(callMcpIdentities.get(threadId)?.keys() ?? [])], threadId
+      )
       forgetApprovals(threadId)
-      sessionData.tools = []
       useToolApprovalRequests.getState().clearPendingForThread(threadId)
       if (isAbort) return
 
@@ -962,7 +974,9 @@ function ThreadDetail() {
       // one promise. Internal tools retain the existing Chat policy.
       const { serverName, checkMcp } = bindMcpCall(toolCall)
       if (
-        serverName &&
+        (serverName ||
+          (chatShellRoute(toolCall.toolName) === 'builtin' &&
+            !isAutoAllowedTool(toolCall.toolName, threadId, toolCall.input))) &&
         !isDisabledChatAgentTool(toolCall.toolName, serverName) &&
         webRoute(toolCall.toolName) !== 'disabled' &&
         !approvalsOf(threadId).has(toolCall.toolCallId)
@@ -1018,7 +1032,7 @@ function ThreadDetail() {
           return recorded
         }
 
-        if (serverName || !isAutoAllowedTool(toolName)) {
+        if (serverName || (!isScopedThreadTool(toolName) && !isAutoAllowedTool(toolName, threadId, toolCall.input))) {
           await untilAborted(checkMcp(stopSignal), stopSignal)
           if (signal.aborted || isChatClosing()) return { output: CHAT_CLOSED_TOOL_ERROR, isError: true }
         }
@@ -1026,7 +1040,8 @@ function ThreadDetail() {
           throw new Error(`Tool identity changed for ${toolName}; start a new turn`)
         }
 
-        let approved: ApprovalResult = !serverName && isAutoAllowedTool(toolName)
+        let approved: ApprovalResult =
+          !serverName && isAutoAllowedTool(toolName, threadId, toolCall.input)
         if (!approved) {
           const approvals = approvalsOf(threadId)
           let pending = approvals.get(toolCall.toolCallId)
@@ -2278,7 +2293,6 @@ function ThreadDetail() {
 
   useEffect(() => {
     if (status !== 'ready' || processingQueueRef.current) return
-    if (sessionData.tools.length > 0) return
 
     const next = useMessageQueue.getState().dequeue(threadId)
     if (!next) return
@@ -2294,7 +2308,7 @@ function ThreadDetail() {
       .finally(() => {
         processingQueueRef.current = false
       })
-  }, [status, threadId, sendQueuedMessage, sessionData.tools.length])
+  }, [status, threadId, sendQueuedMessage])
 
   // If streaming errors out, discard any queued messages so they don't sit there stuck
   useEffect(() => {

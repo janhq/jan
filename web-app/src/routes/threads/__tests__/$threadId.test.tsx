@@ -27,6 +27,7 @@ const h = vi.hoisted(() => {
   }
 
   const threadsState: any = {
+    getConversationCapabilities: vi.fn(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false })),
     threads: {
       'thread-1': {
         id: 'thread-1',
@@ -1900,6 +1901,58 @@ describe('ThreadDetail route', () => {
       })
     })
 
+    it('prompts once for elevated shell and re-reads the grant after approval', async () => {
+      let grant = { version: 1, folderScope: null, shellNetwork: true, memoryWrite: false }
+      h.threadsState.getConversationCapabilities.mockImplementation(() => grant)
+      h.appStateState.mcpToolNames = new Set()
+      h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = () => undefined
+      let approve!: (allowed: boolean) => void
+      h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>(resolve => { approve = resolve }))
+      shell.execute.mockImplementationOnce(async () => {
+        expect(h.threadsState.getConversationCapabilities('thread-1').shellNetwork).toBe(false)
+        return { output: 'scratch only' }
+      })
+      renderComponent()
+      const toolCall = call('elevated-shell', 'shell', { command: 'echo safe' })
+      await arrive(toolCall)
+      const pending = dispatch(toolCall)
+      await waitFor(() => expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1))
+      expect(shell.execute).not.toHaveBeenCalled()
+      grant = { ...grant, shellNetwork: false }
+      approve(true)
+      await pending
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('shell', { command: 'echo safe' }, 'thread-1')
+      h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }))
+    })
+
+    it('dispatches a scoped native read through the thread executor, not MCP', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = () => undefined
+      renderComponent()
+      const toolCall = call('native-read', 'read', { path: 'scratch.txt' })
+      await arrive(toolCall)
+      await dispatch(toolCall)
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1')
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+    })
+
+    it('releases an undispatched streamed origin on an error terminal without touching a sibling', async () => {
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      renderComponent()
+      await arrive(call('failed-input'))
+      useToolCallRuntime.getState().recordOrigin('failed-input', 'sibling', 'other-thread')
+      await act(async () => {
+        await (h as any).capturedOnFinish({
+          message: { id: 'failed-provider', role: 'assistant', parts: [
+            { type: 'tool-fetch', toolCallId: 'failed-input', input: {}, state: 'input-available' },
+          ] }, isAbort: false, isError: true,
+        })
+      })
+      expect(useToolCallRuntime.getState().origins[toolOriginKey('thread-1', 'failed-input')]).toBeUndefined()
+      expect(useToolCallRuntime.getState().origins[toolOriginKey('other-thread', 'failed-input')]).toBe('sibling')
+    })
+
     it('runs the advertised native shell without a prompt even with a same-name MCP tool', async () => {
       h.appStateState.mcpToolNames = new Set(['shell'])
       h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = () => undefined
@@ -2337,6 +2390,32 @@ describe('ThreadDetail route', () => {
       integrationMaxSteps = undefined
     })
     afterEach(() => { h.integrationChat = null; h.chatSessionsState.sessions = {} })
+
+    it('uses exactly two SDK inference steps for a native read and its final answer', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      shell.execute.mockClear()
+      const { chat, steps } = setup(['native-read-sdk'])
+      vi.mocked(h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool).mockReturnValue(undefined)
+      steps.mockImplementation(async () => chunks(steps.mock.calls.length === 1 ? [
+        { type: 'start', messageId: 'native-provider' },
+        { type: 'tool-input-available', toolCallId: 'native-read-sdk', toolName: 'read', input: { path: 'scratch.txt' } },
+        { type: 'finish', finishReason: 'tool-calls' },
+      ] : textStep))
+      await act(async () => { await chat.sendMessage({ text: 'read the scratch file' }) })
+      expect(steps).toHaveBeenCalledTimes(2)
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1')
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ toolCallId: 'native-read-sdk', state: 'output-available' }))
+      expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ type: 'text', text: 'continued' }))
+    })
+
+    it('keeps an ordinary SDK answer to exactly one inference step', async () => {
+      const { chat, steps } = setup([])
+      steps.mockImplementation(async () => chunks(textStep))
+      await act(async () => { await chat.sendMessage({ text: 'hello' }) })
+      expect(steps).toHaveBeenCalledTimes(1)
+      expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ type: 'text', text: 'continued' }))
+    })
 
     it('runs multiple calls serially, injects each result once, continues once, and clears busy after drain', async () => {
       let release!: (value: unknown) => void

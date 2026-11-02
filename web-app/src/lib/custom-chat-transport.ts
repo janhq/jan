@@ -51,6 +51,7 @@ import {
   resolveScopedChatToolPolicy,
 } from './scopedChatToolPolicy'
 import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
+import { isScopedThreadTool } from '@/lib/scopedToolDispatch'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
@@ -1861,9 +1862,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return routeRefusedToolCalls(
       continuedStream,
       (toolName) =>
-        CHAT_AGENT_TOOL_NAMES.has(toolName) &&
         !(toolName in this.tools) &&
-        !useChatShell.getState().shellEnabled
+        (CHAT_AGENT_TOOL_NAMES.has(toolName)
+          ? !useChatShell.getState().shellEnabled
+          : // Other native names (e.g. skill_write after a revoke) reach the
+            // route so the dispatch boundary can refuse them with a reason.
+            isScopedThreadTool(toolName))
     )
   }
 
@@ -2001,26 +2005,49 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Static instruction for the one built-in tool chat offers: the sandboxed
-   * shell. Empty when no sandbox backend enforces or when the user has turned
-   * the shell off, because shell is then withheld too — stating limits for a
-   * tool that is not offered would only confuse the model, and an empty string
-   * keeps the prompt prefix stable.
+   * Static instruction for the built-in tools this turn actually offers. Built
+   * from the advertised record, so it never names a tool the model was not
+   * given (a revoked skill_write, a switched-off shell, no sandbox) and an empty
+   * string keeps the prompt prefix stable when none are offered.
    */
   buildAgentToolsSystemInstruction(): string {
-    // Describing a tool the model was not given only invites it to ask for it.
-    if (!useChatShell.getState().shellEnabled || !sandboxEnforces()) return ''
-    // Stating the limits up front is cheaper than letting the model discover
-    // them by having a command refused.
-    return [
-      '# Shell',
-      'shell runs commands in an isolated scratch workspace under an OS',
-      'sandbox: it starts there, can only write there, and cannot read files',
-      "in the user's home directory. The workspace belongs to this",
-      'conversation alone and is deleted with it, so do not keep anything',
-      'there that should last. It has no network access, so commands that',
-      'download or upload will fail.',
-    ].join(' ')
+    const offered = (name: string) =>
+      name in this.tools && !this.mcpIdentities.has(name)
+    const files = ['read', 'ls', 'find', 'grep', 'write', 'edit'].filter(offered)
+    const lines: string[] = []
+    if (files.length > 0) {
+      lines.push(
+        '# Workspace files',
+        `${files.join(', ')} work inside an isolated scratch workspace that belongs`,
+        'to this conversation alone and is deleted with it, so do not keep anything',
+        'there that should last. Folders outside it are reachable only if the user',
+        'granted them to this conversation.'
+      )
+    }
+    if (useChatShell.getState().shellEnabled && sandboxEnforces() && offered('shell')) {
+      // Stating the limits up front is cheaper than letting the model discover
+      // them by having a command refused.
+      lines.push(
+        '# Shell',
+        'shell runs commands in an isolated scratch workspace under an OS',
+        'sandbox: it starts there, can only write there, and cannot read files',
+        "in the user's home directory. The workspace belongs to this",
+        'conversation alone and is deleted with it, so do not keep anything',
+        'there that should last. It has no network access, so commands that',
+        'download or upload will fail.'
+      )
+    }
+    const skills = ['skill_list', 'skill_read', 'skill_write'].filter(offered)
+    if (skills.length > 0) {
+      lines.push('# Skills', `${skills.join(', ')} manage reusable skills.`)
+    }
+    if (offered('memory')) {
+      lines.push(
+        '# Memory',
+        'memory can only view and search saved notes in this conversation; it cannot change them.'
+      )
+    }
+    return lines.join(' ')
   }
 
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {

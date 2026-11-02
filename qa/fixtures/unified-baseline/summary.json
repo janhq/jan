@@ -1,24 +1,24 @@
 [
   {
     "scenario": "chat-bare",
-    "tools": "",
-    "systemUtf8Bytes": 0,
-    "toolsJsonUtf8Bytes": 0,
-    "requestJsonUtf8Bytes": 57
+    "tools": "read,write,edit,memory,skill_list,skill_read",
+    "systemUtf8Bytes": 428,
+    "toolsJsonUtf8Bytes": 4294,
+    "requestJsonUtf8Bytes": 4819
   },
   {
     "scenario": "chat-default-assistant",
-    "tools": "",
-    "systemUtf8Bytes": 1085,
-    "toolsJsonUtf8Bytes": 0,
-    "requestJsonUtf8Bytes": 1192
+    "tools": "read,write,edit,memory,skill_list,skill_read",
+    "systemUtf8Bytes": 1515,
+    "toolsJsonUtf8Bytes": 4294,
+    "requestJsonUtf8Bytes": 5927
   },
   {
     "scenario": "chat-default-assistant-shell",
-    "tools": "shell",
-    "systemUtf8Bytes": 1453,
-    "toolsJsonUtf8Bytes": 1049,
-    "requestJsonUtf8Bytes": 2620
+    "tools": "read,write,edit,shell,memory,skill_list,skill_read",
+    "systemUtf8Bytes": 1882,
+    "toolsJsonUtf8Bytes": 5342,
+    "requestJsonUtf8Bytes": 7342
   },
   {
     "scenario": "cowork-execute",

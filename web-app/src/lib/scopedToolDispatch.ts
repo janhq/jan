@@ -11,6 +11,30 @@ const THREAD_TOOLS = new Set([
   'memory', 'skill_list', 'skill_read', 'skill_write',
 ])
 
+/** Native Chat names that dispatch through this boundary. */
+export const isScopedThreadTool = (name: string): boolean => THREAD_TOOLS.has(name)
+
+/** Whether a call reaches beyond the conversation scratch root under the CURRENT
+ * grant (network or project folder for shell, folder writes, durable memory or
+ * skill mutation). Elevated calls need the normal per-call approval; plain
+ * scratch calls keep Chat's auto-allow. Malformed grants resolve to the default,
+ * so they are never elevated by corrupt metadata. */
+export function isElevatedThreadCall(
+  name: string,
+  args: Record<string, unknown>,
+  value: unknown
+): boolean {
+  const grant = resolveConversationCapabilities(value)
+  switch (name) {
+    case 'skill_write': return true
+    case 'memory': return args.op !== 'view' && args.op !== 'search'
+    case 'shell': return grant.shellNetwork || !!grant.folderScope
+    case 'write':
+    case 'edit': return grant.folderScope?.access === 'write'
+    default: return false
+  }
+}
+
 export function authorizeThreadTool(
   name: string,
   args: Record<string, unknown>,
