@@ -194,6 +194,31 @@ directly. Capture `--check` is clean. Vitest is 264/264 across the baseline,
 replay wrapper and related suites. `tsc -b` is clean, `git diff --check` is
 clean, and `node --check` passes on both scripts.
 
+### Round 4: Jan Reviewer on `745a14133` (changes requested)
+
+| Severity | Finding | Fix and verification |
+|---|---|---|
+| Blocking | CI runs Node 20, which rejects `--use-env-proxy` in `NODE_OPTIONS` at startup (exit 9), so the new child cases failed | Reproduced on Node 20.20.2 (`--use-env-proxy is not allowed in NODE_OPTIONS`). The tests now feature-detect with `process.allowedNodeEnvironmentFlags`. Where the flag is supported, they assert our guard refuses. On older Node they assert Node refuses to start (non-zero exit, message names the flag). Either way, 0 model and 0 proxy hits. The in-process guard matrix covers every form on every version |
+| Important | The spawned CLI path used `URL.pathname`, which is `/C:/...` on Windows; the child env kept only `PATH` | `fileURLToPath`; the child env is the inherited env minus proxy, opt-in and `NODE_OPTIONS` keys (any case), so `SystemRoot` and the rest survive. A new test checks the path exists and has no drive-after-slash form, and checks env preservation and stripping |
+
+Verification:
+
+- Replay suite 11/11 on Node 20.20.2 and on Node 24.18.0, also with an
+  inherited `NODE_USE_ENV_PROXY=1` in the parent.
+- Windows box (`ssh win`, Node 20.20.2, `SystemRoot=C:\windows`), on a
+  minimal copy (both scripts plus the request fixtures in a temp dir, removed
+  afterwards): 10 pass, 0 fail, 1 skipped (the Unix-only `--pid` test). The
+  previous head's test file failed there with `Cannot find module
+  'C:\C:\...\unified-baseline-replay.mjs'`.
+- Node 20: capture `--check` clean, baseline and replay-wrapper vitest 9/9.
+  The bounded runner gave the same results as Node 24, except that both
+  `NODE_OPTIONS` cases exit 9 at Node startup with 0 hits.
+- Node 24: vitest 264/264 across the related suites, `tsc -b` clean,
+  `git diff --check` clean.
+
+Node 20.20.2 was installed with `fnm` for these checks; it is removed again
+afterwards, and the default Node was never changed.
+
 ## Not covered (real-model QA still open)
 
 - No real local model was run. Real prompt tokens, TTFT, latency, peak

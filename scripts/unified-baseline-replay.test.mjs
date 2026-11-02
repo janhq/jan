@@ -3,8 +3,10 @@
 //   node --test scripts/unified-baseline-replay.test.mjs   (or run it directly)
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { assertLoopback, assertNoEnvProxy, loadScenarios, replay, toMarkdown } from './unified-baseline-replay.mjs'
 
 const sse = (o) => `data: ${JSON.stringify(o)}\n\n`
@@ -152,6 +154,18 @@ test('fails closed when Node env proxy meets any proxy variable', () => {
 })
 
 /** Fake model + trap proxy; the CLI runs as a bounded child; only its PID is killed. */
+const CLI = fileURLToPath(new URL('./unified-baseline-replay.mjs', import.meta.url))
+// Node < 24 rejects the flag in NODE_OPTIONS at startup (CI runs Node 20), so
+// those child cases only run where Node itself understands it. The in-process
+// matrix above checks the guard for every form on every version.
+const NODE_HAS_ENV_PROXY = process.allowedNodeEnvironmentFlags.has('--use-env-proxy')
+/** The inherited env (Windows needs SystemRoot etc.) minus anything proxy-related. */
+const childEnv = (extra) => ({
+  ...Object.fromEntries(Object.entries(process.env).filter(([k]) =>
+    !/^(node_use_env_proxy|node_options|https?_proxy|all_proxy|no_proxy)$/i.test(k))),
+  ...extra,
+})
+
 async function runCliAgainstTraps(extraEnv) {
   const hits = { model: 0, proxy: 0 }
   const model = createServer((req, res) => { req.resume(); hits.model++; res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(sse({ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] }) + 'data: [DONE]\n\n') })
@@ -160,9 +174,9 @@ async function runCliAgainstTraps(extraEnv) {
   const listen = (s) => new Promise((r) => s.listen(0, '127.0.0.1', () => r(s.address().port)))
   try {
     const mp = await listen(model), pp = await listen(proxy)
-    const env = { PATH: process.env.PATH, ...extraEnv(`http://127.0.0.1:${pp}`) }
+    const env = childEnv(extraEnv(`http://127.0.0.1:${pp}`))
     const result = await new Promise((resolve) => {
-      const child = spawn(process.execPath, [new URL('./unified-baseline-replay.mjs', import.meta.url).pathname,
+      const child = spawn(process.execPath, [CLI,
         '--base-url', `http://127.0.0.1:${mp}/v1`, '--model', 'x', '--runs', '1', '--warmup', '0',
         '--scenarios', 'chat-bare', '--timeout-ms', '3000'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
       liveChildren.add(child)
@@ -178,12 +192,24 @@ async function runCliAgainstTraps(extraEnv) {
 }
 
 test('CLI refuses to run under an env proxy: nothing reaches the proxy or the model', async () => {
-  for (const make of [(p) => ({ NODE_USE_ENV_PROXY: '1', HTTP_PROXY: p }), (p) => ({ NODE_USE_ENV_PROXY: '1', http_proxy: p }),
-    (p) => ({ NODE_OPTIONS: '--use-env-proxy', https_proxy: p, HTTP_PROXY: p }),
-    (p) => ({ NODE_OPTIONS: '"--use-env-proxy"', HTTP_PROXY: p })]) {
+  for (const make of [(p) => ({ NODE_USE_ENV_PROXY: '1', HTTP_PROXY: p }), (p) => ({ NODE_USE_ENV_PROXY: '1', http_proxy: p })]) {
     const r = await runCliAgainstTraps(make)
     assert.equal(r.code, 1, r.out)
     assert.match(r.out, /Refusing to run: Node env proxy/)
+    assert.deepEqual(r.hits, { model: 0, proxy: 0 })
+  }
+  for (const make of [(p) => ({ NODE_OPTIONS: '--use-env-proxy', https_proxy: p, HTTP_PROXY: p }),
+    (p) => ({ NODE_OPTIONS: '"--use-env-proxy"', HTTP_PROXY: p })]) {
+    const r = await runCliAgainstTraps(make)
+    if (NODE_HAS_ENV_PROXY) {
+      // Node starts with the proxy enabled; our guard must refuse.
+      assert.equal(r.code, 1, r.out)
+      assert.match(r.out, /Refusing to run: Node env proxy/)
+    } else {
+      // Node < 24 refuses the unknown flag at startup (exit 9): also safe.
+      assert.notEqual(r.code, 0, r.out)
+      assert.match(r.out, /use-env-proxy/)
+    }
     assert.deepEqual(r.hits, { model: 0, proxy: 0 })
   }
   const direct = await runCliAgainstTraps(() => ({}))
@@ -200,4 +226,20 @@ test('a stalled server hits the request timeout instead of hanging', async () =>
   } finally {
     server.closeAllConnections(); server.close()
   }
+})
+
+test('spawned CLI path and child env are portable (Windows, Node 20+)', () => {
+  // A URL pathname would be /D:/... on Windows; the CLI path must be a real file path.
+  assert.ok(existsSync(CLI), CLI)
+  assert.ok(!/^\/[A-Za-z]:/.test(CLI), CLI)
+  const env = childEnv({ EXTRA: '1' })
+  for (const k of Object.keys(env)) {
+    assert.doesNotMatch(k, /^(node_use_env_proxy|node_options|https?_proxy|all_proxy|no_proxy)$/i, k)
+  }
+  // Everything else is inherited, e.g. Windows' SystemRoot, which networking needs.
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!/proxy|^node_options$/i.test(k)) assert.equal(env[k], v, k)
+  }
+  assert.equal(env.EXTRA, '1')
+  assert.equal(NODE_HAS_ENV_PROXY, process.allowedNodeEnvironmentFlags.has('--use-env-proxy'))
 })
