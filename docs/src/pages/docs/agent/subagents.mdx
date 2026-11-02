@@ -216,6 +216,11 @@ the checkout's other config emptied or overridden (`core.fsmonitor`, hooks, filt
 ignoring `replace` refs and nested repositories. A checkout that fails the check is neither read
 nor removed, and the session-end note says why.
 
+Because a checkout borrows your objects instead of copying them, avoid `git gc --prune=now` in your
+repository while a child is running or a checkout is kept: it can delete objects only a checkout
+still uses (the base of a `{ "ref": ... }` workspace fetched for the run, for instance) and break
+that checkout. A plain `git gc` keeps unreferenced objects for two weeks and is safe.
+
 The main agent can read its subagents' checkouts with the file tools (`read`, `ls`,
 `find`, `grep`), and from its shell only while that shell is sandboxed, where they are mounted
 read-only (`git -C <checkout> diff` works; an escalated command naming them is refused).
