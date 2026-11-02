@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import { quiesceChats, resumeChatsAfterPreventedClose, withChatCloseDeadline } from '@/lib/chatClose'
 import { flushMessageWrites } from '@/hooks/useMessages'
 import { quiesceCoworkRuns, resumeCoworkAfterPreventedClose, __resetCoworkRunCloseForTests } from '@/hooks/useCoworkRun'
@@ -118,6 +119,26 @@ async function doStart() {
 
   // 2. Load. A partial migration keeps legacy-only sessions visible.
   const loaded = await loadCoworkSessions(invoke, { migrationSettled })
+
+  // Failing closed on an unreadable deletion journal must not hide data
+  // silently: legacy sessions stay hidden and their deletion stays blocked on
+  // EVERY launch until the journal is repaired, so warn persistently on every
+  // launch with manual recovery instructions. Never auto-repair, quarantine,
+  // or drop the journal: rewriting it could resurrect sessions the user
+  // deleted. The corrupt value itself is left byte-for-byte untouched.
+  if (loaded.deletionJournalError) {
+    toast.warning('Some imported Cowork conversations are hidden', {
+      id: 'cowork-deletion-journal-unreadable',
+      duration: Infinity,
+      description:
+        "Jan can't read its deletion record, so conversations imported from an " +
+        'older version stay hidden rather than risk restoring ones you already ' +
+        'deleted, and deleting them is temporarily blocked. Your data is ' +
+        "untouched. To recover, fix or remove the 'cowork_deleted_ids' entry in " +
+        "Jan's settings.json — removing it restores every imported conversation, " +
+        'including any you had deleted.',
+    })
+  }
 
   const p = createCoworkPersistence(invoke, {
     onThreadWritten: upsertThread,

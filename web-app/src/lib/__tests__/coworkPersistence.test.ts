@@ -679,8 +679,16 @@ describe('loadCoworkSessions', () => {
       expect(r.legacyIds.size).toBe(0)
       // The unreadable journal itself is never replaced or rewritten by a load.
       expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe(journal)
+      // The hidden state is surfaced to the caller, never swallowed silently.
+      expect(r.deletionJournalError).toBeTruthy()
     }
   )
+
+  it('does not report a journal error on a healthy load', async () => {
+    commit('committed')
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(r.deletionJournalError).toBeUndefined()
+  })
 })
 
 describe('sidecar version/shape containment', () => {

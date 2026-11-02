@@ -168,7 +168,7 @@ mod write_file_atomic_tests {
     }
 
     #[test]
-    fn failure_leaves_existing_content_untouched() {
+    fn failure_on_missing_parent_creates_nothing() {
         let dir = temp_dir("failure");
         let target = dir.join("missing-subdir").join("thread.json");
         assert!(write_file_atomic(&target, b"data").is_err());
@@ -178,6 +178,40 @@ mod write_file_atomic_tests {
             .unwrap()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_name() != "missing-subdir")
+            .collect();
+        assert!(leftovers.is_empty(), "stray files: {leftovers:?}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Seeds a real target, then injects a write failure (read-only parent
+    /// blocks the sibling temp file) and proves the previous bytes survive.
+    #[cfg(unix)]
+    #[test]
+    fn failed_write_preserves_existing_target_bytes() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir("preserve");
+        let target = dir.join("thread.json");
+        write_file_atomic(&target, b"original contents").unwrap();
+
+        let mut read_only = fs::metadata(&dir).unwrap().permissions();
+        read_only.set_mode(0o555);
+        fs::set_permissions(&dir, read_only).unwrap();
+        let result = write_file_atomic(&target, b"replacement");
+        let mut writable = fs::metadata(&dir).unwrap().permissions();
+        writable.set_mode(0o755);
+        fs::set_permissions(&dir, writable).unwrap();
+
+        // Root ignores permission bits; skip rather than assert a vacuous pass.
+        if result.is_ok() {
+            eprintln!("skipping: permissions not enforced (running as root?)");
+            fs::remove_dir_all(&dir).unwrap();
+            return;
+        }
+        assert_eq!(fs::read(&target).unwrap(), b"original contents");
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path() != target)
             .collect();
         assert!(leftovers.is_empty(), "stray files: {leftovers:?}");
         fs::remove_dir_all(&dir).unwrap();

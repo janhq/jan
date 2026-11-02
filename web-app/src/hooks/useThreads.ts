@@ -131,9 +131,9 @@ const cleanupThreadArtifacts = (threadId: string, thread?: Thread) => {
 // A native delete can fail after local state was already cleared (e.g. a
 // Windows file lock); silently dropping that leaves the thread gone from the
 // UI now but back on the next launch. Restore it and surface the failure
-// instead. Grants stay pruned in-process: the restored thread is default-deny
-// for the rest of this session (the on-disk grant is untouched and becomes
-// loadable again after a restart, the pre-delete status quo).
+// instead. Grants stay pruned in-process: the restored thread is default-deny.
+// Its on-disk grant bytes survive, but confer no authority — a grant is only
+// active after an in-process setter success (capability enforcement model).
 const deleteThreadOnDisk = (threadId: string, thread?: Thread) => {
   // .then(() => ...) routes synchronous throws and non-promise returns (test
   // doubles) into the same catch as an async rejection.
@@ -145,8 +145,10 @@ const deleteThreadOnDisk = (threadId: string, thread?: Thread) => {
       let restoredThread = false
       if (thread) {
         // The pre-delete record may still carry a consent grant in its
-        // metadata, which the capabilities getter falls back to. Strip it so
-        // the restored thread is default-deny for this session.
+        // metadata. The capabilities getter no longer reads metadata (the
+        // in-process map is the only authority source), so stripping it is
+        // defense-in-depth: it keeps the stale grant from being re-persisted
+        // by whole-record writers or trusted by a future metadata reader.
         const { conversationCapabilities: _staleGrant, ...metadata } = thread.metadata ?? {}
         void _staleGrant
         const restored: Thread = { ...thread, metadata }
@@ -489,14 +491,15 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       try {
         // Revoke-first, as in the single delete above: while the native delete
         // is awaited a concurrent dispatch must not resolve grants for a
-        // thread already being deleted. The record (and its metadata grant,
-        // which the getter falls back to) stays visible until reconcile, so
-        // overlay defaults rather than merely pruning the entry. On failure
-        // the thread survives but stays default-deny for the rest of this
-        // session (its on-disk grant is untouched); on success reconcile
-        // drops the entry with the record. The overlay deliberately stays in
-        // the map even if the id later leaves a fetched list — setThreads
-        // must not prune it (see its deny-protection asymmetry).
+        // thread already being deleted. The record stays visible until
+        // reconcile; since the getter reads only the in-process map, an
+        // explicit default overlay and a pruned entry both resolve to
+        // default-deny — the overlay matches the revoke path's explicit
+        // semantics. On failure the thread survives but stays default-deny
+        // (its on-disk grant bytes are inert without a new setter success);
+        // on success reconcile drops the entry with the record. The overlay
+        // deliberately stays in the map even if the id later leaves a fetched
+        // list — setThreads must not prune it (deny-protection asymmetry).
         capabilityRequests.delete(thread.id)
         effectiveCapabilities.set(thread.id, defaultConversationCapabilities())
         await getServiceHub().threads().deleteThread(thread.id)

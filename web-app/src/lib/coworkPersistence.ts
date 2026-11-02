@@ -157,6 +157,13 @@ export type LoadedCoworkSessions = {
   legacyIds: Set<string>
   /** Thread records of the sessions that are already persisted. */
   threads: Json[]
+  /**
+   * Set when the deletion journal was unreadable and the legacy-blob merge was
+   * therefore skipped (fail closed against resurrecting deleted sessions).
+   * The caller must surface this: it hides legacy sessions on every launch
+   * until the journal is repaired, and is silent data-hiding otherwise.
+   */
+  deletionJournalError?: string
 }
 
 /**
@@ -201,27 +208,40 @@ export async function loadCoworkSessions(
   )
 
   const legacyIds = new Set<string>()
+  let deletionJournalError: string | undefined
   if (!opts.migrationSettled) {
+    // With deletion intent unreadable, merging the blob could resurrect
+    // deleted sessions, so the merge is skipped entirely (fail closed;
+    // committed threads still load) — and the state is reported to the
+    // caller so it is shown to the user, never hidden silently.
+    let deleted: Set<string> | null = null
     try {
-      const have = new Set(sessions.map((s) => s.id))
-      const deleted = await readDeletedIds(invoke)
-      const blob = readCoworkSessions(
-        await invoke<string | null>('settings_get', { key: CODE_SESSIONS_KEY })
-      )
-      for (const s of blob) {
-        if (have.has(s.id) || deleted.has(s.id) || isEmpty(s)) continue
-        if (chatIds.has(s.id)) {
-          sessions.push({ ...s, unavailable: 'id-collision' })
-        } else {
-          sessions.push(s)
-          legacyIds.add(s.id)
-        }
-      }
+      deleted = await readDeletedIds(invoke)
     } catch (e) {
-      // Includes a journal that failed the strict read: with deletion intent
-      // unreadable, merging the blob could resurrect deleted sessions, so the
-      // merge is skipped entirely (fail closed; committed threads still load).
-      console.warn('[cowork] skipping the legacy sessions blob:', e)
+      deletionJournalError = e instanceof Error ? e.message : String(e)
+      console.warn(
+        '[cowork] deletion journal unreadable; skipping the legacy sessions blob:',
+        e
+      )
+    }
+    if (deleted) {
+      try {
+        const have = new Set(sessions.map((s) => s.id))
+        const blob = readCoworkSessions(
+          await invoke<string | null>('settings_get', { key: CODE_SESSIONS_KEY })
+        )
+        for (const s of blob) {
+          if (have.has(s.id) || deleted.has(s.id) || isEmpty(s)) continue
+          if (chatIds.has(s.id)) {
+            sessions.push({ ...s, unavailable: 'id-collision' })
+          } else {
+            sessions.push(s)
+            legacyIds.add(s.id)
+          }
+        }
+      } catch (e) {
+        console.warn('[cowork] skipping the legacy sessions blob:', e)
+      }
     }
   }
 
@@ -237,7 +257,13 @@ export async function loadCoworkSessions(
     /* resume is best effort */
   }
 
-  return { sessions, currentId, legacyIds, threads: coworkThreads }
+  return {
+    sessions,
+    currentId,
+    legacyIds,
+    threads: coworkThreads,
+    ...(deletionJournalError !== undefined && { deletionJournalError }),
+  }
 }
 
 export type CoworkPersistence = {

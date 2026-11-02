@@ -66,6 +66,8 @@ const agentTools = vi.hoisted(() => ({
   stopAgentSessionMonitors: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('@/lib/agentTools', () => agentTools)
+const sonner = vi.hoisted(() => ({ warning: vi.fn(), error: vi.fn() }))
+vi.mock('sonner', () => ({ toast: sonner }))
 const closeWindow = vi.hoisted(() => ({ callback: null as null | ((event: { preventDefault: () => void }) => Promise<void>) }))
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({ onCloseRequested: vi.fn(async (callback) => {
@@ -86,7 +88,7 @@ import {
   isCoworkMigrationDone,
   __resetCoworkSyncForTests,
 } from '../coworkSync'
-import { CODE_SESSIONS_KEY, COWORK_MIGRATION_FLAG_KEY } from '../migrateCoworkSessions'
+import { CODE_SESSIONS_KEY, COWORK_DELETED_IDS_KEY, COWORK_MIGRATION_FLAG_KEY } from '../migrateCoworkSessions'
 
 const legacy = (id: string): Json => ({
   id,
@@ -109,6 +111,8 @@ describe('coworkSync startup', () => {
     backend.log.length = 0
     agentTools.cleanupThreadWorkspace.mockClear()
     agentTools.sweepSessionWorkspaces.mockClear()
+    sonner.warning.mockClear()
+    sonner.error.mockClear()
     __resetCoworkSyncForTests()
     useCoworkSessions.setState({ sessions: [], currentId: null })
     useThreads.setState({ threads: {} })
@@ -367,6 +371,36 @@ describe('coworkSync startup', () => {
     const ids = useCoworkSessions.getState().sessions.map((s) => s.id)
     expect(ids).toContain(early)
     expect(ids).toContain('a')
+  })
+
+  it('warns the user persistently on every launch while the deletion journal is unreadable', async () => {
+    backend.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    backend.settings.set(
+      CODE_SESSIONS_KEY,
+      JSON.stringify({ state: { sessions: [legacy('hidden')] }, version: 1 })
+    )
+    await startCoworkSync()
+    // Fail closed: the legacy session stays hidden, never auto-resurrected,
+    // and the corrupt journal bytes are left exactly as they were.
+    expect(useCoworkSessions.getState().sessions.some((s) => s.id === 'hidden')).toBe(false)
+    expect(backend.settings.get(COWORK_DELETED_IDS_KEY)).toBe('{corrupt')
+    expect(backend.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBeUndefined()
+    // ...but never silently: a persistent warning with recovery instructions.
+    expect(sonner.warning).toHaveBeenCalledTimes(1)
+    expect(sonner.warning.mock.calls[0][1]).toMatchObject({ duration: Infinity })
+    expect(sonner.warning.mock.calls[0][1].description).toContain('cowork_deleted_ids')
+    // The warning repeats on the next launch until the journal is repaired.
+    __resetCoworkSyncForTests()
+    useCoworkSessions.setState({ sessions: [], currentId: null })
+    await startCoworkSync()
+    expect(sonner.warning).toHaveBeenCalledTimes(2)
+    // A healthy journal raises no warning and merges the blob again.
+    backend.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify([]))
+    __resetCoworkSyncForTests()
+    useCoworkSessions.setState({ sessions: [], currentId: null })
+    await startCoworkSync()
+    expect(sonner.warning).toHaveBeenCalledTimes(2)
+    expect(useCoworkSessions.getState().sessions.some((s) => s.id === 'hidden')).toBe(true)
   })
 
   it('the sandbox sweep keep-list includes sessions created before hydration finished', async () => {
