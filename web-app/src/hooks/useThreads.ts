@@ -18,10 +18,10 @@ import {
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { abortRun } from '@/lib/coworkRunner'
-import { revokeThreadCapabilitiesInHost } from '@/lib/agentTools'
+import { revokeThreadCapabilitiesInHost, stopAllThreadAgentMonitors } from '@/lib/agentTools'
 import { dropMonitorLane } from '@/lib/coworkMonitor'
 import { isCoworkThread, workspaceScopeFor } from '@/lib/threadMode'
-import { defaultConversationCapabilities, resolveConversationCapabilities, type ConversationCapabilitiesV1 } from '@/lib/conversationCapabilities'
+import { defaultConversationCapabilities, HostRevokeUnconfirmedError, resolveConversationCapabilities, type ConversationCapabilitiesV1 } from '@/lib/conversationCapabilities'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -775,7 +775,19 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       // against host-confirmed consent, so until this resolves a background
       // poll would still run under the grant being replaced. Narrowing only
       // ever denies, and a failure must not be reported as a revocation.
-      await revokeThreadCapabilitiesInHost(threadId)
+      try {
+        await revokeThreadCapabilitiesInHost(threadId)
+      } catch (cause) {
+        // The host never acknowledged the narrow, so background monitors may
+        // still be polling under the old grant. Best effort: ask for a plain
+        // stop (it rides the same IPC and may fail identically, and even a
+        // successful stop leaves the host confirmation live). Either way this
+        // write rejects structurally so the surface can tell the user the
+        // truth; nothing is persisted and the denied overlay above stays.
+        // Grants are never restored.
+        await stopAllThreadAgentMonitors(threadId)
+        throw new HostRevokeUnconfirmedError(threadId, cause)
+      }
       if (previous) await previous.catch(() => {})
       assertChatThread()
       await getServiceHub().threads().setConversationCapabilities(threadId, capabilities)

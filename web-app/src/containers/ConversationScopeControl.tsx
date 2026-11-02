@@ -5,6 +5,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { ConversationCapabilitiesConsent } from './ConversationCapabilitiesConsent'
 import {
   defaultConversationCapabilities,
+  HostRevokeUnconfirmedError,
   resolveConversationCapabilities,
   type ConversationCapabilitiesV1,
 } from '@/lib/conversationCapabilities'
@@ -98,10 +99,19 @@ export function ConversationScopeControl({ threadId, pickFolder, disabled = fals
     setError('')
     try {
       await useThreads.getState().setConversationCapabilities(threadId, next)
-    } catch {
+    } catch (error) {
       if (applySeq.current === seq) {
+        // Two different truths. A failed SAVE still narrowed the host first,
+        // so elevated access really is off. A failed host ACK means neither
+        // narrow path ran: claiming "off" would be false -- background agent
+        // tasks may still hold the previous access and a stop was only
+        // attempted, not confirmed.
         setError(
-          'Permission change could not be saved. Elevated access stays off until a save succeeds.'
+          error instanceof HostRevokeUnconfirmedError
+            ? 'The app did not confirm this permission change. Background agent tasks may ' +
+              'still have the previous access; stopping them was attempted but is not ' +
+              'confirmed. Retry, or quit Jan to guarantee they stop.'
+            : 'Permission change could not be saved. Elevated access stays off until a save succeeds.'
         )
       }
     } finally {

@@ -2,17 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useThreads } from '../useThreads'
 import { resolveConversationCapabilities } from '@/lib/conversationCapabilities'
 
-const { persist, updateThread, deleteNative, toastError, revokeHost, calls } = vi.hoisted(() => {
-  const calls: string[] = []
-  return {
-    calls,
-    persist: vi.fn(),
-    updateThread: vi.fn(),
-    deleteNative: vi.fn(),
-    toastError: vi.fn(),
-    revokeHost: vi.fn(),
-  }
-})
+const { persist, updateThread, deleteNative, toastError, revokeHost, stopAllMonitors, calls } =
+  vi.hoisted(() => {
+    const calls: string[] = []
+    return {
+      calls,
+      persist: vi.fn(),
+      updateThread: vi.fn(),
+      deleteNative: vi.fn(),
+      toastError: vi.fn(),
+      revokeHost: vi.fn(),
+      stopAllMonitors: vi.fn(),
+    }
+  })
 
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({ threads: () => ({ setConversationCapabilities: persist, updateThread, deleteThread: deleteNative }) }),
@@ -23,6 +25,7 @@ vi.mock('@/lib/agentTools', () => ({
   cancelAgentThreadBash: vi.fn(),
   stopAgentSessionMonitors: vi.fn(),
   revokeThreadCapabilitiesInHost: revokeHost,
+  stopAllThreadAgentMonitors: stopAllMonitors,
 }))
 vi.mock('@/hooks/useAgentMode', () => ({ useAgentMode: { getState: () => ({ removeThread: vi.fn() }) } }))
 vi.mock('@/stores/chat-session-store', () => ({ useChatSessions: { getState: () => ({ removeSession: vi.fn() }) } }))
@@ -73,6 +76,9 @@ describe('useThreads conversation capabilities', () => {
     persist.mockImplementation(async (id: string) => {
       calls.push(`persist:${id}`)
     })
+    stopAllMonitors.mockImplementation(async (id: string) => {
+      calls.push(`stopAll:${id}`)
+    })
     useThreads.setState({
       threads: { chat: thread() },
       currentThreadId: 'chat',
@@ -84,6 +90,22 @@ describe('useThreads conversation capabilities', () => {
   // consent. So a revocation has to reach the host before anything is written,
   // and before the save queue, or a background poll keeps running under the
   // grant being replaced.
+  // The host never acknowledged the narrow: NEITHER narrow path ran, so
+  // background polls may still hold the old grant. The write must reject with
+  // the structured error (so the surface can say so truthfully), attempt a
+  // plain stop, persist nothing, and keep the denied overlay -- never restore.
+  it('a failed host ACK rejects structurally, attempts a stop, and persists nothing', async () => {
+    revokeHost.mockRejectedValueOnce(new Error('ipc bridge down'))
+    await expect(save(granted)).rejects.toMatchObject({
+      name: 'HostRevokeUnconfirmedError',
+    })
+    expect(calls).toEqual(['stopAll:chat'])
+    expect(useThreads.getState().getConversationCapabilities('chat').shellNetwork).toBe(false)
+    expect(
+      useThreads.getState().threads.chat.metadata?.conversationCapabilities
+    ).toEqual({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false })
+  })
+
   it('narrows the host before it persists', async () => {
     await save(granted)
     expect(calls).toEqual(['narrow:chat', 'persist:chat'])
@@ -114,7 +136,12 @@ describe('useThreads conversation capabilities', () => {
 
   it('does not persist or report a revocation the host refused', async () => {
     revokeHost.mockRejectedValueOnce(new Error('host unreachable'))
-    await expect(save(granted)).rejects.toThrow('host unreachable')
+    // The raw transport error is wrapped: the surface needs to distinguish
+    // "the host never acknowledged" from an ordinary failed save.
+    await expect(save(granted)).rejects.toMatchObject({
+      name: 'HostRevokeUnconfirmedError',
+      hostCause: expect.objectContaining({ message: 'host unreachable' }),
+    })
     expect(persist).not.toHaveBeenCalled()
     expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(
       resolveConversationCapabilities(undefined)

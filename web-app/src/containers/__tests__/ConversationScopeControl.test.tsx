@@ -3,9 +3,11 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
 
-const { persist, updateThread } = vi.hoisted(() => ({
+const { persist, updateThread, revokeHost, stopAllMonitors } = vi.hoisted(() => ({
   persist: vi.fn(),
   updateThread: vi.fn(),
+  revokeHost: vi.fn(),
+  stopAllMonitors: vi.fn(),
 }))
 
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -21,6 +23,8 @@ vi.mock('@/lib/agentTools', () => ({
   cleanupThreadWorkspace: vi.fn(),
   cancelAgentThreadBash: vi.fn(),
   stopAgentSessionMonitors: vi.fn(),
+  revokeThreadCapabilitiesInHost: revokeHost,
+  stopAllThreadAgentMonitors: stopAllMonitors,
 }))
 vi.mock('@/hooks/useAgentMode', () => ({
   useAgentMode: { getState: () => ({ removeThread: vi.fn() }) },
@@ -84,6 +88,8 @@ describe('ConversationScopeControl', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     persist.mockResolvedValue(undefined)
+    revokeHost.mockResolvedValue(undefined)
+    stopAllMonitors.mockResolvedValue(undefined)
     useThreads.setState({ threads: {}, currentThreadId: null, searchIndex: null })
   })
 
@@ -135,6 +141,28 @@ describe('ConversationScopeControl', () => {
         'Permission change could not be saved. Elevated access stays off until a save succeeds.'
       )
     )
+    expect(screen.getByLabelText(SHELL_LABEL)).not.toBeChecked()
+    expect(useThreads.getState().getConversationCapabilities(id).shellNetwork).toBe(false)
+  })
+
+  it('a failed host ACK warns that background access is not confirmed stopped', async () => {
+    const id = freshId()
+    useThreads.setState({ threads: { [id]: thread(id) } })
+    revokeHost.mockRejectedValueOnce(new Error('ipc bridge down'))
+    mount(id)
+    fireEvent.click(screen.getByLabelText(SHELL_LABEL))
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Background agent tasks may still have the previous access'
+      )
+    )
+    // The unsafe universal claim must NOT appear: elevated access is not
+    // provably off when the host never acknowledged the narrow.
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Elevated access stays off')
+    expect(screen.getByRole('alert')).toHaveTextContent('quit Jan to guarantee they stop')
+    // Nothing persisted, a stop was attempted, the toggle stays off.
+    expect(persist).not.toHaveBeenCalled()
+    expect(stopAllMonitors).toHaveBeenCalledExactlyOnceWith(id)
     expect(screen.getByLabelText(SHELL_LABEL)).not.toBeChecked()
     expect(useThreads.getState().getConversationCapabilities(id).shellNetwork).toBe(false)
   })

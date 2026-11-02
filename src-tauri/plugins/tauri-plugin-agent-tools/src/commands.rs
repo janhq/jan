@@ -963,9 +963,10 @@ pub async fn revoke_thread_capabilities(thread_id: String) -> Result<(), AgentTo
 /// Narrow a thread's host confirmation and stop everything running under it,
 /// returning the generation token a subsequent confirm must present.
 ///
-/// The strict consent setter calls this BEFORE it validates or persists, for
-/// every caller rather than only the frontend, so a write that fails or is
-/// lost can never leave an earlier confirmation live. The mirror is never
+/// The strict consent setter calls this BEFORE the write, for every caller
+/// rather than only the frontend, so a write that fails or is lost can never
+/// leave an earlier confirmation live. (Input validation runs first: a
+/// rejected request writes nothing and narrows nothing.) The mirror is never
 /// restored on failure; it is re-confirmed only by a successful write.
 pub async fn revoke_thread_consent(thread_id: &str) -> u64 {
     let token = reap_thread_monitor_children(thread_id, crate::thread_capabilities::narrow).await;
