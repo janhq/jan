@@ -24,7 +24,7 @@ expression: render_snapshot(buf)
 |│   └ Read kv.rs                                                               │|
 |│     Search lock() in src                                                     │|
 |│ • Edited kv.rs (+1 -1)                                                       │|
-|│     -        let a = self.a.lock();                                          │|
+|│   └ -        let a = self.a.lock();                                          │|
 |│     +        let b = self.b.lock();                                          │|
 |╰──────────────────────────────────────────────────────────────────────────────╯|
 |                                                                                |
@@ -90,7 +90,6 @@ expression: render_snapshot(buf)
 19 6..10 fg=#56B6C2
 19 79..80 fg=#56B6C2
 20 0..1 fg=#56B6C2
-20 2..6 fg=DarkGray
 20 6..12 fg=#56B6C2
 20 19..23 fg=DarkGray
 20 79..80 fg=#56B6C2
@@ -104,6 +103,7 @@ expression: render_snapshot(buf)
 21 23..24 fg=DarkGray
 21 79..80 fg=#56B6C2
 22 0..1 fg=#56B6C2
+22 2..6 fg=DarkGray
 22 6..7 fg=Red bg=#421A1E mod=BOLD
 22 7..15 fg=#C0C5CE bg=#421A1E
 22 15..18 fg=#B48EAD bg=#421A1E

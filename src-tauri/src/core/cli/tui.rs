@@ -32,6 +32,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+mod transcript_event;
 mod find;
 mod highlight;
 mod markdown;
@@ -40,6 +41,8 @@ mod theme;
 pub(super) use theme::fg_sgr;
 mod vibe_setting;
 
+use crate::core::agent::events::MAIN_AGENT;
+use transcript_event::{tree_lines, Child, EventRow, Fit, TranscriptEvent};
 use markdown::{
     answer_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
     reasoning_tail_lines,
@@ -47,7 +50,7 @@ use markdown::{
 
 use super::agent_status::AgentStatusReporter;
 use super::brand;
-use super::journal::{self, DisplayEntry, ReasoningSeg};
+use super::journal::{self, DisplayEntry, NoteTone, ReasoningSeg};
 use super::mcp::McpServerEntry;
 use super::user_message::{build_user_message, image_mime, image_mime_of, PendingImage, MAX_IMAGE_BYTES};
 use super::worktree::Worktree;
@@ -826,11 +829,6 @@ impl NoticeKind {
 
 /// Gutter glyph for goal-loop lines, matching the header's `◎ /goal` badge.
 const GOAL_GLYPH: &str = "◎";
-
-/// Gutter for the body rows of a multi-line system block. Distinct from the tool
-/// rows' `└` tree and the reasoning rows' `┊`, so three stacked blocks stay
-/// tellable apart at a glance.
-const SYSTEM_CONT: &str = "┆";
 
 /// How loud a system line is. The only thing that varies between them, so it is
 /// a parameter rather than a colour picked at each of the ~90 call sites.
@@ -2061,7 +2059,6 @@ impl ToolGroup {
             return RowKind::Tool {
                 state: ToolState::Running,
                 label: self.activity(),
-                reserve: TOOL_ROW_RESERVE,
             }
             .into();
         }
@@ -2109,7 +2106,6 @@ impl ToolGroup {
                 None => self.outcome(state == GroupRow::Aborted),
             },
             label,
-            reserve: TOOL_ROW_RESERVE,
         }
         .into()
     }
@@ -2423,27 +2419,12 @@ enum RowKind {
     /// The opening splash, re-laid out at the draw width (the wordmark is
     /// dropped and the hints re-packed on a terminal too narrow for them).
     Banner(Box<Banner>),
-    /// A line the app is saying: `glyph` in the gutter column, body wrapped at
-    /// the draw width, so the gutter owns the left edge of the whole row instead
-    /// of only its first line. `cont` is what a wrapped continuation puts in the
-    /// column: an edge glyph repeats, a marker glyph gives way to blanks (a
-    /// second `•` would read as a second note).
-    System {
-        glyph: &'static str,
-        cont: &'static str,
-        gutter: Style,
-        body: Vec<Span<'static>>,
-        /// A filled bubble background spanning the row, or `None` for the plain
-        /// gutter form. Set for the user turn so it reads as a distinct card the
-        /// way the desktop's `bg-secondary` bubble does.
-        bg: Option<Color>,
-    },
-    /// A tool call/summary row, re-truncated to `width - reserve`.
-    Tool {
-        state: ToolState,
-        label: String,
-        reserve: u16,
-    },
+    /// A user turn: the `USER_GLYPH` gutter and the body wrapped beside it,
+    /// in the filled bubble that reads as a distinct card the way the
+    /// desktop's `bg-secondary` bubble does.
+    User { body: Vec<Span<'static>> },
+    /// A tool call/summary row, re-wrapped at the draw width.
+    Tool { state: ToolState, label: String },
     /// A group of read-only exploration calls: an `Explored` header over one
     /// child row per action (see `explored_lines`).
     Explored {
@@ -2484,6 +2465,10 @@ enum RowKind {
     Resolved { call: Box<RowKind>, result: Box<RowKind> },
     /// A row about subagents: a dispatch or a finished child.
     Agent(Box<AgentRow>),
+    /// Any other transcript event (a note, an error, a compaction, a memory
+    /// tidy, a message between agents, a turn receipt), laid out by the shared
+    /// `event` renderer: open while `live`, else folded to its name and summary.
+    Event(Box<EventRow>),
 }
 
 /// `• Dispatched kv-review, docs-writer` or `• Finished kv-review · 3 tools`:
@@ -2499,8 +2484,11 @@ struct AgentRow {
     stats: Option<String>,
     /// One child row per brief, under the tree's corner.
     briefs: Vec<Vec<Span<'static>>>,
-    /// How a finished child ended, as the last child row.
+    /// How a finished child ended, as the row's summary.
     status: Option<AgentStatus>,
+    /// The dispatch belongs to the step in progress, so its briefs show until
+    /// the step finishes (see `EventRow::live`).
+    live: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -2520,7 +2508,10 @@ impl AgentRow {
         }
     }
 
-    fn lines(&self, width: u16) -> Vec<Line<'static>> {
+    /// The row as an event: the verb and the children it names, how a
+    /// finished child ended as its summary, the briefs a dispatch sent as its
+    /// detail.
+    fn event(&self) -> EventRow {
         let dim = Style::new().fg(theme::muted());
         let mut head = vec![Span::styled(self.verb(), Style::new().bold())];
         for (i, name) in self.names.iter().enumerate() {
@@ -2530,18 +2521,65 @@ impl AgentRow {
         if let Some(stats) = &self.stats {
             head.push(Span::styled(format!(" \u{b7} {stats}"), dim));
         }
-        let mut out = tool_row_spans(self.state.bullet(), head, TOOL_ROW_RESERVE, width, Vec::new());
-        let inner = width.saturating_sub(TREE_FIRST.len() as u16).max(1) as usize;
-        let status = self.status.iter().map(|s| s.spans(inner));
-        for (i, child) in self.briefs.iter().cloned().chain(status).enumerate() {
-            out.extend(gutter_lines(
-                wrap_spans_hard(child, inner),
-                vec![child_prefix(i == 0)],
-                vec![child_prefix(false)],
-            ));
+        let status = self
+            .status
+            .iter()
+            .map(|s| Child::Text(s.spans(STATUS_PREVIEW_WIDTH)));
+        EventRow {
+            event: TranscriptEvent::new(self.state.bullet(), head).children(status).capped(),
+            detail: self.briefs.iter().cloned().map(Child::Text).collect(),
+            live: self.live,
         }
-        out
     }
+}
+
+/// Columns a finished child's reply preview may take on its status line,
+/// before the row wraps it to the draw width.
+const STATUS_PREVIEW_WIDTH: usize = 72;
+
+/// A message between two agents as one event, seen from `me`, the agent whose
+/// transcript holds it: `Message to <name>` for one it sent, `Message from
+/// <name>` for one it received, the first line as its summary and the whole
+/// text as its detail. Live, so it reads in full while the step that
+/// delivered it is in progress, then folds with that step.
+fn agent_message_row(me: &str, from: &str, to: &str, text: &str) -> EventRow {
+    let (verb, other) = if from == me { ("Message to", to) } else { ("Message from", from) };
+    let dim = Style::new().dim();
+    let mut lines = text.lines().map(str::trim_end).skip_while(|l| l.trim().is_empty());
+    let first = lines.next().unwrap_or("").trim().to_string();
+    let rest: Vec<&str> = lines.collect();
+    let marker = Span::styled(TOOL_BULLET, Style::new().fg(theme::accent()));
+    let title = vec![
+        Span::styled(format!("{verb} "), Style::new().bold()),
+        agent_label(other),
+    ];
+    EventRow {
+        event: TranscriptEvent::new(marker, title).child(Child::text(first, dim)),
+        detail: rest.into_iter().map(|l| Child::text(l, dim)).collect(),
+        live: true,
+    }
+}
+
+/// The event for a note `agent` raised: its gutter mark in `tone`, the agent
+/// as the title, each line of `text` under it.
+fn agent_note_row(agent: &str, tone: NoteTone, text: &str) -> EventRow {
+    let (marker, body) = match tone {
+        NoteTone::Info => {
+            let (gutter, body) = Level::Info.styles();
+            (Span::styled(format!("{SYSTEM_GLYPH} "), gutter), body)
+        }
+        NoteTone::Warn => {
+            let (gutter, body) = Level::Warn.styles();
+            (Span::styled(format!("{WARN_GLYPH} "), gutter), body)
+        }
+        NoteTone::Monitor => (
+            Span::styled(format!("{MONITOR_GLYPH} "), Style::new().fg(theme::accent())),
+            Style::new(),
+        ),
+        NoteTone::Finished => (ToolState::Success.bullet(), Style::new()),
+    };
+    let lines = text.lines().map(|l| Child::text(l, body));
+    EventRow::plain(TranscriptEvent::new(marker, vec![agent_label(agent)]).children(lines))
 }
 
 /// The worker names a `dispatch_subagent` call gives its children. While the
@@ -2616,6 +2654,7 @@ fn dispatch_row(args: &serde_json::Value, reported: Option<&[String]>) -> AgentR
         stats: None,
         briefs,
         status: None,
+        live: true,
     }
 }
 
@@ -2701,45 +2740,22 @@ impl RowKind {
             RowKind::Line(line) => vec![line.clone()],
             RowKind::Markdown(text) => answer_lines(text, width),
             RowKind::Banner(banner) => banner_lines(banner, width),
-            RowKind::System {
-                glyph,
-                cont,
-                gutter,
-                body,
-                bg,
-            } => {
-                let lead = glyph.chars().count() + 1;
-                // A banded row reserves one column so the bubble keeps a right
-                // margin instead of the text touching its tinted edge.
-                let reserve = if bg.is_some() { 1 } else { 0 };
-                let max = width.saturating_sub(lead as u16 + reserve).max(8) as usize;
+            RowKind::User { body } => {
+                let lead = USER_GLYPH.chars().count() + 1;
+                // One column held back so the text keeps a margin inside the
+                // bubble instead of touching its tinted edge.
+                let max = width.saturating_sub(lead as u16 + 1).max(8) as usize;
+                let gutter = Style::new().fg(theme::accent()).bold();
                 let lines = gutter_lines(
                     wrap_spans_hard(body.clone(), max),
-                    vec![Span::styled(
-                        format!("{glyph:<width$}", width = lead),
-                        *gutter,
-                    )],
-                    vec![Span::styled(
-                        format!("{cont:<width$}", width = lead),
-                        *gutter,
-                    )],
+                    vec![Span::styled(format!("{USER_GLYPH:<lead$}"), gutter)],
+                    vec![Span::styled(" ".repeat(lead), gutter)],
                 );
-                match bg {
-                    Some(bg) => band_rows(lines, *bg, width),
-                    None => lines,
-                }
+                band_rows(lines, user_bubble_bg(), width)
             }
-            RowKind::Tool {
-                state,
-                label,
-                reserve,
-            } => tool_row_lines(
-                state.bullet(),
-                label,
-                *reserve,
-                width,
-                shells_hint(*state),
-            ),
+            RowKind::Tool { state, label } => {
+                tool_row_lines(state.bullet(), label, width, shells_hint(*state))
+            }
             RowKind::Explored {
                 state,
                 failed,
@@ -2772,36 +2788,22 @@ impl RowKind {
                 lang,
             } => {
                 let max = width.saturating_sub(8).max(1) as usize;
-                let mut out: Vec<Line<'static>> = content
+                let summary = content
                     .iter()
-                    .map(|c| {
-                        Line::from(vec![
-                            Span::styled(TREE_FIRST, Style::new().dark_gray()),
-                            Span::styled(summarize_result(c, max), result_style(*is_error)),
-                        ])
-                    })
-                    .collect();
-                if let Some(diff) = diff {
-                    out.extend(diff_lines(
-                        diff,
-                        width as usize,
-                        DIFF_MAX_ROWS,
-                        TREE_REST,
-                        lang.as_deref(),
-                    ));
-                }
-                out
+                    .map(|c| Child::text(summarize_result(c, max), result_style(*is_error)));
+                let diff = diff.iter().map(|diff| Child::Diff {
+                    diff: diff.clone(),
+                    lang: lang.clone(),
+                });
+                let children: Vec<Child> = summary.chain(diff).collect();
+                tree_lines(&children, Fit::Wrap, width, true)
             }
             RowKind::Resolved { call, result } => {
                 // A resolved edit/write ends its row on the change count, so
                 // the size of the edit reads before its body does.
                 let stat = match (call.as_ref(), result.as_ref()) {
                     (
-                        RowKind::Tool {
-                            state,
-                            label,
-                            reserve,
-                        },
+                        RowKind::Tool { state, label },
                         RowKind::Result {
                             is_error: false,
                             diff: Some(diff),
@@ -2810,7 +2812,6 @@ impl RowKind {
                     ) => Some(tool_row_lines(
                         state.bullet(),
                         label,
-                        *reserve,
                         width,
                         diff_stat_spans(diff),
                     )),
@@ -2820,7 +2821,44 @@ impl RowKind {
                 out.extend(result.render(width));
                 out
             }
-            RowKind::Agent(row) => row.lines(width),
+            RowKind::Agent(row) => {
+                let row = row.event();
+                row.lines(width, row.live)
+            }
+            RowKind::Event(row) => row.lines(width, row.live),
+        }
+    }
+
+    /// The event this row is, for a row the shared renderer lays out.
+    fn event_row(&self) -> Option<EventRow> {
+        match self {
+            RowKind::Agent(row) => Some(row.event()),
+            RowKind::Event(row) => Some((**row).clone()),
+            _ => None,
+        }
+    }
+
+    /// What this row opens to beyond what it shows, laid out under it, or
+    /// `None` when it already shows everything (it is live, or has no detail).
+    fn event_detail(&self, width: u16) -> Option<Vec<Line<'static>>> {
+        self.event_row()
+            .filter(|row| !row.live && !row.detail.is_empty())
+            .map(|row| row.detail_lines(width))
+    }
+
+    /// The same row with its step finished, folded to its name and summary;
+    /// `None` for a row that is not live.
+    fn settled(&self) -> Option<RowKind> {
+        match self {
+            RowKind::Agent(row) if row.live => Some(RowKind::Agent(Box::new(AgentRow {
+                live: false,
+                ..(**row).clone()
+            }))),
+            RowKind::Event(row) if row.live => Some(RowKind::Event(Box::new(EventRow {
+                live: false,
+                ..(**row).clone()
+            }))),
+            _ => None,
         }
     }
 }
@@ -2881,6 +2919,12 @@ struct Transcript {
     /// Committed finished-subagent summary rows, each holding the child's run
     /// so Ctrl-O can expand it (parallel to `groups`/`reasoning_blocks`).
     subagent_blocks: Vec<SubagentBlock>,
+    /// Rows of the events the step in progress holds open (a dispatch, a
+    /// message between agents), folded by `end_step`.
+    live_events: Vec<usize>,
+    /// The subagent each in-flight `await_subagent` call waits on, by call
+    /// id, so its result reads as that agent's answer.
+    awaited: HashMap<String, String>,
     /// Start transcript index of each "trace" -- a contiguous run of
     /// reasoning-summary + tool-group rows (see `trace_runs`) -- the user has
     /// expanded. A *finished* trace (one an answer follows) folds to a single
@@ -2995,8 +3039,13 @@ impl Transcript {
         // it lands above the streaming response. Reasoning tokens must
         // not trigger this, or every call by a reasoning model splits
         // into its own row.
-        if self.tool_group.is_some() && self.answer_started() {
-            self.finalize_tool_group();
+        if self.answer_started() {
+            if self.tool_group.is_some() {
+                self.finalize_tool_group();
+            }
+            if !self.live_events.is_empty() {
+                self.end_step();
+            }
         }
     }
 
@@ -3083,13 +3132,13 @@ impl Transcript {
             self.finalize_tool_group();
             self.gap(Kind::Tool);
             if name == "dispatch_subagent" {
+                self.live_events.push(self.rows.len());
                 self.push_row(RowKind::Agent(Box::new(dispatch_row(args, None))));
                 self.dispatch_args.insert(id.clone(), args.clone());
             } else {
                 self.push_row(RowKind::Tool {
                     state: ToolState::Running,
                     label: label.clone(),
-                    reserve: TOOL_ROW_RESERVE,
                 });
             }
             self.pending_rows.push(PendingToolRow {
@@ -3117,6 +3166,11 @@ impl Transcript {
         // in-flight command label and the live buffer are both dead weight.
         self.bash_commands.remove(&id);
         self.live_output.remove(&id);
+        if let Some(agent) = self.awaited.remove(&id) {
+            self.flush_assistant();
+            self.collected(&agent, &content, is_error);
+            return;
+        }
         // Grouped calls are already represented by the group row; retain
         // their result on the group so an expand can show it later.
         if self.grouped_ids.contains(&id) {
@@ -3460,7 +3514,6 @@ impl Transcript {
                     _ => RowKind::Tool {
                         state: ToolState::Interrupted,
                         label: row.label,
-                        reserve: TOOL_ROW_RESERVE,
                     },
                 }
                 .into();
@@ -3487,6 +3540,7 @@ impl Transcript {
         self.flush_assistant();
         self.close_tool_group(interrupted);
         self.interrupt_pending_rows();
+        self.end_step();
         self.live_output.clear();
     }
 
@@ -3512,6 +3566,7 @@ impl Transcript {
             .retain_mut(|r| shift(r.idx).map(|idx| r.idx = idx).is_some());
         self.subagent_blocks
             .retain_mut(|b| shift(b.idx).map(|idx| b.idx = idx).is_some());
+        self.live_events = self.live_events.iter().filter_map(|&i| shift(i)).collect();
         self.pending_rows
             .retain_mut(|p| shift(p.idx).map(|idx| p.idx = idx).is_some());
         self.expanded = self.expanded.iter().filter_map(|&i| shift(i)).collect();
@@ -3640,6 +3695,7 @@ impl Transcript {
                 // to nothing (a bare HTML comment) still emits no row.
                 let row: Row = RowKind::Markdown(seg.to_string()).into();
                 if !row.lines(self.render_width()).is_empty() {
+                    self.end_step();
                     self.gap(Kind::Prose);
                     self.push_row(row);
                 }
@@ -3955,7 +4011,6 @@ impl Transcript {
             _ => RowKind::Tool {
                 state: ToolState::of(is_error),
                 label,
-                reserve: TOOL_ROW_RESERVE,
             },
         };
         self.rows[row.idx] = RowKind::Resolved {
@@ -4005,12 +4060,14 @@ impl Transcript {
     /// blocks): collapse all when all are already expanded, else expand all and
     /// scroll the most-recent one into view.
     fn toggle_regions(&mut self) {
+        let events = (0..self.rows.len()).filter(|&i| self.folded_event(i));
         let all: Vec<usize> = self
             .groups
             .iter()
             .map(|g| g.idx)
             .chain(self.reasoning_blocks.iter().map(|r| r.idx))
             .chain(self.subagent_blocks.iter().map(|b| b.idx))
+            .chain(events)
             .collect();
         // Ctrl-O also unfolds every collapsed (finished) trace, so one keystroke
         // opens both the folds and the per-row detail.
@@ -4067,6 +4124,7 @@ impl Transcript {
                     .get(&i)
                     .map(|&pos| self.subagent_blocks[pos].detail_lines(width))
             })
+            .or_else(|| self.rows.get(i)?.kind.event_detail(width))
     }
 
     /// An expanded region's text before wrapping, one entry per logical line,
@@ -4094,10 +4152,11 @@ impl Transcript {
         if let Some(&pos) = index.reasoning.get(&i) {
             return Some(Cow::Borrowed(self.reasoning_blocks[pos].flat_detail()));
         }
-        index
-            .subagents
-            .get(&i)
-            .map(|&pos| Cow::Borrowed(self.subagent_blocks[pos].flat_detail().as_slice()))
+        if let Some(&pos) = index.subagents.get(&i) {
+            return Some(Cow::Borrowed(self.subagent_blocks[pos].flat_detail().as_slice()));
+        }
+        let detail = self.rows.get(i)?.kind.event_detail(find::FLAT_WIDTH)?;
+        Some(Cow::Owned(find::flat_text(&detail)))
     }
 
     /// Where each row's region lives in `groups`, `reasoning_blocks` and
@@ -4140,13 +4199,89 @@ impl Transcript {
         let is_region = self.groups.iter().any(|g| g.idx == idx)
             || self.reasoning_blocks.iter().any(|r| r.idx == idx)
             || self.subagent_blocks.iter().any(|b| b.idx == idx)
-            || self.tool_group.as_ref().is_some_and(|g| g.idx == idx);
+            || self.tool_group.as_ref().is_some_and(|g| g.idx == idx)
+            || self.folded_event(idx);
         if !is_region {
             return;
         }
         if !self.expanded.remove(&idx) {
             self.expanded.insert(idx);
         }
+    }
+
+    /// Whether row `idx` is an event folded to its name and summary, with
+    /// detail an expand reveals.
+    fn folded_event(&self, idx: usize) -> bool {
+        self.rows
+            .get(idx)
+            .and_then(|row| row.kind.event_row())
+            .is_some_and(|row| !row.live && !row.detail.is_empty())
+    }
+
+    /// The agent's step is over: every event it held open folds to its name
+    /// and summary, as its tool group folds to `Worked`. Called when answer
+    /// prose begins and when the run ends, the two points a step finishes.
+    fn end_step(&mut self) {
+        for idx in std::mem::take(&mut self.live_events) {
+            let settled = self.rows.get(idx).and_then(|row| row.kind.settled());
+            if let Some(kind) = settled {
+                self.rows[idx] = kind.into();
+            }
+        }
+    }
+
+    /// A wait on a subagent: no row of its own (the live throbber stands in
+    /// for it), but journaled, so a resume knows what the result answers.
+    fn await_call(&mut self, id: &str, args: &serde_json::Value, agent: &str) {
+        self.log(DisplayEntry::ToolCall {
+            id: id.to_string(),
+            name: "await_subagent".to_string(),
+            args: args.clone(),
+        });
+        self.awaited.insert(id.to_string(), agent.to_string());
+    }
+
+    /// What an awaited subagent handed back, as its event: `Collected <name>`
+    /// over the answer's first line, the rest as detail.
+    fn collected(&mut self, agent: &str, content: &str, is_error: bool) {
+        let style = result_style(is_error);
+        let mut lines = content.lines().map(str::trim_end).filter(|l| !l.trim().is_empty());
+        let first = lines.next().unwrap_or("(no answer)").to_string();
+        let title = vec![
+            Span::styled("Collected ", Style::new().bold()),
+            agent_label(agent),
+        ];
+        let row = EventRow {
+            event: TranscriptEvent::new(ToolState::of(is_error).bullet(), title)
+                .child(Child::text(first, style)),
+            detail: lines.map(|l| Child::text(l, style)).collect(),
+            live: true,
+        };
+        self.gap(Kind::Tool);
+        self.push_event(row);
+    }
+
+    /// A message between agents as it was delivered, journaled so a resume
+    /// shows it. `me` names the agent this transcript belongs to.
+    fn agent_message(&mut self, me: &str, from: &str, to: &str, text: &str) {
+        self.flush_assistant();
+        self.finalize_tool_group();
+        self.log(DisplayEntry::AgentMessage {
+            from: from.to_string(),
+            to: to.to_string(),
+            text: text.to_string(),
+        });
+        self.gap(Kind::Meta);
+        self.push_event(agent_message_row(me, from, to, text));
+    }
+
+    /// Commit an event row, holding it open until its step finishes when it
+    /// is `live`.
+    fn push_event(&mut self, row: EventRow) {
+        if row.live {
+            self.live_events.push(self.rows.len());
+        }
+        self.push_row(RowKind::Event(Box::new(row)));
     }
 
     /// Forget what `buf_scan` folded in. Every site that clears or replaces
@@ -5282,7 +5417,6 @@ impl SubagentPanel {
             panel.transcript.push_row(RowKind::Tool {
                 state: ToolState::Success,
                 label: label.clone(),
-                reserve: TOOL_ROW_RESERVE,
             });
         }
         panel
@@ -5831,6 +5965,8 @@ impl App {
         self.transcript.reasoning_blocks.clear();
         self.transcript.expanded_traces.clear();
         self.transcript.subagent_blocks.clear();
+        self.transcript.live_events.clear();
+        self.transcript.awaited.clear();
         // Aborts the children themselves, not just their panels: the
         // conversation they would report into is going away.
         self.stop_subagents();
@@ -6037,21 +6173,30 @@ impl App {
         self.push_banner(&phrasing, awaiting_first_message);
     }
 
-    /// Append a line the *app* is saying, in its own gutter column. Every other
-    /// transcript class owns one (the user's `› ` bubble, `• ` tool, `┊ ` reasoning),
-    /// so without it a note is indistinguishable from model prose. `glyph` names the
-    /// category and `level` carries severity.
+    /// Append an event the *app* reports, under its own gutter mark. Every
+    /// other transcript class owns one (the user's `USER_GLYPH` bubble, a
+    /// tool's bullet, reasoning's rail), so without it a note is
+    /// indistinguishable from model prose. `glyph` names the category and
+    /// `level` carries severity. The text's first line is the event's title;
+    /// any further lines hang under it as its description.
     fn system_marked(&mut self, glyph: &'static str, level: Level, text: &str) {
+        let (gutter, body) = level.styles();
+        let mut lines = text.lines();
+        let title = lines.next().unwrap_or("").to_string();
+        let rest: Vec<Child> = lines.map(|l| Child::text(l, Style::new().dim())).collect();
+        let event = TranscriptEvent::new(Span::styled(format!("{glyph} "), gutter), vec![
+            Span::styled(title, body),
+        ])
+        .children(rest);
+        self.push_event(EventRow::plain(event));
+    }
+
+    /// Commit an app-side event row (a note, a report, a message between
+    /// agents) to the main transcript.
+    fn push_event(&mut self, row: EventRow) {
         self.scrollback = 0;
         self.transcript.gap(Kind::Meta);
-        let (gutter, body) = level.styles();
-        self.transcript.push_row(RowKind::System {
-            glyph,
-            cont: " ",
-            gutter,
-            body: vec![Span::styled(text.to_string(), body)],
-            bg: None,
-        });
+        self.transcript.push_event(row);
     }
 
     fn system(&mut self, level: Level, text: &str) {
@@ -6064,27 +6209,28 @@ impl App {
         self.system(Level::Info, text);
     }
 
-    /// A background ping's headline, as the row its `NoticeKind` calls for: a
-    /// monitor match under the monitor glyph, a timeout or a failed command as
-    /// a warning, a finished command as a finished tool row. `who` names the
-    /// subagent the ping came from, ahead of the headline.
+    /// A background ping's headline, as the event its `NoticeKind` calls for:
+    /// a monitor match under the monitor glyph, a timeout or a failed command
+    /// as a warning, a finished command under a finished tool's bullet. `who`
+    /// names the subagent the ping came from, which makes it that agent's
+    /// note (see `agent_note`).
     fn notice(&mut self, text: &str, who: Option<&str>) {
-        let body = match who {
-            Some(name) => format!("{name}: {text}"),
-            None => text.to_string(),
-        };
-        match NoticeKind::of(text) {
-            NoticeKind::MonitorMatched => {
-                self.scrollback = 0;
-                self.transcript.gap(Kind::Meta);
-                self.transcript.push_row(RowKind::System {
-                    glyph: MONITOR_GLYPH,
-                    cont: " ",
-                    gutter: Style::new().fg(theme::accent()),
-                    body: vec![Span::raw(body)],
-                    bg: None,
-                });
-            }
+        let kind = NoticeKind::of(text);
+        if let Some(agent) = who {
+            let tone = match kind {
+                NoticeKind::MonitorMatched => NoteTone::Monitor,
+                NoticeKind::MonitorTimedOut | NoticeKind::ShellFailed => NoteTone::Warn,
+                NoticeKind::ShellFinished => NoteTone::Finished,
+                NoticeKind::Other => NoteTone::Info,
+            };
+            return self.agent_note(agent, tone, text);
+        }
+        let body = text.to_string();
+        match kind {
+            NoticeKind::MonitorMatched => self.push_event(EventRow::plain(TranscriptEvent::new(
+                Span::styled(format!("{MONITOR_GLYPH} "), Style::new().fg(theme::accent())),
+                vec![Span::raw(body)],
+            ))),
             NoticeKind::MonitorTimedOut | NoticeKind::ShellFailed => {
                 self.system(Level::Warn, &body)
             }
@@ -6094,28 +6240,47 @@ impl App {
                 self.transcript.push_row(RowKind::Tool {
                     state: ToolState::Success,
                     label: body,
-                    reserve: TOOL_ROW_RESERVE,
                 });
             }
             NoticeKind::Other => self.note(&body),
         }
     }
 
-    /// A body row of a multi-line system block (`/help`, `/threads`, a goal
-    /// status), under the header its `system*` call pushed. The gutter keeps
-    /// running so the block reads as one unit instead of leaving its body
-    /// unattributed, and the body starts in the header's column.
+    /// A note a subagent's run raised, as the spec lays out every event
+    /// attributed to an agent: the agent's name is the title and `text` hangs
+    /// under it, wrapping in the tree's column. Journaled, so a resume draws
+    /// the same rows.
+    fn agent_note(&mut self, agent: &str, tone: NoteTone, text: &str) {
+        self.transcript.log(DisplayEntry::AgentNote {
+            agent: agent.to_string(),
+            tone,
+            text: text.to_string(),
+        });
+        self.push_event(agent_note_row(agent, tone, text));
+    }
+
+    /// A description row of a multi-line report (`/help`, `/threads`, a goal
+    /// status), hung under the event its `system*` call pushed, so the block
+    /// reads as one event instead of leaving its body unattributed.
     ///
     /// Fixed dim styling rather than the header's `Level`: blocks are
-    /// informational -- a warning or an error is a single line.
+    /// informational -- a warning or an error is a single event.
     fn system_detail(&mut self, body: Vec<Span<'static>>) {
-        self.transcript.push_row(RowKind::System {
-            glyph: SYSTEM_CONT,
-            cont: SYSTEM_CONT,
-            gutter: Style::new().dark_gray(),
-            body,
-            bg: None,
-        });
+        let rows = &mut self.transcript.rows;
+        match rows.pop().map(|row| row.kind) {
+            // Re-pushed rather than edited in place: the row's cached layout
+            // is stale once it grows a child.
+            Some(RowKind::Event(mut row)) => {
+                row.event.children.push(Child::Text(body));
+                rows.push(RowKind::Event(row).into());
+            }
+            other => {
+                rows.extend(other.map(Row::from));
+                let (gutter, _) = Level::Info.styles();
+                let marker = Span::styled(format!("{SYSTEM_GLYPH} "), gutter);
+                self.push_event(EventRow::plain(TranscriptEvent::new(marker, body)));
+            }
+        }
     }
 
     fn system_detail_text(&mut self, text: &str) {
@@ -6154,6 +6319,7 @@ impl App {
             stats: Some(pluralize("tool", panel.calls.len())),
             briefs: Vec::new(),
             status: Some(panel.status(Some(&outcome))),
+            live: false,
         })));
         if !panel.transcript.rows.is_empty() {
             let idx = self.transcript.rows.len() - 1;
@@ -6333,8 +6499,11 @@ impl App {
         for notice in &shells {
             crate::core::agent::reminder::attach(&mut self.history, &notice.text);
         }
-        for text in &subagents {
-            crate::core::agent::reminder::attach(&mut self.history, text);
+        for notice in &subagents {
+            if let Some((from, text)) = &notice.message {
+                self.transcript.agent_message(MAIN_AGENT, from, MAIN_AGENT, text);
+            }
+            crate::core::agent::reminder::attach(&mut self.history, &notice.text);
         }
         self.begin_turn();
         self.want_start = true;
@@ -6346,6 +6515,7 @@ impl App {
     /// bullet would read as work that is still running or that succeeded.
     fn abort_tool_rows(&mut self) {
         self.transcript.close_tool_group(true);
+        self.transcript.end_step();
         self.resolve_orphan_tool_rows();
     }
 
@@ -8299,6 +8469,7 @@ impl App {
                     self.transcript.flush_assistant();
                     let run_id = args.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
                     let sub = subagent_name_from_run_id(run_id).to_string();
+                    self.transcript.await_call(&id, &args, &sub);
                     self.awaiting.push((id, run_id.to_string(), sub));
                     return;
                 }
@@ -8495,6 +8666,10 @@ impl App {
                 self.transcript.finalize_tool_group();
                 self.transcript.flush_assistant();
                 self.notice(&text, None);
+            }
+            StreamEvent::AgentMessage { from, to, text } => {
+                self.scrollback = 0;
+                self.transcript.agent_message(MAIN_AGENT, &from, &to, &text);
             }
             StreamEvent::Monitors { monitors } => self.monitors = monitors,
             // The live countdown carries every attempt; the transcript notes
@@ -8762,6 +8937,16 @@ impl App {
                 let key = self.usage_key();
                 self.session_usage.entry(key).or_default().add(&usage);
             }
+            // The parent's message, as the child took it: in the child's own
+            // run and in the main transcript, which is where the sender is.
+            StreamEvent::AgentMessage { from, to, text } => {
+                if let Some(panel) = panel {
+                    panel.transcript.agent_message(name, &from, &to, &text);
+                    panel.transcript.cap_rows(CHILD_ROWS_MAX);
+                }
+                self.scrollback = 0;
+                self.transcript.agent_message(MAIN_AGENT, &from, &to, &text);
+            }
             // A child's headline (a compaction, a monitor match) is as much the
             // user's business as the parent's: dropping it made a child's
             // compaction invisible.
@@ -8776,7 +8961,7 @@ impl App {
                 reason,
                 ..
             } => {
-                self.note(&format!("{name}: {reason}; retrying"));
+                self.agent_note(name, NoteTone::Info, &format!("{reason}; retrying"));
             }
             // A child's compaction is announced, but the spinner and gauge are
             // the parent's: the child's history is not the one on screen.
@@ -8813,7 +8998,11 @@ impl App {
             CompactionReason::ContextOverflow => "the provider rejected the prompt as too long",
             CompactionReason::SessionBudget => "the session token budget was used up",
         };
-        let who = child.map(|c| format!("{c}: ")).unwrap_or_default();
+        // A child's note is that agent's; the main run's is the app's own.
+        let say = |app: &mut App, text: String| match child {
+            Some(agent) => app.agent_note(agent, NoteTone::Info, &text),
+            None => app.note(&text),
+        };
         match phase {
             CompactionPhase::Started => {
                 if child.is_none() {
@@ -8828,16 +9017,16 @@ impl App {
                 }
                 self.transcript.finalize_tool_group();
                 self.transcript.flush_assistant();
-                self.note(&format!(
-                    "{who}compacted {} messages into a summary: {why}",
-                    messages.unwrap_or(0)
-                ));
+                say(
+                    self,
+                    format!("compacted {} messages into a summary: {why}", messages.unwrap_or(0)),
+                );
             }
             CompactionPhase::Failed => {
                 if child.is_none() {
                     self.run_compacting = None;
                 }
-                self.note(&format!("{who}compaction failed ({why}); history unchanged"));
+                say(self, format!("compaction failed ({why}); history unchanged"));
             }
         }
     }
@@ -8925,6 +9114,7 @@ impl App {
 
     fn on_done(&mut self, stop_reason: String, usage: Option<Usage>) {
         self.transcript.finalize_tool_group();
+        self.transcript.end_step();
         // Done is terminal: nothing more arrives on this stream, so a call that
         // never completed cannot be left animating for the rest of the session.
         self.resolve_orphan_tool_rows();
@@ -8992,6 +9182,9 @@ impl App {
             );
             self.transcript.gap(Kind::Meta);
             self.transcript.push(stats);
+            // The receipt closes the turn: whatever comes next (a late note,
+            // a child's report) starts a block of its own, off a blank line.
+            self.transcript.last_kind = Kind::None;
         }
         // Cache this turn's output rate from the single `usage` sample and its
         // streaming duration, before `run_started` is cleared below. Holds
@@ -10468,13 +10661,7 @@ const USER_GLYPH: &str = "›";
 /// only filled element in the transcript, so the user's own words are what the
 /// eye lands on when scanning back.
 fn user_bubble(body: Vec<Span<'static>>) -> RowKind {
-    RowKind::System {
-        glyph: USER_GLYPH,
-        cont: " ",
-        gutter: Style::new().fg(theme::accent()).bold(),
-        body,
-        bg: Some(user_bubble_bg()),
-    }
+    RowKind::User { body }
 }
 
 /// Tint a run of gutter rows as one filled bubble spanning the whole transcript
@@ -11415,11 +11602,10 @@ fn starting_call_lines(
 fn tool_row_lines(
     bullet: Span<'static>,
     label: &str,
-    reserve: u16,
     width: u16,
     suffix: Vec<Span<'static>>,
 ) -> Vec<Line<'static>> {
-    tool_row_spans(bullet, verb_first_spans(label), reserve, width, suffix)
+    tool_row_spans(bullet, verb_first_spans(label), width, suffix)
 }
 
 /// `tool_row_lines` for a label already split into styled spans, such as a
@@ -11427,29 +11613,10 @@ fn tool_row_lines(
 fn tool_row_spans(
     bullet: Span<'static>,
     label: Vec<Span<'static>>,
-    reserve: u16,
     width: u16,
     suffix: Vec<Span<'static>>,
 ) -> Vec<Line<'static>> {
-    let held = if suffix.is_empty() {
-        0
-    } else {
-        suffix.iter().map(Span::width).sum::<usize>().max(ELAPSED_RESERVE)
-    };
-    let max = (width.saturating_sub(reserve) as usize)
-        .saturating_sub(held)
-        .max(1);
-    let mut rows = wrap_spans_hard(label, max);
-    if rows.len() > TOOL_ROW_MAX_LINES {
-        rows.truncate(TOOL_ROW_MAX_LINES);
-        if let Some(last) = rows.last_mut() {
-            last.push(Span::raw(" \u{2026}"));
-        }
-    }
-    rows.last_mut()
-        .expect("wrap_text yields at least one row")
-        .extend(suffix);
-    gutter_lines(rows, vec![bullet], vec![Span::raw("  ")])
+    TranscriptEvent::new(bullet, label).suffix(suffix).capped().lines(width)
 }
 
 /// `label` split into a bold verb (its first word) and the plain rest.
@@ -11511,50 +11678,43 @@ fn result_style(is_error: bool) -> Style {
 /// as a tree: each call's finished label with its output (and diff, if any)
 /// indented under it.
 fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
-    let max = width.saturating_sub(8) as usize;
-    let mut out: Vec<Line<'static>> = Vec::new();
     // A single-call group's summary row already IS that call's `done` label, so
     // repeating it here would duplicate it; only multi-call groups (whose
-    // summary is a counted breakdown) need the per-call headers. An `Explored`,
-    // `Shell` or `Worked` row already ends on its tree, so its detail always
-    // names each call and carries that tree on rather than opening a second
-    // corner.
-    // A mixed group still in flight reads as its running call, with no tree yet.
+    // summary is a counted breakdown) nest each call as an event of its own.
+    // An `Explored`, `Shell` or `Worked` row already ends on its tree, so its
+    // detail always names each call and carries that tree on rather than
+    // opening a second corner. A mixed group still in flight reads as its
+    // running call, with no tree yet.
     let tree = group.explored() || group.shells() || (group.worked() && !group.is_running());
     let show_headers = group.calls.len() > 1 || tree;
-    let first = |out: &Vec<Line<'static>>| out.is_empty() && !tree;
-    for call in &group.calls {
-        if show_headers {
-            out.extend(gutter_lines(
-                wrap_spans_hard(verb_first_spans(&call.settled_label()), max),
-                vec![child_prefix(first(&out)), call.state().bullet()],
-                vec![Span::raw(TREE_NESTED)],
-            ));
-        }
-        let Some(content) = &call.content else {
-            continue;
-        };
-        // Expanded view shows the full output verbatim, and a line wider than
-        // the terminal wraps rather than eliding -- this is the surface the
-        // transcript's one-line summary sends the user to. A silent call says
-        // so, so it is visibly accounted for.
-        let rows = if content.trim().is_empty() {
-            wrap_text("(no output)", Style::new().dark_gray(), max)
-        } else {
-            wrap_text(content, result_style(call.is_error), max)
-        };
-        let indent = if show_headers { TREE_NESTED } else { TREE_REST };
-        let lead = if show_headers {
-            Span::raw(TREE_NESTED)
-        } else {
-            child_prefix(first(&out))
-        };
-        out.extend(gutter_lines(rows, vec![lead], vec![Span::raw(indent)]));
-        if let Some(diff) = &call.diff {
-            out.extend(diff_lines(diff, width as usize, DIFF_MAX_ROWS, indent, None));
-        }
-    }
-    out
+    let children: Vec<Child> = group
+        .calls
+        .iter()
+        .flat_map(|call| {
+            // Expanded view shows the full output verbatim, and a line wider
+            // than the terminal wraps rather than eliding -- this is the
+            // surface the transcript's one-line summary sends the user to. A
+            // silent call says so, so it is visibly accounted for.
+            let output = call.content.as_ref().map(|content| {
+                if content.trim().is_empty() {
+                    Child::text("(no output)", Style::new().dark_gray())
+                } else {
+                    Child::text(content.clone(), result_style(call.is_error))
+                }
+            });
+            let diff = call.diff.clone().map(|diff| Child::Diff { diff, lang: None });
+            let body = output.into_iter().chain(diff);
+            if show_headers {
+                let head = verb_first_spans(&call.settled_label());
+                vec![Child::Nested(
+                    TranscriptEvent::new(call.state().bullet(), head).children(body),
+                )]
+            } else {
+                body.collect()
+            }
+        })
+        .collect();
+    tree_lines(&children, Fit::Wrap, width, !tree)
 }
 
 /// Classify a collapsible tool into a breakdown noun and whether it is a
@@ -11720,15 +11880,12 @@ fn explored_lines(
     suffix: Vec<Span<'static>>,
     width: u16,
 ) -> Vec<Line<'static>> {
-    let mut head = vec![bullet, Span::styled(verb, Style::new().bold())];
+    let mut head = vec![Span::styled(verb, Style::new().bold())];
     if failed > 0 {
         head.push(Span::styled(format!(" \u{b7} {failed} failed"), Style::new().red()));
     }
-    head.extend(suffix);
-    let mut out = vec![Line::from(head)];
     let dim = Style::new().dark_gray();
-    let max = (width as usize).saturating_sub(TREE_REST.len() + 2).max(1);
-    for (i, action) in actions.iter().take(EXPLORE_MAX_ROWS).enumerate() {
+    let rows = actions.iter().take(EXPLORE_MAX_ROWS).map(|action| {
         let mut spans = vec![Span::styled(action.verb, Style::new().fg(theme::accent()))];
         if let Some(noun) = action.noun {
             spans.push(Span::raw(format!(" {noun}:")));
@@ -11748,19 +11905,18 @@ fn explored_lines(
             ExploreOutcome::Empty => spans.push(Span::styled(" (no matches)", dim)),
             ExploreOutcome::Failed => spans.push(Span::styled(" (failed)", Style::new().red())),
         }
-        out.extend(gutter_lines(
-            wrap_spans_hard(spans, max),
-            vec![child_prefix(i == 0)],
-            vec![Span::raw(TREE_REST)],
-        ));
-    }
-    if actions.len() > EXPLORE_MAX_ROWS {
-        out.push(Line::from(Span::styled(
-            format!("{TREE_REST}\u{2026} +{} more", actions.len() - EXPLORE_MAX_ROWS),
+        Child::Text(spans)
+    });
+    let more = (actions.len() > EXPLORE_MAX_ROWS).then(|| {
+        Child::text(
+            format!("\u{2026} +{} more", actions.len() - EXPLORE_MAX_ROWS),
             dim,
-        )));
-    }
-    out
+        )
+    });
+    TranscriptEvent::new(bullet, head)
+        .suffix(suffix)
+        .children(rows.chain(more))
+        .lines(width)
 }
 
 /// Short sentence summarizing a finished tool group, e.g. "Read 3 memory notes,
@@ -11781,21 +11937,16 @@ fn worked_lines(
     width: u16,
 ) -> Vec<Line<'static>> {
     let head = vec![
-        bullet,
         Span::styled("Worked", Style::new().bold()),
         Span::styled(
             format!(" \u{b7} {}", pluralize("tool call", calls)),
             Style::new().dark_gray(),
         ),
     ];
-    let max = (width as usize).saturating_sub(TREE_FIRST.len() + 2).max(1);
-    vec![
-        Line::from(clip_spans(head, width as usize)),
-        Line::from(vec![
-            child_prefix(true),
-            Span::styled(truncate(summary, max), Style::new().dim()),
-        ]),
-    ]
+    TranscriptEvent::new(bullet, head)
+        .child(Child::text(summary, Style::new().dim()))
+        .clipped()
+        .lines(width)
 }
 
 /// The one-line header a finished trace collapses to, with a step count so the
@@ -11813,19 +11964,16 @@ fn trace_header_lines(
 ) -> Vec<Line<'static>> {
     let verb = if run.tool_ran { "Worked" } else { "Thought" };
     let unit = if run.steps == 1 { "step" } else { "steps" };
-    let mut out = vec![Line::from(vec![
-        Span::styled(TOOL_BULLET, Style::new().dim()),
+    let head = vec![
         Span::styled(verb, Style::new().dim().bold()),
         Span::styled(format!(" \u{b7} {} {unit}", run.steps), Style::new().dim()),
-    ])];
-    if !nouns.is_empty() {
-        let max = (width as usize).saturating_sub(TREE_FIRST.len() + 2).max(1);
-        out.push(Line::from(vec![
-            child_prefix(true),
-            Span::styled(truncate(&group_summary(nouns), max), Style::new().dim()),
-        ]));
-    }
-    out
+    ];
+    let summary = (!nouns.is_empty())
+        .then(|| Child::text(group_summary(nouns), Style::new().dim()));
+    TranscriptEvent::new(Span::styled(TOOL_BULLET, Style::new().dim()), head)
+        .children(summary)
+        .clipped()
+        .lines(width)
 }
 
 /// The terminal cap of an expanded trace's rail: a `└` corner that closes the
@@ -11865,13 +12013,7 @@ fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Ve
             width,
         );
     }
-    tool_row_lines(
-        running_bullet(spinner_frame),
-        &group.activity(),
-        TOOL_ROW_RESERVE,
-        width,
-        badge,
-    )
+    tool_row_lines(running_bullet(spinner_frame), &group.activity(), width, badge)
 }
 
 /// Live output kept per running command. Past this the front is dropped: the
@@ -11981,11 +12123,12 @@ fn shell_output_span((text, note): (String, bool)) -> Span<'static> {
 
 /// Hang `rows` off a shell header as its tree: the corner on the first row, the
 /// blank indent after.
-fn shell_tree(rows: Vec<(String, bool)>) -> Vec<Line<'static>> {
-    rows.into_iter()
-        .enumerate()
-        .map(|(i, row)| Line::from(vec![child_prefix(i == 0), shell_output_span(row)]))
-        .collect()
+fn shell_tree(rows: Vec<(String, bool)>, width: u16) -> Vec<Line<'static>> {
+    let children: Vec<Child> = rows
+        .into_iter()
+        .map(|row| Child::Text(vec![shell_output_span(row)]))
+        .collect();
+    tree_lines(&children, Fit::Clip, width, true)
 }
 
 /// Columns an output row may use under the tree: the prefix and a right margin
@@ -12043,7 +12186,7 @@ fn running_shell_lines(
         width,
     );
     let rows = shell_tail_rows(output, LIVE_OUTPUT_TAIL_LINES, shell_output_width(width));
-    out.extend(shell_tree(rows));
+    out.extend(shell_tree(rows, width));
     out
 }
 
@@ -12160,7 +12303,7 @@ fn finished_shell_lines(
         "Ran"
     };
     let mut out = shell_header_rows(state.bullet(), verb, command, suffix, width);
-    out.extend(shell_tree(rows));
+    out.extend(shell_tree(rows, width));
     out
 }
 
@@ -13204,18 +13347,18 @@ fn finish_plugin_install(
                     for hook in
                         tauri_plugin_agent_tools::tools::hooks::plugin_hook_entries(&dir).0
                     {
-                        app.note(&format!(
-                            "  hook {} ({}): {}",
+                        app.system_detail_text(&format!(
+                            "hook {} ({}): {}",
                             hook.event,
                             hook.matcher.as_deref().unwrap_or("*"),
                             hook.command
                         ));
                     }
                     for tool in crate::core::agent::hooks_config::plugin_tool_entries(&dir) {
-                        app.note(&format!("  tool {}: {}", tool.name, tool.command));
+                        app.system_detail_text(&format!("tool {}: {}", tool.name, tool.command));
                     }
-                    app.note(
-                        "  disable with [plugins] hooks = false / tools = false in agent.toml",
+                    app.system_detail_text(
+                        "disable with [plugins] hooks = false / tools = false in agent.toml",
                     );
                 }
             }
@@ -15761,7 +15904,7 @@ async fn handle_key_input(
                 } else {
                     match crate::core::agent::subagent::stop_subagent(&app.subagent_set, &run_id) {
                         Ok(_) => app.note(&format!("stopped subagent {name}")),
-                        Err(e) => app.note(&format!("could not stop subagent {name}: {e}")),
+                        Err(e) => app.note(&format!("could not stop subagent {name}\n{e}")),
                     }
                 }
             }
@@ -18136,16 +18279,10 @@ fn handle_agent_message_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                 &text,
             ) {
                 Ok(_) => {
-                    let (run_id, name) = (prompt.run_id.clone(), prompt.name.clone());
+                    let name = prompt.name.clone();
                     app.agent_message = None;
-                    if let Some(panel) = app.subagents.iter_mut().find(|p| p.run_id == run_id) {
-                        // Committed first, as a steer to the parent is, so the
-                        // message sits below what the child said before it.
-                        panel.transcript.flush_assistant();
-                        panel.transcript.finalize_tool_group();
-                        panel.transcript.push_user_line(&text, &[]);
-                        panel.transcript.cap_rows(CHILD_ROWS_MAX);
-                    }
+                    // The message itself shows once the child takes it (an
+                    // `AgentMessage` from its run); queued is not read.
                     app.note(&format!(
                         "message queued for subagent {name}; it reads it at its next step"
                     ));
@@ -22837,6 +22974,13 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
                 };
                 app.push_subagent_summary(SubagentPanel::replayed(name, calls), outcome);
             }
+            DisplayEntry::AgentMessage { from, to, text } => {
+                app.transcript.agent_message(MAIN_AGENT, from, to, text);
+            }
+            DisplayEntry::AgentNote { agent, tone, text } => {
+                app.transcript.finalize_tool_group();
+                app.agent_note(agent, *tone, text);
+            }
         }
     }
     // A replay is rendering, not work: the calls it re-renders must not stage
@@ -22845,6 +22989,10 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
     // result will never get one.
     app.transcript.finalize_tool_group();
     app.transcript.interrupt_committed_groups();
+    // A wait the journal never saw answered gets no answer now: no throbber
+    // spins for it, and nothing will read its result as a subagent's.
+    app.awaiting.clear();
+    app.transcript.awaited.clear();
     app.turn_touched.clear();
     app.transcript.diff_paths.clear();
     app.todo_call_this_turn = false;
@@ -22864,6 +23012,8 @@ fn rebuild_transcript(app: &mut App) {
     app.transcript.reasoning_blocks.clear();
     app.transcript.expanded_traces.clear();
     app.transcript.subagent_blocks.clear();
+    app.transcript.live_events.clear();
+    app.transcript.awaited.clear();
     app.transcript.expanded.clear();
     app.transcript.reveal = None;
     app.find = None;
@@ -22944,6 +23094,8 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     app.transcript.reasoning_blocks.clear();
     app.transcript.expanded_traces.clear();
     app.transcript.subagent_blocks.clear();
+    app.transcript.live_events.clear();
+    app.transcript.awaited.clear();
     // The conversation these would report into is being replaced.
     app.stop_subagents();
     app.stop_monitors();
@@ -26603,9 +26755,16 @@ mod tests {
             name: "dispatch_subagent".into(),
             args: json!({ "subagents": [{ "agent": "general", "task": "go" }] }),
         });
+        assert!(transcript_text(&app).contains("\u{2022} Dispatching general\n  \u{2514} go"));
         app.transcript.settle(true);
         assert!(has_dispatch_state(&app, ToolState::Interrupted));
-        assert!(transcript_text(&app).contains("• Dispatching general\n  └ go"));
+        // The run is over, so the dispatch folds to its name; the brief is a
+        // click or Ctrl-O away.
+        let text = transcript_text(&app);
+        assert!(text.contains("\u{2022} Dispatching general") && !text.contains("\u{2514} go"), "{text}");
+        app.transcript.toggle_regions();
+        let open = render_rows(&mut app, 80, 10).join("\n");
+        assert!(open.contains("  \u{2514} go"), "{open}");
     }
 
     fn has_dispatch_state(app: &App, state: ToolState) -> bool {
@@ -26975,19 +27134,31 @@ mod tests {
             "the user is left where they were"
         );
         assert_eq!(
-            inbox.drain(),
+            inbox.drain().0,
             vec![json!({ "role": "user", "content": "also say BANANA" })],
             "queued exactly as a parent message is"
         );
-        let text = render_rows(&mut app, 80, 30).join("\n");
-        assert!(
-            text.contains("› also say BANANA"),
-            "the message shows as a user turn: {text}"
+        // Queued is not read: nothing shows as delivered yet.
+        let child = |app: &App| -> String {
+            app.subagents[0].transcript.rows.iter().map(row_text).collect::<Vec<_>>().join("\n")
+        };
+        assert!(!child(&app).contains("BANANA"), "{}", child(&app));
+
+        // The child takes it at its next boundary: both sides show it.
+        subagent_event(
+            &mut app,
+            "sub-counter-1",
+            "counter",
+            StreamEvent::AgentMessage {
+                from: super::MAIN_AGENT.into(),
+                to: "counter".into(),
+                text: "also say BANANA".into(),
+            },
         );
-        let bubble = app.subagents[0].transcript.rows.iter().any(
-            |row| matches!(row.kind, RowKind::System { glyph, .. } if glyph == super::USER_GLYPH),
-        );
-        assert!(bubble, "the steer is the main transcript's user bubble");
+        let seen = child(&app);
+        assert!(seen.contains("\u{2022} Message from main\n  \u{2514} also say BANANA"), "{seen}");
+        let parent = transcript_text(&app);
+        assert!(parent.contains("\u{2022} Message to counter\n  \u{2514} also say BANANA"), "{parent}");
     }
 
     /// The dock opens over the `/agents` inspector, whose draw path returns
@@ -27037,7 +27208,7 @@ mod tests {
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
         assert!(app.agent_message.is_none());
         assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Agents));
-        assert!(inbox.drain().is_empty());
+        assert!(inbox.drain().0.is_empty());
     }
 
     /// `x` on the list stops the selected child through `stop_subagent`.
@@ -27882,6 +28053,17 @@ mod tests {
 
     fn message_text_of(row: &Row) -> String {
         row_text(row)
+    }
+
+    /// The transcript unwrapped, one logical line each, as `/find` reads it:
+    /// for a report whose rows wrap inside one event at the test width.
+    fn flat_transcript(app: &App) -> String {
+        app.transcript
+            .rows
+            .iter()
+            .flat_map(|r| r.flat().clone())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Text a committed transcript row renders to at a nominal width, joined
@@ -30140,11 +30322,22 @@ mod tests {
             .rows
             .iter()
             .any(|r| row_text(r).contains("\u{2514} Read 1 file; ran 2 commands")));
-        // Expanded, the calls carry the row's tree on: no second corner.
+        // Expanded, the calls carry the row's tree on, each call an event of
+        // its own with its output on its own corner one level in.
         let group = app.transcript.groups.last().expect("folded group");
         let detail: Vec<String> =
             super::group_detail_lines(group, 80).iter().map(line_text).collect();
-        assert!(!detail.iter().any(|l| l.contains('\u{2514}')), "{detail:#?}");
+        assert_eq!(
+            detail,
+            [
+                "    \u{2022} Ran make",
+                "      \u{2514} ok",
+                "    \u{2022} Read a.rs",
+                "      \u{2514} ok",
+                "    \u{2022} Ran make test",
+                "      \u{2514} ok",
+            ]
+        );
     }
 
     /// While a command of the run is in flight it reads `Running <cmd>` under
@@ -30320,8 +30513,12 @@ mod tests {
                 messages: Some(9),
             }),
         });
-        let rows = render_rows(&mut app, 80, 20).join("\n");
-        assert!(rows.contains("general-4: compacted 9 messages"), "{rows}");
+        let rows = render_rows(&mut app, 80, 20)
+            .iter()
+            .map(|r| r.trim_end())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rows.contains("\u{2022} general-4\n  \u{2514} compacted 9 messages"), "{rows}");
         assert!(rows.contains("Running cargo test"), "{rows}");
         assert!(!rows.contains("Ran cargo test"), "{rows}");
         let group = app.transcript.groups.last().expect("committed group");
@@ -37776,12 +37973,14 @@ mod tests {
             "• Explored\n  └ Search needle0\n    Search needle1\n    Search needle2\n    \
              Search needle3\n    … +2 more"
         );
-        assert_eq!(lines[5].spans[0].style, Style::new().dark_gray());
+        assert_eq!(lines[5].spans[1].style, Style::new().dark_gray());
         // Ctrl-O shows every call with its result, carried on the same tree.
         let detail = lines_text(&group_detail_lines(&app.transcript.groups[0], 80));
         assert!(detail.contains("Searched") && detail.contains("hit"), "{detail}");
         assert_eq!(detail.matches("Searched").count(), 6, "{detail}");
-        assert!(!detail.contains('└'), "{detail}");
+        // The calls carry the header's tree on; only each call's own output
+        // opens a corner, one level in.
+        assert!(detail.starts_with("    \u{2022} Searched\n      \u{2514} hit"), "{detail}");
     }
 
     #[test]
@@ -39331,7 +39530,7 @@ mod tests {
         assert!(resumed.contains("Thought"), "{resumed}");
         assert!(has_tool_row(&fresh, "Created a.txt", ToolState::Success), "tool row: {resumed}");
         assert!(
-            resumed.contains("    1 +x"),
+            resumed.contains("  \u{2514} 1 +x"),
             "diff panel: {resumed}"
         );
         assert!(resumed.contains("Answer."), "{resumed}");
@@ -39662,7 +39861,7 @@ mod tests {
             .join("\n");
         assert!(
             has_tool_row(&app, "Created a.txt", ToolState::Success)
-                && after.contains("    1 +x"),
+                && after.contains("  \u{2514} 1 +x"),
             "the journal was carried, not just the wire history: {after}"
         );
         assert!(!after.contains("Second answer."), "{after}");
@@ -39886,7 +40085,7 @@ mod tests {
             has_tool_row(&app, "Created a.txt", ToolState::Success),
             "first turn keeps its rows: {after}"
         );
-        assert!(after.contains("    1 +x"), "{after}");
+        assert!(after.contains("  \u{2514} 1 +x"), "{after}");
         assert!(
             !after.contains("Second answer."),
             "rewound turn is gone: {after}"
@@ -41195,11 +41394,105 @@ mod tests {
         start_subagent(&mut app, "r1", "scout");
         subagent_event(&mut app, "r1", "scout", retry(2));
         assert!(app.retrying.is_none());
-        assert!(transcript_text(&app).contains("scout: Upstream request failed"));
+        assert!(transcript_text(&app).contains("\u{2022} scout\n  \u{2514} Upstream request failed"));
 
         app.apply(retry(2));
         subagent_event(&mut app, "r1", "scout", StreamEvent::Token { text: "x".into() });
         assert!(app.retrying.is_some(), "a child's token is not the parent's resend");
+    }
+
+    /// #512: an event a subagent raised is that agent's: its name is the
+    /// title and the text hangs under the tree, wrapping in the tree's column
+    /// rather than under the bullet.
+    #[test]
+    fn a_child_notice_is_titled_by_the_agent_with_the_text_under_it() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r1", "general-4");
+        let text = "Upstream request failed: connection reset by the peer while reading";
+        subagent_event(&mut app, "r1", "general-4", StreamEvent::Notice { text: text.into() });
+        assert_eq!(
+            last_row_lines(&app, 40),
+            [
+                "\u{2022} general-4",
+                "  \u{2514} Upstream request failed:",
+                "    connection reset by the peer",
+                "    while reading",
+            ]
+        );
+    }
+
+    /// A child's retry note follows the same layout as its other notes.
+    #[test]
+    fn a_child_retry_is_titled_by_the_agent_with_the_reason_under_it() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r1", "general-4");
+        subagent_event(&mut app, "r1", "general-4", retry(2));
+        let lines = last_row_lines(&app, 80);
+        assert_eq!(lines[0], "\u{2022} general-4");
+        assert!(lines[1].starts_with("  \u{2514} Upstream request failed"), "{lines:?}");
+        assert!(lines[1].ends_with("; retrying"), "{lines:?}");
+    }
+
+    /// The child's note is journaled and a resume draws the same rows, in the
+    /// warning tone a failed background command earned.
+    #[test]
+    fn a_resumed_child_notice_keeps_its_layout() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        start_subagent(&mut app, "r1", "general-4");
+        let failed = format!("{}after 3s: make test", crate::core::agent::bg_shell::FAILED_PREFIX);
+        subagent_event(&mut app, "r1", "general-4", StreamEvent::Notice { text: failed.clone() });
+        let live = last_row_lines(&app, 60);
+        assert_eq!(live[0], "\u{26a0} general-4", "{live:?}");
+
+        let mut fresh = test_app();
+        super::replay_display_log(&mut fresh, app.transcript.display_log.clone());
+        let row = fresh
+            .transcript
+            .rows
+            .iter()
+            .rev()
+            .find(|r| matches!(r.kind, RowKind::Event(_)))
+            .expect("the note replays as an event");
+        let replayed: Vec<String> = row.lines(60).iter().map(line_text).collect();
+        assert_eq!(replayed, live);
+    }
+
+    /// The worktrees a session kept hang one per row under their headline.
+    #[test]
+    fn kept_worktrees_hang_under_their_headline() {
+        let mut app = test_app();
+        let notice = crate::core::agent::child_workspace::kept_notice(&[
+            "/tmp/wt-a on jan/agent/a (1 commit(s), 0 uncommitted file(s))".to_string(),
+            "/tmp/wt-b on jan/agent/b (0 commit(s), 2 uncommitted file(s))".to_string(),
+        ]);
+        app.notice(&notice, None);
+        assert_eq!(
+            last_row_lines(&app, 90),
+            [
+                "\u{2022} subagent worktrees kept (they hold work)",
+                "  \u{2514} /tmp/wt-a on jan/agent/a (1 commit(s), 0 uncommitted file(s))",
+                "    /tmp/wt-b on jan/agent/b (0 commit(s), 2 uncommitted file(s))",
+            ]
+        );
+    }
+
+    /// The turn receipt closes its block: the next event starts its own, off
+    /// a blank line, instead of running on under the receipt.
+    #[test]
+    fn an_event_after_the_turn_receipt_is_set_off_by_a_blank_line() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token { text: "done".into() });
+        app.on_done("stop".into(), None);
+        app.note("model switched to gpt-5-mini");
+        let text: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
+        let receipt = text
+            .iter()
+            .position(|t| t.contains("Worked for "))
+            .expect("a receipt");
+        assert_eq!(text[receipt + 1].trim(), "", "{text:#?}");
+        assert!(text[receipt + 2].contains("model switched"), "{text:#?}");
     }
 
     /// A failed compaction takes its throbber down and says so.
@@ -41239,7 +41532,7 @@ mod tests {
             assert!(app.run_compacting.is_none());
         }
         assert!(
-            transcript_text(&app).contains("alpha: compacted 5 messages"),
+            transcript_text(&app).contains("\u{2022} alpha\n  \u{2514} compacted 5 messages"),
             "{}",
             transcript_text(&app)
         );
@@ -41262,7 +41555,7 @@ mod tests {
         );
         let out = transcript_text(&app);
         assert!(
-            out.contains("alpha: compacted 12 messages into a summary"),
+            out.contains("\u{2022} alpha\n  \u{2514} compacted 12 messages into a summary"),
             "{out}"
         );
     }
@@ -43581,7 +43874,7 @@ mod tests {
             app.transcript
                 .rows
                 .iter()
-                .all(|r| matches!(r.kind, RowKind::Line(_) | RowKind::System { .. })),
+                .all(|r| matches!(r.kind, RowKind::Line(_) | RowKind::Event(_))),
             "the readout must not be committed to the transcript as a row"
         );
     }
@@ -44190,7 +44483,15 @@ mod tests {
     async fn help_lists_every_keybinding() {
         let mut app = test_app();
         run_command(&mut app, "help", &no_mcp()).await;
-        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        // Unwrapped, as `/find` reads it: the listing is one event whose rows
+        // wrap at the draw width.
+        let text: String = app
+            .transcript
+            .rows
+            .iter()
+            .flat_map(|r| r.flat().clone())
+            .collect::<Vec<_>>()
+            .join("\n");
         for (keys, description) in KEY_BINDINGS {
             assert!(text.contains(keys), "missing keys {keys:?} in: {text}");
             assert!(
@@ -48121,7 +48422,7 @@ mod tests {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         std::fs::write(root.join("AGENTS.md"), "# Agents\n\nUse make.\n").unwrap();
         run_command(&mut app, "reload system-prompt", &no_mcp()).await;
-        let out = transcript_text(&app);
+        let out = flat_transcript(&app);
         assert!(out.contains("AGENTS.md (") && !out.contains("fallback"), "{out}");
 
         std::fs::write(root.join("JAN.md"), "# Rules\n").unwrap();
@@ -48688,7 +48989,7 @@ mod tests {
                 },
             ])),
         );
-        let text = transcript_text(&app);
+        let text = flat_transcript(&app);
         assert!(text.contains("1 tools, 1 hooks"), "{text}");
         assert!(text.contains("hook PreToolUse (bash): ./audit.sh"), "{text}");
         assert!(text.contains("tool scan: ./scan.sh"), "{text}");
@@ -50051,13 +50352,16 @@ mod tests {
         );
 
         let lines = last_row_lines(&app, 50);
-        assert!(lines.len() > 1, "expected a wrap: {lines:?}");
-        for line in &lines {
+        assert_eq!(lines[0], "\u{2022} commands:", "{lines:?}");
+        assert!(lines[1].starts_with("  \u{2514} /plan"), "{lines:?}");
+        assert!(lines.len() > 2, "expected a wrap: {lines:?}");
+        for line in &lines[2..] {
             assert!(
-                line.starts_with("\u{2506} "),
-                "the block's left edge breaks on a wrap: {line:?}"
+                line.starts_with("    ") && !line[4..].starts_with(' '),
+                "the description's edge breaks on a wrap: {line:?}"
             );
         }
+        assert!(lines.iter().all(|l| l.chars().count() <= 50), "{lines:?}");
     }
 
     #[test]

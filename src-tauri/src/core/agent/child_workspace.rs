@@ -753,13 +753,11 @@ impl Ledger {
     }
 }
 
-/// The session-end note naming the subagent worktrees left to merge.
+/// The session-end note naming the subagent worktrees left to merge: a
+/// headline, then one worktree per line, so a display can hang each under it.
 #[cfg(feature = "cli")]
 pub(crate) fn kept_notice(kept: &[String]) -> String {
-    format!(
-        "subagent worktrees kept (they hold work): {}",
-        kept.join("; ")
-    )
+    format!("subagent worktrees kept (they hold work)\n{}", kept.join("\n"))
 }
 
 #[cfg(feature = "cli")]

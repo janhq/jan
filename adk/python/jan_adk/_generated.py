@@ -43,6 +43,7 @@ EVENT_TAGS: tuple[str, ...] = (
     "subagent_plan",
     "subagent",
     "notice",
+    "agent_message",
     "compaction",
     "retry",
     "monitors",
@@ -94,6 +95,7 @@ EventTag = Literal[
     "subagent_plan",
     "subagent",
     "notice",
+    "agent_message",
     "compaction",
     "retry",
     "monitors",
@@ -386,6 +388,14 @@ class NoticeEvent(TypedDict):
     text: str
     type: Literal["notice"]
 
+class AgentMessageEvent(TypedDict):
+    """`item/agent_message`"""
+
+    from: str
+    to: str
+    text: str
+    type: Literal["agent_message"]
+
 class CompactionEvent(TypedDict):
     """`item/compaction`"""
 
@@ -543,6 +553,7 @@ StreamEvent = Union[
     SubagentPlanEvent,
     SubagentEvent,
     NoticeEvent,
+    AgentMessageEvent,
     CompactionEvent,
     RetryEvent,
     MonitorsEvent,

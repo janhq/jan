@@ -870,6 +870,7 @@ impl TurnMap {
             | StreamEvent::AskResolved { .. }
             // Display-only, TUI-oriented, or diagnostics for other surfaces.
             | StreamEvent::Notice { .. }
+            | StreamEvent::AgentMessage { .. }
             | StreamEvent::Compaction { .. }
             | StreamEvent::Retry { .. }
             | StreamEvent::Monitors { .. }

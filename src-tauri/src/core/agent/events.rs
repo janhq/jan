@@ -16,6 +16,10 @@
 /// in `docs/src/pages/docs/agent/cli.mdx` under `jan cli agent run`.
 pub const PROTOCOL_VERSION: u32 = 1;
 
+/// How [`StreamEvent::AgentMessage`] names the main agent: the one agent that
+/// has no worker name.
+pub const MAIN_AGENT: &str = "main";
+
 /// `Deserialize` as well as `Serialize`: a consumer validates what it received
 /// against these shapes, and `JsonSchema` is what `jan cli agent schema`
 /// publishes them as -- a consumer generates its own types from
@@ -178,6 +182,17 @@ pub enum StreamEvent {
     /// transcript reads in the order the model saw things. Display-only and
     /// transient, like notes: it is never journaled.
     Notice { text: String },
+    /// A message between the main agent and one of its subagents, emitted when
+    /// it is delivered at the reader's turn boundary rather than when it was
+    /// queued, so the transcript reads in the order the reader saw things.
+    /// `from` and `to` name the agents: a subagent by its worker name, the
+    /// main agent as [`MAIN_AGENT`]. A message to a subagent (the
+    /// `message_subagent` tool, or the user steering it from `/agents`) is
+    /// emitted on the child's own stream, so it reaches the parent wrapped in
+    /// `Subagent`; a subagent's `message_main_agent` is emitted on the main
+    /// run's. Display-only: the message itself is already in the reader's
+    /// history.
+    AgentMessage { from: String, to: String, text: String },
     /// The loop is summarizing part of the conversation to make room. Sent as
     /// `Started` before the summarizer call and `Finished` or `Failed` after
     /// it, so a consumer can show progress for what is otherwise a silent
@@ -723,6 +738,14 @@ pub(crate) mod tests {
                 },
             ),
             (
+                "AgentMessage",
+                StreamEvent::AgentMessage {
+                    from: "explore".into(),
+                    to: MAIN_AGENT.into(),
+                    text: "found the parser".into(),
+                },
+            ),
+            (
                 "TodoUpdate",
                 StreamEvent::TodoUpdate {
                     list: TodoList {
@@ -842,6 +865,7 @@ pub(crate) mod tests {
             | StreamEvent::SubagentPlan { .. }
             | StreamEvent::Subagent { .. }
             | StreamEvent::Notice { .. }
+            | StreamEvent::AgentMessage { .. }
             | StreamEvent::Compaction { .. }
             | StreamEvent::Retry { .. }
             | StreamEvent::Monitors { .. }

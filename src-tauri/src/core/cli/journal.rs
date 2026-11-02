@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 
 /// One rendered transcript event. Only what a replay needs to rebuild rows:
 /// notes, turn receipts and permission prompts are transient by design.
+/// An entry an older build does not know is skipped on read (see
+/// `read_journal`), so adding one never breaks an older resume.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DisplayEntry {
@@ -77,6 +79,32 @@ pub enum DisplayEntry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
+    /// A message between the main agent and a subagent, as delivered (see
+    /// `StreamEvent::AgentMessage`). Part of the conversation, not a note: the
+    /// main agent's next move may answer it, so a resume must show it.
+    AgentMessage { from: String, to: String, text: String },
+    /// A note one subagent's run raised on the main transcript (a notice, a
+    /// retry, a compaction), drawn with the agent as its title and `text`
+    /// under it. Journaled so a resume shows what the child went through.
+    AgentNote {
+        agent: String,
+        tone: NoteTone,
+        text: String,
+    },
+}
+
+/// How an [`DisplayEntry::AgentNote`] reads: its gutter mark and colour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteTone {
+    /// A plain informational note.
+    Info,
+    /// Something the user should notice: a timeout, a failed command.
+    Warn,
+    /// A monitor condition matching.
+    Monitor,
+    /// A background command that finished.
+    Finished,
 }
 
 /// One stretch of natively streamed reasoning, anchored to the byte offset in

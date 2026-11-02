@@ -817,6 +817,31 @@
         ]
       },
       {
+        "description": "A message between the main agent and one of its subagents, emitted when\nit is delivered at the reader's turn boundary rather than when it was\nqueued, so the transcript reads in the order the reader saw things.\n`from` and `to` name the agents: a subagent by its worker name, the\nmain agent as [`MAIN_AGENT`]. A message to a subagent (the\n`message_subagent` tool, or the user steering it from `/agents`) is\nemitted on the child's own stream, so it reaches the parent wrapped in\n`Subagent`; a subagent's `message_main_agent` is emitted on the main\nrun's. Display-only: the message itself is already in the reader's\nhistory.",
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "agent_message"
+          }
+        },
+        "required": [
+          "type",
+          "from",
+          "to",
+          "text"
+        ]
+      },
+      {
         "description": "The loop is summarizing part of the conversation to make room. Sent as\n`Started` before the summarizer call and `Finished` or `Failed` after\nit, so a consumer can show progress for what is otherwise a silent\nround trip. `reason` says which path asked. `messages` is how many were\nfolded into the summary, `None` except on `Finished`. Display-only and\nnever journaled; the compacted history itself arrives as\n`MessagesUpdated`.",
         "type": "object",
         "properties": {

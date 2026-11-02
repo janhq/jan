@@ -21,7 +21,5 @@ expression: render_snapshot(buf)
  4 20..25 fg=DarkGray
  5 0..4 fg=DarkGray
  5 4..18 mod=DIM
- 6 0..4 fg=DarkGray
  6 4..17 mod=DIM
- 7 0..4 fg=DarkGray
  7 4..15 mod=DIM
