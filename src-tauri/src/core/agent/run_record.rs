@@ -10,20 +10,18 @@
 //! through [`load`]. The file is replaced atomically (temp file + rename) at each
 //! step boundary, so a reader never sees a half-written document and a stopped or
 //! crashed run still leaves everything up to its last boundary.
+//!
+//! Nothing in a record is cut or dropped. `messages` is the run's wire history
+//! exactly as the model was sent it (reasoning, image parts, tool-call ids and
+//! raw argument strings, every tool result whole), so anything rebuilt from a
+//! record is byte-identical to the original prefix and keeps hitting the
+//! provider's prompt cache. The entries are the readable view of the same run.
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::core::agent::events::StreamEvent;
-
-/// Longest tool result kept in a transcript entry. The full text went to the
-/// model; the transcript is a record for reading back, and a child that cats a
-/// large file would otherwise make every rewrite of the document that large.
-/// Tool results are the only thing a record ever cuts, and a cut one always
-/// ends in [`truncation_notice`], so a reader can tell a clipped result from a
-/// short one.
-pub const RESULT_MAX_BYTES: usize = 64 * 1024;
 
 /// Suffix of a subagent's transcript file, after its name.
 pub const TRANSCRIPT_SUFFIX: &str = "-transcript.json";
@@ -70,6 +68,10 @@ pub struct Transcript {
     pub status: Status,
     pub prompt: String,
     pub transcript: Vec<Entry>,
+    /// The wire history as last sent, verbatim (see the module docs). Empty
+    /// until a run publishes one.
+    #[serde(default)]
+    pub messages: Vec<serde_json::Value>,
     /// The final answer; `None` until the run ends, and for a run that failed or
     /// was stopped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -87,13 +89,15 @@ impl Transcript {
             status: Status::Running,
             prompt: prompt.to_string(),
             transcript: Vec::new(),
+            messages: Vec::new(),
             output: None,
             error: None,
         }
     }
 
     /// Fold one stream event in. Returns whether it closed a step worth
-    /// persisting: a tool result or a new turn, not every streamed token.
+    /// persisting: a tool result, a new turn or a new wire history, not every
+    /// streamed token.
     ///
     /// Token and reasoning deltas extend the last entry of their own kind so a
     /// paragraph is one entry, not one per chunk. A call is recorded when its
@@ -132,9 +136,13 @@ impl Transcript {
             } => {
                 self.transcript.push(Entry::ToolResult {
                     id: id.clone(),
-                    content: clip(content),
+                    content: content.clone(),
                     is_error: *is_error,
                 });
+                true
+            }
+            StreamEvent::MessagesUpdated { messages } => {
+                self.messages = messages.clone();
                 true
             }
             StreamEvent::Step { .. } => true,
@@ -187,6 +195,7 @@ impl Transcript {
     pub fn from_history(id: &str, history: &[serde_json::Value]) -> Self {
         let mut doc = Self::new("main", id, "");
         doc.status = Status::Finished;
+        doc.messages = history.to_vec();
         let mut seen_prompt = false;
         for message in history {
             let role = message.get("role").and_then(|r| r.as_str()).unwrap_or("");
@@ -249,7 +258,7 @@ impl Transcript {
                             .unwrap_or_default()
                             .to_string(),
                         is_error: content.starts_with("ERROR"),
-                        content: clip(&content),
+                        content,
                     });
                 }
                 _ => {}
@@ -268,30 +277,6 @@ impl Transcript {
         }
         doc
     }
-}
-
-/// The line a clipped tool result ends with: what was kept, of how much, and
-/// that the cut is this record's alone.
-pub fn truncation_notice(kept: usize, total: usize) -> String {
-    format!(
-        "\n[tool result truncated in this record: kept the first {kept} of {total} bytes; the \
-         model received the full result]"
-    )
-}
-
-fn clip(content: &str) -> String {
-    if content.len() <= RESULT_MAX_BYTES {
-        return content.to_string();
-    }
-    let mut cut = RESULT_MAX_BYTES;
-    while cut > 0 && !content.is_char_boundary(cut) {
-        cut -= 1;
-    }
-    format!(
-        "{}{}",
-        &content[..cut],
-        truncation_notice(cut, content.len())
-    )
 }
 
 /// `<dir>/<stem>-transcript.json` for a subagent name. The name was validated
@@ -454,26 +439,128 @@ mod tests {
         );
     }
 
+    /// Bigger than any display cap (the TUI's is 64 KB), with a multibyte
+    /// character on every byte offset, so a cut anywhere would show.
+    fn big_result() -> String {
+        format!("{}\u{20ac}{}", "a".repeat(64 * 1024 - 1), "\u{e9}x".repeat(40 * 1024))
+    }
+
     #[test]
-    fn a_tool_result_is_a_step_boundary_and_is_clipped() {
+    fn a_tool_result_is_a_step_boundary_and_is_kept_whole() {
         let mut t = Transcript::new("a", "sub-a-1", "p");
         assert!(!t.apply(&StreamEvent::ToolCall {
             id: "1".into(),
             name: "read".into(),
             args: serde_json::json!({ "path": "x" }),
         }));
-        let big = "é".repeat(RESULT_MAX_BYTES);
         assert!(t.apply(&StreamEvent::ToolResult {
             id: "1".into(),
-            content: big,
+            content: big_result(),
             is_error: false,
             diff: None,
         }));
         let Some(Entry::ToolResult { content, .. }) = t.transcript.last() else {
             panic!("no result entry");
         };
-        assert!(content.contains("[tool result truncated in this record"));
-        assert!(content.len() < RESULT_MAX_BYTES + 160);
+        assert_eq!(*content, big_result());
+    }
+
+    /// The wire history a resume would resend, with every field the model saw:
+    /// reasoning, an image part, a call id and its raw argument string (spacing
+    /// and all), and a tool result past 64 KB.
+    fn wire_history() -> Vec<serde_json::Value> {
+        vec![
+            serde_json::json!({ "role": "system", "content": "you are jan" }),
+            serde_json::json!({
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "what is in this?" },
+                    { "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD", "detail": "auto" } }
+                ]
+            }),
+            serde_json::json!({
+                "role": "assistant",
+                "content": null,
+                "reasoning_content": format!("think {}", "r".repeat(70 * 1024)),
+                "tool_calls": [{
+                    "id": "call_9f", "type": "function",
+                    "function": { "name": "read", "arguments": "{ \"path\" : \"a.txt\",\"n\":1.50 }" }
+                }]
+            }),
+            serde_json::json!({ "role": "tool", "tool_call_id": "call_9f", "content": big_result() }),
+            serde_json::json!({ "role": "assistant", "content": "done", "reasoning_content": "sure" }),
+        ]
+    }
+
+    /// What a resume rebuilds its request from must be byte-identical to what
+    /// the model was sent, or the provider's prompt cache misses. Nothing in a
+    /// record is cut: a >64 KB result and the reasoning survive save -> load.
+    #[test]
+    fn a_large_tool_result_and_reasoning_survive_save_and_load_byte_identically() {
+        let dir = tmp("verbatim");
+        let path = transcript_path(&dir, "w");
+        let messages = wire_history();
+        let mut t = Transcript::new("w", "sub-w-1", "p");
+        t.apply(&StreamEvent::Reasoning { text: "r".repeat(70 * 1024) });
+        t.apply(&StreamEvent::ToolResult {
+            id: "call_9f".into(),
+            content: big_result(),
+            is_error: false,
+            diff: None,
+        });
+        assert!(t.apply(&StreamEvent::MessagesUpdated { messages: messages.clone() }));
+        write_atomic(&path, &t).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded, t);
+        assert_eq!(
+            serde_json::to_vec(&loaded.messages).unwrap(),
+            serde_json::to_vec(&messages).unwrap(),
+            "the rebuilt request messages serialize identically"
+        );
+        assert!(loaded.transcript.contains(&Entry::Reasoning { text: "r".repeat(70 * 1024) }));
+        assert!(loaded.transcript.contains(&Entry::ToolResult {
+            id: "call_9f".into(),
+            content: big_result(),
+            is_error: false,
+        }));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A main thread's record keeps its wire history verbatim too, and its
+    /// readable entries are not clipped.
+    #[test]
+    fn a_thread_record_keeps_its_wire_history_verbatim() {
+        let dir = tmp("verbatim-thread");
+        let path = dir.join("transcript.json");
+        let history = wire_history();
+        write_atomic(&path, &Transcript::from_history("thread-1", &history)).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&loaded.messages).unwrap(),
+            serde_json::to_vec(&history).unwrap()
+        );
+        assert!(loaded.transcript.contains(&Entry::ToolResult {
+            id: "call_9f".into(),
+            content: big_result(),
+            is_error: false,
+        }));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A child's history reaches its recorder as `MessagesUpdated`, which is
+    /// filtered from the parent's stream but not from the record.
+    #[test]
+    fn a_recorder_persists_the_childs_wire_history_whole() {
+        let dir = tmp("verbatim-recorder");
+        let mut r = Recorder::start(&dir, "w", "sub-w-1", "p");
+        r.record(&StreamEvent::MessagesUpdated { messages: wire_history() });
+        let doc = load(&transcript_path(&dir, "w")).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&doc.messages).unwrap(),
+            serde_json::to_vec(&wire_history()).unwrap()
+        );
+        drop(r);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -619,34 +706,6 @@ mod tests {
         assert!(t.transcript.is_empty(), "partial JSON is never recorded");
     }
 
-    #[test]
-    fn clip_never_splits_a_multibyte_character() {
-        // A 3-byte char straddling the limit forces the boundary walk-back.
-        let text = format!("{}{}", "a".repeat(RESULT_MAX_BYTES - 1), "\u{20ac}\u{20ac}");
-        let clipped = clip(&text);
-        assert!(clipped.is_char_boundary(clipped.len()));
-        assert!(clipped.contains("[tool result truncated in this record"));
-        assert!(!clipped.starts_with(&text));
-    }
-
-    /// A clipped result says so in words a reader cannot miss: that it was
-    /// truncated, how much was kept of how much, and that the model saw it all.
-    #[test]
-    fn a_clipped_result_carries_an_explicit_truncation_notice() {
-        let text = "x".repeat(RESULT_MAX_BYTES + 100);
-        let clipped = clip(&text);
-        let notice = truncation_notice(RESULT_MAX_BYTES, text.len());
-        assert!(clipped.ends_with(&notice), "{notice}");
-        assert_eq!(
-            notice,
-            format!(
-                "\n[tool result truncated in this record: kept the first {RESULT_MAX_BYTES} of {} \
-                 bytes; the model received the full result]",
-                text.len()
-            )
-        );
-    }
-
     /// A message the parent steers a child with is part of the child's run, so
     /// the record keeps it as a user turn, persisted at once.
     #[test]
@@ -744,12 +803,6 @@ mod tests {
         };
         assert_eq!(keys(&main_path), keys(&transcript_path(&dir, "w")));
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_result_at_exactly_the_limit_is_kept_whole() {
-        let text = "b".repeat(RESULT_MAX_BYTES);
-        assert_eq!(clip(&text), text);
     }
 
     #[test]
