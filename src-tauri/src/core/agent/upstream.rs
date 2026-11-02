@@ -527,13 +527,37 @@ pub(crate) fn extract_choice_message(response: &serde_json::Value) -> Option<&se
         .and_then(|c| c.get("message"))
 }
 
+/// One MCP content block as the text a tool result carries. Text and an inline
+/// text resource pass through; a binary block the text form cannot carry
+/// becomes a placeholder line naming it, so the model learns the tool returned
+/// something rather than reading the gap as nothing.
+fn mcp_block_text(block: &rmcp::model::ContentBlock) -> String {
+    use rmcp::model::{ContentBlock, ResourceContents};
+    let with_mime = |uri: &str, mime: Option<&String>| match mime {
+        Some(mime) => format!("{uri} ({mime})"),
+        None => uri.to_string(),
+    };
+    match block {
+        ContentBlock::Text(t) => t.text.clone(),
+        ContentBlock::Image(i) => format!("[image omitted: {}]", i.mime_type),
+        ContentBlock::Audio(a) => format!("[audio omitted: {}]", a.mime_type),
+        ContentBlock::Resource(r) => match &r.resource {
+            ResourceContents::TextResourceContents { text, .. } => text.clone(),
+            ResourceContents::BlobResourceContents { uri, mime_type, .. } => {
+                format!("[resource omitted: {}]", with_mime(uri, mime_type.as_ref()))
+            }
+            // `non_exhaustive`: a kind added upstream is still announced.
+            _ => "[resource omitted]".to_string(),
+        },
+        ContentBlock::ResourceLink(l) => {
+            format!("[resource link: {}]", with_mime(&l.uri, l.mime_type.as_ref()))
+        }
+        _ => "[content omitted]".to_string(),
+    }
+}
+
 fn mcp_call_result_to_string(result: &CallToolResult) -> String {
-    let parts: Vec<String> = result
-        .content
-        .iter()
-        .filter_map(|c| c.as_text())
-        .map(|t| t.text.clone())
-        .collect();
+    let parts: Vec<String> = result.content.iter().map(mcp_block_text).collect();
 
     if result.is_error == Some(true) {
         if parts.is_empty() {
@@ -1938,6 +1962,35 @@ fn flush_trailing_line(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// Blocks the text form cannot carry leave a placeholder line, so the
+    /// model knows the tool returned them rather than nothing.
+    #[test]
+    fn mcp_result_names_the_blocks_it_cannot_pass_through() {
+        use rmcp::model::{ContentBlock, ResourceContents};
+        let result = CallToolResult::success(vec![
+            ContentBlock::text("before"),
+            ContentBlock::image("aGk=", "image/png"),
+            ContentBlock::audio("aGk=", "audio/wav"),
+            ContentBlock::resource(
+                ResourceContents::blob("aGk=", "file:///a.pdf").with_mime_type("application/pdf"),
+            ),
+            ContentBlock::resource(ResourceContents::text("inline body", "file:///n.txt")),
+            ContentBlock::resource_link(rmcp::model::Resource::new("file:///big.log", "big")),
+            ContentBlock::text("after"),
+        ]);
+        assert_eq!(
+            mcp_call_result_to_string(&result),
+            "before\n[image omitted: image/png]\n[audio omitted: audio/wav]\n\
+             [resource omitted: file:///a.pdf (application/pdf)]\ninline body\n\
+             [resource link: file:///big.log]\nafter"
+        );
+        let only_image = CallToolResult::error(vec![ContentBlock::image("aGk=", "image/png")]);
+        assert_eq!(
+            mcp_call_result_to_string(&only_image),
+            "ERROR: [image omitted: image/png]"
+        );
+    }
 
     #[test]
     fn assistant_id_charset() {
