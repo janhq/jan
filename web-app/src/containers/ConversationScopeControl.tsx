@@ -29,11 +29,14 @@ type Props = {
  * overlay-only) stay inactive until explicitly re-applied through the strict
  * setter.
  *
- * MOUNT PRECONDITION: the restart-reconfirmation display requires the
- * overlay-only getter (scoped-enforcement merge). While the getter still
- * falls back to persisted metadata, a stale elevated disk grant after a
- * restart would display as active with no reconfirmation notice — do not
- * mount before that merge.
+ * MOUNT PRECONDITIONS (scoped-enforcement merge): (1) the restart-
+ * reconfirmation display requires the overlay-only getter — while the getter
+ * still falls back to persisted metadata, a stale elevated disk grant after a
+ * restart would display as active with no reconfirmation notice; (2) the
+ * effective scope read below relies on every overlay mutation being paired
+ * with a threads-map write — before mounting, subscribe to the merged
+ * effective map through a stable Zustand selector instead, so an external
+ * revocation with no thread-object change still re-renders.
  */
 export function ConversationScopeControl({ threadId, pickFolder, disabled = false }: Props) {
   const thread = useThreads((state) => state.threads[threadId])

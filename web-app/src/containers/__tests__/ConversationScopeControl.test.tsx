@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
 
@@ -63,6 +63,16 @@ const elevated = {
 // useThreads is module state and would otherwise leak between tests.
 let seq = 0
 const freshId = () => `chat-${++seq}`
+
+function deferred() {
+  let resolve!: () => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
 
 const mount = (id: string, pickFolder = vi.fn(async () => null)) =>
   render(<ConversationScopeControl threadId={id} pickFolder={pickFolder} />)
@@ -191,6 +201,35 @@ describe('ConversationScopeControl', () => {
       memoryWrite: false,
     })
     expect(screen.getByLabelText(SHELL_LABEL)).not.toBeChecked()
+  })
+
+  it('reflects an external revocation immediately, before the pending native save settles', async () => {
+    const id = freshId()
+    useThreads.setState({ threads: { [id]: thread(id) } })
+    await act(async () => {
+      await useThreads.getState().setConversationCapabilities(id, elevated)
+    })
+    mount(id)
+    expect(screen.getByLabelText(SHELL_LABEL)).toBeChecked()
+
+    // External revoke (e.g. another surface) whose native write stays pending.
+    const native = deferred()
+    persist.mockReturnValueOnce(native.promise)
+    let revoke!: Promise<void>
+    act(() => {
+      revoke = useThreads.getState().setConversationCapabilities(id, null)
+    })
+    // Authority and UI are already denied before the await resolves.
+    expect(useThreads.getState().getConversationCapabilities(id).shellNetwork).toBe(false)
+    expect(screen.getByLabelText(SHELL_LABEL)).not.toBeChecked()
+    expect(screen.queryByTestId('scope-reconfirm')).not.toBeInTheDocument()
+
+    await act(async () => {
+      native.resolve()
+      await revoke
+    })
+    expect(screen.getByLabelText(SHELL_LABEL)).not.toBeChecked()
+    expect(useThreads.getState().getConversationCapabilities(id).shellNetwork).toBe(false)
   })
 
   it('a cancelled folder pick persists nothing', async () => {

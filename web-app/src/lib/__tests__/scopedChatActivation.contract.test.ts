@@ -45,6 +45,9 @@ describe('consent mount preconditions', () => {
   it.todo(
     'ConversationScopeControl mounts only once the getter is overlay-only: after restart, persisted elevated grants resolve to denied defaults until reconfirmed (no metadata fallback)'
   )
+  it.todo(
+    'effective scope is subscribed via a stable Zustand selector against the merged effective map (no fresh-object loop): an overlay revocation with no thread-object change still re-renders the active scope'
+  )
 })
 
 describe('temporary chats (scratch only, never persistent consent)', () => {
