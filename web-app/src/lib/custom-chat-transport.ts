@@ -877,9 +877,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   /** Bracket one runTurn, not each model step. Refresh events during a run
    * must not mutate its advertised schemas or system prefix. */
   private chatRunAbort?: () => void
+  private chatOperation: Promise<void> = Promise.resolve()
+  trackChatOperation(operation: Promise<void>): void { this.chatOperation = operation }
   private chatRunDone: Promise<void> = Promise.resolve()
   private finishChatRun?: () => void
-  async cancelChatRun(): Promise<void> { this.chatRunAbort?.(); await this.chatRunDone }
+  async cancelChatRun(): Promise<void> {
+    // Snapshot the owning operation; its settlement includes SDK stream drain,
+    // ready/onFinish and reservation release, unlike the adapter finalizer.
+    const operation = this.chatOperation
+    this.chatRunAbort?.()
+    await this.chatRunDone
+    await operation.catch(() => {})
+  }
   beginChatRun(abort?: () => void): () => void {
     if (this.chatRunSnapshot) throw new Error('Chat turn already running')
     const snapshot = {}

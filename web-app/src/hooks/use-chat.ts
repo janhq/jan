@@ -147,17 +147,22 @@ export function useChat(
         // from an approval or tool still owned by the current turn.
         const send = instance.sendMessage.bind(instance)
         const regenerate = instance.regenerate.bind(instance)
-        let reserved = false
-        const busy = () => reserved || instance.status === 'submitted' || instance.status === 'streaming'
+        let reservation: object | undefined
+        const busy = () => reservation !== undefined || instance.status === 'submitted' || instance.status === 'streaming'
         const start = (operation: () => Promise<void>, error: string) => {
           if (busy()) return Promise.reject(new Error(error))
           // SDK text/FileList conversion may yield before status=submitted.
           // Reserve synchronously, before invoking any SDK mutation.
-          reserved = true
+          const owner = {}
+          reservation = owner
           try {
-            return operation().finally(() => { reserved = false })
+            const settled = operation().finally(() => {
+              if (reservation === owner) reservation = undefined
+            })
+            transport.trackChatOperation(settled)
+            return settled
           } catch (cause) {
-            reserved = false
+            if (reservation === owner) reservation = undefined
             return Promise.reject(cause)
           }
         }

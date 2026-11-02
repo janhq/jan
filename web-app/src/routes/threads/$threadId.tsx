@@ -1900,6 +1900,8 @@ function ThreadDetail() {
 
       await Promise.resolve(regenerate(messageId ? { messageId } : undefined)).catch(error => {
         pendingAssistantParents.delete(threadId)
+        continueReplaceIds.delete(threadId)
+        setContinueFromContent('')
         console.error('Chat regeneration was not accepted:', error)
       })
     },
@@ -1910,6 +1912,7 @@ function ThreadDetail() {
       contextLimitError,
       ensureBranched,
       resolveAssistantParent,
+      setContinueFromContent,
       threadId,
     ]
   )
@@ -1957,6 +1960,11 @@ function ThreadDetail() {
         syncActivePath()
         await Promise.resolve(regenerate({ messageId: newId })).catch(error => {
           pendingAssistantParents.delete(threadId)
+          continueReplaceIds.delete(threadId)
+          setContinueFromContent('')
+          deleteMessage(threadId, newId)
+          setActiveBranch(target)
+          syncActivePath()
           console.error('Edited Chat regeneration was not accepted:', error)
         })
       } else {
@@ -1970,6 +1978,8 @@ function ThreadDetail() {
       syncActivePath,
       regenerate,
       endRunningTools,
+      setContinueFromContent,
+      deleteMessage,
       threadId,
     ]
   )

@@ -4,8 +4,10 @@ import { act, render, screen, fireEvent, renderHook, waitFor } from '@testing-li
 import type { UIMessageChunk } from 'ai'
 
 const h = vi.hoisted(() => ({ send: vi.fn(), begin: vi.fn(), release: vi.fn() }))
-vi.mock('@/lib/custom-chat-transport', () => ({
-  CustomChatTransport: class {
+vi.mock('@/lib/custom-chat-transport', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/custom-chat-transport')>('@/lib/custom-chat-transport')
+  return {
+  CustomChatTransport: class extends actual.CustomChatTransport {
     abort?: () => void
     done: Promise<void> = Promise.resolve()
     beginChatRun(abort: () => void) {
@@ -15,7 +17,7 @@ vi.mock('@/lib/custom-chat-transport', () => ({
       this.done = new Promise(resolve => { finish = resolve })
       return () => { h.release(); this.abort = undefined; finish() }
     }
-    async cancelChatRun() { this.abort?.(); await this.done }
+    async cancelChatRun() { this.abort?.(); await this.done; await super.cancelChatRun() }
     getTurnModelSelection() { return { selectedModel: { settings: { ctx_len: { controller_props: { value: 1000000 } } } } } }
     sendMessages = h.send
     reconnectToStream = async () => null
@@ -23,7 +25,8 @@ vi.mock('@/lib/custom-chat-transport', () => ({
     setOnTokenUsage() {}
     refreshTools() {}
   },
-}))
+  }
+})
 vi.mock('@/hooks/useAppState', () => ({ useAppState: (select: (state: unknown) => unknown) => select({ mcpToolNames: new Set(), ragToolNames: new Set() }) }))
 import { useChat } from '../use-chat'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -108,6 +111,21 @@ describe('production useChat wrapper with real SDK Chat and runTurn', () => {
     expect(result.current.messages.filter(m => m.role === 'user')).toHaveLength(1)
     expect(onError).toHaveBeenCalledTimes(1)
     expect(h.release).toHaveBeenCalledTimes(1)
+  })
+  it('cancel barrier permits an immediate real SDK replacement request', async () => {
+    h.send.mockResolvedValueOnce(wave()).mockResolvedValueOnce(answer())
+    const dispatch = vi.fn().mockImplementation(() => new Promise(() => {}))
+    const { result } = renderHook(() => useChat({ sessionId: 'fixture', dispatchTool: dispatch }))
+    await act(async () => { await result.current.sendMessage({ text: 'original' }) })
+    await waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1))
+    const session = useChatSessions.getState().sessions.fixture
+    await act(async () => {
+      await session.transport.cancelChatRun()
+      await result.current.regenerate()
+    })
+    expect(h.send).toHaveBeenCalledTimes(2)
+    expect(result.current.status).toBe('ready')
+    expect(result.current.messages.at(-1)?.parts).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'text', text: 'done' })]))
   })
   it('acknowledges enqueue before a held tool finishes so later composer text survives', async () => {
     h.send.mockResolvedValueOnce(wave()).mockResolvedValueOnce(answer())

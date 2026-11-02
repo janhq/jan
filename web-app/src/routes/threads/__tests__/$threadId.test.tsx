@@ -254,6 +254,7 @@ vi.mock('@/containers/MessageItem', () => ({
     onDelete,
     versionInfo,
     onSwitchVersion,
+    onContinue,
   }: any) => (
     <div data-testid={`message-${message.id}`} data-role={message.role}>
       <span>{message.id}</span>
@@ -280,6 +281,7 @@ vi.mock('@/containers/MessageItem', () => ({
       >
         edit
       </button>
+      <button data-testid={`continue-${message.id}`} onClick={() => onContinue(message.id)}>continue</button>
       <button
         data-testid={`del-${message.id}`}
         onClick={() => onDelete(message.id)}
@@ -410,9 +412,14 @@ vi.mock('@/hooks/use-chat', () => ({
     session.chat ??= {
       get messages() { return h.chatState.messages },
       set messages(messages) { h.chatState.messages = messages },
-      stop: h.mockStop,
+      stop: () => {
+        h.mockStop()
+        session.isStreaming = false
+        h.appStateState.setThreadBusy(threadId, false)
+      },
     }
     session.transport ??= { getTurnModelSelection: () => null }
+    session.transport.cancelChatRun ??= vi.fn().mockResolvedValue(undefined)
     session.transport.setContinueFromContent ??= h.mockSetContinueFromContent
     session.transport.getMcpServerForTool ??= (name: string) =>
       h.appStateState.mcpToolNames.has(name)
@@ -437,8 +444,10 @@ vi.mock('@/hooks/use-chat', () => ({
       status: live?.status ?? h.chatState.status,
       error: h.chatState.error,
       sendMessage: h.mockSendMessage,
-      regenerate: h.mockRegenerate,
-      setMessages: h.mockSetChatMessages,
+      regenerate: h.integrationChat ? (...args: Parameters<Chat['regenerate']>) => h.integrationChat!.regenerate(...args) : h.mockRegenerate,
+      setMessages: h.integrationChat ? (update: any) => {
+        h.integrationChat!.messages = typeof update === 'function' ? update(h.integrationChat!.messages) : update
+      } : h.mockSetChatMessages,
       stop: h.integrationChat ? () => h.integrationChat!.stop() : h.mockStop,
       addToolOutput: h.mockAddToolOutput,
       updateRagToolsAvailability: h.mockUpdateRag,
@@ -529,6 +538,7 @@ vi.mock('@/hooks/useWebSearchConfig', async (importOriginal) => ({
 // -----------------------------------------------------------------------------
 import { Route } from '../$threadId'
 import { createChatRunStream } from '@/lib/chatRunTransport'
+import { CustomChatTransport } from '@/lib/custom-chat-transport'
 import type { UIMessageChunk } from 'ai'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useMCPServers } from '@/hooks/useMCPServers'
@@ -2065,7 +2075,7 @@ describe('ThreadDetail route', () => {
 
     it('returns an error for an unavailable tool', async () => {
       renderComponent()
-      expect(await dispatch(call('missing', 'unknown'))).toEqual({ output: "Error: Tool 'unknown' not found in any service", isError: true })
+      expect(await dispatch(call('missing', 'unknown'))).toEqual({ output: "Error: MCP tool 'unknown' is unavailable or disabled", isError: true })
     })
 
     it('Stop signal cancels a hung MCP call exactly once and drains runtime', async () => {
@@ -2234,18 +2244,39 @@ describe('ThreadDetail route', () => {
     const setup = (ids = ['tcA', 'tcB'], threadId = 'thread-1') => {
       let args: any
       let controller: AbortController | undefined
-      let drain: Promise<void> = Promise.resolve()
-      let finishDrain: (() => void) | undefined
-      const steps = vi.fn(async () => chunks(steps.mock.calls.length === 1 ? toolStep(...ids) : textStep))
-      const cancelChatRun = vi.fn(async () => { controller?.abort(); await drain })
+      const transport = new CustomChatTransport(undefined, threadId)
+      const records: any[] = []
+      h.messagesState.getMessages.mockImplementation(() => records)
+      h.messagesState.addMessage.mockImplementation((record: any) => { records.push(record) })
+      h.messagesState.updateMessage.mockImplementation((record: any) => {
+        const index = records.findIndex(item => item.id === record.id)
+        if (index >= 0) records[index] = record
+      })
+      h.threadsState.updateThread.mockImplementation((id: string, patch: any) => {
+        Object.assign(h.threadsState.threads[id], patch)
+      })
+      const steps = vi.fn(async (messages: any[]) => {
+        for (const message of messages.filter(m => m.role === 'user')) {
+          if (!records.some(record => record.id === message.id)) records.push({
+            id: message.id, thread_id: threadId, role: 'user', metadata: {},
+            content: [{ type: 'text', text: { value: message.parts.find((p: any) => p.type === 'text')?.text ?? '', annotations: [] } }],
+          })
+        }
+        return chunks(steps.mock.calls.length === 1 ? toolStep(...ids) : textStep)
+      })
+      const cancel = transport.cancelChatRun.bind(transport)
+      const cancelChatRun = vi.spyOn(transport, 'cancelChatRun').mockImplementation(cancel)
+      const finished = vi.fn((event: any) => args.onFinish(event))
+      const requests: any[] = []
       const chat = new Chat({
         id: threadId,
         transport: {
           sendMessages: async (request) => {
+            requests.push(request)
             controller = new AbortController()
             const abort = () => controller?.abort()
             request.abortSignal?.addEventListener('abort', abort, { once: true })
-            drain = new Promise<void>(resolve => { finishDrain = resolve })
+            const release = transport.beginChatRun(() => controller?.abort())
             return createChatRunStream({
               messages: request.messages, messageId: 'a-integration-' + threadId,
               signal: controller.signal,
@@ -2253,7 +2284,7 @@ describe('ThreadDetail route', () => {
               dispatch: args.dispatchTool,
               onFinally: () => {
                 request.abortSignal?.removeEventListener('abort', abort)
-                finishDrain?.()
+                release()
               },
             })
           },
@@ -2261,19 +2292,34 @@ describe('ThreadDetail route', () => {
         },
         // As in production, only the presentation stream requests approval.
         onToolCall: event => args.onToolCall(event),
-        onFinish: event => args.onFinish(event),
+        onFinish: finished,
       })
-      h.integrationChat = chat
-      h.chatSessionsState.sessions[threadId] = {
-        chat, transport: { getTurnModelSelection: () => null, cancelChatRun },
+      // Mirror the production admission guard, but retain the real SDK request,
+      // ready/onFinish lifecycle and production transport settlement barrier.
+      let reserved = false
+      const guarded = (operation: () => Promise<void>) => {
+        if (reserved || chat.status === 'submitted' || chat.status === 'streaming') {
+          return Promise.reject(new Error('Stop the current Chat turn before regenerating'))
+        }
+        reserved = true
+        const settled = operation().finally(() => { reserved = false })
+        transport.trackChatOperation(settled)
+        return settled
       }
+      const send = chat.sendMessage.bind(chat)
+      const regenerate = chat.regenerate.bind(chat)
+      chat.sendMessage = (...args) => guarded(() => send(...args))
+      chat.regenerate = (...args) => guarded(() => regenerate(...args))
+      vi.spyOn(transport, 'getMcpServerForTool').mockReturnValue('test-server')
+      h.integrationChat = chat
+      h.chatSessionsState.sessions[threadId] = { chat, transport }
       const view = renderComponent()
       args = {
         onToolCall: (h as any).capturedOnToolCall,
         onFinish: (h as any).capturedOnFinish,
         dispatchTool: (h as any).capturedDispatchTool,
       }
-      return { ...view, chat, steps, cancelChatRun }
+      return { ...view, chat, steps, cancelChatRun, requests, finished }
     }
     beforeEach(() => {
       h.appStateState.mcpToolNames = new Set(['fetch'])
@@ -2313,11 +2359,11 @@ describe('ThreadDetail route', () => {
       }
     })
 
-    it.each(['Stop', 'delete', 'edit', 'regenerate'])('%s cancels a running backend call without executing queued calls or following up', async action => {
+    it.each(['Stop', 'delete'])('%s cancels a running backend call without executing queued calls or following up', async action => {
       const cancel = vi.fn().mockResolvedValue(undefined)
       const run = vi.fn(() => ({ promise: new Promise(() => {}), cancel, token: 't' }))
       hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: run }) as never
-      const { chat, steps, cancelChatRun, rerender } = setup()
+      const { chat, steps, cancelChatRun } = setup()
       const pending = chat.sendMessage({ text: 'go' })
       await waitFor(() => expect(run).toHaveBeenCalledTimes(1))
       h.chatState.messages = chat.messages
@@ -2326,19 +2372,64 @@ describe('ThreadDetail route', () => {
         await act(async () => { await cancelChatRun(); h.removeChatSession('thread-1') })
       } else if (action === 'Stop') {
         await act(async () => { screen.getByTestId('chat-stop').click() })
-      } else {
-        const Component = Route.component as React.ComponentType
-        rerender(<Component />)
-        await act(async () => {
-          screen.getByTestId(action === 'edit' ? 'edit-' + chat.messages[0].id : 'regen-a-integration-thread-1').click()
-        })
-        expect(cancelChatRun).toHaveBeenCalledTimes(1)
       }
       await act(async () => { await pending })
       expect(cancel).toHaveBeenCalledTimes(1)
       expect(run).toHaveBeenCalledTimes(1)
       expect(steps).toHaveBeenCalledTimes(1)
       expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+    })
+
+    it.each(['edit', 'regenerate', 'Continue'])('%s settles the original SDK operation then starts exactly one replacement during a held tool', async action => {
+      const cancel = vi.fn().mockResolvedValue(undefined)
+      const run = vi.fn(() => ({ promise: new Promise(() => {}), cancel, token: 'held-tool' }))
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: run }) as never
+      const { chat, steps, cancelChatRun, rerender, requests, finished } = setup(['tcA', 'tcB'])
+      let originalSettled = false
+      const pending = chat.sendMessage({ text: 'go' }).finally(() => { originalSettled = true })
+      await waitFor(() => expect(run).toHaveBeenCalledTimes(1))
+      expect(originalSettled).toBe(false)
+      const replacementAdmission = vi.fn(() => {
+        expect(originalSettled).toBe(true)
+        expect(finished).toHaveBeenCalledTimes(1)
+      })
+      const originalRegenerate = chat.regenerate.bind(chat)
+      chat.regenerate = (...args) => { replacementAdmission(); return originalRegenerate(...args) }
+      const originalUser = chat.messages[0].id
+      const originalAssistant = chat.messages[1].id
+      if (action === 'Continue') {
+        // A partial response preceding the held tool can be continued.
+        chat.messages = chat.messages.map(message => message.id === originalAssistant
+          ? { ...message, parts: [{ type: 'text' as const, text: 'partial' }, ...message.parts] }
+          : message)
+      }
+      const Component = Route.component as React.ComponentType
+      rerender(<Component />)
+      await act(async () => {
+        screen.getByTestId(action === 'edit' ? `edit-${originalUser}`
+          : action === 'Continue' ? `continue-${originalAssistant}` : `regen-${originalAssistant}`).click()
+      })
+      await waitFor(() => expect(cancel).toHaveBeenCalledTimes(1))
+      expect(cancelChatRun).toHaveBeenCalledTimes(1)
+      await act(async () => { await pending })
+      expect(originalSettled).toBe(true)
+      expect(finished).toHaveBeenCalled()
+      await waitFor(() => expect(steps).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(chat.status).toBe('ready'))
+      expect(run).toHaveBeenCalledTimes(1) // queued tcB and old follow-up never run
+      expect(h.mockRegenerate).not.toHaveBeenCalled()
+      const replacement = chat.messages.find(message => message.role === 'assistant')!
+      expect(replacement.parts).toContainEqual({ type: 'text', text: 'continued', state: 'done' })
+      expect(replacementAdmission).toHaveBeenCalledTimes(1)
+      expect(requests).toHaveLength(2)
+      expect(requests.map(request => request.trigger)).toEqual(['submit-message', 'regenerate-message'])
+      expect(steps.mock.calls[1][0].filter((message: any) => message.role === 'user').at(-1)).toMatchObject({
+        id: action === 'edit' ? 'gen-id' : originalUser,
+        parts: [{ type: 'text', text: action === 'edit' ? 'edited text' : 'go' }],
+      })
+      expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+      expect(useToolCallRuntime.getState().queue).toEqual([])
+      if (action === 'Continue') expect(h.mockSetContinueFromContent).toHaveBeenCalledWith({ text: 'partial', reasoning: '' })
     })
 
     it('Stop during approval never executes, settles queued cards, and ignores a late approval', async () => {
