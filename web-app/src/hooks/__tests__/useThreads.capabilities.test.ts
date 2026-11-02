@@ -2,12 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useThreads } from '../useThreads'
 import { resolveConversationCapabilities } from '@/lib/conversationCapabilities'
 
-const { persist, updateThread, deleteNative, toastError } = vi.hoisted(() => ({
-  persist: vi.fn(),
-  updateThread: vi.fn(),
-  deleteNative: vi.fn(),
-  toastError: vi.fn(),
-}))
+const { persist, updateThread, deleteNative, toastError, revokeHost, calls } = vi.hoisted(() => {
+  const calls: string[] = []
+  return {
+    calls,
+    persist: vi.fn(),
+    updateThread: vi.fn(),
+    deleteNative: vi.fn(),
+    toastError: vi.fn(),
+    revokeHost: vi.fn(),
+  }
+})
 
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({ threads: () => ({ setConversationCapabilities: persist, updateThread, deleteThread: deleteNative }) }),
@@ -17,6 +22,7 @@ vi.mock('@/lib/agentTools', () => ({
   cleanupThreadWorkspace: vi.fn(),
   cancelAgentThreadBash: vi.fn(),
   stopAgentSessionMonitors: vi.fn(),
+  revokeThreadCapabilitiesInHost: revokeHost,
 }))
 vi.mock('@/hooks/useAgentMode', () => ({ useAgentMode: { getState: () => ({ removeThread: vi.fn() }) } }))
 vi.mock('@/stores/chat-session-store', () => ({ useChatSessions: { getState: () => ({ removeSession: vi.fn() }) } }))
@@ -59,13 +65,60 @@ const save = (value: unknown, id = 'chat') =>
 describe('useThreads conversation capabilities', () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    persist.mockResolvedValue(undefined)
     deleteNative.mockResolvedValue(undefined)
+    calls.length = 0
+    revokeHost.mockImplementation(async (id: string) => {
+      calls.push(`narrow:${id}`)
+    })
+    persist.mockImplementation(async (id: string) => {
+      calls.push(`persist:${id}`)
+    })
     useThreads.setState({
       threads: { chat: thread() },
       currentThreadId: 'chat',
       searchIndex: null,
     })
+  })
+
+  // The native monitor loop cannot read this store; it reads host-confirmed
+  // consent. So a revocation has to reach the host before anything is written,
+  // and before the save queue, or a background poll keeps running under the
+  // grant being replaced.
+  it('narrows the host before it persists', async () => {
+    await save(granted)
+    expect(calls).toEqual(['narrow:chat', 'persist:chat'])
+  })
+
+  it('narrows the host without waiting for an earlier queued save', async () => {
+    const pending = deferred()
+    persist.mockImplementationOnce(async () => {
+      calls.push('persist:first')
+      await pending.promise
+    })
+    const first = save(granted)
+    await Promise.resolve()
+    // Revoke while the first write is still in flight.
+    const second = save(undefined)
+    await vi.waitFor(() => expect(calls).toContain('narrow:chat'))
+    expect(
+      calls.filter((c) => c.startsWith('narrow')).length
+    ).toBeGreaterThanOrEqual(2)
+    // The host was narrowed although the first persist has not resolved.
+    expect(calls).not.toContain('persist:chat')
+    pending.resolve()
+    // The revoke superseded the in-flight grant, so the grant must refuse to
+    // report success; only the revoke is allowed to complete.
+    await expect(first).rejects.toThrow('Conversation changed')
+    await second
+  })
+
+  it('does not persist or report a revocation the host refused', async () => {
+    revokeHost.mockRejectedValueOnce(new Error('host unreachable'))
+    await expect(save(granted)).rejects.toThrow('host unreachable')
+    expect(persist).not.toHaveBeenCalled()
+    expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(
+      resolveConversationCapabilities(undefined)
+    )
   })
 
   it('does not confirm persisted elevations on bootstrap or reload', async () => {
@@ -155,7 +208,9 @@ describe('useThreads conversation capabilities', () => {
     persist.mockReturnValueOnce(pending.promise)
     const first = expect(save(granted)).rejects.toThrow('Conversation changed')
     const second = save(null)
-    expect(persist).toHaveBeenCalledTimes(1)
+    // Each write narrows the host before it persists, so the first persist
+    // lands a microtask later; the queued one must still be held back.
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
     pending.resolve()
     await Promise.all([first, second])
     expect(persist).toHaveBeenCalledTimes(2)
@@ -229,6 +284,9 @@ describe('useThreads conversation capabilities', () => {
     const pending = deferred()
     persist.mockReturnValueOnce(pending.promise)
     const first = expect(save(undefined)).rejects.toThrow('Cowork')
+    // Let the first write get past its host narrowing and into persistence, so
+    // the second is genuinely queued behind an in-flight write.
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
     const second = expect(save(null)).rejects.toThrow('Cowork')
     useThreads.setState({ threads: { chat: thread('chat', { mode: 'cowork' }) } })
     pending.resolve()

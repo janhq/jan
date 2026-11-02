@@ -525,6 +525,66 @@ export async function listMonitors(threadId: string): Promise<string> {
 }
 
 /**
+ * Start a monitor owned by a Chat thread.
+ *
+ * Deliberately narrower than {@link startMonitor}: there is no data folder,
+ * scope, network or writability argument. The host derives all of them from
+ * the thread's own stored consent intersected with its confirmed in-process
+ * authority, and re-derives them before every poll, so nothing passed here can
+ * widen what the monitor may do. A monitor whose consent is withdrawn stops
+ * with a terminal `permission revoked` update rather than polling on.
+ */
+export async function startThreadMonitor(
+  threadId: string,
+  args: Record<string, unknown>,
+  onUpdate: (update: MonitorUpdate) => void
+): Promise<string> {
+  const channel = new Channel<MonitorUpdate>()
+  channel.onmessage = onUpdate
+  return await invoke('plugin:agent-tools|start_thread_monitor', {
+    threadId,
+    args,
+    onUpdate: channel,
+  })
+}
+
+/** Stop one of a thread's monitors. Scoped to that thread's own set, so an id
+ * from another conversation is simply unknown here. */
+export async function stopThreadMonitor(
+  threadId: string,
+  monitorId: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|stop_thread_monitor', {
+    threadId,
+    monitorId,
+  })
+}
+
+/** One line per active monitor for a thread, for `monitor {op:"list"}`. */
+export async function listThreadMonitors(threadId: string): Promise<string> {
+  return await invoke('plugin:agent-tools|list_thread_monitors', { threadId })
+}
+
+/** Stop every monitor a thread still has and reap their poll children. */
+export async function stopAllThreadMonitors(threadId: string): Promise<void> {
+  await invoke('plugin:agent-tools|stop_all_thread_monitors', { threadId })
+}
+
+/**
+ * Drop a thread's confirmed elevations in the host process immediately, and
+ * stop anything still running under them.
+ *
+ * Narrow-only: it can deny but never grant. Call it the moment a revocation is
+ * requested, before persisting, so the revocation takes effect natively
+ * without waiting for an earlier queued save to finish. A rejection means the
+ * host could not be narrowed, so the caller must not continue as though the
+ * revocation had been applied.
+ */
+export async function revokeThreadCapabilities(threadId: string): Promise<void> {
+  await invoke('plugin:agent-tools|revoke_thread_capabilities', { threadId })
+}
+
+/**
  * The ids of a session's still-active monitors. Every monitor is one-shot, so a
  * monitor no longer listed here has ended; the UI reconciles its rail against
  * this so a row cannot stay 'running' after a missed terminal update.

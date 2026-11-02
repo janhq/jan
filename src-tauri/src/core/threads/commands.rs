@@ -241,7 +241,20 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
     let data_folder = get_jan_data_folder_path(app_handle);
     let lock = get_lock_for_thread(&thread_id).await;
     let _guard = lock.lock().await;
-    super::capabilities::patch_conversation_capabilities(&data_folder, &thread_id, value)
+    // Narrow the host's in-process confirmation BEFORE validating or writing,
+    // and for every caller rather than only the frontend: a write that then
+    // fails -- or is lost -- must never leave an earlier confirmation live.
+    // This also stops the thread's monitors and reaps their poll children, so
+    // nothing keeps running under the authority being replaced.
+    let token = tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
+    super::capabilities::patch_conversation_capabilities(&data_folder, &thread_id, value.clone())?;
+    // Only a write that actually succeeded confirms, and only when no newer
+    // narrow intervened. A skipped confirm leaves the thread denied, which the
+    // per-poll intersection enforces regardless of what is on disk.
+    let grant = serde_json::from_value(value)
+        .map_err(|e| format!("Invalid version 1 conversation capabilities: {e}"))?;
+    tauri_plugin_agent_tools::confirm_thread_consent(&thread_id, grant, token);
+    Ok(())
 }
 
 /// Roll back only an unchanged, empty desktop creation. The expected raw
@@ -292,7 +305,17 @@ pub async fn rollback_created_thread<R: Runtime>(
         }
         return Err("Created chat contains data; refusing rollback".into());
     }
-    fs::remove_dir_all(directory).map_err(|e| e.to_string())
+    // Past every refusal, this IS a delete, so it tears down exactly as
+    // `delete_thread` does: revoke on the ATTEMPT (a removal that fails must
+    // not leave the thread confirmed with monitors polling), cancel the
+    // shells the thread itself started, and forget only once the directory is
+    // really gone so the id cannot be recreated into the old confirmation.
+    // A rollback refused above keeps the conversation -- and its consent.
+    tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
+    tauri_plugin_agent_tools::cancel_thread_shells(&thread_id);
+    fs::remove_dir_all(directory).map_err(|e| e.to_string())?;
+    tauri_plugin_agent_tools::forget_thread_consent(&thread_id).await;
+    Ok(())
 }
 
 /// Deletes a thread and all its associated files by removing its directory.
@@ -310,10 +333,26 @@ pub async fn delete_thread<R: Runtime>(
     let data_folder = get_jan_data_folder_path(app_handle);
     let lock = get_lock_for_thread(&thread_id).await;
     let _guard = lock.lock().await;
+    // `get_thread_dir` validates the id, so this runs before anything is
+    // keyed on it.
     let thread_dir = get_thread_dir(&data_folder, &thread_id)?;
+    // Narrow on the delete ATTEMPT, before the removal, for the same reason
+    // the consent setter narrows before it writes: a delete that then fails
+    // must not leave this thread confirmed with its monitors still polling.
+    // Scoped to this thread id alone; no other thread is touched.
+    tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
+    // The conversation itself is going away, so the shells it started go with
+    // it: the raw bucket is disjoint from the monitor bucket the revoke reaps.
+    tauri_plugin_agent_tools::cancel_thread_shells(&thread_id);
     if thread_dir.exists() {
         fs::remove_dir_all(thread_dir).map_err(|error| error.to_string())?;
     }
+    // Only once the thread is really gone, forget it entirely, so an id
+    // supplied again at creation starts with no entry at all rather than a
+    // narrowed one. Deleting removes the stored half of the consent, so a
+    // confirmation left behind could pair with an out-of-band restore of the
+    // directory (backup, folder sync) and need no fresh user consent.
+    tauri_plugin_agent_tools::forget_thread_consent(&thread_id).await;
     Ok(())
 }
 

@@ -613,6 +613,13 @@ pub async fn start_monitor(
     )?;
     let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
     let ctx = monitor::MonitorCtx {
+        // A Cowork session monitor keeps the ownerless process bucket it has
+        // always used; only thread-owned monitors register under an owner.
+        owner: None,
+        // And its polls keep bypassing PreToolUse hooks, as they always have:
+        // the hook gate is thread-only. Gating Cowork too is a behavior change
+        // that wants its own reviewed task.
+        hooks: None,
         project_root: root,
         scratch_root: Some(scratch),
         mask_root: Some(PathBuf::from(&data_folder)),
@@ -713,6 +720,294 @@ pub async fn stop_session_monitors(thread_id: String) -> Result<(), AgentToolsEr
 pub async fn cancel_thread_bash(thread_id: String) -> Result<(), AgentToolsError> {
     crate::tools::proc::kill_thread(&thread_id);
     Ok(())
+}
+
+/// Live monitors per Chat thread.
+///
+/// Deliberately a *separate* map from [`session_monitors`], which is keyed by
+/// raw session id. Sharing one map behind a namespaced key would make
+/// Thread/Session non-collision a naming convention; two maps make it
+/// structural, so nothing on this surface can address a Cowork session's
+/// monitors even if the ids were identical.
+struct ThreadMonitors {
+    set: std::sync::Arc<crate::tools::monitor::MonitorSet>,
+    channel: MonitorChannelSlot,
+}
+
+fn thread_monitors(
+) -> &'static std::sync::Mutex<std::collections::HashMap<String, ThreadMonitors>> {
+    static SETS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, ThreadMonitors>>,
+    > = std::sync::OnceLock::new();
+    SETS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Process-registry bucket for one thread's monitor poll children. A thread id
+/// is `[A-Za-z0-9_-]` only (`validate_thread_id`), so the `:` here means this
+/// key can never equal the raw-thread-id bucket `cancel_thread_bash` reaps,
+/// nor any Cowork session's. Per thread rather than per monitor, so one
+/// `kill_thread` reaps everything a revocation must stop.
+fn monitor_owner(thread_id: &str) -> String {
+    format!("thread-monitor:{thread_id}")
+}
+
+/// The authority for one poll: freshly read stored consent intersected with
+/// the current host confirmation, canonical roots rebuilt from the result and
+/// the jail re-verified. Returns the generation the spawn is admitted against.
+///
+/// This is re-run immediately before *every* poll, so a start-time grant
+/// authorizes nothing on its own, and it reuses the same `attach_folder` /
+/// `resolve_workspace_root` / mask construction as scoped Chat tool dispatch
+/// rather than introducing a second policy path.
+async fn resolve_thread_monitor_ctx(
+    thread_id: &str,
+) -> Result<(crate::tools::monitor::MonitorCtx, u64), String> {
+    if !jail::backend().enforces() {
+        return Err("no OS sandbox could be established on this system".into());
+    }
+    let (data_folder, grant, generation) =
+        crate::thread_capabilities::authorize(thread_id).await?;
+    let Some(scope) = grant.folder_scope.clone() else {
+        return Err("folder access for this conversation is no longer granted".into());
+    };
+    let writable = scope.access == "write";
+    let sandbox = WorkspaceScope::Thread
+        .ensure(&data_folder, thread_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let scratch = workspace::ensure_scratch_dir(thread_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let attached = attach_folder(Some(scope.path.as_str()), &sandbox, &data_folder, writable)
+        .map_err(|e| e.to_string())?;
+    let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
+    Ok((
+        crate::tools::monitor::MonitorCtx {
+            owner: Some(monitor_owner(thread_id)),
+            // Re-resolved with the rest of the poll's authority, so a hook the
+            // user adds or removes applies from the next poll. Chat has no
+            // project, so these are the user's global hooks, exactly what
+            // one-shot Chat dispatch resolves in `execute_tool_inner`.
+            hooks: Some(crate::tools::hooks::resolve_for(None)),
+            project_root: root,
+            scratch_root: Some(scratch),
+            mask_root: Some(data_folder),
+            hidden_root: workspace::hidden_root(true),
+            read_roots,
+            write_roots,
+            allow_network: grant.shell_network,
+            home_readonly: false,
+            sandbox: true,
+            workspace_readonly: false,
+        },
+        generation,
+    ))
+}
+
+fn thread_authority(thread_id: &str) -> crate::tools::monitor::ThreadAuthority {
+    let resolver_id = thread_id.to_string();
+    crate::tools::monitor::ThreadAuthority {
+        thread_id: thread_id.to_string(),
+        owner: monitor_owner(thread_id),
+        resolve: std::sync::Arc::new(move || {
+            let id = resolver_id.clone();
+            Box::pin(async move { resolve_thread_monitor_ctx(&id).await })
+        }),
+    }
+}
+
+/// Start a monitor owned by a Chat thread.
+///
+/// Unlike [`start_monitor`] there is no caller-supplied data folder, scope,
+/// network or writability flag to forge: the host derives every one of them
+/// from the thread's own consent, and re-derives them on each poll. Nothing
+/// the caller passes can widen authority.
+#[tauri::command]
+pub async fn start_thread_monitor(
+    thread_id: String,
+    args: serde_json::Value,
+    on_update: tauri::ipc::Channel<crate::tools::monitor::MonitorUpdate>,
+) -> Result<String, AgentToolsError> {
+    let spec =
+        crate::tools::monitor::parse_start_args(&args).map_err(AgentToolsError::from)?;
+    // Authorize once up front so an unauthorized start fails loudly, rather
+    // than starting a monitor whose only possible output is a revoked notice.
+    let (ctx, _) = resolve_thread_monitor_ctx(&thread_id)
+        .await
+        .map_err(AgentToolsError::from)?;
+    let authority = thread_authority(&thread_id);
+    // The map lock is held across `start_owned`, so a revoke or stop that
+    // removes this thread's entry cannot interleave between publishing the set
+    // and starting the monitor. Otherwise the monitor would belong to a set no
+    // longer in the map: invisible to list, unstoppable by id, and never
+    // aborted by a later revocation.
+    {
+        let mut sets = thread_monitors().lock().unwrap();
+        let entry = sets.entry(thread_id).or_insert_with(|| {
+            let slot: MonitorChannelSlot = std::sync::Arc::new(std::sync::Mutex::new(None));
+            let subscriber_slot = slot.clone();
+            ThreadMonitors {
+                set: std::sync::Arc::new(crate::tools::monitor::MonitorSet::subscribed(
+                    std::sync::Arc::new(move |update| {
+                        if let Some(channel) = subscriber_slot.lock().unwrap().as_ref() {
+                            let _ = channel.send(update);
+                        }
+                    }),
+                )),
+                channel: slot,
+            }
+        });
+        *entry.channel.lock().unwrap() = Some(on_update);
+        entry
+            .set
+            .clone()
+            .start_owned(spec, ctx, Some(authority))
+            .map_err(AgentToolsError::from)
+    }
+}
+
+/// Stop one of a thread's monitors. Scoped to the calling thread's own set, so
+/// a monitor id from another conversation is simply unknown here.
+#[tauri::command]
+pub async fn stop_thread_monitor(
+    thread_id: String,
+    monitor_id: String,
+) -> Result<String, AgentToolsError> {
+    let set = thread_monitors()
+        .lock()
+        .unwrap()
+        .get(&thread_id)
+        .map(|entry| entry.set.clone());
+    Ok(match set {
+        Some(set) => set.stop(&monitor_id),
+        None => format!("ERROR: unknown or already-stopped monitor '{monitor_id}'"),
+    })
+}
+
+#[tauri::command]
+pub async fn list_thread_monitors(thread_id: String) -> Result<String, AgentToolsError> {
+    let set = thread_monitors()
+        .lock()
+        .unwrap()
+        .get(&thread_id)
+        .map(|entry| entry.set.clone());
+    Ok(match set {
+        Some(set) => set.list(),
+        None => "No active monitors.".to_string(),
+    })
+}
+
+/// Stop every monitor a thread still has, and reap their poll children.
+#[tauri::command]
+pub async fn stop_all_thread_monitors(thread_id: String) -> Result<(), AgentToolsError> {
+    stop_thread_monitors_and_children(&thread_id).await;
+    Ok(())
+}
+
+/// Advance the barrier (`advance` is [`crate::thread_capabilities::narrow`]
+/// for a revocation, [`crate::thread_capabilities::bump_generation`] for a
+/// plain stop) and empty this thread's process bucket under the admission
+/// guard, then reap outside it. Returns the new generation token.
+///
+/// The barrier move and the bucket drain are what must be atomic against a
+/// poll's {check generation, spawn, register}: a poll that got the guard first
+/// has already registered, so its pid is in the returned list; a poll that
+/// gets it afterwards sees the new generation and refuses to spawn. Reaping
+/// outside keeps the blocking Windows `taskkill` off the global mutex (and off
+/// the per-thread consent lock the setter holds above it).
+async fn reap_thread_monitor_children(thread_id: &str, advance: fn(&str) -> u64) -> u64 {
+    let (token, pids) = {
+        let _admitted = crate::thread_capabilities::admission().lock().await;
+        let token = advance(thread_id);
+        (
+            token,
+            crate::tools::proc::take_thread_pids(&monitor_owner(thread_id)),
+        )
+    };
+    for pid in pids {
+        crate::tools::proc::kill_tree(pid);
+    }
+    token
+}
+
+/// Stop-all is not a revocation: the barrier bump keeps an already-resolved
+/// poll from spawning after the reap, while the confirmed grant survives for
+/// the next start. Only `narrow` (the setter, revoke, delete) denies.
+async fn stop_thread_monitors_and_children(thread_id: &str) {
+    let set = thread_monitors()
+        .lock()
+        .unwrap()
+        .remove(thread_id)
+        .map(|entry| entry.set);
+    reap_thread_monitor_children(thread_id, crate::thread_capabilities::bump_generation).await;
+    if let Some(set) = set {
+        set.stop_all();
+    }
+}
+
+/// Narrow a thread's host confirmation immediately, ahead of any queued
+/// persistence.
+///
+/// Narrow-only: it can deny but never grant, so exposing it to the webview
+/// cannot widen authority. The frontend calls it the moment a revocation is
+/// requested, because its own save queue may hold an earlier in-flight write;
+/// without this the native mirror would keep authorizing polls until that
+/// queue drained. The strict setter narrows again when it runs, which is what
+/// covers callers that never go through the frontend.
+#[tauri::command]
+pub async fn revoke_thread_capabilities(thread_id: String) -> Result<(), AgentToolsError> {
+    revoke_thread_consent(&thread_id).await;
+    Ok(())
+}
+
+/// Narrow a thread's host confirmation and stop everything running under it,
+/// returning the generation token a subsequent confirm must present.
+///
+/// The strict consent setter calls this BEFORE it validates or persists, for
+/// every caller rather than only the frontend, so a write that fails or is
+/// lost can never leave an earlier confirmation live. The mirror is never
+/// restored on failure; it is re-confirmed only by a successful write.
+pub async fn revoke_thread_consent(thread_id: &str) -> u64 {
+    let token = reap_thread_monitor_children(thread_id, crate::thread_capabilities::narrow).await;
+    let set = thread_monitors()
+        .lock()
+        .unwrap()
+        .remove(thread_id)
+        .map(|entry| entry.set);
+    if let Some(set) = set {
+        set.stop_all();
+    }
+    token
+}
+
+/// Kill every shell tree registered under a thread's RAW process bucket (the
+/// one the Stop button's `cancel_thread_bash` drains), which is disjoint from
+/// the `thread-monitor:` bucket a revocation reaps.
+///
+/// Called at the delete/rollback boundary, where the conversation itself is
+/// going away, so nothing it started may outlive it. A consent *revocation*
+/// deliberately does not call this: revocation narrows what the next dispatch
+/// may run, while an in-flight shell stays the UI Stop button's to cancel.
+pub fn cancel_thread_shells(thread_id: &str) {
+    crate::tools::proc::kill_thread(thread_id);
+}
+
+/// Forget a thread entirely at the native delete boundary, so an id supplied
+/// again at creation cannot inherit an earlier confirmation.
+pub async fn forget_thread_consent(thread_id: &str) {
+    revoke_thread_consent(thread_id).await;
+    crate::thread_capabilities::clear(thread_id);
+}
+
+/// Confirm elevations after the strict setter actually wrote them. Returns
+/// false when a newer narrow intervened, in which case the thread stays
+/// denied -- fail closed.
+pub fn confirm_thread_consent(
+    thread_id: &str,
+    grant: crate::thread_capabilities::ThreadCapabilities,
+    token: u64,
+) -> bool {
+    crate::thread_capabilities::confirm_if_current(thread_id, grant, token)
 }
 
 /// Validate the folder a surface asked to attach (Cowork's shared folder, chat's
@@ -868,7 +1163,14 @@ async fn execute_thread_tool_inner(
     }
     let stored: crate::thread_capabilities::ThreadCapabilities = serde_json::from_value(stored)
         .map_err(|e| AgentToolsError::from(format!("Invalid stored consent: {e}")))?;
-    let grant = stored.intersect(effective)?;
+    // Defense in depth, same as every monitor poll: the host's process-local
+    // confirmation must ALSO allow. A stale on-disk grant after a restart, or
+    // an elevation whose revoke has narrowed but whose disk write is still in
+    // flight, therefore denies here too -- the mirror can only ever narrow
+    // (bootstrap and unknown threads read as denied), so the scratch baseline
+    // of an unconfirmed thread, temporary chat included, is untouched.
+    let (mirror, _) = crate::thread_capabilities::current(&thread_id);
+    let grant = stored.intersect(effective)?.intersect(mirror)?;
     if (name == "skill_write"
         || (name == crate::tools::MEMORY_TOOL
             && !matches!(
@@ -1408,6 +1710,31 @@ mod tests {
         }
     }
 
+    /// "Stop my monitors" is not "revoke my consent": stop-all advances the
+    /// TOCTOU barrier (an in-flight poll must not spawn after the reap) but
+    /// must leave the host confirmation exactly as the strict setter left it.
+    #[tokio::test]
+    async fn stop_all_thread_monitors_keeps_the_confirmed_grant() {
+        let id = "stop-all-keeps-grant";
+        let token = crate::thread_capabilities::narrow(id);
+        let grant = crate::thread_capabilities::ThreadCapabilities {
+            version: 1,
+            folder_scope: None,
+            shell_network: true,
+            memory_write: true,
+        };
+        assert!(confirm_thread_consent(id, grant, token));
+        let confirmed_at = crate::thread_capabilities::generation(id);
+        stop_all_thread_monitors(id.to_string()).await.unwrap();
+        let (caps, generation) = crate::thread_capabilities::current(id);
+        assert!(
+            caps.shell_network && caps.memory_write,
+            "stopping monitors must not revoke consent"
+        );
+        assert_ne!(generation, confirmed_at, "but the barrier must advance");
+        assert_ne!(generation, 0);
+    }
+
     #[test]
     fn shell_network_requires_both_stored_and_effective_consent() {
         use crate::thread_capabilities::ThreadCapabilities;
@@ -1439,16 +1766,34 @@ mod tests {
         stored: serde_json::Value,
         effective: serde_json::Value,
     ) -> Result<ToolResult, AgentToolsError> {
-        execute_thread_tool_inner(
+        // One thread id per data folder, so concurrently running tests cannot
+        // see each other's host confirmation.
+        let id = format!(
+            "chat-boundary-{}",
+            data.file_name().unwrap().to_string_lossy()
+        );
+        // The strict setter confirms exactly what it persisted, so these
+        // boundary tests model host confirmation as "mirror == stored". The
+        // unconfirmed (restart) case is exercised separately in
+        // `one_shot_chat_elevation_requires_host_confirmation`.
+        if let Ok(grant) =
+            serde_json::from_value::<crate::thread_capabilities::ThreadCapabilities>(stored.clone())
+        {
+            let token = crate::thread_capabilities::narrow(&id);
+            crate::thread_capabilities::confirm_if_current(&id, grant, token);
+        }
+        let result = execute_thread_tool_inner(
             None,
             data.to_path_buf(),
-            "chat-boundary-test".into(),
+            id.clone(),
             name.into(),
             args,
             stored,
             serde_json::from_value(effective).unwrap(),
         )
-        .await
+        .await;
+        crate::thread_capabilities::clear(&id);
+        result
     }
 
     #[tokio::test]
@@ -1573,6 +1918,65 @@ mod tests {
         assert!(err.message.contains("ReadEscape"), "{}", err.message);
         assert_eq!(std::fs::read_to_string(outside).unwrap(), "unchanged");
         let _ = std::fs::remove_dir_all(parent);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    /// One-shot Chat dispatch requires the host's process confirmation, exactly
+    /// like every monitor poll: stored consent alone (a stale on-disk grant
+    /// after a restart, or a revoke whose disk write has not landed yet) must
+    /// not elevate, while the scratch baseline keeps working unconfirmed.
+    #[tokio::test]
+    async fn one_shot_chat_elevation_requires_host_confirmation() {
+        let data = unique_data_folder();
+        let id = "one-shot-mirror";
+        let folder = repo_outside_tmp("one-shot-mirror-folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("input.txt"), "original").unwrap();
+        let write = consent(Some(&folder), true, true, true);
+        let call = |name: &str, args: serde_json::Value| {
+            let (data, name, write) = (data.clone(), name.to_string(), write.clone());
+            async move {
+                execute_thread_tool_inner(
+                    None,
+                    data,
+                    id.into(),
+                    name,
+                    args,
+                    write.clone(),
+                    serde_json::from_value(write).unwrap(),
+                )
+                .await
+            }
+        };
+        // Unconfirmed: both disk and the caller say yes, the host does not.
+        assert!(
+            call("read", json!({"path": folder.join("input.txt")}))
+                .await
+                .is_err(),
+            "an unconfirmed grant must not reach an attached folder"
+        );
+        let err = call("memory", json!({"op":"write","name":"m","content":"x"}))
+            .await
+            .unwrap_err();
+        assert!(err.message.contains("not authorized"), "{}", err.message);
+        // The scratch baseline needs no confirmation (temporary chat).
+        let baseline = call("write", json!({"path":"note.txt","content":"scratch"}))
+            .await
+            .unwrap();
+        assert!(!baseline.is_error, "{}", baseline.content);
+        // Confirmed by the strict setter: the same call now elevates.
+        let token = crate::thread_capabilities::narrow(id);
+        assert!(crate::thread_capabilities::confirm_if_current(
+            id,
+            serde_json::from_value(write.clone()).unwrap(),
+            token
+        ));
+        let out = call("read", json!({"path": folder.join("input.txt")}))
+            .await
+            .unwrap();
+        assert!(out.content.contains("original"), "{}", out.content);
+        crate::thread_capabilities::clear(id);
+        let _ = std::fs::remove_dir_all(folder);
         let _ = std::fs::remove_dir_all(data);
     }
 

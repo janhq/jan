@@ -18,6 +18,7 @@ import {
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { abortRun } from '@/lib/coworkRunner'
+import { revokeThreadCapabilitiesInHost } from '@/lib/agentTools'
 import { dropMonitorLane } from '@/lib/coworkMonitor'
 import { isCoworkThread, workspaceScopeFor } from '@/lib/threadMode'
 import { defaultConversationCapabilities, resolveConversationCapabilities, type ConversationCapabilitiesV1 } from '@/lib/conversationCapabilities'
@@ -767,6 +768,14 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     } } }))
     const previous = capabilityWrites.get(threadId)
     const write = (async () => {
+      // Narrow the host process before anything is persisted, and ahead of
+      // the queue wait below, which may still be draining an earlier write.
+      // The synchronous revoke above only clears this window's overlay; the
+      // native monitor loop cannot read this store and authorizes each poll
+      // against host-confirmed consent, so until this resolves a background
+      // poll would still run under the grant being replaced. Narrowing only
+      // ever denies, and a failure must not be reported as a revocation.
+      await revokeThreadCapabilitiesInHost(threadId)
       if (previous) await previous.catch(() => {})
       assertChatThread()
       await getServiceHub().threads().setConversationCapabilities(threadId, capabilities)
