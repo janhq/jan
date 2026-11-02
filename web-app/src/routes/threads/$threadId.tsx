@@ -1875,8 +1875,12 @@ function ThreadDetail() {
   // Regenerate keeps the previous reply as a prior version (no deletion); the
   // new reply arrives in onFinish as a sibling and becomes the active branch.
   const handleRegenerate = useCallback(
-    async (messageId?: string) => {
+    async (messageId?: string, continuation?: { text: string; reasoning: string }) => {
       await endRunningTools()
+      if (continuation && messageId) {
+        setContinueFromContent(continuation)
+        continueReplaceIds.set(threadId, messageId)
+      }
       const hadBannerError =
         useAppState.getState().oomError != null ||
         useAppState.getState().backendError != null ||
@@ -1922,16 +1926,15 @@ function ThreadDetail() {
   // transport re-emits the partial as the first delta, so the regenerated
   // message reconstitutes partial + new content and the KV cache is reused.
   const handleContinue = useCallback(
-    (messageId: string) => {
+    async (messageId: string) => {
       const msg = chatMessages.find((m) => m.id === messageId)
       if (!msg) return
       const { text, reasoning } = partialOf(msg)
       if (!text && !reasoning) return
-      setContinueFromContent({ text, reasoning })
-      continueReplaceIds.set(threadId, messageId)
-      handleRegenerate(messageId)
+      // Publish only after handleRegenerate drains the original onFinish.
+      await handleRegenerate(messageId, { text, reasoning })
     },
-    [chatMessages, setContinueFromContent, handleRegenerate, threadId]
+    [chatMessages, handleRegenerate]
   )
 
   // Editing forks a new sibling version (the original + its subtree are kept).

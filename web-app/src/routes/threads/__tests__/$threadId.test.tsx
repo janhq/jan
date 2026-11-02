@@ -2241,7 +2241,7 @@ describe('ThreadDetail route', () => {
       { type: 'text-end', id: 'text' },
       { type: 'finish', finishReason: 'stop' },
     ]
-    const setup = (ids = ['tcA', 'tcB'], threadId = 'thread-1') => {
+    const setup = (ids = ['tcA', 'tcB'], threadId = 'thread-1', partialText = false) => {
       let args: any
       let controller: AbortController | undefined
       const transport = new CustomChatTransport(undefined, threadId)
@@ -2262,7 +2262,10 @@ describe('ThreadDetail route', () => {
             content: [{ type: 'text', text: { value: message.parts.find((p: any) => p.type === 'text')?.text ?? '', annotations: [] } }],
           })
         }
-        return chunks(steps.mock.calls.length === 1 ? toolStep(...ids) : textStep)
+        return chunks(steps.mock.calls.length === 1 ? [
+          ...(partialText ? [{ type: 'text-start' as const, id: 'partial' }, { type: 'text-delta' as const, id: 'partial', delta: 'partial' }, { type: 'text-end' as const, id: 'partial' }] : []),
+          ...toolStep(...ids),
+        ] : textStep)
       })
       const cancel = transport.cancelChatRun.bind(transport)
       const cancelChatRun = vi.spyOn(transport, 'cancelChatRun').mockImplementation(cancel)
@@ -2278,7 +2281,7 @@ describe('ThreadDetail route', () => {
             request.abortSignal?.addEventListener('abort', abort, { once: true })
             const release = transport.beginChatRun(() => controller?.abort())
             return createChatRunStream({
-              messages: request.messages, messageId: 'a-integration-' + threadId,
+              messages: request.messages, messageId: requests.length === 1 ? 'a-integration-' + threadId : 'replacement-' + threadId,
               signal: controller.signal,
               sendStep: steps,
               dispatch: args.dispatchTool,
@@ -2384,7 +2387,7 @@ describe('ThreadDetail route', () => {
       const cancel = vi.fn().mockResolvedValue(undefined)
       const run = vi.fn(() => ({ promise: new Promise(() => {}), cancel, token: 'held-tool' }))
       hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: run }) as never
-      const { chat, steps, cancelChatRun, rerender, requests, finished } = setup(['tcA', 'tcB'])
+      const { chat, steps, cancelChatRun, rerender, requests, finished } = setup(['tcA', 'tcB'], 'thread-1', action === 'Continue')
       let originalSettled = false
       const pending = chat.sendMessage({ text: 'go' }).finally(() => { originalSettled = true })
       await waitFor(() => expect(run).toHaveBeenCalledTimes(1))
@@ -2397,12 +2400,6 @@ describe('ThreadDetail route', () => {
       chat.regenerate = (...args) => { replacementAdmission(); return originalRegenerate(...args) }
       const originalUser = chat.messages[0].id
       const originalAssistant = chat.messages[1].id
-      if (action === 'Continue') {
-        // A partial response preceding the held tool can be continued.
-        chat.messages = chat.messages.map(message => message.id === originalAssistant
-          ? { ...message, parts: [{ type: 'text' as const, text: 'partial' }, ...message.parts] }
-          : message)
-      }
       const Component = Route.component as React.ComponentType
       rerender(<Component />)
       await act(async () => {
@@ -2429,7 +2426,11 @@ describe('ThreadDetail route', () => {
       })
       expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
       expect(useToolCallRuntime.getState().queue).toEqual([])
-      if (action === 'Continue') expect(h.mockSetContinueFromContent).toHaveBeenCalledWith({ text: 'partial', reasoning: '' })
+      if (action === 'Continue') {
+        expect(h.mockSetContinueFromContent).toHaveBeenCalledWith({ text: 'partial', reasoning: '' })
+        expect(h.messagesState.deleteMessage).toHaveBeenCalledExactlyOnceWith('thread-1', originalAssistant)
+        expect(h.messagesState.addMessage).toHaveBeenCalledWith(expect.objectContaining({ id: 'replacement-thread-1', role: 'assistant' }))
+      }
     })
 
     it('Stop during approval never executes, settles queued cards, and ignores a late approval', async () => {
