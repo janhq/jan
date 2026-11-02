@@ -423,6 +423,7 @@ vi.mock('@/hooks/use-chat', () => ({
     session.transport ??= { getTurnModelSelection: () => null }
     session.transport.cancelChatRun ??= vi.fn().mockResolvedValue(undefined)
     session.transport.setContinueFromContent ??= h.mockSetContinueFromContent
+    session.transport.hasAdvertisedNativeTool ??= () => true
     session.transport.getMcpServerForTool ??= (name: string) =>
       h.appStateState.mcpToolNames.has(name)
         ? h.appStateState.tools.find((tool) => tool.name === name)?.server ?? 'test-server'
@@ -1926,6 +1927,15 @@ describe('ThreadDetail route', () => {
       h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }))
     })
 
+    it('refuses unadvertised native calls before approval or execution', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedNativeTool = () => false
+      renderComponent()
+      expect(await dispatch(call('unadvertised', 'read', { path: 'scratch.txt' }))).toMatchObject({ isError: true, output: expect.stringContaining('not advertised') })
+      expect(shell.execute).not.toHaveBeenCalled()
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+    })
+
     it('dispatches an advertised native read even with a same-name MCP inventory entry', async () => {
       h.appStateState.mcpToolNames = new Set(['read'])
       h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = () => undefined
@@ -2373,6 +2383,7 @@ describe('ThreadDetail route', () => {
       const regenerate = chat.regenerate.bind(chat)
       chat.sendMessage = (...args) => guarded(() => send(...args))
       chat.regenerate = (...args) => guarded(() => regenerate(...args))
+      vi.spyOn(transport, 'hasAdvertisedNativeTool').mockReturnValue(true)
       vi.spyOn(transport, 'getMcpServerForTool').mockReturnValue('test-server')
       h.integrationChat = chat
       h.chatSessionsState.sessions[threadId] = { chat, transport }

@@ -1029,6 +1029,11 @@ function ThreadDetail() {
       try {
         const toolName = toolCall.toolName
         const { serverName, checkMcp } = bindMcpCall(toolCall)
+        if (!serverName && isScopedThreadTool(toolName) &&
+          !(toolName === 'shell' && chatShellRoute(toolName) === 'disabled') &&
+          !useChatSessions.getState().sessions[threadId]?.transport.hasAdvertisedNativeTool(toolName)) {
+          return { output: `Tool '${toolName}' was not advertised for this turn; start a new turn to refresh capabilities.`, isError: true }
+        }
         // Captured at classification, before any approval wait.
         const classifiedGrant =
           !serverName && chatShellRoute(toolName) === 'builtin'

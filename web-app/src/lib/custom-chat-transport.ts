@@ -875,6 +875,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private mcpIdentities = new Map<string, string>()
   private turnMcpIdentities?: Map<string, string>
 
+  hasAdvertisedNativeTool(name: string): boolean {
+    const tools = this.chatRunSnapshot?.tools ?? this.tools
+    return isScopedThreadTool(name) && Object.prototype.hasOwnProperty.call(tools, name) && !this.getMcpServerForTool(name)
+  }
+
   getMcpServerForTool(name: string): string | undefined {
     return (this.turnMcpIdentities ?? this.mcpIdentities).get(name)
   }

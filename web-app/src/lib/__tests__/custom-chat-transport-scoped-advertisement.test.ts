@@ -137,6 +137,22 @@ describe('scoped native schema advertisement', () => {
     expect(memory.function.parameters.properties.op.enum).toHaveLength(6)
   })
 
+  it('permits native dispatch only for a frozen advertised native record', async () => {
+    expect(transport.hasAdvertisedNativeTool('read')).toBe(false)
+    await transport.refreshTools()
+    expect(transport.hasAdvertisedNativeTool('read')).toBe(true)
+    expect(transport.hasAdvertisedNativeTool('skill_write')).toBe(false)
+    expect(transport.hasAdvertisedNativeTool('screenshot')).toBe(false)
+    const release = transport.beginChatRun()
+    await transport.refreshTools()
+    h.sandbox = false
+    await transport.refreshTools()
+    expect(transport.hasAdvertisedNativeTool('read')).toBe(true)
+    release()
+    await transport.refreshTools()
+    expect(transport.hasAdvertisedNativeTool('read')).toBe(false)
+  })
+
   it('advertises skill_write only under memoryWrite and drops it on the next turn after revoke', async () => {
     h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: true }
     await transport.refreshTools()
