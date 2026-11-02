@@ -1,6 +1,6 @@
 # Chat → existing runTurn (#504)
 
-Current-access parity slice, based on merged serializer parent `4f76f4db9`.
+Current-access parity slice, rebased onto merged MCP/grants/typefix parent `c2b9b4458`. No capability activation.
 
 ## Production seam
 - `hooks/use-chat.ts` gives the retained SDK `Chat` a streaming transport wrapper. `lib/chatRunTransport.ts` calls existing `coworkRunner.runTurn`; the route's sequential tool loop and SDK `sendAutomaticallyWhen` authority are removed, not feature-flagged beside it.
@@ -14,8 +14,10 @@ Current-access parity slice, based on merged serializer parent `4f76f4db9`.
 Grants prerequisite owns strict resolver, `useThreads.getConversationCapabilities(id)` effective deny-overlay getter, narrow atomic native patch and optional ChatInput prepare seam. Consume only after merge; re-read effective getter per dispatch before any auto-allow, retain native canonical scope containment. Consent controls stay unmounted until actual enforcement/advertisement activate together. No raw disk metadata bypass. `clientToolDispatch` remains the shared future todo/ask/task/monitor seam; no second ping path.
 
 ## Verification status
-- Full web suite: 376 files / 5103 tests passed after building local extension artifacts.
+- Full web suite on current merged parent: **384 files / 5327 tests passed**. App TypeScript, production ESLint and diff checks pass.
 - Typecheck and production-file ESLint passed.
-- Route replacement tests plus real hook/SDK/runner tests and canonical reload/request negative controls are present.
+- Route **106 tests** retain all **20 merged MCP cases**. Real SDK edit/regenerate replacements assert a second `regenerate-message` request and replacement assistant, with no old queued tool/follow-up. Cancellation waits the original SDK operation through reservation release, not the early send-admission receipt.
+- Continue publishes its replacement receipt after original drain; streamed-partial/distinct-id regression asserts exact old-record deletion and new assistant persistence. Held-tool Continue is defensive handler-race coverage; normal UI exposes Continue only on a stopped reply.
+- Composer acceptance, same-tick admission, model-scale completion-only budget and canonical reload/provider-request negative controls are covered.
 - Independent early code review and removed-test audit led to cancellation/parser/freeze/approval fixes and additional mounted integration coverage.
-- Independent controlled browser inspection verified pending approval, Stop with zero execution/no follow-up, and a subsequent approved typed-result completion with exactly one execution/follow-up. This was an isolated fixture with fake services, not native/provider QA; broader manual scenarios were not completed. Final follow-up review and separate verification remain gates, not yet claimed complete. No ready PR until they pass and latest merged parent is rebased/retested.
+- Independent controlled browser inspection verified pending approval, Stop with zero execution/no follow-up, and a subsequent approved typed-result completion with exactly one execution/follow-up. This was an isolated fixture with fake services, not native/provider QA; broader manual scenarios were not completed. Independent cancellation/MCP review and separate verifier passed the runtime fixes; the final parent-only rebase is separately checked before push. Ready PR #9541 is awaiting a new-head bot review, not merge-approved.

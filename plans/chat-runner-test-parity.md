@@ -1,6 +1,6 @@
 # Route test adaptation parity matrix — current, not final verification
 
-Latest route execution: **83 passed / 83 tests; 0 failures; no unhandled errors**. Command: `./node_modules/.bin/vitest run --project @janhq/web-app 'web-app/src/routes/threads/__tests__/$threadId.test.tsx'`.
+Latest route execution: **106 passed / 106 tests**, including all **20 newly merged MCP identity cases**. Current full suite: **384 files / 5327 tests**, with TypeScript and production ESLint passing after parent `c2b9b4458`. Command: `./node_modules/.bin/vitest run --project @janhq/web-app 'web-app/src/routes/threads/__tests__/$threadId.test.tsx'`.
 
 Owned file: `web-app/src/routes/threads/__tests__/$threadId.test.tsx`. No production edits.
 
@@ -50,11 +50,13 @@ Harness boundary: integration mounts actual Route, uses real SDK Chat/useSDKChat
 | parameterized MCP web_search/web_fetch collision | uses MCP for %s when built-in web is disabled | both names, one prompt/one MCP/no built-in |
 | parameterized edit/regenerate cancellation | %s cancels a running backend call | both route buttons await transport cancellation; backend cancelled once/no queued calls/no follow-up |
 
-## Explicit remaining gaps (do not call parity complete)
+## Ownership boundaries and follow-up verification
 - Closed after initial matrix: mounted route concurrent A+B regression now verifies independent completion/continuation.
-- Closed with an explicit replacement contract: production wrapper rejects overlapping send/regenerate BEFORE SDK message/activeResponse mutation. The real-hook regression checks unchanged original messages/status, Stop cancels that original owner, no extra request, and a subsequent accepted turn succeeds. Route edit/regenerate awaits cancellation before replacement; there cannot be an older orphan run behind a newer unrelated completed reply.
+- Closed with an explicit replacement contract: production wrapper synchronously reserves admission and rejects overlapping send/regenerate BEFORE SDK message/activeResponse mutation. The real-hook regression checks unchanged original messages/status, Stop cancels that original owner, no extra request, and a subsequent accepted turn succeeds. Route edit/regenerate awaits cancellation before replacement; there cannot be an older orphan run behind a newer unrelated completed reply.
 - Closed separately: `hooks/__tests__/use-chat-runner.test.ts` uses the production wrapper with real SDK Chat/runTurn, verifying deletion alone aborts a hung dispatch and releases the snapshot.
 - Closed separately: production-wrapper test verifies session-store `isStreaming` during held dispatch, ready after drain, exactly one follow-up and typed output.
 - Adapter/model tests now cover fail-closed parser/SDK approvals/duplicate ids, cancellation, same-wave queued settling, image sentinels, typed results, canonical serializer reload and negative controls, regenerated model snapshot and stale discovery. Retry/manual streaming gates remain independently verified; no claim from counts alone.
+
+After MCP integration, all 20 newly merged identity cases remain covered; actual guarded SDK replacement tests strengthen edit/regenerate and add Continue receipt/persistence checks. Continue during a held tool is defensive handler coverage, not a normal button-visibility claim.
 
 Matrix maps all 36 literal old cases + both parameterized groups (38 definitions). Multiple assertions consolidated where contract moved; renamed old implementation-only onFinish/auto-resubmit assertions are explicitly replaced by dispatch + real adapter canonical-output/follow-up assertions.
