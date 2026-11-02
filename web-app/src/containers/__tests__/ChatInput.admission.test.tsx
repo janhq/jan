@@ -15,6 +15,10 @@ import type { UIMessageChunk } from 'ai'
 const h = vi.hoisted(() => ({
   send: vi.fn(),
   tracked: [] as Array<Promise<void>>,
+  // When set, the tracked-operation chain handed to the production barrier
+  // resolves only after this gate: cancelChatRun can then be observed actually
+  // awaiting the tracked operation rather than winning a microtask race.
+  gate: undefined as Promise<void> | undefined,
 }))
 
 vi.mock('@/lib/custom-chat-transport', async () => {
@@ -25,7 +29,8 @@ vi.mock('@/lib/custom-chat-transport', async () => {
       // model step and discovery surfaces are stubbed.
       trackChatOperation(operation: Promise<void>) {
         h.tracked.push(operation)
-        super.trackChatOperation(operation)
+        const gated = operation.then(() => h.gate, () => h.gate) as Promise<void>
+        super.trackChatOperation(gated)
       }
       getTurnModelSelection() {
         return { selectedModel: { settings: { ctx_len: { controller_props: { value: 1000000 } } } } } as never
@@ -329,6 +334,7 @@ describe('real ChatInput with production use-chat hook and real SDK Chat', () =>
     usePrompt.setState({ prompt: '' })
     h.send.mockReset()
     h.tracked.length = 0
+    h.gate = undefined
   })
 
   it('clears the submitted draft at admission during a held tool and keeps text typed before turn end', async () => {
@@ -361,6 +367,8 @@ describe('real ChatInput with production use-chat hook and real SDK Chat', () =>
   it('cancellation still awaits the full tracked SDK operation, not the admission receipt', async () => {
     h.send.mockResolvedValueOnce(wave())
     const dispatch = vi.fn(() => new Promise<{ output: unknown }>(() => {}))
+    let releaseGate!: () => void
+    h.gate = new Promise<void>((resolve) => { releaseGate = resolve })
     render(<Host dispatchTool={dispatch} />)
 
     fireEvent.change(textarea(), { target: { value: 'original draft' } })
@@ -372,14 +380,22 @@ describe('real ChatInput with production use-chat hook and real SDK Chat', () =>
     // must still be pending while the tool is held.
     expect(h.tracked).toHaveLength(1)
     let operationSettled = false
-    void h.tracked[0].finally(() => { operationSettled = true })
+    h.tracked[0].then(() => { operationSettled = true }, () => { operationSettled = true })
     await Promise.resolve()
     expect(operationSettled).toBe(false)
 
-    // Route cancellation path: the retained transport's cancel barrier.
+    // Route cancellation path: the retained transport's cancel barrier. The
+    // abort lets the SDK operation itself settle, but the tracked chain is
+    // held by the gate — cancelChatRun may not resolve before it.
     const transport = useChatSessions.getState().sessions['thread-1'].transport
-    await act(async () => { await transport.cancelChatRun() })
-    expect(operationSettled).toBe(true)
+    let cancelSettled = false
+    const cancelled = transport.cancelChatRun().then(() => { cancelSettled = true })
+    await act(async () => { await waitFor(() => expect(operationSettled).toBe(true)) })
+    expect(cancelSettled).toBe(false)
+
+    releaseGate()
+    await act(async () => { await cancelled })
+    expect(cancelSettled).toBe(true)
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('ready'))
   })
 })
