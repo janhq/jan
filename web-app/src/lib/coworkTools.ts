@@ -7,6 +7,7 @@
  * `subagent.rs`) so the CLI and the desktop advertise the same contract.
  */
 import { jsonSchema, type Tool } from 'ai'
+import type { ToolOutcome } from '@/lib/coworkRunner'
 import { getAgentToolSchemas } from '@/lib/agentTools'
 import { MONITOR_TOOL_NAME, monitorTool } from '@/lib/coworkMonitor'
 import {
@@ -15,6 +16,18 @@ import {
   WEB_SEARCH_DESCRIPTION,
   WEB_SEARCH_INPUT_SCHEMA,
 } from '@/lib/webSearchTool'
+
+/** Check the actual frozen record, never the native registry or prototype. */
+export function unadvertisedToolRefusal(
+  toolName: string,
+  advertisedTools: Record<string, Tool>
+): ToolOutcome | null {
+  if (Object.prototype.hasOwnProperty.call(advertisedTools, toolName)) return null
+  return {
+    output: `The \`${toolName}\` tool is not available to this run. Use an advertised tool.`,
+    isError: true,
+  }
+}
 
 /** Tools that can mutate something. Withheld, and refused, in plan mode. */
 export const PLAN_DENIED_TOOLS = new Set([

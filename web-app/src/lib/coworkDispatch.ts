@@ -1,3 +1,4 @@
+import type { Tool } from 'ai'
 import {
   executeAgentTool,
   listAgentMonitors,
@@ -11,6 +12,7 @@ import {
   PLAN_DENIED_TOOLS,
   TASK_TOOL_NAME,
   TODO_TOOL_NAME,
+  unadvertisedToolRefusal,
 } from '@/lib/coworkTools'
 import {
   MONITOR_TOOL_NAME,
@@ -27,6 +29,8 @@ import {
 } from '@/lib/coworkPrompt'
 
 export type DispatchContext = {
+  /** The effective frozen record actually advertised to this caller. */
+  advertisedTools: Record<string, Tool>
   sessionId: string
   readOnlyFolder: string | null
   planMode: boolean
@@ -195,6 +199,9 @@ export async function dispatchCoworkTool(
     const op = memoryOp(call.input)
     if (PLAN_DENIED_MEMORY_OPS.has(op)) return planMemoryRefusal(op)
   }
+
+  const refusal = unadvertisedToolRefusal(toolName, ctx.advertisedTools)
+  if (refusal) return refusal
 
   try {
     if (toolName === TODO_TOOL_NAME) return await ctx.onTodo(call.input)

@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { executeAgentTool } = vi.hoisted(() => ({ executeAgentTool: vi.fn() }))
-vi.mock('@/lib/agentTools', () => ({ executeAgentTool }))
+const native = vi.hoisted(() => ({
+  executeAgentTool: vi.fn(),
+  startAgentMonitor: vi.fn(),
+  stopAgentMonitor: vi.fn(),
+  listAgentMonitors: vi.fn(),
+}))
+const { executeAgentTool } = native
+vi.mock('@/lib/agentTools', () => native)
 
 const { executeWebTool } = vi.hoisted(() => ({ executeWebTool: vi.fn() }))
 vi.mock('@/lib/webSearchTool', () => ({
@@ -14,6 +20,7 @@ vi.mock('@/hooks/useCoworkConfig', () => ({
   useCoworkConfig: { getState: () => coworkConfig },
 }))
 
+import type { Tool } from 'ai'
 import { dispatchCoworkTool } from '../coworkDispatch'
 import type { PendingToolCall } from '../coworkRunner'
 
@@ -24,6 +31,12 @@ const call = (toolName: string, input: unknown = {}): PendingToolCall => ({
 })
 
 const ctx = (over = {}) => ({
+  advertisedTools: Object.fromEntries([
+    'read', 'ls', 'find', 'grep', 'write', 'edit', 'shell', 'screenshot',
+    'memory', 'skill_list', 'skill_read', 'skill_write', 'todo', 'ask', 'task',
+    'monitor', 'web_search', 'web_fetch',
+  ].map((name) => [name, {} as Tool])),
+  monitors: null,
   sessionId: 's1',
   readOnlyFolder: null,
   planMode: false,
@@ -38,6 +51,83 @@ describe('dispatchCoworkTool', () => {
   beforeEach(() => {
     executeAgentTool.mockReset()
     executeAgentTool.mockResolvedValue({ content: 'ok' })
+  })
+
+  it.each([
+    'unknown_tool', 'bash', 'toString', 'constructor', '__proto__',
+    'shell', 'write', 'memory', 'skill_write', 'task', 'ask', 'todo',
+    'monitor', 'web_search', 'web_fetch',
+  ])('refuses unknown or withheld %s before any side effect', async (name) => {
+    vi.clearAllMocks()
+    const c = ctx({ advertisedTools: { read: {} as Tool }, webSearch: true })
+    const out = await dispatchCoworkTool(call(name, { op: 'start' }), c)
+    expect(out).toMatchObject({ isError: true })
+    expect(out.output).toContain('not available to this run')
+    for (const fn of Object.values(native)) expect(fn).not.toHaveBeenCalled()
+    expect(executeWebTool).not.toHaveBeenCalled()
+    expect(c.onTodo).not.toHaveBeenCalled()
+    expect(c.onAsk).not.toHaveBeenCalled()
+    expect(c.onTask).not.toHaveBeenCalled()
+  })
+
+  it('fails closed with an empty advertised record', async () => {
+    const out = await dispatchCoworkTool(call('read'), ctx({ advertisedTools: {} }))
+    expect(out.isError).toBe(true)
+    expect(executeAgentTool).not.toHaveBeenCalled()
+  })
+
+  describe('against a plan-mode record', () => {
+    const planRecord = Object.fromEntries([
+      'read', 'ls', 'find', 'grep', 'screenshot', 'memory', 'skill_list',
+      'skill_read', 'todo', 'ask', 'web_search', 'web_fetch',
+    ].map((name) => [name, {} as Tool]))
+    const planCtx = () =>
+      ctx({ planMode: true, advertisedTools: planRecord, webSearch: true })
+
+    it.each(['write', 'edit', 'shell', 'skill_write', 'task', 'monitor'])(
+      'keeps the plan-mode guidance for withheld %s',
+      async (name) => {
+        const out = await dispatchCoworkTool(call(name), planCtx())
+        expect(out.isError).toBe(true)
+        expect(out.output).toMatch(/disabled in plan mode/)
+        expect(executeAgentTool).not.toHaveBeenCalled()
+      }
+    )
+
+    it('refuses an unknown tool before the native registry', async () => {
+      const out = await dispatchCoworkTool(call('bash'), planCtx())
+      expect(out.output).toContain('not available to this run')
+      expect(executeAgentTool).not.toHaveBeenCalled()
+    })
+
+    it.each(['read', 'skill_read'])('dispatches advertised %s', async (name) => {
+      const out = await dispatchCoworkTool(call(name), planCtx())
+      expect(out.isError).toBeFalsy()
+      expect(executeAgentTool).toHaveBeenCalledOnce()
+    })
+
+    it('dispatches memory view but refuses a memory write', async () => {
+      const c = planCtx()
+      const view = await dispatchCoworkTool(call('memory', { op: 'view' }), c)
+      expect(view.isError).toBeFalsy()
+      const write = await dispatchCoworkTool(call('memory', { op: 'write' }), c)
+      expect(write.isError).toBe(true)
+      expect(executeAgentTool).toHaveBeenCalledOnce()
+    })
+
+    it('runs todo and ask through their callbacks', async () => {
+      const c = planCtx()
+      await dispatchCoworkTool(call('todo'), c)
+      await dispatchCoworkTool(call('ask'), c)
+      expect(c.onTodo).toHaveBeenCalledOnce()
+      expect(c.onAsk).toHaveBeenCalledOnce()
+    })
+  })
+
+  it.each(['skill_list', 'skill_read'])('dispatches advertised %s', async (name) => {
+    const out = await dispatchCoworkTool(call(name), ctx())
+    expect(out.isError).toBeFalsy()
+    expect(executeAgentTool).toHaveBeenCalledWith(name, {}, 's1', null, 'session', true, true, null)
   })
 
   // The trailing 'session' is load-bearing: under the default 'thread' scope a

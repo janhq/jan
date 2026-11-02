@@ -665,6 +665,54 @@ describe('runSubagent', () => {
     )
   })
 
+  it.each(['memory', 'task', 'ask', 'todo', 'monitor', 'unknown', 'toString']) (
+    'refuses child %s before the dispatch callback', async (name) => {
+      mockSteps([toolStep('denied', name, { op: 'write' }), textStep('done')])
+      const opts = baseOpts({ parentTools: tools('read', 'memory', 'task', 'ask', 'todo', 'monitor') })
+      await runSubagent(opts)
+      expect(opts.dispatch).not.toHaveBeenCalled()
+      expect(opts.events.onInner).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'tool_result', id: 'denied', is_error: true,
+        content: expect.stringContaining('not available to this run'),
+      }))
+    }
+  )
+
+  it.each([
+    { saved: ['read'], requested: null },
+    { saved: null, requested: ['read'] },
+    { saved: ['read', 'write'], requested: ['read'] },
+  ])('enforces resolved saved/requested allowlists: %j', async ({ saved, requested }) => {
+    const parentTools = tools('read', 'write', 'skill_list', 'skill_read')
+    const resolved = resolveSubagent(
+      { name: 'researcher', description: 'inspect', allowed_tools: requested ?? undefined },
+      [definition({ allowed_tools: saved })],
+      Object.keys(parentTools)
+    )
+    if ('error' in resolved) throw new Error(resolved.error)
+    mockSteps([
+      toolStep('denied', 'write', {}),
+      toolStep('read', 'read', {}),
+      toolStep('list', 'skill_list', {}),
+      toolStep('skill', 'skill_read', {}),
+      textStep('done'),
+    ])
+    const opts = baseOpts({ resolved, parentTools })
+    await runSubagent(opts)
+    expect((opts.dispatch.mock.calls as unknown as [{ toolName: string }][]).map(([call]) => call.toolName))
+      .toEqual(['read', 'skill_list', 'skill_read'])
+    expect(opts.events.onInner).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'tool_result', id: 'denied', is_error: true,
+    }))
+    // The dispatch guard never changes the schema record or system prefix.
+    const steps = streamText.mock.calls.map(([step]) => step)
+    for (const step of steps) {
+      expect(Object.keys(step.tools)).toEqual(['read', 'skill_list', 'skill_read'])
+      expect(step.tools).toBe(steps[0].tools)
+      expect(step.system).toBe(steps[0].system)
+    }
+  })
+
   it('reports a step cap as an error, keeping the partial output', async () => {
     mockSteps(
       Array.from({ length: 4 }, (_, i) =>

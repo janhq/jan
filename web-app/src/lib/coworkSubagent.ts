@@ -12,6 +12,7 @@ import {
   ASK_TOOL_NAME,
   TASK_TOOL_NAME,
   TODO_TOOL_NAME,
+  unadvertisedToolRefusal,
 } from '@/lib/coworkTools'
 import { MONITOR_TOOL_NAME } from '@/lib/coworkMonitor'
 import { MAX_SUBAGENT_STEPS } from '@/lib/coworkBudget'
@@ -787,7 +788,12 @@ export async function runSubagent(
             messages: msgs,
             signal,
           }),
-        dispatch: opts.dispatch,
+        // Enforce the same narrowed record sent to every child step, including
+        // resolved implicit skill reads, before invoking any host callback.
+        dispatch: (call, signal) => {
+          const refusal = unadvertisedToolRefusal(call.toolName, tools)
+          return refusal ? Promise.resolve(refusal) : opts.dispatch(call, signal)
+        },
         sink,
         onStep: ({ result, outcomes }) => {
           if (result.text.trim()) finalText = result.text

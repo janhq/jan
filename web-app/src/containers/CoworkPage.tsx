@@ -748,6 +748,7 @@ export function CoworkPage() {
               // here, so each is its own queue of one.
               withToolTiming(call.toolCallId, () =>
                 dispatchCoworkTool(call, {
+                  advertisedTools: transport.advertisedTools,
                   sessionId: sid,
                   readOnlyFolder: current?.folder ?? null,
                   planMode: runConfig.planMode,
@@ -914,6 +915,7 @@ export function CoworkPage() {
                           // tool that was never advertised.
                           dispatch: (call) =>
                             dispatchCoworkTool(call, {
+                              advertisedTools: transport.advertisedTools,
                               sessionId: sid,
                               readOnlyFolder: current?.folder ?? null,
                               planMode: current?.planMode ?? false,
