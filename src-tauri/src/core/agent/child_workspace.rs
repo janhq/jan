@@ -1155,12 +1155,19 @@ pub(crate) fn sweep_orphans(root: &Path) -> Settled {
 
 /// What a session start sweeps, without holding the start up: the stale and
 /// trashed session scratches, `root`'s project's worktree trash, and the
-/// worktrees crashed sessions left there. `report` gets each notice. Must
-/// be called on a runtime.
+/// worktrees crashed sessions left there. `report` gets each notice.
+///
+/// A plain thread, not the runtime's: dropping a tokio runtime (which `main`
+/// returning does) waits for its blocking tasks, so a sweep there would hold
+/// exit until its git and deletes were done. A process may exit mid-sweep:
+/// its locks drop with it, records and renames are atomic, and the next start
+/// redoes what is left.
 #[cfg(feature = "cli")]
 pub(crate) fn spawn_startup_sweep(root: PathBuf, mut report: impl FnMut(String) + Send + 'static) {
-    tokio::spawn(tauri_plugin_agent_tools::workspace::sweep_stale_scratch_dirs());
-    tokio::task::spawn_blocking(move || {
+    std::thread::spawn(move || {
+        if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            rt.block_on(tauri_plugin_agent_tools::workspace::sweep_stale_scratch_dirs());
+        }
         empty_trash(&root);
         for notice in sweep_orphans(&root).notices() {
             report(notice);
@@ -2457,6 +2464,33 @@ mod git_tests {
         assert!(idle_gone && survived);
         assert_eq!(fetched.as_deref(), Some(tip.as_str()));
         assert!(again.is_empty(), "reported once: {again:?}");
+    }
+
+    /// Exit drops the runtime, which waits for every blocking task: a startup
+    /// sweep still in git (or deleting old trash) must not be one of them.
+    #[cfg(unix)]
+    #[test]
+    fn exit_does_not_wait_on_the_startup_sweep() {
+        use std::time::{Duration, Instant};
+        let Some(root) = repo("sweep-exit") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        drop(ledger);
+        if !slow_status(&ws.root) {
+            return;
+        }
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async { spawn_startup_sweep(root.clone(), |_| {}) });
+        // Long enough for the sweep to be blocked in that status.
+        std::thread::sleep(Duration::from_millis(500));
+        let started = Instant::now();
+        drop(rt);
+        let took = started.elapsed();
+        std::thread::sleep(Duration::from_secs(3));
+        let _ = std::fs::remove_dir_all(&ws.root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(took < Duration::from_secs(1), "exit waited {took:?}");
     }
 
     /// A worktree a live session holds (this process's own included) is

@@ -14083,8 +14083,9 @@ pub async fn run(
     app.shell_set = shell_set;
     app.shell_detach = shell_detach;
     app.subagent_set = subagent_set;
-    // Weak, so exit's drain never waits on a startup sweep still fetching:
-    // one cut short is redone at the next start.
+    // Weak, so exit's drain never waits on a startup sweep still fetching.
+    // The sweep runs on a thread exit does not join: a process that exits
+    // mid-sweep leaves the rest for the next start.
     if let Some(reports) = app.cleanup_reports.as_ref().map(mpsc::UnboundedSender::downgrade) {
         crate::core::agent::child_workspace::spawn_startup_sweep(
             app.project_root.clone(),
