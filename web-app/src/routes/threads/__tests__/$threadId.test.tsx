@@ -329,31 +329,24 @@ vi.mock('@/lib/extension', () => ({
   },
 }))
 
-vi.mock('@/lib/messages', () => ({
-  convertThreadMessagesToUIMessages: (msgs: any[]) =>
-    msgs.map((m) => ({
-      id: m.id,
-      role: m.role,
-      parts: [{ type: 'text', text: m.content?.[0]?.text?.value ?? '' }],
-    })),
-  extractContentPartsFromUIMessage: (msg: any) =>
-    msg.parts.flatMap((p: any) =>
-      p.type === 'text'
-        ? [{ type: 'text', text: { value: p.text, annotations: [] } }]
-        : p.type?.startsWith('tool-')
-          ? [{ type: 'tool_call', tool_call_id: p.toolCallId, output: p.output }]
-          : []
-    ),
-  uiMessageHasMeaningfulContent: (msg: any) =>
-    !!msg?.parts?.some((p: any) => p.type === 'text' && p.text?.trim()),
-  toolErrorsOf: (msg: any) => {
-    const errors: Record<string, string> = {}
-    for (const p of msg.parts ?? []) {
-      if (p.state === 'output-error') errors[p.toolCallId] = p.errorText
-    }
-    return Object.keys(errors).length ? errors : undefined
-  },
-}))
+vi.mock('@/lib/messages', async (importOriginal) => {
+  // The route's save path uses the real builder (and the real content
+  // extraction inside it); the display-side converters stay controlled fakes.
+  const actual = await importOriginal<typeof import('@/lib/messages')>()
+  return {
+    convertThreadMessagesToUIMessages: (msgs: any[]) =>
+      msgs.map((m) => ({
+        id: m.id,
+        role: m.role,
+        parts: [{ type: 'text', text: m.content?.[0]?.text?.value ?? '' }],
+      })),
+    uiMessageHasMeaningfulContent: (msg: any) =>
+      !!msg?.parts?.some((p: any) => p.type === 'text' && p.text?.trim()),
+    toolErrorsOf: actual.toolErrorsOf,
+    extractContentPartsFromUIMessage: actual.extractContentPartsFromUIMessage,
+    assistantRecordFields: actual.assistantRecordFields,
+  }
+})
 
 // The chat runs MCP tools through the cancellable API so Stop can end the call.
 const cancellable = (run: (args: any) => Promise<unknown>) => (args: any) => ({
@@ -616,6 +609,34 @@ describe('ThreadDetail route', () => {
     renderComponent()
     expect(screen.getByTestId('message-m-a')).toBeInTheDocument()
     expect(screen.getByTestId('message-m-b')).toBeInTheDocument()
+  })
+
+  // The save path runs the real assistantRecordFields: a streamed turn the
+  // content round trip would lose is stored with its parts as uiParts.
+  it('onFinish stores a lossy streamed turn with its uiParts', () => {
+    renderComponent()
+    const parts = [
+      { type: 'step-start' },
+      { type: 'reasoning', text: 'think', providerMetadata: { anthropic: { signature: 'sig' } } },
+      { type: 'text', text: '\n\nanswer' },
+    ]
+    const onFinish = (h as any).capturedOnFinish
+    act(() => {
+      onFinish({
+        message: { id: 'a-ui', role: 'assistant', parts, metadata: {} },
+        isAbort: false,
+        isError: false,
+      })
+    })
+    const saved = h.messagesState.addMessage.mock.calls
+      .map((c: any[]) => c[0])
+      .find((m: any) => m.id === 'a-ui')
+    expect(saved.content).toEqual([
+      { type: 'reasoning', text: { value: 'think', annotations: [] } },
+      { type: 'text', text: { value: '\n\nanswer', annotations: [] } },
+    ])
+    expect(saved.metadata.uiParts).toEqual({ v: 1, parts })
+    expect(saved.metadata).not.toHaveProperty('uiPartsSkipped')
   })
 
   it('submits user text via ChatInput -> sendMessage', async () => {
@@ -2325,8 +2346,8 @@ describe('ThreadDetail route', () => {
           .map((c: any[]) => c[0])
           .find((m: any) => m.id === 'a-tools')
         expect(rewritten.content).toEqual([
-          { type: 'tool_call', tool_call_id: 'tcA', output: 'result A' },
-          { type: 'tool_call', tool_call_id: 'tcB', output: undefined },
+          { type: 'tool_call', tool_call_id: 'tcA', tool_name: 'fetch', input: {}, output: 'result A' },
+          { type: 'tool_call', tool_call_id: 'tcB', tool_name: 'fetch', input: {}, output: undefined },
         ])
         expect(rewritten.metadata).toMatchObject({
           parentId: 'u1',

@@ -255,6 +255,30 @@ export function reasoningPartsFromText(text: string): ReasoningTextPart[] {
 export function convertThreadMessageToUIMessage(
   threadMessage: ThreadMessage
 ): UIMessage {
+  const { uiParts, ...metadata } = (threadMessage.metadata || {}) as Record<
+    string,
+    unknown
+  >
+  // `uiPartsSkipped` stays visible: that turn reloads (and is re-sent) lossy.
+  const parts: any[] =
+    rehydrateUIParts(uiParts, threadMessage.content || [], metadata.toolErrors) ??
+    contentToUIParts(threadMessage)
+
+  return {
+    id: threadMessage.id,
+    role: threadMessage.role as 'user' | 'assistant' | 'system',
+    parts,
+    metadata: {
+      ...metadata,
+      createdAt: new Date(threadMessage.created_at || Date.now()),
+    },
+  } as UIMessage
+}
+
+// The parts a record reloads to from its `content` (and legacy
+// `metadata.tool_calls`) alone: what every record reloaded to before
+// `metadata.uiParts`, and what one still reloads to without a usable carrier.
+function contentToUIParts(threadMessage: ThreadMessage): any[] {
   const parts: any[] = []
 
   // Process content array - preserve original order (including tool calls)
@@ -388,15 +412,7 @@ export function convertThreadMessageToUIMessage(
     })
   }
 
-  return {
-    id: threadMessage.id,
-    role: threadMessage.role as 'user' | 'assistant' | 'system',
-    parts,
-    metadata: {
-      ...(threadMessage.metadata || {}),
-      createdAt: new Date(threadMessage.created_at || Date.now()),
-    },
-  } as UIMessage
+  return parts
 }
 
 export function uiMessageHasMeaningfulContent(message: {
@@ -580,4 +596,312 @@ export function extractContentPartsFromUIMessage(message: UIMessage): ThreadCont
   }
 
   return content
+}
+
+// The desktop UI's projection of a stored assistant turn; see
+// `assistantRecordFields`.
+type UIPartsSkipped = 'provider-metadata' | 'size' | 'unsupported-part' | 'mismatch'
+
+const UI_PARTS_MAX_CHARS = 256 * 1024
+const PROVIDER_METADATA_MAX_CHARS = 8 * 1024
+const SETTLED_TOOL_STATES = new Set([
+  'output-available',
+  'output-error',
+  'output-denied',
+])
+
+class SkipUIParts extends Error {
+  constructor(readonly reason: UIPartsSkipped) {
+    super(reason)
+  }
+}
+
+// JSON with object keys sorted, so a comparison does not depend on key order:
+// storage goes through serde_json::Value, which keeps insertion order only
+// while some dependency enables its `preserve_order` feature (genai does today).
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.keys(v)
+            .sort()
+            .map((k) => [k, v[k]])
+        )
+      : v
+  )
+}
+
+// Every field of each AI SDK UIMessagePart type (ai@6.0.182). A part carrying
+// any other field is not stored (`unsupported-part`): an unknown field is never
+// dropped silently, so a new SDK field fails loudly here instead.
+const TOOL_FIELDS = [
+  'type', 'toolCallId', 'title', 'toolMetadata', 'providerExecuted', 'state',
+  'input', 'output', 'errorText', 'rawInput', 'callProviderMetadata',
+  'resultProviderMetadata', 'preliminary', 'approval',
+]
+const PART_FIELDS: Record<string, readonly string[]> = {
+  'text': ['type', 'text', 'state', 'providerMetadata'],
+  'reasoning': ['type', 'text', 'state', 'providerMetadata'],
+  'step-start': ['type'],
+  'file': ['type', 'mediaType', 'filename', 'url', 'providerMetadata'],
+  'source-url': ['type', 'sourceId', 'url', 'title', 'providerMetadata'],
+  'source-document': ['type', 'sourceId', 'mediaType', 'title', 'filename', 'providerMetadata'],
+  // `rawInput` is set on dynamic tools by the SDK runtime though its type omits it.
+  'dynamic-tool': ['toolName', ...TOOL_FIELDS],
+  // No `data-*` kind: Jan writes none. If it ever does, add it here, or every
+  // such turn reloads lossy (visibly, as `unsupported-part`).
+}
+const APPROVAL_FIELDS = ['id', 'approved', 'reason']
+// Opaque provider/tool metadata objects: bounded, and plain JSON objects only.
+const METADATA_FIELDS = new Set([
+  'providerMetadata', 'callProviderMetadata', 'resultProviderMetadata', 'toolMetadata',
+])
+// Fields a call that has not settled does not keep (see sanitizeUIPart).
+const SETTLED_ONLY_FIELDS = [
+  'output', 'errorText', 'rawInput', 'resultProviderMetadata', 'preliminary', 'approval',
+]
+
+function providerField(value: unknown): unknown {
+  if (value === undefined) return value
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new SkipUIParts('unsupported-part')
+  let size: number
+  try {
+    size = JSON.stringify(value)?.length ?? 0
+  } catch {
+    // BigInt, a cycle, a throwing getter: not plain JSON, so not storable.
+    throw new SkipUIParts('unsupported-part')
+  }
+  if (size > PROVIDER_METADATA_MAX_CHARS) throw new SkipUIParts('provider-metadata')
+  return value
+}
+
+function sanitizeUIPart(part: any): Record<string, unknown> {
+  const type = part?.type
+  const fields =
+    typeof type === 'string' && type.startsWith('tool-') ? TOOL_FIELDS : PART_FIELDS[type]
+  if (!fields) throw new SkipUIParts('unsupported-part')
+  for (const key of Object.keys(part))
+    if (part[key] !== undefined && !fields.includes(key))
+      throw new SkipUIParts('unsupported-part')
+  const isTool = fields === TOOL_FIELDS || type === 'dynamic-tool'
+  // A call still in flight is stored as `input-available`, as reloading from
+  // `content` has always done: onFinish runs it and rewrites the turn. It keeps
+  // none of a settled call's fields.
+  const settled = !isTool || SETTLED_TOOL_STATES.has(part.state)
+  const out: Record<string, unknown> = {}
+  for (const field of fields) {
+    if (!settled && SETTLED_ONLY_FIELDS.includes(field)) continue
+    out[field] = METADATA_FIELDS.has(field) ? providerField(part[field]) : part[field]
+  }
+  if (!isTool) return out
+  if (!settled) {
+    out.state = 'input-available'
+    return out
+  }
+  const approval = part.approval
+  if (approval !== undefined) {
+    if (
+      !approval ||
+      typeof approval !== 'object' ||
+      typeof approval.id !== 'string' ||
+      Object.keys(approval).some(
+        (k) => approval[k] !== undefined && !APPROVAL_FIELDS.includes(k)
+      )
+    )
+      throw new SkipUIParts('unsupported-part')
+    out.approval = { id: approval.id, approved: approval.approved, reason: approval.reason }
+  } else if (part.state === 'output-denied') {
+    // convertToModelMessages dereferences the approval of a denied call, so a
+    // denied call without one could never be re-sent.
+    throw new SkipUIParts('unsupported-part')
+  }
+  return out
+}
+
+// The parts as plain JSON, each reduced to its type's allowlisted fields.
+// Throws SkipUIParts rather than dropping anything that does not fit.
+function sanitizeUIParts(parts: unknown[]): Record<string, unknown>[] {
+  const sanitized = parts.map(sanitizeUIPart)
+  try {
+    return JSON.parse(JSON.stringify(sanitized))
+  } catch {
+    throw new SkipUIParts('unsupported-part')
+  }
+}
+
+// The data URL of the media at `content[index]`, as a file part of
+// `mediaType` carries it.
+function contentMediaUrl(
+  content: any[],
+  index: unknown,
+  mediaType: unknown
+): string | undefined {
+  if (!Number.isInteger(index) || typeof mediaType !== 'string') return undefined
+  const c = content[index as number]
+  if (c?.type === 'image_url' && typeof c.image_url?.url === 'string')
+    return c.image_url.url
+  const data = c?.type === 'input_audio' ? c.input_audio?.data
+    : c?.type === 'input_video' ? c.input_video?.data
+      : undefined
+  return typeof data === 'string' ? `data:${mediaType};base64,${data}` : undefined
+}
+
+// The `content` tool_call entry for a tool part's call id.
+function contentToolCall(content: any[], toolCallId: unknown): any {
+  return content.find(
+    (c) => c?.type === 'tool_call' && c.tool_call_id === toolCallId
+  )
+}
+
+// A stored part with what it points at in `content` filled back in: a data
+// URL (`contentRef`) or a tool output (`outputInContent`). Throws when the
+// pointer does not resolve.
+function resolveContentPointers(part: unknown, content: any[]): unknown {
+  if (!part || typeof part !== 'object') return part
+  const { contentRef, outputInContent, ...rest } = part as Record<string, unknown>
+  if (contentRef !== undefined) {
+    const url = contentMediaUrl(content, contentRef, rest.mediaType)
+    if (url === undefined) throw new SkipUIParts('unsupported-part')
+    rest.url = url
+  }
+  if (outputInContent !== undefined) {
+    const entry = contentToolCall(content, rest.toolCallId)
+    if (outputInContent !== true || !entry || entry.output === undefined)
+      throw new SkipUIParts('unsupported-part')
+    rest.output = entry.output
+  }
+  return rest
+}
+
+// The stored parts, when the carrier is intact and re-deriving the record's
+// `content` and `metadata.toolErrors` from them gives back exactly what is
+// stored: any writer that changed either since (an older build's Stop rewrite,
+// which may touch only `toolErrors`, or an edit) invalidates them.
+function rehydrateUIParts(
+  carrier: unknown,
+  content: ThreadContent[],
+  toolErrors: unknown
+): Record<string, unknown>[] | undefined {
+  const { v, parts } = (carrier ?? {}) as { v?: unknown; parts?: unknown }
+  if (v !== 1 || !Array.isArray(parts) || parts.length === 0) return undefined
+  try {
+    const rehydrated = sanitizeUIParts(
+      parts.map((part) => resolveContentPointers(part, content))
+    )
+    const derived = extractContentPartsFromUIMessage({
+      parts: rehydrated,
+    } as unknown as UIMessage)
+    const derivedErrors = toolErrorsOf({ parts: rehydrated } as unknown as UIMessage)
+    return canonicalJson(derived) === canonicalJson(content) &&
+      canonicalJson(derivedErrors ?? {}) === canonicalJson(toolErrors ?? {})
+      ? rehydrated
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function uiPartsFor(
+  message: UIMessage,
+  content: ThreadContent[],
+  metadata: Record<string, unknown>
+): { uiParts?: { v: 1; parts: unknown[] }; uiPartsSkipped?: UIPartsSkipped } {
+  if (!message.parts?.length) return {}
+  try {
+    const sanitized = sanitizeUIParts(message.parts)
+    const legacy = sanitizeUIParts(
+      contentToUIParts({ ...message, content, metadata } as unknown as ThreadMessage)
+    )
+    if (canonicalJson(legacy) === canonicalJson(sanitized)) return {}
+    const uiParts = {
+      v: 1 as const,
+      // The two large payloads `content` already holds are kept once: a
+      // media data URL and a tool output. The part points at them instead.
+      parts: sanitized.map((part) => {
+        if (part.type === 'file' && typeof part.url === 'string' && part.url.startsWith('data:')) {
+          const ref = content.findIndex(
+            (_, i) => contentMediaUrl(content, i, part.mediaType) === part.url
+          )
+          if (ref < 0) return part
+          const stored: Record<string, unknown> = { ...part, contentRef: ref }
+          delete stored.url
+          return stored
+        }
+        if (part.state === 'output-available' && part.output !== undefined) {
+          const entry = contentToolCall(content, part.toolCallId)
+          if (!entry || canonicalJson(entry.output) !== canonicalJson(part.output))
+            return part
+          const stored: Record<string, unknown> = { ...part, outputInContent: true }
+          delete stored.output
+          return stored
+        }
+        return part
+      }),
+    }
+    if (JSON.stringify(uiParts).length > UI_PARTS_MAX_CHARS)
+      throw new SkipUIParts('size')
+    // Never store a carrier the reader would reject (e.g. a call still in
+    // flight that already has an output, which `content` keeps).
+    if (!rehydrateUIParts(uiParts, content, metadata.toolErrors))
+      throw new SkipUIParts('mismatch')
+    return { uiParts }
+  } catch (error) {
+    // The carrier is optional: whatever goes wrong building it, the turn is
+    // still saved (legacy content), never lost.
+    const reason = error instanceof SkipUIParts ? error.reason : 'unsupported-part'
+    console.warn(
+      `Assistant turn ${message.id} will reload from content only (lossy): ${reason}`,
+      ...(error instanceof SkipUIParts ? [] : [error])
+    )
+    return { uiPartsSkipped: reason }
+  }
+}
+
+/**
+ * The stored `content` and `metadata` of an assistant turn: the one builder
+ * for both places a turn is written (onFinish and rewriteStoredTurn).
+ *
+ * `metadata.uiParts = { v: 1, parts }` is the desktop UI's projection of the
+ * turn: its UIMessage parts, sanitized to plain JSON, so the turn reloads (and
+ * is re-sent to the model) exactly as it streamed. It is written only when
+ * reloading from `content` alone would lose something. A data URL already in
+ * `content` is stored as `contentRef: <index>`, and a tool output `content`
+ * already holds for the same call id as `outputInContent: true`, instead of a
+ * second copy (text and reasoning are duplicated: they are small).
+ * When the parts cannot be stored whole (oversized provider metadata, over
+ * 256 KB, an unsupported part), `uiParts` is omitted and
+ * `metadata.uiPartsSkipped` says why; nothing is silently truncated.
+ *
+ * Reading: `content` stays the canonical record. Older builds and the CLI read
+ * only `content` and ignore these fields. A new build uses `uiParts` only while
+ * re-deriving `content` from it gives back the stored `content`, and otherwise
+ * (including every record written before this field existed) reloads from
+ * `content` as before. Existing records are not migrated or rewritten.
+ *
+ * Trust: like `content`, the carrier is the user's own local data and is
+ * re-sent to the model, including provider metadata (as provider options) and
+ * `providerExecuted`. It grants nothing `content` could not already say.
+ *
+ * `baseMetadata` is spread first, minus any `uiParts` / `uiPartsSkipped` it
+ * carries from an earlier version of the turn.
+ */
+export function assistantRecordFields(
+  message: UIMessage,
+  baseMetadata: Record<string, unknown> | undefined,
+  opts: { stopped?: boolean }
+): { content: ThreadContent[]; metadata: Record<string, unknown> } {
+  const content = extractContentPartsFromUIMessage(message)
+  const toolErrors = toolErrorsOf(message)
+  const metadata: Record<string, unknown> = {
+    ...baseMetadata,
+    ...(opts.stopped ? { stopped: true } : {}),
+    ...(toolErrors ? { toolErrors } : {}),
+  }
+  delete metadata.uiParts
+  delete metadata.uiPartsSkipped
+  return {
+    content,
+    metadata: { ...metadata, ...uiPartsFor(message, content, metadata) },
+  }
 }
