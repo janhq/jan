@@ -93,8 +93,8 @@ pub fn admission() -> &'static tokio::sync::Mutex<()> {
 }
 
 /// Drop every elevation for a thread and return the new generation token.
-/// Callers narrow BEFORE validating or persisting, so a failed or lost write
-/// can never leave an earlier confirmation live.
+/// Callers narrow BEFORE persisting, so a failed or lost write can never
+/// leave an earlier confirmation live.
 pub fn narrow(thread_id: &str) -> u64 {
     let generation = next_generation();
     confirmed().lock().unwrap().insert(

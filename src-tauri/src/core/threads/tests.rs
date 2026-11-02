@@ -1268,11 +1268,11 @@ async fn a_refused_rollback_keeps_consent() {
 }
 
 /// A rollback whose removal FAILS must leave the thread denied: the teardown
-/// narrows on the attempt, like `delete_thread`, and never restores.
-#[cfg(unix)]
+/// narrows on the attempt, like `delete_thread`, and never restores. The
+/// failure is forced through a per-thread test seam rather than directory
+/// permissions, which a suite running as root would silently ignore.
 #[tokio::test]
 async fn a_failed_rollback_still_denies_the_thread() {
-    use std::os::unix::fs::PermissionsExt;
     use tauri_plugin_agent_tools::thread_capabilities::current;
     let (app, data_dir) = mock_app_with_temp_data_dir();
     let created = create_thread(app.handle().clone(), create_test_thread("rollback-fail"))
@@ -1282,11 +1282,14 @@ async fn a_failed_rollback_still_denies_the_thread() {
     set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
         .await
         .unwrap();
-    let dir = get_thread_dir(&data_dir, &id).unwrap();
-    fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
+    *ROLLBACK_REMOVAL_FAILS_FOR.lock().unwrap() = Some(id.clone());
     let refused = rollback_created_thread(app.handle().clone(), id.clone(), created.clone()).await;
-    fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
-    assert!(refused.is_err(), "the removal must fail while the dir is read-only");
+    *ROLLBACK_REMOVAL_FAILS_FOR.lock().unwrap() = None;
+    assert!(refused.is_err(), "the seam must have failed the removal");
+    assert!(
+        get_thread_dir(&data_dir, &id).unwrap().exists(),
+        "the seam fails before anything is removed"
+    );
     let (grant, generation) = current(&id);
     assert!(!grant.shell_network, "a failed rollback narrowed on the attempt");
     assert_ne!(generation, 0, "narrowed, not forgotten: the thread still exists");

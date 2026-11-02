@@ -241,9 +241,13 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
     let data_folder = get_jan_data_folder_path(app_handle);
     let lock = get_lock_for_thread(&thread_id).await;
     let _guard = lock.lock().await;
-    // Narrow the host's in-process confirmation BEFORE validating or writing,
-    // and for every caller rather than only the frontend: a write that then
-    // fails -- or is lost -- must never leave an earlier confirmation live.
+    // Narrow the host's in-process confirmation BEFORE the write, and for
+    // every caller rather than only the frontend: a write that then fails --
+    // or is lost -- must never leave an earlier confirmation live. The input
+    // validation above runs first: a request rejected there writes nothing
+    // and narrows nothing, and a user's revocation does not depend on this
+    // setter accepting it -- the frontend narrows the host pre-queue via
+    // `revoke_thread_capabilities` before this command is ever awaited.
     // This also stops the thread's monitors and reaps their poll children, so
     // nothing keeps running under the authority being replaced.
     let token = tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
@@ -313,10 +317,23 @@ pub async fn rollback_created_thread<R: Runtime>(
     // A rollback refused above keeps the conversation -- and its consent.
     tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
     tauri_plugin_agent_tools::cancel_thread_shells(&thread_id);
+    // Test seam below: proving "a failed removal leaves the thread denied"
+    // needs the removal to fail on demand, and a permissions-based failure is
+    // not deterministic -- a suite running as root ignores directory modes.
+    #[cfg(test)]
+    if ROLLBACK_REMOVAL_FAILS_FOR.lock().unwrap().as_deref() == Some(thread_id.as_str()) {
+        return Err("forced removal failure (test seam)".into());
+    }
     fs::remove_dir_all(directory).map_err(|e| e.to_string())?;
     tauri_plugin_agent_tools::forget_thread_consent(&thread_id).await;
     Ok(())
 }
+
+/// Scoped to one thread id so the other rollback tests, running in parallel
+/// in the same process, never see a forced failure.
+#[cfg(test)]
+pub(super) static ROLLBACK_REMOVAL_FAILS_FOR: std::sync::Mutex<Option<String>> =
+    std::sync::Mutex::new(None);
 
 /// Deletes a thread and all its associated files by removing its directory.
 #[tauri::command]
