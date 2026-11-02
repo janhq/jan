@@ -558,12 +558,20 @@ impl Ledger {
 /// work, since removal deletes it. Returns whether it went.
 #[cfg(feature = "cli")]
 fn remove_if_empty(wt: &ChildWorktree) -> bool {
+    empty_into_trash(wt).is_some()
+}
+
+/// [`remove_if_empty`], saying how it went: `Some(true)` when it was moved
+/// into trash, `Some(false)` when deleted in place, `None` when kept.
+#[cfg(feature = "cli")]
+fn empty_into_trash(wt: &ChildWorktree) -> Option<bool> {
     // A checkout that is no longer what Jan made is never removed: what it
     // holds cannot be read without trusting it.
-    let Ok(checkout) = checkout(wt) else { return false };
-    checkout.commits_anywhere(&wt.base) == Some(0)
-        && checkout.is_clean() == Ok(true)
-        && trash(&wt.path)
+    let checkout = checkout(wt).ok()?;
+    if checkout.commits_anywhere(&wt.base) != Some(0) || checkout.is_clean() != Ok(true) {
+        return None;
+    }
+    trash(&wt.path)
 }
 
 /// Where Jan keeps what it knows of each checkout of a project: beside the
@@ -669,25 +677,28 @@ fn reserve_with(
 }
 
 /// Move a checkout that holds nothing out of the way at once, into the
-/// project's trash, which the startup sweep empties: deleting in place walks
-/// every file a child left (`node_modules`, build output) while the user
-/// waits. Deletes in place when the rename fails (something mounted there, a
-/// handle still open on Windows). Returns whether `path` is gone.
+/// project's trash: deleting in place walks every file a child left
+/// (`node_modules`, build output) while the user waits, and the trash keeps
+/// it a while in case the emptiness check missed work. Deletes in place when
+/// the rename fails (something mounted there, a handle still open on
+/// Windows). `Some(true)` when trashed, `Some(false)` when deleted, `None`
+/// when it is still there.
 #[cfg(feature = "cli")]
-fn trash(path: &Path) -> bool {
+fn trash(path: &Path) -> Option<bool> {
     if let (Some(dir), Some(id)) = (path.parent(), path.file_name()) {
         let bin = dir.join(TRASH_DIR);
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
-        let to = bin.join(format!("{}-{}", id.to_string_lossy(), &nonce[..8]));
+        let to = bin.join(tauri_plugin_agent_tools::workspace::trash_name(&id.to_string_lossy()));
         if std::fs::create_dir_all(&bin).is_ok() && std::fs::rename(path, to).is_ok() {
-            return true;
+            return Some(true);
         }
     }
-    std::fs::remove_dir_all(path).is_ok()
+    std::fs::remove_dir_all(path).is_ok().then_some(false)
 }
 
-/// Empty the trash of `root`'s project. Startup only, off the render loop.
-/// Errors are ignored per entry: another jan's sweep may be deleting it too.
+/// Delete what has been in the trash of `root`'s project for
+/// [`TRASH_KEPT_FOR`](tauri_plugin_agent_tools::workspace::TRASH_KEPT_FOR).
+/// Startup only, off the render loop. A failure is logged, not retried:
+/// another jan's sweep may be deleting it too, and the next start tries again.
 #[cfg(feature = "cli")]
 pub(crate) fn empty_trash(root: &Path) {
     let Some(bin) = project_worktrees_dir(root).map(|d| d.join(TRASH_DIR)) else { return };
@@ -695,10 +706,18 @@ pub(crate) fn empty_trash(root: &Path) {
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
         // Never follow a link: only what is in the trash itself goes.
-        match std::fs::symlink_metadata(&path) {
-            Ok(meta) if meta.is_dir() => drop(std::fs::remove_dir_all(&path)),
-            Ok(_) => drop(std::fs::remove_file(&path)),
-            Err(_) => {}
+        let Ok(meta) = std::fs::symlink_metadata(&path) else { continue };
+        let name = entry.file_name();
+        if !tauri_plugin_agent_tools::workspace::trash_expired(&name.to_string_lossy(), &meta) {
+            continue;
+        }
+        let gone = if meta.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        if let Err(e) = gone {
+            log::warn!("agent: could not empty {} from trash: {e}", path.display());
         }
     }
 }
@@ -907,18 +926,71 @@ impl Batch {
 
     /// Settle every worktree at once, one thread each, so N kept ones cost
     /// the slowest one rather than the sum (bringing a branch back may take a
-    /// fetch). Returns a kept line per worktree that holds work, in order.
-    pub(crate) fn settle(self) -> Vec<String> {
+    /// fetch).
+    pub(crate) fn settle(self) -> Settled {
         let Batch { ledger, owned, report_busy } = self;
         let ledger = ledger.as_ref();
-        std::thread::scope(|scope| {
+        let outcomes: Vec<Outcome> = std::thread::scope(|scope| {
             let settling: Vec<_> = owned
                 .into_iter()
                 .map(|one| scope.spawn(move || settle_one(ledger, one, report_busy)))
                 .collect();
-            settling.into_iter().filter_map(|t| t.join().ok().flatten()).collect()
-        })
+            settling.into_iter().filter_map(|t| t.join().ok()).collect()
+        });
+        let mut settled = Settled::default();
+        for outcome in outcomes {
+            match outcome {
+                Outcome::Kept(line) => settled.kept.push(line),
+                Outcome::Trashed(bin) => {
+                    settled.trashed += 1;
+                    settled.trash = Some(bin);
+                }
+                Outcome::Gone => {}
+            }
+        }
+        settled
     }
+}
+
+/// What settling a batch did, for the notice that tells the user.
+#[cfg(feature = "cli")]
+#[derive(Debug, Default)]
+pub(crate) struct Settled {
+    /// A line per worktree that holds work, in order.
+    pub(crate) kept: Vec<String>,
+    /// How many empty ones went to the trash, and where it is: the
+    /// emptiness check can miss work, and the user must know where to look.
+    trashed: usize,
+    trash: Option<PathBuf>,
+}
+
+#[cfg(feature = "cli")]
+impl Settled {
+    /// The notices naming what was kept and where the empty ones went, each
+    /// shown on its own: the trash line is not one of the kept worktrees.
+    pub(crate) fn notices(&self) -> Vec<String> {
+        let kept = (!self.kept.is_empty()).then(|| kept_notice(&self.kept));
+        let trashed = self.trash.as_ref().map(|bin| {
+            let days = tauri_plugin_agent_tools::workspace::TRASH_KEPT_FOR.as_secs() / 86_400;
+            format!(
+                "{} empty worktree(s) moved to {}; deleted after {days} days",
+                self.trashed,
+                display(bin)
+            )
+        });
+        kept.into_iter().chain(trashed).collect()
+    }
+}
+
+/// How one worktree of a batch was settled.
+#[cfg(feature = "cli")]
+enum Outcome {
+    /// It holds work (or a writer is still in it): its kept line.
+    Kept(String),
+    /// It held nothing and went into the trash at this path.
+    Trashed(PathBuf),
+    /// It held nothing and is gone, or it stays the ledger's unreported.
+    Gone,
 }
 
 /// Decide one worktree of a batch. With a ledger it is claimed first, as an
@@ -926,7 +998,7 @@ impl Batch {
 /// claim (a writer is back in it, or an undo is deciding it) stays the
 /// ledger's, lock included, for the next end.
 #[cfg(feature = "cli")]
-fn settle_one(ledger: Option<&Arc<Ledger>>, one: Owned, report_busy: bool) -> Option<String> {
+fn settle_one(ledger: Option<&Arc<Ledger>>, one: Owned, report_busy: bool) -> Outcome {
     let Owned { wt, hold } = one;
     if let Some(ledger) = ledger {
         if !ledger.claim(&wt.path) {
@@ -939,12 +1011,19 @@ fn settle_one(ledger: Option<&Arc<Ledger>>, one: Owned, report_busy: bool) -> Op
                 state.holds.insert(wt.path.clone(), hold);
             }
             drop(state);
-            return (busy && report_busy).then(|| kept_line(&wt, None));
+            return match busy && report_busy {
+                true => Outcome::Kept(kept_line(&wt, None)),
+                false => Outcome::Gone,
+            };
         }
     }
-    let line = if !wt.path.is_dir() || remove_if_empty(&wt) {
+    let emptied = if wt.path.is_dir() { empty_into_trash(&wt) } else { Some(false) };
+    let outcome = if let Some(trashed) = emptied {
         forget_meta(&wt);
-        None
+        match (trashed, wt.path.parent()) {
+            (true, Some(dir)) => Outcome::Trashed(dir.join(TRASH_DIR)),
+            _ => Outcome::Gone,
+        }
     } else {
         // Whatever the child committed before it was stopped, so the user
         // has the branch to merge.
@@ -952,13 +1031,13 @@ fn settle_one(ledger: Option<&Arc<Ledger>>, one: Owned, report_busy: bool) -> Op
         let line = kept_line(&wt, brought.as_deref());
         // The user owns it now: no later sweep reports it again.
         let _ = write_meta(&wt, true);
-        Some(line)
+        Outcome::Kept(line)
     };
     if let Some(ledger) = ledger {
         ledger.state.lock().unwrap().removing.remove(&wt.path);
     }
     drop(hold);
-    line
+    outcome
 }
 
 #[cfg(feature = "cli")]
@@ -982,7 +1061,7 @@ impl Ledger {
     /// The ledger's lock is held only to take the worktrees and to record
     /// each decision, never across git, so leases and dispatches carry on
     /// meanwhile.
-    pub(crate) fn finish_session(self: &Arc<Self>) -> Vec<String> {
+    pub(crate) fn finish_session(self: &Arc<Self>) -> Settled {
         self.take(true).settle()
     }
 
@@ -1028,11 +1107,11 @@ pub(crate) fn kept_notice(kept: &[String]) -> String {
 /// record does not describe the checkout beside it, and ignores checkouts
 /// made before records were kept. Runs git: call it on the blocking pool.
 #[cfg(feature = "cli")]
-pub(crate) fn sweep_orphans(root: &Path) -> Vec<String> {
+pub(crate) fn sweep_orphans(root: &Path) -> Settled {
     let Some(dir) = project_worktrees_dir(root).and_then(|d| dunce::canonicalize(d).ok()) else {
-        return Vec::new();
+        return Settled::default();
     };
-    let Ok(entries) = std::fs::read_dir(dir.join(META_DIR)) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(dir.join(META_DIR)) else { return Settled::default() };
     let mut owned = Vec::new();
     for entry in entries.filter_map(Result::ok) {
         let name = entry.file_name();
@@ -1076,16 +1155,15 @@ pub(crate) fn sweep_orphans(root: &Path) -> Vec<String> {
 
 /// What a session start sweeps, without holding the start up: the stale and
 /// trashed session scratches, `root`'s project's worktree trash, and the
-/// worktrees crashed sessions left there. `report` gets the kept notice, if
-/// any. Must be called on a runtime.
+/// worktrees crashed sessions left there. `report` gets each notice. Must
+/// be called on a runtime.
 #[cfg(feature = "cli")]
-pub(crate) fn spawn_startup_sweep(root: PathBuf, report: impl FnOnce(String) + Send + 'static) {
+pub(crate) fn spawn_startup_sweep(root: PathBuf, mut report: impl FnMut(String) + Send + 'static) {
     tokio::spawn(tauri_plugin_agent_tools::workspace::sweep_stale_scratch_dirs());
     tokio::task::spawn_blocking(move || {
         empty_trash(&root);
-        let kept = sweep_orphans(&root);
-        if !kept.is_empty() {
-            report(kept_notice(&kept));
+        for notice in sweep_orphans(&root).notices() {
+            report(notice);
         }
     });
 }
@@ -1343,7 +1421,7 @@ mod git_tests {
         assert!(ws.root.join("feature.txt").is_file());
         assert!(ws.note().contains("feature at"), "{}", ws.note());
 
-        assert!(ledger.finish_session().is_empty(), "an untouched ref worktree goes");
+        assert!(ledger.finish_session().kept.is_empty(), "an untouched ref worktree goes");
         assert!(!wt.path.exists());
         let _ = std::fs::remove_dir_all(&clone);
         let _ = std::fs::remove_dir_all(&upstream);
@@ -1366,7 +1444,7 @@ mod git_tests {
         let tip = crate::core::agent::git::head_sha(&committed.root).unwrap();
         std::fs::write(dirty.root.join("a.txt"), "edited\n").unwrap();
 
-        let kept = ledger.finish_session();
+        let kept = ledger.finish_session().kept;
         assert_eq!(kept.len(), 2, "{kept:?}");
         assert!(committed.root.is_dir() && dirty.root.is_dir());
         assert!(!idle.root.exists(), "an untouched ref worktree still goes");
@@ -1400,7 +1478,7 @@ mod git_tests {
         let index = if index.is_absolute() { index } else { ws.root.join(index) };
         std::fs::write(&index, "not an index").unwrap();
 
-        let kept = ledger.finish_session();
+        let kept = ledger.finish_session().kept;
         assert!(ws.root.join("a.txt").is_file(), "the edit survives");
         assert_eq!(kept.len(), 1, "{kept:?}");
         assert!(kept[0].contains("status unknown"), "{kept:?}");
@@ -1419,7 +1497,7 @@ mod git_tests {
         commit(&committed.root, "b.txt");
         std::fs::write(dirty.root.join("a.txt"), "edited\n").unwrap();
 
-        let kept = ledger.finish_session();
+        let kept = ledger.finish_session().kept;
         assert_eq!(kept.len(), 2, "{kept:?}");
         assert!(!idle.root.exists());
         let idle_branch = &idle.worktree.as_ref().unwrap().branch;
@@ -1448,7 +1526,7 @@ mod git_tests {
         std::fs::write(ws.root.join("out/report.md"), "deliverable\n").unwrap();
 
         let kept = crate::core::agent::git::with_global_config(HIDE_UNTRACKED, || {
-            ledger.finish_session()
+            ledger.finish_session().kept
         });
         assert_eq!(kept.len(), 1, "{kept:?}");
         assert!(ws.root.join("out/report.md").is_file());
@@ -1469,7 +1547,7 @@ mod git_tests {
         commit(&ws.root, "b.txt");
         assert!(git(&ws.root, &["switch", "-q", "--detach", &wt.base]));
 
-        let kept = ledger.finish_session();
+        let kept = ledger.finish_session().kept;
         assert_eq!(kept.len(), 1, "{kept:?}");
         assert!(kept[0].contains("1 commit(s)"), "{kept:?}");
         assert!(ws.root.is_dir());
@@ -1566,7 +1644,7 @@ mod git_tests {
         }
         let sweep = {
             let ledger = ledger.clone();
-            std::thread::spawn(move || ledger.finish_session())
+            std::thread::spawn(move || ledger.finish_session().kept)
         };
         std::thread::sleep(Duration::from_millis(500));
         let started = Instant::now();
@@ -1758,7 +1836,7 @@ mod git_tests {
         std::fs::write(wt.path.join(".git"), format!("gitdir: {}\n", evil.display())).unwrap();
 
         let live = ledger.live();
-        let kept = ledger.finish_session();
+        let kept = ledger.finish_session().kept;
         let ran = marker.exists();
         let still_there = wt.path.is_dir();
         let _ = std::fs::remove_file(&marker);
@@ -2040,7 +2118,7 @@ mod git_tests {
         let before = tree(&root.join(".git"), &skip);
 
         let live = ledger.live();
-        let kept = ledger.finish_session();
+        let kept = ledger.finish_session().kept;
         let after = tree(&root.join(".git"), &skip);
         let ran = marker.exists();
         let branch = crate::core::agent::git::resolve_commit(&root, &wt.branch);
@@ -2127,7 +2205,7 @@ mod git_tests {
                 .unwrap();
             assert!(set.success(), "{key}");
 
-            let kept = ledger.finish_session();
+            let kept = ledger.finish_session().kept;
             let fetched = crate::core::agent::git::resolve_commit(&root, &wt.branch);
             let still_there = wt.path.is_dir();
             let _ = std::fs::remove_dir_all(&wt.path);
@@ -2153,7 +2231,7 @@ mod git_tests {
         text.push_str("/etc\n");
         std::fs::write(&alternates, text).unwrap();
 
-        let kept = ledger.finish_session();
+        let kept = ledger.finish_session().kept;
         let fetched = crate::core::agent::git::resolve_commit(&root, &wt.branch);
         let still_there = wt.path.is_dir();
         let _ = std::fs::remove_dir_all(&wt.path);
@@ -2188,7 +2266,7 @@ mod git_tests {
         let (_idle, l2) = ledger.assign(&root, "explore", true, None).unwrap();
         drop((l1, l2));
         commit(&kept.root, "b.txt");
-        assert_eq!(ledger.end_conversation().settle().len(), 1);
+        assert_eq!(ledger.end_conversation().settle().kept.len(), 1);
         for earlier in ["general", "explore"] {
             let reuse = WorkspaceRequest::Reuse(earlier.to_string());
             let err = ledger.assign(&root, "next", true, Some(&reuse)).unwrap_err();
@@ -2210,7 +2288,7 @@ mod git_tests {
         let batch = ledger.end_conversation();
         let (new, lease) = ledger.assign(&root, "general", true, None).unwrap();
         drop(lease);
-        assert!(batch.settle().is_empty());
+        assert!(batch.settle().kept.is_empty());
         assert!(!old.root.exists(), "the old conversation's empty worktree goes");
         assert!(new.root.is_dir(), "the new conversation's worktree stays");
         assert_eq!(ledger.live().len(), 1, "{:?}", ledger.live());
@@ -2225,23 +2303,30 @@ mod git_tests {
         let Some(root) = repo("busyend") else { return };
         let ledger = Arc::new(Ledger::default());
         let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
-        assert!(ledger.end_conversation().settle().is_empty());
+        assert!(ledger.end_conversation().settle().kept.is_empty());
         assert!(ws.root.is_dir(), "a writer is still in it");
         drop(lease);
-        assert!(ledger.finish_session().is_empty());
+        assert!(ledger.finish_session().kept.is_empty());
         assert!(!ws.root.exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Removing an empty worktree is a rename into the project's trash, so
-    /// no one waits for its files to be deleted; the trash is emptied later.
+    /// no one waits for its files to be deleted. The trash keeps it a week,
+    /// in case the emptiness check missed work; older trash goes.
     #[test]
     fn an_empty_worktree_is_moved_to_trash_not_deleted_in_place() {
         let Some(root) = repo("trash") else { return };
         let ledger = Arc::new(Ledger::default());
         let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
         drop(lease);
-        assert!(ledger.finish_session().is_empty());
+        let settled = ledger.finish_session();
+        assert!(settled.kept.is_empty());
+        let bin = display(&dunce::canonicalize(trash_of(&root)).unwrap());
+        assert_eq!(
+            settled.notices(),
+            [format!("1 empty worktree(s) moved to {bin}; deleted after 7 days")]
+        );
         assert!(!ws.root.exists());
         let trashed: Vec<PathBuf> = std::fs::read_dir(trash_of(&root))
             .unwrap()
@@ -2250,8 +2335,16 @@ mod git_tests {
             .collect();
         assert_eq!(trashed.len(), 1, "{trashed:?}");
         assert!(trashed[0].join("a.txt").is_file());
+        let old = trash_of(&root).join("general-0000-1000000000000000000");
+        let unstamped = trash_of(&root).join("general-0000-12345678");
+        std::fs::create_dir_all(&unstamped).unwrap();
+        std::fs::create_dir_all(old.join("deep")).unwrap();
         empty_trash(&root);
-        assert_eq!(std::fs::read_dir(trash_of(&root)).unwrap().count(), 0);
+        assert!(trashed[0].join("a.txt").is_file(), "fresh trash is kept");
+        assert!(!old.exists(), "week-old trash goes");
+        assert!(unstamped.is_dir(), "a fresh entry without a time goes by its mtime");
+        let _ = std::fs::remove_dir_all(&unstamped);
+        let _ = std::fs::remove_dir_all(&trashed[0]);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2265,7 +2358,7 @@ mod git_tests {
         std::fs::create_dir_all(ws.root.join("node_modules/x")).unwrap();
         std::fs::write(ws.root.join("node_modules/x/y.js"), "y\n").unwrap();
         let kept = crate::core::agent::git::with_global_config(HIDE_UNTRACKED, || {
-            ledger.finish_session()
+            ledger.finish_session().kept
         });
         assert_eq!(kept.len(), 1);
         assert!(ws.root.join("node_modules/x/y.js").is_file());
@@ -2292,7 +2385,7 @@ mod git_tests {
             roots.push(ws.root);
         }
         let started = Instant::now();
-        let kept = ledger.finish_session();
+        let kept = ledger.finish_session().kept;
         let took = started.elapsed();
         for dir in &roots {
             let _ = std::fs::remove_dir_all(dir);
@@ -2325,7 +2418,7 @@ mod git_tests {
         assert_eq!(meta.objects, wt.objects);
         assert!(!meta.finished);
         commit(&kept.root, "b.txt");
-        assert_eq!(ledger.finish_session().len(), 1);
+        assert_eq!(ledger.finish_session().kept.len(), 1);
         assert!(read(&json).finished, "a reported worktree is marked");
         for ext in ["json", "lock"] {
             let gone = meta_of(&root).join(format!("{}.{ext}", id_of(&idle)));
@@ -2351,8 +2444,8 @@ mod git_tests {
         std::fs::write(dirty.root.join("a.txt"), "edited\n").unwrap();
         drop(ledger);
 
-        let kept = sweep_orphans(&root);
-        let again = sweep_orphans(&root);
+        let kept = sweep_orphans(&root).kept;
+        let again = sweep_orphans(&root).kept;
         let branch = &committed.worktree.as_ref().unwrap().branch;
         let fetched = crate::core::agent::git::resolve_commit(&root, branch);
         let survived = committed.root.is_dir() && dirty.root.is_dir();
@@ -2374,7 +2467,7 @@ mod git_tests {
         let ledger = Arc::new(Ledger::default());
         let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
         drop(lease);
-        assert!(sweep_orphans(&root).is_empty());
+        assert!(sweep_orphans(&root).kept.is_empty());
         assert!(ws.root.is_dir(), "a live session's worktree stays");
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
@@ -2391,7 +2484,7 @@ mod git_tests {
         drop(ledger);
         let alternates = ws.root.join(".git/objects/info/alternates");
         std::fs::write(&alternates, "/etc\n").unwrap();
-        let kept = sweep_orphans(&root);
+        let kept = sweep_orphans(&root).kept;
         let still_there = ws.root.is_dir();
         let _ = std::fs::remove_dir_all(&ws.root);
         let _ = std::fs::remove_dir_all(&root);
@@ -2421,7 +2514,7 @@ mod git_tests {
         };
         edit(&a, &|m| m.branch = "main".to_string());
         edit(&b, &|m| m.repo = other.clone());
-        let kept = sweep_orphans(&root);
+        let kept = sweep_orphans(&root).kept;
         let both = a.root.is_dir() && b.root.is_dir();
         let branch = &b.worktree.as_ref().unwrap().branch;
         let fetched = crate::core::agent::git::resolve_commit(&other, branch)

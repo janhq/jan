@@ -6883,9 +6883,11 @@ impl App {
         }
         let reports = self.cleanup_reports.clone();
         let settle = move || {
-            let kept = batch.settle();
-            if let (false, Some(reports)) = (kept.is_empty(), reports) {
-                let _ = reports.send(crate::core::agent::child_workspace::kept_notice(&kept));
+            let notices = batch.settle().notices();
+            if let Some(reports) = reports {
+                for notice in notices {
+                    let _ = reports.send(notice);
+                }
             }
         };
         // A sync caller (a plain test) has no runtime, and no worktrees.
@@ -14236,9 +14238,8 @@ pub async fn run(
     while let Some(earlier) = app.cleanup_rx.recv().await {
         eprintln!("{earlier}");
     }
-    let kept = kept.unwrap_or_default();
-    if !kept.is_empty() {
-        eprintln!("{}", crate::core::agent::child_workspace::kept_notice(&kept));
+    for notice in kept.map(|kept| kept.notices()).unwrap_or_default() {
+        eprintln!("{notice}");
     }
     res
 }
