@@ -14,12 +14,12 @@ prompt, and the extra model requests a tool-using turn makes.
 
 | Path | What it is |
 |---|---|
-| `scripts/capture-cowork-schema-fixture.mjs` | Copies the built-in tool schemas out of `src-tauri/plugins/tauri-plugin-agent-tools/src/tools/schema.rs` into `qa/fixtures/unified-baseline/builtin-schemas.json`. `--check` fails on drift. Assumes desktop `tauri` feature, POSIX shell, no escalation. |
+| `scripts/capture-cowork-schema-fixture.mjs` | Copies the built-in tool schemas out of `src-tauri/plugins/tauri-plugin-agent-tools/src/tools/schema.rs` into `qa/fixtures/unified-baseline/builtin-schemas.json`. `--check` fails on drift. Line endings are normalized, so a CRLF checkout is not drift. Assumes desktop `tauri` feature, POSIX shell, no escalation. The same comparison runs in the vitest below, so CI catches `schema.rs` changes and hand edits to the fixture. |
 | `web-app/src/lib/__tests__/unifiedBaseline.test.ts` | Builds the first-turn request for each scenario with the production code paths (chat transport, Cowork tool and prompt builders, `getAgentToolSchemas` filtering). Only the native IPC boundary and app-state stores are stubbed. Writes `requests/*.json` and `summary.json` as file snapshots. Also checks how many model requests the current Cowork loop makes for scripted task shapes. |
 | `qa/fixtures/unified-baseline/requests/*.json` | Replayable OpenAI-compatible `messages` + `tools` per scenario. |
 | `qa/fixtures/unified-baseline/summary.json` | UTF-8 byte sizes of the system prompt, tools JSON and whole request per scenario. |
-| `scripts/unified-baseline-replay.mjs` | Replays the request fixtures against a **loopback** server (literal `127.0.0.1` or `[::1]`) and records server-counted prompt tokens, TTFT, total latency and peak RSS of one PID. Refuses non-loopback URLs and redirects, redacts the key from errors, and rejects truncated streams. |
-| `scripts/unified-baseline-replay.test.mjs` | Checks the replay mechanics against a fake loopback server only. |
+| `scripts/unified-baseline-replay.mjs` | Replays the request fixtures against a **loopback** server (literal `127.0.0.1` or `[::1]`) and records server-counted prompt tokens, TTFT, total latency and peak RSS of one PID. Refuses non-loopback URLs and redirects. Refuses to run when Node's opt-in env proxy (`NODE_USE_ENV_PROXY` / `--use-env-proxy`) meets any `HTTP(S)_PROXY` / `ALL_PROXY` variable, in either case. Rejects unknown scenario names, redacts the key from errors, rejects truncated streams, and bounds every request with `--timeout-ms` (default 600000). |
+| `scripts/unified-baseline-replay.test.mjs` | Checks the replay mechanics against fake loopback servers only, including a trap proxy. `web-app/src/lib/__tests__/unifiedBaselineReplay.test.ts` runs it inside vitest, so it runs wherever `yarn test` does. |
 
 Scenarios (one user turn `Reply with OK.`, no memory notes, no files, no
 MCP/RAG, web search off, Cowork subagents off, fixed date 2026-01-01):
@@ -50,6 +50,41 @@ node --test scripts/unified-baseline-replay.test.mjs
 Review the fixture diff. A changed request is a changed prompt prefix for every
 user, so a large jump in `summary.json` deserves a measured replay before merge.
 
+## Production behaviour captured as-is
+
+The fixtures record what the app sends today, including two quirks that an
+external review asked about. They are deliberately not changed here; this PR
+makes no runtime changes. If either is fixed later, the fixture diff is the
+intended signal.
+
+- **Shell heading in chat.**
+  `CustomChatTransport.buildAgentToolsSystemInstruction` in
+  `web-app/src/lib/custom-chat-transport.ts` builds `['# Shell', 'shell runs
+  …', …].join(' ')` (from `edd85fad4`). The heading and its paragraph land on
+  one line: `# Shell shell runs commands …`. `buildSystemPrompt` joins whole
+  sections with blank lines, so only this section is affected. The
+  `chat-default-assistant-shell` fixture records it verbatim.
+- **`monitor` offered without a sandbox.** `buildCoworkTools` in
+  `web-app/src/lib/coworkTools.ts` adds `monitor` whenever plan mode is off,
+  whatever the sandbox state. So `cowork-execute-no-sandbox` advertises it
+  (1342 bytes of tool JSON) while its prompt says shell commands are
+  unavailable. Execution is still gated:
+  - Dispatch goes through `coworkDispatch.ts` → `startAgentMonitor`
+    (`agentTools.ts`) → the `start_monitor` command in
+    `src-tauri/plugins/tauri-plugin-agent-tools/src/commands.rs`.
+  - That command returns `monitor is unavailable because no OS sandbox could
+    be established on this system` when `jail::backend().enforces()` is false,
+    before parsing arguments or spawning anything. This is the same backend
+    `sandbox_status` reports, which gates `shell`.
+  - With an enforcing sandbox, each poll runs through `confined_shell` with
+    `sandbox: true` (`tools/monitor.rs`, `eval_script`). If confinement cannot
+    be set up, the poll counts as "not yet" rather than running unconfined.
+
+  So the real effect without a sandbox is no unconfined execution, plus a tool
+  schema that can only fail: wasted prompt tokens and, if the model calls it,
+  a wasted step that returns an error. I found no test that drives the
+  no-sandbox refusal in `start_monitor`.
+
 ## Measurement protocol (real local model)
 
 Run on an isolated data folder, never the tester's real Jan data (see #493's
@@ -77,6 +112,8 @@ scheduling noise.
 1. Start Jan, load the model, and enable Local API Server (default
    `http://127.0.0.1:1337/v1`). Set a throwaway API key for the run if none is set.
 2. Find the inference process: `pgrep -f jan-llama-worker` (macOS/Linux).
+   Run the replay without `NODE_USE_ENV_PROXY` or `--use-env-proxy` when proxy
+   variables are set; the script refuses otherwise.
 3. Cold prefill (no KV prefix reuse):
 
    ```sh

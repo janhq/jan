@@ -211,7 +211,8 @@ describe('unified request-shape fixtures (synthetic bytes only)', () => {
     )
     expect(captureFixture(source)).toBe(committed)
     // A CRLF checkout (Windows core.autocrlf) is not drift.
-    expect(captureFixture(source.replace(/\n/g, '\r\n'))).toBe(committed)
+    const crlf = normalizeEol(source).replace(/\n/g, '\r\n')
+    expect(captureFixture(crlf)).toBe(committed)
   })
 
   it('writes replayable first-turn requests and their byte summary', async () => {

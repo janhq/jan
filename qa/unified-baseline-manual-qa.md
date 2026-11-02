@@ -6,7 +6,7 @@ token, TTFT and RSS values below only prove the CLI records what a server
 sends, and that its timing works. They say nothing about any real model.** No
 real model, provider, credential or Jan data was used.
 
-Host: macOS 26 (Darwin 25.6.0) arm64, Node v24.18.0. First pass on `f1fc21a7f`;
+Host: macOS 26 (Darwin 25.6.0) arm64, Node v24.18.0. First pass on `1d0f5b4ca`;
 rows marked † were re-run after the review fixes (next commit).
 
 ## Harness
@@ -49,7 +49,7 @@ NETLOG=net.log node --import ./netlog.mjs scripts/unified-baseline-replay.mjs <a
 | Missing model / unknown scenario | no `--model`; `--scenarios nope` | exit 2 usage; exit 1 `No matching scenarios` |
 | Nonexistent PID | `--pid 999999` | exit 1 `--pid 999999: no such process` |
 
-Findings fixed during this QA. In `f1fc21a7f`: A nonexistent `--pid`
+Findings fixed during this QA. In `1d0f5b4ca`: A nonexistent `--pid`
 had silently produced a blank memory column. Redirect and connection failures
 had printed only `fetch failed`, with no reason. Before the fix the redirect
 was already refused, with 0 trap hits.
@@ -58,7 +58,7 @@ was already refused, with 0 trap hits.
 
 Reviewer: the Jan Agent (`jan 0.8.8-69`, `jan cli agent run --sandbox`) with
 its default config. The default model is Claude Fable, not Codex. It ran
-read-only on a detached snapshot of `f1fc21a7f` plus this harness and its
+read-only on a detached snapshot of `1d0f5b4ca` plus this harness and its
 outputs. It confirmed:
 
 - TTFT of 304–317 ms ignores the role-only chunk.
@@ -82,7 +82,7 @@ fixed in the follow-up commit († rows above):
 | Low | The net log claim overstated coverage | Narrowed (see Harness) |
 
 An earlier Claude (Fable) subagent review, before the PR opened, found 8
-low/medium items. Those were fixed in `47b42c703`.
+low/medium items. Those were fixed in `c8ee0623b`.
 
 ## Fixture stability and drift
 
@@ -103,6 +103,74 @@ is clean. `yarn test:web`: 4871/4871 tests. One file
 (`services/core/__tests__/tauri.test.ts`) fails to load because the bundled
 `@janhq/assistant-extension` package is not built in this checkout. That is
 an environment issue, not something this change touches.
+
+## Round 3: Jan Reviewer findings, rebased onto `d60efe046`
+
+The branch was rebased onto the integration head `d60efe046` (after #9531).
+#9531 adds dispatch-time refusals (`unadvertisedToolRefusal`,
+`capabilityModeRefusal`) and changes no advertised tool or prompt. The
+baseline vitest passed without `-u`, and regenerating gave no diff, so the
+fixtures needed no regeneration.
+
+**Env proxy risk, verified before the fix (Node v24.18.0).** A bounded probe
+ran the CLI against an in-process fake model plus a trap proxy:
+
+| Environment | Model hits | Proxy hits |
+|---|---|---|
+| `NODE_USE_ENV_PROXY=1` with `HTTP_PROXY` or `http_proxy` | 0 | 1 (`CONNECT 127.0.0.1:<port>`) |
+| `NODE_OPTIONS=--use-env-proxy` with `HTTP_PROXY` | 0 | 1 |
+| Opt-in with `HTTPS_PROXY`, or `NO_PROXY=127.0.0.1` | 1 | 0 (direct) |
+| Proxy variables without the opt-in | 1 | 0 (direct) |
+
+So the loopback guarantee did not hold under Node's opt-in env proxy. (A first,
+unbounded probe hung because its fake proxy did not answer `CONNECT`. The
+probes since then bound every child with a deadline and kill only the
+recorded child PID.)
+
+**After the fix**, the bounded runner `qa-run.mjs` used in-process servers
+closed in `finally`. Each CLI run was a child with a 20 s deadline; none was
+hit:
+
+| Case | Result |
+|---|---|
+| Opt-in (`NODE_USE_ENV_PROXY=1` or `NODE_OPTIONS=--use-env-proxy`) with `HTTP_PROXY`, `http_proxy`, `HTTPS_PROXY`, `https_proxy`, or `HTTP_PROXY` + `NO_PROXY=127.0.0.1` | exit 1 `Refusing to run: Node env proxy is enabled ...`; 0 model, 0 proxy, 0 trap hits |
+| Proxy variables without the opt-in; opt-in without a proxy variable | exit 0, 1 model hit, 0 proxy hits |
+| `--scenarios chat-bare,cowork-exec` | exit 1 `Unknown scenario(s): cowork-exec. Available: ...`; 0 requests sent |
+| `--scenarios chat-bare,cowork-plan` | exit 0, 2 requests |
+| Redirect to the trap | exit 1 `fetch failed: unexpected redirect`, 0 trap hits |
+| Server never answers, `--timeout-ms 500` | exit 1 after 527 ms, `Request exceeded 500 ms; run not counted` |
+| Stalls mid-stream after one chunk, `--timeout-ms 500` | exit 1 after 546 ms, same message |
+| `--timeout-ms 0` | exit 1 `--timeout-ms must be an integer >= 1` |
+
+**Proof that the new checks can fail.** Each file was edited temporarily and
+restored with `git checkout`:
+
+- Env-proxy guard call removed: the trap-proxy node test fails (1 of 10), and
+  so does the vitest wrapper (1 failed).
+- One description hand-edited in `builtin-schemas.json`: `--check` exits 1,
+  and the vitest fixture test fails.
+- `schema.rs` and the fixture converted to CRLF: `--check` is clean and the
+  vitest passes 8/8. This first exposed a bug in my test's synthetic CRLF
+  case, which doubled `\r` on CRLF input; it was fixed before commit.
+- One replay assertion broken: the vitest wrapper fails, so CI would catch it.
+
+**Checks at the final head:**
+
+- `node scripts/capture-cowork-schema-fixture.mjs --check`: clean, and
+  regenerating gives no diff.
+- `node --test scripts/unified-baseline-replay.test.mjs`: 10/10.
+- Vitest for the baseline, replay wrapper and related chat/Cowork suites
+  (including #9531's `coworkDispatch` and `coworkSubagent`): 264/264.
+- `yarn tsc -b`: clean. The new test files typecheck clean separately.
+- `node --check` on both scripts: ok. ESLint ignores test files by repo
+  config, and there is no root ESLint for `scripts/`.
+- `yarn test:web`: 4912 passed, 4 failed. The 4 failures are in
+  `routes/__tests__/coworkSkills.test.tsx` (lines 537 and 612 assert
+  `expected undefined to be 1`). The file fails the same 4 on a pristine
+  `d60efe046` worktree and passes 11/11 on the previous parent `753bbc96c`,
+  so the #9531 merge introduced them, not this branch. This branch changes
+  only two new test files under `web-app/`. Plus the known environment-only
+  `tauri.test.ts` load failure (unbuilt `@janhq/assistant-extension`).
 
 ## Not covered (real-model QA still open)
 
@@ -171,6 +239,72 @@ const w = (o) => appendFileSync(log, JSON.stringify({ pid: process.pid, ...o }) 
 dc.subscribe('net.client.socket', ({ socket }) => socket.once('connect', () => w({ connect: `${socket.remoteAddress}:${socket.remotePort}` })))
 const orig = dns.lookup
 dns.lookup = function (host, ...rest) { w({ dnsLookup: host }); return orig.call(this, host, ...rest) }
+```
+
+`qa-run.mjs` (round 3, bounded)
+
+```js
+// Bounded manual QA for the replay CLI. All servers are in-process and closed in
+// finally; each CLI run is a child with a hard deadline, and only that recorded
+// child PID is killed on timeout. Synthetic loopback only; no real credentials.
+import { spawn } from 'node:child_process'
+import { createServer } from 'node:http'
+const repo = process.argv[2]
+const hits = { model: 0, trap: 0, proxy: 0, stall: 0 }
+const sse = (o) => `data: ${JSON.stringify(o)}\n\n`
+const model = createServer((req, res) => {
+  req.resume(); hits.model++
+  if (req.url.startsWith('/redirect')) { res.writeHead(307, { location: `http://127.0.0.1:${ports.trap}/v1/chat/completions` }); return res.end() }
+  res.writeHead(200, { 'content-type': 'text/event-stream' })
+  res.write(sse({ choices: [{ delta: { role: 'assistant' } }] }))
+  setTimeout(() => res.end(sse({ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] }) +
+    sse({ choices: [], usage: { prompt_tokens: 1000, completion_tokens: 1 } }) + 'data: [DONE]\n\n'), 100)
+})
+const trap = createServer((req, res) => { req.resume(); hits.trap++; res.end() })
+const proxy = createServer((req, res) => { req.resume(); hits.proxy++; res.writeHead(502); res.end() })
+proxy.on('connect', (_r, sock) => { hits.proxy++; sock.end('HTTP/1.1 502 trap\r\n\r\n') })
+const stall = createServer((req, res) => {          // /headers: send headers + one chunk, then stall
+  req.resume(); hits.stall++
+  if (req.url.startsWith('/headers')) { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(sse({ choices: [{ delta: { content: 'O' } }] })) }
+})
+const servers = { model, trap, proxy, stall }, ports = {}
+const listen = (s) => new Promise((r) => s.listen(0, '127.0.0.1', () => r(s.address().port)))
+const cli = (args, env = {}, deadlineMs = 20000) => new Promise((resolve) => {
+  const child = spawn(process.execPath, [`${repo}/scripts/unified-baseline-replay.mjs`, '--model', 'synthetic', '--runs', '1', '--warmup', '0', ...args],
+    { env: { PATH: process.env.PATH, ...env }, stdio: ['ignore', 'pipe', 'pipe'] })
+  let out = ''; child.stdout.on('data', (d) => (out += d)); child.stderr.on('data', (d) => (out += d))
+  const t0 = Date.now()
+  const timer = setTimeout(() => { out += ` [HARNESS DEADLINE: killed pid ${child.pid}]`; child.kill('SIGKILL') }, deadlineMs)
+  child.on('close', (code) => { clearTimeout(timer); resolve({ code, ms: Date.now() - t0, last: out.trim().split('\n').pop() }) })
+})
+const show = async (name, args, env) => {
+  for (const k in hits) hits[k] = 0
+  const r = await cli(args, env)
+  console.log(`[${name}] exit=${r.code} ${r.ms}ms hits=${JSON.stringify(hits)} | ${r.last}`)
+}
+try {
+  for (const [k, s] of Object.entries(servers)) ports[k] = await listen(s)
+  const M = `http://127.0.0.1:${ports.model}/v1`, P = `http://127.0.0.1:${ports.proxy}`
+  await show('direct, no proxy env', ['--base-url', M, '--scenarios', 'chat-bare'])
+  for (const [n, env] of [
+    ['NODE_USE_ENV_PROXY=1 HTTP_PROXY', { NODE_USE_ENV_PROXY: '1', HTTP_PROXY: P }],
+    ['NODE_USE_ENV_PROXY=1 http_proxy', { NODE_USE_ENV_PROXY: '1', http_proxy: P }],
+    ['NODE_USE_ENV_PROXY=1 HTTPS_PROXY', { NODE_USE_ENV_PROXY: '1', HTTPS_PROXY: P }],
+    ['NODE_USE_ENV_PROXY=1 https_proxy', { NODE_USE_ENV_PROXY: '1', https_proxy: P }],
+    ['NODE_USE_ENV_PROXY=1 HTTP_PROXY + NO_PROXY=127.0.0.1', { NODE_USE_ENV_PROXY: '1', HTTP_PROXY: P, NO_PROXY: '127.0.0.1' }],
+    ['NODE_OPTIONS=--use-env-proxy http_proxy', { NODE_OPTIONS: '--use-env-proxy', http_proxy: P }],
+    ['HTTP_PROXY without opt-in', { HTTP_PROXY: P }],
+    ['NODE_USE_ENV_PROXY=1 without proxy var', { NODE_USE_ENV_PROXY: '1' }],
+  ]) await show(n, ['--base-url', M, '--scenarios', 'chat-bare'], env)
+  await show('--scenarios valid+typo', ['--base-url', M, '--scenarios', 'chat-bare,cowork-exec'])
+  await show('--scenarios valid pair', ['--base-url', M, '--scenarios', 'chat-bare,cowork-plan'])
+  await show('redirect to trap', ['--base-url', `http://127.0.0.1:${ports.model}/redirect/v1`, '--scenarios', 'chat-bare'])
+  await show('server never answers, --timeout-ms 500', ['--base-url', `http://127.0.0.1:${ports.stall}/v1`, '--scenarios', 'chat-bare', '--timeout-ms', '500'])
+  await show('stalls mid-stream, --timeout-ms 500', ['--base-url', `http://127.0.0.1:${ports.stall}/headers/v1`, '--scenarios', 'chat-bare', '--timeout-ms', '500'])
+  await show('--timeout-ms 0', ['--base-url', M, '--timeout-ms', '0'])
+} finally {
+  for (const s of Object.values(servers)) { s.closeAllConnections(); s.close() }
+}
 ```
 
 </details>
