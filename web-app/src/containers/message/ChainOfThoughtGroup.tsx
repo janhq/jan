@@ -190,7 +190,7 @@ export const ChainOfThoughtGroup = memo(
               <ToolCallCard
                 part={part}
                 messageId={messageId}
-            threadId={threadId}
+                threadId={threadId}
                 citationOffset={citationOffsets.get(partIndex) ?? 0}
                 className="mb-1"
               />

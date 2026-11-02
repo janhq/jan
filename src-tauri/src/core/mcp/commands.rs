@@ -259,6 +259,101 @@ async fn collect_mcp_tools<R: Runtime>(
     Ok(all_tools)
 }
 
+/// Validation is deliberately different from advertisement and legacy fresh-only
+/// enumeration: discover only the requested owner, then prove uniqueness against
+/// every other enabled owner's last successful complete listing. The cache's
+/// sole production writer is collect_mcp_tools (and this function), after live
+/// paginated discovery and connected/active checks. A present empty Vec proves
+/// successful discovery of no tools; an absent entry proves nothing and MUST
+/// fail closed. Never infer absence from a disconnected server or query rivals.
+async fn collect_validation_tools(
+    state: &AppState,
+    server_name: &str,
+    tool_name: &str,
+) -> Result<Vec<ToolWithServer>, String> {
+    let timeout_duration = tool_call_timeout(state).await;
+    let (peer, initial_active) = {
+        let servers = state.mcp_servers.lock().await;
+        let active = state.mcp_active_servers.lock().await;
+        if !active.contains_key(server_name) {
+            return Err(format!("MCP validation target '{server_name}' is disabled"));
+        }
+        let peer = servers
+            .get(server_name)
+            .filter(|service| !service.is_closed())
+            .map(|service| service.peer().clone())
+            .ok_or_else(|| format!("MCP validation target '{server_name}' is disconnected"))?;
+        (peer, active.clone())
+    };
+    let tools = timeout(timeout_duration, list_live_tools(&peer))
+        .await
+        .map_err(|_| format!("Fresh MCP discovery timed out for server '{server_name}'"))?
+        .map_err(|_| format!("Fresh MCP discovery failed for server '{server_name}'"))?;
+    let fresh: Vec<ToolWithServer> = tools
+        .into_iter()
+        .map(|tool| ToolWithServer {
+            name: tool.name.to_string(),
+            description: tool.description.as_ref().map(|d| d.to_string()),
+            input_schema: Value::Object((*tool.input_schema).clone()),
+            server: server_name.to_owned(),
+        })
+        .collect();
+
+    // No remote await while holding these short lifecycle-ordered guards.
+    // Unrelated connection churn is irrelevant: only their known ownership is
+    // used. Target replacement, disablement, or enabled-set/config change is not.
+    let servers = state.mcp_servers.lock().await;
+    let active = state.mcp_active_servers.lock().await;
+    if *active != initial_active
+        || !servers
+            .get(server_name)
+            .is_some_and(|service| same_connection(service, &peer))
+    {
+        return Err("MCP inventory changed during discovery; retry".into());
+    }
+    let mut cache = state.mcp_last_known_tools.lock().await;
+    let inventory = validation_ownership_inventory(
+        server_name,
+        tool_name,
+        fresh.clone(),
+        active.keys().map(String::as_str),
+        &cache,
+    )?;
+    cache.insert(server_name.to_owned(), fresh);
+    Ok(inventory)
+}
+
+fn validation_ownership_inventory<'a>(
+    server_name: &str,
+    tool_name: &str,
+    mut fresh: Vec<ToolWithServer>,
+    enabled: impl Iterator<Item = &'a str>,
+    cache: &HashMap<String, Vec<ToolWithServer>>,
+) -> Result<Vec<ToolWithServer>, String> {
+    if !fresh
+        .iter()
+        .any(|tool| tool.name == tool_name && tool.server == server_name)
+    {
+        return Err(format!(
+            "MCP tool '{tool_name}' is unavailable on server '{server_name}'"
+        ));
+    }
+    for name in enabled.filter(|name| *name != server_name) {
+        let cached = cache.get(name).filter(|tools| tools.iter().all(|tool| tool.server == name))
+            .ok_or_else(|| format!("MCP ownership unavailable for enabled server '{name}': no trustworthy successful discovery inventory"))?;
+        fresh.extend(cached.iter().cloned());
+    }
+    if fresh
+        .iter()
+        .any(|tool| tool.name == tool_name && tool.server != server_name)
+    {
+        return Err(format!(
+            "Ambiguous MCP tool '{tool_name}': multiple enabled servers own this name"
+        ));
+    }
+    Ok(fresh)
+}
+
 fn is_transport_error(error: &str) -> bool {
     let lower = error.to_lowercase();
     lower.contains("transport closed")
@@ -454,7 +549,18 @@ pub async fn get_tools<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     fresh_only: Option<bool>,
+    validation_server: Option<String>,
+    validation_tool: Option<String>,
 ) -> Result<Vec<ToolWithServer>, String> {
+    match (validation_server, validation_tool) {
+        (Some(server), Some(tool)) if !server.trim().is_empty() && !tool.trim().is_empty() => {
+            return collect_validation_tools(&state, &server, &tool).await;
+        }
+        (None, None) => {}
+        _ => {
+            return Err("MCP validation requires both validation_server and validation_tool".into())
+        }
+    }
     collect_mcp_tools(&app, &state, None, fresh_only.unwrap_or(false)).await
 }
 
@@ -1180,6 +1286,208 @@ mod call_tool_routing_tests {
             .await
             .unwrap_err()
             .contains("disconnected"));
+    }
+
+    #[derive(Clone)]
+    struct ValidationServer {
+        entered: std::sync::Arc<tokio::sync::Notify>,
+        release: Option<std::sync::Arc<tokio::sync::Notify>>,
+    }
+
+    impl rmcp::ServerHandler for ValidationServer {
+        fn get_info(&self) -> rmcp::model::ServerInfo {
+            rmcp::model::ServerInfo::new(
+                rmcp::model::ServerCapabilities::builder()
+                    .enable_tools()
+                    .build(),
+            )
+        }
+
+        async fn list_tools(
+            &self,
+            _: Option<rmcp::model::PaginatedRequestParams>,
+            _: rmcp::service::RequestContext<rmcp::RoleServer>,
+        ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
+            self.entered.notify_one();
+            if let Some(release) = &self.release {
+                release.notified().await;
+            }
+            Ok(rmcp::model::ListToolsResult::with_all_items(vec![
+                rmcp::model::Tool::new("search", "fixture", serde_json::Map::new()),
+            ]))
+        }
+    }
+
+    async fn validation_connection(
+        release: Option<std::sync::Arc<tokio::sync::Notify>>,
+    ) -> (
+        crate::core::state::RunningMcpService,
+        std::sync::Arc<tokio::sync::Notify>,
+    ) {
+        use rmcp::ServiceExt;
+        let entered = std::sync::Arc::new(tokio::sync::Notify::new());
+        let server = ValidationServer {
+            entered: entered.clone(),
+            release,
+        };
+        let (server_io, client_io) = tokio::io::duplex(8192);
+        tokio::spawn(async move {
+            let running = server.serve(server_io).await.unwrap();
+            let _ = running.waiting().await;
+        });
+        let app = tauri::test::mock_app();
+        let client = super::super::progress::JanClientHandler::new(
+            super::super::helpers::jan_client_info(),
+            "alpha".into(),
+            app.handle().clone(),
+        )
+        .serve(client_io)
+        .await
+        .unwrap();
+        (client, entered)
+    }
+
+    fn cached_tool(name: &str, server: &str) -> crate::core::mcp::models::ToolWithServer {
+        crate::core::mcp::models::ToolWithServer {
+            name: name.into(),
+            server: server.into(),
+            description: None,
+            input_schema: serde_json::json!({}),
+        }
+    }
+
+    #[tokio::test]
+    async fn targeted_inventory_uses_offline_rival_ownership_not_remote_discovery() {
+        let state = crate::core::state::AppState::default();
+        let (client, _) = validation_connection(None).await;
+        state
+            .mcp_servers
+            .lock()
+            .await
+            .insert("alpha".into(), client);
+        for name in ["alpha", "beta"] {
+            state
+                .mcp_active_servers
+                .lock()
+                .await
+                .insert(name.into(), serde_json::json!({}));
+        }
+        // No beta connection: success demonstrates it is not remotely queried.
+        state
+            .mcp_last_known_tools
+            .lock()
+            .await
+            .insert("beta".into(), vec![cached_tool("other", "beta")]);
+        let inventory = super::collect_validation_tools(&state, "alpha", "search")
+            .await
+            .unwrap();
+        assert_eq!(inventory.len(), 2);
+        assert!(inventory
+            .iter()
+            .any(|tool| tool.name == "other" && tool.server == "beta"));
+        state
+            .mcp_last_known_tools
+            .lock()
+            .await
+            .insert("beta".into(), vec![cached_tool("search", "beta")]);
+        assert!(super::collect_validation_tools(&state, "alpha", "search")
+            .await
+            .unwrap_err()
+            .contains("Ambiguous"));
+        state.mcp_last_known_tools.lock().await.remove("beta");
+        assert!(super::collect_validation_tools(&state, "alpha", "search")
+            .await
+            .unwrap_err()
+            .contains("ownership unavailable"));
+        // Mismatched provenance is not a trustworthy inventory either.
+        state
+            .mcp_last_known_tools
+            .lock()
+            .await
+            .insert("beta".into(), vec![cached_tool("other", "wrong")]);
+        assert!(super::collect_validation_tools(&state, "alpha", "search")
+            .await
+            .unwrap_err()
+            .contains("ownership unavailable"));
+        state
+            .mcp_last_known_tools
+            .lock()
+            .await
+            .insert("beta".into(), vec![]);
+        assert_eq!(
+            super::collect_validation_tools(&state, "alpha", "search")
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(super::collect_validation_tools(&state, "alpha", "missing")
+            .await
+            .unwrap_err()
+            .contains("unavailable"));
+        let client = state.mcp_servers.lock().await.remove("alpha").unwrap();
+        client.cancel().await.unwrap();
+        assert!(super::collect_validation_tools(&state, "alpha", "search")
+            .await
+            .unwrap_err()
+            .contains("disconnected"));
+        state.mcp_active_servers.lock().await.remove("alpha");
+        assert!(super::collect_validation_tools(&state, "alpha", "search")
+            .await
+            .unwrap_err()
+            .contains("disabled"));
+    }
+
+    #[tokio::test]
+    async fn targeted_inventory_rejects_replacement_or_disabling_during_discovery() {
+        use std::sync::Arc;
+        for replace in [true, false] {
+            let state = crate::core::state::AppState::default();
+            let release = Arc::new(tokio::sync::Notify::new());
+            let (client, entered) = validation_connection(Some(release.clone())).await;
+            state
+                .mcp_servers
+                .lock()
+                .await
+                .insert("alpha".into(), client);
+            state
+                .mcp_active_servers
+                .lock()
+                .await
+                .insert("alpha".into(), serde_json::json!({}));
+            let discovery = super::collect_validation_tools(&state, "alpha", "search");
+            tokio::pin!(discovery);
+            assert_pending(discovery.as_mut()).await;
+            entered.notified().await;
+            // An in-flight transport request holds no global lock.
+            assert!(state.mcp_servers.try_lock().is_ok());
+            let old = if replace {
+                let (replacement, _) = validation_connection(None).await;
+                state
+                    .mcp_servers
+                    .lock()
+                    .await
+                    .insert("alpha".into(), replacement)
+            } else {
+                state.mcp_active_servers.lock().await.remove("alpha");
+                None
+            };
+            release.notify_one();
+            assert!(discovery
+                .await
+                .unwrap_err()
+                .contains("changed during discovery"));
+            assert!(!state
+                .mcp_last_known_tools
+                .lock()
+                .await
+                .contains_key("alpha"));
+            if let Some(old) = old {
+                old.cancel().await.unwrap();
+            }
+            let client = state.mcp_servers.lock().await.remove("alpha").unwrap();
+            client.cancel().await.unwrap();
+        }
     }
 
     // Controlled fake remote gates use the exact production snapshot helper and

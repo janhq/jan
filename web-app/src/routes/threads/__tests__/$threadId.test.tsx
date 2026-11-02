@@ -457,7 +457,8 @@ vi.mock('@/lib/agentTools', () => ({
   executeAgentTool: shell.execute,
 }))
 vi.mock('@/hooks/useToolApproval', () => ({ useToolApproval: h.useToolApprovalMock }))
-vi.mock('@/hooks/useToolApprovalRequests', () => ({
+vi.mock('@/hooks/useToolApprovalRequests', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useToolApprovalRequests')>()),
   useToolApprovalRequests: h.useToolApprovalRequestsMock,
 }))
 vi.mock('@/hooks/useAgentMode', () => ({ useAgentMode: h.useAgentModeMock }))
@@ -2067,6 +2068,20 @@ describe('ThreadDetail route', () => {
           toolOrigins: { 'origin-persist': 'test-server' },
         }),
       }))
+    })
+
+    it('reports early validation failures as identity errors, never user denial', async () => {
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue({ kind: 'validation-error', errorText: 'MCP target unavailable during approval' })
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(toolCall('validation-error'))
+        await finishWithToolCalls()
+      })
+      expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
+        toolCallId: 'validation-error', state: 'output-error', errorText: expect.stringContaining('MCP target unavailable during approval'),
+      }))
+      expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(expect.objectContaining({ errorText: 'Tool execution denied by user' }))
     })
 
     it('does NOT execute the tool from onToolCall (execution deferred to onFinish)', async () => {

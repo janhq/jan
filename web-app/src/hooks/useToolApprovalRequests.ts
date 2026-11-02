@@ -1,13 +1,21 @@
 import { create } from 'zustand'
 import { useToolApproval } from './useToolApproval'
 
+/** Validation is not a user decision; this resolved result avoids unattended
+ * early-prompt rejections while retaining the exact diagnostic for the loop. */
+export type ApprovalValidationFailure = { kind: 'validation-error'; errorText: string }
+export type ApprovalResult = boolean | ApprovalValidationFailure
+export function throwIfApprovalValidationFailed(result: ApprovalResult): asserts result is boolean {
+  if (typeof result !== 'boolean') throw new Error(result.errorText)
+}
+
 export type PendingApproval = {
   toolCallId: string
   toolName: string
   threadId: string
   /** MCP server the tool belongs to, so the prompt can offer to trust it. */
   serverName?: string
-  resolve: (approved: boolean) => void
+  resolve: (approved: ApprovalResult) => void
 }
 
 /** Reject/throw to deny an unavailable identity. Called before prompting and granting. */
@@ -33,7 +41,7 @@ type ToolApprovalRequestsState = {
     threadId: string,
     serverName?: string,
     validate?: ApprovalValidator
-  ) => Promise<boolean>
+  ) => Promise<ApprovalResult>
   resolveApproval: (toolCallId: string, decision: ApprovalDecision) => void
   cancelApproval: (toolCallId: string) => void
   clearPendingForThread: (threadId: string) => void
@@ -60,7 +68,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
         return { pending: next }
       })
     }
-    const finish = (entry: InFlightApproval, approved: boolean) => {
+    const finish = (entry: InFlightApproval, approved: ApprovalResult) => {
       if (!isCurrent(entry)) return
       inFlight.delete(entry.toolCallId)
       entry.controller.abort()
@@ -74,7 +82,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       requestApproval: (toolCallId, toolName, threadId, serverName, validate) => {
         const previous = inFlight.get(toolCallId)
         if (previous) finish(previous, false)
-        return new Promise<boolean>((resolve) => {
+        return new Promise<ApprovalResult>((resolve) => {
           const entry: InFlightApproval = {
             toolCallId, toolName, threadId, serverName, resolve, validate,
             deciding: false, controller: new AbortController(),
@@ -97,8 +105,8 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
               try {
                 await validate(entry.controller.signal)
                 publish()
-              } catch {
-                finish(entry, false)
+              } catch (error) {
+                finish(entry, { kind: 'validation-error', errorText: error instanceof Error ? error.message : 'MCP identity validation failed' })
               }
             })()
           }
@@ -136,8 +144,8 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
             try {
               await entry.validate!(entry.controller.signal)
               grant()
-            } catch {
-              finish(entry, false)
+            } catch (error) {
+              finish(entry, { kind: 'validation-error', errorText: error instanceof Error ? error.message : 'MCP identity validation failed' })
             }
           })()
         }

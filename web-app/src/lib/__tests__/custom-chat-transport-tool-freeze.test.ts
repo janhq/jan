@@ -96,6 +96,31 @@ describe('CustomChatTransport smart-tool-routing freeze', () => {
     transport = new CustomChatTransport('sys', 'thread-1')
   })
 
+  it('refreshes full ownership only when the routed set is invalidated', async () => {
+    await transport.refreshTools()
+    expect(mcpService.getTools).toHaveBeenCalledTimes(1)
+    await transport.refreshTools()
+    await transport.refreshTools()
+    expect(mcpService.getTools).toHaveBeenCalledTimes(1)
+    h.disabledTools = ['srv::newly-disabled']
+    await transport.refreshTools()
+    expect(mcpService.getTools).toHaveBeenCalledTimes(2)
+    h.servers = ['srv', 'other']
+    await transport.refreshTools()
+    expect(mcpService.getTools).toHaveBeenCalledTimes(3)
+  })
+
+  it('shares the collision discovery with orchestrator all-tools fallback', async () => {
+    h.getRelevantTools.mockImplementationOnce(async (_message, service) => {
+      const first = await service.getTools()
+      const second = await service.getTools()
+      expect(first).toBe(second)
+      return first
+    })
+    await transport.refreshTools()
+    expect(mcpService.getTools).toHaveBeenCalledTimes(1)
+  })
+
   it('routes once and freezes the set across subsequent turns', async () => {
     transport.setLastUserMessage('first query')
     await transport.refreshTools()

@@ -34,8 +34,8 @@ describe('TauriMCPService – coverage', () => {
 
   it('uses uncached fail-closed native discovery only for authorization inventories', async () => {
     vi.mocked(invoke).mockResolvedValue([])
-    await svc.getTools({ freshOnly: true })
-    expect(invoke).toHaveBeenCalledWith('get_tools', { freshOnly: true })
+    await svc.getTools({ freshOnly: true, validationServer: 'alpha', validationTool: 'read' })
+    expect(invoke).toHaveBeenCalledWith('get_tools', { freshOnly: true, validationServer: 'alpha', validationTool: 'read' })
     expect(mockCore.api.getTools).not.toHaveBeenCalled()
     await svc.getTools()
     expect(mockCore.api.getTools).toHaveBeenCalledOnce()

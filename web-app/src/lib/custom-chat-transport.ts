@@ -877,6 +877,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   // the routed set for the thread's lifetime so the prefix stays stable;
   // re-route only when the connected servers or disabled-tool set changes.
   private frozenRoutedTools: MCPTool[] | null = null
+  private frozenIdentityInventory: MCPTool[] | null = null
   private frozenRoutedSig = ''
   private onTokenUsage?: TokenUsageCallback
   private hasDocuments = false
@@ -1163,8 +1164,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           mcpService.getToolsForServers &&
           mcpService.getServerSummaries
         ) {
-          // Routing/disabled filtering must not conceal a colliding rival.
-          identityInventory = await mcpService.getTools()
           const summaries = await mcpService.getServerSummaries!()
           const routedSig = JSON.stringify({
             servers: summaries.map((s) => s.name).sort(),
@@ -1172,7 +1171,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           })
           if (this.frozenRoutedTools && this.frozenRoutedSig === routedSig) {
             mcpTools = this.frozenRoutedTools
+            identityInventory = this.frozenIdentityInventory ?? []
           } else {
+            // Refresh collision ownership with the routed set, not every turn.
+            // Dispatch still performs fresh target revocation checks.
+            identityInventory = await mcpService.getTools()
+
             const routerModel =
               mcpSettings.useLightweightRouterModel &&
               mcpSettings.routerModelProvider.trim() &&
@@ -1182,7 +1186,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             mcpTools = await mcpOrchestrator.getRelevantTools(
               this.lastUserMessage,
               {
-                getTools: () => mcpService.getTools(),
+                getTools: async () => identityInventory,
                 getToolsForServers: (names) =>
                   mcpService.getToolsForServers!(names),
                 getServerSummaries: () => Promise.resolve(summaries),
@@ -1193,6 +1197,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                 abortSignal,
               }
             )
+            this.frozenIdentityInventory = identityInventory
             this.frozenRoutedTools = mcpTools
             this.frozenRoutedSig = routedSig
           }

@@ -105,7 +105,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
-import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { useToolApprovalRequests, throwIfApprovalValidationFailed, type ApprovalResult } from '@/hooks/useToolApprovalRequests'
 import { toolOriginKey, useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
@@ -229,7 +229,7 @@ useChatSessions.subscribe((state) => {
 // thread switches), so one thread finishing or being left would drop another
 // thread's pending approvals and prompt the user again.
 const callMcpIdentities = new Map<string, Map<string, string | undefined>>()
-const toolApprovalPromises = new Map<string, Map<string, Promise<boolean>>>()
+const toolApprovalPromises = new Map<string, Map<string, Promise<ApprovalResult>>>()
 const approvalsOf = (threadId: string) => {
   let approvals = toolApprovalPromises.get(threadId)
   if (!approvals) {
@@ -841,7 +841,7 @@ function ThreadDetail() {
             const toolName = toolCall.toolName
             const serverName = callMcpIdentities.get(threadId)?.get(toolCall.toolCallId)
             const checkMcp = (validationSignal: AbortSignal = stopSignal) => assertMcpIdentityAvailable(
-              toolName, serverName, () => serviceHub.mcp().getTools({ freshOnly: true }),
+              toolName, serverName, () => serviceHub.mcp().getTools({ freshOnly: true, validationServer: serverName, validationTool: toolName }),
               (server, name) => useToolAvailable.getState().isToolDisabled(server, name),
               validationSignal
             )
@@ -892,6 +892,7 @@ function ThreadDetail() {
             // closing rather than as the user's refusal.
             if (stoppedByUser() || isChatClosing()) break
 
+            throwIfApprovalValidationFailed(approved)
             if (!approved) {
               record({
                 state: 'output-error',
@@ -1161,7 +1162,7 @@ function ThreadDetail() {
               threadId,
               serverName,
               (validationSignal) => assertMcpIdentityAvailable(
-                toolCall.toolName, serverName, () => serviceHub.mcp().getTools({ freshOnly: true }),
+                toolCall.toolName, serverName, () => serviceHub.mcp().getTools({ freshOnly: true, validationServer: serverName, validationTool: toolCall.toolName }),
                 (server, name) => useToolAvailable.getState().isToolDisabled(server, name),
                 validationSignal
               )

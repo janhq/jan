@@ -367,7 +367,7 @@ describe('validated approval lifecycle (real approval stores and identity valida
     const result = requests.requestApproval('validated', 'read', 'validated-thread', 'alpha',
       () => assertMcpIdentityAvailable('read', 'alpha', getTools, () => false))
     expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
-    await expect(result).resolves.toBe(false)
+    await expect(result).resolves.toMatchObject({ kind: 'validation-error', errorText: expect.any(String) })
     expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
     expectNoTrust()
   })
@@ -381,7 +381,7 @@ describe('validated approval lifecycle (real approval stores and identity valida
     await expect(useToolApprovalRequests.getState().requestApproval(
       'validated', 'read', 'validated-thread', 'alpha',
       () => assertMcpIdentityAvailable('read', 'alpha', getTools, () => false)
-    )).resolves.toBe(false)
+    )).resolves.toMatchObject({ kind: 'validation-error' })
     expect(getTools).toHaveBeenCalledOnce()
     expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
   })
@@ -399,7 +399,7 @@ describe('validated approval lifecycle (real approval stores and identity valida
         getTools.mockResolvedValue(tools)
         disabled = reason === 'disabled'
         requests.resolveApproval('validated', decision)
-        await expect(result).resolves.toBe(false)
+        await expect(result).resolves.toMatchObject({ kind: 'validation-error' })
         expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
         expectNoTrust()
       }
@@ -451,11 +451,11 @@ describe('validated approval lifecycle (real approval stores and identity valida
     expectNoTrust()
   })
 
-  it('converts a synchronous validator throw into a denied approval', async () => {
+  it('distinguishes a synchronous validator failure from a user denial', async () => {
     await expect(useToolApprovalRequests.getState().requestApproval(
       'validated', 'read', 'validated-thread', 'alpha',
       () => { throw new Error('identity unavailable') }
-    )).resolves.toBe(false)
+    )).resolves.toEqual({ kind: 'validation-error', errorText: 'identity unavailable' })
     expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
     expectNoTrust()
   })
