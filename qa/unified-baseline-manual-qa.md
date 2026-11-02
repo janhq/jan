@@ -198,7 +198,7 @@ clean, and `node --check` passes on both scripts.
 
 | Severity | Finding | Fix and verification |
 |---|---|---|
-| Blocking | CI runs Node 20, which rejects `--use-env-proxy` in `NODE_OPTIONS` at startup (exit 9), so the new child cases failed | Reproduced on Node 20.20.2 (`--use-env-proxy is not allowed in NODE_OPTIONS`). The tests now feature-detect with `process.allowedNodeEnvironmentFlags`. Where the flag is supported, they assert our guard refuses. On older Node they assert Node refuses to start (non-zero exit, message names the flag). Either way, 0 model and 0 proxy hits. The in-process guard matrix covers every form on every version |
+| Blocking | CI runs Node 20, which rejects `--use-env-proxy` in `NODE_OPTIONS` at startup (exit 9), so the new child cases failed | Reproduced on Node 20.20.2 (`--use-env-proxy is not allowed in NODE_OPTIONS`). The tests now feature-detect with `process.allowedNodeEnvironmentFlags`. Where the flag is supported, they assert our guard refuses. On older Node they assert Node's own startup rejection: exit 9 and `--use-env-proxy is not allowed in NODE_OPTIONS` (tightened after the local review below). Either way, 0 model and 0 proxy hits. The in-process guard matrix covers every form on every version |
 | Important | The spawned CLI path used `URL.pathname`, which is `/C:/...` on Windows; the child env kept only `PATH` | `fileURLToPath`; the child env is the inherited env minus proxy, opt-in and `NODE_OPTIONS` keys (any case), so `SystemRoot` and the rest survive. A new test checks the path exists and has no drive-after-slash form, and checks env preservation and stripping |
 
 Verification:
@@ -215,6 +215,15 @@ Verification:
   `NODE_OPTIONS` cases exit 9 at Node startup with 0 hits.
 - Node 24: vitest 264/264 across the related suites, `tsc -b` clean,
   `git diff --check` clean.
+
+Local Jan Agent review of `5bc189d0a` (default config, read-only): 1 medium.
+The Node < 24 branch accepted any non-zero exit that mentioned the flag. It
+now requires exit 9 and Node's exact diagnostic. The reviewer also noted that
+Windows force-terminates without running the suite's SIGTERM handler, so on
+Windows each child's own timeout and deadline are the cleanup fallback
+(commented in the test). In its sandbox it ran 9/11, the 2 failures being
+`ps` spawns blocked (EPERM). It confirmed Node 24 guard coverage is not
+weakened, and that the env filter and `fileURLToPath` path are correct.
 
 Node 20.20.2 was installed with `fnm` for these checks; it is removed again
 afterwards, and the default Node was never changed.

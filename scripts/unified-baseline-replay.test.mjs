@@ -13,6 +13,8 @@ const sse = (o) => `data: ${JSON.stringify(o)}\n\n`
 
 // CLI children this process spawned. If a supervisor (the vitest wrapper)
 // terminates us, kill exactly these recorded children, nothing found by name.
+// Windows force-terminates without running this handler; there each child's
+// own request timeout and 6 s deadline are the fallback.
 const liveChildren = new Set()
 process.once('SIGTERM', () => {
   for (const child of liveChildren) child.kill('SIGKILL')
@@ -206,9 +208,10 @@ test('CLI refuses to run under an env proxy: nothing reaches the proxy or the mo
       assert.equal(r.code, 1, r.out)
       assert.match(r.out, /Refusing to run: Node env proxy/)
     } else {
-      // Node < 24 refuses the unknown flag at startup (exit 9): also safe.
-      assert.notEqual(r.code, 0, r.out)
-      assert.match(r.out, /use-env-proxy/)
+      // Node < 24 refuses the unknown flag at startup: also safe, but prove
+      // it was Node's own rejection, not some other failure.
+      assert.equal(r.code, 9, r.out)
+      assert.match(r.out, /--use-env-proxy is not allowed in NODE_OPTIONS/)
     }
     assert.deepEqual(r.hits, { model: 0, proxy: 0 })
   }
