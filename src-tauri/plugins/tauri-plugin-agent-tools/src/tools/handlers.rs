@@ -1126,7 +1126,8 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         let mut out = collect_and_format(child, spill_scratch, sink, tail).await;
         // Appended inside the task so a backgrounded job carries the hint too.
         if sandboxed {
-            out.push_str(&sandbox_denial_note(&out, &policy, escalation));
+            let note = sandbox_denial_note(&out, &policy, escalation);
+            insert_before_exit_marker(&mut out, &note);
         }
         if let Some(pid) = pid {
             proc::unregister(thread_owned.as_deref(), pid);
@@ -1419,54 +1420,63 @@ impl BashCapture {
         if let Some(w) = self.spill.as_mut() {
             let _ = w.flush();
         }
-        let retained = String::from_utf8_lossy(self.tail.make_contiguous()).into_owned();
+        let raw = self.tail.make_contiguous();
+        // Bytes dropped from the front cut into the first retained line. That
+        // loses visible text unless the line is a CR redraw whose last frame
+        // starts inside the retained part (only that frame is ever shown).
+        let front_cut = self.total_bytes > raw.len() && {
+            let first = raw.split(|&b| b == b'\n').next().unwrap_or_default();
+            let first = first.strip_suffix(b"\r").unwrap_or(first);
+            !first.contains(&b'\r')
+        };
+        let retained = String::from_utf8_lossy(raw).into_owned();
         let collapsed = sanitize_output(&retained);
         let capped = tail_cap(&collapsed, BASH_MAX_LINES, BASH_MAX_BYTES);
         let shown_lines = capped.matches('\n').count();
-        // Truncated when the model-facing output lost real lines (front dropped)
+        // Truncated when the model-facing output lost real lines (front dropped),
+        // raw bytes (front dropped from a line with no newline in the lost part)
         // or bytes (tail cap). CR-only progress redraws collapse to a single
         // line, so they read as complete rather than truncated.
-        let truncated = self.total_newlines > shown_lines || capped.len() < collapsed.len();
+        let truncated = self.total_newlines > shown_lines
+            || front_cut
+            || capped.len() < collapsed.len();
 
-        // Always emit an explicit exit marker on its own line. A bare exit code
-        // (including 0) is the only reliable success signal: commands like
-        // `git push` write their normal status to stderr on success, so stderr
-        // text must not be read as failure.
         let mut body = capped;
         if !body.is_empty() && !body.ends_with('\n') {
             body.push('\n');
         }
+        if truncated {
+            let shown = body.len();
+            let path = match self.spill_path.take() {
+                Some(p) => Some(p),
+                None => write_temp_output(&collapsed, self.scratch.as_deref()),
+            }
+            .map(|p| crate::tools::sandbox::scratch_display_path(self.scratch.as_deref(), &p));
+            match path {
+                Some(p) => body.push_str(&format!(
+                    "[output truncated at {shown} of {} bytes; full output written \
+                     to {p}. Use the read tool (with offset/limit) on that path to see \
+                     the rest]\n",
+                    self.total_bytes,
+                )),
+                None => body.push_str(&format!(
+                    "[output truncated at {shown} of {} bytes]\n",
+                    self.total_bytes,
+                )),
+            }
+        } else if let Some(p) = self.spill_path.take() {
+            remove_spill_file(&p);
+        }
+
+        // Always end with an explicit exit marker on its own, final line. A bare
+        // exit code (including 0) is the only reliable success signal: commands
+        // like `git push` write their normal status to stderr on success, so
+        // stderr text must not be read as failure.
         match code {
             Some(code) => body.push_str(&format!("[exit {code}]")),
             None => body.push_str("[terminated by signal]"),
         }
-
-        if !truncated {
-            if let Some(p) = self.spill_path.take() {
-                remove_spill_file(&p);
-            }
-            return body;
-        }
-
-        let path = match self.spill_path.take() {
-            Some(p) => Some(p),
-            None => write_temp_output(&collapsed, self.scratch.as_deref()),
-        }
-        .map(|p| crate::tools::sandbox::scratch_display_path(self.scratch.as_deref(), &p));
-        match path {
-            Some(p) => format!(
-                "{body}\n[output truncated at {} of {} bytes; full output written \
-                 to {p}. Use the read tool (with offset/limit) on that path to see \
-                 the rest]",
-                body.len(),
-                self.total_bytes,
-            ),
-            None => format!(
-                "{body}\n[output truncated at {} of {} bytes]",
-                body.len(),
-                self.total_bytes,
-            ),
-        }
+        body
     }
 }
 
@@ -1499,13 +1509,27 @@ fn sandbox_denial_note(out: &str, policy: &jail::Policy, escalation: bool) -> St
     note
 }
 
+/// Splice `note` (which starts with `\n`) in above a shell result's exit
+/// marker, so the marker stays the final line as the tool description
+/// promises. Output without a marker on its last line gets `note` appended.
+pub fn insert_before_exit_marker(out: &mut String, note: &str) {
+    let at = out.rfind('\n').map_or(0, |i| i + 1);
+    if note.is_empty() || exit_marker(&out[at..]).is_none() {
+        out.push_str(note);
+        return;
+    }
+    let line = note.strip_prefix('\n').unwrap_or(note);
+    out.insert_str(at, &format!("{line}\n"));
+}
+
 /// The escalation half of [`sandbox_denial_note`].
 const ESCALATION_HINT: &str = "\n[If this command is needed for the task, rerun it with `escalate: true` and a `justification` to ask the user to run it outside the sandbox.]";
 
 /// True when a shell tool result reports failure via its exit marker: a
 /// non-zero `[exit N]` or a signal termination. The marker is emitted by
-/// [`BashCapture::finish`] on its own line and a truncation note may follow it,
-/// so scan every line rather than only the tail. Model-facing content is
+/// [`BashCapture::finish`] as the final line, but results saved before that
+/// order carry a truncation note after it, so scan every line rather than
+/// only the tail. Model-facing content is
 /// deliberately left unprefixed (a non-zero exit is not an "ERROR" string, since
 /// commands like `grep`/`diff`/`test` exit non-zero without failing); this feeds
 /// the display-only `is_error` flag so the TUI marks the call failed.
@@ -4067,6 +4091,55 @@ mod tests {
         );
         assert!(out.contains("[exit 0]"), "unexpected: {out}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A first line longer than the window loses bytes from the front without
+    /// losing a newline, and that must still be reported as truncation.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn bash_long_first_line_without_newline_is_flagged_truncated() {
+        let root = unique_root();
+        let out = execute_builtin(
+            lookup("shell").unwrap(),
+            &json!({"command": "printf 'START%070000dEND\\nlast\\n' 0"}),
+            &root,
+        )
+        .await;
+        assert!(!out.contains("START"), "front was not dropped: {}", &out[..80]);
+        assert!(out.contains("output truncated at"), "silent truncation: end of {}", &out[out.len() - 200..]);
+        assert!(out.ends_with("[exit 0]"), "exit marker not last: {}", &out[out.len() - 300..]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The tool description promises a final `[exit N]` line: the truncation
+    /// notice goes above it, never after it.
+    #[test]
+    fn bash_capture_puts_the_exit_marker_last_when_truncated() {
+        let mut cap = BashCapture::new(None);
+        for i in 0..5000 {
+            cap.push(format!("line {i:060}\n").as_bytes());
+        }
+        let out = cap.finish(Some(2));
+        let (head, last) = out.rsplit_once('\n').unwrap();
+        assert_eq!(last, "[exit 2]");
+        assert!(head.rsplit_once('\n').unwrap().1.starts_with("[output truncated at"), "{head}");
+        assert!(bash_result_failed(&out));
+    }
+
+    /// The sandbox hint is spliced in above the exit marker, so the marker
+    /// stays the final line.
+    #[test]
+    fn notes_are_inserted_above_the_exit_marker() {
+        let mut out = "touch: x: Read-only file system\n[exit 1]".to_string();
+        insert_before_exit_marker(&mut out, "\n[sandbox: limits]");
+        assert_eq!(out, "touch: x: Read-only file system\n[sandbox: limits]\n[exit 1]");
+        let mut bare = "[terminated by signal]".to_string();
+        insert_before_exit_marker(&mut bare, "\n[sandbox: limits]");
+        assert_eq!(bare, "[sandbox: limits]\n[terminated by signal]");
+        let mut none = "no marker".to_string();
+        insert_before_exit_marker(&mut none, "\n[note]");
+        assert_eq!(none, "no marker\n[note]");
     }
 
     // POSIX command text: Windows runs PowerShell.
