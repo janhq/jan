@@ -23,6 +23,7 @@ dependencies = [
  "fix-path-env",
  "flate2",
  "form_urlencoded",
+ "fs4",
  "futures",
  "futures-util",
  "genai",
