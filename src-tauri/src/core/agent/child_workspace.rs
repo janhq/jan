@@ -515,7 +515,13 @@ impl Ledger {
     /// holds nothing. Everything else the session made stays, since a later
     /// dispatch may still name it. Call after the dispatch's lease is gone.
     pub(crate) fn undo(&self, name: &str, ws: &ChildWorkspace) {
-        self.state.lock().unwrap().by_name.remove(name);
+        // Only while the name is still this dispatch's: an undo arriving after
+        // the conversation ended must not drop the next one's same name.
+        let mut state = self.state.lock().unwrap();
+        if state.by_name.get(name) == Some(ws) {
+            state.by_name.remove(name);
+        }
+        drop(state);
         if let Some(wt) = ws.worktree.as_ref().filter(|_| ws.fresh) {
             self.remove_unless_busy(wt);
         }
@@ -2301,6 +2307,26 @@ mod git_tests {
         assert_eq!(ledger.live().len(), 1, "{:?}", ledger.live());
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A stale dispatch of the old conversation undone after a switch takes
+    /// back only its own worktree, never the new conversation's same name.
+    #[test]
+    fn a_late_undo_keeps_the_next_conversations_name() {
+        let Some(root) = repo("late-undo") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (old, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        let batch = ledger.end_conversation();
+        let (new, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        ledger.undo("general", &old);
+        let reuse = WorkspaceRequest::Reuse("general".to_string());
+        let again = ledger.assign(&root, "next", false, Some(&reuse)).map(|(ws, _)| ws.root);
+        drop(batch.settle());
+        let _ = ledger.finish_session();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(again, Ok(new.root));
     }
 
     /// A writer still in its worktree when the conversation ends keeps it,
