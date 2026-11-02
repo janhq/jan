@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useToolApprovalRequests } from '../useToolApprovalRequests'
+import { approvalKey, useToolApprovalRequests, type ApprovalResult } from '../useToolApprovalRequests'
 import { useToolApproval } from '../useToolApproval'
 import { assertMcpIdentityAvailable } from '@/lib/chatMcpIdentity'
 import type { MCPTool } from '@/types/completion'
@@ -36,14 +36,14 @@ describe('useToolApprovalRequests', () => {
     })
   })
 
-  it('stores a pending approval keyed by toolCallId', () => {
+  it('stores a pending approval keyed by threadId and toolCallId', () => {
     const { result } = renderHook(() => useToolApprovalRequests())
 
     act(() => {
       result.current.requestApproval('tc1', 'tool-a', 'thread-1')
     })
 
-    expect(result.current.pending['tc1']).toMatchObject({
+    expect(result.current.pending[approvalKey('thread-1', 'tc1')]).toMatchObject({
       toolCallId: 'tc1',
       toolName: 'tool-a',
       threadId: 'thread-1',
@@ -54,13 +54,13 @@ describe('useToolApprovalRequests', () => {
     useToolApproval.setState({ allowAllMCPPermissions: true })
     const { result } = renderHook(() => useToolApprovalRequests())
 
-    let p: Promise<boolean>
+    let p: Promise<ApprovalResult>
     act(() => {
       p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
     })
 
     await expect(p!).resolves.toBe(true)
-    expect(result.current.pending['tc1']).toBeUndefined()
+    expect(result.current.pending[approvalKey('thread-1', 'tc1')]).toBeUndefined()
   })
 
   it('auto-resolves true (no pending) when the tool is already approved for the thread', async () => {
@@ -69,40 +69,40 @@ describe('useToolApprovalRequests', () => {
     })
     const { result } = renderHook(() => useToolApprovalRequests())
 
-    let p: Promise<boolean>
+    let p: Promise<ApprovalResult>
     act(() => {
       p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
     })
 
     await expect(p!).resolves.toBe(true)
-    expect(result.current.pending['tc1']).toBeUndefined()
+    expect(result.current.pending[approvalKey('thread-1', 'tc1')]).toBeUndefined()
   })
 
   it('resolveApproval allow-once resolves true without persisting the tool', async () => {
     const { result } = renderHook(() => useToolApprovalRequests())
 
-    let p: Promise<boolean>
+    let p: Promise<ApprovalResult>
     act(() => {
       p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
     })
     act(() => {
-      result.current.resolveApproval('tc1', 'allow-once')
+      result.current.resolveApproval('tc1', 'allow-once', 'thread-1')
     })
 
     await expect(p!).resolves.toBe(true)
     expect(useToolApproval.getState().isToolApproved('thread-1', 'tool-a')).toBe(false)
-    expect(result.current.pending['tc1']).toBeUndefined()
+    expect(result.current.pending[approvalKey('thread-1', 'tc1')]).toBeUndefined()
   })
 
   it('resolveApproval allow-thread persists the tool for that thread only', async () => {
     const { result } = renderHook(() => useToolApprovalRequests())
 
-    let p: Promise<boolean>
+    let p: Promise<ApprovalResult>
     act(() => {
       p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
     })
     act(() => {
-      result.current.resolveApproval('tc1', 'allow-thread')
+      result.current.resolveApproval('tc1', 'allow-thread', 'thread-1')
     })
 
     await expect(p!).resolves.toBe(true)
@@ -114,7 +114,7 @@ describe('useToolApprovalRequests', () => {
   it('allow-thread preserves the server identity for subsequent requests', async () => {
     const requests = useToolApprovalRequests.getState()
     const initial = requests.requestApproval('first', 'read_file', 'thread-1', 'server-a')
-    requests.resolveApproval('first', 'allow-thread')
+    requests.resolveApproval('first', 'allow-thread', 'thread-1')
     await expect(initial).resolves.toBe(true)
     await expect(
       requests.requestApproval('same', 'read_file', 'thread-1', 'server-a')
@@ -122,8 +122,8 @@ describe('useToolApprovalRequests', () => {
     expect(useToolApprovalRequests.getState().pending).toEqual({})
 
     const other = requests.requestApproval('other', 'read_file', 'thread-1', 'server-b')
-    expect(useToolApprovalRequests.getState().pending.other.serverName).toBe('server-b')
-    requests.resolveApproval('other', 'deny')
+    expect(useToolApprovalRequests.getState().pending[approvalKey('thread-1', 'other')].serverName).toBe('server-b')
+    requests.resolveApproval('other', 'deny', 'thread-1')
     await expect(other).resolves.toBe(false)
     expect(useToolApproval.getState().approvedTools).toEqual({})
   })
@@ -135,8 +135,8 @@ describe('useToolApprovalRequests', () => {
     })
     const requests = useToolApprovalRequests.getState()
     const pending = requests.requestApproval('legacy', 'read_file', 'thread-1', 'server-a')
-    expect(useToolApprovalRequests.getState().pending.legacy).toBeDefined()
-    requests.resolveApproval('legacy', 'deny')
+    expect(useToolApprovalRequests.getState().pending[approvalKey('thread-1', 'legacy')]).toBeDefined()
+    requests.resolveApproval('legacy', 'deny', 'thread-1')
     await expect(pending).resolves.toBe(false)
   })
 
@@ -153,12 +153,12 @@ describe('useToolApprovalRequests', () => {
   it('resolveApproval allow-always trusts the whole server, in every thread', async () => {
     const { result } = renderHook(() => useToolApprovalRequests())
 
-    let p: Promise<boolean>
+    let p: Promise<ApprovalResult>
     act(() => {
       p = result.current.requestApproval('tc1', 'tool-a', 'thread-1', 'github')
     })
     act(() => {
-      result.current.resolveApproval('tc1', 'allow-always')
+      result.current.resolveApproval('tc1', 'allow-always', 'thread-1')
     })
 
     await expect(p!).resolves.toBe(true)
@@ -172,12 +172,12 @@ describe('useToolApprovalRequests', () => {
   it('resolveApproval allow-always falls back to the tool when it has no server', async () => {
     const { result } = renderHook(() => useToolApprovalRequests())
 
-    let p: Promise<boolean>
+    let p: Promise<ApprovalResult>
     act(() => {
       p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
     })
     act(() => {
-      result.current.resolveApproval('tc1', 'allow-always')
+      result.current.resolveApproval('tc1', 'allow-always', 'thread-1')
     })
 
     await expect(p!).resolves.toBe(true)
@@ -192,13 +192,13 @@ describe('useToolApprovalRequests', () => {
     })
     const { result } = renderHook(() => useToolApprovalRequests())
 
-    let p: Promise<boolean>
+    let p: Promise<ApprovalResult>
     act(() => {
       p = result.current.requestApproval('tc1', 'tool-a', 'thread-1', 'github')
     })
 
     await expect(p!).resolves.toBe(true)
-    expect(result.current.pending['tc1']).toBeUndefined()
+    expect(result.current.pending[approvalKey('thread-1', 'tc1')]).toBeUndefined()
   })
 
   it('keeps the server on the pending entry so the prompt can name it', () => {
@@ -208,7 +208,7 @@ describe('useToolApprovalRequests', () => {
       result.current.requestApproval('tc1', 'tool-a', 'thread-1', 'github')
     })
 
-    expect(result.current.pending['tc1']).toMatchObject({
+    expect(result.current.pending[approvalKey('thread-1', 'tc1')]).toMatchObject({
       serverName: 'github',
     })
   })
@@ -216,12 +216,12 @@ describe('useToolApprovalRequests', () => {
   it('resolveApproval deny resolves false', async () => {
     const { result } = renderHook(() => useToolApprovalRequests())
 
-    let p: Promise<boolean>
+    let p: Promise<ApprovalResult>
     act(() => {
       p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
     })
     act(() => {
-      result.current.resolveApproval('tc1', 'deny')
+      result.current.resolveApproval('tc1', 'deny', 'thread-1')
     })
 
     await expect(p!).resolves.toBe(false)
@@ -240,10 +240,10 @@ describe('useToolApprovalRequests', () => {
       // The UI can retain the action after the request has been cancelled.
       const staleResolve = requests.resolveApproval
 
-      requests.cancelApproval('cancelled')
+      requests.cancelApproval('cancelled', 'thread-1')
       await expect(pending).resolves.toBe(false)
-      expect(useToolApprovalRequests.getState().pending.cancelled).toBeUndefined()
-      staleResolve('cancelled', decision)
+      expect(useToolApprovalRequests.getState().pending[approvalKey('thread-1', 'cancelled')]).toBeUndefined()
+      staleResolve('cancelled', decision, 'thread-1')
 
       const approval = useToolApproval.getState()
       expect(approval.approvedTools).toEqual({})
@@ -263,17 +263,17 @@ describe('useToolApprovalRequests', () => {
     void sameThread.then(sameThreadSettled)
     void otherThread.then(otherThreadSettled)
 
-    requests.cancelApproval('cancelled')
+    requests.cancelApproval('cancelled', 'thread-1')
     await expect(cancelled).resolves.toBe(false)
     expect(Object.keys(useToolApprovalRequests.getState().pending)).toEqual([
-      'same-thread',
-      'other-thread',
+      approvalKey('thread-1', 'same-thread'),
+      approvalKey('thread-2', 'other-thread'),
     ])
     expect(sameThreadSettled).not.toHaveBeenCalled()
     expect(otherThreadSettled).not.toHaveBeenCalled()
 
-    requests.resolveApproval('same-thread', 'allow-once')
-    requests.resolveApproval('other-thread', 'deny')
+    requests.resolveApproval('same-thread', 'allow-once', 'thread-1')
+    requests.resolveApproval('other-thread', 'deny', 'thread-2')
     await expect(sameThread).resolves.toBe(true)
     await expect(otherThread).resolves.toBe(false)
   })
@@ -281,11 +281,11 @@ describe('useToolApprovalRequests', () => {
   it('cancelApproval is a no-op for missing or already settled calls', async () => {
     const requests = useToolApprovalRequests.getState()
     const pending = requests.requestApproval('approved', 'tool-a', 'thread-1', 'github')
-    requests.resolveApproval('approved', 'allow-always')
+    requests.resolveApproval('approved', 'allow-always', 'thread-1')
     const state = useToolApprovalRequests.getState()
 
-    requests.cancelApproval('missing')
-    requests.cancelApproval('approved')
+    requests.cancelApproval('missing', 'thread-1')
+    requests.cancelApproval('approved', 'thread-1')
 
     await expect(pending).resolves.toBe(true)
     expect(useToolApprovalRequests.getState()).toBe(state)
@@ -295,8 +295,8 @@ describe('useToolApprovalRequests', () => {
   it('clearPendingForThread resolves matching promises false and removes only that thread', async () => {
     const { result } = renderHook(() => useToolApprovalRequests())
 
-    let pA: Promise<boolean>
-    let pB: Promise<boolean>
+    let pA: Promise<ApprovalResult>
+    let pB: Promise<ApprovalResult>
     act(() => {
       pA = result.current.requestApproval('tcA', 'tool-a', 'thread-A')
       pB = result.current.requestApproval('tcB', 'tool-b', 'thread-B')
@@ -307,11 +307,11 @@ describe('useToolApprovalRequests', () => {
     })
 
     await expect(pA!).resolves.toBe(false)
-    expect(result.current.pending['tcA']).toBeUndefined()
-    expect(result.current.pending['tcB']).toMatchObject({ threadId: 'thread-B' })
+    expect(result.current.pending[approvalKey('thread-A', 'tcA')]).toBeUndefined()
+    expect(result.current.pending[approvalKey('thread-B', 'tcB')]).toMatchObject({ threadId: 'thread-B' })
 
     act(() => {
-      result.current.resolveApproval('tcB', 'allow-once')
+      result.current.resolveApproval('tcB', 'allow-once', 'thread-B')
     })
     await expect(pB!).resolves.toBe(true)
   })
@@ -326,7 +326,7 @@ describe('useToolApprovalRequests', () => {
       result.current.clearPendingForThread('thread-Z')
     })
 
-    expect(result.current.pending['tcA']).toMatchObject({ threadId: 'thread-A' })
+    expect(result.current.pending[approvalKey('thread-A', 'tcA')]).toMatchObject({ threadId: 'thread-A' })
   })
 })
 
@@ -348,7 +348,13 @@ const expectNoTrust = () => {
 
 describe('validated approval lifecycle (real approval stores and identity validator)', () => {
   beforeEach(() => {
-    useToolApprovalRequests.getState().clearPendingForThread('validated-thread')
+    const requests = useToolApprovalRequests.getState()
+    for (const entry of Object.values(requests.pending)) {
+      requests.clearPendingForThread(entry.threadId)
+    }
+    requests.clearPendingForThread('validated-thread')
+    requests.clearPendingForThread('alpha-thread')
+    requests.clearPendingForThread('beta-thread')
     useToolApproval.setState({
       approvedTools: {}, approvedMCPTools: [], approvedServers: [],
       approvedToolsGlobal: [], allowAllMCPPermissions: false,
@@ -358,7 +364,6 @@ describe('validated approval lifecycle (real approval stores and identity valida
   const invalidInventories: [string, MCPTool[]][] = [
     ['disconnected', []],
     ['moved', [tool('beta')]],
-    ['ambiguous', [tool(), tool('beta')]],
   ]
 
   it.each(invalidInventories)('denies %s identity before publishing a prompt', async (_reason, tools) => {
@@ -366,9 +371,9 @@ describe('validated approval lifecycle (real approval stores and identity valida
     const requests = useToolApprovalRequests.getState()
     const result = requests.requestApproval('validated', 'read', 'validated-thread', 'alpha',
       () => assertMcpIdentityAvailable('read', 'alpha', getTools, () => false))
-    expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
+    expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toBeUndefined()
     await expect(result).resolves.toMatchObject({ kind: 'validation-error', errorText: expect.any(String) })
-    expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
+    expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toBeUndefined()
     expectNoTrust()
   })
 
@@ -383,7 +388,7 @@ describe('validated approval lifecycle (real approval stores and identity valida
       () => assertMcpIdentityAvailable('read', 'alpha', getTools, () => false)
     )).resolves.toMatchObject({ kind: 'validation-error' })
     expect(getTools).toHaveBeenCalledOnce()
-    expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
+    expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toBeUndefined()
   })
 
   for (const decision of ['allow-once', 'allow-thread', 'allow-always'] as const) {
@@ -395,12 +400,12 @@ describe('validated approval lifecycle (real approval stores and identity valida
         const requests = useToolApprovalRequests.getState()
         const result = requests.requestApproval('validated', 'read', 'validated-thread', 'alpha',
           () => assertMcpIdentityAvailable('read', 'alpha', getTools, () => disabled))
-        await vi.waitFor(() => expect(useToolApprovalRequests.getState().pending.validated).toBeDefined())
+        await vi.waitFor(() => expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toBeDefined())
         getTools.mockResolvedValue(tools)
         disabled = reason === 'disabled'
-        requests.resolveApproval('validated', decision)
+        requests.resolveApproval('validated', decision, 'validated-thread')
         await expect(result).resolves.toMatchObject({ kind: 'validation-error' })
-        expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
+        expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toBeUndefined()
         expectNoTrust()
       }
     )
@@ -416,22 +421,36 @@ describe('validated approval lifecycle (real approval stores and identity valida
         const result = requests.requestApproval('validated', 'read', 'validated-thread', 'alpha',
           () => assertMcpIdentityAvailable('read', 'alpha', getTools, () => false))
         if (stage === 'at decision') {
-          await vi.waitFor(() => expect(useToolApprovalRequests.getState().pending.validated).toBeDefined())
+          await vi.waitFor(() => expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toBeDefined())
           getTools.mockReturnValue(inventory.promise)
-          requests.resolveApproval('validated', 'allow-always')
+          requests.resolveApproval('validated', 'allow-always', 'validated-thread')
         }
-        requests[cancel](cancel === 'cancelApproval' ? 'validated' : 'validated-thread')
+        if (cancel === 'cancelApproval') requests.cancelApproval('validated', 'validated-thread')
+        else requests.clearPendingForThread('validated-thread')
         await expect(result).resolves.toBe(false)
         inventory.resolve([tool()])
         await vi.waitFor(() => expect(getTools).toHaveBeenCalledTimes(stage === 'before prompt' ? 1 : 2))
         // Drain both the identity validator and the approval continuation.
         await new Promise((done) => setTimeout(done, 0))
-        requests.resolveApproval('validated', 'allow-thread')
-        expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
+        requests.resolveApproval('validated', 'allow-thread', 'validated-thread')
+        expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toBeUndefined()
         expectNoTrust()
       })
     }
   }
+
+  it('validates an explicit alpha binding despite a same-name beta rival and grants only alpha', async () => {
+    const requests = useToolApprovalRequests.getState()
+    const getTools = vi.fn().mockResolvedValue([tool(), tool('beta')])
+    const result = requests.requestApproval('validated', 'read', 'validated-thread', 'alpha',
+      () => assertMcpIdentityAvailable('read', 'alpha', getTools, () => false))
+    await vi.waitFor(() => expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toBeDefined())
+    requests.resolveApproval('validated', 'allow-thread', 'validated-thread')
+    await expect(result).resolves.toBe(true)
+    expect(getTools).toHaveBeenCalledTimes(2)
+    expect(useToolApproval.getState().isToolApproved('validated-thread', 'read', 'alpha')).toBe(true)
+    expect(useToolApproval.getState().isToolApproved('validated-thread', 'read', 'beta')).toBe(false)
+  })
 
   it.each(['allow-once', 'deny'] as const)('duplicate decisions cannot widen a pending allow-once to trust (%s)', async (second) => {
     const inventory = deferred<MCPTool[]>()
@@ -439,11 +458,11 @@ describe('validated approval lifecycle (real approval stores and identity valida
     const requests = useToolApprovalRequests.getState()
     const result = requests.requestApproval('validated', 'read', 'validated-thread', 'alpha',
       () => assertMcpIdentityAvailable('read', 'alpha', getTools, () => false))
-    await vi.waitFor(() => expect(useToolApprovalRequests.getState().pending.validated).toBeDefined())
+    await vi.waitFor(() => expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toBeDefined())
     getTools.mockReturnValue(inventory.promise)
-    requests.resolveApproval('validated', 'allow-once')
-    requests.resolveApproval('validated', 'allow-always')
-    requests.resolveApproval('validated', second)
+    requests.resolveApproval('validated', 'allow-once', 'validated-thread')
+    requests.resolveApproval('validated', 'allow-always', 'validated-thread')
+    requests.resolveApproval('validated', second, 'validated-thread')
     inventory.resolve([tool()])
     await expect(result).resolves.toBe(second !== 'deny')
     await new Promise((done) => setTimeout(done, 0))
@@ -456,7 +475,7 @@ describe('validated approval lifecycle (real approval stores and identity valida
       'validated', 'read', 'validated-thread', 'alpha',
       () => { throw new Error('identity unavailable') }
     )).resolves.toEqual({ kind: 'validation-error', errorText: 'identity unavailable' })
-    expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
+    expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toBeUndefined()
     expectNoTrust()
   })
 
@@ -469,10 +488,10 @@ describe('validated approval lifecycle (real approval stores and identity valida
     await expect(old).resolves.toBe(false)
     inventory.resolve([tool()])
     await new Promise((done) => setTimeout(done, 0))
-    expect(useToolApprovalRequests.getState().pending.validated).toMatchObject({
+    expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toMatchObject({
       toolName: 'write', serverName: 'beta',
     })
-    requests.resolveApproval('validated', 'deny')
+    requests.resolveApproval('validated', 'deny', 'validated-thread')
     await expect(replacement).resolves.toBe(false)
     expectNoTrust()
   })
@@ -483,9 +502,9 @@ describe('validated approval lifecycle (real approval stores and identity valida
     const requests = useToolApprovalRequests.getState()
     const result = requests.requestApproval('validated', 'read', 'validated-thread', 'alpha',
       () => assertMcpIdentityAvailable('read', 'alpha', getTools, () => false))
-    await vi.waitFor(() => expect(useToolApprovalRequests.getState().pending.validated).toBeDefined())
+    await vi.waitFor(() => expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toBeDefined())
     getTools.mockReturnValue(inventory.promise)
-    requests.resolveApproval('validated', decision)
+    requests.resolveApproval('validated', decision, 'validated-thread')
     expectNoTrust()
     inventory.resolve([tool()])
     await expect(result).resolves.toBe(true)
@@ -502,8 +521,99 @@ describe('validated approval lifecycle (real approval stores and identity valida
     useToolApprovalRequests.getState().clearPendingForThread('validated-thread')
     await expect(result).resolves.toBe(false)
     expect(signal.aborted).toBe(true)
-    expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
+    expect(useToolApprovalRequests.getState().pending[approvalKey('validated-thread', 'validated')]).toBeUndefined()
     expectNoTrust()
+  })
+
+  it('keeps duplicate call IDs in two threads without replacement or decision/cancel cross-talk', async () => {
+    const requests = useToolApprovalRequests.getState()
+    const alpha = requests.requestApproval('shared', 'read', 'alpha-thread', 'alpha')
+    const beta = requests.requestApproval('shared', 'read', 'beta-thread', 'beta')
+    const alphaSettled = vi.fn()
+    const betaSettled = vi.fn()
+    void alpha.then(alphaSettled)
+    void beta.then(betaSettled)
+    await Promise.resolve()
+    expect(alphaSettled).not.toHaveBeenCalled()
+    expect(betaSettled).not.toHaveBeenCalled()
+    expect(Object.keys(useToolApprovalRequests.getState().pending)).toEqual([
+      approvalKey('alpha-thread', 'shared'), approvalKey('beta-thread', 'shared'),
+    ])
+    requests.resolveApproval('shared', 'allow-always', 'missing-thread')
+    requests.cancelApproval('shared', 'missing-thread')
+    requests.resolveApproval('shared', 'allow-thread', 'alpha-thread')
+    await expect(alpha).resolves.toBe(true)
+    expect(betaSettled).not.toHaveBeenCalled()
+    expect(useToolApprovalRequests.getState().pending[approvalKey('beta-thread', 'shared')]).toMatchObject({ serverName: 'beta' })
+    requests.cancelApproval('shared', 'alpha-thread')
+    expect(useToolApprovalRequests.getState().pending[approvalKey('beta-thread', 'shared')]).toBeDefined()
+    requests.cancelApproval('shared', 'beta-thread')
+    await expect(beta).resolves.toBe(false)
+    expect(useToolApproval.getState().isToolApproved('alpha-thread', 'read', 'alpha')).toBe(true)
+    expect(useToolApproval.getState().isToolApproved('beta-thread', 'read', 'beta')).toBe(false)
+    expect(useToolApprovalRequests.getState().pending).toEqual({})
+  })
+
+  it.each(['before prompt', 'at decision'] as const)('Stop isolates duplicate IDs with validators pending %s', async (stage) => {
+    const requests = useToolApprovalRequests.getState()
+    const alphaGate = deferred<void>()
+    const betaGate = deferred<void>()
+    let alphaSignal!: AbortSignal
+    let betaSignal!: AbortSignal
+    const alphaValidate = vi.fn((signal: AbortSignal) => {
+      alphaSignal = signal
+      return stage === 'before prompt' || alphaValidate.mock.calls.length > 1
+        ? alphaGate.promise : Promise.resolve()
+    })
+    const betaValidate = vi.fn((signal: AbortSignal) => {
+      betaSignal = signal
+      return stage === 'before prompt' || betaValidate.mock.calls.length > 1
+        ? betaGate.promise : Promise.resolve()
+    })
+    const alpha = requests.requestApproval('shared', 'read', 'alpha-thread', 'alpha', alphaValidate)
+    const beta = requests.requestApproval('shared', 'read', 'beta-thread', 'beta', betaValidate)
+    if (stage === 'at decision') {
+      await vi.waitFor(() => expect(Object.keys(useToolApprovalRequests.getState().pending)).toHaveLength(2))
+      requests.resolveApproval('shared', 'allow-always', 'alpha-thread')
+      requests.resolveApproval('shared', 'allow-thread', 'beta-thread')
+    }
+    requests.clearPendingForThread('alpha-thread')
+    await expect(alpha).resolves.toBe(false)
+    expect(alphaSignal.aborted).toBe(true)
+    expect(betaSignal.aborted).toBe(false)
+    alphaGate.resolve()
+    betaGate.resolve()
+    await new Promise((done) => setTimeout(done, 0))
+    expect(useToolApprovalRequests.getState().pending[approvalKey('alpha-thread', 'shared')]).toBeUndefined()
+    if (stage === 'before prompt') {
+      expect(useToolApprovalRequests.getState().pending[approvalKey('beta-thread', 'shared')]).toBeDefined()
+      requests.resolveApproval('shared', 'allow-thread', 'beta-thread')
+    }
+    await expect(beta).resolves.toBe(true)
+    expect(useToolApproval.getState().approvedServers).toEqual([])
+    expect(useToolApproval.getState().isToolApproved('alpha-thread', 'read', 'alpha')).toBe(false)
+    expect(useToolApproval.getState().isToolApproved('beta-thread', 'read', 'beta')).toBe(true)
+    expect(useToolApproval.getState().isToolApproved('alpha-thread', 'read', 'beta')).toBe(false)
+    expect(useToolApprovalRequests.getState().pending).toEqual({})
+  })
+
+  it.each(['allow-thread', 'allow-always'] as const)('duplicate-ID %s grants preserve alpha and beta identities', async (decision) => {
+    const requests = useToolApprovalRequests.getState()
+    const alpha = requests.requestApproval('shared', 'read', 'alpha-thread', 'alpha')
+    const beta = requests.requestApproval('shared', 'read', 'beta-thread', 'beta')
+    requests.resolveApproval('shared', decision, 'alpha-thread')
+    await expect(alpha).resolves.toBe(true)
+    expect(useToolApproval.getState().isToolApproved('beta-thread', 'read', 'beta')).toBe(false)
+    expect(useToolApprovalRequests.getState().pending[approvalKey('beta-thread', 'shared')]).toMatchObject({ serverName: 'beta' })
+    requests.resolveApproval('shared', decision, 'beta-thread')
+    await expect(beta).resolves.toBe(true)
+    const approval = useToolApproval.getState()
+    expect(approval.isToolApproved('alpha-thread', 'read', 'alpha')).toBe(true)
+    expect(approval.isToolApproved('beta-thread', 'read', 'beta')).toBe(true)
+    expect(approval.isToolApproved('alpha-thread', 'read', 'beta')).toBe(decision === 'allow-always')
+    expect(approval.isToolApproved('beta-thread', 'read', 'alpha')).toBe(decision === 'allow-always')
+    expect(approval.approvedServers).toEqual(decision === 'allow-always' ? ['alpha', 'beta'] : [])
+    expect(useToolApprovalRequests.getState().pending).toEqual({})
   })
 
 })

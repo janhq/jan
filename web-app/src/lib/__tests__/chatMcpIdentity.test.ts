@@ -46,15 +46,14 @@ describe('chat MCP identity', () => {
     ['disconnected', []],
     ['moved to another server', [tool('read', 'beta')]],
     ['removed tool', [tool('write', 'alpha')]],
-    ['new collision', [tool('read', 'alpha'), tool('read', 'beta')]],
   ])('rejects a stale binding when %s', async (_reason, tools) => {
     await expect(assertMcpIdentityAvailable('read', 'alpha', async () => tools, () => false)).rejects.toThrow(/stale|ambiguous|unavailable/)
   })
 
-  it('does not resolve a collision by ignoring a disabled rival', async () => {
+  it('validates explicit alpha independently of a same-name beta rival', async () => {
     await expect(assertMcpIdentityAvailable('read', 'alpha', async () => [
       tool('read', 'alpha'), tool('read', 'beta'),
-    ], (server) => server === 'beta')).rejects.toThrow(/ambiguous/)
+    ], (server) => server === 'beta')).resolves.toBeUndefined()
   })
 
   it('rechecks disabled state after asynchronous inventory validation', async () => {

@@ -41,7 +41,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { approvalKey, useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { parseCitationsFromToolOutput } from '@/lib/citation-parser'
 import type { RagCitation, WebCitation } from '@/components/Citations'
 import { useGroundingStore } from '@/stores/grounding-store'
@@ -209,9 +209,9 @@ export const MessageItem = memo(
       if (!hasPendingToolCall) return false
       return message.parts.some((part) => {
         const toolCallId = (part as { toolCallId?: string }).toolCallId
-        return Boolean(toolCallId && pendingApprovals[toolCallId])
+        return Boolean(toolCallId && pendingApprovals[approvalKey(threadId ?? '', toolCallId)])
       })
-    }, [hasPendingToolCall, message.parts, pendingApprovals])
+    }, [hasPendingToolCall, message.parts, pendingApprovals, threadId])
 
     const usedSkills = useMemo(
       () => usedSkillNames(message.parts as never),

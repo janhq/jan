@@ -1018,7 +1018,7 @@ function ThreadDetail() {
               })
             }
           } finally {
-            useToolApprovalRequests.getState().cancelApproval(toolCall.toolCallId)
+            useToolApprovalRequests.getState().cancelApproval(toolCall.toolCallId, threadId)
             approvalsOf(threadId).delete(toolCall.toolCallId)
             // Covers every exit from the iteration, including the denied path.
             useToolCallRuntime.getState().markSettled(toolCall.toolCallId)

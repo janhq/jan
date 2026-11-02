@@ -12,7 +12,7 @@ import {
 } from '@/components/ai-elements/reasoning-timeline'
 import { Button } from '@/components/ui/button'
 import { scrollToBottomButtonClassName } from '@/components/ai-elements/conversation'
-import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { approvalKey, useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import {
   isToolCallRunning,
   useToolCallRuntime,
@@ -123,7 +123,7 @@ export const ChainOfThoughtGroup = memo(
         ? meaningful.filter((e) => {
             if (frontier.includes(e)) return true
             const toolCallId = e.part.toolCallId
-            return Boolean(toolCallId && pendingApprovals[toolCallId])
+            return Boolean(toolCallId && pendingApprovals[approvalKey(threadId ?? '', toolCallId)])
           })
         : entries
 

@@ -31,6 +31,10 @@ export type ApprovalDecision =
   | 'allow-always'
   | 'deny'
 
+/** Collision-safe identity shared by visible prompts and validation in flight. */
+export const approvalKey = (threadId: string, callId: string): string =>
+  JSON.stringify([threadId, callId])
+
 type ToolApprovalRequestsState = {
   // Only actionable prompts; validation and callbacks are never persisted.
   pending: Record<string, PendingApproval>
@@ -42,8 +46,8 @@ type ToolApprovalRequestsState = {
     serverName?: string,
     validate?: ApprovalValidator
   ) => Promise<ApprovalResult>
-  resolveApproval: (toolCallId: string, decision: ApprovalDecision) => void
-  cancelApproval: (toolCallId: string) => void
+  resolveApproval: (toolCallId: string, decision: ApprovalDecision, threadId: string) => void
+  cancelApproval: (toolCallId: string, threadId: string) => void
   clearPendingForThread: (threadId: string) => void
 }
 
@@ -59,18 +63,18 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
     // their continuations. Object identity also protects reused tool-call IDs.
     const inFlight = new Map<string, InFlightApproval>()
     const isCurrent = (entry: InFlightApproval) =>
-      inFlight.get(entry.toolCallId) === entry
+      inFlight.get(approvalKey(entry.threadId, entry.toolCallId)) === entry
     const removePrompt = (entry: InFlightApproval) => {
-      if (get().pending[entry.toolCallId] !== entry) return
+      if (get().pending[approvalKey(entry.threadId, entry.toolCallId)] !== entry) return
       set((s) => {
         const next = { ...s.pending }
-        delete next[entry.toolCallId]
+        delete next[approvalKey(entry.threadId, entry.toolCallId)]
         return { pending: next }
       })
     }
     const finish = (entry: InFlightApproval, approved: ApprovalResult) => {
       if (!isCurrent(entry)) return
-      inFlight.delete(entry.toolCallId)
+      inFlight.delete(approvalKey(entry.threadId, entry.toolCallId))
       entry.controller.abort()
       removePrompt(entry)
       entry.resolve(approved)
@@ -80,14 +84,15 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       pending: {},
 
       requestApproval: (toolCallId, toolName, threadId, serverName, validate) => {
-        const previous = inFlight.get(toolCallId)
+        const key = approvalKey(threadId, toolCallId)
+        const previous = inFlight.get(key)
         if (previous) finish(previous, false)
         return new Promise<ApprovalResult>((resolve) => {
           const entry: InFlightApproval = {
             toolCallId, toolName, threadId, serverName, resolve, validate,
             deciding: false, controller: new AbortController(),
           }
-          inFlight.set(toolCallId, entry)
+          inFlight.set(key, entry)
           const publish = () => {
             if (!isCurrent(entry)) return
             const settings = useToolApproval.getState()
@@ -96,7 +101,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
               finish(entry, true)
               return
             }
-            set((s) => ({ pending: { ...s.pending, [toolCallId]: entry } }))
+            set((s) => ({ pending: { ...s.pending, [key]: entry } }))
           }
           // Preserve synchronous prompting/auto-approval for existing callers.
           if (!validate) publish()
@@ -113,22 +118,23 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
         })
       },
 
-      resolveApproval: (toolCallId, decision) => {
-        const entry = inFlight.get(toolCallId)
+      resolveApproval: (toolCallId, decision, threadId) => {
+        const key = approvalKey(threadId, toolCallId)
+        const entry = inFlight.get(key)
         if (!entry) return
         // Denial wins even while an earlier allow decision is validating.
         if (decision === 'deny') {
           finish(entry, false)
           return
         }
-        if (entry.deciding || get().pending[toolCallId] !== entry) return
+        if (entry.deciding || get().pending[key] !== entry) return
         entry.deciding = true
         removePrompt(entry)
         const grant = () => {
           if (!isCurrent(entry)) return
           // Consume before persistence: synchronous store subscribers cannot
           // race another decision or resurrect this request.
-          inFlight.delete(toolCallId)
+          inFlight.delete(key)
           const approval = useToolApproval.getState()
           if (decision === 'allow-thread') {
             approval.approveToolForThread(entry.threadId, entry.toolName, entry.serverName)
@@ -151,8 +157,8 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
         }
       },
 
-      cancelApproval: (toolCallId) => {
-        const entry = inFlight.get(toolCallId)
+      cancelApproval: (toolCallId, threadId) => {
+        const entry = inFlight.get(approvalKey(threadId, toolCallId))
         if (entry) finish(entry, false)
       },
 

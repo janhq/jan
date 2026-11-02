@@ -57,7 +57,7 @@ fn same_connection(service: &RunningMcpService, peer: &McpPeer) -> bool {
 }
 
 // Bypass rmcp list_tools response caching, including server TTL/stale fallback.
-// Authorization/uniqueness needs a live paginated inventory on every call.
+// Explicit validation and legacy routing need live schemas, not cached responses.
 async fn list_live_tools(peer: &McpPeer) -> Result<Vec<rmcp::model::Tool>, rmcp::ServiceError> {
     use rmcp::model::{ClientRequest, ListToolsRequest, PaginatedRequestParams, ServerResult};
     let mut tools = Vec::new();
@@ -182,18 +182,27 @@ async fn collect_mcp_tools<R: Runtime>(
                     .get(&server_name)
                     .is_some_and(|service| same_connection(service, peer.as_ref().unwrap()));
                 let active = state.mcp_active_servers.lock().await;
-                if !active.contains_key(&server_name) || !connected {
+                if !active.contains_key(&server_name) {
                     if fresh_only {
                         return Err("MCP inventory changed during discovery; retry".into());
                     }
                     continue;
                 }
-                state
-                    .mcp_last_known_tools
-                    .lock()
-                    .await
-                    .insert(server_name.clone(), mapped.clone());
-                Some(mapped)
+                if !connected {
+                    if fresh_only {
+                        return Err("MCP inventory changed during discovery; retry".into());
+                    }
+                    // Ignore the stale response but preserve the enabled server's
+                    // advertisement across reconnects, just as on list failure.
+                    None
+                } else {
+                    state
+                        .mcp_last_known_tools
+                        .lock()
+                        .await
+                        .insert(server_name.clone(), mapped.clone());
+                    Some(mapped)
+                }
             }
             Some(Ok(Err(e))) => {
                 let err_str = e.to_string();
@@ -259,20 +268,16 @@ async fn collect_mcp_tools<R: Runtime>(
     Ok(all_tools)
 }
 
-/// Validation is deliberately different from advertisement and legacy fresh-only
-/// enumeration: discover only the requested owner, then prove uniqueness against
-/// every other enabled owner's last successful complete listing. The cache's
-/// sole production writer is collect_mcp_tools (and this function), after live
-/// paginated discovery and connected/active checks. A present empty Vec proves
-/// successful discovery of no tools; an absent entry proves nothing and MUST
-/// fail closed. Never infer absence from a disconnected server or query rivals.
+/// Explicit validation is scoped to the requested active connection and live
+/// tool schema. Rival inventories and name collisions affect advertisement and
+/// legacy unnamed routing, not server-bound execution (which never falls back).
 async fn collect_validation_tools(
     state: &AppState,
     server_name: &str,
     tool_name: &str,
 ) -> Result<Vec<ToolWithServer>, String> {
     let timeout_duration = tool_call_timeout(state).await;
-    let (peer, initial_active) = {
+    let peer = {
         let servers = state.mcp_servers.lock().await;
         let active = state.mcp_active_servers.lock().await;
         if !active.contains_key(server_name) {
@@ -283,7 +288,7 @@ async fn collect_validation_tools(
             .filter(|service| !service.is_closed())
             .map(|service| service.peer().clone())
             .ok_or_else(|| format!("MCP validation target '{server_name}' is disconnected"))?;
-        (peer, active.clone())
+        peer
     };
     let tools = timeout(timeout_duration, list_live_tools(&peer))
         .await
@@ -300,57 +305,26 @@ async fn collect_validation_tools(
         .collect();
 
     // No remote await while holding these short lifecycle-ordered guards.
-    // Unrelated connection churn is irrelevant: only their known ownership is
-    // used. Target replacement, disablement, or enabled-set/config change is not.
+    // Only the target must still be enabled and on the same connection.
     let servers = state.mcp_servers.lock().await;
     let active = state.mcp_active_servers.lock().await;
-    if *active != initial_active
+    if !active.contains_key(server_name)
         || !servers
             .get(server_name)
             .is_some_and(|service| same_connection(service, &peer))
     {
         return Err("MCP inventory changed during discovery; retry".into());
     }
-    let mut cache = state.mcp_last_known_tools.lock().await;
-    let inventory = validation_ownership_inventory(
-        server_name,
-        tool_name,
-        fresh.clone(),
-        active.keys().map(String::as_str),
-        &cache,
-    )?;
-    cache.insert(server_name.to_owned(), fresh);
-    Ok(inventory)
-}
-
-fn validation_ownership_inventory<'a>(
-    server_name: &str,
-    tool_name: &str,
-    mut fresh: Vec<ToolWithServer>,
-    enabled: impl Iterator<Item = &'a str>,
-    cache: &HashMap<String, Vec<ToolWithServer>>,
-) -> Result<Vec<ToolWithServer>, String> {
-    if !fresh
-        .iter()
-        .any(|tool| tool.name == tool_name && tool.server == server_name)
-    {
+    if !fresh.iter().any(|tool| tool.name == tool_name) {
         return Err(format!(
             "MCP tool '{tool_name}' is unavailable on server '{server_name}'"
         ));
     }
-    for name in enabled.filter(|name| *name != server_name) {
-        let cached = cache.get(name).filter(|tools| tools.iter().all(|tool| tool.server == name))
-            .ok_or_else(|| format!("MCP ownership unavailable for enabled server '{name}': no trustworthy successful discovery inventory"))?;
-        fresh.extend(cached.iter().cloned());
-    }
-    if fresh
-        .iter()
-        .any(|tool| tool.name == tool_name && tool.server != server_name)
-    {
-        return Err(format!(
-            "Ambiguous MCP tool '{tool_name}': multiple enabled servers own this name"
-        ));
-    }
+    state
+        .mcp_last_known_tools
+        .lock()
+        .await
+        .insert(server_name.to_owned(), fresh.clone());
     Ok(fresh)
 }
 
@@ -1303,6 +1277,14 @@ mod call_tool_routing_tests {
             )
         }
 
+        async fn call_tool(
+            &self,
+            _: rmcp::model::CallToolRequestParams,
+            _: rmcp::service::RequestContext<rmcp::RoleServer>,
+        ) -> Result<rmcp::model::CallToolResponse, rmcp::ErrorData> {
+            Ok(rmcp::model::CallToolResult::success(vec![]).into())
+        }
+
         async fn list_tools(
             &self,
             _: Option<rmcp::model::PaginatedRequestParams>,
@@ -1357,7 +1339,7 @@ mod call_tool_routing_tests {
     }
 
     #[tokio::test]
-    async fn targeted_inventory_uses_offline_rival_ownership_not_remote_discovery() {
+    async fn targeted_inventory_ignores_never_listed_offline_and_colliding_rivals() {
         let state = crate::core::state::AppState::default();
         let (client, _) = validation_connection(None).await;
         state
@@ -1372,55 +1354,24 @@ mod call_tool_routing_tests {
                 .await
                 .insert(name.into(), serde_json::json!({}));
         }
-        // No beta connection: success demonstrates it is not remotely queried.
-        state
-            .mcp_last_known_tools
-            .lock()
-            .await
-            .insert("beta".into(), vec![cached_tool("other", "beta")]);
+        // Enabled, never-listed, offline beta must not block explicit alpha.
         let inventory = super::collect_validation_tools(&state, "alpha", "search")
             .await
             .unwrap();
-        assert_eq!(inventory.len(), 2);
-        assert!(inventory
-            .iter()
-            .any(|tool| tool.name == "other" && tool.server == "beta"));
+        assert_eq!(inventory.len(), 1);
+        assert_eq!(inventory[0].server, "alpha");
+        assert_eq!(inventory[0].name, "search");
+        // Even a known same-name rival is irrelevant to server-bound execution.
         state
             .mcp_last_known_tools
             .lock()
             .await
             .insert("beta".into(), vec![cached_tool("search", "beta")]);
-        assert!(super::collect_validation_tools(&state, "alpha", "search")
+        let inventory = super::collect_validation_tools(&state, "alpha", "search")
             .await
-            .unwrap_err()
-            .contains("Ambiguous"));
-        state.mcp_last_known_tools.lock().await.remove("beta");
-        assert!(super::collect_validation_tools(&state, "alpha", "search")
-            .await
-            .unwrap_err()
-            .contains("ownership unavailable"));
-        // Mismatched provenance is not a trustworthy inventory either.
-        state
-            .mcp_last_known_tools
-            .lock()
-            .await
-            .insert("beta".into(), vec![cached_tool("other", "wrong")]);
-        assert!(super::collect_validation_tools(&state, "alpha", "search")
-            .await
-            .unwrap_err()
-            .contains("ownership unavailable"));
-        state
-            .mcp_last_known_tools
-            .lock()
-            .await
-            .insert("beta".into(), vec![]);
-        assert_eq!(
-            super::collect_validation_tools(&state, "alpha", "search")
-                .await
-                .unwrap()
-                .len(),
-            1
-        );
+            .unwrap();
+        assert_eq!(inventory.len(), 1);
+        assert_eq!(inventory[0].server, "alpha");
         assert!(super::collect_validation_tools(&state, "alpha", "missing")
             .await
             .unwrap_err()
@@ -1487,6 +1438,155 @@ mod call_tool_routing_tests {
             }
             let client = state.mcp_servers.lock().await.remove("alpha").unwrap();
             client.cancel().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn duplex_explicit_dispatch_ignores_collisions_but_legacy_unnamed_rejects_them() {
+        use tauri::Manager;
+        let app = tauri::test::mock_app();
+        app.manage(crate::core::state::AppState::default());
+        let state = app.state::<crate::core::state::AppState>();
+        for name in ["alpha", "beta"] {
+            let (client, _) = validation_connection(None).await;
+            state.mcp_servers.lock().await.insert(name.into(), client);
+            state
+                .mcp_active_servers
+                .lock()
+                .await
+                .insert(name.into(), serde_json::json!({}));
+        }
+        assert!(super::call_tool(
+            state.clone(),
+            "search".into(),
+            Some("alpha".into()),
+            None,
+            None,
+            None
+        )
+        .await
+        .is_ok());
+        assert!(
+            super::call_tool(state.clone(), "search".into(), None, None, None, None)
+                .await
+                .unwrap_err()
+                .contains("ambiguous")
+        );
+        assert!(super::call_tool(
+            state.clone(),
+            "search".into(),
+            Some("missing".into()),
+            None,
+            None,
+            None
+        )
+        .await
+        .unwrap_err()
+        .contains("not found"));
+        let clients = std::mem::take(&mut *state.mcp_servers.lock().await);
+        for (_, client) in clients {
+            client.cancel().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn targeted_inventory_ignores_unrelated_activation_during_discovery() {
+        use std::sync::Arc;
+        let state = crate::core::state::AppState::default();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let (client, entered) = validation_connection(Some(release.clone())).await;
+        state
+            .mcp_servers
+            .lock()
+            .await
+            .insert("alpha".into(), client);
+        state
+            .mcp_active_servers
+            .lock()
+            .await
+            .insert("alpha".into(), serde_json::json!({}));
+        let discovery = super::collect_validation_tools(&state, "alpha", "search");
+        tokio::pin!(discovery);
+        assert_pending(discovery.as_mut()).await;
+        entered.notified().await;
+        state
+            .mcp_active_servers
+            .lock()
+            .await
+            .insert("beta".into(), serde_json::json!({}));
+        release.notify_one();
+        let inventory = discovery.await.unwrap();
+        assert_eq!(inventory.len(), 1);
+        assert_eq!(inventory[0].server, "alpha");
+        state
+            .mcp_servers
+            .lock()
+            .await
+            .remove("alpha")
+            .unwrap()
+            .cancel()
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn nonfresh_inventory_keeps_cache_on_midlisting_disconnect_or_replacement() {
+        use std::sync::Arc;
+        for fresh_only in [false, true] {
+            for replace in [false, true] {
+                let app = tauri::test::mock_app();
+                let state = crate::core::state::AppState::default();
+                let release = Arc::new(tokio::sync::Notify::new());
+                let (client, entered) = validation_connection(Some(release.clone())).await;
+                state
+                    .mcp_servers
+                    .lock()
+                    .await
+                    .insert("alpha".into(), client);
+                state
+                    .mcp_active_servers
+                    .lock()
+                    .await
+                    .insert("alpha".into(), serde_json::json!({}));
+                state
+                    .mcp_last_known_tools
+                    .lock()
+                    .await
+                    .insert("alpha".into(), vec![cached_tool("cached", "alpha")]);
+                let discovery = super::collect_mcp_tools(app.handle(), &state, None, fresh_only);
+                tokio::pin!(discovery);
+                assert_pending(discovery.as_mut()).await;
+                entered.notified().await;
+                // Keep the old transport alive so it can return a successful
+                // response after the registered connection changes.
+                let old = state.mcp_servers.lock().await.remove("alpha").unwrap();
+                if replace {
+                    let (replacement, _) = validation_connection(None).await;
+                    state
+                        .mcp_servers
+                        .lock()
+                        .await
+                        .insert("alpha".into(), replacement);
+                }
+                release.notify_one();
+                let result = discovery.await;
+                if fresh_only {
+                    assert!(result.unwrap_err().contains("changed during discovery"));
+                } else {
+                    let inventory = result.unwrap();
+                    assert_eq!(inventory.len(), 1);
+                    assert_eq!(inventory[0].name, "cached");
+                }
+                assert_eq!(
+                    state.mcp_last_known_tools.lock().await["alpha"][0].name,
+                    "cached"
+                );
+                old.cancel().await.unwrap();
+                let replacement = state.mcp_servers.lock().await.remove("alpha");
+                if let Some(client) = replacement {
+                    client.cancel().await.unwrap();
+                }
+            }
         }
     }
 
@@ -1593,7 +1693,7 @@ mod call_tool_routing_tests {
     }
 
     #[test]
-    fn failed_rival_prevents_dispatch_to_the_survivor() {
+    fn failed_rival_prevents_legacy_unnamed_dispatch_to_the_survivor() {
         for matches in [vec!["alpha"], vec![]] {
             let result = ensure_complete_tool_discovery(&["beta".into()])
                 .and_then(|()| select_tool_server("search", None, &matches));

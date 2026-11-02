@@ -1912,17 +1912,13 @@ describe('ThreadDetail route', () => {
         }))
       })
 
-      it.each(['revoked', 'disconnected', 'replaced', 'ambiguous'] as const)(
+      it.each(['revoked', 'disconnected', 'replaced'] as const)(
         'does not dispatch when the advertised pair is %s while approval is pending',
         async (change) => {
           await waitForApproval()
           if (change === 'revoked') h.toolAvailableState.isToolDisabled.mockReturnValue(true)
           if (change === 'disconnected') getMcpTools.mockResolvedValue([])
           if (change === 'replaced') getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }])
-          if (change === 'ambiguous') getMcpTools.mockResolvedValue([
-            { name: 'fetch', server: advertisedServer },
-            { name: 'fetch', server: otherServer },
-          ])
           await act(async () => { approve(true) })
           expect(callTool).not.toHaveBeenCalled()
           expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
@@ -1932,6 +1928,13 @@ describe('ThreadDetail route', () => {
           expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
         }
       )
+
+      it('dispatches only the bound server despite a newly advertised same-name rival', async () => {
+        await waitForApproval()
+        getMcpTools.mockResolvedValue([{ name: 'fetch', server: advertisedServer }, { name: 'fetch', server: otherServer }])
+        await act(async () => { approve(true) })
+        expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ serverName: advertisedServer }))
+      })
 
       it('Stop releases the thread while inventory is unresolved and ignores a late inventory result', async () => {
         let resolveInventory!: (tools: Array<{ name: string; server: string }>) => void
@@ -1947,7 +1950,7 @@ describe('ThreadDetail route', () => {
         const earlyPrompts = h.toolApprovalState.requestApproval.mock.calls.length
         await act(async () => { screen.getByTestId('chat-stop').click() })
         expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
-        expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledWith('bound-call')
+        expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledWith('bound-call', 'thread-1')
         await act(async () => {
           resolveInventory([{ name: 'fetch', server: advertisedServer }])
           approve(true)
@@ -1967,7 +1970,7 @@ describe('ThreadDetail route', () => {
         expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
           'bound-call', 'fetch', 'thread-1', advertisedServer, expect.any(Function)
         )
-        expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledExactlyOnceWith('bound-call')
+        expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledExactlyOnceWith('bound-call', 'thread-1')
         expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
           toolCallId: 'bound-call', state: 'output-error',
           errorText: expect.stringMatching(/unavailable|stale|ambiguous/),

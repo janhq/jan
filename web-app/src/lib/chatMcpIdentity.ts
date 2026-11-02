@@ -50,8 +50,8 @@ export async function assertMcpIdentityAvailable(
       return getTools()
     }).then(resolve, reject)
   }).finally(() => cleanup())
-  if (!uniqueMcpTools(tools).some((tool) => tool.name === toolName && tool.server === serverName) ||
+  if (!tools.some((tool) => tool.name === toolName && tool.server === serverName) ||
       isDisabled(serverName, toolName)) {
-    throw new Error(`MCP identity for '${toolName}' is stale, ambiguous or unavailable`)
+    throw new Error(`MCP identity for '${toolName}' is stale or unavailable`)
   }
 }

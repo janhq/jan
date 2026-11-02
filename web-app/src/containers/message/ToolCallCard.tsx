@@ -85,6 +85,7 @@ export const ToolCallCard = memo(
         state={part.state}
         toolCallId={part.toolCallId}
         messageId={messageId}
+        threadId={threadId}
         className={className}
       >
         <ToolHeader
