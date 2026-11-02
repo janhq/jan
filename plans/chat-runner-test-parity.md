@@ -1,6 +1,6 @@
 # Route test adaptation parity matrix — current, not final verification
 
-Latest route execution measured at `7aa499562`: **108 passed / 108 tests**, including all **20 newly merged MCP identity cases**. Full suite at `7aa499562` on merged parent `0b117ccd5`: **392 files / 5506 tests**, with TypeScript and production ESLint passing. (Historical record at `8c61e8940` after parent `cdecd19d4`: 106 route tests, 386 files / 5381 tests.) Command: `./node_modules/.bin/vitest run --project @janhq/web-app 'web-app/src/routes/threads/__tests__/$threadId.test.tsx'`.
+Latest route execution measured at `f4ea15326`: **110 passed / 110 tests**, including all **20 newly merged MCP identity cases**. Full suite at `f4ea15326` on merged parent `0b117ccd5`: **392 files / 5509 tests**, with TypeScript and production ESLint passing. (Historical record at `8c61e8940` after parent `cdecd19d4`: 106 route tests, 386 files / 5381 tests.) Command: `./node_modules/.bin/vitest run --project @janhq/web-app 'web-app/src/routes/threads/__tests__/$threadId.test.tsx'`.
 
 This document maps coverage for one owned file, `web-app/src/routes/threads/__tests__/$threadId.test.tsx`; "no production edits" applies to this parity exercise only — the test file and this document. The PR's production changes are recorded in `plans/chat-runner-handoff.md`.
 
