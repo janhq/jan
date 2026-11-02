@@ -6,6 +6,7 @@ import {
   ChatCompletionRole,
 } from '@janhq/core'
 import type { UIMessage } from '@ai-sdk/react'
+import { isChatRunNotice } from './chatRunNotice'
 // Attachments are now handled upstream in newUserThreadContent
 
 type ThreadContent = NonNullable<ThreadMessage['content']>[number]
@@ -523,6 +524,11 @@ export function extractContentPartsFromUIMessage(message: UIMessage): ThreadCont
         content.push(reasoningContent)
       }
     } else if (part.type === 'text') {
+      // Adapter notices are UI-only. `content` is replayed as assistant
+      // history by old builds and the CLI (which never see providerMetadata),
+      // so a notice must not enter it; its absence from `content` is what
+      // makes uiParts the carrier that keeps displaying the notice.
+      if (isChatRunNotice(part)) continue
       // Add text content as separate item
       const textContent = part.text ?? ''
       if (textContent) {

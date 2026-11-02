@@ -1,4 +1,8 @@
-import { trackChat, observeChatWork, isChatClosing } from '@/lib/chatClose'
+import { createChatRunStream, type ChatToolOutcome } from '@/lib/chatRunTransport'
+import type { PendingToolCall } from '@/lib/coworkRunner'
+import { generateId } from 'ai'
+import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { trackChat, observeChatWork } from '@/lib/chatClose'
 import {
   CustomChatTransport,
   type ContinuationContent,
@@ -19,11 +23,14 @@ import { useAppState } from '@/hooks/useAppState'
 
 type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
+    dispatchTool?: (call: PendingToolCall, signal: AbortSignal) => Promise<ChatToolOutcome>
     sessionId?: string
     sessionTitle?: string
     systemMessage?: string
     onTokenUsage?: (usage: LanguageModelUsage, messageId: string) => void;
   }
+
+const admissions = new WeakMap<object, () => void>()
 
 // This is a wrapper around the AI SDK's useChat hook
 // It implements model switching and uses the custom chat transport,
@@ -38,6 +45,7 @@ export function useChat(
   const transportSessionRef = useRef<string | undefined>(undefined)
   const {
     sessionId,
+    dispatchTool,
     sessionTitle,
     systemMessage,
     onTokenUsage,
@@ -89,12 +97,77 @@ export function useChat(
         const pending = new Set<Promise<unknown>>()
         const instance = new Chat({
           ...chatInitOptions,
-          transport: transportRef.current,
+          transport: {
+            reconnectToStream: (request) => transport.reconnectToStream(request),
+            sendMessages: async (request) => {
+              const abort = new AbortController()
+              const releaseSnapshot = transport.beginChatRun(() => abort.abort('Turn replaced'))
+              admissions.get(instance)?.()
+              admissions.delete(instance)
+              const stop = () => {
+                abort.abort(request.abortSignal?.reason)
+                useToolApprovalRequests.getState().clearPendingForThread(sessionId)
+              }
+              request.abortSignal?.addEventListener('abort', stop, { once: true })
+              if (request.abortSignal?.aborted) stop()
+              const unwatch = useChatSessions.subscribe(state => {
+                if (!state.sessions[sessionId]) {
+                  abort.abort('Thread deleted')
+                  useToolApprovalRequests.getState().clearPendingForThread(sessionId)
+                }
+              })
+              return createChatRunStream({
+                messages: request.messages,
+                messageId: generateId(),
+                signal: abort.signal,
+                // Read after first send resolves its frozen model selection,
+                // not the previous turn's model or mutable global selection.
+                getModelContextTokens: () => {
+                  const value = transport.getTurnModelSelection()?.selectedModel?.settings?.ctx_len?.controller_props?.value
+                  return typeof value === 'number' ? value : undefined
+                },
+                sendStep: (messages, signal) => transport.sendMessages({ ...request, messages, abortSignal: signal }),
+                dispatch: dispatchTool ?? (async () => ({ output: 'Chat tool executor unavailable', isError: true })),
+                onFinally: () => {
+                  releaseSnapshot()
+                  useToolApprovalRequests.getState().clearPendingForThread(sessionId)
+                  unwatch()
+                  request.abortSignal?.removeEventListener('abort', stop)
+                },
+              })
+            },
+          },
           onFinish: (event) => observeChatWork(pending, () => chatInitOptions.onFinish?.(event)),
-          sendAutomaticallyWhen: chatInitOptions.sendAutomaticallyWhen
-            ? async (event) => !isChatClosing() && await chatInitOptions.sendAutomaticallyWhen!(event) && !isChatClosing()
-            : undefined,
+          // runTurn is the sole follow-up authority; SDK auto-send would
+          // execute a second model request for the same settled tool wave.
+          sendAutomaticallyWhen: undefined,
         })
+        // SDK serializes state updates, not whole requests. Guard BEFORE it
+        // mutates messages/activeResponse so a queued send cannot steal Stop
+        // from an approval or tool still owned by the current turn.
+        const send = instance.sendMessage.bind(instance)
+        const regenerate = instance.regenerate.bind(instance)
+        let reservation: object | undefined
+        const busy = () => reservation !== undefined || instance.status === 'submitted' || instance.status === 'streaming'
+        const start = (operation: () => Promise<void>, error: string) => {
+          if (busy()) return Promise.reject(new Error(error))
+          // SDK text/FileList conversion may yield before status=submitted.
+          // Reserve synchronously, before invoking any SDK mutation.
+          const owner = {}
+          reservation = owner
+          try {
+            const settled = operation().finally(() => {
+              if (reservation === owner) reservation = undefined
+            })
+            transport.trackChatOperation(settled)
+            return settled
+          } catch (cause) {
+            if (reservation === owner) reservation = undefined
+            return Promise.reject(cause)
+          }
+        }
+        instance.sendMessage = (...args) => start(() => send(...args), 'Chat turn already running')
+        instance.regenerate = (...args) => start(() => regenerate(...args), 'Stop the current Chat turn before regenerating')
         trackChat(instance, pending)
         return instance
       },
@@ -156,8 +229,34 @@ export function useChat(
     [transport]
   )
 
+  // Composer submission waits for admission, not the entire model/tool run.
+  // The retained Chat still exposes/tracks the full operation for Stop/close.
+  const sendMessageAccepted = useCallback<typeof chatResult.sendMessage>(async (...args) => {
+    const retained = sessionId ? useChatSessions.getState().sessions[sessionId]?.chat : undefined
+    const owner = retained ?? chatResult
+    if ((retained && admissions.has(retained)) || owner.status === 'submitted' || owner.status === 'streaming') {
+      throw new Error('Chat turn already running')
+    }
+    if (!retained) throw new Error('Chat session unavailable')
+    await new Promise<void>((resolve, reject) => {
+      admissions.set(retained, resolve)
+      const operation = retained.sendMessage(...args)
+      // Transport entry acknowledges SDK enqueue before streaming/dispatch.
+      // Preflight rejection still reaches the route's rollback; accepted runs
+      // remain tracked by trackChat independently for Stop/close finalization.
+      void operation.then(() => {
+        admissions.delete(retained)
+        resolve()
+      }, error => {
+        admissions.delete(retained)
+        reject(error)
+      })
+    })
+  }, [sessionId, chatResult])
+
   return {
     ...chatResult,
+    sendMessage: sendMessageAccepted,
     updateRagToolsAvailability,
     setContinueFromContent,
   }

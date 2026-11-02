@@ -260,8 +260,9 @@ describe('MessageItem', () => {
     expect(onContinue).toHaveBeenCalledWith('msg-1')
   })
 
-  // Continue extends partial text; with none there is nothing to resume.
-  it('hides Continue on a stopped turn that never wrote any text', () => {
+  it('offers Continue on a stopped turn whose tool settled, even with no text', () => {
+    // The settled (error-marked) wave is a kept-history resume point: Continue
+    // replays it as canonical history instead of regenerating it away.
     render(
       <MessageItem
         message={
@@ -274,6 +275,31 @@ describe('MessageItem', () => {
                 state: 'output-error',
                 input: {},
                 errorText: 'Stopped before the tool finished.',
+              },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+        onContinue={vi.fn()}
+      />
+    )
+    expect(screen.queryByTitle('chat:actions.continue')).toBeInTheDocument()
+  })
+
+  it('hides Continue on a stopped turn whose only tool is still in flight', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            metadata: { createdAt: new Date(), stopped: true },
+            parts: [
+              {
+                type: 'tool-slow_wait',
+                toolCallId: 'c1',
+                state: 'input-available',
+                input: {},
               },
             ],
           }) as any

@@ -230,6 +230,9 @@ export async function consumeStep(
           sink.onToolArgsDelta(chunk.toolCallId, chunk.inputTextDelta)
           break
         case 'tool-input-available': {
+          // Hosted/provider-executed tools already carry their own output in
+          // the canonical stream; dispatching them locally repeats the action.
+          if (chunk.providerExecuted) break
           const call: PendingToolCall = {
             toolCallId: chunk.toolCallId,
             toolName: chunk.toolName,
@@ -364,6 +367,14 @@ export type RunDeps = {
   }) => void
   /** Monotonic ids for the assistant messages this run appends. */
   nextMessageId: () => string
+  /** Presentation adapters may retain the canonical SDK parts (signatures,
+   * sources and media) rather than the Cowork projection. Called only after
+   * sendStep has been fully consumed; must include this step's tool outcomes. */
+  assistantMessage?: (
+    id: string,
+    result: StepResult,
+    outcomes: Map<string, ToolOutcome>
+  ) => UIMessage
   /**
    * Pings from work the model started and is no longer blocked on: a
    * backgrounded subagent finishing. Omitted by a child run, which cannot
@@ -403,6 +414,11 @@ export async function runTurn(opts: {
   maxSteps?: number
   /** Tokens already spent by this session, which the caps apply across. */
   sessionTokens?: number
+  /** Surface-owned cap policy; Cowork retains its existing defaults. */
+  budgetPolicy?: {
+    exceeded: (state: { step: number; sessionTokens: number }, maxSteps: number) => BudgetStop
+    record: typeof recordSpend
+  }
 }): Promise<RunOutcome> {
   const { deps, signal } = opts
   const maxSteps = opts.maxSteps ?? MAX_AGENT_STEPS
@@ -423,7 +439,7 @@ export async function runTurn(opts: {
         stoppedBy: 'aborted',
       }
     }
-    const overBudget = budgetExceeded(
+    const overBudget = (opts.budgetPolicy?.exceeded ?? budgetExceeded)(
       { step, sessionTokens: spend.spent },
       maxSteps
     )
@@ -529,7 +545,7 @@ export async function runTurn(opts: {
     step += 1
     if (result.usage) {
       usage = result.usage
-      spend = recordSpend(spend, result.usage)
+      spend = (opts.budgetPolicy?.record ?? recordSpend)(spend, result.usage)
     }
 
     if (result.errorText) {
@@ -537,7 +553,7 @@ export async function runTurn(opts: {
       // parts is a turn the model never took, and it would be replayed as one.
       if (result.text || result.toolCalls.length > 0) {
         messages.push(
-          assistantMessageFor(deps.nextMessageId(), result, new Map())
+          (deps.assistantMessage ?? assistantMessageFor)(deps.nextMessageId(), result, new Map())
         )
       }
       deps.onStep({
@@ -573,7 +589,7 @@ export async function runTurn(opts: {
     }
 
     if (result.text || result.toolCalls.length > 0) {
-      messages.push(assistantMessageFor(deps.nextMessageId(), result, outcomes))
+      messages.push((deps.assistantMessage ?? assistantMessageFor)(deps.nextMessageId(), result, outcomes))
     }
     deps.onStep({ step, result, turns: turnsFor(result, outcomes), outcomes })
 

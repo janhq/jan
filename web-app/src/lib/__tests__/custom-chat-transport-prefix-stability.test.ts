@@ -491,3 +491,63 @@ it.each(['anthropic', 'google', 'openai'])(
     expect(sent).not.toContain('__JAN_TOOL_IMAGE__')
   }
 )
+
+// Exercise the new adapter's actual canonical output through the production
+// transport media/tool-wave pipeline, not SDK conversion alone.
+it.each(['groq', 'anthropic', 'google', 'openai'])(
+  'Chat runner typed MCP/RAG/media live and reload requests match for %s',
+  async (name) => {
+    const { createChatRunStream } = await import('../chatRunTransport')
+    const { readUIMessageStream } = await import('ai')
+    const { assistantRecordFields, convertThreadMessageToUIMessage } = await import('../messages')
+    const chunks = (values: unknown[]) => new ReadableStream({ start(c) { values.forEach(v => c.enqueue(v)); c.close() } })
+    const initial = user('u-fixture', 'controlled media fixture')
+    let n = 0
+    const responses = [
+      chunks([{ type: 'start-step' }, ...['image', 'empty', 'zero', 'false', 'rag'].map(toolCallId => ({ type: 'tool-input-available', toolCallId, toolName: `fixture_${toolCallId}`, input: {} })), { type: 'finish-step' }, { type: 'finish' }]),
+      chunks([{ type: 'start-step' }, { type: 'text-start', id: 't' }, { type: 'text-delta', id: 't', delta: 'fixture done' }, { type: 'text-end', id: 't' }, { type: 'finish-step' }, { type: 'finish' }]),
+    ]
+    const outputs: Record<string, unknown> = {
+      image: [{ type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' }],
+      empty: '', zero: 0, false: false, rag: [{ type: 'text', text: 'retrieved fixture' }],
+    }
+    let live: UIMessage | undefined
+    for await (const message of readUIMessageStream({ stream: createChatRunStream({
+      messages: [initial], messageId: 'a-fixture', signal: new AbortController().signal,
+      sendStep: async () => responses[n++], dispatch: async call => ({ output: outputs[call.toolCallId] }),
+    }) })) live = message
+    const record = JSON.parse(JSON.stringify({ id: live!.id, thread_id: 'thread-1', role: 'assistant', status: 'ready', created_at: 1, completed_at: 1, ...assistantRecordFields(live!, {}, {}) }))
+    const reloaded = convertThreadMessageToUIMessage(record)
+    provider.provider = name
+    h.providerId = name
+    selectedModel.id = 'gpt'
+    selectedModel.capabilities = ['tools', 'vision']
+    streamTextCalls.length = 0
+    const transport = new CustomChatTransport('fixture system', 'thread-1')
+    await drain(await send(transport, [initial, live!]))
+    await drain(await send(transport, [initial, reloaded]))
+    expect(streamTextCalls[1].messages).toEqual(streamTextCalls[0].messages)
+    const wire = JSON.stringify(streamTextCalls[0].messages)
+    expect(wire).toContain(name === 'groq' ? '__JAN_TOOL_IMAGE__data:image/png;base64,iVBORw0KGgo=' : 'image-data')
+    expect(wire).toContain('retrieved fixture')
+    // Losing uiParts would corrupt falsy tool outcomes/wave boundaries.
+    const legacy = convertThreadMessageToUIMessage({ ...record, metadata: {} })
+    await drain(await send(transport, [initial, legacy]))
+    expect(streamTextCalls[2].messages).not.toEqual(streamTextCalls[0].messages)
+  }
+)
+
+it('does not send persisted Chat cap notices back through the production model conversion', async () => {
+  const { CHAT_RUN_NOTICE_METADATA } = await import('../chatRunNotice')
+  const transport = new CustomChatTransport('fixture system', 'thread-1')
+  const message: UIMessage = { id: 'stopped', role: 'assistant', parts: [
+    { type: 'text', text: 'Actual partial answer', state: 'done' },
+    { type: 'text', text: 'DISPLAY_ONLY_CAP_NOTICE', state: 'done', providerMetadata: CHAT_RUN_NOTICE_METADATA },
+  ] }
+  streamTextCalls.length = 0
+  await drain(await send(transport, [user('u-notice', 'fixture'), message]))
+  const wire = JSON.stringify(streamTextCalls[0].messages)
+  expect(wire).toContain('Actual partial answer')
+  expect(wire).not.toContain('DISPLAY_ONLY_CAP_NOTICE')
+  expect(wire).not.toContain('chatRunNotice')
+})

@@ -15,6 +15,7 @@ import {
   splitAssistantToolWaves,
 } from '@/lib/custom-chat-transport'
 import { newUserThreadContent } from '@/lib/completion'
+import { CHAT_RUN_NOTICE_METADATA, isChatRunNotice } from '@/lib/chatRunNotice'
 
 const assistant = (parts: any[], metadata?: Record<string, unknown>) =>
   ({ id: 'a1', role: 'assistant', parts, metadata }) as UIMessage
@@ -328,6 +329,45 @@ describe('corrupt carriers fall back to the content path', () => {
       expect((back!.metadata as any).uiParts).toBeUndefined()
     })
   }
+})
+
+describe('cap notices stay out of persisted legacy content', () => {
+  const notice = {
+    type: 'text',
+    text: 'Stopped at the step limit — press Continue to keep going.',
+    providerMetadata: CHAT_RUN_NOTICE_METADATA,
+  }
+
+  it('content excludes the notice (CLI-compatible) while the carrier keeps its display', () => {
+    const message = assistant([{ type: 'text', text: 'partial answer' }, notice])
+    const record = build(message, undefined, true)
+    // Legacy `content` is what old builds and the CLI replay as assistant
+    // history and what a content-only Continue prefills from.
+    expect(JSON.stringify(record.content)).not.toContain('Stopped at the step limit')
+    expect(record.content).toMatchObject([{ type: 'text', text: { value: 'partial answer' } }])
+    // Losing the notice from `content` forces the uiParts carrier, so the
+    // reloaded turn still displays it — and still marked, so replay/prefill
+    // filters keep recognizing it after the persistence roundtrip.
+    expect(record.metadata?.uiParts).toBeDefined()
+    const parts = convertThreadMessageToUIMessage(persist(record)).parts as any[]
+    expect(parts.filter((p) => isChatRunNotice(p))).toHaveLength(1)
+    expect(parts).toContainEqual(expect.objectContaining({ type: 'text', text: 'partial answer' }))
+  })
+
+  it('a skipped carrier reloads content-only with no notice anywhere', () => {
+    const message = assistant([
+      { type: 'text', text: 'partial answer' },
+      { type: 'file', mediaType: 'application/pdf', url: `data:application/pdf;base64,${'P'.repeat(300 * 1024)}` },
+      notice,
+    ])
+    const record = build(message, undefined, true)
+    expect(record.metadata?.uiParts).toBeUndefined()
+    expect(record.metadata?.uiPartsSkipped).toBe('size')
+    expect(JSON.stringify(record.content)).not.toContain('Stopped at the step limit')
+    const parts = convertThreadMessageToUIMessage(persist(record)).parts
+    expect(JSON.stringify(parts)).not.toContain('Stopped at the step limit')
+    expect(parts).toContainEqual(expect.objectContaining({ type: 'text', text: 'partial answer' }))
+  })
 })
 
 describe('no silent truncation', () => {
