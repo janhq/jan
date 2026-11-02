@@ -264,8 +264,8 @@ describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
   })
 
   it('a hydration landing mid-retry-window wins without waiting out the backend', async () => {
-    // isLoadingThreads is deliberately NOT trusted as a hydration signal; the
-    // only authoritative skip is the record itself appearing in the store.
+    // A resident record or success-only threadsHydrated skips the lookup;
+    // isLoadingThreads alone is not an authoritative hydration signal.
     fetchThreadsMock.mockImplementation(() => {
       // Hydration lands after the first failed attempt.
       if (fetchThreadsMock.mock.calls.length === 1) {
