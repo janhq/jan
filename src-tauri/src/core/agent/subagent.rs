@@ -2164,7 +2164,7 @@ async fn run_subagent(
     // messages: they are user turns of the child's run, and nothing else sees
     // them on their way in.
     let recorder = Arc::new(std::sync::Mutex::new(transcript_dir.as_deref().map(|dir| {
-        crate::core::agent::run_record::Recorder::start(dir, &name, &run_id, &description)
+        crate::core::agent::subagent_session::Recorder::start(dir, &name, &run_id, &description)
     })));
     let fwd_recorder = recorder.clone();
     let forwarder = tokio::spawn(async move {
@@ -2518,7 +2518,7 @@ fn start_dispatch(
     let session_display = transcript_dir.as_ref().map(|dir| {
         scratch_display_path(
             scratch,
-            &crate::core::agent::run_record::transcript_path(dir, &name),
+            &crate::core::agent::subagent_session::session_file(dir, &name),
         )
     });
     let slot = ChildSlot::new();
@@ -3521,7 +3521,7 @@ pub fn subagent_tool_schemas(
         "enum": registry.dispatchable_names(),
         "description": "The predefined agent to run (see the Subagents section of your instructions for what each is for); use `general` when no other fits. The same agent may appear several times: repeats are named `<agent>-2`, `<agent>-3`, ... in the order listed, and that name is what message_subagent/stop_subagent take and the blackboard/<name>.md file its answer is written to."
     });
-    let bg = format!(" Subagents run in the BACKGROUND, concurrently (up to {max_parallel} at once, from max_parallel_subagents in agent.toml; more are queued FIFO). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to; the entry ends with a link to the subagent's full session record (subagents/<name>-transcript.json: its prompt, reasoning, tool calls and results), which lasts until this session ends. Steer a running child with message_subagent, or stop it with stop_subagent, by its name (reported when it starts).");
+    let bg = format!(" Subagents run in the BACKGROUND, concurrently (up to {max_parallel} at once, from max_parallel_subagents in agent.toml; more are queued FIFO). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to; the entry ends with a link to the subagent's full session record (subagents/<name>-session.jsonl: its prompt, reasoning, tool calls and results), which lasts until this session ends. Steer a running child with message_subagent, or stop it with stop_subagent, by its name (reported when it starts).");
     let phases_desc = " List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase's results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes).";
     let dispatch_desc = format!(
         "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} Every subagent gets your full toolset unless its agent's definition or allowed_tools restricts it, except memory: subagents have no memory tool and no memory index, so put any remembered fact a subagent needs into its task."
@@ -5279,13 +5279,15 @@ pub(crate) mod tests {
             .load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// A dispatched child leaves `<scratch>/subagents/<name>-transcript.json`
-    /// behind, carrying the task it was given as `prompt` and a terminal status.
-    /// With no provider configured the child fails fast, which is exactly the
-    /// case a record must still close: the failure is what the parent reads.
+    /// A dispatched child leaves `<scratch>/subagents/<name>-session.jsonl`
+    /// behind, in the main session format, carrying the task it was given as
+    /// `prompt` and a terminal status. With no provider configured the child
+    /// fails fast, which is exactly the case a record must still close: the
+    /// failure is what the parent reads.
     #[cfg(feature = "cli")]
     #[tokio::test]
-    async fn a_dispatched_child_leaves_a_closed_transcript_in_the_scratch() {
+    async fn a_dispatched_child_leaves_a_closed_session_in_the_scratch() {
+        use crate::core::agent::session_log::RunStatus;
         let root = unique_root("transcript-file");
         write_def(&project_subagents_dir(&root), "reviewer", "");
         let scratch = unique_root("transcript-scratch");
@@ -5306,19 +5308,16 @@ pub(crate) mod tests {
         .run_id;
         let _ = await_subagent(&bg, &run_id).await;
 
-        let path = crate::core::agent::run_record::transcript_path(
-            &scratch.join(tauri_plugin_agent_tools::tools::spill::SUBAGENT_DIR),
-            "reviewer",
-        );
-        let doc: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).expect("transcript exists")).unwrap();
-        assert_eq!(doc["name"], "reviewer");
-        assert_eq!(doc["run_id"], run_id.as_str());
-        assert_eq!(doc["prompt"], req("reviewer", None).description.as_str());
-        assert_ne!(doc["status"], "running", "the record is closed: {doc}");
+        let loaded = crate::core::agent::subagent_session::load(&scratch, "reviewer").unwrap();
+        assert_eq!(loaded.skipped, 0);
+        let meta = loaded.record.meta.expect("a meta line");
+        assert_eq!(meta.name, "reviewer");
+        assert_eq!(meta.run_id, run_id);
+        assert_eq!(meta.prompt, req("reviewer", None).description);
+        assert_ne!(meta.status, RunStatus::Running, "the record is closed: {meta:?}");
         assert!(
-            doc["error"].is_string() || doc["output"].is_string(),
-            "a closed record says how it ended: {doc}"
+            meta.error.is_some() || meta.output.is_some(),
+            "a closed record says how it ended: {meta:?}"
         );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
@@ -5353,7 +5352,7 @@ pub(crate) mod tests {
             .expect("blackboard entry");
         let session = scratch_display_path(
             Some(&scratch),
-            &crate::core::agent::run_record::session_path(&scratch, "reviewer"),
+            &crate::core::agent::subagent_session::session_path(&scratch, "reviewer"),
         );
         assert!(entry.starts_with("ERROR: "), "the result leads: {entry}");
         assert!(entry.ends_with(&session_link(&session)), "{entry}");
@@ -5364,8 +5363,8 @@ pub(crate) mod tests {
     #[test]
     fn a_blackboard_entry_is_the_result_then_the_session_link() {
         assert_eq!(
-            blackboard_entry("the answer", Some("/tmp/subagents/a-transcript.json")),
-            format!("the answer{}", session_link("/tmp/subagents/a-transcript.json"))
+            blackboard_entry("the answer", Some("/tmp/subagents/a-session.jsonl")),
+            format!("the answer{}", session_link("/tmp/subagents/a-session.jsonl"))
         );
         assert_eq!(blackboard_entry("the answer", None), "the answer");
         assert!(session_link("/p").contains("deleted when this session ends"));
@@ -5380,7 +5379,7 @@ pub(crate) mod tests {
             .find(|s| s["function"]["name"] == "dispatch_subagent")
             .unwrap();
         let desc = dispatch["function"]["description"].as_str().unwrap();
-        assert!(desc.contains("subagents/<name>-transcript.json"), "{desc}");
+        assert!(desc.contains("subagents/<name>-session.jsonl"), "{desc}");
     }
 
     /// A run with no scratch has nowhere sanctioned to write, and must not
@@ -5405,7 +5404,8 @@ pub(crate) mod tests {
     #[cfg(feature = "cli")]
     #[tokio::test]
     async fn aborting_a_child_task_closes_its_record_as_stopped() {
-        use crate::core::agent::run_record::{transcript_path, Recorder};
+        use crate::core::agent::session_log::RunStatus;
+        use crate::core::agent::subagent_session::{session_file, Recorder};
         let dir = unique_root("transcript-abort");
         let recorder = Recorder::start(&dir, "w", "sub-w-1", "task");
         let handle = tokio::spawn(async move {
@@ -5415,9 +5415,12 @@ pub(crate) mod tests {
         tokio::task::yield_now().await;
         handle.abort();
         let _ = handle.await;
-        let doc: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(transcript_path(&dir, "w")).unwrap()).unwrap();
-        assert_eq!(doc["status"], "stopped", "{doc}");
+        let meta = crate::core::agent::session_log::load(&session_file(&dir, "w"))
+            .unwrap()
+            .record
+            .meta
+            .unwrap();
+        assert_eq!(meta.status, RunStatus::Stopped, "{meta:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

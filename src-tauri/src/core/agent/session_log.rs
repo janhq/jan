@@ -19,6 +19,12 @@
 //!
 //! Loading never writes. A [`SessionWriter`] holds an advisory lock beside the
 //! file for as long as it lives, so two processes cannot interleave batches.
+//!
+//! A delegated run (a subagent) keeps its session in this same format, plus a
+//! `meta` line saying who it was and how it ended ([`RunMeta`]); the last
+//! committed one holds. Its file sits in the shell-writable session scratch, so
+//! neither [`load`] nor [`SessionWriter::open`] follows a link planted at the
+//! file's (or the lock's) name.
 
 use std::borrow::Cow;
 use std::io::Write;
@@ -133,11 +139,40 @@ fn default_true() -> bool {
     true
 }
 
-/// The session in memory: the wire messages and the transcript entries.
+/// Where a delegated run stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    Running,
+    Finished,
+    Failed,
+    Stopped,
+}
+
+/// Who a delegated run was and how it ended. A main thread has none: its
+/// metadata lives in `thread.json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RunMeta {
+    pub name: String,
+    pub run_id: String,
+    /// The task it was given.
+    pub prompt: String,
+    pub status: RunStatus,
+    /// The final answer, once it finished.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    /// Why a failed or stopped run ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// The session in memory: the wire messages, the transcript entries and, for
+/// a delegated run, its metadata.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SessionRecord {
     pub messages: Vec<Value>,
     pub display: Vec<DisplayEntry>,
+    pub meta: Option<RunMeta>,
 }
 
 /// A loaded record plus how many lines were not applied: unparsable lines and
@@ -154,6 +189,7 @@ enum Line<'a> {
     Session { version: u32 },
     Message { message: Cow<'a, Value> },
     Display { entry: Cow<'a, DisplayEntry> },
+    Meta { meta: Cow<'a, RunMeta> },
     Truncate { messages: usize, display: usize },
     Sync { messages: usize, display: usize },
 }
@@ -217,6 +253,7 @@ fn apply<'a>(record: &mut SessionRecord, lines: impl Iterator<Item = Line<'a>>) 
         match line {
             Line::Message { message } => record.messages.push(message.into_owned()),
             Line::Display { entry } => record.display.push(entry.into_owned()),
+            Line::Meta { meta } => record.meta = Some(meta.into_owned()),
             Line::Truncate { messages, display } => {
                 record.messages.truncate(messages);
                 record.display.truncate(display);
@@ -227,13 +264,43 @@ fn apply<'a>(record: &mut SessionRecord, lines: impl Iterator<Item = Line<'a>>) 
 }
 
 /// Read a session file. Read-only: a torn or uncommitted tail is skipped and
-/// counted, never repaired here. A missing file is an empty session.
+/// counted, never repaired here. A missing file is an empty session; a link or
+/// anything else that is not a regular file is refused.
 pub fn load(path: &Path) -> std::io::Result<Loaded> {
-    match std::fs::read(path) {
-        Ok(bytes) => Ok(parse(&bytes).loaded),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Loaded::default()),
-        Err(e) => Err(e),
+    let mut file = match open_no_follow(std::fs::OpenOptions::new().read(true), path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Loaded::default()),
+        Err(e) => return Err(e),
+    };
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut file, &mut bytes)?;
+    Ok(parse(&bytes).loaded)
+}
+
+/// Open `path` with `options`, refusing a symlink at the last component and
+/// anything that is not a regular file. On Unix the open itself does not
+/// follow a link (`O_NOFOLLOW`), so a link swapped in after the check is
+/// refused too.
+fn open_no_follow(
+    options: &mut std::fs::OpenOptions,
+    path: &Path,
+) -> std::io::Result<std::fs::File> {
+    if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(std::io::Error::other(format!(
+            "{} is a symlink",
+            path.display()
+        )));
     }
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(options, libc::O_NOFOLLOW);
+    let file = options.open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::other(format!(
+            "{} is not a regular file",
+            path.display()
+        )));
+    }
+    Ok(file)
 }
 
 /// The advisory lock file guarding `path`. A sibling rather than the session
@@ -308,13 +375,15 @@ impl SessionWriter {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        let lock = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(lock_path(path))
-            .map_err(|e| e.to_string())?;
+        let lock = open_no_follow(
+            std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false),
+            &lock_path(path),
+        )
+        .map_err(|e| e.to_string())?;
         try_lock(&lock).map_err(|e| match e {
             fs4::TryLockError::WouldBlock => format!(
                 "{} is open in another session; close it there first",
@@ -322,13 +391,13 @@ impl SessionWriter {
             ),
             fs4::TryLockError::Error(e) => e.to_string(),
         })?;
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .append(true)
-            .create(true)
-            .open(path)
-            .map_err(|e| e.to_string())?;
-        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let mut file = open_no_follow(
+            std::fs::OpenOptions::new().read(true).append(true).create(true),
+            path,
+        )
+        .map_err(|e| e.to_string())?;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut file, &mut bytes).map_err(|e| e.to_string())?;
         let parsed = parse(&bytes);
         if parsed.committed_len < bytes.len() as u64 {
             file.set_len(parsed.committed_len)
@@ -410,6 +479,44 @@ impl SessionWriter {
                 display: display_len,
             },
         )?;
+        self.commit(&body)?;
+        self.record.messages.truncate(keep_m);
+        self.record.messages.extend_from_slice(&messages[keep_m..]);
+        self.record.display.truncate(keep_d);
+        self.record.display.extend_from_slice(new_display);
+        Ok(true)
+    }
+
+    /// Record a delegated run's metadata as one `meta` + `sync` batch. Returns
+    /// whether anything was written (nothing when it is unchanged).
+    pub fn sync_meta(&mut self, meta: &RunMeta) -> std::io::Result<bool> {
+        if self.record.meta.as_ref() == Some(meta) {
+            return Ok(false);
+        }
+        let mut body = String::new();
+        if self.len == 0 {
+            push_line(&mut body, &Line::Session { version: VERSION })?;
+        }
+        push_line(
+            &mut body,
+            &Line::Meta {
+                meta: Cow::Borrowed(meta),
+            },
+        )?;
+        push_line(
+            &mut body,
+            &Line::Sync {
+                messages: self.record.messages.len(),
+                display: self.record.display.len(),
+            },
+        )?;
+        self.commit(&body)?;
+        self.record.meta = Some(meta.clone());
+        Ok(true)
+    }
+
+    /// Append one batch with a single write and sync it to disk.
+    fn commit(&mut self, body: &str) -> std::io::Result<()> {
         let written = self
             .file
             .write_all(body.as_bytes())
@@ -421,11 +528,7 @@ impl SessionWriter {
             return Err(e);
         }
         self.len += body.len() as u64;
-        self.record.messages.truncate(keep_m);
-        self.record.messages.extend_from_slice(&messages[keep_m..]);
-        self.record.display.truncate(keep_d);
-        self.record.display.extend_from_slice(new_display);
-        Ok(true)
+        Ok(())
     }
 }
 
@@ -680,6 +783,109 @@ mod tests {
         assert!(err.contains("another session"), "{err}");
         drop(first);
         assert!(SessionWriter::open(&path).is_ok());
+    }
+
+    fn meta(status: RunStatus) -> RunMeta {
+        RunMeta {
+            name: "scout".into(),
+            run_id: "sub-scout-1".into(),
+            prompt: "look around".into(),
+            status,
+            output: None,
+            error: None,
+        }
+    }
+
+    /// A delegated run's outcome rides in the same file as its messages and
+    /// display entries: the last committed `meta` line is the one that holds.
+    #[test]
+    fn the_last_committed_meta_line_is_the_runs() {
+        let (_dir, path) = file();
+        let mut writer = SessionWriter::open(&path).unwrap();
+        assert!(writer.sync_meta(&meta(RunStatus::Running)).unwrap());
+        writer.sync(&messages(), Some(&sample())).unwrap();
+        let done = RunMeta {
+            output: Some("found it".into()),
+            ..meta(RunStatus::Finished)
+        };
+        assert!(writer.sync_meta(&done).unwrap());
+        assert!(!writer.sync_meta(&done).unwrap(), "an unchanged meta writes nothing");
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded.skipped, 0);
+        assert_eq!(loaded.record.meta, Some(done));
+        assert_eq!(loaded.record.messages, messages());
+        assert_eq!(loaded.record.display, sample());
+        assert_eq!(writer.record(), &loaded.record);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("{\"type\":\"session\",\"version\":1}\n"), "{text}");
+        assert!(text.contains("{\"type\":\"meta\",\"meta\":{\"name\":\"scout\""), "{text}");
+    }
+
+    /// A main thread's file has no `meta` line, and one written before the line
+    /// existed loads as it always did.
+    #[test]
+    fn a_file_without_meta_loads_with_none() {
+        let (_dir, path) = file();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "{\"type\":\"session\",\"version\":1}\n\
+             {\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":\"hi\"}}\n\
+             {\"type\":\"sync\",\"messages\":1,\"display\":0}\n",
+        )
+        .unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded.skipped, 0);
+        assert_eq!(loaded.record.meta, None);
+        assert_eq!(loaded.record.messages, vec![json!({ "role": "user", "content": "hi" })]);
+    }
+
+    /// A meta line no `sync` closed is a torn batch like any other.
+    #[test]
+    fn an_uncommitted_meta_line_is_skipped() {
+        let (_dir, path) = file();
+        let mut writer = SessionWriter::open(&path).unwrap();
+        writer.sync_meta(&meta(RunStatus::Running)).unwrap();
+        drop(writer);
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        let line = Line::Meta {
+            meta: Cow::Owned(meta(RunStatus::Finished)),
+        };
+        writeln!(f, "{}", serde_json::to_string(&line).unwrap()).unwrap();
+        drop(f);
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded.record.meta, Some(meta(RunStatus::Running)));
+        assert_eq!(loaded.skipped, 1);
+    }
+
+    /// A session file can live in the shell-writable scratch (a subagent's), so
+    /// a link planted at its name or its lock's must route nothing onto the
+    /// file it points at, read or write.
+    #[cfg(unix)]
+    #[test]
+    fn a_planted_symlink_is_neither_read_nor_written() {
+        let (dir, path) = file();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let victim = dir.path().join("victim");
+        std::fs::write(&victim, "keep\n").unwrap();
+        std::os::unix::fs::symlink(&victim, &path).unwrap();
+        assert!(load(&path).is_err());
+        assert!(SessionWriter::open(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep\n");
+
+        std::fs::remove_file(&path).unwrap();
+        let _ = std::fs::remove_file(lock_path(&path));
+        std::os::unix::fs::symlink(&victim, lock_path(&path)).unwrap();
+        assert!(SessionWriter::open(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep\n");
+    }
+
+    #[test]
+    fn a_directory_at_the_session_path_is_refused() {
+        let (_dir, path) = file();
+        std::fs::create_dir_all(&path).unwrap();
+        assert!(load(&path).is_err());
+        assert!(SessionWriter::open(&path).is_err());
     }
 
     #[test]
