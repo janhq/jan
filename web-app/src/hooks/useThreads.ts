@@ -139,8 +139,7 @@ const deleteThreadOnDisk = (threadId: string, thread?: Thread) => {
   // doubles) into the same catch as an async rejection.
   Promise.resolve()
     .then(() => getServiceHub().threads().deleteThread(threadId))
-    .catch(
-    (error) => {
+    .catch((error) => {
       console.warn(`[Threads] Failed to delete thread ${threadId} from storage:`, error)
       let restoredThread = false
       if (thread) {
@@ -179,8 +178,7 @@ const deleteThreadOnDisk = (threadId: string, thread?: Thread) => {
           ? 'It could not be removed from storage. The conversation was restored, but some auxiliary data (attachment index, cache) may have been cleaned up.'
           : 'It could not be fully removed from storage.',
       })
-    }
-  )
+    })
 }
 
 export const useThreads = create<ThreadState>()((set, get) => ({
