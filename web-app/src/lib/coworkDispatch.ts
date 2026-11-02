@@ -7,19 +7,16 @@ import {
 } from '@/lib/agentTools'
 import { useCoworkConfig } from '@/hooks/useCoworkConfig'
 import {
-  ASK_TOOL_NAME,
   capabilityModeRefusal,
   PLAN_DENIED_MEMORY_OPS,
-  TASK_TOOL_NAME,
-  TODO_TOOL_NAME,
   unadvertisedToolRefusal,
 } from '@/lib/coworkTools'
+import { monitorSpecFromArgs, type MonitorLane } from '@/lib/coworkMonitor'
 import {
-  MONITOR_TOOL_NAME,
-  monitorSpecFromArgs,
-  type MonitorLane,
-} from '@/lib/coworkMonitor'
-import type { PendingToolCall, ToolOutcome } from '@/lib/coworkRunner'
+  dispatchClientTool,
+  type PendingToolCall,
+  type ToolOutcome,
+} from '@/lib/clientToolDispatch'
 import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
 import {
   EXECUTE_PLAN_LABEL,
@@ -187,16 +184,14 @@ export async function dispatchCoworkTool(
   if (refusal) return refusal
 
   try {
-    if (toolName === TODO_TOOL_NAME) return await ctx.onTodo(call.input)
-    if (toolName === ASK_TOOL_NAME) {
-      return await ctx.onAsk(call.toolCallId, call.input)
-    }
-    if (toolName === TASK_TOOL_NAME) {
-      return await ctx.onTask(call.toolCallId, call.input)
-    }
-    if (toolName === MONITOR_TOOL_NAME) {
-      return await runMonitorOp(call.input, ctx)
-    }
+    // Policy gates above remain authoritative; this seam grants nothing.
+    const client = await dispatchClientTool(call, {
+      onTodo: ctx.onTodo,
+      onAsk: ctx.onAsk,
+      onTask: ctx.onTask,
+      onMonitor: (input) => runMonitorOp(input, ctx),
+    })
+    if (client !== undefined) return client
 
     if (WEB_TOOL_NAMES.has(toolName)) {
       const web = await executeWebTool(toolName, call.input ?? {})
