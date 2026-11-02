@@ -1,6 +1,7 @@
 import { readUIMessageStream, type UIMessage, type UIMessageChunk } from 'ai'
 import { runTurn, type PendingToolCall, type ToolOutcome, type RunOutcome } from './coworkRunner'
 import { STOPPED_TOOL_ERROR, untilAborted } from './stopped-tool-calls'
+import { CHAT_RUN_NOTICE_METADATA } from './chatRunNotice'
 import { encodeToolImageSentinel } from './tool-image-sentinel'
 
 export type ChatToolOutcome = Omit<ToolOutcome, 'output'> & { output: unknown }
@@ -197,7 +198,7 @@ export function createChatRunStream(options: {
           const capId = `cap:${step}`
           emit({ type: 'text-start', id: capId })
           emit({ type: 'text-delta', id: capId, delta: `\n\nStopped at the ${outcome.stoppedBy === 'steps' ? 'step' : 'token'} limit. You can continue this turn.` })
-          emit({ type: 'text-end', id: capId })
+          emit({ type: 'text-end', id: capId, providerMetadata: CHAT_RUN_NOTICE_METADATA })
           emit({ type: 'abort' })
         }
         if (outcome.stoppedBy === 'error') emit({ type: 'error', errorText: outcome.errorText ?? 'Chat run failed' })

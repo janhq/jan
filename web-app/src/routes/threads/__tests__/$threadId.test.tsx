@@ -1,3 +1,4 @@
+import { CHAT_RUN_NOTICE_METADATA } from '@/lib/chatRunNotice'
 import { Chat, useChat as useSDKChat } from '@ai-sdk/react'
 import { trackChat, quiesceChats, __resetChatCloseForTests } from '@/lib/chatClose'
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -2106,7 +2107,7 @@ describe('ThreadDetail route', () => {
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
     })
 
-    it('deletion with adapter abort reports chat closing, not user denial', async () => {
+    it('deletion with adapter abort returns an interrupted error without executing', async () => {
       const run = serveMcp()
       let decide!: (approved: boolean) => void
       h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>((r) => { decide = r }))
@@ -2263,7 +2264,10 @@ describe('ThreadDetail route', () => {
           })
         }
         return chunks(steps.mock.calls.length === 1 ? [
-          ...(partialText ? [{ type: 'text-start' as const, id: 'partial' }, { type: 'text-delta' as const, id: 'partial', delta: 'partial' }, { type: 'text-end' as const, id: 'partial' }] : []),
+          ...(partialText ? [
+            { type: 'text-start' as const, id: 'partial' }, { type: 'text-delta' as const, id: 'partial', delta: 'partial' }, { type: 'text-end' as const, id: 'partial' },
+            { type: 'text-start' as const, id: 'notice' }, { type: 'text-delta' as const, id: 'notice', delta: 'UI limit notice must not be prefill' }, { type: 'text-end' as const, id: 'notice', providerMetadata: CHAT_RUN_NOTICE_METADATA },
+          ] : []),
           ...toolStep(...ids),
         ] : textStep)
       })
@@ -2427,7 +2431,8 @@ describe('ThreadDetail route', () => {
       expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
       expect(useToolCallRuntime.getState().queue).toEqual([])
       if (action === 'Continue') {
-        expect(h.mockSetContinueFromContent).toHaveBeenCalledWith({ text: 'partial', reasoning: '' })
+        expect(h.mockSetContinueFromContent).toHaveBeenCalledExactlyOnceWith({ text: 'partial', reasoning: '' })
+        expect(JSON.stringify(replacement.parts)).not.toContain('UI limit notice')
         expect(h.messagesState.deleteMessage).toHaveBeenCalledExactlyOnceWith('thread-1', originalAssistant)
         expect(h.messagesState.addMessage).toHaveBeenCalledWith(expect.objectContaining({ id: 'replacement-thread-1', role: 'assistant' }))
       }

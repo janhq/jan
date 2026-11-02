@@ -1,3 +1,4 @@
+import { isChatRunNotice } from '@/lib/chatRunNotice'
 import type { ChatToolOutcome } from '@/lib/chatRunTransport'
 import { assertMcpIdentityAvailable, memoizeMcpValidation } from '@/lib/chatMcpIdentity'
 import { isChatClosing, setChatCloseStop } from '@/lib/chatClose'
@@ -159,7 +160,7 @@ const titleAborts = new Map<string, AbortController>()
 const partialOf = (message: UIMessage) => {
   const collect = (type: 'text' | 'reasoning') =>
     message.parts
-      .filter((p) => p.type === type)
+      .filter((p) => p.type === type && !isChatRunNotice(p))
       .map((p) => (p as { text: string }).text)
       .join('')
   return { text: collect('text'), reasoning: collect('reasoning') }

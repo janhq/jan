@@ -536,3 +536,18 @@ it.each(['groq', 'anthropic', 'google', 'openai'])(
     expect(streamTextCalls[2].messages).not.toEqual(streamTextCalls[0].messages)
   }
 )
+
+it('does not send persisted Chat cap notices back through the production model conversion', async () => {
+  const { CHAT_RUN_NOTICE_METADATA } = await import('../chatRunNotice')
+  const transport = new CustomChatTransport('fixture system', 'thread-1')
+  const message: UIMessage = { id: 'stopped', role: 'assistant', parts: [
+    { type: 'text', text: 'Actual partial answer', state: 'done' },
+    { type: 'text', text: 'DISPLAY_ONLY_CAP_NOTICE', state: 'done', providerMetadata: CHAT_RUN_NOTICE_METADATA },
+  ] }
+  streamTextCalls.length = 0
+  await drain(await send(transport, [user('u-notice', 'fixture'), message]))
+  const wire = JSON.stringify(streamTextCalls[0].messages)
+  expect(wire).toContain('Actual partial answer')
+  expect(wire).not.toContain('DISPLAY_ONLY_CAP_NOTICE')
+  expect(wire).not.toContain('chatRunNotice')
+})

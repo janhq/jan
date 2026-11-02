@@ -12,6 +12,7 @@ import {
   InvalidToolInputError,
   lastAssistantMessageIsCompleteWithToolCalls,
 } from 'ai'
+import { withoutChatRunNotices } from './chatRunNotice'
 import { uniqueMcpTools, warnWithheldMcpTools } from './chatMcpIdentity'
 import { repairToolArgs } from './toolCallRepair'
 import {
@@ -1564,7 +1565,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // messages. Required by the Claude API (tool_use / tool_result pairing) and
     // it keeps the prompt prefix byte-identical across turns so llama.cpp reuses
     // the KV cache. See `splitAssistantToolWaves`.
-    const messagesToConvert = splitAssistantToolWaves(options.messages)
+    const messagesToConvert = splitAssistantToolWaves(withoutChatRunNotices(options.messages))
 
     const inferenceParams = this.getActiveInferenceParams()
 

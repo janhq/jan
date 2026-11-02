@@ -1,3 +1,4 @@
+import { isChatRunNotice, withoutChatRunNotices } from '../chatRunNotice'
 import type { ThreadMessage } from '@janhq/core'
 import { assistantRecordFields, convertThreadMessageToUIMessage } from '../messages'
 import { describe, it, expect, vi } from 'vitest'
@@ -153,6 +154,11 @@ describe('Chat runTurn stream adapter (real SDK reader and runner)', () => {
     expect(send).toHaveBeenCalledTimes(1)
     expect(message.metadata).toMatchObject({ stopped: true, runStopReason: 'steps' })
     expect(message.parts.at(-1)).toMatchObject({ type: 'text', text: expect.stringContaining('step limit') })
+    expect(isChatRunNotice(message.parts.at(-1)!)).toBe(true)
+    const stored = JSON.parse(JSON.stringify({ id: message.id, role: 'assistant', thread_id: 'fixture', ...assistantRecordFields(message, {}, {}) })) as ThreadMessage
+    const reloaded = convertThreadMessageToUIMessage(stored)
+    expect(isChatRunNotice(reloaded.parts.at(-1)!)).toBe(true)
+    expect(withoutChatRunNotices([reloaded])[0].parts).toEqual(message.parts.slice(0, -1))
   })
   it('surfaces token exhaustion as a stopped turn with continuation text', async () => {
     const send = vi.fn().mockResolvedValue(stream([{ type: 'tool-input-available', toolCallId: 'c', toolName: 'fixture', input: {} }, { type: 'finish', messageMetadata: { usage: { inputTokens: 250000, outputTokens: 1001, totalTokens: 251001 } } }]))
