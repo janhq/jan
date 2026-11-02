@@ -143,8 +143,14 @@ pub fn project_key(project_root: &Path) -> PathBuf {
     for top in root.ancestors() {
         let dot_git = top.join(".git");
         if dot_git.is_dir() {
+            // The alternates spell `main` however git was handed it (forward
+            // slashes on Windows, an unresolved symlink), and the slug hashes
+            // that text, so canonicalize to land on `main`'s own store key.
             return match (shared_clone_origin(top), root.strip_prefix(top)) {
-                (Some(main), Ok(rel)) => main.join(rel),
+                (Some(main), Ok(rel)) => {
+                    let main = main.canonicalize().unwrap_or(main);
+                    if rel.as_os_str().is_empty() { main } else { main.join(rel) }
+                }
                 _ => root,
             };
         }
@@ -905,8 +911,15 @@ mod tests {
         }
         std::fs::create_dir_all(main.join(".git/objects")).unwrap();
         let main = main.canonicalize().unwrap();
-        assert_eq!(project_key(&clone), main);
-        assert_eq!(project_key(&clone.join("sub")), main.join("sub"));
+        // The store slug hashes the path's text, which `Path` equality does not
+        // compare: a trailing slash or another spelling of `main` would pass
+        // `==` and still land in a different, empty store.
+        assert_eq!(project_key(&clone).as_os_str(), main.as_os_str());
+        assert_eq!(path_slug(&project_key(&clone)), path_slug(&main));
+        assert_eq!(
+            project_key(&clone.join("sub")).as_os_str(),
+            main.join("sub").as_os_str()
+        );
         assert_eq!(project_key(&elsewhere), elsewhere.canonicalize().unwrap());
         let _ = std::fs::remove_dir_all(jan_home().unwrap());
         let _ = std::fs::remove_dir_all(elsewhere.parent().unwrap());
