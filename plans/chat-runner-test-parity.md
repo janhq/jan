@@ -2,7 +2,7 @@
 
 Latest route execution measured at `7aa499562`: **108 passed / 108 tests**, including all **20 newly merged MCP identity cases**. Full suite at `7aa499562` on merged parent `0b117ccd5`: **392 files / 5506 tests**, with TypeScript and production ESLint passing. (Historical record at `8c61e8940` after parent `cdecd19d4`: 106 route tests, 386 files / 5381 tests.) Command: `./node_modules/.bin/vitest run --project @janhq/web-app 'web-app/src/routes/threads/__tests__/$threadId.test.tsx'`.
 
-Owned file: `web-app/src/routes/threads/__tests__/$threadId.test.tsx`. No production edits.
+This document maps coverage for one owned file, `web-app/src/routes/threads/__tests__/$threadId.test.tsx`; "no production edits" applies to this parity exercise only — the test file and this document. The PR's production changes are recorded in `plans/chat-runner-handoff.md`.
 
 All pre-tool-suite tests and post-tool-suite presentation/attachment/versioning/context-resume/RAG availability tests retained. Async regenerate/edit/context transport fixtures adapted. Old tests assumed removed onFinish loop and SDK auto-send; replacements assert dispatch outcomes and actual SDK Chat + createChatRunStream, not a recreated serial loop.
 

@@ -151,8 +151,8 @@ export const MessageItem = memo(
     }, [onContinue, message.id])
 
     // The button renders only where the route has a working path: a capped
-    // turn resumes from its kept history (tool-only included); a user-stopped
-    // turn resumes only from partial text/reasoning. The cap notice itself
+    // turn or one with settled tool waves resumes from kept history; a pure
+    // text/reasoning stop resumes from its partial. The cap notice itself
     // never qualifies.
     const canContinue = canContinueStoppedTurn(metadata, message.parts)
 

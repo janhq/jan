@@ -16,6 +16,24 @@ export function isCappedTurn(metadata: unknown): boolean {
   return reason === 'steps' || reason === 'tokens'
 }
 
+/** A tool part whose execution already settled (result or stop/error marked). */
+const isSettledToolPart = (part: UIMessage['parts'][number]): boolean =>
+  'toolCallId' in part &&
+  ((part as { state?: string }).state === 'output-available' ||
+    (part as { state?: string }).state === 'output-error')
+
+/** A stopped turn resumes from kept canonical history (a new user continue
+ * turn) whenever regenerate-plus-prefill could lose settled work and make the
+ * model re-issue it: any cap, or any settled tool wave in the turn. A pure
+ * text/reasoning stop keeps the seamless prefill path. A tool still in flight
+ * does not qualify — the defensive mid-run race stays on the prefill path. */
+export function resumesFromKeptHistory(
+  metadata: unknown,
+  parts: UIMessage['parts']
+): boolean {
+  return isCappedTurn(metadata) || parts.some(isSettledToolPart)
+}
+
 /** Continue eligibility for the message UI, mirroring the route's working
  * paths: a capped turn resumes from any substantive part (tool waves
  * included); a turn the user stopped resumes only from partial
@@ -31,7 +49,7 @@ export function canContinueStoppedTurn(
   return parts.some((part) => {
     if (isChatRunNotice(part)) return false
     if (part.type === 'text' || part.type === 'reasoning') return !!part.text?.trim()
-    return capped && 'toolCallId' in part
+    return capped ? 'toolCallId' in part : isSettledToolPart(part)
   })
 }
 

@@ -2,7 +2,7 @@ import { isChatRunNotice } from '@/lib/chatRunNotice'
 import type { ChatToolOutcome } from '@/lib/chatRunTransport'
 import {
   CAPPED_CONTINUE_INSTRUCTION,
-  isCappedTurn,
+  resumesFromKeptHistory,
 } from '@/lib/chatRunTransport'
 import { assertMcpIdentityAvailable, memoizeMcpValidation } from '@/lib/chatMcpIdentity'
 import { isChatClosing, setChatCloseStop } from '@/lib/chatClose'
@@ -1949,12 +1949,14 @@ function ThreadDetail() {
       if (!msg) return
       // MessageItem renders the button from canContinueStoppedTurn; the
       // handler itself stays tolerant of the stop-stamp race (a click landing
-      // before `stopped` metadata) and so only branches on the cap marker.
-      if (isCappedTurn(msg.metadata)) {
-        // A capped run resumes as a new turn through the normal send path: the
-        // capped assistant (tool calls and results) stays canonical history,
-        // so nothing is re-dispatched. Regenerate-plus-prefill would drop the
-        // tool waves from the request and the model would re-issue them.
+      // before `stopped` metadata): a tool still in flight is not settled, so
+      // the race keeps the prefill path below.
+      if (resumesFromKeptHistory(msg.metadata, msg.parts)) {
+        // A capped run — or any stopped turn with settled tool waves — resumes
+        // as a new turn through the normal send path: the stopped assistant
+        // (tool calls and results) stays canonical history, so nothing is
+        // re-dispatched. Regenerate-plus-prefill would drop the tool waves
+        // from the request and the model would re-issue them.
         try {
           await sendQueuedMessage(CAPPED_CONTINUE_INSTRUCTION)
         } catch (error) {

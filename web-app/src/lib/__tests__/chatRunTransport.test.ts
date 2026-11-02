@@ -170,8 +170,11 @@ describe('Chat runTurn stream adapter (real SDK reader and runner)', () => {
     expect(canContinueStoppedTurn(capped, [tool, notice])).toBe(true)
     expect(canContinueStoppedTurn(capped, [notice])).toBe(false)
     expect(canContinueStoppedTurn({ stopped: true, runStopReason: 'tokens' }, [tool, notice])).toBe(true)
-    // User-stopped turns keep the old rule: only partial text/reasoning resumes.
-    expect(canContinueStoppedTurn({ stopped: true }, [tool])).toBe(false)
+    // User-stopped turns resume from settled tool waves (kept history) or
+    // partial text; a tool still in flight is not a resume point.
+    expect(canContinueStoppedTurn({ stopped: true }, [tool])).toBe(true)
+    const inFlight = { type: 'tool-fixture', toolCallId: 'c', state: 'input-available', input: {} } as unknown as UIMessage['parts'][number]
+    expect(canContinueStoppedTurn({ stopped: true }, [inFlight])).toBe(false)
     expect(canContinueStoppedTurn({ stopped: true }, [text])).toBe(true)
     expect(canContinueStoppedTurn({ stopped: true }, [{ type: 'text', text: '  ' }])).toBe(false)
     expect(canContinueStoppedTurn(undefined, [text])).toBe(false)

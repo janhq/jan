@@ -2482,6 +2482,98 @@ describe('ThreadDetail route', () => {
       expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
     })
 
+    it('Continue after a user Stop keeps settled tool waves in the request without re-execution', async () => {
+      const run = vi.fn(() => Promise.resolve({ content: 'A' }))
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: cancellable(run) }) as never
+      const { chat, steps, rerender } = setup(['tcA'])
+      // Step 1: tool wave settles. Step 2: final text streams and is held open
+      // so Stop lands mid-text. Step 3: the continuation reply.
+      steps.mockImplementation(async (messages: any[]) => {
+        const records = h.messagesState.getMessages('thread-1')
+        for (const message of messages.filter((m: any) => m.role === 'user')) {
+          if (!records.some((record: any) => record.id === message.id)) records.push({
+            id: message.id, thread_id: 'thread-1', role: 'user', metadata: {},
+            content: [{ type: 'text', text: { value: message.parts.find((p: any) => p.type === 'text')?.text ?? '', annotations: [] } }],
+          })
+        }
+        const call = steps.mock.calls.length
+        if (call === 1) return chunks(toolStep('tcA'))
+        if (call === 2) return new ReadableStream<UIMessageChunk>({ start(c) {
+          c.enqueue({ type: 'start', messageId: 'provider-final' })
+          c.enqueue({ type: 'text-start', id: 'text' })
+          c.enqueue({ type: 'text-delta', id: 'text', delta: 'the result shows' })
+          // Held open: only Stop ends this stream.
+        } })
+        return chunks(textStep)
+      })
+      const pending = chat.sendMessage({ text: 'go' })
+      await waitFor(() => expect(run).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(JSON.stringify(chat.messages.at(-1)!.parts)).toContain('the result shows'))
+      const Component = Route.component as React.ComponentType
+      rerender(<Component />)
+      await act(async () => { screen.getByTestId('chat-stop').click() })
+      await act(async () => { await pending })
+      await waitFor(() => expect(chat.status).toBe('ready'))
+      const stopped = chat.messages.find(message => message.role === 'assistant')!
+      expect(stopped.metadata).toMatchObject({ stopped: true })
+      expect(stopped.parts).toContainEqual(expect.objectContaining({ toolCallId: 'tcA', state: 'output-available', output: 'A' }))
+
+      rerender(<Component />)
+      await act(async () => { screen.getByTestId(`continue-${stopped.id}`).click() })
+      await waitFor(() => expect(steps).toHaveBeenCalledTimes(3))
+      await waitFor(() => expect(chat.status).toBe('ready'))
+
+      // The settled tool wave stays in the next request; nothing re-executes.
+      expect(run).toHaveBeenCalledTimes(1)
+      const history = steps.mock.calls[2][0]
+      const kept = history.find((message: any) =>
+        message.role === 'assistant' && message.parts.some((p: any) => p.toolCallId === 'tcA'))
+      expect(kept).toBeDefined()
+      expect(kept.parts).toContainEqual(
+        expect.objectContaining({ toolCallId: 'tcA', state: 'output-available', output: 'A' })
+      )
+      expect(history.filter((message: any) => message.role === 'user').at(-1)!.parts)
+        .toEqual([{ type: 'text', text: 'Continue.' }])
+      // Not the regenerate/prefill path: the stopped record is kept, nothing
+      // is prefilled, and the continuation persists as its own reply.
+      expect(h.mockSetContinueFromContent).not.toHaveBeenCalled()
+      expect(h.messagesState.deleteMessage).not.toHaveBeenCalled()
+      expect(chat.messages.filter(message => message.role === 'assistant')).toHaveLength(2)
+      expect(chat.messages.at(-1)!.parts).toContainEqual(expect.objectContaining({ type: 'text', text: 'continued' }))
+    })
+
+    it('Continue after stopping a held tool keeps the truthful error outcome, never a false result', async () => {
+      const cancel = vi.fn().mockResolvedValue(undefined)
+      const run = vi.fn(() => ({ promise: new Promise(() => {}), cancel, token: 't' }))
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: run }) as never
+      const { chat, steps, rerender } = setup(['tcA'])
+      const pending = chat.sendMessage({ text: 'go' })
+      await waitFor(() => expect(run).toHaveBeenCalledTimes(1))
+      h.chatState.messages = chat.messages
+      const Component = Route.component as React.ComponentType
+      rerender(<Component />)
+      await act(async () => { screen.getByTestId('chat-stop').click() })
+      await act(async () => { await pending })
+      await waitFor(() => expect(chat.status).toBe('ready'))
+      const stopped = chat.messages.find(message => message.role === 'assistant')!
+      const settledError = stopped.parts.find((p: any) => p.toolCallId === 'tcA') as any
+      expect(settledError).toMatchObject({ state: 'output-error' })
+
+      rerender(<Component />)
+      await act(async () => { screen.getByTestId(`continue-${stopped.id}`).click() })
+      await waitFor(() => expect(steps).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(chat.status).toBe('ready'))
+      expect(run).toHaveBeenCalledTimes(1)
+      const history = steps.mock.calls[1][0]
+      const kept = history.find((message: any) =>
+        message.role === 'assistant' && message.parts.some((p: any) => p.toolCallId === 'tcA'))
+      expect(kept).toBeDefined()
+      const keptPart = kept.parts.find((p: any) => p.toolCallId === 'tcA')
+      // Truthfully an error — never rewritten into a completed result.
+      expect(keptPart).toMatchObject({ state: 'output-error' })
+      expect(keptPart.output).toBeUndefined()
+    })
+
     it('branched Continue links the user turn and reply into the active path across reload', async () => {
       integrationMaxSteps = 1
       const run = vi.fn(() => Promise.resolve({ content: 'A' }))
