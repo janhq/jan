@@ -1,6 +1,6 @@
 # Conversation orchestration: production shared todo/ask slice
 
-Original parent: `4f76f4db9`; rebased onto merged MCP parent `0cfd05b0e`, integration PR #9529; #504/#505. This slice does not claim Chat orchestration activation or capability parity. Chat runner #9541, grants #9540 and MCP #9533 remain separately coordinated. No unmerged source imported, no route/hook/transport changes.
+Original parent: `4f76f4db9`; rebased onto merged grants/MCP parent `8b8d47ba1`, integration PR #9529; #504/#505. This slice does not claim Chat orchestration activation or capability parity. Chat runner #9541 remains separately coordinated; grants #9540 and MCP #9533 are merged, without activation by this slice. No unmerged source imported, no route/hook/transport changes.
 
 ## Production consumption and exact API
 
@@ -28,9 +28,9 @@ Task children must narrow the parent's advertised tools and dispatch with the SA
 
 - Independent follow-up review: PASS after fixing replacement-owner cleanup, cross-tool ID collision and malformed todo/ask payloads; reviewer ran 53 boundary tests.
 - Separate verifier: 25 focused files / 306 tests pass, app typecheck and changed-file lint pass. Added two automated jsdom tests using the installed real AI SDK `streamText`/conversion → `runTurn` → shared dispatch → mounted existing ask card. Provider generation alone is mocked. Includes two same-step todo calls, transcript reload, answer/resume and Stop/no late policy effect.
-- Local artifact gap repaired with workspace-local `yarn install --immutable`, `yarn build:tauri:plugin:api` and `yarn build:extensions`; no tracked dependency changes. Unexcluded `yarn test:web`: **379 files / 5211 tests pass**, including the previously missing extension suite. Bot follow-up adds explicit settled-ID reuse refusal and optional-null todo parity regressions; final rerun recorded below. App `tsc --noEmit --incremental false`, changed production ESLint and `git diff --check` pass.
+- Local artifact gap repaired with workspace-local `yarn install --immutable`, `yarn build:tauri:plugin:api` and `yarn build:extensions`; no tracked dependency changes. Unexcluded `yarn test:web`: **384 files / 5325 tests pass**, including the previously missing extension suite. Final run includes bot fixes and the merged grants parent with no exclusions. Bot fixes independently reviewed (56 focused tests PASS) and separately verified through repeated-ID multi-step SDK and null-parity tests (27 tests PASS). App `tsc --noEmit --incremental false`, changed production ESLint and `git diff --check` pass.
 - Browser tool reports no connected extension. Coordinator clarified that this handler-only extraction has no visual changes and needs no native QA: task-appropriate real installed SDK execution plus manual inspection of synthetic mounted existing UI snapshots satisfies this slice. This is not pixel/native/real-provider verification. Separate final verifier reran 57 tests across five files and manually inspected temporary printed mounted DOM: expected prompt, Small/Large radio options, selected aria state, submit control, two todo labels, and exact card removal after Stop. Temporary instrumentation was removed. This used the real installed SDK test path, not a separate standalone manual SDK script. Evidence: `/tmp/final-verifier-vitest.log`, `/tmp/final-verifier-dom.log`, `/tmp/final-verifier-tsc.log`.
-- Fetched merged integration parent is `0cfd05b0e` (MCP #9533 merged); clean rebase, no unmerged source imported. Local dependency symlinks only, ignored by Git.
+- Fetched merged integration parent is `8b8d47ba1` (grants #9540 and MCP #9533 merged); clean rebase, no unmerged source imported. Workspace-local dependency install/build artifacts only, ignored by Git.
 
 ## Readiness gates
 
