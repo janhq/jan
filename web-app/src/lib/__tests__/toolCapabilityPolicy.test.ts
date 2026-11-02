@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { resolveToolCapabilities } from '../toolCapabilityPolicy'
+import { PLAN_DENIED_TOOLS, resolveToolCapabilities } from '../toolCapabilityPolicy'
+import { MONITOR_TOOL_NAME } from '../coworkMonitor'
 
 // These are advertisement decisions, not schemas or permission grants.
 const names = ['read', 'write', 'edit', 'shell', 'memory', 'skill_list', 'skill_read', 'skill_write', 'screenshot']
 
 describe('bounded tool advertisement policy', () => {
+  it('withholds the monitor identity in plan mode because it schedules shell scripts', () => {
+    expect(PLAN_DENIED_TOOLS.has(MONITOR_TOOL_NAME)).toBe(true)
+    const policy = resolveToolCapabilities({ surface: 'cowork', planMode: true, allowSubagents: true, webSearch: true })
+    expect(policy.monitor).toBe(false)
+    expect(policy.allowsNativeTool(MONITOR_TOOL_NAME)).toBe(false)
+  })
+
   it.each([true, false])('Chat never widens its native subset (model tools=%s)', (modelSupportsTools) => {
     for (const shellEnabled of [true, false]) {
       for (const webSearch of [true, false]) {

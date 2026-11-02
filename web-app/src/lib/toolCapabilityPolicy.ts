@@ -9,6 +9,9 @@ export const PLAN_DENIED_TOOLS = new Set([
   'shell',
   'skill_write',
   'task',
+  // Starting a monitor schedules shell scripts, which is exec-class work.
+  // Keep this pure module independent of schemas; a test binds the name to
+  // coworkMonitor's exported identity.
   'monitor',
 ])
 
