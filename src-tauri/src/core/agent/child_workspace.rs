@@ -542,7 +542,7 @@ fn remove_if_empty(wt: &ChildWorktree) -> bool {
     // holds cannot be read without trusting it.
     let Ok(checkout) = checkout(wt) else { return false };
     checkout.commits_anywhere(&wt.base) == Some(0)
-        && checkout.try_changed_paths().is_ok_and(|c| c.is_empty())
+        && checkout.is_clean() == Ok(true)
         && std::fs::remove_dir_all(&wt.path).is_ok()
 }
 

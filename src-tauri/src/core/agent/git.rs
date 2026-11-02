@@ -801,6 +801,12 @@ impl Checkout {
         })
     }
 
+    /// Whether the checkout has no uncommitted change. `Err` when git cannot
+    /// tell, which a caller deciding on removal must never read as clean.
+    pub(crate) fn is_clean(&self) -> Result<bool, String> {
+        clean_with(|args| self.run(args))
+    }
+
     /// Fetch `branch` into `repo` under the same name: the child's commits
     /// become a branch of the user's repository. Not forced, so a branch the
     /// user has since built on is never overwritten (the fetch fails instead),
@@ -863,6 +869,17 @@ pub(crate) fn changed_paths(worktree: &Path) -> Vec<String> {
 #[cfg(feature = "cli")]
 pub(crate) fn try_changed_paths(worktree: &Path) -> Result<Vec<String>, String> {
     changed_paths_with(|args| run(worktree, None, args))
+}
+
+/// The status [`Checkout::is_clean`] runs, split out so its arguments are
+/// testable. `--untracked-files=normal` shows a new directory as one `?? dir/`
+/// line instead of walking every file a child left in it (`node_modules`,
+/// build output), and still overrides a user's `status.showUntrackedFiles=no`,
+/// under which new files would read as clean and be deleted.
+#[cfg(feature = "cli")]
+fn clean_with(git: impl Fn(&[&str]) -> Result<String, String>) -> Result<bool, String> {
+    let args = ["status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=all"];
+    Ok(git(&args)?.trim().is_empty())
 }
 
 #[cfg(feature = "cli")]
@@ -1373,6 +1390,48 @@ mod tests {
         let err = Checkout::open(&wt, &objects).unwrap_err();
         assert!(err.contains(".git was replaced"), "{err}");
         let _ = std::fs::remove_dir_all(&moved);
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The emptiness check asks git to show a new directory as one line rather
+    /// than walk it, and an unreadable status is never "clean".
+    #[test]
+    fn the_emptiness_check_lists_untracked_files_normally() {
+        let seen = std::cell::RefCell::new(Vec::new());
+        let answer = |out: Result<&str, &str>| {
+            clean_with(|args| {
+                seen.borrow_mut().extend(args.iter().map(|a| a.to_string()));
+                out.map(str::to_string).map_err(str::to_string)
+            })
+        };
+        assert_eq!(answer(Ok("")), Ok(true));
+        assert!(seen.borrow().iter().any(|a| a == "--untracked-files=normal"), "{seen:?}");
+        assert!(!seen.borrow().iter().any(|a| a == "--untracked-files=all"), "{seen:?}");
+        assert_eq!(answer(Ok("?? node_modules/")), Ok(false));
+        assert!(answer(Err("broken")).is_err());
+    }
+
+    /// A new directory full of files is work, even for a user who hides
+    /// untracked files from `git status`.
+    #[test]
+    fn is_clean_sees_a_new_directory_as_work_when_status_hides_untracked_files() {
+        let Some(root) = init_repo() else { return };
+        let r = root.to_string_lossy().to_string();
+        git(&["-C", &r, "config", "status.showUntrackedFiles", "no"]).unwrap();
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("clean");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/clean-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        assert_eq!(child.is_clean(), Ok(true));
+        let deep = wt.join("node_modules/a/b");
+        std::fs::create_dir_all(&deep).unwrap();
+        for i in 0..500 {
+            std::fs::write(deep.join(format!("{i}.js")), "x").unwrap();
+        }
+        assert_eq!(child.is_clean(), Ok(false));
         let _ = std::fs::remove_dir_all(&wt);
         let _ = std::fs::remove_dir_all(&root);
     }
