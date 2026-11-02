@@ -802,6 +802,21 @@ describe('ChatInput', () => {
     expect(clearAttachmentsMock).toHaveBeenCalled()
   })
 
+  it('retains draft and attachments when the staged scope boundary refuses submission', async () => {
+    promptState = 'keep this draft'
+    selectedModelOverride = { id: 'vision', provider: 'llamacpp', capabilities: ['vision'] }
+    attachmentsList = [{ type: 'image', name: 'fixture.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,xxx' }]
+    const originalAttachments = attachmentsList
+    const onSubmit = vi.fn(() => false)
+    renderInput({ onSubmit })
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(promptState).toBe('keep this draft')
+    expect(attachmentsList).toBe(originalAttachments)
+    expect(clearAttachmentsMock).not.toHaveBeenCalled()
+    expect(createThreadMock).not.toHaveBeenCalled()
+  })
+
   it.each(['llamacpp', 'remote'])('preserves image draft after Vision → Plain, then accepts Vision (%s)', async (provider) => {
     promptState = 'describe this image'
     selectedModelOverride = { id: 'vision', provider, capabilities: ['vision'] }

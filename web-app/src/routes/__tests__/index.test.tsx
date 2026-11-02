@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
+import userEvent from '@testing-library/user-event'
 
 const h = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -117,6 +118,7 @@ vi.mock('@/hooks/useThreadManagement', () => ({
   useThreadManagement: () => ({ addFolder: vi.fn(), folders: [] }),
 }))
 
+import { useChatAttachments, NEW_THREAD_ATTACHMENT_KEY } from '@/hooks/useChatAttachments'
 import { Route } from '../index'
 import { useHomeMode } from '@/hooks/useHomeMode'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
@@ -139,6 +141,7 @@ describe('Index route', () => {
     h.navigate.mockClear()
     sessionStorage.clear()
     useHomeMode.setState({ mode: 'chat' })
+    useChatAttachments.setState({ attachmentsByThread: {} })
     useCoworkSessions.setState({ sessions: [], currentId: null })
   })
 
@@ -225,6 +228,34 @@ describe('Index route', () => {
       h.providers = [{ provider: 'llamacpp', models: [{ id: 'x' }] }]
     })
 
+    it('keeps ID-less attachments in one home draft when switching existing workflows', async () => {
+      h.coworkEnabled = true
+      const image = { type: 'image', name: 'fixture.png' } as any
+      const document = { type: 'document', name: 'fixture.txt' } as any
+      useChatAttachments.getState().setAttachments(NEW_THREAD_ATTACHMENT_KEY, [image])
+      useChatAttachments.getState().setAttachments('home-cowork', [document])
+      renderComponent()
+      fireEvent.click(screen.getByTestId('home-mode-cowork'))
+      expect(useChatAttachments.getState().getAttachments(NEW_THREAD_ATTACHMENT_KEY)).toEqual([image, document])
+      expect(useChatAttachments.getState().getAttachments('home-cowork')).toEqual([])
+      expect(screen.getAllByTestId('chat-input')).toHaveLength(1)
+    })
+
+    it('removes the folder without losing project intent and discloses writable scope', async () => {
+      h.coworkEnabled = true
+      h.pickFolder.mockResolvedValue('/synthetic/workspace')
+      renderComponent()
+      fireEvent.click(screen.getByTestId('home-mode-cowork'))
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      await screen.findByText('workspace')
+      fireEvent.click(screen.getByRole('button', { name: 'Menu project' }))
+      expect(screen.getByRole('status')).toHaveTextContent('common:conversationScope.writable')
+      await userEvent.click(screen.getByTestId('home-cowork-folder'))
+      fireEvent.click(await screen.findByText('common:homeMode.removeFolder'))
+      fireEvent.click(screen.getByTestId('home-mode-chat'))
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-project-id', 'project-1')
+    })
+
     it('is hidden where Cowork is not available', () => {
       h.coworkEnabled = false
       renderComponent()
@@ -288,7 +319,7 @@ describe('Index route', () => {
       expect(composer.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       expect(composer).not.toContainElement(picker)
       expect(picker.compareDocumentPosition(ideas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      expect(picker.parentElement?.parentElement).toHaveClass('pt-2')
+      expect(screen.getByRole('region', { name: 'common:conversationScope.label' }).parentElement).toHaveClass('pt-2')
       expect(screen.getByTestId('surface-controls')).toContainElement(screen.getByTestId('home-mode-toggle'))
     })
 

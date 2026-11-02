@@ -23,11 +23,12 @@ type SearchParams = {
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { CoworkComposerMenu } from '@/containers/CoworkComposerMenu'
-import { HomeWorkspacePicker } from '@/containers/HomeWorkspacePicker'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
-import type { ThreadFolder } from '@/services/projects/types'
 import { HomeModeToggle } from '@/containers/HomeModeToggle'
+import { useHomeScope } from '@/hooks/useHomeScope'
+import { UnifiedHomeScope } from '@/containers/UnifiedHomeScope'
+import { NEW_THREAD_ATTACHMENT_KEY, useChatAttachments } from '@/hooks/useChatAttachments'
 import { useHomeMode } from '@/hooks/useHomeMode'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { usePrompt } from '@/hooks/usePrompt'
@@ -65,9 +66,20 @@ function Index() {
   // The selector is hidden where Cowork is not available; the mode is then Chat
   // whatever was stored.
   const mode = coworkAvailable ? storedMode : 'chat'
-  const [folder, setFolder] = useState<string | null>(null)
-  const [project, setProject] = useState<ThreadFolder | null>(null)
+  const { folder, setFolder, project, setProject } = useHomeScope()
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
+  // A home draft has one attachment owner across workflow selection. Existing
+  // home-Cowork drafts are merged once rather than hidden by a mode switch.
+  useEffect(() => {
+    const store = useChatAttachments.getState()
+    const legacy = store.getAttachments('home-cowork')
+    if (!legacy.length) return
+    store.setAttachments(NEW_THREAD_ATTACHMENT_KEY, (current) => [
+      ...current,
+      ...legacy.filter((item) => !current.some((other) => item.id != null && other.id === item.id)),
+    ])
+    store.clearAttachments('home-cowork')
+  }, [])
   const { addFolder, folders: projects } = useThreadManagement()
   useTools()
 
@@ -157,7 +169,6 @@ function Index() {
               projectId={mode === 'chat' ? project?.id : undefined}
               projectAssistantId={mode === 'chat' ? project?.assistantId : undefined}
               onSubmit={mode === 'cowork' ? startCowork : undefined}
-              scopeKey={mode === 'cowork' ? 'home-cowork' : undefined}
               supportsAssistants={mode === 'chat'}
               ownsToolSet={mode === 'cowork' ? false : undefined}
               menuWorkspace={(
@@ -202,14 +213,14 @@ function Index() {
                 className="-mx-3 overflow-hidden px-3"
               >
                 <div className="pt-2">
-                  <HomeWorkspacePicker
+                  <UnifiedHomeScope
                     folder={folder}
                     project={project}
                     projects={projects}
                     onSelectProject={setProject}
                     onAddFolder={() => void pickFolder()}
                     onAddProject={() => setProjectDialogOpen(true)}
-                    onRemove={() => { setFolder(null); setProject(null) }}
+                    onRemove={() => folder ? setFolder(null) : setProject(null)}
                   />
                 </div>
               </motion.div>
