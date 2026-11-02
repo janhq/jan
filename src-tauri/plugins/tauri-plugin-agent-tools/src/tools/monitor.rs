@@ -610,6 +610,10 @@ fn match_update(monitor_id: &str, name: &str, content: &str) -> MonitorUpdate {
 
 /// Reaps and deregisters a poll child if its task is aborted mid-poll. The
 /// normal path calls [`PollChild::disarm`] once the child has exited.
+///
+/// Shared lifecycle improvement, deliberately NOT thread-only: a Session
+/// (Cowork) monitor aborted mid-poll previously leaked its registered pid and
+/// the child ran to natural exit; with this guard both paths reap on abort.
 struct PollChild<'a> {
     owner: Option<&'a str>,
     pid: Option<u32>,
@@ -655,6 +659,13 @@ async fn eval_script(
     // path carries `None` and fires nothing. Run before the admission guard,
     // so a slow hook never holds the global mutex; a revocation landing after
     // an allow is still caught by the generation re-check below.
+    //
+    // Only a hook that RAN and answered `{"decision":"deny"}` denies. A hook
+    // that crashes, times out or prints malformed JSON is 'misbehaved,
+    // proceed' -- deliberate parity with one-shot dispatch (`run_hooks`), and
+    // hooks here are defense-in-depth over host consent, never its source.
+    // On a poll that misbehavior repeats every interval with its notices
+    // dropped (there is no turn to attach them to); accepted and documented.
     if let Some(hooks) = &ctx.hooks {
         let payload = crate::tools::hooks::HookPayload {
             tool_name: Some(crate::tools::SHELL_TOOL.to_string()),
@@ -1042,6 +1053,47 @@ mod tests {
             spawned,
             "control failed to spawn, so the barrier assertion proves nothing"
         );
+    }
+
+    /// The PollChild drop guard is a SHARED lifecycle improvement: a Session
+    /// monitor aborted mid-poll must reap its in-flight poll child rather
+    /// than leak it to run to natural exit (the pre-guard behavior).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_aborted_session_monitor_reaps_its_in_flight_poll_child() {
+        let dir = unique_root();
+        let pidfile = dir.join("poll-child.pid");
+        // The sleeper is the shell's own child (same process group), so after
+        // the kill it is reparented and fully reaped by the OS: liveness can
+        // be probed without the zombie ambiguity a direct child would have.
+        let script = format!("sleep 30 & echo $! > {}; wait", pidfile.display());
+        let set = Arc::new(MonitorSet::new());
+        // Session path: no authority, no owner, no hooks.
+        set.start(spec("watch", &script, 60), ctx_for(&dir)).unwrap();
+        let mut pid = None;
+        for _ in 0..400 {
+            if let Some(parsed) = std::fs::read_to_string(&pidfile)
+                .ok()
+                .and_then(|s| s.trim().parse::<i32>().ok())
+            {
+                pid = Some(parsed);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let pid = nix::unistd::Pid::from_raw(pid.expect("the poll child never started"));
+        // Abort mid-poll: the drop guard, not the normal exit path, must reap.
+        set.stop_all();
+        let mut dead = false;
+        for _ in 0..500 {
+            // Signal 0 probes liveness without delivering anything.
+            if nix::sys::signal::kill(pid, None).is_err() {
+                dead = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(dead, "the in-flight poll child survived the abort");
     }
 
     /// A user PreToolUse deny hook gates a thread-owned poll BEFORE its spawn,
