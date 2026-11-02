@@ -18,7 +18,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
 }))
 vi.mock('@/hooks/useMessages', () => ({ useMessages: { getState: () => ({ getMessages: (id: string) => messages.get(id) ?? [] }) } }))
 vi.mock('@/stores/chat-session-store', () => ({ useChatSessions: { getState: () => ({ sessions }) } }))
-vi.mock('@/lib/agentTools', () => ({ cleanupThreadWorkspace: vi.fn(), cancelAgentThreadBash: vi.fn(), stopAgentSessionMonitors: vi.fn() }))
+vi.mock('@/lib/agentTools', () => ({ cleanupThreadWorkspace: vi.fn(), cancelAgentThreadBash: vi.fn(), stopAgentSessionMonitors: vi.fn(), revokeThreadCapabilitiesInHost: vi.fn().mockResolvedValue(undefined), stopAllThreadAgentMonitors: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/hooks/useAgentMode', () => ({ useAgentMode: {} }))
 vi.mock('@/hooks/useAppState', () => ({ useAppState: {} }))
 vi.mock('@/hooks/useCoworkSessions', () => ({ useCoworkSessions: {} }))
