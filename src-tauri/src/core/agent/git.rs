@@ -107,15 +107,12 @@ fn repo_command(repo: &Path, args: &[&str]) -> Result<Command, String> {
 fn run_limited(repo: &Path, args: &[&str], limit: std::time::Duration) -> Result<String, String> {
     use std::io::Read;
     use std::process::Stdio;
+    // `git_command` already gives git no stdin, no prompt and (unix) a session
+    // of its own, whose group a timeout kills so the helpers die with it
+    // instead of holding its pipes open. Adding `process_group(0)` here would
+    // make that `setsid` fail and the spawn with it.
     let mut cmd = repo_command(repo, args)?;
-    cmd.env("GIT_TERMINAL_PROMPT", "0")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    // Its own process group, so a timeout reaches the helpers too: killing
-    // only git would leave them running, holding its pipes open.
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| format!("failed to launch git: {e}"))?;
     // Drained while it runs, or a chatty command fills a pipe and never exits.
     let drain = |pipe: Option<Box<dyn Read + Send>>| {
