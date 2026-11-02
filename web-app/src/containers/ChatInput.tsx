@@ -422,12 +422,15 @@ const ChatInput = memo(function ChatInput({
   const maxRows = 10
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
-  // Scoped conversation permissions exist only for a persistent Chat thread
-  // on a tool-capable model; temporary chats and Cowork sessions never get a
-  // consent control. The control itself re-checks these guards.
+  // Scoped conversation permissions exist for any persistent Chat thread on a
+  // surface that owns its tool set; temporary chats and Cowork sessions never
+  // get a consent control. Deliberately NOT gated on agent mode or model tool
+  // capability: a thread may already hold an elevated grant, and the shield is
+  // its only revocation surface, so it must stay reachable when agent mode is
+  // on or a non-tool model is selected. Granting there claims no tool support;
+  // access is enforced per dispatch. The control re-checks these guards.
   const scopeControlThread =
-    showToolControls &&
-    selectedModel?.capabilities?.includes('tools') &&
+    ownsToolSet &&
     currentThread &&
     currentThread.id !== TEMPORARY_CHAT_ID &&
     !isCoworkThread(currentThread)

@@ -491,12 +491,26 @@ describe('ChatInput', () => {
       expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
     })
 
-    it('is absent for a model without tool support', () => {
+    it('stays reachable for a model without tool support: an existing grant must remain revocable', () => {
       threadsMockState['thread-1'] = persistentThread
       getCurrentThreadMock.mockReturnValue(persistentThread)
       selectedModelOverride = { id: 'model-a', capabilities: [], provider: 'llamacpp' }
       renderInput()
-      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
+      expect(screen.getByTestId('conversation-scope-trigger')).toBeEnabled()
+    })
+
+    it('stays reachable in agent mode: an existing grant must remain revocable', async () => {
+      threadsMockState['thread-1'] = persistentThread
+      getCurrentThreadMock.mockReturnValue(persistentThread)
+      agentModeOn = true
+      renderInput()
+      const trigger = screen.getByTestId('conversation-scope-trigger')
+      expect(trigger).toBeEnabled()
+      // The control itself opens and offers revocation, not a tool claim.
+      fireEvent.click(trigger)
+      expect(
+        await screen.findByText('Conversation permissions', { selector: 'legend' })
+      ).toBeInTheDocument()
     })
 
     it('is absent when the composer does not own the tool set', () => {
