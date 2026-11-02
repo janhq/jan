@@ -1,6 +1,6 @@
 # Scoped Chat consent — integration contract (not rollout)
 
-Base: `db714205c`. This slice is **not ready for a PR or activation** until the actual Chat adapter consumes it with per-call enforcement. No consent controls are mounted yet. No Cowork migration, MCP trust, route serializer or runner changes here.
+Base: `4f76f4db9`. Coordinator-authorized prerequisite API slice, not full #503/#505 implementation or activation. This prerequisite may merge before the actual Chat adapter consumes it; activation still requires per-call enforcement. No consent controls are mounted or advertised. No Cowork migration, MCP trust, route serializer or runner changes here.
 
 ## Public API
 
@@ -30,3 +30,9 @@ Lexical path validation is **not** filesystem identity, canonicalization, symlin
 4. Display accepted active scope, not just pending draft. Do not mount unsupported/unenforced permission controls.
 5. A failed disk save can leave older consent on disk. The in-memory deny overlay is not durable across process restart. Establish re-confirmation/restart policy before claiming failed revocation survives restart. Do not silently replay stale persisted authority.
 6. Independent final code review and separate isolated UI/runtime verification remain required after actual integration. Synthetic component-only light/dark/narrow/keyboard verification is not native picker, persistence, provider or dispatch QA.
+
+## Prerequisite verification
+
+Final relevant frontend regression: 228 passed across seven files; TypeScript no-emit and diff whitespace checks passed. Native thread suite: 49 passed, including narrow patch preservation, shared-lock concurrent delete/write, stale whole-record consent preservation and invalid/temporary/Cowork record rejection. Coordinator independently reran the native suite: 49 passed. Repository compile-only resource stubs were used, never executed or committed.
+
+Independent code review findings were fixed and the final retained-bulk-delete delta confirmed. Separate isolated component-only verification passed 12 checks: production component/CSS at desktop and narrow widths, light/dark, keyboard/focus and folder reselect/remove. This does not establish native picker, live dispatch, model/provider or activation parity. Existing component is test-backed and unmounted for follow-up activation; no settings or flags were introduced.
