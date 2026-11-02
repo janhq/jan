@@ -251,6 +251,21 @@ yourself for small, targeted tasks where delegating would cost more than it save
 memory: no memory tool and no memory index. Put any fact from your memory that a subagent needs into its \
 task, and record anything worth keeping from its answer yourself.";
 
+/// Where a dispatched child works, appended to [`SUBAGENT_GUIDE`] only in the
+/// CLI build: the desktop makes no checkouts and keeps readers writable (see
+/// `child_workspace`), so there it would describe branches that never exist.
+/// A constant per build, so the prefix stays byte-stable.
+const SUBAGENT_WORKSPACE_GUIDE: &str = if cfg!(feature = "cli") {
+    "\n\nEach subagent's workspace is set when you dispatch it. One that can write or edit files works in its own \
+checkout (a clone) on its own branch, started from HEAD, so parallel writers never share a checkout and \
+your uncommitted changes are not in it; its branch is in your repository when it is done, to merge. \
+Any other subagent works in your checkout read-only. The dispatch result says where each one works. Override with `workspace`: \"new\", \
+\"shared\", the name of an earlier subagent to continue in its worktree, or `workspace: {\"ref\": \"<git \
+ref>\"}` to review or test a branch or pull request in a checkout of its own."
+} else {
+    ""
+};
+
 /// The `# Subagents` block: the guide, then the predefined agents the
 /// `dispatch_subagent` `agent` enum accepts, each with its model and purpose.
 /// Read from the registry when the prompt is composed, so it is fixed for the
@@ -259,8 +274,10 @@ task, and record anything worth keeping from its answer yourself.";
 fn subagent_guide(project_root: &Path) -> String {
     let registry = crate::core::agent::subagent::SubagentRegistry::load(project_root);
     match crate::core::agent::subagent::agent_catalog(&registry) {
-        Some(catalog) => format!("{SUBAGENT_GUIDE}\n\nPredefined agents (`agent` field):\n{catalog}"),
-        None => SUBAGENT_GUIDE.to_string(),
+        Some(catalog) => format!(
+            "{SUBAGENT_GUIDE}{SUBAGENT_WORKSPACE_GUIDE}\n\nPredefined agents (`agent` field):\n{catalog}"
+        ),
+        None => format!("{SUBAGENT_GUIDE}{SUBAGENT_WORKSPACE_GUIDE}"),
     }
 }
 
@@ -510,6 +527,17 @@ impl SessionStart {
             date: chrono::Local::now().format("%Y-%m-%d").to_string(),
             branch: project_root.and_then(crate::core::agent::git::current_branch),
             memory: project_root.map(MemorySnapshot::capture),
+        }
+    }
+
+    /// Read the clock now, with a `branch` the caller already read. Takes no
+    /// memory snapshot: its caller places a worktree subagent, and subagents
+    /// have no memory.
+    pub(crate) fn with_branch(branch: Option<String>) -> Self {
+        Self {
+            date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+            branch,
+            memory: None,
         }
     }
 
@@ -1192,6 +1220,36 @@ mod tests {
         assert!(with.contains("- `research` (model: smol): "), "{with}");
         assert!(with.contains("do not do the same work yourself"));
         assert!(!with.contains("keep working rather than waiting"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // Where a child works is decided at dispatch, and the CLI guide says so,
+    // ahead of the agent catalog.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn the_cli_subagent_guide_explains_child_worktrees() {
+        let root = scratch_project("subagent-worktrees");
+        let with = default_prompt(None, &root, None, true).expect("prompt");
+        assert!(with.contains("own checkout"), "{with}");
+        assert!(with.contains("is in your repository"), "{with}");
+        assert!(with.contains("read-only"), "{with}");
+        assert!(with.contains("workspace: {\"ref\""), "{with}");
+        let guide = with.find("Each subagent's workspace").expect("workspace paragraph");
+        assert!(guide < with.find("Predefined agents").unwrap(), "{with}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // The desktop makes no worktrees and keeps readers writable, so its agent
+    // is told nothing about either.
+    #[cfg(not(feature = "cli"))]
+    #[test]
+    fn the_desktop_subagent_guide_says_nothing_of_worktrees() {
+        let root = scratch_project("subagent-desktop");
+        let with = default_prompt(None, &root, None, true).expect("prompt");
+        assert!(with.contains("belongs to that subagent"), "{with}");
+        assert!(!with.contains("own checkout"), "{with}");
+        assert!(!with.contains("is in your repository"), "{with}");
+        assert!(!with.contains("`workspace`"), "{with}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

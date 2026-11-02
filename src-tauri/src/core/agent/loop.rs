@@ -220,6 +220,10 @@ pub(crate) struct OrchestrationArgs {
     /// subagent (`subagent::spawn_memory_tidy`), which shares it with the TUI
     /// so a hit cap is reported; `None` everywhere else.
     pub memory_change_budget: Option<Arc<tauri_plugin_agent_tools::memory::ChangeBudget>>,
+    /// Set only on a dispatched child: whether its `project_root` is
+    /// read-only, the extra paths its sandboxed shell may write and the
+    /// environment it gets (see [`crate::core::agent::child_workspace`]).
+    pub child_scope: Option<crate::core::agent::child_workspace::ChildScope>,
 }
 
 #[async_trait]
@@ -873,6 +877,46 @@ struct CompositeToolInvoker {
     memory_changes: Option<MemoryChangesTracker>,
     /// See [`OrchestrationArgs::memory_change_budget`].
     memory_change_budget: Option<Arc<tauri_plugin_agent_tools::memory::ChangeBudget>>,
+    /// The bucket this run's shells register under (`proc::kill_thread`): a
+    /// child's own `run_id`, so stopping it can end the shells it left running
+    /// before its worktree goes to another writer. `None` on a top-level run.
+    shell_owner: Option<String>,
+    /// What a child's workspace adds to its tools: a read-only root, the paths
+    /// its shell may also write, and its shell env. A top-level run gets the
+    /// default plus, on the CLI, read access to its subagents' worktrees.
+    workspace: RunWorkspace,
+}
+
+/// The per-run additions to [`CompositeToolInvoker`]'s tool context that come
+/// from where the run works (see [`crate::core::agent::child_workspace`]).
+#[derive(Debug, Clone, Default)]
+struct RunWorkspace {
+    read_only: bool,
+    read_roots: Vec<std::path::PathBuf>,
+    write_roots: Vec<std::path::PathBuf>,
+}
+
+impl RunWorkspace {
+    /// A child runs under its scope; a parent may read its children's
+    /// worktrees. Write roots are also read roots: the tools require it.
+    fn resolve(
+        scope: Option<&crate::core::agent::child_workspace::ChildScope>,
+        root: &std::path::Path,
+    ) -> Self {
+        match scope {
+            Some(scope) => Self {
+                read_only: scope.read_only,
+                read_roots: scope.write_roots.iter().chain(&scope.read_roots).cloned().collect(),
+                write_roots: scope.write_roots.clone(),
+            },
+            None => Self {
+                read_roots: crate::core::agent::child_workspace::parent_read_root(root)
+                    .into_iter()
+                    .collect(),
+                ..Self::default()
+            },
+        }
+    }
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -1161,8 +1205,11 @@ fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> S
         .first_phase
         .iter()
         .map(|c| match &d.blackboard_dir {
-            Some(dir) => format!("  - {} (run_id: {}) -> {dir}/{}.md", c.name, c.run_id, c.name),
-            None => format!("  - {} (run_id: {})", c.name, c.run_id),
+            Some(dir) => format!(
+                "  - {} (run_id: {}) -> {dir}/{}.md; {}",
+                c.name, c.run_id, c.name, c.workspace
+            ),
+            None => format!("  - {} (run_id: {}); {}", c.name, c.run_id, c.workspace),
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -1263,6 +1310,9 @@ impl CompositeToolInvoker {
         let ctx = ctx.with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
+        .with_workspace_readonly(self.workspace.read_only)
+        .with_read_roots(&self.workspace.read_roots)
+        .with_write_roots(&self.workspace.write_roots)
         .with_escalation(self.escalation.offered())
         .with_hidden_root(self.hidden_root.as_deref())
         .with_scratch_root(&self.scratch_root)
@@ -1274,7 +1324,8 @@ impl CompositeToolInvoker {
             self.run_mode == crate::core::agent::plan::RunMode::Plan,
             Some(self.hook_sink()),
         )
-        .with_shell_done_sink(self.shell_done_sink());
+        .with_shell_done_sink(self.shell_done_sink())
+        .with_thread_id(self.shell_owner.as_deref());
         match &self.shell_detach {
             Some(signal) => ctx.with_detach_signal(signal.clone()),
             None => ctx,
@@ -1742,7 +1793,9 @@ impl CompositeToolInvoker {
                     // Unconfined means no scratch: the tools see the real
                     // `/tmp`, so there is nowhere sanctioned to spill.
                     self.subagent_scratch(),
-                ) {
+                )
+                .await
+                {
                     Ok(d) => format_dispatched_plan(&d),
                     Err(e) => {
                         ctx.bg.release_names(&reserved);
@@ -2694,10 +2747,11 @@ impl ToolInvoker for CompositeToolInvoker {
                 &tauri_plugin_agent_tools::tools::gate::GateContext {
                     project_root: &self.project_root,
                     scratch: Some(self.scratch_root.as_path()),
-                    // The CLI works *in* the project, so it has no separate
-                    // read-only or writable root to attach.
-                    read_roots: &[],
-                    write_roots: &[],
+                    // The CLI works *in* the project; what is attached is
+                    // its subagents' worktrees (a parent) or the borrowed
+                    // objects and build dir (a child).
+                    read_roots: &self.workspace.read_roots,
+                    write_roots: &self.workspace.write_roots,
                     hidden_root: self.hidden_root.as_deref(),
                 },
                 &self.permissions,
@@ -2735,6 +2789,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 let hidden = self.hidden_root.clone();
                 let scratch = self.scratch_root.clone();
                 let web_search = self.web_search.clone();
+                let read_roots = self.workspace.read_roots.clone();
                 // Hooks come along: a read is still a tool call, and a
                 // PreToolUse policy that stopped applying to whatever happened
                 // to be batched concurrently would be no policy at all.
@@ -2759,6 +2814,7 @@ impl ToolInvoker for CompositeToolInvoker {
                         .with_sandbox(sandbox)
                         .with_hidden_root(hidden.as_deref())
                         .with_scratch_root(&scratch)
+                        .with_read_roots(&read_roots)
                         .with_web_search(web_search.as_ref())
                         .with_hooks(&hooks, planning, Some(hook_sink));
                     let (text, diff, images) = execute_builtin_with_diff(tool, &args, &ctx).await;
@@ -2991,6 +3047,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         // Each proxy request is a session of one run: it snapshots its own.
         session_start: None,
         memory_change_budget: None,
+        child_scope: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -3674,6 +3731,7 @@ async fn orchestrate_inner(
         session_start,
         // Read through `args` where the invoker is built.
         memory_change_budget: _,
+        child_scope,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -4012,8 +4070,8 @@ async fn orchestrate_inner(
 
     if let Some(root) = project_root {
         // Background subagents are scoped to this run unless the session owns
-        // them: `_bg_guard` aborts any still-running child when
-        // `orchestrate_inner` returns or is cancelled. The cap
+        // them: `bg_guard` aborts any still-running child and sweeps their
+        // worktrees when the run ends or is cancelled. The cap
         // (`max_parallel_subagents`) is snapshotted here, at run start.
         let bg = session_subagent_bg.clone().unwrap_or_else(|| {
             std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
@@ -4025,9 +4083,9 @@ async fn orchestrate_inner(
         // TUI aborts them on cancel and on session reset). Arming it here would
         // kill on the first turn's return exactly the children this change
         // exists to keep running.
-        let _bg_guard = session_subagent_bg
+        let bg_guard = session_subagent_bg
             .is_none()
-            .then(|| crate::core::agent::subagent::AbortOnDrop(bg.clone()));
+            .then(|| crate::core::agent::subagent::AbortOnDrop::new(bg.clone(), events));
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
             model_id: model_id.clone(),
@@ -4087,7 +4145,11 @@ async fn orchestrate_inner(
             hidden_root: crate::core::agent::project::hidden_root(settings.sandbox),
             scratch_root: scratch_root.clone(),
             env_passthrough: settings.env_passthrough,
-            env_set: settings.env_set,
+            // A child's workspace adds its build and cache dirs on top.
+            env_set: merge_env_set(
+                settings.env_set,
+                child_scope.as_ref().map(|c| c.env_set.clone()).unwrap_or_default(),
+            ),
             web_search: resolve_web_search(),
             project_root: root.clone(),
             allowed_names: allowed_names.clone(),
@@ -4122,12 +4184,15 @@ async fn orchestrate_inner(
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             bg_shells: session_bg_shells.clone().unwrap_or_default(),
             parent_link: args.parent_link.clone(),
+            // Only a child run has an id of its own.
+            shell_owner: run_id.clone(),
             // Without a session registry nothing would deliver the detached
             // command's end except a park, which holds the message just the
             // same; so the signal only applies where the session owns shells.
             shell_detach: args.shell_detach.clone().filter(|_| session_bg_shells.is_some()),
             memory_changes,
             memory_change_budget: args.memory_change_budget.clone(),
+            workspace: RunWorkspace::resolve(child_scope.as_ref(), root),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -4233,12 +4298,20 @@ async fn orchestrate_inner(
         .await;
         // On a clean exit, wait for any subagents the model dispatched but never
         // explicitly awaited, so their in-flight work isn't aborted and lost by
-        // `_bg_guard`. On an error, teardown still aborts them. A session-owned
+        // `bg_guard`. On an error, teardown still aborts them. A session-owned
         // set is skipped: nothing is about to abort those children, and waiting
         // here would hold the run open for precisely the work the session set
         // exists to outlive it.
         if result.is_ok() && session_subagent_bg.is_none() {
             bg.join_all().await;
+        }
+        // A run-owned registry's children are done with this run, so its end
+        // is their session's end: stop any still running, then sweep their
+        // worktrees, here rather than when the function returns so the kept
+        // notice precedes `SessionEnd`. A session-owned registry has no guard;
+        // its owner sweeps it.
+        if let Some(guard) = bg_guard {
+            guard.finish().await;
         }
         // Fired on failure too: a SessionEnd hook that only ran on the happy
         // path could not be used for the cleanup or audit it exists for. Its
@@ -8947,6 +9020,8 @@ mod tests {
             shell_detach: None,
             memory_changes: None,
             memory_change_budget: None,
+            shell_owner: None,
+            workspace: RunWorkspace::default(),
         }
     }
 
@@ -12286,10 +12361,12 @@ mod tests {
                 DispatchedChild {
                     name: "explorer-a".to_string(),
                     run_id: "sub-explorer-a-1".to_string(),
+                    workspace: "working read-only in /p".to_string(),
                 },
                 DispatchedChild {
                     name: "explorer-b".to_string(),
                     run_id: "sub-explorer-b-2".to_string(),
+                    workspace: "working read-only in /p".to_string(),
                 },
             ],
             blackboard_dir: Some("blackboard".to_string()),
@@ -12312,6 +12389,7 @@ mod tests {
             first_phase: vec![DispatchedChild {
                 name: "researcher".to_string(),
                 run_id: "sub-researcher-1".to_string(),
+                workspace: "working read-only in /p".to_string(),
             }],
             blackboard_dir: None,
             names: vec!["researcher".to_string(), "writer".to_string()],
@@ -12603,6 +12681,7 @@ mod tests {
             first_phase: vec![DispatchedChild {
                 name: "w".to_string(),
                 run_id: "sub-w-1".to_string(),
+                workspace: "working read-only in /p".to_string(),
             }],
             blackboard_dir: None,
             names: vec!["w".to_string()],
@@ -13023,4 +13102,224 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// How the stub provider answers the parent's second request.
+    #[cfg(feature = "cli")]
+    #[derive(Clone, Copy)]
+    enum SecondTurn {
+        /// A 400, which fails the run.
+        Fails,
+        /// Never, so the test can cancel the run while it waits.
+        Hangs,
+    }
+
+    /// A git project whose run dispatches one `writer` child into a fresh
+    /// worktree, against a stub provider on which the child's request never
+    /// returns: the writer is still in its worktree, holding its lease, when
+    /// the parent's run ends. Returns the project, the run's args, and a
+    /// receiver signalled once the parent's second request has arrived (the
+    /// dispatch is done by then). `None` without git.
+    #[cfg(feature = "cli")]
+    fn run_with_a_stuck_writer(
+        second: SecondTurn,
+    ) -> Option<(
+        std::path::PathBuf,
+        OrchestrationArgs,
+        std::sync::mpsc::Receiver<()>,
+    )> {
+        use std::io::{BufRead, BufReader, Read, Write};
+
+        let root = unique_project_root();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        if !(git(&["init", "-q"])
+            && git(&["add", "a.txt"])
+            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
+        {
+            return None;
+        }
+        let defs = crate::core::agent::subagent::project_subagents_dir(&root);
+        std::fs::create_dir_all(&defs).unwrap();
+        std::fs::write(
+            defs.join("writer.toml"),
+            "name = \"writer\"\ndescription = \"edits\"\nsystem_prompt = \"You are writer.\"\n",
+        )
+        .unwrap();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (second_tx, second_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let parent_turns = AtomicUsize::new(0);
+            // Held, never answered, so neither side's request returns.
+            let mut parked = Vec::new();
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut length = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        length = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; length];
+                let _ = reader.read_exact(&mut body);
+                if String::from_utf8_lossy(&body).contains("You are writer.") {
+                    parked.push(stream);
+                    continue;
+                }
+                if parent_turns.fetch_add(1, Ordering::SeqCst) == 0 {
+                    let dispatch = json!({ "subagents": [{ "agent": "writer", "task": "edit a.txt" }] })
+                        .to_string();
+                    let chunk = json!({"id":"s","object":"chat.completion.chunk","created":1,"model":"m",
+                        "choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[
+                            {"index":0,"id":"c1","type":"function","function":{"name":"dispatch_subagent","arguments":dispatch}}]},
+                            "finish_reason":null}]});
+                    let done = json!({"id":"s","object":"chat.completion.chunk","created":1,"model":"m",
+                        "choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]});
+                    let answer = format!("data: {chunk}\n\ndata: {done}\n\ndata: [DONE]\n\n");
+                    let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+                    continue;
+                }
+                let _ = second_tx.send(());
+                match second {
+                    SecondTurn::Fails => {
+                        let body = "{\"error\":{\"message\":\"bad request\"}}";
+                        let _ = write!(stream, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                    }
+                    SecondTurn::Hangs => parked.push(stream),
+                }
+            }
+        });
+
+        let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
+        args.sandbox = Some(false);
+        args.project_memory = false;
+        args.provider_configs = Arc::new(Mutex::new(HashMap::from([(
+            "stub".to_string(),
+            ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["m".into()],
+                ..Default::default()
+            },
+        )])));
+        Some((root, args, second_rx))
+    }
+
+    /// The subagent checkouts still on disk for `root`'s project and the
+    /// `jan/agent/*` branches still in its repository.
+    #[cfg(feature = "cli")]
+    fn leftover_worktrees(root: &std::path::Path) -> (Vec<String>, String) {
+        let branches = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["branch", "--list", "jan/agent/*"])
+            .output()
+            .unwrap();
+        let dir = crate::core::agent::child_workspace::project_worktrees_dir(root).unwrap();
+        let checkouts = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name() != "cargo-target")
+            .map(|e| e.path().display().to_string())
+            .collect();
+        (checkouts, String::from_utf8_lossy(&branches.stdout).trim().to_string())
+    }
+
+    /// A run that fails while a writer it dispatched is still working ends that
+    /// writer before sweeping: the worktree holds nothing, so it and its branch
+    /// go, and nothing claims it was kept for holding work.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_failed_run_sweeps_the_worktree_of_a_writer_it_was_still_running() {
+        let Some((root, args, _second)) = run_with_a_stuck_writer(SecondTurn::Fails) else {
+            return;
+        };
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let body = json!({ "model": "m", "messages": [{ "role": "user", "content": "go" }] });
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            run_orchestration_streamed(&tx, &body, &args),
+        )
+        .await
+        .expect("the run ends");
+        assert!(result.is_err(), "{result:?}");
+        drop(tx);
+
+        let mut dispatched = false;
+        while let Some(event) = rx.recv().await {
+            match event {
+                StreamEvent::ToolResult { content, .. } if content.contains("worktree") => {
+                    dispatched = true;
+                }
+                StreamEvent::Notice { text } => {
+                    assert!(!text.contains("kept"), "an empty worktree was reported kept: {text}");
+                }
+                _ => {}
+            }
+        }
+        assert!(dispatched, "the writer was dispatched into a worktree");
+        let (worktrees, branches) = leftover_worktrees(&root);
+        assert!(worktrees.is_empty(), "{worktrees:?}");
+        assert!(branches.is_empty(), "{branches}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A cancelled run never reaches its own end, so the sweep has to happen on
+    /// the way down too: the writer is stopped and its empty worktree removed.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_cancelled_run_sweeps_the_worktree_of_a_writer_it_was_still_running() {
+        let Some((root, args, second)) = run_with_a_stuck_writer(SecondTurn::Hangs) else {
+            return;
+        };
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let run = tokio::spawn(async move {
+            let body = json!({ "model": "m", "messages": [{ "role": "user", "content": "go" }] });
+            run_orchestration_streamed(&tx, &body, &args).await
+        });
+        let arrived = tokio::task::spawn_blocking(move || {
+            second.recv_timeout(std::time::Duration::from_secs(30))
+        })
+        .await
+        .unwrap();
+        assert!(arrived.is_ok(), "the parent reached its second turn");
+        let (worktrees, _) = leftover_worktrees(&root);
+        assert_eq!(worktrees.len(), 1, "the writer is in its worktree: {worktrees:?}");
+
+        run.abort();
+        assert!(run.await.unwrap_err().is_cancelled());
+        // The drop hands the sweep to the blocking pool, so it lands shortly
+        // after the abort returns rather than inside it.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !leftover_worktrees(&root).0.is_empty() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        while let Ok(event) = rx.try_recv() {
+            if let StreamEvent::Notice { text } = event {
+                assert!(!text.contains("kept"), "an empty worktree was reported kept: {text}");
+            }
+        }
+        let (worktrees, branches) = leftover_worktrees(&root);
+        assert!(worktrees.is_empty(), "{worktrees:?}");
+        assert!(branches.is_empty(), "{branches}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

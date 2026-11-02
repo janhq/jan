@@ -16,6 +16,7 @@ dependencies = [
  "comfy-table",
  "console",
  "dirs",
+ "dunce",
  "ed25519-dalek",
  "env",
  "env_logger",

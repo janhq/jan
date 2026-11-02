@@ -772,6 +772,9 @@ pub struct SubagentRequest {
     /// Jan's own tidy subagent sets this. It is never read from a tool call, so
     /// neither the model nor a definition can ask for it.
     pub memory_access: bool,
+    /// Where it works, when the dispatch said (see
+    /// [`crate::core::agent::child_workspace`]); `None` takes the default.
+    pub workspace: Option<crate::core::agent::child_workspace::WorkspaceRequest>,
 }
 
 /// A group of subagents that run concurrently. The next phase starts only once
@@ -1091,6 +1094,10 @@ pub(crate) fn stop_subagent(
     }
     entry.abort.abort();
     entry.slot.release(bg);
+    end_child_shells(&entry.run_id);
+    // Under the lock the phase barrier reads `finished` under, so no next
+    // phase can see this child done while its worktree is still held.
+    entry.lease.release();
     let _ = entry.events.send(StreamEvent::SubagentEnd {
         run_id: entry.run_id.clone(),
         name: entry.name.clone(),
@@ -1132,6 +1139,61 @@ struct BackgroundEntry {
     /// Parent messages this child has not picked up yet. Registry-owned so a
     /// child queued on the semaphore can be addressed before it starts.
     inbox: Arc<ChildInbox>,
+    /// A writer's hold on its worktree, given up before the child is marked
+    /// finished, by its task or by whoever stops it. See [`LeaseSlot`].
+    lease: LeaseSlot,
+}
+
+/// End every shell the child `run_id` started and left running. Its run
+/// registers them under its own id (see `CompositeToolInvoker::shell_owner`)
+/// and runs each in a task of its own, which aborting the child does not
+/// reach: they must be gone before the child gives its worktree up, or they
+/// keep writing into a checkout the next writer or the sweep now owns.
+fn end_child_shells(run_id: &str) {
+    tauri_plugin_agent_tools::tools::proc::kill_thread(run_id);
+}
+
+/// A writer's answer with the line naming its branch, which this first brings
+/// into the user's repository (git, so on the blocking pool) for the parent to
+/// merge; a failed run's branch is left to the session's sweep. A reader's
+/// answer is returned as it is.
+async fn with_branch_footer(
+    ws: crate::core::agent::child_workspace::ChildWorkspace,
+    result: Result<String, SubagentError>,
+) -> Result<String, SubagentError> {
+    let Ok(answer) = result else { return result };
+    let footer = tokio::task::spawn_blocking(move || {
+        let problem = ws.bring_back();
+        ws.answer_footer(problem.as_deref())
+    })
+    .await
+    .ok()
+    .flatten();
+    Ok(match footer {
+        Some(footer) => format!("{answer}\n\n{footer}"),
+        None => answer,
+    })
+}
+
+/// A writer child's [`WriterLease`](crate::core::agent::child_workspace::WriterLease),
+/// shared by its task and its registry entry so either can give it up. The
+/// task's own drop is too late: an aborted task is dropped whenever the
+/// runtime gets to it, and by then a phase barrier may already have read the
+/// child as finished and dispatched the next writer into the same worktree.
+#[derive(Clone, Default)]
+struct LeaseSlot(
+    Arc<std::sync::Mutex<Option<crate::core::agent::child_workspace::WriterLease>>>,
+);
+
+impl LeaseSlot {
+    fn new(lease: Option<crate::core::agent::child_workspace::WriterLease>) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(lease)))
+    }
+
+    /// Give the worktree up now (a no-op once done, or for a reader).
+    fn release(&self) {
+        drop(self.0.lock().unwrap().take());
+    }
 }
 
 /// A finished child the parent has not been told about yet: the `<SYSTEM>` ping
@@ -1204,6 +1266,10 @@ pub(crate) struct BackgroundSubagents {
     session_events: std::sync::Mutex<
         Option<tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>>,
     >,
+    /// Where each child of this registry works, kept for the registry's life
+    /// so a later dispatch can name an earlier child's workspace, and swept
+    /// when the session ends.
+    pub(crate) workspaces: Arc<crate::core::agent::child_workspace::Ledger>,
 }
 
 /// Default cap on concurrently *running* subagents per parent run when
@@ -1269,6 +1335,7 @@ impl BackgroundSubagents {
             plans_pending: std::sync::atomic::AtomicUsize::new(0),
             generation: std::sync::atomic::AtomicU64::new(0),
             session_events: std::sync::Mutex::new(None),
+            workspaces: Arc::default(),
         }
     }
 
@@ -1446,6 +1513,8 @@ impl BackgroundSubagents {
         let mut guard = self.inner.lock().unwrap();
         for (_, entry) in guard.drain() {
             entry.abort.abort();
+            end_child_shells(&entry.run_id);
+            entry.lease.release();
             // Release the counters here rather than leaving it to the aborted
             // tasks: a cancelled run must owe nothing the moment its teardown
             // returns, and a session-owned registry outlives this call. Exactly
@@ -1491,6 +1560,8 @@ impl BackgroundSubagents {
             return false;
         };
         entry.abort.abort();
+        end_child_shells(&entry.run_id);
+        entry.lease.release();
         // Exactly once, whether the child finished or is cut off here: see
         // `ChildSlot::release`.
         entry.slot.release(self);
@@ -1682,12 +1753,86 @@ impl Drop for SlotGuard {
 }
 
 /// RAII guard tying background children to the parent run's lifetime: dropping it
-/// (on normal return or when the parent future is cancelled) aborts every child.
-pub(crate) struct AbortOnDrop(pub Arc<BackgroundSubagents>);
+/// (on normal return or when the parent future is cancelled) aborts every child,
+/// then, in the CLI, ends the registry's workspace session: the worktrees that
+/// hold nothing are removed and the rest are named on the run's events.
+///
+/// Abort first: a writer still running holds its worktree, and a sweep before
+/// it was stopped would keep that worktree (and report it as holding work)
+/// just before the abort left it empty for good.
+///
+/// The sweep runs git per worktree, so it never runs on an async worker: a
+/// run ending normally awaits it on the blocking pool ([`Self::finish`]), and
+/// a drop hands it to that pool and returns.
+pub(crate) struct AbortOnDrop {
+    bg: Arc<BackgroundSubagents>,
+    #[cfg(feature = "cli")]
+    events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    /// Cleared by [`Self::finish`], which has already torn down.
+    armed: bool,
+}
+
+impl AbortOnDrop {
+    pub(crate) fn new(
+        bg: Arc<BackgroundSubagents>,
+        events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    ) -> Self {
+        // The desktop has no subagent worktrees, so nothing is ever reported.
+        #[cfg(not(feature = "cli"))]
+        let _ = events;
+        Self {
+            bg,
+            #[cfg(feature = "cli")]
+            events: events.clone(),
+            armed: true,
+        }
+    }
+
+    /// Tear down now and wait for the sweep, so its kept notice lands before
+    /// whatever the caller sends next. The run's normal end; a cancelled run
+    /// only ever reaches the drop.
+    pub(crate) async fn finish(mut self) {
+        self.armed = false;
+        self.bg.abort_all();
+        #[cfg(feature = "cli")]
+        {
+            let _ = tokio::task::spawn_blocking(self.sweep()).await;
+        }
+    }
+
+    /// End the registry's workspace session and name what it kept.
+    #[cfg(feature = "cli")]
+    fn sweep(&self) -> impl FnOnce() + Send + 'static {
+        let workspaces = self.bg.workspaces.clone();
+        let events = self.events.clone();
+        move || {
+            let kept = workspaces.finish_session();
+            if !kept.is_empty() {
+                let _ = events.send(crate::core::agent::events::StreamEvent::Notice {
+                    text: crate::core::agent::child_workspace::kept_notice(&kept),
+                });
+            }
+        }
+    }
+}
 
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
-        self.0.abort_all();
+        if !self.armed {
+            return;
+        }
+        self.bg.abort_all();
+        #[cfg(feature = "cli")]
+        {
+            // A drop cannot wait: on a runtime the sweep goes to the blocking
+            // pool rather than stalling the worker this drop is on, and off
+            // one (a plain thread) inline is all there is.
+            let sweep = self.sweep();
+            match tokio::runtime::Handle::try_current() {
+                Ok(rt) => drop(rt.spawn_blocking(sweep)),
+                Err(_) => sweep(),
+            }
+        }
     }
 }
 
@@ -1921,12 +2066,22 @@ async fn run_subagent(
     parent_link: ParentLink,
     transcript_dir: Option<PathBuf>,
     memory_access: bool,
+    placed: Option<(
+        crate::core::agent::child_workspace::ChildWorkspace,
+        crate::core::agent::child_workspace::Placement,
+    )>,
 ) -> Result<String, SubagentError> {
     use crate::core::agent::events::StreamEvent;
     use crate::core::agent::r#loop::run_orchestration_steered;
 
     let name = resolved.definition.name.clone();
     let mut child_args = without_memory(parent_args, memory_access);
+    // Where it works: its own worktree, or the parent's checkout read-only.
+    // The git behind it was read at dispatch, on the blocking pool.
+    let workspace = placed.map(|(ws, placement)| {
+        crate::core::agent::child_workspace::apply(&mut child_args, &ws, placement);
+        ws
+    });
     child_args.system_prompt_override = Some(resolved.definition.system_prompt.clone());
     // The host wrote its prompt for the conversation it drives, not for a
     // delegate with a task of its own; left in place it would also replace the
@@ -1988,6 +2143,7 @@ async fn run_subagent(
         run_id: run_id.clone(),
         name: name.clone(),
         task: Some(description.clone()),
+        workspace: workspace.as_ref().map(|ws| ws.label()),
     });
 
     let (child_tx, mut child_rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
@@ -2093,7 +2249,7 @@ pub(crate) fn without_memory(
 /// once -- when the plan's last phase finishes (see [`run_phase_plan`]). Silence
 /// suppresses only the `<SYSTEM>` ping; the child still fills its blackboard
 /// file, decrements the running count, and wakes the phase driver's barrier.
-pub(crate) fn spawn_subagent(
+pub(crate) async fn spawn_subagent(
     scope: &DispatchScope,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     req: SubagentRequest,
@@ -2102,6 +2258,34 @@ pub(crate) fn spawn_subagent(
     scratch: Option<&Path>,
     notify_on_finish: bool,
 ) -> Result<Dispatched, SubagentError> {
+    let prepared = prepare_dispatch(scope, parent_args, req, parent).await?;
+    start_dispatch(scope, parent_args, prepared, events, scratch, notify_on_finish)
+}
+
+/// A dispatch resolved and given its workspace, not yet registered. Dropping
+/// it gives a writer's worktree back.
+struct PreparedDispatch {
+    name: String,
+    description: String,
+    resolved: ResolvedDispatch,
+    /// The dispatching run's inheritance, re-priced for the child's model.
+    parent: ParentRun,
+    /// See [`SubagentRequest::memory_access`].
+    memory_access: bool,
+    workspace: crate::core::agent::child_workspace::ChildWorkspace,
+    /// What the child's args take from `workspace`, read from git with it.
+    placement: crate::core::agent::child_workspace::Placement,
+    lease: LeaseSlot,
+}
+
+/// The half of [`spawn_subagent`] that can fail on the request: resolve it,
+/// price it, and assign the child its workspace.
+async fn prepare_dispatch(
+    scope: &DispatchScope,
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+    req: SubagentRequest,
+    parent: &ParentRun,
+) -> Result<PreparedDispatch, SubagentError> {
     if !parent_args.subagents_enabled {
         return Err(SubagentError::PermissionDenied(
             "subagents cannot dispatch nested subagents".to_string(),
@@ -2132,19 +2316,88 @@ pub(crate) fn spawn_subagent(
         )?,
         ..resolved
     };
-    launch(scope, parent_args, resolved, req, parent, events, scratch, notify_on_finish)
+    assign_dispatch(scope, parent_args, resolved, req, parent).await
 }
 
-/// Start an already-resolved child on a background task: the half of
-/// [`spawn_subagent`] after its definition and tools are settled, shared with
-/// Jan's internal subagents, which are not in the registry.
-#[allow(clippy::too_many_arguments)]
-fn launch(
+/// Give an already-resolved child its workspace: the part of
+/// [`prepare_dispatch`] after its definition and tools are settled, shared
+/// with Jan's internal subagents, which are not in the registry.
+async fn assign_dispatch(
     scope: &DispatchScope,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     resolved: ResolvedDispatch,
     req: SubagentRequest,
     parent: &ParentRun,
+) -> Result<PreparedDispatch, SubagentError> {
+    let project_root = parent_args
+        .project_root
+        .as_ref()
+        .ok_or_else(|| SubagentError::Upstream("subagents require an active project".to_string()))?;
+    let name = resolved.definition.name.clone();
+    // A run already torn down has swept its worktrees and will not sweep
+    // again, so a worktree made for it now would leak. Checked again under the
+    // registry lock below, where a teardown racing this dispatch is caught.
+    if scope.is_stale() {
+        return Err(SubagentError::Cancelled);
+    }
+    // Assigned now, before the child can queue: the dispatch result names it,
+    // and a second writer onto a busy worktree is refused here.
+    let writer = crate::core::agent::child_workspace::is_writer(
+        resolved.allowed_tools.as_deref(),
+        &parent_args.permissions,
+    );
+    // On the blocking pool: assigning runs `git clone`, `git status` and for
+    // a ref possibly a network fetch, and placing the child reads its branch,
+    // which would otherwise stall every other task on this runtime worker
+    // until git returns.
+    let scratch = parent_args
+        .session_id
+        .as_deref()
+        .map(tauri_plugin_agent_tools::workspace::scratch_dir);
+    let (workspace, placement, lease) = {
+        let scope = scope.clone();
+        let root = project_root.clone();
+        let name = name.clone();
+        let request = req.workspace.clone();
+        tokio::task::spawn_blocking(move || {
+            let (ws, lease) = scope
+                .bg
+                .workspaces
+                .assign(&root, &name, writer, request.as_ref())
+                .map_err(SubagentError::Upstream)?;
+            // Checked here too, not only under the registry lock: a run
+            // cancelled while git worked drops this dispatch's future, and
+            // then nothing would take the worktree back.
+            if scope.is_stale() {
+                drop(lease);
+                scope.bg.workspaces.undo(&name, &ws);
+                return Err(SubagentError::Cancelled);
+            }
+            let placement =
+                crate::core::agent::child_workspace::place(&ws, &root, scratch.as_deref());
+            Ok((ws, placement, lease))
+        })
+        .await
+        .map_err(|e| SubagentError::Upstream(format!("assigning a workspace failed: {e}")))??
+    };
+    Ok(PreparedDispatch {
+        name,
+        description: req.description,
+        resolved,
+        parent: parent.clone(),
+        memory_access: req.memory_access,
+        workspace,
+        placement,
+        lease: LeaseSlot::new(lease),
+    })
+}
+
+/// The half of [`spawn_subagent`] that registers the prepared child and
+/// starts its task, or refuses it when its run was torn down meanwhile.
+fn start_dispatch(
+    scope: &DispatchScope,
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+    prepared: PreparedDispatch,
     events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
     scratch: Option<&Path>,
     notify_on_finish: bool,
@@ -2153,7 +2406,19 @@ fn launch(
     use std::sync::atomic::Ordering;
 
     let bg = &scope.bg;
-    let name = resolved.definition.name.clone();
+    let PreparedDispatch {
+        name,
+        description,
+        resolved,
+        parent,
+        memory_access,
+        workspace,
+        placement,
+        lease,
+    } = prepared;
+    let workspace_note = workspace.note();
+    let ws_done = workspace.clone();
+    let task_lease = lease.clone();
     let run_id = next_subagent_run_id(&name);
     let (tx, rx) = tokio::sync::oneshot::channel();
     let result_file = scratch.and_then(|s| {
@@ -2168,6 +2433,22 @@ fn launch(
     // a child reports its progress through `notices`.
     let mut entries = bg.inner.lock().unwrap();
     if scope.is_stale() {
+        drop(entries);
+        // Torn down between the check above and here: give the worktree back
+        // and take back this assignment, since the teardown's own sweep may
+        // already have run. Only this one: a session-owned registry outlives
+        // the teardown (Esc stops its children mid-session), and its earlier
+        // children's worktrees and names are still the session's to reuse.
+        lease.release();
+        // `undo` runs git, so it goes to the blocking pool rather than
+        // stalling this async worker. Nothing waits on it: the dispatch is
+        // refused either way.
+        let ledger = bg.workspaces.clone();
+        let undo = move || ledger.undo(&name, &workspace);
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => drop(handle.spawn_blocking(undo)),
+            Err(_) => undo(),
+        }
         return Err(SubagentError::Cancelled);
     }
 
@@ -2187,7 +2468,7 @@ fn launch(
         let _ = events.send(StreamEvent::SubagentQueued {
             run_id: run_id.clone(),
             name: name.clone(),
-            task: Some(req.description.clone()),
+            task: Some(description.clone()),
             waiting,
         });
     }
@@ -2197,9 +2478,7 @@ fn launch(
     // child outliving this run keeps reporting somewhere that is still read.
     let task_events = bg.child_events(events);
     let entry_events = bg.child_events(events);
-    let inherited = parent.clone();
-    let description = req.description.clone();
-    let memory_access = req.memory_access;
+    let inherited = parent;
     let run_id_task = run_id.clone();
     let name_task = name.clone();
     let registry = bg.clone();
@@ -2264,8 +2543,17 @@ fn launch(
             parent_link,
             transcript_dir,
             memory_access,
+            Some((workspace, placement)),
         )
         .await;
+        // Before `finished` below: a next phase may reuse this worktree as
+        // soon as the barrier sees the child done. A shell the run abandoned
+        // at its park budget would still be writing in it.
+        end_child_shells(&run_id_task);
+        // Still holding the lease, with no shell of the child's left: nothing
+        // writes the checkout while its branch is read.
+        let result = with_branch_footer(ws_done, result).await;
+        task_lease.release();
         if let Some((_, path)) = &result_file {
             fill_subagent_result(path, &spilled_text(&result));
         }
@@ -2304,10 +2592,14 @@ fn launch(
             finished,
             slot,
             inbox,
+            lease,
         },
     );
     drop(entries);
-    Ok(Dispatched { run_id })
+    Ok(Dispatched {
+        run_id,
+        workspace: workspace_note,
+    })
 }
 
 /// The name Jan's memory-tidy subagent runs under. Not a registry entry: the
@@ -2353,7 +2645,7 @@ Finish with a short report, one line per change: `archived <name>`, `merged <a> 
 /// caller collects it with [`await_subagent`]. It never rings the parent's
 /// doorbell, so a tidy never starts a model turn of its own.
 #[cfg(feature = "cli")]
-pub(crate) fn spawn_memory_tidy(
+pub(crate) async fn spawn_memory_tidy(
     scope: &DispatchScope,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     parent: &ParentRun,
@@ -2369,7 +2661,8 @@ pub(crate) fn spawn_memory_tidy(
         ..parent.clone()
     };
     let args = memory_tidy_args(parent_args, budget);
-    launch(scope, &args, resolved, req, parent, events, None, false)
+    let prepared = assign_dispatch(scope, &args, resolved, req, parent).await?;
+    start_dispatch(scope, &args, prepared, events, None, false)
 }
 
 /// The tidy child's run args: the parent's, with the change cap its `memory`
@@ -2412,6 +2705,9 @@ fn memory_tidy_dispatch() -> (ResolvedDispatch, SubagentRequest) {
         allowed_tools: None,
         agent: MEMORY_TIDY_AGENT.to_string(),
         memory_access: true,
+        // Never a worktree: with no write or edit tool the tidy is a reader,
+        // so it gets the default, the parent's checkout read-only.
+        workspace: None,
     };
     (resolved, req)
 }
@@ -2463,6 +2759,8 @@ pub(crate) fn worker_names_in(result: &str) -> Option<Vec<String>> {
 pub(crate) struct DispatchedChild {
     pub(crate) name: String,
     pub(crate) run_id: String,
+    /// Where it works (see [`Dispatched::workspace`]).
+    pub(crate) workspace: String,
 }
 
 /// `<scratch>/blackboard`.
@@ -2536,7 +2834,7 @@ fn inject_inputs(task: &str, inputs: &[(String, String)]) -> String {
 /// each completes, handing every phase its predecessor's blackboard results.
 /// Returns as soon as phase 1 is dispatched. The whole plan is validated up front
 /// so a bad subagent fails the dispatch atomically, before any child starts.
-pub(crate) fn spawn_dispatch_plan(
+pub(crate) async fn spawn_dispatch_plan(
     bg: &Arc<BackgroundSubagents>,
     generation: u64,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
@@ -2618,7 +2916,8 @@ pub(crate) fn spawn_dispatch_plan(
         children: first_children,
     } = spawn_first_phase(bg, multi, first.subagents, |req| {
         spawn_subagent(&scope, parent_args, req, parent, events, scratch, !multi)
-    })?;
+    })
+    .await?;
 
     if multi {
         let remaining: Vec<Phase> = phases.collect();
@@ -2675,12 +2974,15 @@ struct FirstPhase {
 /// owes nothing the moment it reports its failure. `spawn` is a parameter so a
 /// test can make a later child fail, which no request that passed the up-front
 /// checks otherwise does on demand.
-fn spawn_first_phase(
+async fn spawn_first_phase<F>(
     bg: &BackgroundSubagents,
     multi: bool,
     reqs: Vec<SubagentRequest>,
-    mut spawn: impl FnMut(SubagentRequest) -> Result<Dispatched, SubagentError>,
-) -> Result<FirstPhase, SubagentError> {
+    mut spawn: impl FnMut(SubagentRequest) -> F,
+) -> Result<FirstPhase, SubagentError>
+where
+    F: std::future::Future<Output = Result<Dispatched, SubagentError>>,
+{
     let mut started = FirstPhase {
         names: Vec::with_capacity(reqs.len()),
         ids: Vec::with_capacity(reqs.len()),
@@ -2689,11 +2991,12 @@ fn spawn_first_phase(
     for req in reqs {
         let name = req.name.clone();
         started.names.push(name.clone());
-        match spawn(req) {
+        match spawn(req).await {
             Ok(d) => {
                 started.children.push(DispatchedChild {
                     name,
                     run_id: d.run_id.clone(),
+                    workspace: d.workspace,
                 });
                 started.ids.push(d.run_id);
             }
@@ -2773,7 +3076,9 @@ async fn run_phase_plan(
                 &events,
                 scratch.as_deref(),
                 false,
-            ) {
+            )
+            .await
+            {
                 Ok(d) => {
                     ids.push(d.run_id);
                     names.push(name);
@@ -2909,6 +3214,9 @@ fn completion_notice(
 /// file is the child's blackboard entry, reported by the plan as a whole.
 pub(crate) struct Dispatched {
     pub(crate) run_id: String,
+    /// Where it works, as the dispatch result says (see
+    /// [`crate::core::agent::child_workspace::ChildWorkspace::note`]).
+    pub(crate) workspace: String,
 }
 
 /// Block until the background subagent `run_id` finishes and return its final
@@ -3166,7 +3474,7 @@ pub fn subagent_tool_schemas(
     let dispatch_desc = format!(
         "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} Every subagent gets your full toolset unless its agent's definition or allowed_tools restricts it, except memory: subagents have no memory tool and no memory index, so put any remembered fact a subagent needs into its task."
     );
-    vec![
+    let mut tools = vec![
         json!({
             "type": "function",
             "function": {
@@ -3245,7 +3553,24 @@ pub fn subagent_tool_schemas(
                 "parameters": { "type": "object", "properties": {}, "required": [] }
             }
         }),
-    ]
+    ];
+    // Only the CLI build gives a child a worktree or a read-only checkout, so
+    // only there is the field offered (and read: see `parse_dispatch_plan`).
+    if cfg!(feature = "cli") {
+        tools[0]["function"]["parameters"]["properties"]["subagents"]["items"]["properties"]
+            ["workspace"] = json!({
+            "description": "Optional; where the subagent works. OMIT for the default: one that can write or edit gets a fresh worktree (a clone of its own) on its own branch, any other works read-only in your checkout. \"new\": a fresh worktree. \"shared\": your checkout. The name of an earlier subagent: that subagent's workspace (one writer at a time). {\"ref\": \"<git ref>\"}: a fresh worktree at that ref, fetched if needed (e.g. pull/123/head).",
+            "anyOf": [
+                { "type": "string" },
+                {
+                    "type": "object",
+                    "properties": { "ref": { "type": "string" } },
+                    "required": ["ref"]
+                }
+            ]
+        });
+    }
+    tools
 }
 
 fn required_str(args: &serde_json::Value, key: &str) -> Result<String, SubagentError> {
@@ -3318,6 +3643,14 @@ pub fn parse_dispatch_plan(
     let names = number_workers(agents.iter().map(String::as_str), taken);
     for ((sub, agent), name) in subs_val.iter().zip(agents).zip(names.iter().cloned()) {
         let description = required_str(sub, "task")?;
+        // The desktop schema has no `workspace`, so one sent there is ignored
+        // like any other unknown field: every child shares the checkout anyway.
+        let workspace = if cfg!(feature = "cli") {
+            crate::core::agent::child_workspace::parse_request(sub.get("workspace"))
+                .map_err(|e| SubagentError::Upstream(format!("subagent '{name}': {e}")))?
+        } else {
+            None
+        };
         let phase = match sub.get("phase") {
             None | Some(serde_json::Value::Null) => 0,
             Some(v) => v
@@ -3336,6 +3669,7 @@ pub fn parse_dispatch_plan(
             allowed_tools: optional_tool_list(sub),
             agent,
             memory_access: false,
+            workspace,
         });
     }
     let phases = by_phase
@@ -4041,6 +4375,7 @@ pub(crate) mod tests {
             allowed_tools: allowed,
             agent: name.to_string(),
             memory_access: false,
+            workspace: None,
         }
     }
 
@@ -4544,6 +4879,7 @@ pub(crate) mod tests {
             finished: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             slot: ChildSlot::new(),
             inbox: Arc::new(ChildInbox::default()),
+            lease: LeaseSlot::default(),
         }
     }
 
@@ -4579,7 +4915,7 @@ pub(crate) mod tests {
             "r1".to_string(),
             test_entry(rx, handle.abort_handle(), ev_tx),
         );
-        let guard = AbortOnDrop(bg.clone());
+        let guard = AbortOnDrop::new(bg.clone(), &tokio::sync::mpsc::unbounded_channel().0);
         drop(guard);
         assert!(bg.inner.lock().unwrap().is_empty(), "abort_all drains the map");
         assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
@@ -4673,7 +5009,8 @@ pub(crate) mod tests {
             "entry must remain registered while being awaited"
         );
 
-        AbortOnDrop(bg.clone()); // constructs + drops -> abort_all
+        // constructs + drops -> abort_all
+        AbortOnDrop::new(bg.clone(), &tokio::sync::mpsc::unbounded_channel().0);
         assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
         assert!(
             matches!(awaiting.await.unwrap(), Err(SubagentError::Cancelled)),
@@ -4844,6 +5181,7 @@ pub(crate) mod tests {
             compaction: None,
             session_start: None,
             memory_change_budget: None,
+            child_scope: None,
         }
     }
 
@@ -4909,6 +5247,7 @@ pub(crate) mod tests {
             Some(&scratch),
             true,
         )
+        .await
         .unwrap()
         .run_id;
         let _ = await_subagent(&bg, &run_id).await;
@@ -4941,7 +5280,7 @@ pub(crate) mod tests {
         let args = max_par_args(&root);
         let bg = Arc::new(BackgroundSubagents::new(1));
         let (events_tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let run_id = dispatch_reviewer(&bg, &args, &events_tx);
+        let run_id = dispatch_reviewer(&bg, &args, &events_tx).await;
         let _ = await_subagent(&bg, &run_id).await;
         assert!(!root.join("subagents").exists());
         let _ = std::fs::remove_dir_all(&root);
@@ -4972,12 +5311,13 @@ pub(crate) mod tests {
     /// One queue-test dispatch, with no scratch: these assert admission order,
     /// not spilling, and a child that fails fast has nothing to write anyway.
     #[cfg(feature = "cli")]
-    fn dispatch_reviewer(
+    async fn dispatch_reviewer(
         bg: &Arc<BackgroundSubagents>,
         args: &crate::core::agent::r#loop::OrchestrationArgs,
         events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
     ) -> String {
         spawn_subagent(&bg.scope(), args, req("reviewer", None), &parent_run(), events, None, true)
+            .await
             .unwrap()
             .run_id
     }
@@ -4997,7 +5337,7 @@ pub(crate) mod tests {
         let (events_tx, _events_rx) = tokio::sync::mpsc::unbounded_channel();
         // Hold the only permit so the next dispatch is guaranteed to queue.
         let held = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let queued_id = dispatch_reviewer(&bg, &args, &events_tx);
+        let queued_id = dispatch_reviewer(&bg, &args, &events_tx).await;
 
         let reply = message_subagent(&bg, &queued_id, "narrow it to the parser").unwrap();
         assert!(reply.contains("Queued for subagent"), "{reply}");
@@ -5022,6 +5362,273 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A dispatch that resolves after its run was torn down (a later plan
+    /// phase, an in-flight tool call) is refused without leaving a worktree or
+    /// `jan/agent/*` branch behind: nothing would sweep it again.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_dispatch_after_teardown_leaves_no_worktree_behind() {
+        let root = unique_root("stale-wt");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        if !(git(&["init", "-q"])
+            && git(&["add", "a.txt"])
+            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
+        {
+            return;
+        }
+        write_def(&project_subagents_dir(&root), "writer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, _events_rx) = tokio::sync::mpsc::unbounded_channel();
+        // The scope is taken, then the run is torn down before it dispatches.
+        let scope = bg.scope();
+        bg.abort_all();
+        let refused = spawn_subagent(
+            &scope,
+            &args,
+            req("writer", None),
+            &parent_run(),
+            &events_tx,
+            None,
+            false,
+        )
+        .await;
+        assert!(matches!(refused, Err(SubagentError::Cancelled)));
+        assert!(bg.workspaces.live().is_empty(), "{:?}", bg.workspaces.live());
+        let branches = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["branch", "--list", "jan/agent/*"])
+            .output()
+            .unwrap();
+        assert!(branches.stdout.is_empty(), "{}", String::from_utf8_lossy(&branches.stdout));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A dispatch's git work (here a `{ref}` fetch from a remote that takes a
+    /// second to fail) runs off the async worker: on a single-threaded
+    /// runtime, another task keeps running while it waits.
+    #[cfg(feature = "cli")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_dispatch_waiting_on_git_does_not_stall_the_runtime() {
+        use crate::core::agent::child_workspace::WorkspaceRequest;
+        let root = unique_root("no-stall");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        if !(git(&["init", "-q"])
+            && git(&["add", "a.txt"])
+            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"])
+            && git(&["config", "protocol.ext.allow", "always"])
+            && git(&["remote", "add", "origin", "ext::sh -c sleep% 1"]))
+        {
+            return;
+        }
+        write_def(&project_subagents_dir(&root), "writer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, _events_rx) = tokio::sync::mpsc::unbounded_channel();
+        let ticks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ticker = {
+            let ticks = ticks.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    ticks.fetch_add(1, Ordering::SeqCst);
+                }
+            })
+        };
+        let request = SubagentRequest {
+            workspace: Some(WorkspaceRequest::Ref("pull/1/head".to_string())),
+            ..req("writer", None)
+        };
+        let before = ticks.load(Ordering::SeqCst);
+        let refused =
+            spawn_subagent(&bg.scope(), &args, request, &parent_run(), &events_tx, None, false)
+                .await;
+        let during = ticks.load(Ordering::SeqCst) - before;
+        ticker.abort();
+        assert!(
+            matches!(&refused, Err(SubagentError::Upstream(e)) if e.contains("fetch")),
+            "{:?}",
+            refused.err()
+        );
+        assert!(during >= 20, "the runtime stalled while git ran: {during} tick(s)");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A teardown landing between a dispatch's workspace assignment and its
+    /// registration takes back that dispatch's worktree and nothing else. A
+    /// session-owned registry outlives the teardown (Esc stops its children
+    /// mid-session), so an earlier reader's fresh worktree, which holds no
+    /// lease, and an earlier writer's stay on disk and nameable.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_stale_dispatch_takes_back_only_its_own_worktree() {
+        use crate::core::agent::child_workspace::WorkspaceRequest;
+        let root = unique_root("stale-own");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        if !(git(&["init", "-q"])
+            && git(&["add", "a.txt"])
+            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
+        {
+            return;
+        }
+        write_def(&project_subagents_dir(&root), "writer", "");
+        write_def(&project_subagents_dir(&root), "reader", "allowed_tools = [\"read\"]\n");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(2));
+        let (events_tx, _events_rx) = tokio::sync::mpsc::unbounded_channel();
+        bg.install_session_events(events_tx.clone());
+        let earlier = [
+            SubagentRequest {
+                workspace: Some(WorkspaceRequest::New),
+                ..req("reader", None)
+            },
+            req("writer", None),
+        ];
+        for r in earlier {
+            let d = spawn_subagent(&bg.scope(), &args, r, &parent_run(), &events_tx, None, false)
+                .await
+                .unwrap();
+            assert!(d.workspace.contains("worktree"), "{}", d.workspace);
+            let _ = await_subagent(&bg, &d.run_id).await;
+        }
+        let before = bg.workspaces.live();
+        assert_eq!(before.len(), 2, "{before:?}");
+
+        let scope = bg.scope();
+        // Its own worker name, as `plan_dispatch` would have reserved.
+        let late = SubagentRequest {
+            agent: "writer".to_string(),
+            ..req("late", None)
+        };
+        let late = prepare_dispatch(&scope, &args, late, &parent_run()).await.unwrap();
+        let late_wt = late.workspace.worktree.clone().expect("a writer gets a worktree");
+        bg.abort_all(); // Esc: the session's registry lives on
+        let refused = start_dispatch(&scope, &args, late, &events_tx, None, false);
+        assert!(matches!(refused, Err(SubagentError::Cancelled)));
+
+        // The undo runs on the blocking pool; give it a bounded moment.
+        for _ in 0..300 {
+            if !late_wt.path.exists() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert!(!late_wt.path.exists(), "the stale dispatch's worktree is removed");
+        let branches = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["branch", "--list", "jan/agent/*"])
+            .output()
+            .unwrap();
+        let branches = String::from_utf8_lossy(&branches.stdout).into_owned();
+        assert!(!branches.contains(&late_wt.branch), "{branches}");
+        assert_eq!(bg.workspaces.live(), before, "the earlier worktrees stay");
+        for name in ["reader", "writer"] {
+            let reuse = WorkspaceRequest::Reuse(name.to_string());
+            let again = bg.workspaces.assign(&root, "next", false, Some(&reuse));
+            assert!(again.is_ok(), "{name}: {:?}", again.err());
+        }
+        let _ = bg.workspaces.finish_session();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A stopped writer gives its worktree up the moment the stop returns, not
+    /// when the runtime gets round to dropping its aborted task: a phase
+    /// barrier opens on `finished`, and a next-phase item reusing that
+    /// worktree would otherwise be refused as "still writing" and fail the
+    /// whole phase.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_stopped_writer_releases_its_worktree_before_the_stop_returns() {
+        use crate::core::agent::child_workspace::WorkspaceRequest;
+        let root = unique_root("lease-stop");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        if !(git(&["init", "-q"])
+            && git(&["add", "a.txt"])
+            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
+        {
+            return;
+        }
+        write_def(&project_subagents_dir(&root), "writer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, _events_rx) = tokio::sync::mpsc::unbounded_channel();
+        // Queued behind the only permit, so it is still holding its lease.
+        let held = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let d = spawn_subagent(
+            &bg.scope(),
+            &args,
+            req("writer", None),
+            &parent_run(),
+            &events_tx,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(d.workspace.contains("worktree"), "{}", d.workspace);
+        let reuse = WorkspaceRequest::Reuse("writer".to_string());
+        let busy = bg.workspaces.assign(&root, "next", true, Some(&reuse)).unwrap_err();
+        assert!(busy.contains("still writing"), "{busy}");
+
+        stop_subagent(&bg, "writer").unwrap();
+        let next = bg.workspaces.assign(&root, "next", true, Some(&reuse));
+        assert!(next.is_ok(), "{:?}", next.err());
+        drop(next);
+        drop(held);
+        let _ = bg.workspaces.finish_session();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// Provenance and authority: the message is data in the child's
     /// conversation, never a channel that grants it anything. The dispatch-time
     /// intersection stays the ceiling for the child's whole life.
@@ -5033,7 +5640,7 @@ pub(crate) mod tests {
         let args = max_par_args(&root);
         let bg = Arc::new(BackgroundSubagents::new(1));
         let (events_tx, _events_rx) = tokio::sync::mpsc::unbounded_channel();
-        let run_id = dispatch_reviewer(&bg, &args, &events_tx);
+        let run_id = dispatch_reviewer(&bg, &args, &events_tx).await;
 
         // Whatever the message says, delivery only ever appends a `user` turn:
         // there is no field on it for tools, permissions, sandbox, or model.
@@ -5069,8 +5676,8 @@ pub(crate) mod tests {
     /// The scope boundary in the registry rather than the schema: a child never
     /// gets a subagent registry, so it has nothing to message a sibling through.
     #[cfg(feature = "cli")]
-    #[test]
-    fn a_child_cannot_dispatch_and_so_has_no_registry_to_message_through() {
+    #[tokio::test]
+    async fn a_child_cannot_dispatch_and_so_has_no_registry_to_message_through() {
         let root = unique_root("msg-nested");
         write_def(&project_subagents_dir(&root), "reviewer", "");
         let mut child_args = max_par_args(&root);
@@ -5086,7 +5693,8 @@ pub(crate) mod tests {
                 &events_tx,
                 None,
                 true
-            ),
+            )
+            .await,
             Err(SubagentError::PermissionDenied(_))
         ));
         let _ = std::fs::remove_dir_all(&root);
@@ -5157,13 +5765,17 @@ pub(crate) mod tests {
         let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut starts = Vec::new();
 
-        let r1 = dispatch_reviewer(&bg, &args, &events_tx);
-        let r2 = dispatch_reviewer(&bg, &args, &events_tx);
-        let r3 = dispatch_reviewer(&bg, &args, &events_tx);
+        // The only slot is taken by a child already running. Held here rather
+        // than by a first dispatch: a dispatch yields while its workspace is
+        // assigned, and a provider-less child would finish in that window.
+        let running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let r1 = dispatch_reviewer(&bg, &args, &events_tx).await;
+        let r2 = dispatch_reviewer(&bg, &args, &events_tx).await;
+        let r3 = dispatch_reviewer(&bg, &args, &events_tx).await;
         assert_ne!(r1, r2);
         assert_ne!(r2, r3);
 
-        // The two beyond-cap dispatches must be reported queued, with their
+        // The beyond-cap dispatches must be reported queued, with their
         // 1-based queue positions in dispatch order.
         let mut queued = Vec::new();
         while let Ok(ev) = events_rx.try_recv() {
@@ -5171,20 +5783,21 @@ pub(crate) mod tests {
                 queued.push((run_id, waiting));
             }
         }
-        assert_eq!(queued.len(), 2, "two dispatches exceeded the cap of 1");
-        assert_eq!(queued[0], (r2.clone(), 1), "second dispatch queues first");
-        assert_eq!(queued[1], (r3.clone(), 2), "third dispatch queues behind it");
+        assert_eq!(queued.len(), 3, "three dispatches exceeded the cap of 1");
+        assert_eq!(queued[0], (r1.clone(), 1), "first dispatch queues first");
+        assert_eq!(queued[1], (r2.clone(), 2), "second dispatch queues behind it");
+        assert_eq!(queued[2], (r3.clone(), 3), "third dispatch queues behind that");
 
-        // The first dispatch is admitted immediately: it starts without a
-        // queued event (children fail fast without a provider, which is fine --
-        // we only assert the queueing/ordering contract here).
+        // Children fail fast without a provider, which is fine -- we only
+        // assert the queueing/ordering contract here.
+        drop(running);
         let out1 = await_subagent(&bg, &r1).await;
         let out2 = await_subagent(&bg, &r2).await;
         let out3 = await_subagent(&bg, &r3).await;
         assert!(out1.is_err(), "child run fails without a provider (expected)");
         assert!(out2.is_err() && out3.is_err(), "queued children also complete");
 
-        // Promotion must be FIFO: r2 started before r3.
+        // Promotion must be FIFO: r1, then r2, then r3.
         while let Ok(ev) = events_rx.try_recv() {
             if let StreamEvent::SubagentStart { run_id, .. } = ev {
                 starts.push(run_id);
@@ -5192,7 +5805,7 @@ pub(crate) mod tests {
         }
         let pos = |id: &str| starts.iter().position(|s| s == id);
         assert!(
-            pos(&r2).unwrap() < pos(&r3).unwrap(),
+            pos(&r1).unwrap() < pos(&r2).unwrap() && pos(&r2).unwrap() < pos(&r3).unwrap(),
             "FIFO promotion: {starts:?}"
         );
         let _ = std::fs::remove_dir_all(&root);
@@ -5243,6 +5856,7 @@ pub(crate) mod tests {
             ],
         };
         let d = spawn_dispatch_plan(&bg, bg.generation(), &args, plan, &parent_run(), &tx, Some(&scratch))
+            .await
             .unwrap();
         assert_eq!(d.phase_count, 2);
         assert_eq!(d.total_subagents, 3);
@@ -5328,6 +5942,7 @@ pub(crate) mod tests {
             &tx,
             Some(&scratch),
         )
+        .await
         .unwrap();
         // Phase 1 started; the driver owns the remaining phase.
         assert_eq!(d.first_phase.len(), 1);
@@ -5377,7 +5992,7 @@ pub(crate) mod tests {
         bg.abort_all();
 
         let dispatched =
-            spawn_subagent(&scope, &args, worker("late"), &parent_run(), &tx, None, true);
+            spawn_subagent(&scope, &args, worker("late"), &parent_run(), &tx, None, true).await;
         assert!(
             matches!(dispatched, Err(SubagentError::Cancelled)),
             "a dispatch after teardown must be refused, not started"
@@ -5424,7 +6039,7 @@ pub(crate) mod tests {
         let bg = Arc::new(BackgroundSubagents::new(1));
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
 
-        let id = dispatch_reviewer(&bg, &args, &tx);
+        let id = dispatch_reviewer(&bg, &args, &tx).await;
         // Wait for it to finish without collecting it, then collect it: the
         // entry stays either way, and both states are "done" to the barrier.
         let gate = tokio::time::timeout(
@@ -5464,8 +6079,8 @@ pub(crate) mod tests {
         // Occupy the only slot, so the first dispatch parks on the semaphore
         // (queued) rather than being admitted -- both accounting fields in play.
         let running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let _r1 = dispatch_reviewer(&bg, &args, &tx);
-        let _r2 = dispatch_reviewer(&bg, &args, &tx);
+        let _r1 = dispatch_reviewer(&bg, &args, &tx).await;
+        let _r2 = dispatch_reviewer(&bg, &args, &tx).await;
         assert_eq!(bg.running.load(Ordering::SeqCst), 2);
         assert_eq!(bg.queued.load(Ordering::SeqCst), 2);
         // Admit the first, so the abort below has to release a running child and
@@ -5509,7 +6124,7 @@ pub(crate) mod tests {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
 
         // A free permit: admitted here and now, never queued.
-        let _r1 = dispatch_reviewer(&bg, &args, &tx);
+        let _r1 = dispatch_reviewer(&bg, &args, &tx).await;
         assert_eq!(bg.queued.load(Ordering::SeqCst), 0);
 
         bg.abort_all();
@@ -5537,7 +6152,7 @@ pub(crate) mod tests {
         // Hold the slot so the child cannot finish on its own: the waiter must
         // park, deterministically, with exactly one child outstanding.
         let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let _r1 = dispatch_reviewer(&bg, &args, &tx);
+        let _r1 = dispatch_reviewer(&bg, &args, &tx).await;
 
         let waiter_bg = bg.clone();
         let waiter = tokio::spawn(async move { waiter_bg.wait_for_notice().await });
@@ -5593,6 +6208,7 @@ pub(crate) mod tests {
             &tx,
             Some(&scratch),
         )
+        .await
         .unwrap();
 
         let mut all = Vec::new();
@@ -5650,6 +6266,7 @@ pub(crate) mod tests {
             ],
         };
         spawn_dispatch_plan(&bg, bg.generation(), &args, plan, &parent_run(), &tx, Some(&scratch))
+            .await
             .unwrap();
 
         let mut all = Vec::new();
@@ -5701,8 +6318,8 @@ pub(crate) mod tests {
         // Occupy the only slot BEFORE dispatching, so every dispatch queues and
         // the await below is deterministic: nothing can start while held.
         let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let r1 = dispatch_reviewer(&bg, &args, &events_tx);
-        let r2 = dispatch_reviewer(&bg, &args, &events_tx);
+        let r1 = dispatch_reviewer(&bg, &args, &events_tx).await;
+        let r2 = dispatch_reviewer(&bg, &args, &events_tx).await;
 
         // r2 is queued (not started), and awaiting it must NOT start it: the
         // slot is still held, so the await parks. Assert via the events: no
@@ -5743,11 +6360,11 @@ pub(crate) mod tests {
         // Hold the slot before dispatching so r1, r2, r3 all queue (parked on
         // the semaphore) -- the interesting teardown case.
         let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let _r1 = dispatch_reviewer(&bg, &args, &events_tx);
-        let r2 = dispatch_reviewer(&bg, &args, &events_tx);
-        let r3 = dispatch_reviewer(&bg, &args, &events_tx);
+        let _r1 = dispatch_reviewer(&bg, &args, &events_tx).await;
+        let r2 = dispatch_reviewer(&bg, &args, &events_tx).await;
+        let r3 = dispatch_reviewer(&bg, &args, &events_tx).await;
 
-        AbortOnDrop(bg.clone()); // teardown with queued children parked
+        AbortOnDrop::new(bg.clone(), &events_tx); // teardown with queued children parked
 
         let mut ends = Vec::new();
         while let Ok(ev) = events_rx.try_recv() {
@@ -5778,7 +6395,7 @@ pub(crate) mod tests {
         let bg = Arc::new(BackgroundSubagents::new(1));
         let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
         // No provider is configured, so the child's run errors out at once.
-        let run_id = dispatch_reviewer(&bg, &args, &events_tx);
+        let run_id = dispatch_reviewer(&bg, &args, &events_tx).await;
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             while !bg.live_run_ids().is_empty() {
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;
@@ -5830,6 +6447,7 @@ pub(crate) mod tests {
             None,
             false,
         )
+        .await
         .expect("the child registers");
 
         assert_eq!(bg.running.load(Ordering::SeqCst), 1, "the child is owed");
@@ -5878,25 +6496,32 @@ pub(crate) mod tests {
         // As `spawn_dispatch_plan` does for a multi-phase plan before phase 0.
         bg.begin_plan();
 
-        let mut started = Vec::new();
+        let started = std::sync::Mutex::new(Vec::new());
         let result = spawn_first_phase(
             &bg,
             true,
             vec![req("reviewer", None), req("broken", None)],
             |r| {
-                if r.name == "broken" {
-                    assert_eq!(
-                        bg.running.load(Ordering::SeqCst),
-                        1,
-                        "the good child is live when its sibling fails"
-                    );
-                    return Err(SubagentError::Upstream("cannot start".to_string()));
+                let (bg, scope, args, events_tx, started) =
+                    (&bg, &scope, &args, &events_tx, &started);
+                async move {
+                    if r.name == "broken" {
+                        assert_eq!(
+                            bg.running.load(Ordering::SeqCst),
+                            1,
+                            "the good child is live when its sibling fails"
+                        );
+                        return Err(SubagentError::Upstream("cannot start".to_string()));
+                    }
+                    let d = spawn_subagent(scope, args, r, &parent_run(), events_tx, None, false)
+                        .await?;
+                    started.lock().unwrap().push(d.run_id.clone());
+                    Ok(d)
                 }
-                let d = spawn_subagent(&scope, &args, r, &parent_run(), &events_tx, None, false)?;
-                started.push(d.run_id.clone());
-                Ok(d)
             },
-        );
+        )
+        .await;
+        let started = started.into_inner().unwrap();
 
         assert!(
             matches!(result, Err(SubagentError::Upstream(ref m)) if m == "cannot start"),
@@ -6129,6 +6754,75 @@ pub(crate) mod tests {
             agent["enum"],
             serde_json::json!(["debug", "explore", "general", "research", "review"])
         );
+    }
+
+    /// The optional per-item `workspace` takes a keyword or an earlier
+    /// worker's name as a string, or a `{ref}` object; it is never required,
+    /// and the schema is the same bytes every time it is built.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn the_dispatch_schema_offers_an_optional_workspace() {
+        let reg = SubagentRegistry::load(&unique_root("workspace_schema"));
+        let schemas = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);
+        let item = &schemas[0]["function"]["parameters"]["properties"]["subagents"]["items"];
+        let ws = &item["properties"]["workspace"];
+        let shapes = ws["anyOf"].as_array().expect("anyOf");
+        assert_eq!(shapes[0]["type"], "string");
+        assert_eq!(shapes[1]["type"], "object");
+        assert_eq!(shapes[1]["required"], serde_json::json!(["ref"]));
+        assert!(ws["description"].as_str().unwrap().contains("\"shared\""));
+        assert_eq!(item["required"], serde_json::json!(["agent", "task"]));
+        assert_eq!(
+            schemas,
+            subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS),
+            "stable across turns"
+        );
+    }
+
+    /// The desktop makes no worktrees, so it neither offers `workspace` nor
+    /// acts on one: a model that sends it anyway (even a malformed one) gets
+    /// the plain shared checkout rather than a failed plan.
+    #[cfg(not(feature = "cli"))]
+    #[test]
+    fn the_desktop_dispatch_schema_has_no_workspace_and_ignores_one() {
+        let reg = SubagentRegistry::load(&unique_root("workspace_schema_desktop"));
+        let schemas = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);
+        let item = &schemas[0]["function"]["parameters"]["properties"]["subagents"]["items"];
+        assert!(item["properties"].get("workspace").is_none(), "{item}");
+        assert!(!schemas[0].to_string().contains("worktree"), "{}", schemas[0]);
+        let plan = parse_dispatch_plan_fresh(&serde_json::json!({ "subagents": [
+            { "agent": "general", "task": "a", "workspace": "new" },
+            { "agent": "explore", "task": "b", "workspace": 7 },
+        ]}))
+        .unwrap();
+        assert!(plan.phases[0].subagents.iter().all(|s| s.workspace.is_none()));
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_dispatch_item_carries_its_workspace_and_a_bad_one_fails_the_plan() {
+        use crate::core::agent::child_workspace::WorkspaceRequest;
+        let plan = parse_dispatch_plan_fresh(&serde_json::json!({ "subagents": [
+            { "agent": "general", "task": "a", "workspace": "new" },
+            { "agent": "review", "task": "b", "workspace": { "ref": "pull/1/head" } },
+            { "agent": "explore", "task": "c" },
+        ]}))
+        .unwrap();
+        let ws: Vec<_> = plan.phases[0].subagents.iter().map(|s| s.workspace.clone()).collect();
+        assert_eq!(
+            ws,
+            vec![
+                Some(WorkspaceRequest::New),
+                Some(WorkspaceRequest::Ref("pull/1/head".to_string())),
+                None
+            ]
+        );
+        let err = parse_dispatch_plan_fresh(&serde_json::json!({ "subagents": [
+            { "agent": "general", "task": "a", "workspace": 7 },
+        ]}))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("general") && err.contains("workspace"), "{err}");
     }
 
     /// Every `allowed_tools` array is pinned to the names the run offers, minus
@@ -6539,6 +7233,7 @@ pub(crate) mod tests {
                 finished: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 slot: ChildSlot::new(),
                 inbox: inbox.clone(),
+                lease: LeaseSlot::default(),
             },
             inbox,
         )
@@ -6790,6 +7485,37 @@ pub(crate) mod tests {
             other => panic!("expected SubagentEnd, got {other:?}"),
         }
         assert!(handle.await.unwrap_err().is_cancelled(), "the task was aborted");
+    }
+
+    /// A child's shells run in tasks its abort does not reach, so stopping it
+    /// must end them itself: a shell left writing after the worktree's lease
+    /// is released races the next writer, or the sweep that removes it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stopping_a_child_ends_the_shells_it_started() {
+        use tauri_plugin_agent_tools::tools::proc;
+        let bg = Arc::new(BackgroundSubagents::default());
+        let run_id = format!("sub-shells-{}", std::process::id());
+        let (entry, _inbox) = live_entry(&run_id, "shells");
+        bg.inner.lock().unwrap().insert(run_id.clone(), entry);
+        let child = proc::spawn(
+            proc::shell(),
+            "sleep 300",
+            &std::env::temp_dir(),
+            None,
+            proc::ShellEnv::default(),
+            Some(&run_id),
+        )
+        .await
+        .unwrap();
+        let pid = child.id().unwrap();
+        // Held the way `bash` holds it: by a task of its own.
+        let waiter = tokio::spawn(child.wait_with_output());
+
+        stop_subagent(&bg, "shells").unwrap();
+        let ended = tokio::time::timeout(std::time::Duration::from_secs(5), waiter).await;
+        proc::kill(pid);
+        assert!(ended.is_ok(), "the stopped child's shell is still running");
     }
 
     /// The counters a child holds are released exactly once: stopping it and then
