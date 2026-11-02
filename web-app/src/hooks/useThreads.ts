@@ -3,6 +3,7 @@ import { ulid } from 'ulidx'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { useMessages } from '@/hooks/useMessages'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
@@ -31,6 +32,8 @@ type ThreadState = {
   getThreadById: (threadId: string) => Thread | undefined
   toggleFavorite: (threadId: string) => void
   deleteThread: (threadId: string) => void
+  rollbackCreatedThread: (threadId: string, previousId?: string) => Promise<void>
+  acceptCreatedThread: (threadId: string) => void
   renameThread: (threadId: string, newTitle: string) => void
   deleteAllThreads: () => void
   clearAllThreads: () => void
@@ -53,6 +56,15 @@ type ThreadState = {
   getConversationCapabilities: (threadId: string) => ConversationCapabilitiesV1
   deleteAllThreadsByProject: (projectId: string) => Promise<void>
   searchIndex: Fzf<Thread[]> | null
+}
+
+// Consent writes replace/overlay metadata, so object identity is not a creation
+// token. Ignore only that field; every other creation field must still match.
+const createdThreadSnapshots = new Map<string, { snapshot: string; receipt: Thread }>()
+function creationSnapshot(thread: Thread): string {
+  const metadata = { ...thread.metadata }
+  delete metadata.conversationCapabilities
+  return JSON.stringify({ ...thread, metadata })
 }
 
 // Serialize capability writes per conversation so a slower save cannot restore
@@ -120,6 +132,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   searchIndex: null,
   setThreads: (threads) => {
     const ids = new Set(threads.map((thread) => thread.id))
+    for (const id of createdThreadSnapshots.keys()) {
+      if (!ids.has(id)) createdThreadSnapshots.delete(id)
+    }
     for (const id of capabilityRequests.keys()) {
       if (!ids.has(id)) capabilityRequests.delete(id)
     }
@@ -218,7 +233,56 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       }
     })
   },
+  acceptCreatedThread: (threadId) => {
+    const creation = createdThreadSnapshots.get(threadId)
+    if (creation) getServiceHub().threads().releaseCreatedThread(creation.receipt)
+    createdThreadSnapshots.delete(threadId)
+  },
+  rollbackCreatedThread: async (threadId, previousId) => {
+    const created = get().threads[threadId]
+    const creation = createdThreadSnapshots.get(threadId)
+    const snapshot = creation?.snapshot
+    const assertUnchangedEmpty = () => {
+      const session = useChatSessions.getState().sessions[threadId]
+      if (!threadId || threadId === TEMPORARY_CHAT_ID || !created || !snapshot ||
+        !get().threads[threadId] || creationSnapshot(get().threads[threadId]) !== snapshot ||
+        useMessages.getState().getMessages(threadId).length || session) {
+        throw new Error('Created chat changed; refusing cleanup')
+      }
+    }
+    assertUnchangedEmpty()
+    // A pending consent write must settle before deletion, or it could recreate
+    // metadata after the native delete. Its failure is the reason for rollback.
+    await capabilityWrites.get(threadId)?.catch(() => {})
+    assertUnchangedEmpty()
+    await getServiceHub().threads().rollbackCreatedThread(threadId, creation!.receipt)
+    try {
+      assertUnchangedEmpty()
+    } catch {
+      // Disk deletion succeeded, but do not discard newly changed local work.
+      throw new Error('Chat was deleted from storage, but changed locally during cleanup')
+    }
+    // Never remove local state before durable deletion succeeds. A switch to
+    // another conversation while consent/deletion awaited belongs to the user.
+    createdThreadSnapshots.delete(threadId)
+    capabilityRequests.delete(threadId)
+    effectiveCapabilities.delete(threadId)
+    set((state) => {
+      const remainingThreads = { ...state.threads }
+      delete remainingThreads[threadId]
+      return {
+        threads: remainingThreads,
+        currentThreadId: state.currentThreadId === threadId
+          ? (previousId && remainingThreads[previousId] ? previousId : undefined)
+          : state.currentThreadId,
+        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads).filter(t => t.id !== TEMPORARY_CHAT_ID && t.title), {
+          selector: (item: Thread) => item.title ?? '',
+        }),
+      }
+    })
+  },
   deleteThread: (threadId) => {
+    createdThreadSnapshots.delete(threadId)
     capabilityRequests.delete(threadId)
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -298,6 +362,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     })
   },
   clearAllThreads: () => {
+    createdThreadSnapshots.clear()
     capabilityRequests.clear()
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
@@ -473,6 +538,10 @@ export const useThreads = create<ThreadState>()((set, get) => ({
             currentThreadId: createdThread.id,
           }
         })
+        const stored = get().threads[createdThread.id]
+        if (stored && createdThread.id !== TEMPORARY_CHAT_ID) {
+          createdThreadSnapshots.set(createdThread.id, { snapshot: creationSnapshot(stored), receipt: createdThread })
+        }
         return createdThread
       })
   },

@@ -23,6 +23,10 @@ function fromModelResponse(
   return fallback
 }
 
+// Raw successful native creation responses, keyed by the exact returned UI
+// object. Never reconstruct a deletion receipt from a later UI snapshot.
+const creationReceipts = new WeakMap<Thread, unknown>()
+
 export class DefaultThreadsService implements ThreadsService {
   async setConversationCapabilities(threadId: string, value: ConversationCapabilitiesV1): Promise<void> {
     // Temporary conversations cannot own persistent capability consent.
@@ -118,13 +122,15 @@ export class DefaultThreadsService implements ThreadsService {
 
           const assistants = e.assistants
 
-          return {
+          const created = {
             ...e,
             updated: e.updated,
             model,
             order: e.metadata?.order ?? thread.order,
             assistants,
           } as Thread
+          creationReceipts.set(created, JSON.parse(JSON.stringify(e)))
+          return created
         })
         .catch(() => thread) ?? thread
     )
@@ -155,6 +161,21 @@ export class DefaultThreadsService implements ThreadsService {
         created: Date.now() / 1000,
         updated: Date.now() / 1000,
       })
+  }
+
+  releaseCreatedThread(receipt: Thread): void {
+    creationReceipts.delete(receipt)
+  }
+
+  async rollbackCreatedThread(threadId: string, receipt: Thread): Promise<void> {
+    if (!threadId || threadId === TEMPORARY_CHAT_ID) {
+      throw new Error('Rollback requires a persisted chat id')
+    }
+    const expected = creationReceipts.get(receipt)
+    if (!expected || receipt.id !== threadId) throw new Error('Missing native creation receipt; chat retained')
+    // Compare and delete under the native writer lock; external changes refuse.
+    await getServiceHub().core().invoke('rollback_created_thread', { threadId, expected })
+    creationReceipts.delete(receipt)
   }
 
   async deleteThread(threadId: string): Promise<void> {

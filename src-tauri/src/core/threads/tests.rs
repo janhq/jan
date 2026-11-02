@@ -1179,3 +1179,56 @@ async fn conversation_capabilities_reject_non_chat_and_malformed_stored_records(
     assert!(set_thread_conversation_capabilities(app.handle().clone(), "temporary-chat".into(), capability_grant(true)).await.is_err());
     assert_eq!(fs::read(&temp_path).unwrap(), bytes);
 }
+
+#[tokio::test]
+async fn rollback_created_thread_refuses_external_changes_and_content() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    for case in ["metadata", "message", "sidecar"] {
+        let original = create_thread(app.handle().clone(), create_test_thread(case)).await.unwrap();
+        let id = original["id"].as_str().unwrap().to_string();
+        let path = get_thread_metadata_path(&data_dir, &id).unwrap();
+        if case == "metadata" {
+            let mut changed = original.clone(); changed["title"] = json!("external edit");
+            modify_thread(app.handle().clone(), changed).await.unwrap();
+        } else if case == "message" {
+            fs::write(get_messages_path(&data_dir, &id).unwrap(), b"{\"role\":\"user\"}\n").unwrap();
+        } else {
+            fs::write(get_thread_dir(&data_dir, &id).unwrap().join("cowork.json"), b"{}").unwrap();
+        }
+        let before = fs::read(&path).unwrap();
+        assert!(rollback_created_thread(app.handle().clone(), id.clone(), original).await.is_err());
+        assert_eq!(fs::read(path).unwrap(), before);
+    }
+}
+
+#[tokio::test]
+async fn rollback_created_thread_deletes_only_unchanged_creation_after_grant_failure() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    for _ in 0..2 {
+        let original = create_thread(app.handle().clone(), create_test_thread("retry")).await.unwrap();
+        let id = original["id"].as_str().unwrap().to_string();
+        set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(false)).await.unwrap();
+        rollback_created_thread(app.handle().clone(), id.clone(), original).await.unwrap();
+        assert!(!get_thread_dir(&data_dir, &id).unwrap().exists());
+    }
+}
+
+#[tokio::test]
+async fn rollback_created_thread_checks_external_edit_under_writer_lock() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let original = create_thread(app.handle().clone(), create_test_thread("lock")).await.unwrap();
+    let id = original["id"].as_str().unwrap().to_string();
+    let lock = get_lock_for_thread(&id).await;
+    let guard = lock.lock().await;
+    let mut changed = original.clone(); changed["title"] = json!("other window");
+    let handle = app.handle().clone();
+    let editing = tokio::spawn(async move { modify_thread(handle, changed).await });
+    tokio::task::yield_now().await;
+    let handle = app.handle().clone(); let target = id.clone();
+    let rollback = tokio::spawn(async move { rollback_created_thread(handle, target, original).await });
+    tokio::task::yield_now().await;
+    assert!(!rollback.is_finished()); drop(guard);
+    editing.await.unwrap().unwrap();
+    assert!(rollback.await.unwrap().is_err());
+    assert!(get_thread_metadata_path(&data_dir, &id).unwrap().exists());
+}

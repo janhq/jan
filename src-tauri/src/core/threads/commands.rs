@@ -233,6 +233,57 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
     super::capabilities::patch_conversation_capabilities(&data_folder, &thread_id, value)
 }
 
+/// Roll back only an unchanged, empty desktop creation. The expected raw
+/// creation response is a compare-and-delete receipt, not arbitrary authority
+/// to delete a conversation that another window has edited or started.
+#[tauri::command]
+pub async fn rollback_created_thread<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    thread_id: String,
+    mut expected: serde_json::Value,
+) -> Result<(), String> {
+    validate_thread_id(&thread_id)?;
+    if should_use_sqlite() || thread_id == "temporary-chat" {
+        return Err("Created chat rollback is unsupported for this conversation".into());
+    }
+    if expected["id"].as_str() != Some(thread_id.as_str()) || expected["metadata"]["mode"].as_str() == Some("cowork") {
+        return Err("Invalid created chat receipt".into());
+    }
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let lock = get_lock_for_thread(&thread_id).await;
+    let _guard = lock.lock().await;
+    let directory = get_thread_dir(&data_folder, &thread_id)?;
+    let path = get_thread_metadata_path(&data_folder, &thread_id)?;
+    let mut current: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&path).map_err(|e| e.to_string())?
+    ).map_err(|e| e.to_string())?;
+    // Grant saves are the only permitted change between creation and refusal.
+    for record in [&mut current, &mut expected] {
+        if let Some(metadata) = record.get_mut("metadata").and_then(|v| v.as_object_mut()) {
+            metadata.remove("conversationCapabilities");
+        }
+        if record.get("metadata").is_none_or(|m| m.is_null() || m.as_object().is_some_and(|o| o.is_empty())) {
+            record.as_object_mut().ok_or("Invalid created chat receipt")?.remove("metadata");
+        }
+    }
+    if current != expected {
+        return Err("Created chat changed; refusing rollback".into());
+    }
+    for entry in fs::read_dir(&directory).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if entry.file_name() == THREADS_FILE { continue; }
+        // An empty messages file is harmless; sidecars or any other content
+        // indicate the conversation has acquired data and must be retained.
+        if entry.path() == get_messages_path(&data_folder, &thread_id)?
+            && entry.file_type().map_err(|e| e.to_string())?.is_file()
+            && fs::read(entry.path()).map_err(|e| e.to_string())?.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+        return Err("Created chat contains data; refusing rollback".into());
+    }
+    fs::remove_dir_all(directory).map_err(|e| e.to_string())
+}
+
 /// Deletes a thread and all its associated files by removing its directory.
 #[tauri::command]
 pub async fn delete_thread<R: Runtime>(

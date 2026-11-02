@@ -546,4 +546,46 @@ describe('conversation capability persistence', () => {
     await expect(new DefaultThreadsService().setConversationCapabilities('temporary-chat', grants)).rejects.toThrow('regular chat')
     expect(invoke).not.toHaveBeenCalled()
   })
+  it('rolls back using the raw successful creation response, not UI-transformed metadata', async () => {
+    const raw = { id: 'new-chat', title: 'Draft', created: 7, updated: 8, assistants: [{ id: 'model-only', model: { id: 'm', engine: 'provider' } }], metadata: { order: 3, project: { id: 'p' } } }
+    const createThread = vi.fn().mockResolvedValue(raw)
+    vi.mocked(ExtensionManager.getInstance).mockReturnValue({ get: () => ({ createThread }) } as never)
+    const service = new DefaultThreadsService()
+    const created = await service.createThread({ id: 'new-chat', title: 'Draft', updated: 8, model: { id: 'm', provider: 'provider' } })
+    expect(created.model).toEqual({ id: 'm', provider: 'provider' })
+    await service.rollbackCreatedThread('new-chat', created)
+    expect(invoke).toHaveBeenCalledWith('rollback_created_thread', { threadId: 'new-chat', expected: raw })
+    await expect(service.rollbackCreatedThread('new-chat', created)).rejects.toThrow('receipt')
+  })
+
+  it('rejects missing/failed creation receipts without invoking delete', async () => {
+    const service = new DefaultThreadsService()
+    const input = { id: 'uncreated', updated: 1 }
+    vi.mocked(ExtensionManager.getInstance).mockReturnValue({ get: () => undefined } as never)
+    const created = await service.createThread(input)
+    await expect(service.rollbackCreatedThread('uncreated', created)).rejects.toThrow('receipt')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('propagates guarded rollback errors and retains receipt for retry', async () => {
+    const raw = { id: 'retry-chat', title: 'Draft', updated: 8 }
+    vi.mocked(ExtensionManager.getInstance).mockReturnValue({ get: () => ({ createThread: vi.fn().mockResolvedValue(raw) }) } as never)
+    const service = new DefaultThreadsService()
+    const created = await service.createThread(raw)
+    invoke.mockRejectedValueOnce(new Error('changed on disk'))
+    await expect(service.rollbackCreatedThread('retry-chat', created)).rejects.toThrow('changed on disk')
+    await service.rollbackCreatedThread('retry-chat', created)
+    expect(invoke).toHaveBeenCalledTimes(2)
+  })
+
+  it('acceptance releases raw creation rollback receipt', async () => {
+    const raw = { id: 'accepted-chat', updated: 1 }
+    vi.mocked(ExtensionManager.getInstance).mockReturnValue({ get: () => ({ createThread: vi.fn().mockResolvedValue(raw) }) } as never)
+    const service = new DefaultThreadsService()
+    const created = await service.createThread(raw)
+    service.releaseCreatedThread(created)
+    await expect(service.rollbackCreatedThread(created.id, created)).rejects.toThrow('receipt')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
 })

@@ -261,6 +261,8 @@ const ChatInput = memo(function ChatInput({
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
+  const rollbackCreatedThread = useThreads((state) => state.rollbackCreatedThread)
+  const acceptCreatedThread = useThreads((state) => state.acceptCreatedThread)
   const { loading, currentAssistant, setCurrentAssistant, assistants, defaultAssistantId } =
     useAssistant()
 
@@ -539,7 +541,7 @@ const ChatInput = memo(function ChatInput({
   // Same scope as the message queue: a surface writing attachments under its
   // own id would have them silently dropped if this read a thread id.
   const attachmentsKey =
-    scopeKey ?? currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
+    scopeKey ?? (prepareThreadCreation && !onSubmit ? NEW_THREAD_ATTACHMENT_KEY : currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY)
   const attachments = useChatAttachments(
     useCallback(
       (state) => state.getAttachments(attachmentsKey),
@@ -589,7 +591,7 @@ const ChatInput = memo(function ChatInput({
     // Only the general chat migrates a draft: it composes under the "new
     // thread" key until the thread exists. A scopeKey caller has a stable id
     // from the start, so there is nothing to move.
-    if (scopeKey) return
+    if (scopeKey || (prepareThreadCreation && !onSubmit)) return
     if (
       currentThreadId &&
       lastTransferredThreadId.current !== currentThreadId
@@ -597,7 +599,7 @@ const ChatInput = memo(function ChatInput({
       transferAttachments(NEW_THREAD_ATTACHMENT_KEY, currentThreadId)
       lastTransferredThreadId.current = currentThreadId
     }
-  }, [scopeKey, currentThreadId, transferAttachments])
+  }, [scopeKey, prepareThreadCreation, onSubmit, currentThreadId, transferAttachments])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
@@ -656,6 +658,7 @@ const ChatInput = memo(function ChatInput({
     const isTemporaryChat = window.location.search.includes(
       `${TEMPORARY_CHAT_QUERY_ID}=true`
     )
+    const previousThreadId = currentThreadId
     let finishThreadCreation: ((threadId: string) => Promise<boolean>) | undefined
     if (!onSubmit && prepareThreadCreation) {
       if (isTemporaryChat) {
@@ -823,14 +826,30 @@ const ChatInput = memo(function ChatInput({
         )
 
         if (finishThreadCreation) {
-          if (!newThread?.id) return
+          if (!newThread?.id) {
+            toast.error('Unable to apply chat permissions: missing chat id. Your draft has been kept.')
+            return
+          }
+          let finished = false
           try {
-            if ((await finishThreadCreation(newThread.id)) === false) return
+            finished = (await finishThreadCreation(newThread.id)) !== false
           } catch {
-            toast.error('Unable to apply chat permissions. Your draft has been kept.')
+            // A failed consent write must not strand a newly created empty chat.
+          }
+          if (!finished) {
+            try {
+              await rollbackCreatedThread(newThread.id, previousThreadId)
+              toast.error('Unable to apply chat permissions. Your draft has been kept.')
+            } catch (error) {
+              toast.error(error instanceof Error && error.message === 'Chat was deleted from storage, but changed locally during cleanup'
+                ? 'Chat cleanup conflicted with local changes after storage deletion. Your draft has been kept.'
+                : 'Chat cleanup failed. The empty chat has been retained. Your draft has been kept.')
+            }
             return
           }
         }
+
+        acceptCreatedThread(newThread.id)
 
         // Transfer agent mode from home screen to the new thread
         if (effectiveAgentMode) {

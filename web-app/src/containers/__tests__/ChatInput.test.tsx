@@ -34,16 +34,20 @@ vi.mock('@/hooks/usePrompt', () => ({
 const updateCurrentThreadAssistantMock = vi.fn()
 const updateCurrentThreadModelMock = vi.fn()
 const createThreadMock = vi.fn()
+const rollbackCreatedThreadMock = vi.fn()
 const getCurrentThreadMock = vi.fn(() => undefined)
+let selectedThreadId: string | undefined = 'thread-1'
 
 vi.mock('@/hooks/useThreads', () => ({
   useThreads: (selector: any) =>
     selector({
-      currentThreadId: 'thread-1',
+      currentThreadId: selectedThreadId,
       getCurrentThread: getCurrentThreadMock,
       updateCurrentThreadAssistant: updateCurrentThreadAssistantMock,
       updateCurrentThreadModel: updateCurrentThreadModelMock,
       createThread: createThreadMock,
+      acceptCreatedThread: vi.fn(),
+      rollbackCreatedThread: rollbackCreatedThreadMock,
     }),
 }))
 
@@ -378,6 +382,7 @@ const resetAll = () => {
   tooltipTestMode.real = false
   useToolAvailable.setState({ disabledTools: [] })
   promptState = ''
+  selectedThreadId = 'thread-1'
   appStateOverrides = {}
   attachmentsList = []
   attachmentsByKey = {}
@@ -429,6 +434,7 @@ describe('ChatInput', () => {
       sessionStorage.clear()
       window.history.replaceState({}, '', '/')
       createThreadMock.mockClear()
+      rollbackCreatedThreadMock.mockReset().mockResolvedValue(undefined)
       navigateMock.mockClear()
       clearAttachmentsMock.mockClear()
       transferAttachmentsMock.mockClear()
@@ -515,10 +521,29 @@ describe('ChatInput', () => {
       expect(sessionStorage.length).toBe(0)
       expect(setAgentModeMock).not.toHaveBeenCalled()
       expect(removeAgentThreadMock).not.toHaveBeenCalled()
-      if (outcome !== 'false') {
-        expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Your draft has been kept'))
-        expect(JSON.stringify(vi.mocked(toast.error).mock.calls)).not.toContain('sensitive')
+      if (outcome !== 'prepare throw') {
+        await waitFor(() => expect(rollbackCreatedThreadMock).toHaveBeenCalledWith('created-thread', 'thread-1'))
       }
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Your draft has been kept'))
+      expect(JSON.stringify(vi.mocked(toast.error).mock.calls)).not.toContain('sensitive')
+      if (outcome === 'prepare throw') {
+        expect(createThreadMock).not.toHaveBeenCalled()
+        expect(rollbackCreatedThreadMock).not.toHaveBeenCalled()
+      }
+    })
+
+    it('reports cleanup failure honestly and keeps the draft and attachments', async () => {
+      rollbackCreatedThreadMock.mockRejectedValueOnce(new Error('private disk failure'))
+      const originalAttachments = attachmentsList
+      renderInput({ prepareThreadCreation: () => async () => false })
+      send()
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('cleanup failed')))
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('retained'))
+      expect(promptState).toBe('Keep this draft')
+      expect(attachmentsList).toBe(originalAttachments)
+      expect(navigateMock).not.toHaveBeenCalled()
+      expect(sessionStorage.length).toBe(0)
+      expect(setPromptMock).not.toHaveBeenCalled()
     })
 
     it('rejects temporary chat before preparation, expansion or other send side effects', () => {
@@ -545,9 +570,40 @@ describe('ChatInput', () => {
       send()
       await waitFor(() => expect(createThreadMock).toHaveBeenCalled())
       expect(apply).not.toHaveBeenCalled()
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('missing chat id'))
+      expect(rollbackCreatedThreadMock).not.toHaveBeenCalled()
       expect(navigateMock).not.toHaveBeenCalled()
       expect(sessionStorage.length).toBe(0)
       expect(setPromptMock).not.toHaveBeenCalled()
+    })
+
+    it.each([false, true])('keeps the actual home attachment bucket through provisional selection and rollback failure=%s', async (cleanupFails) => {
+      const draft = [{ type: 'document', name: 'kept.txt', path: '/synthetic/kept.txt' }]
+      attachmentsList = []
+      attachmentsByKey = { __new_thread__: draft, 'created-thread': [], 'retry-thread': [] }
+      selectedThreadId = undefined
+      const approval = deferred<boolean>()
+      const prepare = () => () => approval.promise
+      rollbackCreatedThreadMock.mockImplementationOnce(async () => {
+        if (cleanupFails) throw new Error('guard refused')
+      })
+      const view = renderInput({ prepareThreadCreation: prepare })
+      send()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalled())
+      selectedThreadId = 'created-thread'
+      view.rerender(<ChatInput prepareThreadCreation={prepare} />)
+      expect(screen.getByLabelText('kept.txt')).toBeInTheDocument()
+      expect(transferAttachmentsMock).not.toHaveBeenCalled()
+      await act(async () => approval.resolve(false))
+      selectedThreadId = cleanupFails ? 'created-thread' : undefined
+      view.rerender(<ChatInput prepareThreadCreation={prepare} />)
+      expect(screen.getByLabelText('kept.txt')).toBeInTheDocument()
+      selectedThreadId = 'retry-thread'
+      view.rerender(<ChatInput prepareThreadCreation={prepare} />)
+      expect(screen.getByLabelText('kept.txt')).toBeInTheDocument()
+      expect(attachmentsByKey.__new_thread__).toBe(draft)
+      expect(transferAttachmentsMock).not.toHaveBeenCalled()
+      expect(clearAttachmentsMock).not.toHaveBeenCalled()
     })
 
     it('does not prepare for an onSubmit surface', async () => {

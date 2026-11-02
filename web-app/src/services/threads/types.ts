@@ -9,5 +9,7 @@ export interface ThreadsService {
   fetchThreads(): Promise<Thread[]>
   createThread(thread: Thread): Promise<Thread>
   updateThread(thread: Thread): Promise<void>
+  rollbackCreatedThread(threadId: string, receipt: Thread): Promise<void>
+  releaseCreatedThread(receipt: Thread): void
   deleteThread(threadId: string): Promise<void>
 }
