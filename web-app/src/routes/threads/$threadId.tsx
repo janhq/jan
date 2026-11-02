@@ -436,7 +436,8 @@ export const Route = createFileRoute('/threads/$threadId')({
     // overwrite a newer hydration), and the store is re-read around every
     // await so a hydration landing mid-fetch wins over the stale snapshot.
     // When the whole window fails — every attempt rejected OR returned an
-    // empty list before successful store hydration — classification is UNKNOWN and the typed error below propagates: the
+    // empty list before successful store hydration — classification is UNKNOWN.
+    // The typed error below propagates: the
     // route-local errorComponent renders a Retry screen; a writable chat
     // never mounts over an undecidable thread.
     //
