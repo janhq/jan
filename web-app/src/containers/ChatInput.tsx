@@ -34,7 +34,15 @@ import {
   IconWorldSearch,
   IconTerminal2,
   IconBrandChrome,
+  IconShield,
 } from '@tabler/icons-react'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { ConversationScopeControl } from '@/containers/ConversationScopeControl'
+import { isCoworkThread } from '@/lib/threadMode'
 import { generateId } from 'ai'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { QueuedMessageChip } from '@/containers/QueuedMessageBubble'
@@ -414,6 +422,24 @@ const ChatInput = memo(function ChatInput({
   const maxRows = 10
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
+  // Scoped conversation permissions exist for any persistent Chat thread on a
+  // surface that owns its tool set; temporary chats and Cowork sessions never
+  // get a consent control. Deliberately NOT gated on agent mode or model tool
+  // capability: a thread may already hold an elevated grant, and the shield is
+  // its only revocation surface, so it must stay reachable when agent mode is
+  // on or a non-tool model is selected. Granting there claims no tool support;
+  // access is enforced per dispatch. The control re-checks these guards.
+  const scopeControlThread =
+    ownsToolSet &&
+    currentThread &&
+    currentThread.id !== TEMPORARY_CHAT_ID &&
+    !isCoworkThread(currentThread)
+      ? currentThread
+      : null
+  const pickScopeFolder = useCallback(async () => {
+    const picked = await serviceHub.dialog().open({ directory: true })
+    return typeof picked === 'string' ? picked : null
+  }, [serviceHub])
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const [message, setMessage] = useState('')
   const [optionsOpen, setOptionsOpen] = useState(false)
@@ -815,14 +841,15 @@ const ChatInput = memo(function ChatInput({
 
         setCurrentAssistant(assistant)
 
+        const threadModel = {
+          id: selectedModel?.id ?? defaultModel(selectedProvider),
+          provider: selectedProvider,
+        }
         let newThread: Thread
         try {
           if (finishThreadCreation) {
             newThread = await createThread(
-              {
-                id: selectedModel?.id ?? defaultModel(selectedProvider),
-                provider: selectedProvider,
-              },
+              threadModel,
               prompt, // Use prompt as thread title
               assistant,
               projectMetadata,
@@ -831,10 +858,7 @@ const ChatInput = memo(function ChatInput({
             )
           } else {
             newThread = await createThread(
-              {
-                id: selectedModel?.id ?? defaultModel(selectedProvider),
-                provider: selectedProvider,
-              },
+              threadModel,
               prompt, // Use prompt as thread title
               assistant,
               projectMetadata
@@ -2748,6 +2772,37 @@ const ChatInput = memo(function ChatInput({
                       </DropdownMenuContent>
                     </DropdownMenu>
                     {leadingControls}
+                    {/* The permissions shield is the revocation surface, so it
+                        must stay reachable at every width and during
+                        streaming (revocation applies to the next dispatch,
+                        including within the current turn). It therefore lives
+                        OUTSIDE the narrow-hidden tool group. */}
+                    {scopeControlThread && (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label="Conversation permissions"
+                            data-testid="conversation-scope-trigger"
+                          >
+                            <IconShield
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          align="start"
+                          className="w-[min(380px,calc(100vw-16px))] p-2"
+                        >
+                          <ConversationScopeControl
+                            threadId={scopeControlThread.id}
+                            pickFolder={pickScopeFolder}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    )}
                     <div
                       className={cn(
                         'flex items-center gap-1 @max-[520px]/composer:hidden',

@@ -5,6 +5,7 @@ import {
   fireEvent,
   act,
   waitFor,
+  cleanup,
 } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import userEvent from '@testing-library/user-event'
@@ -38,18 +39,29 @@ const rollbackCreatedThreadMock = vi.fn()
 const getCurrentThreadMock = vi.fn(() => undefined)
 let selectedThreadId: string | undefined = 'thread-1'
 
-vi.mock('@/hooks/useThreads', () => ({
-  useThreads: (selector: any) =>
-    selector({
-      currentThreadId: selectedThreadId,
-      getCurrentThread: getCurrentThreadMock,
-      updateCurrentThreadAssistant: updateCurrentThreadAssistantMock,
-      updateCurrentThreadModel: updateCurrentThreadModelMock,
-      createThread: createThreadMock,
-      acceptCreatedThread: vi.fn(),
-      rollbackCreatedThread: rollbackCreatedThreadMock,
-    }),
-}))
+const threadsMockState: Record<string, any> = {}
+const useThreadsMockState = () => ({
+  currentThreadId: selectedThreadId,
+  threads: threadsMockState,
+  getCurrentThread: getCurrentThreadMock,
+  getConversationCapabilities: () => ({
+    version: 1,
+    folderScope: null,
+    shellNetwork: false,
+    memoryWrite: false,
+  }),
+  setConversationCapabilities: vi.fn(async () => undefined),
+  updateCurrentThreadAssistant: updateCurrentThreadAssistantMock,
+  updateCurrentThreadModel: updateCurrentThreadModelMock,
+  createThread: createThreadMock,
+  acceptCreatedThread: vi.fn(),
+  rollbackCreatedThread: rollbackCreatedThreadMock,
+})
+vi.mock('@/hooks/useThreads', () => {
+  const useThreads = (selector: any) => selector(useThreadsMockState())
+  useThreads.getState = () => useThreadsMockState()
+  return { useThreads }
+})
 
 let appStateOverrides: any = {}
 vi.mock('@/hooks/useAppState', () => ({
@@ -404,6 +416,7 @@ const resetAll = () => {
   clearQueueMock.mockClear()
   for (const k of Object.keys(queueState)) delete queueState[k]
   getCurrentThreadMock.mockReturnValue(undefined)
+  for (const key of Object.keys(threadsMockState)) delete threadsMockState[key]
   useImageAttachmentConfig.setState({ maxImageSizeMB: 10 })
 }
 
@@ -417,6 +430,95 @@ const renderInput = (props: any = {}) =>
 describe('ChatInput', () => {
   beforeEach(() => {
     resetAll()
+  })
+
+  describe('conversation scope control', () => {
+    const persistentThread = { id: 'thread-1', title: 'Chat', assistants: [], updated: 1, metadata: {} }
+    beforeEach(() => {
+      for (const key of Object.keys(threadsMockState)) delete threadsMockState[key]
+      getCurrentThreadMock.mockReturnValue(undefined)
+    })
+
+    it('shows the permissions trigger only for a persistent chat thread, and opens the control', async () => {
+      threadsMockState['thread-1'] = persistentThread
+      getCurrentThreadMock.mockReturnValue(persistentThread)
+      renderInput()
+      const trigger = screen.getByTestId('conversation-scope-trigger')
+      fireEvent.click(trigger)
+      expect(
+        await screen.findByText('Conversation permissions', { selector: 'legend' })
+      ).toBeInTheDocument()
+    })
+
+    it('stays reachable outside the narrow-hidden tool group and while streaming', () => {
+      threadsMockState['thread-1'] = persistentThread
+      getCurrentThreadMock.mockReturnValue(persistentThread)
+      renderInput({ chatStatus: 'streaming' })
+      const trigger = screen.getByTestId('conversation-scope-trigger')
+      // Revocation surface: never inside the @max-[520px] hidden group, never
+      // under an inert (pointer-events-none) ancestor during streaming
+      // (revocation applies to the next dispatch). Checks ancestors only: the
+      // button's own utility classes legitimately contain prefixed
+      // pointer-events-none variants.
+      let node = trigger.parentElement
+      while (node) {
+        const cls = node.getAttribute('class') ?? ''
+        expect(cls).not.toMatch(/(?:^|\s)pointer-events-none(?:\s|$)/)
+        expect(cls).not.toContain('@max-[520px]/composer:hidden')
+        node = node.parentElement
+      }
+      expect(trigger).toBeEnabled()
+    })
+
+    it('is absent with no current thread', () => {
+      renderInput()
+      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
+    })
+
+    it('is absent on a temporary chat', () => {
+      const temp = { ...persistentThread, id: 'temporary-chat' }
+      threadsMockState['temporary-chat'] = temp
+      getCurrentThreadMock.mockReturnValue(temp)
+      renderInput()
+      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
+    })
+
+    it('is absent on a Cowork session thread', () => {
+      const cowork = { ...persistentThread, metadata: { mode: 'cowork' } }
+      threadsMockState['thread-1'] = cowork
+      getCurrentThreadMock.mockReturnValue(cowork)
+      renderInput()
+      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
+    })
+
+    it('stays reachable for a model without tool support: an existing grant must remain revocable', () => {
+      threadsMockState['thread-1'] = persistentThread
+      getCurrentThreadMock.mockReturnValue(persistentThread)
+      selectedModelOverride = { id: 'model-a', capabilities: [], provider: 'llamacpp' }
+      renderInput()
+      expect(screen.getByTestId('conversation-scope-trigger')).toBeEnabled()
+    })
+
+    it('stays reachable in agent mode: an existing grant must remain revocable', async () => {
+      threadsMockState['thread-1'] = persistentThread
+      getCurrentThreadMock.mockReturnValue(persistentThread)
+      agentModeOn = true
+      renderInput()
+      const trigger = screen.getByTestId('conversation-scope-trigger')
+      expect(trigger).toBeEnabled()
+      // The control itself opens and offers revocation, not a tool claim.
+      fireEvent.click(trigger)
+      expect(
+        await screen.findByText('Conversation permissions', { selector: 'legend' })
+      ).toBeInTheDocument()
+    })
+
+    it('is absent when the composer does not own the tool set', () => {
+      threadsMockState['thread-1'] = persistentThread
+      getCurrentThreadMock.mockReturnValue(persistentThread)
+      renderInput({ ownsToolSet: false })
+      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
+    })
   })
 
   describe('next-thread preparation', () => {
@@ -467,6 +569,39 @@ describe('ChatInput', () => {
       expect(JSON.parse(sessionStorage.getItem(initialMessageKey)!)).toMatchObject({ text: 'Keep this draft' })
       expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({ params: { threadId: 'created-thread' } }))
       expect(setPromptMock).toHaveBeenCalledWith('')
+    })
+
+    it('passes the same model and title arguments to both creation branches', async () => {
+      // Guards the hoisted threadModel: the strict (prepared) and legacy
+      // branches must not drift apart in the model/title/assistant arguments.
+      selectedProviderOverride = 'llamacpp'
+      // The title must be the raw draft, not the reference-expanded text.
+      expandPromptReferencesMock.mockImplementation(async (text: string) => ({
+        text: `${text} [expanded]`,
+        resolvedContents: '',
+      }))
+      renderInput({ prepareThreadCreation: () => async () => true })
+      send()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      const strictCall = createThreadMock.mock.calls[0]
+      expect(strictCall).toHaveLength(6)
+      expect(strictCall[4]).toBe(false)
+      expect(strictCall[5]).toEqual({ strict: true })
+
+      cleanup()
+      createThreadMock.mockClear()
+      createThreadMock.mockResolvedValue({ id: 'created-thread' })
+      promptState = 'Keep this draft'
+      renderInput()
+      send()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      const legacyCall = createThreadMock.mock.calls[0]
+      expect(legacyCall).toHaveLength(4)
+
+      expect(strictCall[0]).toEqual({ id: 'model-a', provider: 'llamacpp' })
+      expect(strictCall[1]).toBe('Keep this draft')
+      expect(legacyCall[0]).toEqual(strictCall[0])
+      expect(legacyCall.slice(1, 4)).toEqual(strictCall.slice(1, 4))
     })
 
     it('snapshots before reference expansion and project loading, not from a newer draft', async () => {
