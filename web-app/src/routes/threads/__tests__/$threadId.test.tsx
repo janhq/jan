@@ -329,31 +329,52 @@ vi.mock('@/lib/extension', () => ({
   },
 }))
 
-vi.mock('@/lib/messages', () => ({
-  convertThreadMessagesToUIMessages: (msgs: any[]) =>
-    msgs.map((m) => ({
-      id: m.id,
-      role: m.role,
-      parts: [{ type: 'text', text: m.content?.[0]?.text?.value ?? '' }],
-    })),
-  extractContentPartsFromUIMessage: (msg: any) =>
+vi.mock('@/lib/messages', () => {
+  const extractContentPartsFromUIMessage = (msg: any) =>
     msg.parts.flatMap((p: any) =>
       p.type === 'text'
         ? [{ type: 'text', text: { value: p.text, annotations: [] } }]
         : p.type?.startsWith('tool-')
           ? [{ type: 'tool_call', tool_call_id: p.toolCallId, output: p.output }]
           : []
-    ),
-  uiMessageHasMeaningfulContent: (msg: any) =>
-    !!msg?.parts?.some((p: any) => p.type === 'text' && p.text?.trim()),
-  toolErrorsOf: (msg: any) => {
+    )
+  const toolErrorsOf = (msg: any) => {
     const errors: Record<string, string> = {}
     for (const p of msg.parts ?? []) {
       if (p.state === 'output-error') errors[p.toolCallId] = p.errorText
     }
     return Object.keys(errors).length ? errors : undefined
-  },
-}))
+  }
+  return {
+    convertThreadMessagesToUIMessages: (msgs: any[]) =>
+      msgs.map((m) => ({
+        id: m.id,
+        role: m.role,
+        parts: [{ type: 'text', text: m.content?.[0]?.text?.value ?? '' }],
+      })),
+    extractContentPartsFromUIMessage,
+    uiMessageHasMeaningfulContent: (msg: any) =>
+      !!msg?.parts?.some((p: any) => p.type === 'text' && p.text?.trim()),
+    toolErrorsOf,
+    // The stored fields without the uiParts projection (covered in
+    // assistant-record.test.ts).
+    assistantRecordFields: (
+      msg: any,
+      base: Record<string, unknown> | undefined,
+      opts: { stopped?: boolean }
+    ) => {
+      const toolErrors = toolErrorsOf(msg)
+      return {
+        content: extractContentPartsFromUIMessage(msg),
+        metadata: {
+          ...(base || {}),
+          ...(opts.stopped ? { stopped: true } : {}),
+          ...(toolErrors ? { toolErrors } : {}),
+        },
+      }
+    },
+  }
+})
 
 // The chat runs MCP tools through the cancellable API so Stop can end the call.
 const cancellable = (run: (args: any) => Promise<unknown>) => (args: any) => ({

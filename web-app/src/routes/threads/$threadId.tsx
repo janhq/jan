@@ -41,8 +41,7 @@ import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import {
   convertThreadMessagesToUIMessages,
-  extractContentPartsFromUIMessage,
-  toolErrorsOf,
+  assistantRecordFields,
   uiMessageHasMeaningfulContent,
   threadMessageIsEmpty,
 } from '@/lib/messages'
@@ -272,15 +271,9 @@ function rewriteStoredTurn(
   const { getMessages, updateMessage } = useMessages.getState()
   const stored = getMessages(threadId).find((m) => m.id === message.id)
   if (!stored) return
-  const toolErrors = toolErrorsOf(message)
   updateMessage({
     ...stored,
-    content: extractContentPartsFromUIMessage(message),
-    metadata: {
-      ...stored.metadata,
-      ...(stopped ? { stopped: true } : {}),
-      ...(toolErrors ? { toolErrors } : {}),
-    },
+    ...assistantRecordFields(message, stored.metadata, { stopped }),
   })
 }
 
@@ -632,13 +625,12 @@ function ThreadDetail() {
         message.role === 'assistant' &&
         uiMessageHasMeaningfulContent(message)
       ) {
-        const contentParts = extractContentPartsFromUIMessage(message)
-        const toolErrors = toolErrorsOf(message)
-        const messageMetadata = {
-          ...((message.metadata || {}) as Record<string, unknown>),
-          ...(isStoppedTurn ? { stopped: true } : {}),
-          ...(toolErrors ? { toolErrors } : {}),
-        }
+        const { content: contentParts, metadata: messageMetadata } =
+          assistantRecordFields(
+            message,
+            message.metadata as Record<string, unknown> | undefined,
+            { stopped: isStoppedTurn }
+          )
 
         if (isStoppedTurn) {
           const retained = useChatSessions.getState().sessions[threadId]?.chat
