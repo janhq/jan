@@ -3359,6 +3359,12 @@ impl Transcript {
             // group's row is live (spinner, or lingering finished output), so it
             // can never come from the row cache.
             let seg = match self.tool_group.as_ref().filter(|g| g.idx == i) {
+                // A mixed group is drawn call by call until it folds. Drawn as
+                // its running call alone, or its commands alone, it hid every
+                // other call: a memory read vanished under the next command.
+                Some(g) if g.worked() => {
+                    Segment::eager(Some(i), self.live_worked_panel(g, spinner_frame, width), width)
+                }
                 Some(g) => {
                     // The open group's shell calls render live: a running command
                     // shows its header with elapsed and its streaming output tail; a
@@ -3975,6 +3981,45 @@ impl Transcript {
                 Some(content) => {
                     out.extend(finished_shell_lines(command, content, call.is_error, width));
                 }
+            }
+        }
+        out
+    }
+
+    /// The open mixed group, one entry per call in call order: a command
+    /// with its live tail or output preview, any other call as its own row,
+    /// running with its clock until its result lands, then settled.
+    fn live_worked_panel(
+        &self,
+        group: &ToolGroup,
+        spinner_frame: usize,
+        width: u16,
+    ) -> Vec<Line<'static>> {
+        let mut out = Vec::new();
+        for call in &group.calls {
+            match (call.command.as_deref(), &call.content) {
+                (Some(command), None) => {
+                    let output = self.live_output.get(&call.id).map_or("", String::as_str);
+                    let elapsed = call.started.elapsed().as_secs();
+                    out.extend(running_shell_lines(
+                        command, output, elapsed, spinner_frame, width,
+                    ));
+                }
+                (Some(command), Some(content)) => {
+                    out.extend(finished_shell_lines(command, content, call.is_error, width));
+                }
+                (None, None) => out.extend(tool_row_lines(
+                    running_bullet(spinner_frame),
+                    &call.activity,
+                    width,
+                    vec![elapsed_badge(call.started.elapsed().as_secs())],
+                )),
+                (None, Some(_)) => out.extend(tool_row_lines(
+                    call.state().bullet(),
+                    &call.settled_label(),
+                    width,
+                    Vec::new(),
+                )),
             }
         }
         out
@@ -38277,6 +38322,62 @@ mod tests {
         let text = lines_text(&running_group_rows(group, 2, 80));
         assert!(text.starts_with("• Exploring"), "{text}");
         assert!(text.contains("(0s)") || text.contains("(1s)"), "{text}");
+    }
+
+    /// A memory read stays on screen while the group it opened keeps working:
+    /// the next call, a command or any other tool, is listed under it rather
+    /// than drawn over it, and the group folds to `Worked` once prose starts.
+    #[test]
+    fn a_memory_read_is_not_replaced_by_the_next_call() {
+        for (id, name, args, label) in [
+            ("b1", "bash", json!({ "command": "ls" }), "Running ls"),
+            ("w1", "web_fetch", json!({ "url": "https://x.test" }), "Fetching https://x.test"),
+        ] {
+            let mut app = test_app();
+            app.apply(StreamEvent::ToolCall {
+                id: "m1".into(),
+                name: "memory".into(),
+                args: json!({ "op": "view", "name": "notes" }),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: "m1".into(),
+                content: "note body".into(),
+                is_error: false,
+                diff: None,
+            });
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: name.into(),
+                args,
+            });
+            let running = render_rows(&mut app, 80, 30).join("\n");
+            assert!(running.contains("\u{2022} Read memory: notes"), "{running}");
+            assert!(running.contains(label), "{running}");
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: "ok\n[exit 0]".into(),
+                is_error: false,
+                diff: None,
+            });
+            app.apply(StreamEvent::ToolCall {
+                id: "m2".into(),
+                name: "memory".into(),
+                args: json!({ "op": "search", "query": "yarn" }),
+            });
+            let later = render_rows(&mut app, 80, 30).join("\n");
+            assert!(later.contains("\u{2022} Read memory: notes"), "{later}");
+            assert!(later.contains("Searching memory: yarn"), "{later}");
+            app.apply(StreamEvent::ToolResult {
+                id: "m2".into(),
+                content: "none".into(),
+                is_error: false,
+                diff: None,
+            });
+            app.apply(StreamEvent::Token { text: "Done.".into() });
+            app.transcript.flush_assistant();
+            let folded = render_rows(&mut app, 80, 30).join("\n");
+            assert!(folded.contains("\u{2022} Worked \u{b7} 3 tool calls"), "{folded}");
+        }
     }
 
     /// Feed `calls` (id, tool, args, result, is_error) through the stream as
