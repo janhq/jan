@@ -524,7 +524,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     }
     return await getServiceHub()
       .threads()
-      .createThread(newThread, options)
+      .createThread(newThread, ...(options ? [options] : []))
       .then((createdThread) => {
         set((state) => {
           // Get all existing threads as an array
