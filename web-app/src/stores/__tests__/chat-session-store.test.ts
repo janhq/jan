@@ -214,6 +214,55 @@ describe('removeSession', () => {
     expect(useChatSessions.getState().getSessionData('orphan').tools).toEqual([])
   })
 
+  it('drops the conversation ask card and settles its suspension (session or orphan)', async () => {
+    const { dispatchConversationClientTool, conversationAskCard } =
+      await import('@/lib/conversationClientTools')
+    const ask = (id: string) =>
+      dispatchConversationClientTool(
+        {
+          toolName: 'ask',
+          toolCallId: 'a',
+          input: {
+            questions: [
+              { id: 'q', question: '?', options: [{ label: 'A' }, { label: 'B' }] },
+            ],
+          },
+        },
+        { threadId: id, signal: new AbortController().signal, getMessages: () => [] }
+      )
+    useChatSessions.getState().ensureSession('s1', {} as any, () => makeChat('ready') as any)
+    const pending = ask('s1')
+    const orphan = ask('orphan')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(conversationAskCard('s1')).not.toBeNull()
+    useChatSessions.getState().removeSession('s1')
+    useChatSessions.getState().removeSession('orphan')
+    expect(conversationAskCard('s1')).toBeNull()
+    expect(conversationAskCard('orphan')).toBeNull()
+    await expect(pending).resolves.toBeDefined()
+    await expect(orphan).resolves.toBeDefined()
+  })
+
+  it('clearSessions also drops pending conversation asks', async () => {
+    const { dispatchConversationClientTool, conversationAskCard } =
+      await import('@/lib/conversationClientTools')
+    useChatSessions.getState().ensureSession('s2', {} as any, () => makeChat('ready') as any)
+    const pending = dispatchConversationClientTool(
+      {
+        toolName: 'ask',
+        toolCallId: 'a',
+        input: {
+          questions: [{ id: 'q', question: '?', options: [{ label: 'A' }, { label: 'B' }] }],
+        },
+      },
+      { threadId: 's2', signal: new AbortController().signal, getMessages: () => [] }
+    )
+    await new Promise((r) => setTimeout(r, 0))
+    useChatSessions.getState().clearSessions()
+    expect(conversationAskCard('s2')).toBeNull()
+    await expect(pending).resolves.toBeDefined()
+  })
+
   it('survives unsubscribe errors', () => {
     const chat = makeChat('ready')
     chat['~registerStatusCallback'] = vi.fn(() => () => {

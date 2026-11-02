@@ -127,7 +127,7 @@ describe('transport advertised MCP identity', () => {
   it('binds the original advertised name to its server and refreshes the binding', async () => {
     h.mcpTools = [tool('read', 'alpha')]
     await transport.refreshTools()
-    expect(Object.keys(transport.getTools())).toEqual(['read'])
+    expect(Object.keys(transport.getTools())).toEqual(['read', 'todo', 'ask'])
     expect(transport.getTools().read.description).toBe('alpha/read')
     expect(transport.getMcpServerForTool('read')).toBe('alpha')
     h.mcpTools = [tool('read', 'beta')]
@@ -135,7 +135,7 @@ describe('transport advertised MCP identity', () => {
     expect(transport.getMcpServerForTool('read')).toBe('beta')
     h.mcpTools = []
     await transport.refreshTools()
-    expect(transport.getTools()).toEqual({})
+    expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask'])
     expect(transport.getMcpServerForTool('read')).toBeUndefined()
   })
 
@@ -143,7 +143,7 @@ describe('transport advertised MCP identity', () => {
     h.disabled = disabled
     h.mcpTools = [tool('read', 'alpha'), tool('read', 'beta'), tool('write', 'alpha')]
     await transport.refreshTools()
-    expect(Object.keys(transport.getTools())).toEqual(['write'])
+    expect(Object.keys(transport.getTools())).toEqual(['write', 'todo', 'ask'])
     expect(transport.getMcpServerForTool('read')).toBeUndefined()
     expect(transport.getMcpServerForTool('write')).toBe('alpha')
   })
@@ -156,7 +156,7 @@ describe('transport advertised MCP identity', () => {
       h.mcpTools = [tool('read', 'alpha', 'SECRET_DESCRIPTION'), tool('read', 'beta'), tool('orphan', '')]
       h.routedTools = [h.mcpTools[0]]
       await transport.refreshTools()
-      expect(transport.getTools()).toEqual({})
+      expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask'])
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Withheld MCP tool "read".*name collision.*"alpha".*"beta"/))
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Withheld MCP tool "orphan".*missing server identity/))
       expect(JSON.stringify(warn.mock.calls)).not.toContain('SECRET_DESCRIPTION')
@@ -172,7 +172,7 @@ describe('transport advertised MCP identity', () => {
     h.disabled = ['alpha::read']
     h.mcpTools.push(tool('missing', undefined as unknown as string), tool('blank', '  '))
     await transport.refreshTools()
-    expect(transport.getTools()).toEqual({})
+    expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask'])
     for (const name of ['read', 'missing', 'blank']) {
       expect(transport.getMcpServerForTool(name)).toBeUndefined()
     }
@@ -246,7 +246,7 @@ describe('transport advertised MCP identity', () => {
 
       h.mcpTools = []
       await transport.refreshTools()
-      expect(transport.getTools()).toEqual({})
+      expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask'])
       expect(transport.getMcpServerForTool('read')).toBe('alpha')
     } finally {
       controller.close()
@@ -254,4 +254,49 @@ describe('transport advertised MCP identity', () => {
     }
   })
 
+})
+
+describe('transport advertised conversation client tools', () => {
+  beforeEach(() => {
+    h.routing = false
+    h.routedTools = []
+    h.shellEnabled = false
+    h.webEnabled = false
+    h.documents = false
+    h.disabled = []
+    h.mcpTools = []
+    h.ragTools = []
+    h.schemas.mockReset()
+    h.schemas.mockResolvedValue([])
+  })
+
+  it('is true only for advertised todo/ask in the frozen record', async () => {
+    const transport = new CustomChatTransport('sys', 'thread-1')
+    expect(transport.hasAdvertisedClientTool('todo')).toBe(false)
+    await transport.refreshTools()
+    expect(transport.hasAdvertisedClientTool('todo')).toBe(true)
+    expect(transport.hasAdvertisedClientTool('ask')).toBe(true)
+    // Non-client / missing names are never client tools.
+    for (const name of ['read', 'task', 'shell', 'memory', 'toString', 'constructor', ''])
+      expect(transport.hasAdvertisedClientTool(name)).toBe(false)
+  })
+
+  it('warns by name and server when an MCP tool collides, and routes to the client tool', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      h.mcpTools = [tool('todo', 'alpha', 'SECRET_DESCRIPTION'), tool('read', 'alpha')]
+      const transport = new CustomChatTransport('sys', 'thread-1')
+      await transport.refreshTools()
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/MCP tool "todo".*"alpha".*shadowed/))
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('SECRET_DESCRIPTION')
+      expect(transport.getMcpServerForTool('todo')).toBeUndefined()
+      expect(transport.getTools().todo.description).not.toBe('alpha/todo')
+      expect(transport.hasAdvertisedClientTool('todo')).toBe(true)
+      expect(transport.hasAdvertisedClientTool('ask')).toBe(true)
+      // Unrelated MCP identity is preserved.
+      expect(transport.getMcpServerForTool('read')).toBe('alpha')
+    } finally {
+      warn.mockRestore()
+    }
+  })
 })

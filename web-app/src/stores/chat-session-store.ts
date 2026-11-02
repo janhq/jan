@@ -1,4 +1,5 @@
 import { forgetChat } from '@/lib/chatClose';
+import { dropConversationClientThread } from '@/lib/conversationClientTools';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { create } from "zustand";
 import type { Chat, UIMessage } from "@ai-sdk/react";
@@ -175,6 +176,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     const existing = get().sessions[sessionId];
     if (!existing) {
       delete standaloneData[sessionId];
+      dropConversationClientThread(sessionId);
       return;
     }
 
@@ -208,6 +210,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     }
 
     delete standaloneData[sessionId];
+    dropConversationClientThread(sessionId);
   },
   clearSessions: () => {
     const sessions = get().sessions;
@@ -215,6 +218,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     // Clear all queued messages
     Object.keys(sessions).forEach((sessionId) => {
       useMessageQueue.getState().clearQueue(sessionId);
+      dropConversationClientThread(sessionId);
     });
 
     Object.values(sessions).forEach((session) => {

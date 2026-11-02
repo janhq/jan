@@ -6,7 +6,7 @@ import {
 } from '@/lib/chatRunTransport'
 import { assertMcpIdentityAvailable, memoizeMcpValidation } from '@/lib/chatMcpIdentity'
 import { isChatClosing, setChatCloseStop } from '@/lib/chatClose'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties } from 'react'
 import {
   createFileRoute,
@@ -53,6 +53,15 @@ import {
 import { generateId } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
+import {
+  conversationAskCard,
+  dispatchConversationClientTool,
+  isConversationClientTool,
+  finishConversationClientRun,
+  respondConversationAsk,
+  subscribeConversationAsk,
+} from '@/lib/conversationClientTools'
+import { CoworkAskCard } from '@/containers/CoworkAskCard'
 import {
   convertThreadMessagesToUIMessages,
   assistantRecordFields,
@@ -934,6 +943,8 @@ function ThreadDetail() {
       forgetApprovals(threadId)
       useToolApprovalRequests.getState().clearPendingForThread(threadId)
       if (isAbort) return
+      // Persisted: the transcript is canonical, so the todo bridge can go.
+      if (!isError) finishConversationClientRun(threadId)
 
       if (!isAbort && !isChatClosing()) {
         const localMessages = useMessages.getState().getMessages(threadId)
@@ -1013,6 +1024,8 @@ function ThreadDetail() {
       // runTurn dispatches after canonical parsing completes and reuses this
       // one promise. Internal tools retain the existing Chat policy.
       const { serverName, checkMcp } = bindMcpCall(toolCall)
+      // Conversation todo/ask never prompt: dispatch serves or refuses them.
+      if (!serverName && isConversationClientTool(toolCall.toolName)) return
       const isNative = !serverName && chatShellRoute(toolCall.toolName) === 'builtin'
       // A call dispatch will refuse as unadvertised must not open a prompt (or
       // an always-allow choice) that nothing will ever wait on.
@@ -1072,6 +1085,22 @@ function ThreadDetail() {
           !(toolName === 'shell' && chatShellRoute(toolName) === 'disabled') &&
           !useChatSessions.getState().sessions[threadId]?.transport.hasAdvertisedNativeTool(toolName)) {
           return { output: `Tool '${toolName}' was not advertised for this turn; start a new turn to refresh capabilities.`, isError: true }
+        }
+        // Conversation-owned todo/ask: served before MCP validation or any
+        // approval. Todo is projected from the canonical transcript; ask
+        // suspends on this run's signal (Stop/thread deletion settle it).
+        if (!serverName && isConversationClientTool(toolName)) {
+          if (!useChatSessions.getState().sessions[threadId]?.transport.hasAdvertisedClientTool(toolName)) {
+            return { output: `Tool '${toolName}' was not advertised for this turn; start a new turn to refresh capabilities.`, isError: true }
+          }
+          const clientOutcome = await dispatchConversationClientTool(toolCall, {
+            threadId,
+            signal,
+            getMessages: () =>
+              useChatSessions.getState().sessions[threadId]?.chat.messages ??
+              chatMessagesRef.current,
+          })
+          if (clientOutcome) return clientOutcome
         }
         // Captured at classification, before any approval wait.
         const classifiedGrant =
@@ -1298,6 +1327,15 @@ function ThreadDetail() {
   // streamed token.
   const chatMessagesRef = useRef(chatMessages)
   chatMessagesRef.current = chatMessages
+
+  // Run-owned ask suspension, shown as the existing card above the composer.
+  const askCard = useSyncExternalStore(
+    useCallback(
+      (notify: () => void) => subscribeConversationAsk(threadId, notify),
+      [threadId]
+    ),
+    () => conversationAskCard(threadId)
+  )
 
   // Stop ends the whole turn, not just the stream: it aborts the tool loop,
   // drops the approval prompts, and settles whatever tool call never got to
@@ -2668,6 +2706,17 @@ function ThreadDetail() {
             its fade) runs right up to the composer, with the resting gap kept
             inside the scroll content as pb-4. */}
         <ConversationColumn reserveScrollGutter className="pb-4">
+          {askCard && (
+            <div className="pb-2">
+              <CoworkAskCard
+                requestId={askCard.id}
+                request={askCard.request}
+                onRespond={(id, answers) =>
+                  respondConversationAsk(threadId, id, answers)
+                }
+              />
+            </div>
+          )}
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}

@@ -131,7 +131,7 @@ describe('scoped native schema advertisement', () => {
 
   it('advertises the scratch natives and read-only memory, not skill_write/screenshot', async () => {
     await transport.refreshTools()
-    expect(names()).toEqual([...SCRATCH].sort())
+    expect(names()).toEqual([...SCRATCH, 'todo', 'ask'].sort())
     expect(h.grants).toContain('thread-1')
     const mem = transport.getTools()['memory'].inputSchema as { jsonSchema: any }
     expect(mem.jsonSchema.properties.op.enum).toEqual(['view', 'search'])
@@ -204,7 +204,7 @@ describe('scoped native schema advertisement', () => {
   it('advertises no natives without sandbox or tool support, and omits the shell when switched off', async () => {
     h.sandbox = false
     await transport.refreshTools()
-    expect(names()).toEqual([])
+    expect(names()).toEqual(['ask', 'todo'])
     h.sandbox = true
     h.shellEnabled = false
     await transport.refreshTools()
@@ -215,7 +215,7 @@ describe('scoped native schema advertisement', () => {
   it('withholds a memory schema that is not the expected shape', async () => {
     h.schemas.mockResolvedValue([fn('memory'), fn('read')])
     await transport.refreshTools()
-    expect(names()).toEqual(['read'])
+    expect(names()).toEqual(['ask', 'read', 'todo'])
   })
 
   it('never advertises web/monitor/task natives even if the schema source returns them', async () => {

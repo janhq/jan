@@ -1,3 +1,4 @@
+import { conversationAskCard, respondConversationAsk } from '@/lib/conversationClientTools'
 import { CHAT_RUN_NOTICE_METADATA } from '@/lib/chatRunNotice'
 import { Chat, useChat as useSDKChat } from '@ai-sdk/react'
 import { trackChat, quiesceChats, __resetChatCloseForTests } from '@/lib/chatClose'
@@ -2452,6 +2453,29 @@ describe('ThreadDetail route', () => {
       integrationMaxSteps = undefined
     })
     afterEach(() => { h.integrationChat = null; h.chatSessionsState.sessions = {} })
+
+    it('consumes canonical todo and a suspended ask through the mounted SDK route', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      const { chat, steps } = setup([])
+      const transport = h.chatSessionsState.sessions['thread-1'].transport
+      vi.mocked(transport.getMcpServerForTool).mockReturnValue(undefined)
+      vi.spyOn(transport, 'hasAdvertisedClientTool').mockReturnValue(true)
+      steps.mockImplementation(async () => chunks(steps.mock.calls.length === 1 ? [
+        { type: 'start', messageId: 'client-provider' },
+        { type: 'tool-input-available', toolCallId: 'todo-sdk', toolName: 'todo', input: { op: 'init', items: ['Synthetic task'] } },
+        { type: 'tool-input-available', toolCallId: 'ask-sdk', toolName: 'ask', input: { questions: [{ id: 'q', question: 'Choose scope', options: [{ label: 'A' }, { label: 'B' }] }] } },
+        { type: 'finish', finishReason: 'tool-calls' },
+      ] : textStep))
+      const pending = chat.sendMessage({ text: 'organize the task and ask' })
+      await waitFor(() => expect(conversationAskCard('thread-1')).toMatchObject({ id: 'ask-sdk' }))
+      expect(steps).toHaveBeenCalledTimes(1)
+      await act(async () => { respondConversationAsk('thread-1', 'ask-sdk', [{ id: 'q', selected: ['A'] }]); await pending })
+      expect(steps).toHaveBeenCalledTimes(2)
+      expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ toolCallId: 'todo-sdk', state: 'output-available', output: expect.stringContaining('Synthetic task') }))
+      expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ toolCallId: 'ask-sdk', state: 'output-available', output: expect.stringContaining('A') }))
+      expect(conversationAskCard('thread-1')).toBeNull()
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+    })
 
     it('uses exactly two SDK inference steps for a native read and its final answer', async () => {
       h.appStateState.mcpToolNames = new Set()
