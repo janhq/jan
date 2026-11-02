@@ -899,6 +899,28 @@ fn changed_paths_with(
         .collect())
 }
 
+/// Run `f` with `config` as the user's global git config, as a user's own
+/// `~/.gitconfig` reaches every git Jan runs (repo config does not reach a
+/// clone). Tests run with one thread, so the variable is safe to set; it is
+/// put back even when `f` panics.
+#[cfg(all(test, feature = "cli"))]
+pub(crate) fn with_global_config<R>(config: &str, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<std::ffi::OsString>, tempfile::NamedTempFile);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(value) => std::env::set_var("GIT_CONFIG_GLOBAL", value),
+                None => std::env::remove_var("GIT_CONFIG_GLOBAL"),
+            }
+        }
+    }
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(file.path(), config).unwrap();
+    let restore = Restore(std::env::var_os("GIT_CONFIG_GLOBAL"), file);
+    std::env::set_var("GIT_CONFIG_GLOBAL", restore.1.path());
+    f()
+}
+
 #[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
@@ -1417,8 +1439,6 @@ mod tests {
     #[test]
     fn is_clean_sees_a_new_directory_as_work_when_status_hides_untracked_files() {
         let Some(root) = init_repo() else { return };
-        let r = root.to_string_lossy().to_string();
-        git(&["-C", &r, "config", "status.showUntrackedFiles", "no"]).unwrap();
         let head = head_sha(&root).unwrap();
         let wt = root.with_extension("clean");
         let _ = std::fs::remove_dir_all(&wt);
@@ -1431,7 +1451,8 @@ mod tests {
         for i in 0..500 {
             std::fs::write(deep.join(format!("{i}.js")), "x").unwrap();
         }
-        assert_eq!(child.is_clean(), Ok(false));
+        let hidden = "[status]\n\tshowUntrackedFiles = no\n";
+        assert_eq!(with_global_config(hidden, || child.is_clean()), Ok(false));
         let _ = std::fs::remove_dir_all(&wt);
         let _ = std::fs::remove_dir_all(&root);
     }

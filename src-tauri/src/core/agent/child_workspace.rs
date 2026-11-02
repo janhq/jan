@@ -1415,19 +1415,23 @@ mod git_tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A user's global config hiding untracked files from `git status`.
+    const HIDE_UNTRACKED: &str = "[status]\n\tshowUntrackedFiles = no\n";
+
     /// A user who hides untracked files from `git status` must not lose a
     /// writer's new, never-added files: they are its deliverables.
     #[test]
     fn an_untracked_only_worktree_is_kept_when_status_hides_untracked_files() {
         let Some(root) = repo("untracked") else { return };
-        assert!(git(&root, &["config", "status.showUntrackedFiles", "no"]));
         let ledger = Arc::new(Ledger::default());
         let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
         drop(lease);
         std::fs::create_dir_all(ws.root.join("out")).unwrap();
         std::fs::write(ws.root.join("out/report.md"), "deliverable\n").unwrap();
 
-        let kept = ledger.finish_session();
+        let kept = crate::core::agent::git::with_global_config(HIDE_UNTRACKED, || {
+            ledger.finish_session()
+        });
         assert_eq!(kept.len(), 1, "{kept:?}");
         assert!(ws.root.join("out/report.md").is_file());
         let _ = std::fs::remove_dir_all(&ws.root);
@@ -2237,13 +2241,15 @@ mod git_tests {
     #[test]
     fn an_untracked_directory_keeps_a_worktree_under_the_fast_check() {
         let Some(root) = repo("untracked-dir") else { return };
-        assert!(git(&root, &["config", "status.showUntrackedFiles", "no"]));
         let ledger = Arc::new(Ledger::default());
         let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
         drop(lease);
         std::fs::create_dir_all(ws.root.join("node_modules/x")).unwrap();
         std::fs::write(ws.root.join("node_modules/x/y.js"), "y\n").unwrap();
-        assert_eq!(ledger.finish_session().len(), 1);
+        let kept = crate::core::agent::git::with_global_config(HIDE_UNTRACKED, || {
+            ledger.finish_session()
+        });
+        assert_eq!(kept.len(), 1);
         assert!(ws.root.join("node_modules/x/y.js").is_file());
         let _ = std::fs::remove_dir_all(&ws.root);
         let _ = std::fs::remove_dir_all(&root);
