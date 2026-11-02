@@ -101,6 +101,7 @@ const memory = fn('memory', {
     op: { type: 'string', enum: ['view', 'search', 'write', 'edit', 'delete', 'move'] },
     path: { type: 'string' },
     to: { type: 'string' },
+    title: { type: 'string', description: 'write: one-line title, stored as the first line' },
   },
 })
 // The names Rust's getAgentToolSchemas really returns (AGENT_TOOL_NAMES).
