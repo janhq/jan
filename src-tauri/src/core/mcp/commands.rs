@@ -20,7 +20,70 @@ use crate::core::{
     mcp::models::ToolWithServer,
     state::{RunningMcpService, SharedMcpServers},
 };
-use std::{collections::HashSet, fs, time::Duration};
+use rmcp::{service::Peer, RoleClient};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    sync::Arc,
+    time::Duration,
+};
+
+type McpPeer = Peer<RoleClient>;
+
+// RunningService owns the task and is not Clone. Clone its Arc-backed Peer,
+// never the owner: removal/cancel still closes the original connection.
+async fn snapshot_servers(servers: &SharedMcpServers) -> HashMap<String, McpPeer> {
+    snapshot_handles(servers, |service| service.peer().clone()).await
+}
+
+async fn snapshot_handles<T, H>(
+    servers: &tokio::sync::Mutex<HashMap<String, T>>,
+    clone_handle: impl Fn(&T) -> H,
+) -> HashMap<String, H> {
+    let guard = servers.lock().await;
+    guard
+        .iter()
+        .map(|(name, service)| (name.clone(), clone_handle(service)))
+        .collect()
+}
+
+fn same_connection(service: &RunningMcpService, peer: &McpPeer) -> bool {
+    !service.is_closed()
+        && !peer.is_transport_closed()
+        && match (service.peer_info(), peer.peer_info()) {
+            (Some(current), Some(snapshot)) => Arc::ptr_eq(&current, &snapshot),
+            _ => false,
+        }
+}
+
+// Bypass rmcp list_tools response caching, including server TTL/stale fallback.
+// Explicit validation and legacy routing need live schemas, not cached responses.
+async fn list_live_tools(peer: &McpPeer) -> Result<Vec<rmcp::model::Tool>, rmcp::ServiceError> {
+    use rmcp::model::{ClientRequest, ListToolsRequest, PaginatedRequestParams, ServerResult};
+    let mut tools = Vec::new();
+    let mut cursor = None;
+    loop {
+        let response = peer
+            .send_request(ClientRequest::ListToolsRequest(ListToolsRequest {
+                method: Default::default(),
+                params: Some({
+                    let mut params = PaginatedRequestParams::default();
+                    params.cursor = cursor;
+                    params
+                }),
+                extensions: Default::default(),
+            }))
+            .await?;
+        let ServerResult::ListToolsResult(page) = response else {
+            return Err(rmcp::ServiceError::UnexpectedResponse);
+        };
+        tools.extend(page.tools);
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            return Ok(tools);
+        }
+    }
+}
 
 async fn tool_call_timeout(state: &AppState) -> Duration {
     state.mcp_settings.lock().await.tool_call_timeout_duration()
@@ -43,6 +106,7 @@ async fn collect_mcp_tools<R: Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
     server_filter: Option<HashSet<String>>,
+    fresh_only: bool,
 ) -> Result<Vec<ToolWithServer>, String> {
     let timeout_duration = tool_call_timeout(state).await;
     let mut all_tools: Vec<ToolWithServer> = Vec::new();
@@ -69,18 +133,36 @@ async fn collect_mcp_tools<R: Runtime>(
         }
     };
 
+    // Fresh authorization inventories are snapshots, not advertisement caches.
+    let initial_connections = if fresh_only {
+        Some(snapshot_servers(&state.mcp_servers).await)
+    } else {
+        None
+    };
+    let initial_names: HashSet<String> = server_names.iter().cloned().collect();
+
     for server_name in server_names {
-        // Snapshot the live service's list_all_tools() future while holding the
-        // lock, but resolve it after dropping the guard so a slow/hanging
-        // server doesn't hold `mcp_servers` locked for other callers.
-        let maybe_list_result = {
+        let peer = {
             let servers = state.mcp_servers.lock().await;
-            match servers.get(&server_name) {
-                Some(service) => Some(timeout(timeout_duration, service.list_all_tools()).await),
-                None => None,
-            }
+            servers
+                .get(&server_name)
+                .map(|service| service.peer().clone())
+        };
+        if fresh_only && peer.is_none() {
+            return Err(format!(
+                "MCP server '{server_name}' disconnected during fresh discovery"
+            ));
+        }
+        let maybe_list_result = match &peer {
+            Some(peer) => Some(timeout(timeout_duration, list_live_tools(peer)).await),
+            None => None,
         };
 
+        if fresh_only && !matches!(&maybe_list_result, Some(Ok(Ok(_)))) {
+            return Err(format!(
+                "Fresh MCP discovery failed for server '{server_name}'"
+            ));
+        }
         let fresh_tools = match maybe_list_result {
             Some(Ok(Ok(tools))) => {
                 let mapped: Vec<ToolWithServer> = tools
@@ -92,9 +174,35 @@ async fn collect_mcp_tools<R: Runtime>(
                         server: server_name.clone(),
                     })
                     .collect();
-                let mut last_known = state.mcp_last_known_tools.lock().await;
-                last_known.insert(server_name.clone(), mapped.clone());
-                Some(mapped)
+                // Publish atomically with connection/deactivation checks. This
+                // follows lifecycle lock order servers -> active -> cache; only
+                // local state awaits here, never remote work.
+                let servers = state.mcp_servers.lock().await;
+                let connected = servers
+                    .get(&server_name)
+                    .is_some_and(|service| same_connection(service, peer.as_ref().unwrap()));
+                let active = state.mcp_active_servers.lock().await;
+                if !active.contains_key(&server_name) {
+                    if fresh_only {
+                        return Err("MCP inventory changed during discovery; retry".into());
+                    }
+                    continue;
+                }
+                if !connected {
+                    if fresh_only {
+                        return Err("MCP inventory changed during discovery; retry".into());
+                    }
+                    // Ignore the stale response but preserve the enabled server's
+                    // advertisement across reconnects, just as on list failure.
+                    None
+                } else {
+                    state
+                        .mcp_last_known_tools
+                        .lock()
+                        .await
+                        .insert(server_name.clone(), mapped.clone());
+                    Some(mapped)
+                }
             }
             Some(Ok(Err(e))) => {
                 let err_str = e.to_string();
@@ -102,7 +210,9 @@ async fn collect_mcp_tools<R: Runtime>(
                 if is_transport_error(&err_str) {
                     state.mcp_reconnect_notify.notify_waiters();
                 }
-                if remove_mcp_server_entry(&state.mcp_servers, &server_name).await {
+                if remove_mcp_server_entry(&state.mcp_servers, &server_name, peer.as_ref().unwrap())
+                    .await
+                {
                     removed_any = true;
                 }
                 None
@@ -132,6 +242,23 @@ async fn collect_mcp_tools<R: Runtime>(
         all_tools.extend(tools);
     }
 
+    if let Some(initial) = initial_connections {
+        let active = state.mcp_active_servers.lock().await;
+        let current_names: HashSet<String> = active.keys().cloned().collect();
+        drop(active);
+        let current = state.mcp_servers.lock().await;
+        if initial_names != current_names
+            || current.len() != initial.len()
+            || !initial.iter().all(|(name, peer)| {
+                current
+                    .get(name)
+                    .is_some_and(|service| same_connection(service, peer))
+            })
+        {
+            return Err("MCP inventory changed during discovery; retry".into());
+        }
+    }
+
     if removed_any {
         if let Err(e) = app.emit("mcp-update", json!({ "server": "tools-refresh" })) {
             log::error!("Failed to emit mcp-update event: {e}");
@@ -139,6 +266,66 @@ async fn collect_mcp_tools<R: Runtime>(
     }
 
     Ok(all_tools)
+}
+
+/// Explicit validation is scoped to the requested active connection and live
+/// tool schema. Rival inventories and name collisions affect advertisement and
+/// legacy unnamed routing, not server-bound execution (which never falls back).
+async fn collect_validation_tools(
+    state: &AppState,
+    server_name: &str,
+    tool_name: &str,
+) -> Result<Vec<ToolWithServer>, String> {
+    let timeout_duration = tool_call_timeout(state).await;
+    let peer = {
+        let servers = state.mcp_servers.lock().await;
+        let active = state.mcp_active_servers.lock().await;
+        if !active.contains_key(server_name) {
+            return Err(format!("MCP validation target '{server_name}' is disabled"));
+        }
+        let peer = servers
+            .get(server_name)
+            .filter(|service| !service.is_closed())
+            .map(|service| service.peer().clone())
+            .ok_or_else(|| format!("MCP validation target '{server_name}' is disconnected"))?;
+        peer
+    };
+    let tools = timeout(timeout_duration, list_live_tools(&peer))
+        .await
+        .map_err(|_| format!("Fresh MCP discovery timed out for server '{server_name}'"))?
+        .map_err(|_| format!("Fresh MCP discovery failed for server '{server_name}'"))?;
+    let fresh: Vec<ToolWithServer> = tools
+        .into_iter()
+        .map(|tool| ToolWithServer {
+            name: tool.name.to_string(),
+            description: tool.description.as_ref().map(|d| d.to_string()),
+            input_schema: Value::Object((*tool.input_schema).clone()),
+            server: server_name.to_owned(),
+        })
+        .collect();
+
+    // No remote await while holding these short lifecycle-ordered guards.
+    // Only the target must still be enabled and on the same connection.
+    let servers = state.mcp_servers.lock().await;
+    let active = state.mcp_active_servers.lock().await;
+    if !active.contains_key(server_name)
+        || !servers
+            .get(server_name)
+            .is_some_and(|service| same_connection(service, &peer))
+    {
+        return Err("MCP inventory changed during discovery; retry".into());
+    }
+    if !fresh.iter().any(|tool| tool.name == tool_name) {
+        return Err(format!(
+            "MCP tool '{tool_name}' is unavailable on server '{server_name}'"
+        ));
+    }
+    state
+        .mcp_last_known_tools
+        .lock()
+        .await
+        .insert(server_name.to_owned(), fresh.clone());
+    Ok(fresh)
 }
 
 fn is_transport_error(error: &str) -> bool {
@@ -288,10 +475,27 @@ pub async fn get_connected_servers(
 }
 
 /// Remove an MCP server entry and cancel its running service (used when list-tools fails).
-async fn remove_mcp_server_entry(mcp_servers: &SharedMcpServers, server_name: &str) -> bool {
-    let mut servers = mcp_servers.lock().await;
-    if let Some(service) = servers.remove(server_name) {
-        log::warn!("Removing MCP server {server_name} from connected servers");
+async fn remove_mcp_server_entry(
+    mcp_servers: &SharedMcpServers,
+    server_name: &str,
+    peer: &McpPeer,
+) -> bool {
+    let removed = {
+        let mut servers = mcp_servers.lock().await;
+        // A failed old discovery must never remove a replacement connection.
+        let matches = servers.get(server_name).is_some_and(|service| {
+            match (service.peer_info(), peer.peer_info()) {
+                (Some(current), Some(snapshot)) => Arc::ptr_eq(&current, &snapshot),
+                _ => false,
+            }
+        });
+        if matches {
+            servers.remove(server_name)
+        } else {
+            None
+        }
+    };
+    if let Some(service) = removed {
         let _ = service.cancel().await;
         true
     } else {
@@ -318,8 +522,20 @@ async fn remove_mcp_server_entry(mcp_servers: &SharedMcpServers, server_name: &s
 pub async fn get_tools<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
+    fresh_only: Option<bool>,
+    validation_server: Option<String>,
+    validation_tool: Option<String>,
 ) -> Result<Vec<ToolWithServer>, String> {
-    collect_mcp_tools(&app, &state, None).await
+    match (validation_server, validation_tool) {
+        (Some(server), Some(tool)) if !server.trim().is_empty() && !tool.trim().is_empty() => {
+            return collect_validation_tools(&state, &server, &tool).await;
+        }
+        (None, None) => {}
+        _ => {
+            return Err("MCP validation requires both validation_server and validation_tool".into())
+        }
+    }
+    collect_mcp_tools(&app, &state, None, fresh_only.unwrap_or(false)).await
 }
 
 /// Retrieves tools from a specific subset of MCP servers by name.
@@ -341,7 +557,7 @@ pub async fn get_tools_for_servers<R: Runtime>(
     if filter.is_empty() {
         return Ok(Vec::new());
     }
-    collect_mcp_tools(&app, &state, Some(filter)).await
+    collect_mcp_tools(&app, &state, Some(filter), false).await
 }
 
 /// Returns name, capability tags, and description for all enabled MCP servers
@@ -382,6 +598,81 @@ pub async fn get_server_summaries(
     Ok(summaries)
 }
 
+/// Resolve discovered matches before dispatching: legacy unqualified calls must
+/// never depend on HashMap iteration order, and a named call must never fall back.
+fn select_tool_server<'a>(
+    tool_name: &str,
+    server_name: Option<&str>,
+    matching_servers: &[&'a str],
+) -> Result<Option<&'a str>, String> {
+    if let Some(server) = server_name {
+        return Ok(matching_servers
+            .iter()
+            .copied()
+            .find(|name| *name == server));
+    }
+
+    match matching_servers {
+        [] => Ok(None),
+        [server] => Ok(Some(*server)),
+        _ => {
+            let mut names = matching_servers.to_vec();
+            names.sort_unstable();
+            Err(format!(
+                "Tool '{tool_name}' is ambiguous across MCP servers [{}]; specify server_name",
+                names.join(", ")
+            ))
+        }
+    }
+}
+
+/// Cancellation covers mutex acquisition as well as discovery and execution.
+/// Start the shared discovery/execution budget only after acquiring the snapshot;
+/// dropping the losing future releases a queued waiter or the remote operation.
+/// The snapshot owns handles only; it must not retain the global map guard.
+async fn run_tool_call<T, G, F>(
+    tool_name: &str,
+    timeout_duration: Duration,
+    cancellation_enabled: bool,
+    cancel_rx: oneshot::Receiver<()>,
+    acquire: impl std::future::Future<Output = G>,
+    operation: impl FnOnce(G) -> F,
+) -> Result<T, String>
+where
+    F: std::future::Future<Output = Result<T, String>>,
+{
+    let timed_operation = async {
+        let guard = acquire.await;
+        timeout(timeout_duration, operation(guard)).await
+    };
+    tokio::select! {
+        biased;
+        _ = cancel_rx, if cancellation_enabled => {
+            Err(format!("Tool call '{tool_name}' was cancelled"))
+        }
+        result = timed_operation => {
+            result.unwrap_or_else(|_| Err(format!(
+                "Tool call '{tool_name}' timed out after {} seconds",
+                timeout_duration.as_secs()
+            )))
+        }
+    }
+}
+
+/// Incomplete discovery cannot prove that an unqualified name is unique.
+/// Named calls also fail closed if their selected server could not be queried.
+fn ensure_complete_tool_discovery(failed_servers: &[String]) -> Result<(), String> {
+    if failed_servers.is_empty() {
+        return Ok(());
+    }
+    let mut names = failed_servers.to_vec();
+    names.sort_unstable();
+    Err(format!(
+        "Cannot safely route tool: discovery failed for MCP server(s) [{}]; retry or specify a healthy server_name",
+        names.join(", ")
+    ))
+}
+
 /// Calls a tool on an MCP server by name with optional arguments
 ///
 /// # Arguments
@@ -400,7 +691,7 @@ pub async fn get_server_summaries(
 /// This function:
 /// 1. Locks the MCP servers mutex to access server connections
 /// 2. If server_name is provided, looks for the tool in that specific server
-/// 3. Otherwise, searches through all servers for one containing the named tool
+/// 3. Otherwise, searches all servers and requires an unambiguous tool match
 /// 4. When found, calls the tool on that server with the provided arguments
 /// 5. Supports cancellation via cancellation_token
 /// 6. Returns error if no server has the requested tool or if specified server not found
@@ -428,117 +719,128 @@ pub async fn call_tool(
         cancellations.insert(token.clone(), cancel_tx);
     }
 
-    let servers = state.mcp_servers.lock().await;
+    let result = run_tool_call(
+        &tool_name,
+        timeout_duration,
+        cancellation_token.is_some(),
+        cancel_rx,
+        snapshot_servers(&state.mcp_servers),
+        |servers| {
+            let tool_name = tool_name.as_str();
+            let server_name = &server_name;
+            let arguments = &arguments;
+            let state = &state;
+            async move {
+                // If server_name is provided, only check that specific server
+                let servers_to_check: Vec<(&String, &McpPeer)> =
+                    if let Some(ref server) = server_name {
+                        servers.iter().filter(|(name, _)| *name == server).collect()
+                    } else {
+                        servers.iter().collect()
+                    };
 
-    // If server_name is provided, only check that specific server
-    let servers_to_check: Vec<(&String, &RunningMcpService)> =
-        if let Some(ref server) = server_name {
-            servers.iter().filter(|(name, _)| *name == server).collect()
-        } else {
-            servers.iter().collect()
-        };
-
-    if servers_to_check.is_empty() {
-        cleanup_cancellation_token(&state, &cancellation_token).await;
-        if let Some(server) = server_name {
-            return Err(format!("Server '{server}' not found"));
-        }
-        return Err(format!(
-            "Tool {tool_name} not found — no MCP servers connected"
-        ));
-    }
-
-    let mut transport_error_servers: Vec<String> = Vec::new();
-
-    // Iterate through servers and find the one that contains the tool
-    for (srv_name, service) in servers_to_check.iter() {
-        let tools = match service.list_all_tools().await {
-            Ok(tools) => tools,
-            Err(e) => {
-                let err_str = e.to_string();
-                log::warn!(
-                    "MCP server {} failed to list tools during call_tool: {}",
-                    srv_name,
-                    err_str
-                );
-                if is_transport_error(&err_str) {
-                    transport_error_servers.push(srv_name.to_string());
-                }
-                continue;
-            }
-        };
-
-        if !tools.iter().any(|t| t.name == tool_name) {
-            continue; // Tool not found in this server, try next
-        }
-
-        log::info!("Found tool {tool_name} in server {srv_name}");
-
-        // Call the tool with timeout and cancellation support
-        let mut params = CallToolRequestParams::new(tool_name.clone());
-        if let Some(args) = arguments.clone() {
-            params = params.with_arguments(args);
-        }
-        let tool_call = service.call_tool(params);
-
-        // Race between timeout, tool call, and cancellation
-        let result = if cancellation_token.is_some() {
-            tokio::select! {
-                result = timeout(timeout_duration, tool_call) => {
-                    match result {
-                        Ok(call_result) => call_result.map_err(|e| e.to_string()),
-                        Err(_) => Err(format!(
-                            "Tool call '{tool_name}' timed out after {} seconds",
-                            timeout_duration.as_secs()
-                        )),
+                if servers_to_check.is_empty() {
+                    if let Some(server) = &server_name {
+                        return Err(format!("Server '{server}' not found"));
                     }
+                    return Err(format!(
+                        "Tool {tool_name} not found — no MCP servers connected"
+                    ));
                 }
-                _ = cancel_rx => {
-                    Err(format!("Tool call '{tool_name}' was cancelled"))
+
+                let mut failed_servers: Vec<String> = Vec::new();
+
+                // Discover every match before dispatching so duplicate tool names fail closed.
+                let mut matching_servers = Vec::new();
+                for (srv_name, service) in servers_to_check.iter() {
+                    let tools = match list_live_tools(service).await {
+                        Ok(tools) => tools,
+                        Err(e) => {
+                            let err_str = e.to_string();
+                            log::warn!(
+                                "MCP server {} failed to list tools during call_tool: {}",
+                                srv_name,
+                                err_str
+                            );
+                            if is_transport_error(&err_str) {
+                                state.mcp_reconnect_notify.notify_waiters();
+                            }
+                            failed_servers.push(srv_name.to_string());
+                            continue;
+                        }
+                    };
+
+                    if !tools.iter().any(|t| t.name == tool_name) {
+                        continue; // Tool not found in this server, try next
+                    }
+
+                    matching_servers.push(srv_name.as_str());
                 }
+
+                ensure_complete_tool_discovery(&failed_servers)?;
+                let selected_server =
+                    select_tool_server(&tool_name, server_name.as_deref(), &matching_servers)?;
+
+                if let Some(srv_name) = selected_server {
+                    // Revalidate the snapshot after remote discovery. Unqualified
+                    // calls must also reject newly added/removed rivals. Never
+                    // route an old snapshot to a replacement under the same name.
+                    {
+                        let current = state.mcp_servers.lock().await;
+                        let unchanged = if let Some(name) = server_name.as_deref() {
+                            current
+                                .get(name)
+                                .zip(servers.get(name))
+                                .is_some_and(|(service, peer)| same_connection(service, peer))
+                        } else {
+                            current.len() == servers.len()
+                                && servers.iter().all(|(name, peer)| {
+                                    current
+                                        .get(name)
+                                        .is_some_and(|service| same_connection(service, peer))
+                                })
+                        };
+                        if !unchanged {
+                            return Err("MCP inventory changed during discovery; retry".into());
+                        }
+                    }
+                    let service = servers.get(srv_name).expect("discovered MCP server exists");
+                    log::info!("Found tool {tool_name} in server {srv_name}");
+
+                    // Call the tool with timeout and cancellation support
+                    let mut params = CallToolRequestParams::new(tool_name.to_owned());
+                    if let Some(args) = arguments.clone() {
+                        params = params.with_arguments(args);
+                    }
+                    let tool_call = service.call_tool(params);
+
+                    let result = tool_call.await.map_err(|e| e.to_string());
+
+                    // Signal reconnect if the tool call itself hit a transport error
+                    if let Err(ref e) = result {
+                        if is_transport_error(e) {
+                            log::warn!(
+                                "MCP server {} transport error during tool call: {}",
+                                srv_name,
+                                e
+                            );
+                            state.mcp_reconnect_notify.notify_waiters();
+                        }
+                    }
+
+                    // Cap here rather than at each caller: this is the single point every
+                    // desktop MCP tool result passes through on its way into conversation
+                    // history, so an unbounded result can never reach the model.
+                    return result.map(|res| truncate_tool_result(&res, tool_output_cap));
+                }
+
+                Err(format!("Tool {tool_name} not found"))
             }
-        } else {
-            match timeout(timeout_duration, tool_call).await {
-                Ok(call_result) => call_result.map_err(|e| e.to_string()),
-                Err(_) => Err(format!(
-                    "Tool call '{tool_name}' timed out after {} seconds",
-                    timeout_duration.as_secs()
-                )),
-            }
-        };
-
-        // Signal reconnect if the tool call itself hit a transport error
-        if let Err(ref e) = result {
-            if is_transport_error(e) {
-                log::warn!(
-                    "MCP server {} transport error during tool call: {}",
-                    srv_name,
-                    e
-                );
-                state.mcp_reconnect_notify.notify_waiters();
-            }
-        }
-
-        cleanup_cancellation_token(&state, &cancellation_token).await;
-        // Cap here rather than at each caller: this is the single point every
-        // desktop MCP tool result passes through on its way into conversation
-        // history, so an unbounded result can never reach the model.
-        return result.map(|res| truncate_tool_result(&res, tool_output_cap));
-    }
-
-    // No server had the tool — check if it's because of transport errors
-    if !transport_error_servers.is_empty() {
-        state.mcp_reconnect_notify.notify_waiters();
-        cleanup_cancellation_token(&state, &cancellation_token).await;
-        return Err(format!(
-            "MCP server(s) [{}] disconnected while looking for tool '{}'. Reconnecting — please retry.",
-            transport_error_servers.join(", "),
-            tool_name
-        ));
-    }
-
+        },
+    )
+    .await;
     cleanup_cancellation_token(&state, &cancellation_token).await;
-    Err(format!("Tool {tool_name} not found"))
+    result
 }
 
 /// Cancels a running tool call by its cancellation token
@@ -635,7 +937,10 @@ pub async fn authorize_mcp_server<R: Runtime>(
     if !oauth::is_allowed_oauth_url(&pending.authorization_url) {
         return Err(format!("'{name}' produced a sign-in URL Jan will not open"));
     }
-    if let Err(e) = app.opener().open_url(&pending.authorization_url, None::<&str>) {
+    if let Err(e) = app
+        .opener()
+        .open_url(&pending.authorization_url, None::<&str>)
+    {
         log::warn!("Could not open the browser for '{name}': {e}");
     }
 
@@ -646,10 +951,7 @@ pub async fn authorize_mcp_server<R: Runtime>(
 /// Forget one server's stored tokens. `false` when there were none, so the UI
 /// can tell "cleared" from "nothing to clear".
 #[tauri::command]
-pub async fn clear_mcp_auth<R: Runtime>(
-    app: AppHandle<R>,
-    name: String,
-) -> Result<bool, String> {
+pub async fn clear_mcp_auth<R: Runtime>(app: AppHandle<R>, name: String) -> Result<bool, String> {
     let folder = get_jan_data_folder_path(app);
     oauth::clear(&folder, &name)
 }
@@ -778,14 +1080,18 @@ fn get_result_text(result: &rmcp::model::CallToolResult) -> Option<&str> {
 pub async fn check_jan_browser_extension_connected(
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
-    let servers = state.mcp_servers.lock().await;
-    let service = match servers.get("Jan Browser MCP") {
-        Some(s) => s,
-        None => return Ok(false),
+    let peer = {
+        let servers = state.mcp_servers.lock().await;
+        servers
+            .get("Jan Browser MCP")
+            .map(|service| service.peer().clone())
+    };
+    let Some(service) = peer.as_ref() else {
+        return Ok(false);
     };
 
     // Check available tools
-    let tools = match timeout(Duration::from_secs(2), service.list_all_tools()).await {
+    let tools = match timeout(Duration::from_secs(2), list_live_tools(service)).await {
         Ok(Ok(tools)) if !tools.is_empty() => tools,
         _ => return Ok(false),
     };
@@ -813,7 +1119,7 @@ enum PingResult {
     ToolNotAvailable,
 }
 
-async fn try_ping_tool(service: &RunningMcpService) -> PingResult {
+async fn try_ping_tool(service: &McpPeer) -> PingResult {
     let result = timeout(
         Duration::from_secs(3),
         service.call_tool(CallToolRequestParams::new("ping").with_arguments(Map::new())),
@@ -846,14 +1152,13 @@ async fn try_ping_tool(service: &RunningMcpService) -> PingResult {
     }
 }
 
-async fn try_browser_snapshot_tool(service: &RunningMcpService) -> Result<bool, String> {
+async fn try_browser_snapshot_tool(service: &McpPeer) -> Result<bool, String> {
     let result = timeout(
         // Snapshot tool is very time-consuming
         // Extend timeout to make sure the tool call has enough time to succeed
         Duration::from_secs(20),
-        service.call_tool(
-            CallToolRequestParams::new("browser_snapshot").with_arguments(Map::new()),
-        ),
+        service
+            .call_tool(CallToolRequestParams::new("browser_snapshot").with_arguments(Map::new())),
     )
     .await;
 
@@ -916,4 +1221,695 @@ pub async fn save_mcp_configs<R: Runtime>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod call_tool_routing_tests {
+    use super::{ensure_complete_tool_discovery, run_tool_call, select_tool_server};
+    use std::{future::pending, time::Duration};
+    use tokio::sync::{oneshot, Mutex};
+
+    #[tokio::test]
+    async fn fresh_inventory_rejects_disconnected_last_known_advertisement() {
+        use tauri::Manager;
+        let app = tauri::test::mock_app();
+        app.manage(crate::core::state::AppState::default());
+        let state = app.state::<crate::core::state::AppState>();
+        state
+            .mcp_active_servers
+            .lock()
+            .await
+            .insert("alpha".into(), serde_json::json!({}));
+        state.mcp_last_known_tools.lock().await.insert(
+            "alpha".into(),
+            vec![crate::core::mcp::models::ToolWithServer {
+                name: "search".into(),
+                server: "alpha".into(),
+                description: None,
+                input_schema: serde_json::json!({}),
+            }],
+        );
+        assert_eq!(
+            super::collect_mcp_tools(app.handle(), &state, None, false)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(super::collect_mcp_tools(app.handle(), &state, None, true)
+            .await
+            .unwrap_err()
+            .contains("disconnected"));
+    }
+
+    #[derive(Clone)]
+    struct ValidationServer {
+        entered: std::sync::Arc<tokio::sync::Notify>,
+        release: Option<std::sync::Arc<tokio::sync::Notify>>,
+    }
+
+    impl rmcp::ServerHandler for ValidationServer {
+        fn get_info(&self) -> rmcp::model::ServerInfo {
+            rmcp::model::ServerInfo::new(
+                rmcp::model::ServerCapabilities::builder()
+                    .enable_tools()
+                    .build(),
+            )
+        }
+
+        async fn call_tool(
+            &self,
+            _: rmcp::model::CallToolRequestParams,
+            _: rmcp::service::RequestContext<rmcp::RoleServer>,
+        ) -> Result<rmcp::model::CallToolResponse, rmcp::ErrorData> {
+            Ok(rmcp::model::CallToolResult::success(vec![]).into())
+        }
+
+        async fn list_tools(
+            &self,
+            _: Option<rmcp::model::PaginatedRequestParams>,
+            _: rmcp::service::RequestContext<rmcp::RoleServer>,
+        ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
+            self.entered.notify_one();
+            if let Some(release) = &self.release {
+                release.notified().await;
+            }
+            Ok(rmcp::model::ListToolsResult::with_all_items(vec![
+                rmcp::model::Tool::new("search", "fixture", serde_json::Map::new()),
+            ]))
+        }
+    }
+
+    async fn validation_connection(
+        release: Option<std::sync::Arc<tokio::sync::Notify>>,
+    ) -> (
+        crate::core::state::RunningMcpService,
+        std::sync::Arc<tokio::sync::Notify>,
+    ) {
+        use rmcp::ServiceExt;
+        let entered = std::sync::Arc::new(tokio::sync::Notify::new());
+        let server = ValidationServer {
+            entered: entered.clone(),
+            release,
+        };
+        let (server_io, client_io) = tokio::io::duplex(8192);
+        tokio::spawn(async move {
+            let running = server.serve(server_io).await.unwrap();
+            let _ = running.waiting().await;
+        });
+        let app = tauri::test::mock_app();
+        let client = super::super::progress::JanClientHandler::new(
+            super::super::helpers::jan_client_info(),
+            "alpha".into(),
+            app.handle().clone(),
+        )
+        .serve(client_io)
+        .await
+        .unwrap();
+        (client, entered)
+    }
+
+    fn cached_tool(name: &str, server: &str) -> crate::core::mcp::models::ToolWithServer {
+        crate::core::mcp::models::ToolWithServer {
+            name: name.into(),
+            server: server.into(),
+            description: None,
+            input_schema: serde_json::json!({}),
+        }
+    }
+
+    #[tokio::test]
+    async fn targeted_inventory_ignores_never_listed_offline_and_colliding_rivals() {
+        let state = crate::core::state::AppState::default();
+        let (client, _) = validation_connection(None).await;
+        state
+            .mcp_servers
+            .lock()
+            .await
+            .insert("alpha".into(), client);
+        for name in ["alpha", "beta"] {
+            state
+                .mcp_active_servers
+                .lock()
+                .await
+                .insert(name.into(), serde_json::json!({}));
+        }
+        // Enabled, never-listed, offline beta must not block explicit alpha.
+        let inventory = super::collect_validation_tools(&state, "alpha", "search")
+            .await
+            .unwrap();
+        assert_eq!(inventory.len(), 1);
+        assert_eq!(inventory[0].server, "alpha");
+        assert_eq!(inventory[0].name, "search");
+        // Even a known same-name rival is irrelevant to server-bound execution.
+        state
+            .mcp_last_known_tools
+            .lock()
+            .await
+            .insert("beta".into(), vec![cached_tool("search", "beta")]);
+        let inventory = super::collect_validation_tools(&state, "alpha", "search")
+            .await
+            .unwrap();
+        assert_eq!(inventory.len(), 1);
+        assert_eq!(inventory[0].server, "alpha");
+        assert!(super::collect_validation_tools(&state, "alpha", "missing")
+            .await
+            .unwrap_err()
+            .contains("unavailable"));
+        let client = state.mcp_servers.lock().await.remove("alpha").unwrap();
+        client.cancel().await.unwrap();
+        assert!(super::collect_validation_tools(&state, "alpha", "search")
+            .await
+            .unwrap_err()
+            .contains("disconnected"));
+        state.mcp_active_servers.lock().await.remove("alpha");
+        assert!(super::collect_validation_tools(&state, "alpha", "search")
+            .await
+            .unwrap_err()
+            .contains("disabled"));
+    }
+
+    #[tokio::test]
+    async fn targeted_inventory_rejects_replacement_or_disabling_during_discovery() {
+        use std::sync::Arc;
+        for replace in [true, false] {
+            let state = crate::core::state::AppState::default();
+            let release = Arc::new(tokio::sync::Notify::new());
+            let (client, entered) = validation_connection(Some(release.clone())).await;
+            state
+                .mcp_servers
+                .lock()
+                .await
+                .insert("alpha".into(), client);
+            state
+                .mcp_active_servers
+                .lock()
+                .await
+                .insert("alpha".into(), serde_json::json!({}));
+            let discovery = super::collect_validation_tools(&state, "alpha", "search");
+            tokio::pin!(discovery);
+            assert_pending(discovery.as_mut()).await;
+            entered.notified().await;
+            // An in-flight transport request holds no global lock.
+            assert!(state.mcp_servers.try_lock().is_ok());
+            let old = if replace {
+                let (replacement, _) = validation_connection(None).await;
+                state
+                    .mcp_servers
+                    .lock()
+                    .await
+                    .insert("alpha".into(), replacement)
+            } else {
+                state.mcp_active_servers.lock().await.remove("alpha");
+                None
+            };
+            release.notify_one();
+            assert!(discovery
+                .await
+                .unwrap_err()
+                .contains("changed during discovery"));
+            assert!(!state
+                .mcp_last_known_tools
+                .lock()
+                .await
+                .contains_key("alpha"));
+            if let Some(old) = old {
+                old.cancel().await.unwrap();
+            }
+            let client = state.mcp_servers.lock().await.remove("alpha").unwrap();
+            client.cancel().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn duplex_explicit_dispatch_ignores_collisions_but_legacy_unnamed_rejects_them() {
+        use tauri::Manager;
+        let app = tauri::test::mock_app();
+        app.manage(crate::core::state::AppState::default());
+        let state = app.state::<crate::core::state::AppState>();
+        for name in ["alpha", "beta"] {
+            let (client, _) = validation_connection(None).await;
+            state.mcp_servers.lock().await.insert(name.into(), client);
+            state
+                .mcp_active_servers
+                .lock()
+                .await
+                .insert(name.into(), serde_json::json!({}));
+        }
+        assert!(super::call_tool(
+            state.clone(),
+            "search".into(),
+            Some("alpha".into()),
+            None,
+            None,
+            None
+        )
+        .await
+        .is_ok());
+        assert!(
+            super::call_tool(state.clone(), "search".into(), None, None, None, None)
+                .await
+                .unwrap_err()
+                .contains("ambiguous")
+        );
+        assert!(super::call_tool(
+            state.clone(),
+            "search".into(),
+            Some("missing".into()),
+            None,
+            None,
+            None
+        )
+        .await
+        .unwrap_err()
+        .contains("not found"));
+        let clients = std::mem::take(&mut *state.mcp_servers.lock().await);
+        for (_, client) in clients {
+            client.cancel().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn targeted_inventory_ignores_unrelated_activation_during_discovery() {
+        use std::sync::Arc;
+        let state = crate::core::state::AppState::default();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let (client, entered) = validation_connection(Some(release.clone())).await;
+        state
+            .mcp_servers
+            .lock()
+            .await
+            .insert("alpha".into(), client);
+        state
+            .mcp_active_servers
+            .lock()
+            .await
+            .insert("alpha".into(), serde_json::json!({}));
+        let discovery = super::collect_validation_tools(&state, "alpha", "search");
+        tokio::pin!(discovery);
+        assert_pending(discovery.as_mut()).await;
+        entered.notified().await;
+        state
+            .mcp_active_servers
+            .lock()
+            .await
+            .insert("beta".into(), serde_json::json!({}));
+        release.notify_one();
+        let inventory = discovery.await.unwrap();
+        assert_eq!(inventory.len(), 1);
+        assert_eq!(inventory[0].server, "alpha");
+        state
+            .mcp_servers
+            .lock()
+            .await
+            .remove("alpha")
+            .unwrap()
+            .cancel()
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn nonfresh_inventory_keeps_cache_on_midlisting_disconnect_or_replacement() {
+        use std::sync::Arc;
+        for fresh_only in [false, true] {
+            for replace in [false, true] {
+                let app = tauri::test::mock_app();
+                let state = crate::core::state::AppState::default();
+                let release = Arc::new(tokio::sync::Notify::new());
+                let (client, entered) = validation_connection(Some(release.clone())).await;
+                state
+                    .mcp_servers
+                    .lock()
+                    .await
+                    .insert("alpha".into(), client);
+                state
+                    .mcp_active_servers
+                    .lock()
+                    .await
+                    .insert("alpha".into(), serde_json::json!({}));
+                state
+                    .mcp_last_known_tools
+                    .lock()
+                    .await
+                    .insert("alpha".into(), vec![cached_tool("cached", "alpha")]);
+                let discovery = super::collect_mcp_tools(app.handle(), &state, None, fresh_only);
+                tokio::pin!(discovery);
+                assert_pending(discovery.as_mut()).await;
+                entered.notified().await;
+                // Keep the old transport alive so it can return a successful
+                // response after the registered connection changes.
+                let old = state.mcp_servers.lock().await.remove("alpha").unwrap();
+                if replace {
+                    let (replacement, _) = validation_connection(None).await;
+                    state
+                        .mcp_servers
+                        .lock()
+                        .await
+                        .insert("alpha".into(), replacement);
+                }
+                release.notify_one();
+                let result = discovery.await;
+                if fresh_only {
+                    assert!(result.unwrap_err().contains("changed during discovery"));
+                } else {
+                    let inventory = result.unwrap();
+                    assert_eq!(inventory.len(), 1);
+                    assert_eq!(inventory[0].name, "cached");
+                }
+                assert_eq!(
+                    state.mcp_last_known_tools.lock().await["alpha"][0].name,
+                    "cached"
+                );
+                old.cancel().await.unwrap();
+                let replacement = state.mcp_servers.lock().await.remove("alpha");
+                if let Some(client) = replacement {
+                    client.cancel().await.unwrap();
+                }
+            }
+        }
+    }
+
+    // Controlled fake remote gates use the exact production snapshot helper and
+    // cancellation/budget wrapper. No sleeps, providers, or installed MCP data.
+    #[tokio::test]
+    async fn long_tool_a_does_not_block_fresh_inventory_or_tool_b() {
+        use super::snapshot_handles;
+        use std::{collections::HashMap, sync::Arc};
+        let servers = Mutex::new(HashMap::from([
+            ("alpha".into(), Arc::new(())),
+            ("beta".into(), Arc::new(())),
+        ]));
+        let (finish_a, wait_a) = oneshot::channel::<()>();
+        let (_cancel, rx) = oneshot::channel();
+        let a = run_tool_call(
+            "a",
+            Duration::from_secs(60),
+            false,
+            rx,
+            snapshot_handles(&servers, Arc::clone),
+            |snapshot| async move {
+                assert!(snapshot.contains_key("alpha"));
+                wait_a.await.unwrap(); // fake long execution
+                Ok(())
+            },
+        );
+        tokio::pin!(a);
+        assert_pending(a.as_mut()).await;
+        // Validation observes a newly connected rival, not A's frozen handles.
+        servers
+            .try_lock()
+            .unwrap()
+            .insert("rival".into(), Arc::new(()));
+        let inventory = snapshot_handles(&servers, Arc::clone).await;
+        assert_eq!(inventory.len(), 3);
+        let (_cancel_b, rx_b) = oneshot::channel();
+        let b = run_tool_call(
+            "b",
+            Duration::from_secs(1),
+            false,
+            rx_b,
+            snapshot_handles(&servers, Arc::clone),
+            |snapshot| async move {
+                assert!(snapshot.contains_key("beta"));
+                Ok(42)
+            },
+        );
+        assert_eq!(b.await, Ok(42));
+        assert_pending(a.as_mut()).await;
+        finish_a.send(()).unwrap();
+        assert_eq!(a.await, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn stop_cancels_snapshot_discovery_and_execution_without_late_dispatch() {
+        use super::snapshot_handles;
+        use std::{
+            collections::HashMap,
+            sync::{
+                atomic::{AtomicUsize, Ordering},
+                Arc,
+            },
+        };
+        for executing in [false, true] {
+            let servers = Mutex::new(HashMap::from([("alpha".into(), Arc::new(()))]));
+            let dispatched = AtomicUsize::new(0);
+            let completed = AtomicUsize::new(0);
+            let (release, gate) = oneshot::channel::<()>();
+            let (stop, rx) = oneshot::channel();
+            let call = run_tool_call(
+                "a",
+                Duration::from_secs(60),
+                true,
+                rx,
+                snapshot_handles(&servers, Arc::clone),
+                |_| async {
+                    if executing {
+                        dispatched.fetch_add(1, Ordering::SeqCst);
+                    }
+                    let _ = gate.await; // fake discovery or execution
+                    if !executing {
+                        dispatched.fetch_add(1, Ordering::SeqCst);
+                    }
+                    completed.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+            );
+            tokio::pin!(call);
+            assert_pending(call.as_mut()).await;
+            assert!(
+                servers.try_lock().is_ok(),
+                "remote gate must not retain map lock"
+            );
+            stop.send(()).unwrap();
+            assert!(call.await.unwrap_err().contains("cancelled"));
+            assert!(
+                release.send(()).is_err(),
+                "Stop dropped remote gate; no late dispatch"
+            );
+            assert_eq!(dispatched.load(Ordering::SeqCst), usize::from(executing));
+            assert_eq!(completed.load(Ordering::SeqCst), 0);
+        }
+    }
+
+    #[test]
+    fn failed_rival_prevents_legacy_unnamed_dispatch_to_the_survivor() {
+        for matches in [vec!["alpha"], vec![]] {
+            let result = ensure_complete_tool_discovery(&["beta".into()])
+                .and_then(|()| select_tool_server("search", None, &matches));
+            assert!(result.unwrap_err().contains("discovery failed"));
+        }
+        assert!(ensure_complete_tool_discovery(&[]).is_ok());
+    }
+
+    // Poll once without relying on scheduler timing or wall-clock sleeps.
+    async fn assert_pending<F: std::future::Future>(mut future: std::pin::Pin<&mut F>) {
+        assert!(
+            std::future::poll_fn(|cx| {
+                std::task::Poll::Ready(future.as_mut().poll(cx).is_pending())
+            })
+            .await
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn discovery_timeout_releases_lock_without_dispatch() {
+        let mutex = Mutex::new(());
+        let (_tx, rx) = oneshot::channel();
+        let mut dispatched = false;
+        let result = run_tool_call(
+            "search",
+            Duration::from_secs(10),
+            false,
+            rx,
+            mutex.lock(),
+            |guard| async {
+                let _guard = guard;
+                pending::<()>().await; // controlled hanging list_all_tools
+                dispatched = true;
+                Ok(())
+            },
+        )
+        .await;
+        assert!(result.unwrap_err().contains("timed out"));
+        assert!(!dispatched);
+        assert!(
+            mutex.try_lock().is_ok(),
+            "timeout must drop the discovery guard"
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_cancellation_releases_lock_without_dispatch() {
+        let mutex = Mutex::new(());
+        let (tx, rx) = oneshot::channel();
+        let mut dispatched = false;
+        {
+            let call = run_tool_call(
+                "search",
+                Duration::from_secs(5),
+                true,
+                rx,
+                mutex.lock(),
+                |guard| async {
+                    let _guard = guard;
+                    pending::<()>().await;
+                    dispatched = true;
+                    Ok(())
+                },
+            );
+            tokio::pin!(call);
+            assert_pending(call.as_mut()).await;
+            assert!(mutex.try_lock().is_err(), "discovery must hold the guard");
+            tx.send(()).unwrap();
+            assert!(call.await.unwrap_err().contains("cancelled"));
+        }
+        assert!(!dispatched);
+        assert!(mutex.try_lock().is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn queued_call_gets_full_discovery_and_execution_budget() {
+        let mutex = Mutex::new(());
+        let guard = mutex.lock().await;
+        let (_tx, rx) = oneshot::channel();
+        let call = run_tool_call(
+            "search",
+            Duration::from_secs(10),
+            false,
+            rx,
+            mutex.lock(),
+            |guard| async {
+                let _guard = guard;
+                tokio::time::sleep(Duration::from_secs(6)).await; // discovery
+                tokio::time::sleep(Duration::from_secs(3)).await; // execution
+                Ok(42)
+            },
+        );
+        tokio::pin!(call);
+        assert_pending(call.as_mut()).await; // queued behind the first call
+        tokio::time::advance(Duration::from_secs(20)).await;
+        assert_pending(call.as_mut()).await; // waiting does not consume the budget
+        drop(guard);
+        assert_pending(call.as_mut()).await; // start discovery and its budget
+        tokio::time::advance(Duration::from_secs(6)).await;
+        assert_pending(call.as_mut()).await; // start execution, six seconds used
+        tokio::time::advance(Duration::from_secs(3)).await;
+        assert_eq!(call.await, Ok(42));
+        assert!(mutex.try_lock().is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn discovery_and_execution_share_one_timeout_budget() {
+        let mutex = Mutex::new(());
+        let (_tx, rx) = oneshot::channel();
+        let call = run_tool_call(
+            "search",
+            Duration::from_secs(10),
+            false,
+            rx,
+            mutex.lock(),
+            |guard| async {
+                let _guard = guard;
+                tokio::time::sleep(Duration::from_secs(6)).await;
+                tokio::time::sleep(Duration::from_secs(6)).await;
+                Ok(())
+            },
+        );
+        tokio::pin!(call);
+        assert_pending(call.as_mut()).await;
+        tokio::time::advance(Duration::from_secs(6)).await;
+        assert_pending(call.as_mut()).await;
+        tokio::time::advance(Duration::from_secs(4)).await;
+        assert!(call.await.unwrap_err().contains("timed out"));
+        assert!(mutex.try_lock().is_ok());
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_mutex_wait_removes_waiter_without_late_dispatch() {
+        let mutex = Mutex::new(());
+        let guard = mutex.lock().await;
+        let (tx, rx) = oneshot::channel();
+        let mut dispatched = false;
+        {
+            let call = run_tool_call(
+                "search",
+                Duration::from_secs(5),
+                true,
+                rx,
+                mutex.lock(),
+                |guard| async {
+                    let _guard = guard;
+                    dispatched = true;
+                    Ok(())
+                },
+            );
+            tokio::pin!(call);
+            assert_pending(call.as_mut()).await; // register the queued waiter
+            tx.send(()).unwrap();
+            assert!(call.await.unwrap_err().contains("cancelled"));
+        }
+        drop(guard);
+        // A stale queued waiter would reserve the lock instead of releasing it.
+        assert!(mutex.try_lock().is_ok());
+        assert!(!dispatched);
+    }
+
+    #[tokio::test]
+    async fn operation_succeeds_without_cancellation_token() {
+        let (tx, rx) = oneshot::channel();
+        drop(tx); // absent tokens must not treat a closed channel as cancellation
+        assert_eq!(
+            run_tool_call(
+                "search",
+                Duration::from_secs(1),
+                false,
+                rx,
+                std::future::ready(()),
+                |()| async { Ok(42) }
+            )
+            .await,
+            Ok(42)
+        );
+    }
+
+    #[test]
+    fn legacy_call_selects_the_only_matching_server() {
+        assert_eq!(
+            select_tool_server("search", None, &["alpha"]),
+            Ok(Some("alpha"))
+        );
+        assert_eq!(select_tool_server("search", None, &[]), Ok(None));
+    }
+
+    #[test]
+    fn legacy_call_rejects_ambiguous_matches_in_either_order() {
+        let error = select_tool_server("search", None, &["beta", "alpha"])
+            .expect_err("ambiguous legacy calls must not dispatch");
+        assert_eq!(
+            error,
+            "Tool 'search' is ambiguous across MCP servers [alpha, beta]; specify server_name"
+        );
+        assert_eq!(
+            select_tool_server("search", None, &["alpha", "beta"]),
+            Err(error)
+        );
+    }
+
+    #[test]
+    fn explicit_server_disambiguates_duplicate_tools() {
+        assert_eq!(
+            select_tool_server("search", Some("beta"), &["alpha", "beta"]),
+            Ok(Some("beta"))
+        );
+    }
+
+    #[test]
+    fn explicit_server_never_falls_back_to_another_server() {
+        assert_eq!(
+            select_tool_server("search", Some("missing"), &["alpha"]),
+            Ok(None)
+        );
+        assert_eq!(select_tool_server("search", Some("alpha"), &[]), Ok(None));
+    }
 }

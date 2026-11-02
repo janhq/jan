@@ -122,7 +122,8 @@ vi.mock('@/components/PromptProgress', () => ({
 }))
 
 const pendingApprovalsRef = vi.hoisted(() => ({ current: {} as any }))
-vi.mock('@/hooks/useToolApprovalRequests', () => ({
+vi.mock('@/hooks/useToolApprovalRequests', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useToolApprovalRequests')>()),
   useToolApprovalRequests: (selector: any) =>
     selector({ pending: pendingApprovalsRef.current }),
 }))

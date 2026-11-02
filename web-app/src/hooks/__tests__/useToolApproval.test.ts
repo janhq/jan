@@ -9,22 +9,24 @@ vi.mock('@/constants/localStorage', () => ({
   },
 }))
 
-// Mock zustand persist
-vi.mock('zustand/middleware', () => ({
-  persist: (fn: any) => fn,
-  createJSONStorage: () => ({
-    getItem: vi.fn(),
-    setItem: vi.fn(),
-    removeItem: vi.fn(),
-  }),
+// Exercise the real persist middleware without touching disk or real settings.
+const stored = vi.hoisted(() => new Map<string, string>())
+vi.mock('@/lib/backendStorage', () => ({
+  backendStorage: {
+    getItem: vi.fn((key: string) => stored.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => stored.set(key, value)),
+    removeItem: vi.fn((key: string) => stored.delete(key)),
+  },
 }))
 
 describe('useToolApproval', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    stored.clear()
     // Reset store state to defaults
     useToolApproval.setState({
       approvedTools: {},
+      approvedMCPTools: [],
       approvedServers: [],
       approvedToolsGlobal: [],
       allowAllMCPPermissions: false,
@@ -35,6 +37,7 @@ describe('useToolApproval', () => {
     const { result } = renderHook(() => useToolApproval())
 
     expect(result.current.approvedTools).toEqual({})
+    expect(result.current.approvedMCPTools).toEqual([])
     expect(result.current.approvedServers).toEqual([])
     expect(result.current.approvedToolsGlobal).toEqual([])
     expect(result.current.allowAllMCPPermissions).toBe(false)
@@ -151,6 +154,81 @@ describe('useToolApproval', () => {
 
       const isApproved = result.current.isToolApproved('thread-2', 'tool-a')
       expect(isApproved).toBe(false)
+    })
+  })
+
+  describe('server-qualified thread grants', () => {
+    it('matches the exact thread, server and tool, and deduplicates grants', () => {
+      const approval = useToolApproval.getState()
+      approval.approveToolForThread('thread-1', 'read_file', 'server-a')
+      approval.approveToolForThread('thread-1', 'read_file', 'server-a')
+
+      expect(useToolApproval.getState().approvedMCPTools).toEqual([
+        { threadId: 'thread-1', serverName: 'server-a', toolName: 'read_file' },
+      ])
+      expect(approval.isToolApproved('thread-1', 'read_file', 'server-a')).toBe(true)
+      expect(approval.isToolApproved('thread-1', 'read_file', 'server-b')).toBe(false)
+      expect(approval.isToolApproved('thread-2', 'read_file', 'server-a')).toBe(false)
+      expect(approval.isToolApproved('thread-1', 'write_file', 'server-a')).toBe(false)
+      expect(approval.isToolApproved('thread-1', 'read_file')).toBe(false)
+      expect(useToolApproval.getState().approvedTools).toEqual({})
+    })
+
+    it('does not interpret delimiter-like names as qualified identities', () => {
+      const approval = useToolApproval.getState()
+      approval.approveToolForThread('thread-1', 'b::c', 'a')
+      approval.approveToolForThread('thread-1', 'a::b::c')
+      expect(approval.isToolApproved('thread-1', 'c', 'a::b')).toBe(false)
+      expect(approval.isToolApproved('thread-1', 'b::c', 'a')).toBe(true)
+    })
+
+    it('retains bare persisted thread/global grants only for no-server tools', () => {
+      useToolApproval.setState({
+        approvedTools: { 'thread-1': ['read_file'] },
+        approvedToolsGlobal: ['write_file'],
+      })
+      const approval = useToolApproval.getState()
+      expect(approval.isToolApproved('thread-1', 'read_file')).toBe(true)
+      expect(approval.isToolApproved('thread-2', 'write_file')).toBe(true)
+      expect(approval.isToolApproved('thread-1', 'read_file', 'server-a')).toBe(false)
+      expect(approval.isToolApproved('thread-2', 'write_file', 'server-a')).toBe(false)
+    })
+  })
+
+  describe('persistence', () => {
+    it('rehydrates old grants without upgrading them to server trust', async () => {
+      stored.set('tool-approval-settings', JSON.stringify({
+        state: {
+          approvedTools: { 'thread-1': ['read_file'] },
+          approvedToolsGlobal: ['write_file'],
+          approvedServers: ['trusted'],
+          allowAllMCPPermissions: false,
+        },
+        version: 0,
+      }))
+      await useToolApproval.persist.rehydrate()
+      const approval = useToolApproval.getState()
+      expect(approval.approvedMCPTools).toEqual([])
+      expect(approval.isToolApproved('thread-1', 'read_file')).toBe(true)
+      expect(approval.isToolApproved('thread-2', 'write_file')).toBe(true)
+      expect(approval.isToolApproved('thread-1', 'read_file', 'untrusted')).toBe(false)
+      expect(approval.isToolApproved('thread-1', 'write_file', 'untrusted')).toBe(false)
+      expect(approval.isToolApproved('thread-2', 'anything', 'trusted')).toBe(true)
+      expect(approval.allowAllMCPPermissions).toBe(false)
+    })
+
+    it('persists qualified grants as structured identities and rehydrates them', async () => {
+      useToolApproval.getState().approveToolForThread('thread-1', 'b::c', 'a')
+      const persisted = stored.get('tool-approval-settings')!
+      expect(JSON.parse(persisted).state.approvedMCPTools).toEqual([
+        { threadId: 'thread-1', serverName: 'a', toolName: 'b::c' },
+      ])
+      useToolApproval.setState({ approvedMCPTools: [] })
+      stored.set('tool-approval-settings', persisted)
+      await useToolApproval.persist.rehydrate()
+      const approval = useToolApproval.getState()
+      expect(approval.isToolApproved('thread-1', 'b::c', 'a')).toBe(true)
+      expect(approval.isToolApproved('thread-1', 'c', 'a::b')).toBe(false)
     })
   })
 

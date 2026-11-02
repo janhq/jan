@@ -1,3 +1,4 @@
+import { assertMcpIdentityAvailable, memoizeMcpValidation } from '@/lib/chatMcpIdentity'
 import { isChatClosing, setChatCloseStop, trackChatFinalization } from '@/lib/chatClose'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -87,6 +88,7 @@ import {
 import { usePrompt } from '@/hooks/usePrompt'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
+import { useMCPServers } from '@/hooks/useMCPServers'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { useChatShell } from '@/hooks/useChatShell'
 import {
@@ -104,8 +106,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
-import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
-import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
+import { useToolApprovalRequests, throwIfApprovalValidationFailed, type ApprovalResult } from '@/hooks/useToolApprovalRequests'
+import { toolOriginKey, useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
@@ -227,7 +229,9 @@ useChatSessions.subscribe((state) => {
 // component ref would be shared by every thread (the route is reused across
 // thread switches), so one thread finishing or being left would drop another
 // thread's pending approvals and prompt the user again.
-const toolApprovalPromises = new Map<string, Map<string, Promise<boolean>>>()
+const callMcpIdentities = new Map<string, Map<string, string | undefined>>()
+const callMcpValidators = new Map<string, Map<string, (signal?: AbortSignal) => Promise<void>>>()
+const toolApprovalPromises = new Map<string, Map<string, Promise<ApprovalResult>>>()
 const approvalsOf = (threadId: string) => {
   let approvals = toolApprovalPromises.get(threadId)
   if (!approvals) {
@@ -238,6 +242,8 @@ const approvalsOf = (threadId: string) => {
 }
 const forgetApprovals = (threadId: string) => {
   toolApprovalPromises.delete(threadId)
+  callMcpIdentities.delete(threadId)
+  callMcpValidators.delete(threadId)
 }
 
 // Recorded for a call that never ran because its chat was closed (the thread was
@@ -277,13 +283,6 @@ function rewriteStoredTurn(
   })
 }
 
-// The MCP server a tool belongs to, so an approval prompt can offer to trust
-// the whole server rather than this one tool.
-function serverForTool(toolName: string): string | undefined {
-  return useAppState.getState().tools.find((tool) => tool.name === toolName)
-    ?.server
-}
-
 // The model a thread's turn runs on. A turn can finish in the background while
 // another thread is open, and the global selection follows the open thread.
 function turnModelOf(threadId: string) {
@@ -302,14 +301,17 @@ function turnModelOf(threadId: string) {
 // tool the user turned off could save a permission for it. With the switch off
 // the built-in is not offered, so an MCP tool of the same name is the user's
 // own: it is served as an MCP tool and prompts like any other.
-function chatShellRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
-  if (!CHAT_AGENT_TOOL_NAMES.has(toolName)) return 'other'
+function chatShellRoute(toolName: string, serverName?: string): 'builtin' | 'disabled' | 'other' {
+  // A bound MCP identity means the native schema was not advertised for this
+  // request (e.g. shell is on but no sandbox can enforce it). Never substitute
+  // a native shell for that approved server, even if availability changes.
+  if (serverName || !CHAT_AGENT_TOOL_NAMES.has(toolName)) return 'other'
   if (useChatShell.getState().shellEnabled) return 'builtin'
   return useAppState.getState().mcpToolNames.has(toolName) ? 'other' : 'disabled'
 }
 
-function isDisabledChatAgentTool(toolName: string): boolean {
-  return chatShellRoute(toolName) === 'disabled'
+function isDisabledChatAgentTool(toolName: string, serverName?: string): boolean {
+  return chatShellRoute(toolName, serverName) === 'disabled'
 }
 
 // How a call to a built-in web tool name is served. Same contract as the shell:
@@ -391,6 +393,22 @@ export const Route = createFileRoute('/threads/$threadId')({
 
 function ThreadDetail() {
   const serviceHub = useServiceHub()
+  const makeMcpValidator = (toolName: string, serverName?: string) => memoizeMcpValidation(
+    (signal) => assertMcpIdentityAvailable(
+      toolName, serverName,
+      () => serviceHub.mcp().getTools({ validationServer: serverName, validationTool: toolName }),
+      (server, name) => useToolAvailable.getState().isToolDisabled(server, name), signal,
+      useMCPServers.getState().settings.toolCallTimeoutSeconds
+    ),
+    () => [
+      JSON.stringify(serverName ? useMCPServers.getState().mcpServers[serverName] : undefined),
+      serverName ? useToolAvailable.getState().isToolDisabled(serverName, toolName) : true,
+      JSON.stringify(useAppState.getState().tools
+        .filter((tool) => tool.server === serverName && tool.name === toolName)
+        .map((tool) => tool.inputSchema)),
+    ]
+  )
+
   const { threadId } = useParams({ from: Route.id })
   const search = useSearch({ from: Route.id })
   const searchThreadModel = search.threadModel
@@ -625,12 +643,27 @@ function ThreadDetail() {
         message.role === 'assistant' &&
         uiMessageHasMeaningfulContent(message)
       ) {
+        // Only this message's request-bound identities accompany the shared
+        // serializer metadata; keep the foundation codec as persistence owner.
+        const storedMessage = useMessages.getState().getMessages(threadId).find((item) => item.id === message.id)
+        const priorOrigins = {
+          ...((message.metadata as { toolOrigins?: Record<string, string | null> } | undefined)?.toolOrigins),
+          ...((storedMessage?.metadata as { toolOrigins?: Record<string, string | null> } | undefined)?.toolOrigins),
+        }
+        const toolOrigins = Object.fromEntries(message.parts.flatMap((part) => {
+          if (!('toolCallId' in part) || typeof part.toolCallId !== 'string') return []
+          const live = useToolCallRuntime.getState().origins[toolOriginKey(threadId, part.toolCallId)]
+          const origin = live === undefined ? priorOrigins[part.toolCallId] : live
+          return origin === undefined ? [] : [[part.toolCallId, origin]]
+        }))
         const { content: contentParts, metadata: messageMetadata } =
           assistantRecordFields(
             message,
-            message.metadata as Record<string, unknown> | undefined,
+            { ...((message.metadata || {}) as Record<string, unknown>),
+              toolOrigins },
             { stopped: isStoppedTurn }
           )
+
 
         if (isStoppedTurn) {
           const retained = useChatSessions.getState().sessions[threadId]?.chat
@@ -740,6 +773,9 @@ function ThreadDetail() {
       // prompts stay up, and a late "Allow" would run the tool and resume the
       // reply the user just stopped.
       if (isAbort) {
+        // The shared serializer above has retained these origins in metadata.
+        // Streaming Stop may precede enqueue, so no timing entry can release them.
+        useToolCallRuntime.getState().releaseOrigins(sessionData.tools.map((call) => call.toolCallId), threadId)
         forgetApprovals(threadId)
         sessionData.tools = []
         useToolApprovalRequests.getState().clearPendingForThread(threadId)
@@ -770,7 +806,6 @@ function ThreadDetail() {
       }
 
       const ragToolNames = useAppState.getState().ragToolNames
-      const mcpToolNames = useAppState.getState().mcpToolNames
 
       // Keep the thread marked busy while awaiting approval and executing tools,
       // since streaming has already ended and isSessionBusy's tools-array read isn't reactive.
@@ -832,6 +867,9 @@ function ThreadDetail() {
 
           try {
             const toolName = toolCall.toolName
+            const serverName = callMcpIdentities.get(threadId)?.get(toolCall.toolCallId)
+            const checkMcp = callMcpValidators.get(threadId)?.get(toolCall.toolCallId) ??
+              makeMcpValidator(toolName, serverName)
 
             if (webRoute(toolName) === 'disabled') {
               record({
@@ -843,7 +881,7 @@ function ThreadDetail() {
               continue
             }
 
-            if (isDisabledChatAgentTool(toolName)) {
+            if (isDisabledChatAgentTool(toolName, serverName)) {
               record({
                 state: 'output-error',
                 tool: toolCall.toolName,
@@ -853,7 +891,15 @@ function ThreadDetail() {
               continue
             }
 
-            const approved = isAutoAllowedTool(toolName)
+            if (serverName || !isAutoAllowedTool(toolName)) {
+              await untilAborted(checkMcp(stopSignal), stopSignal)
+              if (stoppedByUser() || isChatClosing() || signal.aborted) break
+            }
+            if (serverName && (webRoute(toolName) === 'builtin' || chatShellRoute(toolName, serverName) === 'builtin')) {
+              throw new Error(`Tool identity changed for ${toolName}; start a new turn`)
+            }
+
+            const approved = !serverName && isAutoAllowedTool(toolName)
               ? true
               : await (approvalsOf(threadId).get(toolCall.toolCallId) ??
                   useToolApprovalRequests
@@ -862,7 +908,8 @@ function ThreadDetail() {
                       toolCall.toolCallId,
                       toolName,
                       threadId,
-                      serverForTool(toolName)
+                      serverName,
+                      checkMcp
                     ))
             approvalsOf(threadId).delete(toolCall.toolCallId)
             // Only an explicit Stop skips the result. Deleting the thread also
@@ -870,6 +917,7 @@ function ThreadDetail() {
             // closing rather than as the user's refusal.
             if (stoppedByUser() || isChatClosing()) break
 
+            throwIfApprovalValidationFailed(approved)
             if (!approved) {
               record({
                 state: 'output-error',
@@ -888,7 +936,7 @@ function ThreadDetail() {
             // not reported as the tool being slow.
             useToolCallRuntime
               .getState()
-              .markRunning(toolCall.toolCallId, serverForTool(toolName))
+              .markRunning(toolCall.toolCallId, serverName)
 
             // A tool result is injected into conversation history verbatim, so a
             // page-sized one can exhaust the context on its own. This is the
@@ -904,11 +952,14 @@ function ThreadDetail() {
             // a hung MCP server) must not hold the loop, and the thread, busy.
             const result = await untilAborted<ToolRunResult>(
               (async () => {
+                if (serverName && (webRoute(toolName) === 'builtin' || chatShellRoute(toolName, serverName) === 'builtin')) {
+                  throw new Error(`Tool identity changed for ${toolName}; start a new turn`)
+                }
                 if (webRoute(toolName) === 'builtin') {
                   return await executeWebTool(toolName, toolCall.input, {
                     maxOutputChars,
                   })
-                } else if (chatShellRoute(toolName) === 'builtin') {
+                } else if (chatShellRoute(toolName, serverName) === 'builtin') {
                   // Chat's shell runs with the sandbox network closed: the
                   // default `allowNetwork = false` is the contract here, not an
                   // accident.
@@ -928,7 +979,7 @@ function ThreadDetail() {
                       .recordDiff(toolCall.toolCallId, diff)
                   }
                   return rest
-                } else if (ragToolNames.has(toolName)) {
+                } else if (!serverName && ragToolNames.has(toolName)) {
                   return await serviceHub.rag().callTool({
                     toolName,
                     arguments: toolCall.input,
@@ -936,12 +987,18 @@ function ThreadDetail() {
                     projectId: projectId,
                     scope: projectId ? 'project' : 'thread',
                   })
-                } else if (mcpToolNames.has(toolName)) {
+                } else if (serverName) {
+                  await checkMcp(stopSignal)
+                  if (stopSignal.aborted) throw new DOMException('Aborted', 'AbortError')
+                  if (webRoute(toolName) === 'builtin' || chatShellRoute(toolName, serverName) === 'builtin') {
+                    throw new Error(`Tool identity changed for ${toolName}; start a new turn`)
+                  }
                   // Give the backend the budget scaled to the window; it narrows
                   // that against the user's configured ceiling. Cancellable, so
                   // Stop ends the call on the backend as well as in this loop.
                   const call = serviceHub.mcp().callToolWithCancellation({
                     toolName,
+                    serverName,
                     arguments: toolCall.input,
                     maxOutputChars,
                   })
@@ -982,10 +1039,12 @@ function ThreadDetail() {
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                errorText: `Error: ${JSON.stringify(error)}`,
+                errorText: `Error: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
               })
             }
           } finally {
+            useToolApprovalRequests.getState().cancelApproval(toolCall.toolCallId, threadId)
+            approvalsOf(threadId).delete(toolCall.toolCallId)
             // Covers every exit from the iteration, including the denied path.
             useToolCallRuntime.getState().markSettled(toolCall.toolCallId)
           }
@@ -1101,15 +1160,20 @@ function ThreadDetail() {
     },
     onToolCall: ({ toolCall }) => {
       // Collect the tool for the onFinish execution loop, and request approval
-      // right now so the popup appears immediately instead of waiting for the
+      // now (after validating its bound identity) instead of waiting for the
       // stream's terminal finish chunk (a stalled stream would otherwise leave
       // the tool at "Running..." with no popup). Execution itself stays in
       // onFinish so the tool result lands on a completed message. Internal tools
       // never prompt (see isAutoAllowedTool).
       sessionData.tools.push(toolCall)
+      const serverName = useChatSessions.getState().sessions[threadId]?.transport
+        .getMcpServerForTool(toolCall.toolName)
+      useToolCallRuntime.getState().recordOrigin(toolCall.toolCallId, serverName, threadId)
+      if (!callMcpIdentities.has(threadId)) callMcpIdentities.set(threadId, new Map())
+      callMcpIdentities.get(threadId)!.set(toolCall.toolCallId, serverName)
       if (
-        !isAutoAllowedTool(toolCall.toolName) &&
-        !isDisabledChatAgentTool(toolCall.toolName) &&
+        serverName &&
+        !isDisabledChatAgentTool(toolCall.toolName, serverName) &&
         webRoute(toolCall.toolName) !== 'disabled' &&
         !approvalsOf(threadId).has(toolCall.toolCallId)
       ) {
@@ -1121,7 +1185,13 @@ function ThreadDetail() {
               toolCall.toolCallId,
               toolCall.toolName,
               threadId,
-              serverForTool(toolCall.toolName)
+              serverName,
+              (() => {
+                const validate = makeMcpValidator(toolCall.toolName, serverName)
+                if (!callMcpValidators.has(threadId)) callMcpValidators.set(threadId, new Map())
+                callMcpValidators.get(threadId)!.set(toolCall.toolCallId, validate)
+                return validate
+              })()
             )
         )
       }
@@ -2345,6 +2415,7 @@ function ThreadDetail() {
                   <MessageItem
                     key={message.id}
                     message={message}
+                    threadId={threadId}
                     isFirstMessage={isFirstMessage}
                     isLastMessage={isLastMessage}
                     status={effectiveStatus}
@@ -2367,6 +2438,7 @@ function ThreadDetail() {
                 <MessageItem
                   key={`continue-placeholder-${pendingContinueMessage.id}`}
                   message={pendingContinueMessage}
+                  threadId={threadId}
                   isFirstMessage={false}
                   isLastMessage={true}
                   status={effectiveStatus}

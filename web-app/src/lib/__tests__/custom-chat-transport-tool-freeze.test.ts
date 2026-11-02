@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import type { MCPTool } from '@/types/completion'
 
 const h = vi.hoisted(() => ({
   disabledTools: [] as string[],
@@ -8,7 +9,7 @@ const h = vi.hoisted(() => ({
 }))
 
 const mcpService = {
-  getTools: vi.fn(async () => []),
+  getTools: vi.fn(async (): Promise<MCPTool[]> => []),
   getToolsForServers: vi.fn(async () => []),
   getServerSummaries: vi.fn(async () =>
     h.servers.map((name) => ({ name, capabilities: [], description: '' }))
@@ -19,6 +20,20 @@ h.serviceHub = {
   mcp: () => mcpService,
   rag: () => ({ getTools: async () => [] }),
 }
+
+vi.mock('@/hooks/useChatShell', () => ({
+  useChatShell: { getState: () => ({ shellEnabled: false }) },
+}))
+vi.mock('@/hooks/useWebSearchConfig', () => ({
+  useWebSearchConfig: { getState: () => ({ webSearchEnabled: false }) },
+}))
+vi.mock('@/lib/agentTools', () => ({
+  CHAT_AGENT_TOOL_NAMES: new Set(['shell']),
+  getAgentToolSchemas: async () => [],
+  sandboxEnforces: () => true,
+  memoryDigestNow: () => '',
+  refreshMemoryDigest: async () => '',
+}))
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceStore: { getState: () => ({ serviceHub: h.serviceHub }) },
@@ -70,11 +85,40 @@ describe('CustomChatTransport smart-tool-routing freeze', () => {
   beforeEach(() => {
     h.disabledTools = []
     h.servers = ['srv']
+    mcpService.getTools.mockReset()
+    mcpService.getTools.mockResolvedValue([
+      { name: 'tool_a', description: '', inputSchema: {}, server: 'srv' },
+    ])
     h.getRelevantTools.mockReset()
     h.getRelevantTools.mockResolvedValue([
       { name: 'tool_a', description: '', inputSchema: {}, server: 'srv' },
     ])
     transport = new CustomChatTransport('sys', 'thread-1')
+  })
+
+  it('refreshes full ownership only when the routed set is invalidated', async () => {
+    await transport.refreshTools()
+    expect(mcpService.getTools).toHaveBeenCalledTimes(1)
+    await transport.refreshTools()
+    await transport.refreshTools()
+    expect(mcpService.getTools).toHaveBeenCalledTimes(1)
+    h.disabledTools = ['srv::newly-disabled']
+    await transport.refreshTools()
+    expect(mcpService.getTools).toHaveBeenCalledTimes(2)
+    h.servers = ['srv', 'other']
+    await transport.refreshTools()
+    expect(mcpService.getTools).toHaveBeenCalledTimes(3)
+  })
+
+  it('shares the collision discovery with orchestrator all-tools fallback', async () => {
+    h.getRelevantTools.mockImplementationOnce(async (_message, service) => {
+      const first = await service.getTools()
+      const second = await service.getTools()
+      expect(first).toBe(second)
+      return first
+    })
+    await transport.refreshTools()
+    expect(mcpService.getTools).toHaveBeenCalledTimes(1)
   })
 
   it('routes once and freezes the set across subsequent turns', async () => {
@@ -109,4 +153,27 @@ describe('CustomChatTransport smart-tool-routing freeze', () => {
     await transport.refreshTools()
     expect(h.getRelevantTools).toHaveBeenCalledTimes(2)
   })
+
+  it.each([false, true])(
+    'withholds a routed tool when an omitted colliding rival is disabled=%s',
+    async (disableRival) => {
+      const routed = { name: 'read', server: 'srv', description: 'routed', inputSchema: {} }
+      const safe = { name: 'write', server: 'srv', description: 'safe', inputSchema: {} }
+      const rival = { ...routed, server: 'other', description: 'not routed' }
+      h.servers = ['srv', 'other']
+      h.disabledTools = disableRival ? ['other::read'] : []
+      mcpService.getTools.mockResolvedValue([routed, rival, safe])
+      h.getRelevantTools.mockResolvedValue([routed, safe])
+
+      transport.setLastUserMessage('use srv only')
+      await transport.refreshTools()
+
+      expect(h.getRelevantTools).toHaveBeenCalledTimes(1)
+      expect(mcpService.getTools).toHaveBeenCalled()
+      expect(Object.keys(transport.getTools())).toEqual(['write'])
+      expect(transport.getMcpServerForTool('read')).toBeUndefined()
+      expect(transport.getMcpServerForTool('write')).toBe('srv')
+    }
+  )
+
 })
