@@ -1965,6 +1965,18 @@ describe('ThreadDetail route', () => {
       expect(shell.execute).not.toHaveBeenCalled()
     })
 
+    it.each(['todo', 'ask'])('refuses unadvertised %s before a prompt or runtime side effect', async (name) => {
+      h.appStateState.mcpToolNames = new Set()
+      h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedClientTool = () => false
+      renderComponent()
+      const toolCall = call('missing-client', name, name === 'todo' ? { op: 'init', items: ['must not run'] } : { questions: [{ id: 'q', question: 'No card', options: [{ label: 'A' }, { label: 'B' }] }] })
+      await arrive(toolCall)
+      expect(await dispatch(toolCall)).toMatchObject({ isError: true, output: expect.stringContaining('not advertised') })
+      expect(conversationAskCard('thread-1')).toBeNull()
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).not.toHaveBeenCalled()
+    })
+
     it('freezes one grant per toolCallId across arrival and dispatch (no orphan prompt after revoke)', async () => {
       h.appStateState.mcpToolNames = new Set()
       h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedNativeTool = () => true
