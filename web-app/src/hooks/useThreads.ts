@@ -131,8 +131,9 @@ const cleanupThreadArtifacts = (threadId: string, thread?: Thread) => {
 // A native delete can fail after local state was already cleared (e.g. a
 // Windows file lock); silently dropping that leaves the thread gone from the
 // UI now but back on the next launch. Restore it and surface the failure
-// instead. Grants stay pruned: the restored thread is default-deny until the
-// user consents again.
+// instead. Grants stay pruned in-process: the restored thread is default-deny
+// for the rest of this session (the on-disk grant is untouched and becomes
+// loadable again after a restart, the pre-delete status quo).
 const deleteThreadOnDisk = (threadId: string, thread?: Thread) => {
   // .then(() => ...) routes synchronous throws and non-promise returns (test
   // doubles) into the same catch as an async rejection.
@@ -141,15 +142,19 @@ const deleteThreadOnDisk = (threadId: string, thread?: Thread) => {
     .catch(
     (error) => {
       console.warn(`[Threads] Failed to delete thread ${threadId} from storage:`, error)
+      let restoredThread = false
       if (thread) {
         // The pre-delete record may still carry a consent grant in its
-        // metadata, which the capabilities getter falls back to. Strip it: the
-        // restored thread is default-deny until the user consents again.
+        // metadata, which the capabilities getter falls back to. Strip it so
+        // the restored thread is default-deny for this session.
         const { conversationCapabilities: _staleGrant, ...metadata } = thread.metadata ?? {}
         void _staleGrant
         const restored: Thread = { ...thread, metadata }
         useThreads.setState((state) => {
+          // A recreated/duplicate record keeps precedence (e.g. a second
+          // delete attempt whose first already succeeded).
           if (state.threads[threadId]) return state
+          restoredThread = true
           const threads = { ...state.threads, [threadId]: restored }
           return {
             threads,
@@ -162,10 +167,12 @@ const deleteThreadOnDisk = (threadId: string, thread?: Thread) => {
       }
       // Honest copy: cleanupThreadArtifacts ran before the native delete
       // (inherited ordering), so attachments index / cached state may already
-      // be gone; only the conversation itself is restored.
+      // be gone; only the conversation record itself is restored, and only
+      // when there is actually something to restore.
       toast.error('Failed to delete chat', {
-        description:
-          'It could not be removed from storage. The conversation was restored, but some auxiliary data (attachment index, cache) may have been cleaned up.',
+        description: restoredThread
+          ? 'It could not be removed from storage. The conversation was restored, but some auxiliary data (attachment index, cache) may have been cleaned up.'
+          : 'It could not be fully removed from storage.',
       })
     }
   )
@@ -485,8 +492,11 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         // thread already being deleted. The record (and its metadata grant,
         // which the getter falls back to) stays visible until reconcile, so
         // overlay defaults rather than merely pruning the entry. On failure
-        // the thread survives but stays default-deny until the user consents
-        // again; on success reconcile drops the entry with the record.
+        // the thread survives but stays default-deny for the rest of this
+        // session (its on-disk grant is untouched); on success reconcile
+        // drops the entry with the record. The overlay deliberately stays in
+        // the map even if the id later leaves a fetched list — setThreads
+        // must not prune it (see its deny-protection asymmetry).
         capabilityRequests.delete(thread.id)
         effectiveCapabilities.set(thread.id, defaultConversationCapabilities())
         await getServiceHub().threads().deleteThread(thread.id)

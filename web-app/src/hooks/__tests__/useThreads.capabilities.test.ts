@@ -377,6 +377,22 @@ describe('useThreads conversation capabilities', () => {
     useThreads.setState({ threads: { chat: recreated } })
     await vi.waitFor(() => expect(toastError).toHaveBeenCalled())
     expect(useThreads.getState().threads.chat).toBe(recreated)
+    // Nothing was restored (the recreated record kept precedence), so the
+    // failure copy must not claim a restoration.
+    expect(toastError.mock.calls[0][1]?.description).not.toContain('restored')
+  })
+
+  it('a failed second delete of an already-gone thread does not claim a restore', async () => {
+    useThreads.getState().deleteThread('chat')
+    // Let the first (successful) native call settle before arming the failure.
+    await vi.waitFor(() => expect(deleteNative).toHaveBeenCalledTimes(1))
+    deleteNative.mockRejectedValueOnce(new Error('not found'))
+    // Second click: the record is already gone from state, so there is no
+    // snapshot to restore and the toast must not say there was.
+    useThreads.getState().deleteThread('chat')
+    await vi.waitFor(() => expect(toastError).toHaveBeenCalled())
+    expect(useThreads.getState().threads.chat).toBeUndefined()
+    expect(toastError.mock.calls[0][1]?.description).not.toContain('restored')
   })
 
 })
