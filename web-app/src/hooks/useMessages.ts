@@ -13,14 +13,14 @@ type MessageState = {
 }
 
 // A failed head stays queued. Later edits/deletes must never overtake it.
-type WriteQueue = { jobs: Array<() => Promise<unknown>>; running?: Promise<void>; error?: unknown; reported?: boolean }
+type WriteQueue = { jobs: Array<() => Promise<unknown>>; running?: Promise<void>; error?: unknown }
 const writes = new Map<string, WriteQueue>()
 function drain(queue: WriteQueue): Promise<void> {
   if (queue.running) return queue.running
   queue.running = (async () => {
     while (queue.jobs.length) {
-      try { await queue.jobs[0](); queue.jobs.shift(); queue.error = undefined; queue.reported = false }
-      catch (error) { queue.error = error; queue.reported = false; throw error }
+      try { await queue.jobs[0](); queue.jobs.shift(); queue.error = undefined }
+      catch (error) { queue.error = error; throw error }
     }
   })().finally(() => { queue.running = undefined })
   void queue.running.catch(() => {})
@@ -32,14 +32,13 @@ function enqueue(threadId: string, job: () => Promise<unknown>) {
   queue.jobs.push(job)
   if (!queue.error) void drain(queue).catch((error) => console.error('Failed to persist message:', error))
 }
-/** Explicit close retry retries failed heads, preserving create/update/delete order. */
+/**
+ * Explicit close retry: drain FIRST, retrying failed heads in order, and throw
+ * only what still fails now. A past background failure whose storage has since
+ * recovered must not fail the close that would have drained it.
+ */
 export async function flushMessageWrites(): Promise<void> {
-  for (const queue of writes.values()) {
-    if (queue.error && !queue.reported) { queue.reported = true; throw queue.error }
-  }
-  const results = await Promise.allSettled([...writes.values()].map(async (queue) => {
-    try { await drain(queue) } catch (error) { queue.reported = true; throw error }
-  }))
+  const results = await Promise.allSettled([...writes.values()].map((queue) => drain(queue)))
   const failed = results.find((result) => result.status === 'rejected')
   if (failed?.status === 'rejected') throw failed.reason
   if ([...writes.values()].some((queue) => queue.jobs.length || queue.running)) await flushMessageWrites()

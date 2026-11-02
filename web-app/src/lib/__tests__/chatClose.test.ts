@@ -69,7 +69,9 @@ describe('ordinary Chat close barrier using installed SDK', () => {
     expect([...disk.messages.keys()].sort()).toEqual(['a-answer', 'b-answer'])
   })
   it('failed write prevents close, preserves later modify/delete order and retries', async () => {
-    disk.create.mockRejectedValueOnce(new Error('disk full'))
+    // Fails on the background attempt AND on the close's drain-first retry;
+    // a close only fails while storage is still failing now.
+    disk.create.mockRejectedValueOnce(new Error('disk full')).mockRejectedValueOnce(new Error('disk full'))
     await partial('a'); await quiesceChats()
     useMessages.getState().updateMessage({ ...useMessages.getState().getMessages('a')[0], metadata: { latest: true } })
     await expect(flushMessageWrites()).rejects.toThrow('disk full')

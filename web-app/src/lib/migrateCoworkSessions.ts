@@ -65,16 +65,26 @@ function canonical(v: unknown): string {
   )
 }
 
+/**
+ * Deletion intent is load-bearing: an unreadable journal must never read as
+ * "nothing was deleted", or merging the untouched legacy blob resurrects
+ * sessions the user deleted. Throws on an unreadable or invalid journal so
+ * every caller fails closed (migration stays `partial` and retries; the load
+ * path skips the legacy-blob merge). A missing journal is an empty set.
+ */
 export async function readDeletedIds(invoke: Invoke): Promise<Set<string>> {
-  try {
-    const raw = await invoke<string | null>('settings_get', {
-      key: COWORK_DELETED_IDS_KEY,
-    })
-    const parsed = raw ? JSON.parse(raw) : []
-    return new Set(Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [])
-  } catch {
-    return new Set()
+  const raw = await invoke<string | null>('settings_get', {
+    key: COWORK_DELETED_IDS_KEY,
+  })
+  // Only an absent key is an empty journal. An empty string is NOT: every
+  // writer stores at least '[]', so '' can only be a damaged value, and
+  // reading it as empty could resurrect deleted sessions (the write path
+  // additionally must never replace it with a fresh empty set).
+  const parsed: unknown = raw == null ? [] : JSON.parse(raw)
+  if (!Array.isArray(parsed) || !parsed.every((id) => typeof id === 'string')) {
+    throw new Error('Invalid Cowork deletion journal: expected an array of strings')
   }
+  return new Set(parsed)
 }
 
 const toErrorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -160,14 +170,15 @@ export async function migrateCoworkSessionsToThreads(
     const sessions = readCoworkSessions(
       await invoke<string | null>('settings_get', { key: CODE_SESSIONS_KEY })
     )
-    const deleted = await readDeletedIds(invoke)
-    const candidates = sessions.filter(
-      (s) => !isEmptySession(s) && !deleted.has(s.id)
-    )
+    const nonEmpty = sessions.filter((s) => !isEmptySession(s))
     result.skipped = sessions.filter(isEmptySession).map((s) => s.id)
 
-    if (candidates.length === 0) {
-      // Nothing was ever written (stable never enabled Cowork): just record it.
+    if (nonEmpty.length === 0) {
+      // Nothing was ever written (stable never enabled Cowork): just record
+      // it. Deliberately decided BEFORE the strict journal read: with nothing
+      // to migrate there is nothing a corrupt journal could resurrect, and
+      // failing here would wrongly keep the migration partial forever
+      // (blocking deletions and the sweep) for users with no legacy data.
       await invoke('settings_set', { key: COWORK_MIGRATION_FLAG_KEY, value: 'true' })
       return { ...result, status: 'nothing-to-migrate' }
     }
@@ -177,6 +188,33 @@ export async function migrateCoworkSessionsToThreads(
     const existing = new Map<string, StoredThread>()
     for (const t of await invoke<StoredThread[]>('list_threads')) {
       if (typeof t?.id === 'string') existing.set(t.id, t)
+    }
+
+    // Already-committed sessions need no deletion intent either (skipping a
+    // copy can never resurrect anything). Deciding them BEFORE the strict
+    // journal read matters for one crash window: a previous launch that
+    // copied every session but died before writing the flag must settle here
+    // even with a corrupt journal, or deletions stay blocked with no warning.
+    const alreadyCommitted = (s: CoworkSession) =>
+      existing.get(s.id)?.metadata?.mode === 'cowork'
+    const uncommitted = nonEmpty.filter((s) => !alreadyCommitted(s))
+    result.skipped.push(...nonEmpty.filter(alreadyCommitted).map((s) => s.id))
+
+    if (uncommitted.length === 0) {
+      await invoke('settings_set', { key: COWORK_MIGRATION_FLAG_KEY, value: 'true' })
+      return result
+    }
+
+    // Uncommitted candidates exist, so deletion intent is load-bearing from
+    // here on: the strict read throws on a corrupt journal and the run stays
+    // partial (fail closed; the corrupt bytes are never rewritten).
+    const deleted = await readDeletedIds(invoke)
+    const candidates = uncommitted.filter((s) => !deleted.has(s.id))
+
+    if (candidates.length === 0) {
+      // Every uncommitted session was deliberately deleted; nothing to copy.
+      await invoke('settings_set', { key: COWORK_MIGRATION_FLAG_KEY, value: 'true' })
+      return { ...result, status: 'nothing-to-migrate' }
     }
 
     for (const session of candidates) {

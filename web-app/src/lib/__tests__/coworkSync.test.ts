@@ -66,6 +66,8 @@ const agentTools = vi.hoisted(() => ({
   stopAgentSessionMonitors: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('@/lib/agentTools', () => agentTools)
+const sonner = vi.hoisted(() => ({ warning: vi.fn(), error: vi.fn() }))
+vi.mock('sonner', () => ({ toast: sonner }))
 const closeWindow = vi.hoisted(() => ({ callback: null as null | ((event: { preventDefault: () => void }) => Promise<void>) }))
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({ onCloseRequested: vi.fn(async (callback) => {
@@ -83,10 +85,11 @@ import {
   startCoworkSync,
   flushCowork,
   flushCoworkDeletes,
+  flushCoworkStartupWarnings,
   isCoworkMigrationDone,
   __resetCoworkSyncForTests,
 } from '../coworkSync'
-import { CODE_SESSIONS_KEY, COWORK_MIGRATION_FLAG_KEY } from '../migrateCoworkSessions'
+import { CODE_SESSIONS_KEY, COWORK_DELETED_IDS_KEY, COWORK_MIGRATION_FLAG_KEY } from '../migrateCoworkSessions'
 
 const legacy = (id: string): Json => ({
   id,
@@ -109,6 +112,8 @@ describe('coworkSync startup', () => {
     backend.log.length = 0
     agentTools.cleanupThreadWorkspace.mockClear()
     agentTools.sweepSessionWorkspaces.mockClear()
+    sonner.warning.mockClear()
+    sonner.error.mockClear()
     __resetCoworkSyncForTests()
     useCoworkSessions.setState({ sessions: [], currentId: null })
     useThreads.setState({ threads: {} })
@@ -234,19 +239,31 @@ describe('coworkSync startup', () => {
     unregister()
   })
 
-  it('native close handler prevents destroy on failed ordinary write and second close retries', async () => {
+  it('native close drains a recovered background write on the FIRST close instead of failing it', async () => {
     await startCoworkSync()
     chatStorage.create.mockRejectedValueOnce(new Error('disk full'))
+    useMessages.getState().addMessage({ id: 'partial', thread_id: 'ordinary', content: [] } as any)
+    await Promise.resolve(); await Promise.resolve()
+    // Storage recovered after the background failure: the close must retry the
+    // queued head and succeed, not re-throw the stale recorded error.
+    const first = vi.fn()
+    await closeWindow.callback!({ preventDefault: first })
+    expect(first).not.toHaveBeenCalled()
+    expect(chatStorage.create).toHaveBeenCalledTimes(2)
+  })
+
+  it('native close handler prevents destroy while the write still fails, then a later close retries', async () => {
+    await startCoworkSync()
+    chatStorage.create.mockRejectedValue(new Error('disk full'))
     useMessages.getState().addMessage({ id: 'partial', thread_id: 'ordinary', content: [] } as any)
     await Promise.resolve(); await Promise.resolve()
     const first = vi.fn()
     await closeWindow.callback!({ preventDefault: first })
     expect(first).toHaveBeenCalledOnce()
+    chatStorage.create.mockResolvedValue(undefined)
     const second = vi.fn()
     await closeWindow.callback!({ preventDefault: second })
     expect(second).not.toHaveBeenCalled()
-    await flushMessageWrites()
-    expect(chatStorage.create).toHaveBeenCalledTimes(2)
   })
 
   it.each([true, false])('project reassignment survives later writes and project deletion (move=%s)', async (move) => {
@@ -355,6 +372,112 @@ describe('coworkSync startup', () => {
     const ids = useCoworkSessions.getState().sessions.map((s) => s.id)
     expect(ids).toContain(early)
     expect(ids).toContain('a')
+  })
+
+  it('warns the user persistently on every launch while the deletion journal is unreadable', async () => {
+    backend.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    backend.settings.set(
+      CODE_SESSIONS_KEY,
+      JSON.stringify({ state: { sessions: [legacy('hidden')] }, version: 1 })
+    )
+    await startCoworkSync()
+    // Fail closed: the legacy session stays hidden, never auto-resurrected,
+    // and the corrupt journal bytes are left exactly as they were.
+    expect(useCoworkSessions.getState().sessions.some((s) => s.id === 'hidden')).toBe(false)
+    expect(backend.settings.get(COWORK_DELETED_IDS_KEY)).toBe('{corrupt')
+    expect(backend.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBeUndefined()
+    // ...but never silently: a persistent warning with recovery instructions.
+    expect(sonner.warning).toHaveBeenCalledTimes(1)
+    expect(sonner.warning.mock.calls[0][1]).toMatchObject({ duration: Infinity })
+    expect(sonner.warning.mock.calls[0][1].description).toContain('cowork_deleted_ids')
+    // The blocked-deletion claim covers ALL Cowork conversations, not only
+    // imported ones: every removal records intent while migration is unsettled.
+    expect(sonner.warning.mock.calls[0][1].description).toContain('any Cowork conversation')
+    // Manual recovery must say to quit first: the settings store rewrites the
+    // whole file from memory (debounced + exit flush), clobbering live edits.
+    expect(sonner.warning.mock.calls[0][1].description).toContain('quit Jan completely')
+    // The warning repeats on the next launch until the journal is repaired.
+    __resetCoworkSyncForTests()
+    useCoworkSessions.setState({ sessions: [], currentId: null })
+    await startCoworkSync()
+    expect(sonner.warning).toHaveBeenCalledTimes(2)
+    // A healthy journal raises no warning and merges the blob again.
+    backend.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify([]))
+    __resetCoworkSyncForTests()
+    useCoworkSessions.setState({ sessions: [], currentId: null })
+    await startCoworkSync()
+    expect(sonner.warning).toHaveBeenCalledTimes(2)
+    expect(useCoworkSessions.getState().sessions.some((s) => s.id === 'hidden')).toBe(true)
+  })
+
+  it('a corrupt journal with nothing to migrate raises no warning and blocks nothing', async () => {
+    backend.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    await startCoworkSync()
+    // No legacy data ⇒ the corrupt journal protects nothing: no false
+    // warning, migration settles, and normal deletion flows stay unblocked.
+    expect(sonner.warning).not.toHaveBeenCalled()
+    expect(backend.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
+    expect(isCoworkMigrationDone()).toBe(true)
+    const id = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().commitTurns(id, [{ role: 'user', content: 'x' }], [], [])
+    await flushCowork()
+    useCoworkSessions.getState().deleteSession(id)
+    await vi.waitFor(() => expect(backend.threads.has(id)).toBe(false))
+    // The corrupt value itself is still never rewritten.
+    expect(backend.settings.get(COWORK_DELETED_IDS_KEY)).toBe('{corrupt')
+  })
+
+  it('the post-mount flush re-raises the journal warning with the same id, and only while it applies', async () => {
+    // Before any start (or after reset) there is nothing to flush.
+    flushCoworkStartupWarnings()
+    expect(sonner.warning).not.toHaveBeenCalled()
+    backend.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    // A mergeable legacy session must exist: the journal (and therefore the
+    // warning) only matters when there is something it could protect.
+    backend.settings.set(
+      CODE_SESSIONS_KEY,
+      JSON.stringify({ state: { sessions: [legacy('pending')] }, version: 1 })
+    )
+    await startCoworkSync()
+    expect(sonner.warning).toHaveBeenCalledTimes(1)
+    // The Toaster host mounts after startup gates: the flush re-raises the
+    // same stable-id warning (sonner drops the pre-mount one).
+    flushCoworkStartupWarnings()
+    expect(sonner.warning).toHaveBeenCalledTimes(2)
+    expect(sonner.warning.mock.calls[1][1].id).toBe(sonner.warning.mock.calls[0][1].id)
+    // A later healthy start clears the pending warning: flush becomes a no-op.
+    backend.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify([]))
+    __resetCoworkSyncForTests()
+    useCoworkSessions.setState({ sessions: [], currentId: null })
+    await startCoworkSync()
+    flushCoworkStartupWarnings()
+    expect(sonner.warning).toHaveBeenCalledTimes(2)
+  })
+
+  it('the sandbox sweep keep-list includes sessions created before hydration finished', async () => {
+    backend.settings.set(COWORK_MIGRATION_FLAG_KEY, 'true')
+    backend.threads.set('committed', {
+      id: 'committed',
+      object: 'thread',
+      title: 'Committed',
+      assistants: [],
+      created: 1,
+      updated: 1,
+      metadata: { mode: 'cowork', folder: null },
+    })
+    backend.extras.set('committed', {
+      version: 1,
+      turns: [{ role: 'user', content: 'hi' }],
+      messages: [],
+    })
+    // A session begun before hydration finished (e.g. a failed first start
+    // retried mid-run) has a live sandbox the sweep must keep.
+    const early = useCoworkSessions.getState().createSession()
+    await startCoworkSync()
+    expect(agentTools.sweepSessionWorkspaces).toHaveBeenCalledTimes(1)
+    const keep = agentTools.sweepSessionWorkspaces.mock.calls[0][0] as string[]
+    expect(keep).toContain('committed')
+    expect(keep).toContain(early)
   })
   it('a sandbox cleanup failure does not restore a durably deleted session', async () => {
     await startCoworkSync()

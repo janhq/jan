@@ -662,4 +662,116 @@ describe('loadCoworkSessions', () => {
     b.settings.set(COWORK_CURRENT_ID_KEY, 'zzz')
     expect((await loadCoworkSessions(b.invoke, { migrationSettled: true })).currentId).toBeNull()
   })
+
+  it.each(['{corrupt', JSON.stringify([42])])(
+    'a corrupt deletion journal (%j) skips the legacy merge and overwrites nothing',
+    async (journal) => {
+      commit('committed')
+      b.settings.set(COWORK_DELETED_IDS_KEY, journal)
+      b.settings.set(
+        CODE_SESSIONS_KEY,
+        JSON.stringify({ state: { sessions: [session('was-deleted')] }, version: 1 })
+      )
+      const r = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+      // Deletion intent is unreadable, so the blob must not be merged (fail
+      // closed against resurrection) — but committed threads still load.
+      expect(r.sessions.map((s) => s.id)).toEqual(['committed'])
+      expect(r.legacyIds.size).toBe(0)
+      // The unreadable journal itself is never replaced or rewritten by a load.
+      expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe(journal)
+      // The hidden state is surfaced to the caller, never swallowed silently.
+      expect(r.deletionJournalError).toBeTruthy()
+    }
+  )
+
+  it('does not report a journal error on a healthy load', async () => {
+    commit('committed')
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(r.deletionJournalError).toBeUndefined()
+  })
+
+  it.each([
+    ['no legacy blob', undefined],
+    [
+      'nothing mergeable in the blob',
+      // Already committed + empty: nothing the journal could protect.
+      JSON.stringify({
+        state: { sessions: [session('committed'), session('empty', { turns: [], messages: [] })] },
+        version: 1,
+      }),
+    ],
+  ])('a corrupt journal with %s raises no false journal error', async (_name, blob) => {
+    commit('committed')
+    b.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    if (blob) b.settings.set(CODE_SESSIONS_KEY, blob)
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(r.deletionJournalError).toBeUndefined()
+    expect(r.sessions.map((s) => s.id)).toEqual(['committed'])
+    expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe('{corrupt')
+  })
+})
+
+describe('sidecar version/shape containment', () => {
+  let b: ReturnType<typeof makeBackend>
+  beforeEach(() => {
+    b = makeBackend()
+  })
+  const seed = (id: string, sidecar: any) => {
+    b.threads.set(id, { ...sessionToThreadRecord(session(id)) })
+    b.extras.set(id, JSON.parse(JSON.stringify(sidecar)))
+  }
+  /** Load, then try to touch (rename + /clear) the session through write-through. */
+  const loadAndTouch = async (id: string) => {
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: true })
+    const s = r.sessions.find((x) => x.id === id)!
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 1 })
+    p.adopt(r.threads)
+    p.schedule({ ...s, title: 'renamed', turns: [], messages: [], updated: Date.now() })
+    await p.flush()
+    return s
+  }
+
+  it('a future-version sidecar loads read-only and its bytes survive a touch', async () => {
+    const v2 = { version: 2, turns: [], messages: [], future: { rich: true } }
+    seed('s', v2)
+    const s = await loadAndTouch('s')
+    expect(s.unavailable).toBe('unreadable-sidecar')
+    expect(b.extras.get('s')).toEqual(v2)
+    expect(b.log.filter((l) => l.startsWith('write_thread_extra'))).toHaveLength(0)
+  })
+
+  it.each([
+    ['null turns', { version: 1, turns: null, messages: [] }],
+    ['non-array messages', { version: 1, turns: [], messages: 'garbage' }],
+    ['missing version', { turns: [{ role: 'user', content: 'hi' }], messages: [] }],
+  ])('a malformed sidecar (%s) is contained read-only, bytes preserved', async (_name, sidecar) => {
+    seed('s', sidecar)
+    const s = await loadAndTouch('s')
+    expect(s.unavailable).toBe('unreadable-sidecar')
+    expect(b.extras.get('s')).toEqual(sidecar)
+    expect(b.log.filter((l) => l.startsWith('write_thread_extra'))).toHaveLength(0)
+  })
+
+  it('a valid v1 sidecar with rich optional data loads writable and an edit erases none of it', async () => {
+    const rich = {
+      version: 1,
+      turns: [{ role: 'user', content: 'hi' }],
+      messages: [{ id: 'm', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+      history: [{ role: 'user', content: 'old' }],
+      subagents: [{ id: 'sub' }],
+      lastUsage: { inputTokens: 5 },
+      todos: [{ id: 't', text: 'todo' }],
+    }
+    seed('s', rich)
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: true })
+    const s = r.sessions.find((x) => x.id === 's')!
+    expect(s.unavailable).toBeUndefined()
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 1 })
+    p.adopt(r.threads)
+    p.schedule({ ...s, title: 'renamed' })
+    await p.flush()
+    // The touch wrote through and the rich payload round-tripped intact.
+    expect(b.threads.get('s')!.title).toBe('renamed')
+    expect(b.extras.get('s')).toEqual(rich)
+  })
 })

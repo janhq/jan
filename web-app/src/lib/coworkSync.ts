@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import { quiesceChats, resumeChatsAfterPreventedClose, withChatCloseDeadline } from '@/lib/chatClose'
 import { flushMessageWrites } from '@/hooks/useMessages'
 import { quiesceCoworkRuns, resumeCoworkAfterPreventedClose, __resetCoworkRunCloseForTests } from '@/hooks/useCoworkRun'
@@ -37,6 +38,18 @@ let startPromise: Promise<void> | null = null
 let migrationSettled = false
 const pendingDeletes = new Set<Promise<void>>()
 let deleteFailure: unknown = null
+let pendingStartupWarning: (() => void) | null = null
+
+/**
+ * Re-raise startup warnings once a sonner `<Toaster>` is mounted. Sonner drops
+ * toasts created before its Toaster subscribes, and startup warnings are
+ * raised while the providers still gate rendering on startup itself — so the
+ * Toaster host calls this from its mount effect. Idempotent: warnings use
+ * stable toast ids, so a re-fire updates rather than duplicates.
+ */
+export function flushCoworkStartupWarnings(): void {
+  pendingStartupWarning?.()
+}
 
 const getInvoke = (): Invoke => {
   const core = getServiceHub().core()
@@ -119,6 +132,38 @@ async function doStart() {
   // 2. Load. A partial migration keeps legacy-only sessions visible.
   const loaded = await loadCoworkSessions(invoke, { migrationSettled })
 
+  // Failing closed on an unreadable deletion journal must not hide data
+  // silently: legacy sessions stay hidden and their deletion stays blocked on
+  // EVERY launch until the journal is repaired, so warn persistently on every
+  // launch with manual recovery instructions. Never auto-repair, quarantine,
+  // or drop the journal: rewriting it could resurrect sessions the user
+  // deleted. The corrupt value itself is left byte-for-byte untouched.
+  if (loaded.deletionJournalError) {
+    const warn = () =>
+      toast.warning('Some imported Cowork conversations are hidden', {
+        id: 'cowork-deletion-journal-unreadable',
+        duration: Infinity,
+        description:
+          "Jan can't read its deletion record, so conversations imported from an " +
+          'older version stay hidden rather than risk restoring ones you already ' +
+          'deleted, and deleting any Cowork conversation is temporarily blocked. ' +
+          'Your data is untouched. To recover: quit Jan completely first — Jan ' +
+          'rewrites settings.json from memory while it runs, which would undo ' +
+          "your edit — then fix or remove the 'cowork_deleted_ids' entry in " +
+          'settings.json. Removing it restores every imported conversation, ' +
+          'including any you had deleted.',
+      })
+    // This startup is what gates provider render, so the Toaster is usually
+    // NOT mounted yet, and sonner drops toasts created before its <Toaster>
+    // subscribes. Fire now for any already-mounted toaster (e.g. a retried
+    // start) AND keep the warning for the post-mount flush; the stable id
+    // makes double delivery idempotent (it updates, never duplicates).
+    pendingStartupWarning = warn
+    warn()
+  } else {
+    pendingStartupWarning = null
+  }
+
   const p = createCoworkPersistence(invoke, {
     onThreadWritten: upsertThread,
     onThreadRemoved: removeThread,
@@ -154,9 +199,15 @@ async function doStart() {
   }
 
   // 4. Sandboxes of conversations that no longer exist. Only once the migration
-  //    settled: while it is partial the live-id list is incomplete.
+  //    settled: while it is partial the live-id list is incomplete. The
+  //    keep-list is the post-merge store state, not just `loaded`: a session
+  //    created before hydration finished (merged as `early` above — e.g. a
+  //    failed first start retried after the user began a run) has a live
+  //    sandbox that the sweep must not delete.
   if (migrationSettled && loaded.sessions.length > 0) {
-    void sweepSessionWorkspaces(loaded.sessions.map((s) => s.id))
+    void sweepSessionWorkspaces(
+      useCoworkSessions.getState().sessions.map((s) => s.id)
+    )
   }
 
   // 5. Write-through from here on.
@@ -241,4 +292,5 @@ export function __resetCoworkSyncForTests() {
   migrationSettled = false
   pendingDeletes.clear()
   deleteFailure = null
+  pendingStartupWarning = null
 }

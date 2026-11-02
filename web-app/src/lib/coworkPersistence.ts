@@ -132,6 +132,24 @@ export function sessionFromThread(
   }
 }
 
+/**
+ * Only consume a sidecar whose shape is the one this build writes
+ * (`sessionToSidecar`: `version: 1` with array `turns`/`messages` — every
+ * sidecar writer since the format exists has written both arrays). Anything
+ * else — a newer format from a future build after a downgrade, or a malformed
+ * v1 — must NOT load as an empty-but-writable session: the next touch (rename,
+ * `updated` bump, /clear) would serialize an empty v1 snapshot over the
+ * on-disk bytes. Such sessions are contained as `unreadable-sidecar`: shown
+ * read-only, never written back, bytes preserved.
+ */
+function isConsumableSidecar(side: Partial<CoworkSidecar>): boolean {
+  return (
+    side.version === 1 &&
+    Array.isArray(side.turns) &&
+    Array.isArray(side.messages)
+  )
+}
+
 export type LoadedCoworkSessions = {
   sessions: CoworkSession[]
   currentId: string | null
@@ -139,6 +157,13 @@ export type LoadedCoworkSessions = {
   legacyIds: Set<string>
   /** Thread records of the sessions that are already persisted. */
   threads: Json[]
+  /**
+   * Set when the deletion journal was unreadable and the legacy-blob merge was
+   * therefore skipped (fail closed against resurrecting deleted sessions).
+   * The caller must surface this: it hides legacy sessions on every launch
+   * until the journal is repaired, and is silent data-hiding otherwise.
+   */
+  deletionJournalError?: string
 }
 
 /**
@@ -167,9 +192,14 @@ export async function loadCoworkSessions(
           threadId: t.id,
           name: COWORK_SIDECAR,
         })
-        return side
-          ? sessionFromThread(t, side)
-          : sessionFromThread(t, null, 'missing-sidecar')
+        if (!side) return sessionFromThread(t, null, 'missing-sidecar')
+        if (!isConsumableSidecar(side)) {
+          console.warn(
+            `[cowork] sidecar for ${t.id} has an unknown version or shape; showing it read-only`
+          )
+          return sessionFromThread(t, null, 'unreadable-sidecar')
+        }
+        return sessionFromThread(t, side)
       } catch (e) {
         console.warn(`[cowork] unreadable sidecar for ${t.id}:`, e)
         return sessionFromThread(t, null, 'unreadable-sidecar')
@@ -178,24 +208,46 @@ export async function loadCoworkSessions(
   )
 
   const legacyIds = new Set<string>()
+  let deletionJournalError: string | undefined
   if (!opts.migrationSettled) {
     try {
       const have = new Set(sessions.map((s) => s.id))
-      const deleted = await readDeletedIds(invoke)
       const blob = readCoworkSessions(
         await invoke<string | null>('settings_get', { key: CODE_SESSIONS_KEY })
       )
-      for (const s of blob) {
-        if (have.has(s.id) || deleted.has(s.id) || isEmpty(s)) continue
-        if (chatIds.has(s.id)) {
-          sessions.push({ ...s, unavailable: 'id-collision' })
-        } else {
-          sessions.push(s)
-          legacyIds.add(s.id)
+      const mergeable = blob.filter((s) => !have.has(s.id) && !isEmpty(s))
+      // The journal is read (strictly) only when there is actually something
+      // it could protect: with nothing mergeable, a corrupt journal must not
+      // raise a false warning on every launch. With deletion intent
+      // unreadable AND mergeable sessions present, the merge is skipped
+      // entirely (fail closed against resurrection; committed threads still
+      // load, the corrupt bytes are never rewritten) and the state is
+      // reported to the caller so it is shown to the user, never hidden.
+      if (mergeable.length > 0) {
+        let deleted: Set<string> | null = null
+        try {
+          deleted = await readDeletedIds(invoke)
+        } catch (e) {
+          deletionJournalError = e instanceof Error ? e.message : String(e)
+          console.warn(
+            '[cowork] deletion journal unreadable; skipping the legacy sessions blob:',
+            e
+          )
+        }
+        if (deleted) {
+          for (const s of mergeable) {
+            if (deleted.has(s.id)) continue
+            if (chatIds.has(s.id)) {
+              sessions.push({ ...s, unavailable: 'id-collision' })
+            } else {
+              sessions.push(s)
+              legacyIds.add(s.id)
+            }
+          }
         }
       }
     } catch (e) {
-      console.warn('[cowork] could not read the legacy sessions blob:', e)
+      console.warn('[cowork] skipping the legacy sessions blob:', e)
     }
   }
 
@@ -211,19 +263,13 @@ export async function loadCoworkSessions(
     /* resume is best effort */
   }
 
-  return { sessions, currentId, legacyIds, threads: coworkThreads }
-}
-
-/** Journal mutations must never replace unreadable deletion intent with an empty set. */
-async function readDeletedIdsStrict(invoke: Invoke): Promise<Set<string>> {
-  const raw = await invoke<string | null>('settings_get', {
-    key: COWORK_DELETED_IDS_KEY,
-  })
-  const parsed: unknown = raw == null ? [] : JSON.parse(raw)
-  if (!Array.isArray(parsed) || !parsed.every((id) => typeof id === 'string')) {
-    throw new Error('Invalid Cowork deletion journal: expected an array of strings')
+  return {
+    sessions,
+    currentId,
+    legacyIds,
+    threads: coworkThreads,
+    ...(deletionJournalError !== undefined && { deletionJournalError }),
   }
-  return new Set(parsed)
 }
 
 export type CoworkPersistence = {
@@ -256,6 +302,13 @@ export function createCoworkPersistence(
   const dirty = new Set<string>()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   const chains = new Map<string, Promise<void>>()
+  // The last thread record THIS layer wrote (or adopted at hydration). The
+  // write-through rebuilds thread.json from it, so an out-of-band edit to a
+  // cowork thread between our writes would be reverted. Acceptable while this
+  // layer is the only cowork thread writer in the process (single-instance
+  // plugin; cowork rows expose no rename/favorite UI); a second writer would
+  // need a re-read or a merge-on-live-record here (as the create-conflict
+  // branch below already does).
   const persisted = new Map<string, Json>()
   const tombstones = new Set<string>()
   // Failed compensation stays queued until flush (no background busy-loop).
@@ -275,7 +328,9 @@ export function createCoworkPersistence(
         await updateDeletionJournal(async () => {
           if (!pendingRollbacks.has(id)) return
           // Re-read in the shared queue so concurrent deletions are preserved.
-          const ids = await readDeletedIdsStrict(invoke)
+          // The strict read means a mutation can never replace unreadable
+          // deletion intent with an empty set.
+          const ids = await readDeletedIds(invoke)
           ids.delete(id)
           await invoke('settings_set', {
             key: COWORK_DELETED_IDS_KEY,
@@ -426,7 +481,7 @@ export function createCoworkPersistence(
         // every session, so serialize read-modify-write across bulk removals.
         if (o?.recordDeleted) {
           await updateDeletionJournal(async () => {
-            const ids = await readDeletedIdsStrict(invoke)
+            const ids = await readDeletedIds(invoke)
             if (ids.has(id)) return
             ids.add(id)
             await invoke('settings_set', {

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { ulid } from 'ulidx'
+import { toast } from 'sonner'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
@@ -125,6 +126,59 @@ const cleanupThreadArtifacts = (threadId: string, thread?: Thread) => {
   cleanupThreadCache(threadId)
   // Cowork conversations keep their sandbox in the session scope.
   cleanupThreadWorkspace(threadId, workspaceScopeFor(thread))
+}
+
+// A native delete can fail after local state was already cleared (e.g. a
+// Windows file lock); silently dropping that leaves the thread gone from the
+// UI now but back on the next launch. Restore it and surface the failure
+// instead. Grants stay pruned in-process: the restored thread is default-deny.
+// Its on-disk grant bytes survive, but confer no authority — a grant is only
+// active after an in-process setter success (capability enforcement model).
+const deleteThreadOnDisk = (threadId: string, thread?: Thread) => {
+  // .then(() => ...) routes synchronous throws and non-promise returns (test
+  // doubles) into the same catch as an async rejection.
+  Promise.resolve()
+    .then(() => getServiceHub().threads().deleteThread(threadId))
+    .catch((error) => {
+      console.warn(`[Threads] Failed to delete thread ${threadId} from storage:`, error)
+      let restoredThread = false
+      if (thread) {
+        // The pre-delete record may still carry a consent grant in its
+        // metadata. The capabilities getter no longer reads metadata (the
+        // in-process map is the only authority source), so stripping it is
+        // defense-in-depth: it keeps the stale grant from being re-persisted
+        // by whole-record writers or trusted by a future metadata reader.
+        const { conversationCapabilities: _staleGrant, ...metadata } = thread.metadata ?? {}
+        void _staleGrant
+        const restored: Thread = { ...thread, metadata }
+        useThreads.setState((state) => {
+          // A recreated/duplicate record keeps precedence (e.g. a second
+          // delete attempt whose first already succeeded).
+          if (state.threads[threadId]) return state
+          restoredThread = true
+          const threads = { ...state.threads, [threadId]: restored }
+          return {
+            threads,
+            searchIndex: new Fzf<Thread[]>(
+              Object.values(threads).filter((t) => t.id !== TEMPORARY_CHAT_ID && t.title),
+              { selector: (item: Thread) => item.title ?? '' }
+            ),
+          }
+        })
+      }
+      // Honest copy: cleanupThreadArtifacts ran before the native delete
+      // (inherited ordering), so attachments index / cached state may already
+      // be gone; only the conversation record itself is restored, and only
+      // when there is actually something to restore.
+      // Stable id: a bulk delete hitting locked storage coalesces into one
+      // toast instead of stacking one per thread.
+      toast.error('Failed to delete chat', {
+        id: 'thread-delete-failed',
+        description: restoredThread
+          ? 'It could not be removed from storage. The conversation was restored, but some auxiliary data (attachment index, cache) may have been cleaned up.'
+          : 'It could not be fully removed from storage.',
+      })
+    })
 }
 
 export const useThreads = create<ThreadState>()((set, get) => ({
@@ -295,7 +349,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       useChatSessions.getState().removeSession(threadId)
       useAppState.getState().clearThreadState(threadId)
       cleanupThreadArtifacts(threadId, state.threads[threadId])
-      getServiceHub().threads().deleteThread(threadId)
+      deleteThreadOnDisk(threadId, state.threads[threadId])
 
       return {
         threads: remainingThreads,
@@ -341,7 +395,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
         cleanupThreadArtifacts(threadId, state.threads[threadId])
-        getServiceHub().threads().deleteThread(threadId)
+        deleteThreadOnDisk(threadId, state.threads[threadId])
       })
 
       // Keep favorite threads and threads with project metadata
@@ -378,7 +432,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
         cleanupThreadArtifacts(threadId, state.threads[threadId])
-        getServiceHub().threads().deleteThread(threadId)
+        deleteThreadOnDisk(threadId, state.threads[threadId])
       })
 
       return {
@@ -436,6 +490,19 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     for (const thread of projectThreads) {
       if (coworkIds.has(thread.id)) continue
       try {
+        // Revoke-first, as in the single delete above: while the native delete
+        // is awaited a concurrent dispatch must not resolve grants for a
+        // thread already being deleted. The record stays visible until
+        // reconcile; since the getter reads only the in-process map, an
+        // explicit default overlay and a pruned entry both resolve to
+        // default-deny — the overlay matches the revoke path's explicit
+        // semantics. On failure the thread survives but stays default-deny
+        // (its on-disk grant bytes are inert without a new setter success);
+        // on success reconcile drops the entry with the record. The overlay
+        // deliberately stays in the map even if the id later leaves a fetched
+        // list — setThreads must not prune it (deny-protection asymmetry).
+        capabilityRequests.delete(thread.id)
+        effectiveCapabilities.set(thread.id, defaultConversationCapabilities())
         await getServiceHub().threads().deleteThread(thread.id)
         reconcile(thread.id, false)
       } catch (error) {
