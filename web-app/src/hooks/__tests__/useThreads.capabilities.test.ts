@@ -193,10 +193,14 @@ describe('useThreads conversation capabilities', () => {
     persist.mockReturnValueOnce(pendingPersist.promise)
     const saveA = save(granted, id)
     await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
-    // B revokes while A's persist is in flight; B's narrow fails.
+    // B revokes while A's persist is in flight; B's narrow fails. B now also
+    // drains A before settling, so A must be released before awaiting B.
     revokeHost.mockRejectedValueOnce(new Error('bridge down'))
-    await expect(save(null, id)).rejects.toMatchObject({ backgroundMayPersist: true })
+    const saveB = expect(save(null, id)).rejects.toMatchObject({
+      backgroundMayPersist: true,
+    })
     pendingPersist.resolve()
+    await saveB
     // A lands host-side but is superseded, so its overlay never applies.
     await expect(saveA).rejects.toThrow('Conversation changed while saving permissions')
   })
@@ -244,6 +248,77 @@ describe('useThreads conversation capabilities', () => {
     await saveB
     expect(calls).toEqual([`narrow:${id}`, `narrow:${id}`])
     expect(persist).toHaveBeenCalledTimes(2)
+  })
+
+  // Reviewer chain-break: a revoke that fails at its FIRST narrow must not
+  // settle while its predecessor's native call is still in flight -- a
+  // successor reads "predecessor settled" (or finds no entry at all) as "no
+  // older native call of ours can still confirm", and re-narrows on that
+  // premise. Without the drain, Z's late confirm postdates B's authoritative
+  // ack and the user-revoked grant is host-live again.
+  it('an early-failing revoke still drains its in-flight predecessor before settling', async () => {
+    const id = 'chain'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    const pendingPersist = deferred()
+    persist.mockReturnValueOnce(pendingPersist.promise)
+    const saveZ = expect(save(granted, id)).rejects.toThrow(
+      'Conversation changed while saving permissions'
+    )
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
+    revokeHost.mockRejectedValueOnce(new Error('bridge blip'))
+    let aSettled = false
+    const saveA = save(null, id).catch((error) => {
+      aSettled = true
+      return error
+    })
+    // Give A every chance to (wrongly) settle while Z is still in flight.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(aSettled).toBe(false)
+    pendingPersist.resolve()
+    const errA = await saveA
+    expect(errA).toMatchObject({
+      name: 'HostRevokeUnconfirmedError',
+      backgroundMayPersist: true,
+    })
+    await saveZ
+  })
+
+  // Verifier coverage gap: the sticky delete must sit AFTER the authoritative
+  // (post-predecessor) narrow. A revoke's best-effort first ack must not clear
+  // uncertainty while an elevated predecessor is still in flight -- a third
+  // request racing into that window reads the sticky set for its own warning.
+  it('uncertainty survives the best-effort ack until the authoritative narrow', async () => {
+    const id = 'window'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    // Z: a grant whose persist hangs in flight.
+    const pendingPersist = deferred()
+    persist.mockReturnValueOnce(pendingPersist.promise)
+    const saveZ = expect(save(granted, id)).rejects.toThrow(
+      'Conversation changed while saving permissions'
+    )
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
+    // A: revoke whose narrow fails -> sticky set while Z is in flight.
+    revokeHost.mockRejectedValueOnce(new Error('bridge blip'))
+    const saveA = expect(save(null, id)).rejects.toMatchObject({
+      backgroundMayPersist: true,
+    })
+    // B: revoke; its best-effort first narrow acks, then it waits on A/Z.
+    const saveB = expect(save(null, id)).rejects.toThrow(
+      'Conversation changed while saving permissions'
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    // C: races into the window; its narrow fails. It must still warn -- the
+    // sticky set may only clear on an ack that postdates every confirm.
+    revokeHost.mockRejectedValueOnce(new Error('bridge blip'))
+    const saveC = expect(save(null, id)).rejects.toMatchObject({
+      backgroundMayPersist: true,
+    })
+    pendingPersist.resolve()
+    await Promise.all([saveZ, saveA, saveB, saveC])
   })
 
   it('narrows the host before it persists', async () => {

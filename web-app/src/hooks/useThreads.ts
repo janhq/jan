@@ -816,6 +816,13 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         await stopAllThreadAgentMonitors(threadId)
         rollbackRequested()
         if (priorGrant) hostUncertainGrants.add(threadId)
+        // Settledness must be TRANSITIVE for the re-narrow proof below: a
+        // request that fails here still drains its predecessor before it
+        // settles, so a successor that sees THIS request settled knows every
+        // older native call of ours has returned -- including across chains
+        // of early narrow failures, where the successor may find no map entry
+        // at all and take the single-narrow path on that guarantee.
+        if (previous) await previous.catch(() => {})
         return new HostRevokeUnconfirmedError(threadId, priorGrant, cause)
       }
       // Narrow the host process before anything is persisted, and ahead of
