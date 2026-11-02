@@ -392,7 +392,13 @@ export const Route = createFileRoute('/threads/$threadId')({
     // writable chat mounts over an undecidable thread.
     if (!thread && threadId !== TEMPORARY_CHAT_ID) {
       const fetched = await getServiceHub().threads().fetchThreads()
-      thread = fetched.find((t) => t.id === threadId)
+      // Re-read the store first: a hydration (or a cowork commit) can land
+      // DURING the await, and that record is newer than the fetched backend
+      // snapshot — deciding on the stale snapshot could classify a
+      // just-committed cowork thread as an ordinary chat.
+      thread =
+        useThreads.getState().threads[threadId] ??
+        fetched.find((t) => t.id === threadId)
     }
     if (
       shouldRedirectThreadToCowork(

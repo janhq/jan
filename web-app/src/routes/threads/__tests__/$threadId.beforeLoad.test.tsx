@@ -179,6 +179,31 @@ describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
     expect(useThreads.getState().threads['chat-hydrating']).toBeUndefined()
   })
 
+  it('R3 stale-fetch race: a store record landing DURING the fetch wins over the stale backend snapshot', async () => {
+    // The cowork commit (or a hydration) finishes while the deferred backend
+    // lookup is in flight: the fetch was issued before the write completed, so
+    // the backend snapshot resolves EMPTY. The post-await decision must re-read
+    // the store — code that only consults `fetched.find(...)` classifies the
+    // just-committed cowork thread as an ordinary chat and mounts a writable
+    // chat view over it.
+    fetchThreadsMock.mockImplementation(async () => {
+      // Simulate the mid-await store write, then resolve the stale (pre-write)
+      // backend snapshot.
+      seedThread('cw-racing', { mode: 'cowork' })
+      return []
+    })
+    expect(useThreads.getState().threads['cw-racing']).toBeUndefined()
+    expect(await runBeforeLoad('cw-racing')).toMatchObject({
+      to: '/cowork/$sessionId',
+      params: { sessionId: 'cw-racing' },
+      replace: true,
+    })
+    expect(fetchThreadsMock).toHaveBeenCalledTimes(1)
+    // beforeLoad itself still never writes the fetched list back globally —
+    // only the externally-landed record is present.
+    expect(Object.keys(useThreads.getState().threads)).toEqual(['cw-racing'])
+  })
+
   it('a rejected backend lookup propagates as a route error so no writable chat mounts', async () => {
     fetchThreadsMock.mockImplementation(() =>
       Promise.reject(new Error('Conversational extension not available yet'))
