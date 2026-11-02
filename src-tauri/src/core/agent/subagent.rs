@@ -2153,12 +2153,16 @@ async fn run_subagent(
     // Recorded from the child's own event stream, before the forwarder filters
     // it for the parent: the transcript keeps what the child did, not what the
     // parent's screen shows of it.
-    let mut recorder = transcript_dir
-        .as_deref()
-        .map(|dir| crate::core::agent::run_record::Recorder::start(dir, &name, &run_id, &description));
+    // Shared with the postman below, which records the parent's steering
+    // messages: they are user turns of the child's run, and nothing else sees
+    // them on their way in.
+    let recorder = Arc::new(std::sync::Mutex::new(transcript_dir.as_deref().map(|dir| {
+        crate::core::agent::run_record::Recorder::start(dir, &name, &run_id, &description)
+    })));
+    let fwd_recorder = recorder.clone();
     let forwarder = tokio::spawn(async move {
         while let Some(ev) = child_rx.recv().await {
-            if let Some(rec) = recorder.as_mut() {
+            if let Some(rec) = fwd_recorder.lock().unwrap().as_mut() {
                 rec.record(&ev);
             }
             match &ev {
@@ -2172,7 +2176,6 @@ async fn run_subagent(
                 _ => {}
             }
         }
-        recorder
     });
 
     // The child's steering channel, answered from its registry-owned inbox.
@@ -2183,17 +2186,25 @@ async fn run_subagent(
     let (steering_tx, mut steering_rx) =
         tokio::sync::mpsc::unbounded_channel::<crate::core::agent::r#loop::SteeringRequest>();
     let postman_inbox = inbox.clone();
+    let postman_recorder = recorder.clone();
     let postman = tokio::spawn(async move {
         while let Some(request) = steering_rx.recv().await {
-            let _ = request.reply.send(postman_inbox.drain());
+            let messages = postman_inbox.drain();
+            if let Some(rec) = postman_recorder.lock().unwrap().as_mut() {
+                for message in &messages {
+                    rec.user_message(message);
+                }
+            }
+            let _ = request.reply.send(messages);
         }
     });
 
     let result = run_orchestration_steered(&child_tx, &body, &child_args, Some(&steering_tx)).await;
     drop(child_tx);
     drop(steering_tx);
-    let recorder = forwarder.await.ok().flatten();
+    let _ = forwarder.await;
     let _ = postman.await;
+    let recorder = recorder.lock().unwrap().take();
 
     let outcome = match result {
         Ok(completion) => Ok(final_assistant_text(&completion)),
@@ -2492,6 +2503,13 @@ fn start_dispatch(
             tauri_plugin_agent_tools::tools::spill::SUBAGENT_DIR,
         )
     });
+    // The session file the blackboard entry links to, in the model's spelling.
+    let session_display = transcript_dir.as_ref().map(|dir| {
+        scratch_display_path(
+            scratch,
+            &crate::core::agent::run_record::transcript_path(dir, &name),
+        )
+    });
     let slot = ChildSlot::new();
     let slot_task = slot.clone();
     // A permit taken here means this child never joined the waitlist: record it
@@ -2555,7 +2573,10 @@ fn start_dispatch(
         let result = with_branch_footer(ws_done, result).await;
         task_lease.release();
         if let Some((_, path)) = &result_file {
-            fill_subagent_result(path, &spilled_text(&result));
+            fill_subagent_result(
+                path,
+                &blackboard_entry(&spilled_text(&result), session_display.as_deref()),
+            );
         }
         // Claimed with a swap, after the answer is on the blackboard (a phase
         // barrier reads `finished` as "the file is there"). A `stop_subagent` or
@@ -3188,6 +3209,24 @@ fn spilled_text(result: &Result<String, SubagentError>) -> String {
     }
 }
 
+/// The line a blackboard entry ends with, pointing at the child's session file
+/// (`display` is the file in the model's spelling).
+fn session_link(display: &str) -> String {
+    format!(
+        "\n\n[full session record: {display} -- prompt, reasoning, tool calls and results; \
+         deleted when this session ends]"
+    )
+}
+
+/// What a child's blackboard file holds: its result, then a link to its
+/// session file when it has one.
+fn blackboard_entry(result: &str, session: Option<&str>) -> String {
+    match session {
+        Some(display) => format!("{result}{}", session_link(display)),
+        None => result.to_string(),
+    }
+}
+
 /// The `<SYSTEM>` ping delivered to the parent when a child finishes.
 fn completion_notice(
     name: &str,
@@ -3469,7 +3508,7 @@ pub fn subagent_tool_schemas(
         "enum": registry.dispatchable_names(),
         "description": "The predefined agent to run (see the Subagents section of your instructions for what each is for); use `general` when no other fits. The same agent may appear several times: repeats are named `<agent>-2`, `<agent>-3`, ... in the order listed, and that name is what message_subagent/stop_subagent take and the blackboard/<name>.md file its answer is written to."
     });
-    let bg = format!(" Subagents run in the BACKGROUND, concurrently (up to {max_parallel} at once, from max_parallel_subagents in agent.toml; more are queued FIFO). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to. Steer a running child with message_subagent, or stop it with stop_subagent, by its name (reported when it starts).");
+    let bg = format!(" Subagents run in the BACKGROUND, concurrently (up to {max_parallel} at once, from max_parallel_subagents in agent.toml; more are queued FIFO). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to; the entry ends with a link to the subagent's full session record (subagents/<name>-transcript.json: its prompt, reasoning, tool calls and results), which lasts until this session ends. Steer a running child with message_subagent, or stop it with stop_subagent, by its name (reported when it starts).");
     let phases_desc = " List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase's results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes).";
     let dispatch_desc = format!(
         "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} Every subagent gets your full toolset unless its agent's definition or allowed_tools restricts it, except memory: subagents have no memory tool and no memory index, so put any remembered fact a subagent needs into its task."
@@ -5268,6 +5307,65 @@ pub(crate) mod tests {
         );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The blackboard keeps the child's result and links to its session file,
+    /// in the spelling the parent's tools resolve, while the session is alive.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_blackboard_entry_links_to_the_childs_session_file() {
+        let root = unique_root("bb-link");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let scratch = unique_root("bb-link-scratch");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let run_id = spawn_subagent(
+            &bg.scope(),
+            &args,
+            req("reviewer", None),
+            &parent_run(),
+            &events_tx,
+            Some(&scratch),
+            true,
+        )
+        .await
+        .unwrap()
+        .run_id;
+        let _ = await_subagent(&bg, &run_id).await;
+
+        let entry = tauri_plugin_agent_tools::tools::spill::read_blackboard_result(&scratch, "reviewer")
+            .expect("blackboard entry");
+        let session = scratch_display_path(
+            Some(&scratch),
+            &crate::core::agent::run_record::session_path(&scratch, "reviewer"),
+        );
+        assert!(entry.starts_with("ERROR: "), "the result leads: {entry}");
+        assert!(entry.ends_with(&session_link(&session)), "{entry}");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn a_blackboard_entry_is_the_result_then_the_session_link() {
+        assert_eq!(
+            blackboard_entry("the answer", Some("/tmp/subagents/a-transcript.json")),
+            format!("the answer{}", session_link("/tmp/subagents/a-transcript.json"))
+        );
+        assert_eq!(blackboard_entry("the answer", None), "the answer");
+        assert!(session_link("/p").contains("deleted when this session ends"));
+    }
+
+    #[test]
+    fn the_dispatch_description_names_the_session_file() {
+        let registry = SubagentRegistry::load(&unique_root("desc-session"));
+        let schemas = subagent_tool_schemas(&registry, 2);
+        let dispatch = schemas
+            .iter()
+            .find(|s| s["function"]["name"] == "dispatch_subagent")
+            .unwrap();
+        let desc = dispatch["function"]["description"].as_str().unwrap();
+        assert!(desc.contains("subagents/<name>-transcript.json"), "{desc}");
     }
 
     /// A run with no scratch has nowhere sanctioned to write, and must not
