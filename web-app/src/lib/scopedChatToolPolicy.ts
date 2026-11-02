@@ -118,11 +118,30 @@ export function memoryReadOnlyParameters(
   if (ops.length === 0) return null
   const properties = { ...(p.properties as Record<string, unknown>) }
   delete properties.to
+  // The Rust per-property text documents mutation; replace it with read-only text.
+  if (properties.name && typeof properties.name === 'object') {
+    properties.name = { ...(properties.name as object), description: MEMORY_READ_NAME_DESCRIPTION }
+  }
+  delete properties.content
+  delete properties.old
+  delete properties.new
   return {
     ...(p as Record<string, unknown>),
-    properties: { ...properties, op: { ...op, enum: ops } },
+    properties: {
+      ...properties,
+      op: { ...op, enum: ops, description: MEMORY_READ_OP_DESCRIPTION },
+    },
   }
 }
+
+/** Read-only advertisement text for `memory`; the Rust description teaches
+ * write/edit/delete/move and "no op asks the user", which is false here. */
+export const MEMORY_READ_DESCRIPTION =
+  'Read your long-term memory: durable notes kept across sessions. Use `view` for the index, a folder, or one note, and `search` to find notes by keyword. Only the read-only `view` and `search` operations are available here.'
+const MEMORY_READ_OP_DESCRIPTION =
+  'view: the index (no name), a folder\'s notes (`folder/`), or a note\'s content. search: keyword search over titles and bodies, archived notes included.'
+const MEMORY_READ_NAME_DESCRIPTION =
+  'Note name without .md: `note` or `folder/note` (this project), `user:note` (every project), `project:<slug>` or `project:<slug>/note` (another project). Optional for view.'
 
 /* NOTE on roots: there is NO caller-supplied roots channel. The native API
  * takes only threadId/name/args plus the per-call effective-grant getter;

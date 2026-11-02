@@ -13,7 +13,7 @@ import {
   lastAssistantMessageIsCompleteWithToolCalls,
 } from 'ai'
 import { withoutChatRunNotices } from './chatRunNotice'
-import { uniqueMcpTools, warnWithheldMcpTools } from './chatMcpIdentity'
+import { uniqueMcpTools, warnNativeShadowedMcpTool, warnWithheldMcpTools } from './chatMcpIdentity'
 import { repairToolArgs } from './toolCallRepair'
 import {
   encodeMcpToolImages,
@@ -48,6 +48,7 @@ import {
 import { resolveToolCapabilities } from './toolCapabilityPolicy'
 import {
   memoryReadOnlyParameters,
+  MEMORY_READ_DESCRIPTION,
   resolveScopedChatToolPolicy,
 } from './scopedChatToolPolicy'
 import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
@@ -1317,13 +1318,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           if (!scoped.advertisesNativeTool(name)) continue
           if (CHAT_AGENT_TOOL_NAMES.has(name) && !shellEnabled) continue
           let parameters: unknown = schema.function.parameters
+          let description: string = schema.function.description
           if (name === 'memory') {
             parameters = memoryReadOnlyParameters(parameters)
             if (!parameters) continue
+            description = MEMORY_READ_DESCRIPTION
           }
+          // Native ownership stays; the replaced MCP tool is reported, not silent.
+          const shadowed = mcpIdentities.get(name)
+          if (shadowed) warnNativeShadowedMcpTool(name, shadowed)
           mcpIdentities.delete(name)
           toolsRecord[name] = {
-            description: schema.function.description,
+            description,
             inputSchema: jsonSchema(parameters as Record<string, unknown>),
           } as Tool
         }

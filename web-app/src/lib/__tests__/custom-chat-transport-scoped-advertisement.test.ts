@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   grant: { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false } as unknown,
   grantThrows: false,
   hasGrantApi: true,
+  mcpTools: [] as unknown[],
   grants: [] as string[],
 }))
 
@@ -26,7 +27,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
   useServiceStore: {
     getState: () => ({
       serviceHub: {
-        mcp: () => ({ getTools: async () => [] }),
+        mcp: () => ({ getTools: async () => h.mcpTools }),
         rag: () => ({ getTools: async () => [] }),
       },
     }),
@@ -118,6 +119,7 @@ describe('scoped native schema advertisement', () => {
     h.shellEnabled = true
     h.sandbox = true
     h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
+    h.mcpTools = []
     h.grantThrows = false
     h.hasGrantApi = true
     h.grants = []
@@ -135,6 +137,28 @@ describe('scoped native schema advertisement', () => {
     expect(mem.jsonSchema.properties.to).toBeUndefined()
     // the shared Rust schema object is not mutated
     expect(memory.function.parameters.properties.op.enum).toHaveLength(6)
+  })
+
+  it('describes memory read-only in the tool, op and name text (no mutation instructions)', async () => {
+    await transport.refreshTools()
+    const tool = transport.getTools()['memory'] as { description: string; inputSchema: { jsonSchema: any } }
+    const text = JSON.stringify([tool.description, tool.inputSchema.jsonSchema])
+    for (const banned of ['write', 'edit', 'delete', 'move', 'no op asks', 'overwrite']) {
+      expect(text.toLowerCase()).not.toContain(banned === 'write' ? 'write over' : banned)
+    }
+    expect(tool.description).toMatch(/read-only/i)
+    expect(tool.inputSchema.jsonSchema.properties.op.description).not.toMatch(/write:|edit:|delete:|move:/)
+    expect(tool.inputSchema.jsonSchema.properties.content).toBeUndefined()
+  })
+
+  it('warns, with the collision wording, when a native tool replaces a same-named MCP tool', async () => {
+    h.mcpTools = [{ name: 'read', server: 'user-srv', description: 'mcp read', inputSchema: {} }]
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await transport.refreshTools()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Withheld MCP tool "read": name collision'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('user-srv'))
+    expect(transport.getMcpServerForTool('read')).toBeUndefined()
+    warn.mockRestore()
   })
 
   it('permits native dispatch only for a frozen advertised native record', async () => {

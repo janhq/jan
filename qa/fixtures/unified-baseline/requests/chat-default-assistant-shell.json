@@ -129,7 +129,7 @@
       "type": "function",
       "function": {
         "name": "memory",
-        "description": "Your long-term memory: durable facts (decisions, conventions, preferences, gotchas) kept across sessions. It is yours to curate; no op asks the user. Before writing, `search` or `view` for an existing note on the topic and update it (`edit`, or `write` over it) rather than adding another. When a new fact supersedes a note, `delete` the old one. When work a note tracks is finished, archive it by adding front matter `status: done` (it stays readable and searchable but leaves the index). Group related notes in a folder with `move` (`name` to `tui/scroll`); never write an index or overview note, the index is built for you. Keep notes short; never store secrets or session-only state.",
+        "description": "Read your long-term memory: durable notes kept across sessions. Use `view` for the index, a folder, or one note, and `search` to find notes by keyword. Only the read-only `view` and `search` operations are available here.",
         "parameters": {
           "type": "object",
           "properties": {
@@ -139,11 +139,11 @@
                 "view",
                 "search"
               ],
-              "description": "view: the index (no name), a folder's notes (`folder/`), or a note's content. search: keyword search over titles and bodies, archived notes included. write: create or overwrite. edit: replace one exact, unique `old` with `new`. delete: remove a note. move: rename `name` to `to` (e.g. into a folder), keeping its content."
+              "description": "view: the index (no name), a folder's notes (`folder/`), or a note's content. search: keyword search over titles and bodies, archived notes included."
             },
             "name": {
               "type": "string",
-              "description": "Note name without .md: `note` or `folder/note` (this project), `user:note` (every project), `project:<slug>` or `project:<slug>/note` (another project, read-only). Required for write, edit, delete and move. `index` and `MEMORY` are reserved: the index is built for you."
+              "description": "Note name without .md: `note` or `folder/note` (this project), `user:note` (every project), `project:<slug>` or `project:<slug>/note` (another project). Optional for view."
             },
             "query": {
               "type": "string",
@@ -152,18 +152,6 @@
             "title": {
               "type": "string",
               "description": "write: one-line title, stored as the note's first line and shown in the index."
-            },
-            "content": {
-              "type": "string",
-              "description": "write: the note's Markdown body. Front matter `status: done` archives it."
-            },
-            "old": {
-              "type": "string",
-              "description": "edit: exact text to replace; must occur exactly once."
-            },
-            "new": {
-              "type": "string",
-              "description": "edit: replacement text."
             }
           },
           "required": [

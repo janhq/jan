@@ -243,6 +243,27 @@ useChatSessions.subscribe((state) => {
 // Retained per-thread callbacks survive navigation; terminal cleanup disposes
 // every promise so a later turn cannot inherit an Allow once decision.
 const toolApprovalPromises = new Map<string, Map<string, Promise<ApprovalResult>>>()
+// One classification grant per native toolCallId: captured on arrival and
+// reused by dispatch, so arrival and dispatch can never disagree about whether
+// the call was elevated (no orphan prompt if the grant is revoked in between).
+const callNativeGrants = new Map<string, Map<string, unknown>>()
+const nativeGrantOf = (threadId: string, callId: string): unknown => {
+  let grants = callNativeGrants.get(threadId)
+  if (!grants) {
+    grants = new Map()
+    callNativeGrants.set(threadId, grants)
+  }
+  if (!grants.has(callId)) grants.set(callId, classifyScopedGrant(threadId))
+  return grants.get(callId)
+}
+// Stable key for the grant a native approval is bound to.
+const grantKeyOf = (grant: unknown): string => {
+  const sort = (v: unknown): unknown =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, sort(x)]))
+      : v
+  try { return JSON.stringify(sort(grant)) ?? 'none' } catch { return 'unserializable' }
+}
 const callMcpIdentities = new Map<string, Map<string, string | undefined>>()
 const callMcpValidators = new Map<string, Map<string, (signal?: AbortSignal) => Promise<void>>>()
 const approvalsOf = (threadId: string) => {
@@ -255,6 +276,7 @@ const approvalsOf = (threadId: string) => {
 }
 const forgetApprovals = (threadId: string) => {
   toolApprovalPromises.delete(threadId)
+  callNativeGrants.delete(threadId)
   callMcpIdentities.delete(threadId)
   callMcpValidators.delete(threadId)
 }
@@ -991,10 +1013,21 @@ function ThreadDetail() {
       // runTurn dispatches after canonical parsing completes and reuses this
       // one promise. Internal tools retain the existing Chat policy.
       const { serverName, checkMcp } = bindMcpCall(toolCall)
+      const isNative = !serverName && chatShellRoute(toolCall.toolName) === 'builtin'
+      // A call dispatch will refuse as unadvertised must not open a prompt (or
+      // an always-allow choice) that nothing will ever wait on.
+      if (
+        isNative &&
+        isScopedThreadTool(toolCall.toolName) &&
+        !useChatSessions.getState().sessions[threadId]?.transport.hasAdvertisedNativeTool(toolCall.toolName)
+      ) {
+        return
+      }
+      const nativeGrant = isNative ? nativeGrantOf(threadId, toolCall.toolCallId) : undefined
       if (
         (serverName ||
-          (chatShellRoute(toolCall.toolName) === 'builtin' &&
-            !isAutoAllowedTool(toolCall.toolName, threadId, toolCall.input))) &&
+          (isNative &&
+            !isAutoAllowedTool(toolCall.toolName, threadId, toolCall.input, nativeGrant))) &&
         !isDisabledChatAgentTool(toolCall.toolName, serverName) &&
         webRoute(toolCall.toolName) !== 'disabled' &&
         !approvalsOf(threadId).has(toolCall.toolCallId)
@@ -1008,7 +1041,8 @@ function ThreadDetail() {
               toolCall.toolName,
               threadId,
               serverName,
-              checkMcp
+              checkMcp,
+              ...(isNative ? [{ native: { grantKey: grantKeyOf(nativeGrant) } }] as const : [])
             )
         )
       }
@@ -1037,7 +1071,7 @@ function ThreadDetail() {
         // Captured at classification, before any approval wait.
         const classifiedGrant =
           !serverName && chatShellRoute(toolName) === 'builtin'
-            ? classifyScopedGrant(threadId)
+            ? nativeGrantOf(threadId, toolCall.toolCallId)
             : undefined
 
         if (webRoute(toolName) === 'disabled') {
@@ -1075,7 +1109,10 @@ function ThreadDetail() {
           let pending = approvals.get(toolCall.toolCallId)
           if (!pending) {
             pending = useToolApprovalRequests.getState().requestApproval(
-              toolCall.toolCallId, toolName, threadId, serverName, checkMcp
+              toolCall.toolCallId, toolName, threadId, serverName, checkMcp,
+              ...(!serverName && chatShellRoute(toolName) === 'builtin'
+                ? [{ native: { grantKey: grantKeyOf(classifiedGrant) } }] as const
+                : [])
             )
             // The SDK presentation reader may trail the runner. Publish the
             // fallback promise before yielding so its callback cannot prompt twice.
@@ -1133,9 +1170,9 @@ function ThreadDetail() {
                 maxOutputChars,
               })
             } else if (chatShellRoute(toolName, serverName) === 'builtin') {
-              // Chat's shell runs with the sandbox network closed: the
-              // default `allowNetwork = false` is the contract here, not an
-              // accident.
+              // Network is not a constant here: the native boundary opens it
+              // only when the classified grant (shellNetwork) allows it and
+              // the call was approved as elevated; otherwise it stays closed.
               const agentResult = await executeAgentTool(
                 toolName,
                 toolCall.input,

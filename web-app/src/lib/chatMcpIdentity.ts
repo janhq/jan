@@ -25,6 +25,14 @@ export function warnWithheldMcpTools(tools: MCPTool[]): void {
   }
 }
 
+/** A native tool owns its name and replaces the same-named MCP tool; say so
+ * with the same collision wording instead of shadowing silently. Names only. */
+export function warnNativeShadowedMcpTool(name: string, server: string): void {
+  console.warn(
+    `[tools] Withheld MCP tool ${JSON.stringify(name)}: name collision; servers: ${JSON.stringify('(native)')}, ${JSON.stringify(server)}`
+  )
+}
+
 /** Check the bound pair, not another server with the same tool name. */
 export async function assertMcpIdentityAvailable(
   toolName: string,

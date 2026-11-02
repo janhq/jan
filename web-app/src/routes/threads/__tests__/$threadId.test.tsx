@@ -1936,6 +1936,42 @@ describe('ThreadDetail route', () => {
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
     })
 
+    it('raises no prompt on arrival for an unadvertised elevated native call', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedNativeTool = () => false
+      h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }))
+      renderComponent()
+      const toolCall = call('revoked-skill-write', 'skill_write', { name: 'x', content: 'y' })
+      await arrive(toolCall)
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(await dispatch(toolCall)).toMatchObject({ isError: true, output: expect.stringContaining('not advertised') })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).not.toHaveBeenCalled()
+    })
+
+    it('freezes one grant per toolCallId across arrival and dispatch (no orphan prompt after revoke)', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedNativeTool = () => true
+      let reads = 0
+      h.threadsState.getConversationCapabilities.mockImplementation(() => (
+        ++reads === 1
+          ? { version: 1, folderScope: null, shellNetwork: false, memoryWrite: true }
+          : { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
+      ))
+      renderComponent()
+      const toolCall = call('frozen-skill-write', 'skill_write', { name: 'x', content: 'y' })
+      await arrive(toolCall)
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
+        'frozen-skill-write', 'skill_write', 'thread-1', undefined, expect.any(Function),
+        { native: { grantKey: expect.stringContaining('"memoryWrite":true') } }
+      )
+      await dispatch(toolCall)
+      // dispatch reused the arrival grant: one prompt, one execution under it
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_write', { name: 'x', content: 'y' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }))
+      expect(reads).toBe(1)
+    })
+
     it('dispatches an advertised native read even with a same-name MCP inventory entry', async () => {
       h.appStateState.mcpToolNames = new Set(['read'])
       h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = () => undefined
