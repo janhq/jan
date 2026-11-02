@@ -61,8 +61,8 @@ vi.mock('@/hooks/useTools', () => ({
 }))
 
 vi.mock('@/containers/ChatInput', () => ({
-  default: ({ model, initialMessage, onSubmit, surfaceControls, leadingControls, menuWorkspace, menuControls, projectId }: any) => (
-    <div data-testid="chat-input" data-initial={String(initialMessage)} data-project-id={projectId}>
+  default: ({ model, initialMessage, onSubmit, surfaceControls, leadingControls, menuWorkspace, menuControls, projectId, scopeKey }: any) => (
+    <div data-testid="chat-input" data-initial={String(initialMessage)} data-project-id={projectId} data-scope-key={scopeKey}>
       {model ? model.id : 'no-model'}
       <div data-testid="menu-workspace">{menuWorkspace}</div>
       <div data-testid="menu-controls">{menuControls}</div>
@@ -234,7 +234,10 @@ describe('Index route', () => {
       const document = { type: 'document', name: 'fixture.txt' } as any
       useChatAttachments.getState().setAttachments(NEW_THREAD_ATTACHMENT_KEY, [image, document])
       renderComponent()
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-scope-key')
       fireEvent.click(screen.getByTestId('home-mode-cowork'))
+      expect(screen.getByTestId('home-mode-cowork')).toHaveAttribute('aria-checked', 'true')
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-scope-key')
       expect(useChatAttachments.getState().getAttachments(NEW_THREAD_ATTACHMENT_KEY)).toEqual([image, document])
       expect(screen.getAllByTestId('chat-input')).toHaveLength(1)
     })
