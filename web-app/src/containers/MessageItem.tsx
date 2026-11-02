@@ -51,6 +51,7 @@ import { injectCitationMarkers } from '@/lib/grounding'
 
 export type MessageItemProps = {
   message: UIMessage
+  threadId?: string
   isFirstMessage: boolean
   isLastMessage: boolean
   status: ChatStatus
@@ -90,6 +91,7 @@ const FOOTER_ICON_BUTTONS =
 export const MessageItem = memo(
   ({
     message,
+    threadId,
     isFirstMessage,
     isLastMessage,
     status,
@@ -522,6 +524,7 @@ export const MessageItem = memo(
             key={`${message.id}-cot-${groupSeq++}`}
             entries={cotEntries}
             messageId={message.id}
+            threadId={threadId}
             totalParts={parts.length}
             isStreaming={isStreaming}
             hasFollowingContent={hasFollowing}

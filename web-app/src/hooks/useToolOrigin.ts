@@ -1,5 +1,5 @@
 import { useMessages } from '@/hooks/useMessages'
-import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
+import { toolOriginKey, useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { useMemo } from 'react'
 import { useAppState } from '@/hooks/useAppState'
 import { getProviderMeta, useWebSearchConfig } from '@/hooks/useWebSearchConfig'
@@ -11,17 +11,17 @@ import { AGENT_TOOL_NAMES, isRecordedShellCall } from '@/lib/agentTools'
  * primitive so a refreshed-but-equivalent tool list does not re-render every
  * card on screen.
  */
-export const useToolOrigin = (toolName: string, toolCallId?: string, messageId?: string): ToolOrigin | undefined => {
+export const useToolOrigin = (toolName: string, toolCallId?: string, messageId?: string, threadId?: string): ToolOrigin | undefined => {
   const liveMcpServer = useToolCallRuntime((s) =>
-    toolCallId ? s.origins[toolCallId] : undefined
+    toolCallId ? s.origins[toolOriginKey(threadId, toolCallId)] : undefined
   )
   const storedMcpServer = useMessages((s) => {
-    if (!toolCallId || !messageId) return undefined
-    const message = Object.values(s.messages).flat().find((m) => m.id === messageId)
+    if (!toolCallId || !messageId || !threadId) return undefined
+    const message = s.messages[threadId]?.find((m) => m.id === messageId)
     const origins = message?.metadata?.toolOrigins as Record<string, string | null> | undefined
     return origins?.[toolCallId]
   })
-  const boundMcpServer = liveMcpServer === undefined ? storedMcpServer : liveMcpServer
+  const boundMcpServer = storedMcpServer === undefined ? liveMcpServer : storedMcpServer
   const mcpServer = useAppState(
     (s) => s.tools.find((tool) => tool.name === toolName)?.server
   )

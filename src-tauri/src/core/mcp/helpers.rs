@@ -190,10 +190,13 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
             }
         }
 
-        let health_check_result = {
+        let health_peer = {
             let servers = servers_state.lock().await;
-            if let Some(service) = servers.get(&name) {
-                match timeout(Duration::from_secs(2), service.list_all_tools()).await {
+            servers.get(&name).map(|service| service.peer().clone())
+        };
+        let health_check_result = {
+            if let Some(peer) = health_peer.as_ref() {
+                match timeout(Duration::from_secs(2), peer.list_all_tools()).await {
                     Ok(Ok(_)) => true,
                     Ok(Err(e)) => {
                         log::warn!("MCP server {name} health check failed: {e}");
@@ -232,11 +235,21 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
         log::error!("MCP server {name} failed health check, attempting auto-reconnect");
 
         // Clean up the dead server entry (if still present) and its tracked PID
-        {
+        let dead_service = {
             let mut servers = servers_state.lock().await;
-            if let Some(service) = servers.remove(&name) {
-                let _ = service.cancel().await;
-            }
+            let still_same = match (servers.get(&name), health_peer.as_ref()) {
+                (Some(service), Some(peer)) => match (service.peer_info(), peer.peer_info()) {
+                    (Some(current), Some(probed)) => std::sync::Arc::ptr_eq(&current, &probed),
+                    _ => false,
+                },
+                (None, _) => true,
+                _ => false,
+            };
+            if !still_same { continue; } // A replacement owns this name now.
+            servers.remove(&name)
+        };
+        if let Some(service) = dead_service {
+            let _ = service.cancel().await;
         }
         {
             let app_state = app.state::<AppState>();
@@ -666,13 +679,16 @@ async fn schedule_mcp_start_task<R: Runtime>(
         const TOOL_VERIFY_BACKOFF_MS: u64 = 1000;
 
         for attempt in 1..=MAX_TOOL_VERIFY_ATTEMPTS {
-            let verify_result = {
+            let verify_peer = {
                 let servers_map = servers.lock().await;
-                if let Some(service) = servers_map.get(&name) {
+                servers_map.get(&name).map(|service| service.peer().clone())
+            };
+            let verify_result = {
+                if let Some(peer) = verify_peer {
                     Some(
                         timeout(
                             Duration::from_secs(TOOL_VERIFY_TIMEOUT_SECS),
-                            service.list_all_tools(),
+                            peer.list_all_tools(),
                         )
                         .await,
                     )

@@ -30,12 +30,26 @@ export async function assertMcpIdentityAvailable(
   toolName: string,
   serverName: string | undefined,
   getTools: () => Promise<MCPTool[]>,
-  isDisabled: (server: string, tool: string) => boolean
+  isDisabled: (server: string, tool: string) => boolean,
+  signal?: AbortSignal
 ): Promise<void> {
   if (!serverName || isDisabled(serverName, toolName)) {
     throw new Error(`MCP tool '${toolName}' is unavailable or disabled`)
   }
-  const tools = await getTools()
+  // Bound fresh discovery; Stop cancels this wait even if an IPC inventory
+  // request cannot itself be interrupted. Late results cannot grant trust.
+  let cleanup = () => {}
+  const tools = await new Promise<MCPTool[]>((resolve, reject) => {
+    const abort = () => reject(new DOMException('Aborted', 'AbortError'))
+    if (signal?.aborted) { abort(); return }
+    const timer = setTimeout(() => reject(new Error('MCP identity validation timed out; retry')), 15_000)
+    signal?.addEventListener('abort', abort, { once: true })
+    cleanup = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort) }
+    Promise.resolve().then(() => {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+      return getTools()
+    }).then(resolve, reject)
+  }).finally(() => cleanup())
   if (!uniqueMcpTools(tools).some((tool) => tool.name === toolName && tool.server === serverName) ||
       isDisabled(serverName, toolName)) {
     throw new Error(`MCP identity for '${toolName}' is stale, ambiguous or unavailable`)

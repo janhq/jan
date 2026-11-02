@@ -70,4 +70,30 @@ describe('chat MCP identity', () => {
       throw new Error('disconnected')
     }, () => false)).rejects.toThrow('disconnected')
   })
+  it('bounds fresh inventory validation without accepting a late result', async () => {
+    vi.useFakeTimers()
+    try {
+      const validation = assertMcpIdentityAvailable('read', 'alpha', () => new Promise(() => {}), () => false)
+      const rejected = expect(validation).rejects.toThrow(/validation timed out/)
+      await vi.advanceTimersByTimeAsync(15_000)
+      await rejected
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('Stop interrupts pending validation and clears its timer', async () => {
+    vi.useFakeTimers()
+    try {
+      const stop = new AbortController()
+      let late!: (tools: MCPTool[]) => void
+      const validation = assertMcpIdentityAvailable('read', 'alpha', () => new Promise((resolve) => { late = resolve }), () => false, stop.signal)
+      const rejected = expect(validation).rejects.toThrow(/Aborted/)
+      await Promise.resolve()
+      stop.abort()
+      await rejected
+      late([tool('read', 'alpha')])
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+
 })

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { invoke } from '@tauri-apps/api/core'
 import { TauriMCPService } from '../tauri'
 import { DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 
@@ -29,6 +30,15 @@ describe('TauriMCPService – coverage', () => {
   beforeEach(() => {
     svc = new TauriMCPService()
     vi.clearAllMocks()
+  })
+
+  it('uses uncached fail-closed native discovery only for authorization inventories', async () => {
+    vi.mocked(invoke).mockResolvedValue([])
+    await svc.getTools({ freshOnly: true })
+    expect(invoke).toHaveBeenCalledWith('get_tools', { freshOnly: true })
+    expect(mockCore.api.getTools).not.toHaveBeenCalled()
+    await svc.getTools()
+    expect(mockCore.api.getTools).toHaveBeenCalledOnce()
   })
 
   describe('callToolWithCancellation', () => {

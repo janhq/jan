@@ -493,4 +493,17 @@ describe('validated approval lifecycle (real approval stores and identity valida
     expect(useToolApproval.getState().isToolApproved('validated-thread', 'read', 'alpha')).toBe(true)
     expect(useToolApproval.getState().isToolApproved('other', 'other', 'alpha')).toBe(decision === 'allow-always')
   })
+  it('Stop aborts the actual pending validation signal and prevents a prompt', async () => {
+    let signal!: AbortSignal
+    const result = useToolApprovalRequests.getState().requestApproval('validated', 'read', 'validated-thread', 'alpha', (validationSignal) => {
+      signal = validationSignal
+      return assertMcpIdentityAvailable('read', 'alpha', () => new Promise(() => {}), () => false, signal)
+    })
+    useToolApprovalRequests.getState().clearPendingForThread('validated-thread')
+    await expect(result).resolves.toBe(false)
+    expect(signal.aborted).toBe(true)
+    expect(useToolApprovalRequests.getState().pending.validated).toBeUndefined()
+    expectNoTrust()
+  })
+
 })

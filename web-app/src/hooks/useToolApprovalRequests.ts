@@ -11,7 +11,7 @@ export type PendingApproval = {
 }
 
 /** Reject/throw to deny an unavailable identity. Called before prompting and granting. */
-export type ApprovalValidator = () => Promise<void>
+export type ApprovalValidator = (signal: AbortSignal) => Promise<void>
 
 /**
  * Scope of the grant. `allow-always` trusts the tool's whole server when it has
@@ -41,6 +41,7 @@ type ToolApprovalRequestsState = {
 
 type InFlightApproval = PendingApproval & {
   validate?: ApprovalValidator
+  controller: AbortController
   deciding: boolean
 }
 
@@ -62,6 +63,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
     const finish = (entry: InFlightApproval, approved: boolean) => {
       if (!isCurrent(entry)) return
       inFlight.delete(entry.toolCallId)
+      entry.controller.abort()
       removePrompt(entry)
       entry.resolve(approved)
     }
@@ -75,7 +77,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
         return new Promise<boolean>((resolve) => {
           const entry: InFlightApproval = {
             toolCallId, toolName, threadId, serverName, resolve, validate,
-            deciding: false,
+            deciding: false, controller: new AbortController(),
           }
           inFlight.set(toolCallId, entry)
           const publish = () => {
@@ -93,7 +95,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
           else {
             void (async () => {
               try {
-                await validate()
+                await validate(entry.controller.signal)
                 publish()
               } catch {
                 finish(entry, false)
@@ -132,7 +134,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
         else {
           void (async () => {
             try {
-              await entry.validate!()
+              await entry.validate!(entry.controller.signal)
               grant()
             } catch {
               finish(entry, false)

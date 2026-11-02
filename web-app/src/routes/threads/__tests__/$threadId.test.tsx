@@ -514,7 +514,7 @@ vi.mock('@/hooks/useWebSearchConfig', async (importOriginal) => ({
 // -----------------------------------------------------------------------------
 import { Route } from '../$threadId'
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
+import { toolOriginKey, useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { useMessageErrors } from '@/stores/message-errors'
 import {
   processAttachmentsForSend,
@@ -1583,7 +1583,7 @@ describe('ThreadDetail route', () => {
       })
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
       expect(shell.execute).toHaveBeenCalledTimes(1)
-      expect(useToolCallRuntime.getState().origins.sh1).toBeNull()
+      expect(useToolCallRuntime.getState().origins[toolOriginKey('thread-1', 'sh1')]).toBeNull()
     })
 
     it('does not run the shell, and says why, once the switch is off', async () => {
@@ -1797,7 +1797,7 @@ describe('ThreadDetail route', () => {
         expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
           'mcp-retrieve', 'retrieve', 'thread-1', 'retrieval-server', expect.any(Function)
         )
-        expect(useToolCallRuntime.getState().origins['mcp-retrieve']).toBe('retrieval-server')
+        expect(useToolCallRuntime.getState().origins[toolOriginKey('thread-1', 'mcp-retrieve')]).toBe('retrieval-server')
         expect(callTool).not.toHaveBeenCalled()
         expect(ragCallTool).not.toHaveBeenCalled()
 

@@ -23,7 +23,7 @@ describe('useToolCallRuntime', () => {
     store().markSettled('mcp')
     store().markSettled('rag')
     store().releaseSettled('thread')
-    expect(store().origins).toEqual({ mcp: 'alpha', rag: null })
+    expect(Object.values(store().origins)).toEqual(['alpha', null])
     store().reset()
     expect(store().origins).toEqual({})
   })

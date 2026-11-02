@@ -54,7 +54,7 @@ export interface MCPService {
   updateMCPConfig(configs: string): Promise<void>
   restartMCPServers(): Promise<void>
   getMCPConfig(): Promise<MCPConfig>
-  getTools(): Promise<MCPTool[]>
+  getTools(options?: { freshOnly?: boolean }): Promise<MCPTool[]>
   /** Fetch tools from a specific subset of servers. */
   getToolsForServers(serverNames: string[]): Promise<MCPTool[]>
   /** Return name/capabilities/description for all connected servers. */

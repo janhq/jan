@@ -106,7 +106,7 @@ import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
-import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
+import { toolOriginKey, useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
@@ -628,7 +628,7 @@ function ThreadDetail() {
         // serializer metadata; keep the foundation codec as persistence owner.
         const toolOrigins = Object.fromEntries(message.parts.flatMap((part) => {
           if (!('toolCallId' in part) || typeof part.toolCallId !== 'string') return []
-          const origin = useToolCallRuntime.getState().origins[part.toolCallId]
+          const origin = useToolCallRuntime.getState().origins[toolOriginKey(threadId, part.toolCallId)]
           return origin === undefined ? [] : [[part.toolCallId, origin]]
         }))
         const { content: contentParts, metadata: messageMetadata } =
@@ -840,9 +840,10 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
             const serverName = callMcpIdentities.get(threadId)?.get(toolCall.toolCallId)
-            const checkMcp = () => assertMcpIdentityAvailable(
-              toolName, serverName, () => serviceHub.mcp().getTools(),
-              (server, name) => useToolAvailable.getState().isToolDisabled(server, name)
+            const checkMcp = (validationSignal: AbortSignal = stopSignal) => assertMcpIdentityAvailable(
+              toolName, serverName, () => serviceHub.mcp().getTools({ freshOnly: true }),
+              (server, name) => useToolAvailable.getState().isToolDisabled(server, name),
+              validationSignal
             )
 
             if (webRoute(toolName) === 'disabled') {
@@ -1141,7 +1142,7 @@ function ThreadDetail() {
       sessionData.tools.push(toolCall)
       const serverName = useChatSessions.getState().sessions[threadId]?.transport
         .getMcpServerForTool(toolCall.toolName)
-      useToolCallRuntime.getState().recordOrigin(toolCall.toolCallId, serverName)
+      useToolCallRuntime.getState().recordOrigin(toolCall.toolCallId, serverName, threadId)
       if (!callMcpIdentities.has(threadId)) callMcpIdentities.set(threadId, new Map())
       callMcpIdentities.get(threadId)!.set(toolCall.toolCallId, serverName)
       if (
@@ -1159,9 +1160,10 @@ function ThreadDetail() {
               toolCall.toolName,
               threadId,
               serverName,
-              () => assertMcpIdentityAvailable(
-                toolCall.toolName, serverName, () => serviceHub.mcp().getTools(),
-                (server, name) => useToolAvailable.getState().isToolDisabled(server, name)
+              (validationSignal) => assertMcpIdentityAvailable(
+                toolCall.toolName, serverName, () => serviceHub.mcp().getTools({ freshOnly: true }),
+                (server, name) => useToolAvailable.getState().isToolDisabled(server, name),
+                validationSignal
               )
             )
         )
@@ -2386,6 +2388,7 @@ function ThreadDetail() {
                   <MessageItem
                     key={message.id}
                     message={message}
+                    threadId={threadId}
                     isFirstMessage={isFirstMessage}
                     isLastMessage={isLastMessage}
                     status={effectiveStatus}
@@ -2408,6 +2411,7 @@ function ThreadDetail() {
                 <MessageItem
                   key={`continue-placeholder-${pendingContinueMessage.id}`}
                   message={pendingContinueMessage}
+                  threadId={threadId}
                   isFirstMessage={false}
                   isLastMessage={true}
                   status={effectiveStatus}

@@ -53,7 +53,7 @@ type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
    * otherwise lose the duration they had been showing.
    */
   enqueue: (toolCallIds: string[], owner?: string) => void
-  recordOrigin: (toolCallId: string, server: string | undefined) => void
+  recordOrigin: (toolCallId: string, server: string | undefined, threadId?: string) => void
   markRunning: (toolCallId: string, server?: string) => void
   markSettled: (toolCallId: string) => void
   /**
@@ -84,6 +84,10 @@ type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
 
 /** The owner of calls enqueued without one. */
 const NO_OWNER = ''
+
+/** Scope provider call IDs: different threads may reuse the same wire ID. */
+export const toolOriginKey = (threadId: string | undefined, callId: string) =>
+  JSON.stringify([threadId ?? '', callId])
 
 export function isToolCallRunning(timing: ToolCallTiming | undefined): boolean {
   return timing?.startedAt !== undefined && timing.endedAt === undefined
@@ -129,8 +133,8 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
   diffs: {},
   origins: {},
 
-  recordOrigin: (toolCallId, server) =>
-    set((s) => ({ origins: { ...s.origins, [toolCallId]: server ?? null } })),
+  recordOrigin: (toolCallId, server, threadId) =>
+    set((s) => ({ origins: { ...s.origins, [toolOriginKey(threadId, toolCallId)]: server ?? null } })),
 
   enqueue: (toolCallIds, owner = NO_OWNER) =>
     set((s) => {
