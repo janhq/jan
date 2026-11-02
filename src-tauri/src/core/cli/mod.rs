@@ -419,8 +419,10 @@ pub(crate) const MISSING_TOOL_RESULT: &str =
 /// Tool pairing is enforced, because an OpenAI-compatible upstream rejects a
 /// conversation where it is broken: a result whose call is gone is dropped, and a
 /// call whose result is missing (a crash between the two) gets the placeholder
-/// above. Roles the agent owns (`system`) and messages carrying neither text nor
-/// calls are left out.
+/// above. A `system` prompt is the agent's and is left out, as are messages
+/// carrying neither text nor calls. Two `system` messages are history rather
+/// than a prompt and are kept: a compaction summary, placed first since it
+/// stands for everything before the rest, and the cost ceiling note, in place.
 pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
     fn answer_open(out: &mut Vec<serde_json::Value>, open: &mut Vec<String>) {
         for id in open.drain(..) {
@@ -432,11 +434,22 @@ pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_
         }
     }
 
+    let mut summaries: Vec<serde_json::Value> = Vec::new();
     let mut out: Vec<serde_json::Value> = Vec::new();
     let mut open: Vec<String> = Vec::new();
     for m in messages {
         let role = m.get("role").and_then(|v| v.as_str()).unwrap_or_default();
         let text = thread_message_text(m);
+        if role == "system" {
+            let node = serde_json::json!({ "role": "system", "content": text });
+            if crate::core::agent::compaction::is_compaction_summary(&node) {
+                summaries.push(node);
+            } else if text.starts_with(crate::core::agent::r#loop::COST_CEILING_MARKER) {
+                answer_open(&mut out, &mut open);
+                out.push(node);
+            }
+            continue;
+        }
         if role == "tool" {
             let id = m
                 .get("tool_call_id")
@@ -480,7 +493,8 @@ pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_
         out.push(msg);
     }
     answer_open(&mut out, &mut open);
-    out
+    summaries.append(&mut out);
+    summaries
 }
 
 // ── Thread forking ─────────────────────────────────────────────────────────
@@ -4449,6 +4463,58 @@ mod tests {
         assert_eq!(
             resumed.history, history,
             "the model must see the tools it ran, not just its own text"
+        );
+    }
+
+    /// A compaction summary is condensed history, not a prompt: it must survive
+    /// resume, and a second save and resume must not lose it either. The cost
+    /// ceiling note says why a run stopped and survives in place the same way.
+    #[test]
+    fn compaction_summary_survives_save_resume_save_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let summary = crate::core::agent::compaction::summary_message("we built a.txt");
+        let ceiling = serde_json::json!({
+            "role": "system",
+            "content": format!(
+                "{} This run stopped after spending about $1.0000.",
+                crate::core::agent::r#loop::COST_CEILING_MARKER
+            ),
+        });
+        let history = vec![
+            serde_json::json!({ "role": "system", "content": "You are Jan." }),
+            summary.clone(),
+            serde_json::json!({ "role": "user", "content": "do it" }),
+            serde_json::json!({ "role": "assistant", "content": "", "tool_calls": [call("c1", "write")] }),
+            serde_json::json!({ "role": "tool", "tool_call_id": "c1", "content": "wrote 1 line" }),
+            ceiling.clone(),
+            serde_json::json!({ "role": "assistant", "content": "Done." }),
+        ];
+        // The live system prompt is the agent's, rebuilt on every run.
+        let expected: Vec<serde_json::Value> = history[1..].to_vec();
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+        let first =
+            load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest)).unwrap();
+        assert_eq!(first.history, expected);
+        cli_save_thread(base, Some(&id), "m", &first.history, None).unwrap();
+        let second =
+            load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest)).unwrap();
+        assert_eq!(second.history, first.history);
+        assert!(crate::core::agent::compaction::is_compaction_summary(&second.history[0]));
+    }
+
+    /// A summary is placed first, whatever order the saved records came in.
+    #[test]
+    fn rebuild_places_compaction_summaries_first() {
+        let summary = crate::core::agent::compaction::summary_message("earlier");
+        let messages = vec![
+            serde_json::json!({ "role": "user", "content": "hi" }),
+            summary.clone(),
+        ];
+        let out = rebuild_wire_history(&messages);
+        assert_eq!(
+            out,
+            vec![summary, serde_json::json!({ "role": "user", "content": "hi" })]
         );
     }
 

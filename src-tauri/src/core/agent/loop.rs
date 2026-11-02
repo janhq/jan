@@ -4755,6 +4755,10 @@ fn client_history(transcript: &Transcript, send_reasoning: bool) -> Vec<serde_js
     project(transcript, None, send_reasoning)
 }
 
+/// How the system note recorded when a run hits its money ceiling starts, so
+/// a resume can tell that history apart from a prompt.
+pub(crate) const COST_CEILING_MARKER: &str = "[cost ceiling reached]";
+
 /// How many messages the request this run is about carries: the `message_count`
 /// a hook payload reports. The projection is the only thing that knows now that
 /// there is no live list to measure, so the count is projected rather than kept
@@ -4923,7 +4927,7 @@ async fn run_turn_cycle(
                 transcript.record_message(serde_json::json!({
                     "role": "system",
                     "content": format!(
-                        "[cost ceiling reached] This run stopped after spending about \
+                        "{COST_CEILING_MARKER} This run stopped after spending about \
                          ${spent:.4} against its ${max:.4} ceiling. The task may be \
                          unfinished; raising --max-budget-usd and resuming continues it."
                     ),
