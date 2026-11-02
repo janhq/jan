@@ -45,6 +45,11 @@ const META_FILE: &str = ".meta.json";
 /// migration runs once.
 const MIGRATED_FILE: &str = ".migrated";
 
+/// Lock files that serialize a store's changes and its side file updates
+/// across processes; see [`lock_changes`] and [`update_meta`].
+const CHANGE_LOCK_FILE: &str = ".lock";
+const META_LOCK_FILE: &str = ".meta.lock";
+
 const USER_PREFIX: &str = "user:";
 const PROJECT_PREFIX: &str = "project:";
 
@@ -403,24 +408,65 @@ fn store_lock<L: Default>(locks: &'static StoreLocks<L>, store: &Path) -> std::s
 /// tidy subagent writes the same store as the main agent, so unserialized
 /// read-modify-writes of the side file would drop each other's updates. Reads
 /// update the side file too, so this is separate from (and taken inside)
-/// [`lock_changes`], which only changes hold.
+/// [`lock_changes`], which only changes hold. [`update_meta`] adds the
+/// cross-process half.
 fn meta_lock(store: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
     static LOCKS: StoreLocks<std::sync::Mutex<()>> = std::sync::OnceLock::new();
     store_lock(&LOCKS, store)
 }
 
 /// Proof that the caller holds a store's change lock; see [`lock_changes`].
-pub type ChangeGuard = tokio::sync::OwnedMutexGuard<()>;
+/// Dropping it releases the lock file before the in-process lock.
+pub struct ChangeGuard {
+    _file: Option<std::fs::File>,
+    _held: tokio::sync::OwnedMutexGuard<()>,
+}
 
 /// Take the store's change lock, which every change to its notes (write, edit,
 /// delete, move) holds for its whole read-modify-write. `memory` calls run in
 /// parallel (the tool is classed `Read`), a tidy subagent changes the store
-/// beside the main agent, and the desktop changes it over IPC: without one
-/// lock two edits of a note would both read the old text and the later write
-/// would silently drop the earlier edit. Async, because it is held across the
-/// file I/O; reads never take it.
+/// beside the main agent, the desktop changes it over IPC, and the desktop and
+/// a `jan` process share the same stores: without one lock two edits of a note
+/// would both read the old text and the later write would silently drop the
+/// earlier edit. Async, because it is held across the file I/O; reads never
+/// take it.
+///
+/// Threads of this process queue on an in-process mutex; its holder then
+/// takes the store's lock file, which other processes contend for. The file
+/// lock blocks in the OS, so it is taken on the blocking pool.
 pub async fn lock_changes(store: &Path) -> ChangeGuard {
-    change_lock(store).lock_owned().await
+    let held = change_lock(store).lock_owned().await;
+    let path = memory_dir(store).join(CHANGE_LOCK_FILE);
+    let file = tokio::task::spawn_blocking(move || lock_file(&path)).await.ok().flatten();
+    ChangeGuard { _file: file, _held: held }
+}
+
+/// Open (creating) a store's lock file; `None` when that fails. The store
+/// directory is not created for it: a store that does not exist yet has no
+/// note two processes could both edit.
+fn open_lock_file(path: &Path) -> Option<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .ok()
+}
+
+/// The lock file at `path`, exclusively locked, waiting for another process
+/// that holds it; the lock lasts until the file is dropped.
+///
+/// `None` when it cannot be made or locked (a read-only or missing store, a
+/// filesystem without advisory locks): the caller then goes on under its
+/// in-process lock alone, as before this lock existed. Failing the memory
+/// operation instead would turn a store this process can still use into one
+/// it cannot, to guard against a second process that is rarely there; the
+/// migration keeps its re-read for that case (see [`archive_if_unchanged`]).
+fn lock_file(path: &Path) -> Option<std::fs::File> {
+    let file = open_lock_file(path)?;
+    fs4::FileExt::lock(&file).ok()?;
+    Some(file)
 }
 
 /// The lock [`lock_changes`] takes, for the sync [`migrate`] to try.
@@ -433,9 +479,15 @@ fn change_lock(store: &Path) -> std::sync::Arc<tokio::sync::Mutex<()>> {
 /// losing a timestamp only reorders the index, it never loses a note. A side
 /// file that fails to parse is left as it is rather than replaced with what
 /// `update` made of an empty one.
+///
+/// Another process updates the side file too, so the in-process lock is
+/// paired with a lock file of its own, not the change lock: reads update the
+/// side file and must not wait out a long change. Held only for this small
+/// read-modify-write, so waiting on it in place is brief.
 fn update_meta(store: &Path, update: impl FnOnce(&mut Meta) -> bool) {
     let lock = meta_lock(store);
     let _held = lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _file = lock_file(&memory_dir(store).join(META_LOCK_FILE));
     let Some(mut meta) = load_meta(store) else {
         return;
     };
@@ -484,10 +536,11 @@ fn save_meta(store: &Path, meta: &Meta) {
 /// that it ran.
 ///
 /// It rewrites notes, so it holds the store's change lock like every other
-/// change; a change in flight defers it to a later session start rather than
-/// blocking this one. Another process shares no lock with this one, so each
-/// note is archived only while it still reads as scanned (see
-/// [`archive_if_unchanged`]).
+/// change, its lock file included; a change in flight here or in another
+/// process defers it to a later session start rather than blocking this one.
+/// A store that cannot be locked across processes (see [`lock_file`]) is
+/// migrated anyway, so each note is archived only while it still reads as
+/// scanned (see [`archive_if_unchanged`]).
 pub fn migrate(store: &Path) {
     let dir = memory_dir(store);
     if !dir.is_dir() || dir.join(MIGRATED_FILE).exists() {
@@ -496,6 +549,12 @@ pub fn migrate(store: &Path) {
     let Ok(_change_lock) = change_lock(store).try_lock_owned() else {
         return;
     };
+    let file = open_lock_file(&dir.join(CHANGE_LOCK_FILE));
+    if let Some(file) = &file {
+        if let Err(fs4::TryLockError::WouldBlock) = fs4::FileExt::try_lock(file) {
+            return;
+        }
+    }
     if dir.join(MIGRATED_FILE).exists() {
         return;
     }
@@ -530,7 +589,8 @@ pub fn migrate(store: &Path) {
 
 /// Archive the note at `path` when it still holds `scanned`; true when it
 /// was written. The re-read is what keeps a change another process made
-/// since the scan: writing the archived scanned copy would silently drop it.
+/// since the scan when the store could not be locked across processes:
+/// writing the archived scanned copy would silently drop it.
 /// A note changed meanwhile stays unarchived, which only leaves it listed.
 fn archive_if_unchanged(path: &Path, scanned: &str) -> bool {
     match std::fs::read_to_string(path) {
@@ -1880,9 +1940,89 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// Another process (a second `jan`, the desktop) shares no lock with this
-    /// one, so a note changed on disk after the migration scanned it is left
-    /// as it is now rather than replaced with the archived scanned copy.
+    /// Hold `name`'s file lock through a handle of its own, the way another
+    /// process (the desktop beside a `jan`) would: flock and LockFileEx locks
+    /// belong to an open file, so this one excludes the store's own.
+    fn hold_as_another_process(root: &Path, name: &str) -> std::fs::File {
+        std::fs::create_dir_all(memory_dir(root)).unwrap();
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(memory_dir(root).join(name))
+            .unwrap();
+        fs4::FileExt::lock(&file).unwrap();
+        file
+    }
+
+    #[tokio::test]
+    async fn a_change_waits_for_another_process_changing_the_store() {
+        let root = unique_root();
+        let other = hold_as_another_process(&root, CHANGE_LOCK_FILE);
+        let waiting = tokio::spawn({
+            let root = root.clone();
+            async move { drop(lock_changes(&root).await) }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        assert!(!waiting.is_finished(), "took the lock another process holds");
+        drop(other);
+        tokio::time::timeout(std::time::Duration::from_secs(10), waiting)
+            .await
+            .expect("taken once the other process lets go")
+            .unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn migration_never_runs_beside_another_process_changing_the_store() {
+        let root = unique_root();
+        put(&root, "merged", "DONE. PR 9 merged.");
+        let other = hold_as_another_process(&root, CHANGE_LOCK_FILE);
+        migrate(&root);
+        let path = memory_dir(&root).join("merged.md");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "DONE. PR 9 merged.");
+        assert!(!memory_dir(&root).join(MIGRATED_FILE).exists(), "deferred, not done");
+        drop(other);
+        migrate(&root);
+        assert!(is_done(&std::fs::read_to_string(&path).unwrap()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_recency_update_waits_for_another_process_updating_it() {
+        let root = unique_root();
+        let other = hold_as_another_process(&root, META_LOCK_FILE);
+        let waiting = std::thread::spawn({
+            let root = root.clone();
+            move || touch_meta(&root, "a", |m| m.read_ms = Some(1))
+        });
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(!memory_dir(&root).join(META_FILE).exists(), "wrote under another's lock");
+        drop(other);
+        waiting.join().unwrap();
+        assert_eq!(load_meta(&root).unwrap().notes["a"].read_ms, Some(1));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A store whose lock file cannot be made (here: a directory squats on
+    /// its name) still takes changes, under the in-process lock alone.
+    #[tokio::test]
+    async fn a_store_that_cannot_be_locked_still_takes_changes() {
+        let root = unique_root();
+        std::fs::create_dir_all(memory_dir(&root).join(CHANGE_LOCK_FILE)).unwrap();
+        std::fs::create_dir_all(memory_dir(&root).join(META_LOCK_FILE)).unwrap();
+        let held = lock_changes(&root).await;
+        write(&root, "a", "one").await.unwrap();
+        drop(held);
+        assert_eq!(read(&root, "a").await.unwrap(), "one");
+        assert!(load_meta(&root).unwrap().notes.contains_key("a"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// When the store cannot be locked across processes, a note changed on
+    /// disk after the migration scanned it is left as it is now rather than
+    /// replaced with the archived scanned copy.
     #[test]
     fn migration_archives_only_a_note_still_as_scanned() {
         let root = unique_root();
@@ -1919,7 +2059,7 @@ mod tests {
             .unwrap()
             .flatten()
             .map(|e| e.file_name().to_string_lossy().to_string())
-            .filter(|n| n != META_FILE)
+            .filter(|n| n != META_FILE && n != META_LOCK_FILE)
             .collect();
         assert!(leftovers.is_empty(), "{leftovers:?}");
         let _ = std::fs::remove_dir_all(&root);
