@@ -173,7 +173,11 @@ export function CoworkPreviewPanel({ roots, path, onClose }: Props) {
                 <Ellipsis className="size-4" />
               </CoworkPanelButton>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent
+              align="end"
+              collisionPadding={12}
+              className="w-80 max-w-[calc(100vw-24px)]"
+            >
               {abs && <>
                 <DropdownMenuItem onSelect={() => void openOrReveal(artifactOpener(), roots, abs)}>
                   <SquareArrowOutUpRight />{t('common:artifactOpenExternal')}
@@ -184,12 +188,26 @@ export function CoworkPreviewPanel({ roots, path, onClose }: Props) {
               </>}
               {state.status === 'ready' && state.kind === 'html' && <>
                 {abs && <DropdownMenuSeparator />}
-                <DropdownMenuCheckboxItem checked={allowNetwork} onCheckedChange={setAllowNetwork}>
-                  <Globe />{t('common:preview.allowNetwork')}
+                <DropdownMenuCheckboxItem
+                  indicatorAlign="right"
+                  checked={allowNetwork}
+                  onCheckedChange={setAllowNetwork}
+                >
+                  <Globe className="size-4 text-muted-foreground" />
+                  <span className="min-w-0 whitespace-normal">
+                    {t('common:preview.allowNetwork')}
+                  </span>
                 </DropdownMenuCheckboxItem>
                 {matchedRoot && canUnsandbox() && (
-                  <DropdownMenuCheckboxItem checked={unsandboxed} onCheckedChange={setUnsandboxed}>
-                    <ShieldOff />{t('common:preview.unsandboxed')}
+                  <DropdownMenuCheckboxItem
+                    indicatorAlign="right"
+                    checked={unsandboxed}
+                    onCheckedChange={setUnsandboxed}
+                  >
+                    <ShieldOff className="size-4 text-muted-foreground" />
+                    <span className="min-w-0 whitespace-normal">
+                      {t('common:preview.unsandboxed')}
+                    </span>
                   </DropdownMenuCheckboxItem>
                 )}
               </>}
