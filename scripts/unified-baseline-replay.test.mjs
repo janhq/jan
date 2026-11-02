@@ -1,6 +1,6 @@
-// Mechanics only, against a fake loopback server: proves the replay parses a
+// Mechanics only, against fake loopback servers: proves the replay parses a
 // streamed response and records timings/usage. Says nothing about real models.
-//   node --test scripts/unified-baseline-replay.test.mjs
+//   node --test scripts/unified-baseline-replay.test.mjs   (or run it directly)
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -8,6 +8,14 @@ import { test } from 'node:test'
 import { assertLoopback, assertNoEnvProxy, loadScenarios, replay, toMarkdown } from './unified-baseline-replay.mjs'
 
 const sse = (o) => `data: ${JSON.stringify(o)}\n\n`
+
+// CLI children this process spawned. If a supervisor (the vitest wrapper)
+// terminates us, kill exactly these recorded children, nothing found by name.
+const liveChildren = new Set()
+process.once('SIGTERM', () => {
+  for (const child of liveChildren) child.kill('SIGKILL')
+  process.exit(1)
+})
 
 test('refuses anything but loopback', () => {
   assert.throws(() => assertLoopback('https://api.openai.com/v1'), /Refusing base URL host/)
@@ -136,6 +144,11 @@ test('fails closed when Node env proxy meets any proxy variable', () => {
   // NO_PROXY is not trusted to save us.
   assert.throws(() => assertNoEnvProxy({ NODE_USE_ENV_PROXY: '1', HTTP_PROXY: P, NO_PROXY: '127.0.0.1' }, []), /Refusing/)
   assert.doesNotThrow(() => assertNoEnvProxy({ NODE_USE_ENV_PROXY: '1' }, []))
+  // Quoted NODE_OPTIONS forms and odd-case names (Windows env is case-insensitive).
+  assert.throws(() => assertNoEnvProxy({ NODE_OPTIONS: '"--use-env-proxy"', HTTP_PROXY: P }, []), /Refusing/)
+  assert.throws(() => assertNoEnvProxy({ NODE_OPTIONS: "'--use-env-proxy'", Http_Proxy: P }, []), /Refusing/)
+  assert.throws(() => assertNoEnvProxy({ node_use_env_proxy: '1', HTTPS_Proxy: P }, []), /Refusing/)
+  assert.throws(() => assertNoEnvProxy({ HTTP_PROXY: P }, ['--use-env-proxy=1']), /Refusing/)
 })
 
 /** Fake model + trap proxy; the CLI runs as a bounded child; only its PID is killed. */
@@ -151,11 +164,12 @@ async function runCliAgainstTraps(extraEnv) {
     const result = await new Promise((resolve) => {
       const child = spawn(process.execPath, [new URL('./unified-baseline-replay.mjs', import.meta.url).pathname,
         '--base-url', `http://127.0.0.1:${mp}/v1`, '--model', 'x', '--runs', '1', '--warmup', '0',
-        '--scenarios', 'chat-bare', '--timeout-ms', '5000'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+        '--scenarios', 'chat-bare', '--timeout-ms', '3000'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+      liveChildren.add(child)
       let out = ''
       child.stdout.on('data', (d) => (out += d)); child.stderr.on('data', (d) => (out += d))
-      const timer = setTimeout(() => child.kill('SIGKILL'), 20_000)
-      child.on('close', (code) => { clearTimeout(timer); resolve({ code, out }) })
+      const timer = setTimeout(() => child.kill('SIGKILL'), 6_000)
+      child.on('close', (code) => { clearTimeout(timer); liveChildren.delete(child); resolve({ code, out }) })
     })
     return { ...result, hits }
   } finally {
@@ -165,7 +179,8 @@ async function runCliAgainstTraps(extraEnv) {
 
 test('CLI refuses to run under an env proxy: nothing reaches the proxy or the model', async () => {
   for (const make of [(p) => ({ NODE_USE_ENV_PROXY: '1', HTTP_PROXY: p }), (p) => ({ NODE_USE_ENV_PROXY: '1', http_proxy: p }),
-    (p) => ({ NODE_OPTIONS: '--use-env-proxy', https_proxy: p, HTTP_PROXY: p })]) {
+    (p) => ({ NODE_OPTIONS: '--use-env-proxy', https_proxy: p, HTTP_PROXY: p }),
+    (p) => ({ NODE_OPTIONS: '"--use-env-proxy"', HTTP_PROXY: p })]) {
     const r = await runCliAgainstTraps(make)
     assert.equal(r.code, 1, r.out)
     assert.match(r.out, /Refusing to run: Node env proxy/)

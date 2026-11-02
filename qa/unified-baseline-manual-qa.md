@@ -172,6 +172,28 @@ restored with `git checkout`:
   only two new test files under `web-app/`. Plus the known environment-only
   `tauri.test.ts` load failure (unbuilt `@janhq/assistant-extension`).
 
+### Round 3b: independent Jan Agent review of `0d790e236`
+
+Reviewer: the Jan Agent with its default config (Claude Fable), read-only and
+sandboxed on a detached snapshot, scoped to `git diff 7d571a84c HEAD`. In its
+sandbox the replay suite passed 8/10; the 2 failures were its sandbox
+blocking `ps` (EPERM), and the trap-proxy and timeout tests passed. It
+confirmed the CRLF handling, the vitest wiring, owned-child kills, and the
+source citations for both documented production behaviours. Findings, all
+fixed in the next commit:
+
+| Severity | Finding | Fix and verification |
+|---|---|---|
+| High | Quoted `NODE_OPTIONS='"--use-env-proxy"'` bypassed the flag regex | Any mention of `use-env-proxy` in `NODE_OPTIONS` or execArgv counts, and opt-in and proxy names match in any case. Unit cases cover quoted, single-quoted, odd-case and `=1` forms, and the trap-proxy CLI test now includes the quoted form. Bounded runner: quoted and odd-case runs exit 1 with 0 model, proxy and trap hits |
+| Medium | `ps` sampling had no timeout, so it could outlive `--timeout-ms` | `execFile('ps', ..., { timeout: 2000 })`; Node kills only that child, and the sample reads as unavailable |
+| Medium | The vitest wrapper's timeout killed the `node --test` runner but not the CLI children it spawned | The wrapper runs the suite directly with `killSignal: 'SIGTERM'`, and the suite kills only the CLI children it recorded. Child deadlines are now 6 s (request timeout 3 s) against a 90 s wrapper. Verified: a SIGTERM during the trap test made the suite exit 1, and its recorded child (PID 20619) was gone |
+| Low | "A tool schema that can only fail" overclaimed, since `stop` and `list` do not go through `start_monitor` | The protocol now scopes the refusal to `start` |
+
+Checks after the fixes: replay suite 10/10, both via `node --test` and run
+directly. Capture `--check` is clean. Vitest is 264/264 across the baseline,
+replay wrapper and related suites. `tsc -b` is clean, `git diff --check` is
+clean, and `node --check` passes on both scripts.
+
 ## Not covered (real-model QA still open)
 
 - No real local model was run. Real prompt tokens, TTFT, latency, peak

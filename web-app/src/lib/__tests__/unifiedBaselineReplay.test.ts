@@ -12,9 +12,12 @@ const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
 it('unified-baseline replay CLI suite passes', () => {
   const run = spawnSync(
     process.execPath,
-    ['--test', 'scripts/unified-baseline-replay.test.mjs'],
-    { cwd: repo, encoding: 'utf8', timeout: 60_000 }
+    // Run directly (no --test sub-process), so the SIGTERM sent on timeout
+    // reaches the suite, which then kills only the CLI children it recorded.
+    // Child deadlines (6 s each, 4 sequential CLI runs) stay well inside this.
+    ['scripts/unified-baseline-replay.test.mjs'],
+    { cwd: repo, encoding: 'utf8', timeout: 90_000, killSignal: 'SIGTERM' }
   )
   expect(run.error, String(run.error)).toBeUndefined()
   expect(run.status, run.stdout + run.stderr).toBe(0)
-}, 70_000)
+}, 100_000)

@@ -80,9 +80,11 @@ intended signal.
     `sandbox: true` (`tools/monitor.rs`, `eval_script`). If confinement cannot
     be set up, the poll counts as "not yet" rather than running unconfined.
 
-  So the real effect without a sandbox is no unconfined execution, plus a tool
-  schema that can only fail: wasted prompt tokens and, if the model calls it,
-  a wasted step that returns an error. I found no test that drives the
+  So the real effect without a sandbox is no unconfined execution. The
+  schema's prompt tokens are still paid on every request, and a `start` call
+  is always refused (a wasted step that returns an error). `stop` and `list`
+  never reach `start_monitor` (`coworkDispatch.ts`). Without a sandbox, no
+  monitor can have been started for them to act on. I found no test that drives the
   no-sandbox refusal in `start_monitor`.
 
 ## Measurement protocol (real local model)

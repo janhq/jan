@@ -40,12 +40,16 @@ export function assertLoopback(baseUrl) {
  * CONNECT reached a trap proxy and the model got no request). Fail closed
  * whenever that opt-in meets any proxy variable, whatever NO_PROXY says.
  */
-const PROXY_VARS = ['HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+const PROXY_VARS = new Set(['http_proxy', 'https_proxy', 'all_proxy'])
 export function assertNoEnvProxy(env = process.env, execArgv = process.execArgv) {
-  const optIn = !!env.NODE_USE_ENV_PROXY ||
-    execArgv.includes('--use-env-proxy') ||
-    /(^|\s)--use-env-proxy(\s|$)/.test(env.NODE_OPTIONS ?? '')
-  const set = PROXY_VARS.filter((v) => env[v])
+  // Deliberately blunt: names are matched in any case, and any mention of the
+  // flag counts, because NODE_OPTIONS also accepts quoted forms such as
+  // '"--use-env-proxy"' that a token parser could miss.
+  const keys = Object.keys(env).filter((k) => env[k])
+  const optIn = keys.some((k) => k.toUpperCase() === 'NODE_USE_ENV_PROXY') ||
+    execArgv.some((a) => a.includes('use-env-proxy')) ||
+    keys.some((k) => k.toUpperCase() === 'NODE_OPTIONS' && env[k].includes('use-env-proxy'))
+  const set = keys.filter((k) => PROXY_VARS.has(k.toLowerCase()))
   if (optIn && set.length) {
     throw new Error(`Refusing to run: Node env proxy is enabled and ${set.join(', ')} is set, ` +
       'so loopback requests could be tunnelled through a proxy. Unset NODE_USE_ENV_PROXY ' +
@@ -82,7 +86,9 @@ export function loadScenarios(dir = FIXTURE_DIR, only) {
 export function rssKiB(pid) {
   if (process.platform === 'win32') return Promise.resolve(null)
   return new Promise((done) =>
-    execFile('ps', ['-o', 'rss=', '-p', String(pid)], (err, out) => {
+    // Bounded: a stuck `ps` must not outlive the request timeout. Node kills
+    // only this child on expiry, and the sample reads as unavailable.
+    execFile('ps', ['-o', 'rss=', '-p', String(pid)], { timeout: 2000 }, (err, out) => {
       const n = err ? NaN : Number.parseInt(String(out).trim(), 10)
       done(Number.isFinite(n) ? n : null)
     }))
