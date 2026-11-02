@@ -1,6 +1,6 @@
 # Chat → existing runTurn (#504)
 
-Current-access parity slice, rebased onto merged MCP/grants/typefix parent `cdecd19d4`. No capability activation.
+Current-access parity slice, rebased onto merged capability-enforcement parent `1a851d57d` (#9544). No capability activation.
 
 ## Production seam
 - `hooks/use-chat.ts` gives the retained SDK `Chat` a streaming transport wrapper. `lib/chatRunTransport.ts` calls existing `coworkRunner.runTurn`; the route's sequential tool loop and SDK `sendAutomaticallyWhen` authority are removed, not feature-flagged beside it.
@@ -14,7 +14,7 @@ Current-access parity slice, rebased onto merged MCP/grants/typefix parent `cdec
 Grants prerequisite owns strict resolver, `useThreads.getConversationCapabilities(id)` effective deny-overlay getter, narrow atomic native patch and optional ChatInput prepare seam. Consume only after merge; re-read effective getter per dispatch before any auto-allow, retain native canonical scope containment. Consent controls stay unmounted until actual enforcement/advertisement activate together. No raw disk metadata bypass. `clientToolDispatch` remains the shared future todo/ask/task/monitor seam; no second ping path.
 
 ## Verification status
-- Full web suite on current merged parent: **387 files / 5383 tests passed**. App TypeScript, production ESLint and diff checks pass.
+- Full web suite on current merged parent: **391 files / 5473 tests passed**. App TypeScript, production ESLint and diff checks pass. The rebase onto `1a851d57d` range-diffs as `=` for all twelve commits, with no file overlap against the parent's agentTools/scoped-dispatch changes.
 - Typecheck and production-file ESLint passed.
 - Route **106 tests** retain all **20 merged MCP cases**. Real SDK edit/regenerate replacements assert a second `regenerate-message` request and replacement assistant, with no old queued tool/follow-up. Cancellation waits the original SDK operation through reservation release, not the early send-admission receipt.
 - Continue publishes its replacement receipt after original drain; streamed-partial/distinct-id regression asserts exact old-record deletion and new assistant persistence. Held-tool Continue is defensive handler-race coverage; normal UI exposes Continue only on a stopped reply.
