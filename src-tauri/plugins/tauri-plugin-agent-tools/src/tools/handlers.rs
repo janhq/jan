@@ -691,7 +691,7 @@ async fn read(
 
     let bytes = match tokio::fs::read(&target).await {
         Ok(b) => b,
-        Err(e) => return (format!("ERROR: {e}"), None),
+        Err(e) => return (format!("ERROR: cannot read {path}: {e}"), None),
     };
 
     // An image file is returned as an OpenAI `image_url` content part rather
@@ -699,7 +699,7 @@ async fn read(
     // plain read (no offset/limit) does this, since slicing an image makes no
     // sense and offset/limit still refers to text lines.
     if offset.is_none() && limit.is_none() && bytes.len() <= MAX_IMAGE_BYTES {
-        if let Some(mime) = crate::tools::image::detect(&target) {
+        if let Some(mime) = crate::tools::image::mime_from_signature(&bytes) {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
             let name = target
@@ -718,12 +718,18 @@ async fn read(
 
     let content = match String::from_utf8(bytes) {
         Ok(c) => c,
-        Err(_) => return ("ERROR: not a UTF-8 text file".to_string(), None),
+        Err(_) => return (format!("ERROR: {path} is not a UTF-8 text file"), None),
     };
 
+    let mut first_line = 1;
     let selected = if offset.is_some() || limit.is_some() {
-        let lines: Vec<&str> = content.split('\n').collect();
+        let mut lines: Vec<&str> = content.split('\n').collect();
+        // A trailing newline ends the last line; it does not start another.
+        if lines.len() > 1 && lines.last() == Some(&"") {
+            lines.pop();
+        }
         let start = offset.map(|o| o.saturating_sub(1)).unwrap_or(0);
+        first_line = start + 1;
         if start >= lines.len() {
             return (
                 format!(
@@ -743,15 +749,43 @@ async fn read(
         content
     };
 
-    (
-        cap_output(
-            &selected,
-            MAX_LINES,
-            MAX_BYTES,
-            "\n[truncated: use offset/limit to read more]",
-        ),
-        None,
-    )
+    (cap_read(&selected, first_line, MAX_LINES, MAX_BYTES), None)
+}
+
+/// [`cap_output`] for `read`, whose note names the `offset` to continue from.
+/// `first_line` is the file's line number of the first line of `s`. A single
+/// line over `max_bytes` (a minified file) is cut at a char boundary rather
+/// than dropped whole, since `offset`/`limit` cannot reach inside a line.
+fn cap_read(s: &str, first_line: usize, max_lines: usize, max_bytes: usize) -> String {
+    let mut out = String::new();
+    for (i, line) in s.split_inclusive('\n').enumerate() {
+        let number = first_line + i;
+        if i >= max_lines || (i > 0 && out.len() + line.len() > max_bytes) {
+            out.push_str(&format!("\n[truncated: use offset={number} to read more]"));
+            return out;
+        }
+        if line.len() > max_bytes {
+            let body = line.strip_suffix('\n').unwrap_or(line);
+            let mut cut = max_bytes;
+            while !body.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            out.push_str(&body[..cut]);
+            let next = if s.len() > line.len() {
+                format!("; use offset={} to read the lines after it", number + 1)
+            } else {
+                String::new()
+            };
+            out.push_str(&format!(
+                "\n[truncated: line {number} cut at {cut} of {} bytes, the rest of that line \
+                 cannot be read with offset/limit{next}]",
+                body.len(),
+            ));
+            return out;
+        }
+        out.push_str(line);
+    }
+    out
 }
 
 async fn ls(
@@ -2276,10 +2310,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_extension_fallback_catches_a_misnamed_image() {
+    async fn a_text_file_named_like_an_image_is_read_as_text() {
         let root = unique_root();
-        // No valid signature header, but the extension says PNG: the extension
-        // fallback still returns an image payload.
+        // No image signature: the extension alone must not turn it into a
+        // broken data URL.
         std::fs::write(root.join("scanned.png"), b"not a real png").unwrap();
         let (content, images) = super::execute_builtin(
             lookup("read").unwrap(),
@@ -2287,11 +2321,113 @@ mod tests {
             &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
         )
         .await;
-        assert!(!content.starts_with("ERROR"), "got: {content}");
-        assert!(
-            images.is_some(),
-            "extension-matching png must yield an image"
-        );
+        assert_eq!(content, "not a real png");
+        assert!(images.is_none(), "no signature, no image");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn a_corrupt_image_is_an_error_naming_the_path() {
+        let root = unique_root();
+        std::fs::write(root.join("broken.png"), [0xff, 0xfe, 0x00, 0x01]).unwrap();
+        let (content, images) = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "broken.png"}),
+            &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
+        )
+        .await;
+        assert!(images.is_none());
+        assert!(content.starts_with("ERROR"), "got: {content}");
+        assert!(content.contains("broken.png"), "got: {content}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_errors_name_the_path() {
+        let root = unique_root();
+        let out =
+            execute_builtin(lookup("read").unwrap(), &json!({"path": "missing.txt"}), &root).await;
+        assert!(out.starts_with("ERROR") && out.contains("missing.txt"), "got: {out}");
+        std::fs::write(root.join("bin"), [0xff, 0xfe, 0x00]).unwrap();
+        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "bin"}), &root).await;
+        assert!(out.starts_with("ERROR") && out.contains("bin"), "got: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The empty piece after a trailing newline is not a line.
+    #[tokio::test]
+    async fn read_line_count_ignores_a_trailing_newline() {
+        let root = unique_root();
+        std::fs::write(root.join("two.txt"), b"a\nb\n").unwrap();
+        let out = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "two.txt", "offset": 3}),
+            &root,
+        )
+        .await;
+        assert!(out.starts_with("ERROR"), "got: {out}");
+        assert!(out.contains("(2 lines total)"), "got: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A single line over the byte cap (a minified file) is cut at a char
+    /// boundary and the note says where, instead of returning only the note.
+    #[tokio::test]
+    async fn read_cuts_an_oversized_line_and_says_where() {
+        let root = unique_root();
+        // Two-byte chars, with an odd byte first, so the cap lands mid-char.
+        let long = format!("x{}", "\u{e9}".repeat(40_000));
+        std::fs::write(root.join("min.js"), format!("{long}\nnext\n")).unwrap();
+        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "min.js"}), &root).await;
+        let (body, note) = out.rsplit_once('\n').unwrap();
+        assert!(body.len() <= MAX_BYTES && body.len() > MAX_BYTES - 4, "len {}", body.len());
+        assert!(long.starts_with(body));
+        assert!(note.contains("line 1"), "{note}");
+        assert!(note.contains(&format!("{} of {} bytes", body.len(), long.len())), "{note}");
+        assert!(note.contains("offset=2"), "{note}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_line_cap_boundary() {
+        let root = unique_root();
+        let lines = |n: usize| (1..=n).map(|i| format!("{i}\n")).collect::<String>();
+        std::fs::write(root.join("at.txt"), lines(MAX_LINES)).unwrap();
+        std::fs::write(root.join("over.txt"), lines(MAX_LINES + 1)).unwrap();
+        let at = execute_builtin(lookup("read").unwrap(), &json!({"path": "at.txt"}), &root).await;
+        assert!(!at.contains("[truncated"), "{}", &at[at.len() - 40..]);
+        let over =
+            execute_builtin(lookup("read").unwrap(), &json!({"path": "over.txt"}), &root).await;
+        assert!(!over.contains("\n2001\n"));
+        assert!(over.ends_with("use offset=2001 to read more]"), "{}", &over[over.len() - 80..]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_byte_cap_boundary() {
+        let root = unique_root();
+        // 64 lines of exactly 1KB each fill the cap to the byte.
+        let line = format!("{}\n", "a".repeat(1023));
+        let full = line.repeat(64);
+        assert_eq!(full.len(), MAX_BYTES);
+        std::fs::write(root.join("at.txt"), &full).unwrap();
+        std::fs::write(root.join("over.txt"), format!("{full}b")).unwrap();
+        let at = execute_builtin(lookup("read").unwrap(), &json!({"path": "at.txt"}), &root).await;
+        assert_eq!(at, full);
+        let over =
+            execute_builtin(lookup("read").unwrap(), &json!({"path": "over.txt"}), &root).await;
+        assert!(over.starts_with(&full));
+        assert!(over.ends_with("use offset=65 to read more]"), "{}", &over[over.len() - 80..]);
+        // The note's line number is relative to the file, not to the slice.
+        std::fs::write(root.join("later.txt"), format!("first\n{full}b")).unwrap();
+        let sliced = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "later.txt", "offset": 2}),
+            &root,
+        )
+        .await;
+        assert!(sliced.starts_with(&full));
+        assert!(sliced.ends_with("use offset=66 to read more]"), "{}", &sliced[sliced.len() - 80..]);
         let _ = std::fs::remove_dir_all(&root);
     }
 
