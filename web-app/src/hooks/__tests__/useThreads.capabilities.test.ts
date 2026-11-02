@@ -301,18 +301,28 @@ describe('useThreads conversation capabilities', () => {
       'Conversation changed while saving permissions'
     )
     await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
-    // A: revoke whose narrow fails -> sticky set while Z is in flight.
+    // A: revoke whose narrow fails -> sticky set (after its stopAll await)
+    // while Z is in flight. Wait for the stopAll marker plus a macrotask so
+    // the sticky add has provably executed before B's ack can clear anything.
     revokeHost.mockRejectedValueOnce(new Error('bridge blip'))
     const saveA = expect(save(null, id)).rejects.toMatchObject({
       backgroundMayPersist: true,
     })
-    // B: revoke; its best-effort first narrow acks, then it waits on A/Z.
+    await vi.waitFor(() => expect(calls).toContain(`stopAll:${id}`))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // B: revoke whose best-effort first narrow acks ONLY NOW -- strictly
+    // after A's sticky add -- then waits on A/Z. An early (pre-predecessor)
+    // delete here would clear a REAL sticky entry.
+    const bNarrow = deferred()
+    revokeHost.mockImplementationOnce(() => bNarrow.promise)
     const saveB = expect(save(null, id)).rejects.toThrow(
       'Conversation changed while saving permissions'
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    bNarrow.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
     // C: races into the window; its narrow fails. It must still warn -- the
-    // sticky set may only clear on an ack that postdates every confirm.
+    // sticky set may only clear on an ack that postdates every confirm, and
+    // B has not reached its authoritative narrow (it is draining A and Z).
     revokeHost.mockRejectedValueOnce(new Error('bridge blip'))
     const saveC = expect(save(null, id)).rejects.toMatchObject({
       backgroundMayPersist: true,
