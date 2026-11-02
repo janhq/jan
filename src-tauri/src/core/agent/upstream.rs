@@ -1122,7 +1122,7 @@ pub(crate) async fn execute_mcp_tool_calls(
         let Some(service) = servers.get(server_name) else {
             results.push((
                 tool_call_id,
-                format!("ERROR: MCP server '{server_name}' not found in runtime state"),
+                format!("ERROR: MCP server '{server_name}' is not running"),
             ));
             continue;
         };

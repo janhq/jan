@@ -2871,14 +2871,16 @@ fn read_blackboard(scratch: Option<&Path>, names: &[String]) -> Vec<(String, Str
         .collect()
 }
 
-/// Prefix a next-phase brief with the previous phase's results.
-fn inject_inputs(task: &str, inputs: &[(String, String)]) -> String {
+/// Prefix a next-phase brief with the previous phase's results. `dir` is the
+/// blackboard in the model's spelling: a child works in its own checkout, so
+/// a bare `blackboard/<name>.md` would resolve against the wrong directory.
+fn inject_inputs(task: &str, inputs: &[(String, String)], dir: &str) -> String {
     if inputs.is_empty() {
         return task.to_string();
     }
-    let mut s = String::from(
+    let mut s = format!(
         "## Results from the previous phase\n\nThe agents before you produced the following; \
-         their full outputs are also on the blackboard at blackboard/<name>.md.\n\n",
+         their full outputs are in {dir}/<name>.md.\n\n",
     );
     for (name, content) in inputs {
         s.push_str(&format!("### {name}\n"));
@@ -2886,9 +2888,7 @@ fn inject_inputs(task: &str, inputs: &[(String, String)]) -> String {
         let cut = char_boundary(trimmed, PHASE_INPUT_MAX_BYTES);
         s.push_str(&trimmed[..cut]);
         if cut < trimmed.len() {
-            s.push_str(&format!(
-                "\n\n[...truncated; read blackboard/{name}.md for the full output]"
-            ));
+            s.push_str(&format!("\n\n[...truncated; read {dir}/{name}.md for the full output]"));
         }
         s.push_str("\n\n");
     }
@@ -3128,10 +3128,15 @@ async fn run_phase_plan(
             return;
         }
         let inputs = read_blackboard(scratch.as_deref(), &prev_names);
+        // Only read when there is a scratch, which `inputs` being non-empty implies.
+        let dir = scratch
+            .as_deref()
+            .map(|s| scratch_display_path(Some(s), &blackboard_dir_path(s)))
+            .unwrap_or_default();
         let mut ids = Vec::with_capacity(phase.subagents.len());
         let mut names = Vec::with_capacity(phase.subagents.len());
         for mut req in phase.subagents {
-            req.description = inject_inputs(&req.description, &inputs);
+            req.description = inject_inputs(&req.description, &inputs, &dir);
             // Push the name only on a successful spawn, so `ids` and `names` stay
             // aligned: a child that never started has no blackboard file for the
             // next phase to read and no answer for the terminal notice to report.
@@ -5963,17 +5968,18 @@ pub(crate) mod tests {
 
     #[test]
     fn inject_inputs_prefixes_and_truncates() {
-        assert_eq!(inject_inputs("do it", &[]), "do it");
+        assert_eq!(inject_inputs("do it", &[], "/tmp/blackboard"), "do it");
         let inputs = vec![("alpha".to_string(), "found X".to_string())];
-        let out = inject_inputs("synthesize", &inputs);
+        let out = inject_inputs("synthesize", &inputs, "/tmp/blackboard");
         assert!(out.contains("Results from the previous phase"));
+        assert!(out.contains("full outputs are in /tmp/blackboard/<name>.md."), "{out}");
         assert!(out.contains("### alpha"));
         assert!(out.contains("found X"));
         assert!(out.trim_end().ends_with("synthesize"));
 
         let big = "x".repeat(PHASE_INPUT_MAX_BYTES + 500);
-        let out = inject_inputs("t", &[("beta".to_string(), big)]);
-        assert!(out.contains("truncated; read blackboard/beta.md"));
+        let out = inject_inputs("t", &[("beta".to_string(), big)], "/tmp/blackboard");
+        assert!(out.contains("truncated; read /tmp/blackboard/beta.md"));
     }
 
     /// The heart of the phased dispatch: a later phase must not start until the
