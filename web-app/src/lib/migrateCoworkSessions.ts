@@ -65,16 +65,22 @@ function canonical(v: unknown): string {
   )
 }
 
+/**
+ * Deletion intent is load-bearing: an unreadable journal must never read as
+ * "nothing was deleted", or merging the untouched legacy blob resurrects
+ * sessions the user deleted. Throws on an unreadable or invalid journal so
+ * every caller fails closed (migration stays `partial` and retries; the load
+ * path skips the legacy-blob merge). A missing journal is an empty set.
+ */
 export async function readDeletedIds(invoke: Invoke): Promise<Set<string>> {
-  try {
-    const raw = await invoke<string | null>('settings_get', {
-      key: COWORK_DELETED_IDS_KEY,
-    })
-    const parsed = raw ? JSON.parse(raw) : []
-    return new Set(Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [])
-  } catch {
-    return new Set()
+  const raw = await invoke<string | null>('settings_get', {
+    key: COWORK_DELETED_IDS_KEY,
+  })
+  const parsed: unknown = raw == null ? [] : JSON.parse(raw)
+  if (!Array.isArray(parsed) || !parsed.every((id) => typeof id === 'string')) {
+    throw new Error('Invalid Cowork deletion journal: expected an array of strings')
   }
+  return new Set(parsed)
 }
 
 const toErrorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))

@@ -234,19 +234,31 @@ describe('coworkSync startup', () => {
     unregister()
   })
 
-  it('native close handler prevents destroy on failed ordinary write and second close retries', async () => {
+  it('native close drains a recovered background write on the FIRST close instead of failing it', async () => {
     await startCoworkSync()
     chatStorage.create.mockRejectedValueOnce(new Error('disk full'))
+    useMessages.getState().addMessage({ id: 'partial', thread_id: 'ordinary', content: [] } as any)
+    await Promise.resolve(); await Promise.resolve()
+    // Storage recovered after the background failure: the close must retry the
+    // queued head and succeed, not re-throw the stale recorded error.
+    const first = vi.fn()
+    await closeWindow.callback!({ preventDefault: first })
+    expect(first).not.toHaveBeenCalled()
+    expect(chatStorage.create).toHaveBeenCalledTimes(2)
+  })
+
+  it('native close handler prevents destroy while the write still fails, then a later close retries', async () => {
+    await startCoworkSync()
+    chatStorage.create.mockRejectedValue(new Error('disk full'))
     useMessages.getState().addMessage({ id: 'partial', thread_id: 'ordinary', content: [] } as any)
     await Promise.resolve(); await Promise.resolve()
     const first = vi.fn()
     await closeWindow.callback!({ preventDefault: first })
     expect(first).toHaveBeenCalledOnce()
+    chatStorage.create.mockResolvedValue(undefined)
     const second = vi.fn()
     await closeWindow.callback!({ preventDefault: second })
     expect(second).not.toHaveBeenCalled()
-    await flushMessageWrites()
-    expect(chatStorage.create).toHaveBeenCalledTimes(2)
   })
 
   it.each([true, false])('project reassignment survives later writes and project deletion (move=%s)', async (move) => {
@@ -355,6 +367,32 @@ describe('coworkSync startup', () => {
     const ids = useCoworkSessions.getState().sessions.map((s) => s.id)
     expect(ids).toContain(early)
     expect(ids).toContain('a')
+  })
+
+  it('the sandbox sweep keep-list includes sessions created before hydration finished', async () => {
+    backend.settings.set(COWORK_MIGRATION_FLAG_KEY, 'true')
+    backend.threads.set('committed', {
+      id: 'committed',
+      object: 'thread',
+      title: 'Committed',
+      assistants: [],
+      created: 1,
+      updated: 1,
+      metadata: { mode: 'cowork', folder: null },
+    })
+    backend.extras.set('committed', {
+      version: 1,
+      turns: [{ role: 'user', content: 'hi' }],
+      messages: [],
+    })
+    // A session begun before hydration finished (e.g. a failed first start
+    // retried mid-run) has a live sandbox the sweep must keep.
+    const early = useCoworkSessions.getState().createSession()
+    await startCoworkSync()
+    expect(agentTools.sweepSessionWorkspaces).toHaveBeenCalledTimes(1)
+    const keep = agentTools.sweepSessionWorkspaces.mock.calls[0][0] as string[]
+    expect(keep).toContain('committed')
+    expect(keep).toContain(early)
   })
   it('a sandbox cleanup failure does not restore a durably deleted session', async () => {
     await startCoworkSync()

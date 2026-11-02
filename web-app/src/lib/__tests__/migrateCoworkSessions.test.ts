@@ -3,6 +3,7 @@ import {
   migrateCoworkSessionsToThreads,
   isCoworkMigrationSettled,
   CODE_SESSIONS_KEY,
+  COWORK_DELETED_IDS_KEY,
   COWORK_MIGRATION_FLAG_KEY,
 } from '../migrateCoworkSessions'
 
@@ -199,6 +200,19 @@ describe('migrateCoworkSessionsToThreads', () => {
     expect(r.migrated).toEqual(['old'])
     const side: any = b.extras.get('old/cowork')
     expect(side.messages.length).toBeGreaterThan(0)
+  })
+
+  it('a corrupt deletion journal fails the migration closed: nothing copied, journal untouched', async () => {
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('was-deleted')]))
+    b.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    const r = await migrateCoworkSessionsToThreads(b.invoke)
+    // With deletion intent unreadable, copying could resurrect a deleted
+    // session; the run stays partial and is retried next launch instead.
+    expect(r.status).toBe('partial')
+    expect(b.calls).not.toContain('create_thread')
+    expect(b.threads.size).toBe(0)
+    expect(b.settings.has(COWORK_MIGRATION_FLAG_KEY)).toBe(false)
+    expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe('{corrupt')
   })
 
   it('a corrupt blob does not throw into startup and leaves the marker unset', async () => {

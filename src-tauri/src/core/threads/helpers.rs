@@ -94,6 +94,12 @@ pub fn update_thread_metadata(
 /// over the target, so a crash mid-write leaves the old contents (or nothing),
 /// never a truncated file. The name is unique per call rather than guarded by
 /// the thread lock, because some callers already hold that lock.
+///
+/// The temp file is fsynced before the rename so the rename can only ever
+/// expose fully written bytes, and on Unix the parent directory is fsynced
+/// after it (best-effort) so the new entry itself is pushed toward disk. This
+/// narrows the power-loss window; it is not a full power-loss durability
+/// guarantee across platforms and filesystems.
 pub fn write_file_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -103,12 +109,77 @@ pub fn write_file_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let tmp = path.with_file_name(format!("{name}.{}.{n}.tmp", std::process::id()));
-    if let Err(e) = fs::write(&tmp, data) {
+    let write_synced = (|| -> std::io::Result<()> {
+        let mut file = File::create(&tmp)?;
+        file.write_all(data)?;
+        file.sync_all()
+    })();
+    if let Err(e) = write_synced {
         let _ = fs::remove_file(&tmp);
         return Err(e.to_string());
     }
     fs::rename(&tmp, path).map_err(|e| {
         let _ = fs::remove_file(&tmp);
         e.to_string()
-    })
+    })?;
+    #[cfg(unix)]
+    if let Some(parent) = path.parent() {
+        // Directories cannot be opened as files on Windows; on Unix this is
+        // the conventional way to flush the rename's directory entry.
+        if let Ok(dir) = File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod write_file_atomic_tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "jan-write-file-atomic-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn writes_new_file_and_overwrites_existing_leaving_no_temp_files() {
+        let dir = temp_dir("roundtrip");
+        let target = dir.join("thread.json");
+        write_file_atomic(&target, b"first").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"first");
+        write_file_atomic(&target, b"second").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"second");
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path() != target)
+            .collect();
+        assert!(leftovers.is_empty(), "stray files: {leftovers:?}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn failure_leaves_existing_content_untouched() {
+        let dir = temp_dir("failure");
+        let target = dir.join("missing-subdir").join("thread.json");
+        assert!(write_file_atomic(&target, b"data").is_err());
+        // A failed write to a bad path must not create or truncate anything.
+        assert!(!target.exists());
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name() != "missing-subdir")
+            .collect();
+        assert!(leftovers.is_empty(), "stray files: {leftovers:?}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }

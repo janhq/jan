@@ -502,7 +502,10 @@ describe('useThreads - coverage', () => {
   it.each(['Chat', 'Cowork'])('propagates rejected %s deletion without pruning thread state', async (mode) => {
     const failure = new Error('durable delete failed')
     const project = { id: 'p1', name: 'Project', updated_at: 1 }
-    const thread = { id: 'failed', title: 'Failed', metadata: { project } } as Thread
+    // Distinct ids per variant: a failed delete intentionally parks the id
+    // default-deny in the in-process authority map, which a later setThreads
+    // for a reused id would make visible in its metadata.
+    const thread = { id: `failed-${mode}`, title: 'Failed', metadata: { project } } as Thread
     if (mode === 'Cowork') {
       thread.metadata = { ...thread.metadata, mode: 'cowork' }
       useCoworkSessions.setState({ sessions: [{
@@ -517,8 +520,8 @@ describe('useThreads - coverage', () => {
 
     await expect(useThreads.getState().deleteAllThreadsByProject('p1')).rejects.toMatchObject({ errors: [failure] })
 
-    expect(useThreads.getState().threads.failed).toEqual(thread)
-    expect(useThreads.getState().currentThreadId).toBe('failed')
+    expect(useThreads.getState().threads[thread.id]).toEqual(thread)
+    expect(useThreads.getState().currentThreadId).toBe(thread.id)
     expect(useThreads.getState().getFilteredThreads('Failed')).toHaveLength(1)
   })
 

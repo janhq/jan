@@ -2,11 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useThreads } from '../useThreads'
 import { resolveConversationCapabilities } from '@/lib/conversationCapabilities'
 
-const { persist, updateThread } = vi.hoisted(() => ({ persist: vi.fn(), updateThread: vi.fn() }))
+const { persist, updateThread, deleteNative, toastError } = vi.hoisted(() => ({
+  persist: vi.fn(),
+  updateThread: vi.fn(),
+  deleteNative: vi.fn(),
+  toastError: vi.fn(),
+}))
 
 vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({ threads: () => ({ setConversationCapabilities: persist, updateThread, deleteThread: vi.fn() }) }),
+  getServiceHub: () => ({ threads: () => ({ setConversationCapabilities: persist, updateThread, deleteThread: deleteNative }) }),
 }))
+vi.mock('sonner', () => ({ toast: { error: toastError } }))
 vi.mock('@/lib/agentTools', () => ({
   cleanupThreadWorkspace: vi.fn(),
   cancelAgentThreadBash: vi.fn(),
@@ -15,7 +21,9 @@ vi.mock('@/lib/agentTools', () => ({
 vi.mock('@/hooks/useAgentMode', () => ({ useAgentMode: { getState: () => ({ removeThread: vi.fn() }) } }))
 vi.mock('@/stores/chat-session-store', () => ({ useChatSessions: { getState: () => ({ removeSession: vi.fn() }) } }))
 vi.mock('@/hooks/useAppState', () => ({ useAppState: { getState: () => ({ clearThreadState: vi.fn() }) } }))
-vi.mock('@/hooks/useCoworkSessions', () => ({ useCoworkSessions: {} }))
+vi.mock('@/hooks/useCoworkSessions', () => ({
+  useCoworkSessions: { getState: () => ({ sessions: [], deleteSession: vi.fn() }) },
+}))
 vi.mock('@/hooks/useCoworkRun', () => ({ useCoworkRun: {} }))
 vi.mock('@/lib/coworkRunner', () => ({ abortRun: vi.fn() }))
 vi.mock('@/lib/coworkMonitor', () => ({ dropMonitorLane: vi.fn() }))
@@ -52,6 +60,7 @@ describe('useThreads conversation capabilities', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     persist.mockResolvedValue(undefined)
+    deleteNative.mockResolvedValue(undefined)
     useThreads.setState({
       threads: { chat: thread() },
       currentThreadId: 'chat',
@@ -321,6 +330,53 @@ describe('useThreads conversation capabilities', () => {
     useThreads.getState().setThreads([{ ...thread(), isFavorite: true }, thread('other')])
     expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(granted)
     expect(useThreads.getState().getConversationCapabilities('other')).toEqual(resolveConversationCapabilities(undefined))
+  })
+
+  it('revokes grant authority before the native delete during project deletion', async () => {
+    useThreads.setState({
+      threads: { chat: thread('chat', { project: { id: 'p', name: 'P', updated_at: 1 } }) },
+    })
+    await save(granted)
+    let authorityDuringDelete: unknown = 'unset'
+    deleteNative.mockImplementationOnce(async () => {
+      // Observed while the native delete is in flight: a concurrent dispatch
+      // must already see default-deny, as on the single-delete path.
+      authorityDuringDelete = useThreads.getState().getConversationCapabilities('chat')
+    })
+    await useThreads.getState().deleteAllThreadsByProject('p')
+    expect(authorityDuringDelete).toEqual(resolveConversationCapabilities(undefined))
+    expect(useThreads.getState().threads.chat).toBeUndefined()
+  })
+
+  it('restores the thread default-deny and surfaces a toast when the native delete fails', async () => {
+    await save(granted)
+    deleteNative.mockRejectedValueOnce(new Error('file locked'))
+    useThreads.getState().deleteThread('chat')
+    expect(useThreads.getState().threads.chat).toBeUndefined()
+    await vi.waitFor(() => expect(useThreads.getState().threads.chat).toBeTruthy())
+    expect(toastError).toHaveBeenCalledOnce()
+    // The restored thread holds no authority until the user consents again,
+    // even though its on-disk metadata may still carry the stale grant.
+    expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(
+      resolveConversationCapabilities(undefined)
+    )
+  })
+
+  it('a successful native delete restores nothing and shows no toast', async () => {
+    useThreads.getState().deleteThread('chat')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(useThreads.getState().threads.chat).toBeUndefined()
+    expect(toastError).not.toHaveBeenCalled()
+  })
+
+  it('a late failed-delete restore never clobbers a thread recreated with the same id', async () => {
+    deleteNative.mockRejectedValueOnce(new Error('file locked'))
+    useThreads.getState().deleteThread('chat')
+    const recreated = thread('chat', { custom: 'recreated' })
+    useThreads.setState({ threads: { chat: recreated } })
+    await vi.waitFor(() => expect(toastError).toHaveBeenCalled())
+    expect(useThreads.getState().threads.chat).toBe(recreated)
   })
 
 })

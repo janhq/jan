@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { ulid } from 'ulidx'
+import { toast } from 'sonner'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
@@ -125,6 +126,49 @@ const cleanupThreadArtifacts = (threadId: string, thread?: Thread) => {
   cleanupThreadCache(threadId)
   // Cowork conversations keep their sandbox in the session scope.
   cleanupThreadWorkspace(threadId, workspaceScopeFor(thread))
+}
+
+// A native delete can fail after local state was already cleared (e.g. a
+// Windows file lock); silently dropping that leaves the thread gone from the
+// UI now but back on the next launch. Restore it and surface the failure
+// instead. Grants stay pruned: the restored thread is default-deny until the
+// user consents again.
+const deleteThreadOnDisk = (threadId: string, thread?: Thread) => {
+  // .then(() => ...) routes synchronous throws and non-promise returns (test
+  // doubles) into the same catch as an async rejection.
+  Promise.resolve()
+    .then(() => getServiceHub().threads().deleteThread(threadId))
+    .catch(
+    (error) => {
+      console.warn(`[Threads] Failed to delete thread ${threadId} from storage:`, error)
+      if (thread) {
+        // The pre-delete record may still carry a consent grant in its
+        // metadata, which the capabilities getter falls back to. Strip it: the
+        // restored thread is default-deny until the user consents again.
+        const { conversationCapabilities: _staleGrant, ...metadata } = thread.metadata ?? {}
+        void _staleGrant
+        const restored: Thread = { ...thread, metadata }
+        useThreads.setState((state) => {
+          if (state.threads[threadId]) return state
+          const threads = { ...state.threads, [threadId]: restored }
+          return {
+            threads,
+            searchIndex: new Fzf<Thread[]>(
+              Object.values(threads).filter((t) => t.id !== TEMPORARY_CHAT_ID && t.title),
+              { selector: (item: Thread) => item.title ?? '' }
+            ),
+          }
+        })
+      }
+      // Honest copy: cleanupThreadArtifacts ran before the native delete
+      // (inherited ordering), so attachments index / cached state may already
+      // be gone; only the conversation itself is restored.
+      toast.error('Failed to delete chat', {
+        description:
+          'It could not be removed from storage. The conversation was restored, but some auxiliary data (attachment index, cache) may have been cleaned up.',
+      })
+    }
+  )
 }
 
 export const useThreads = create<ThreadState>()((set, get) => ({
@@ -295,7 +339,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       useChatSessions.getState().removeSession(threadId)
       useAppState.getState().clearThreadState(threadId)
       cleanupThreadArtifacts(threadId, state.threads[threadId])
-      getServiceHub().threads().deleteThread(threadId)
+      deleteThreadOnDisk(threadId, state.threads[threadId])
 
       return {
         threads: remainingThreads,
@@ -341,7 +385,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
         cleanupThreadArtifacts(threadId, state.threads[threadId])
-        getServiceHub().threads().deleteThread(threadId)
+        deleteThreadOnDisk(threadId, state.threads[threadId])
       })
 
       // Keep favorite threads and threads with project metadata
@@ -378,7 +422,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
         cleanupThreadArtifacts(threadId, state.threads[threadId])
-        getServiceHub().threads().deleteThread(threadId)
+        deleteThreadOnDisk(threadId, state.threads[threadId])
       })
 
       return {
@@ -436,6 +480,15 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     for (const thread of projectThreads) {
       if (coworkIds.has(thread.id)) continue
       try {
+        // Revoke-first, as in the single delete above: while the native delete
+        // is awaited a concurrent dispatch must not resolve grants for a
+        // thread already being deleted. The record (and its metadata grant,
+        // which the getter falls back to) stays visible until reconcile, so
+        // overlay defaults rather than merely pruning the entry. On failure
+        // the thread survives but stays default-deny until the user consents
+        // again; on success reconcile drops the entry with the record.
+        capabilityRequests.delete(thread.id)
+        effectiveCapabilities.set(thread.id, defaultConversationCapabilities())
         await getServiceHub().threads().deleteThread(thread.id)
         reconcile(thread.id, false)
       } catch (error) {

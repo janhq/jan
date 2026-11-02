@@ -154,9 +154,15 @@ async function doStart() {
   }
 
   // 4. Sandboxes of conversations that no longer exist. Only once the migration
-  //    settled: while it is partial the live-id list is incomplete.
+  //    settled: while it is partial the live-id list is incomplete. The
+  //    keep-list is the post-merge store state, not just `loaded`: a session
+  //    created before hydration finished (merged as `early` above — e.g. a
+  //    failed first start retried after the user began a run) has a live
+  //    sandbox that the sweep must not delete.
   if (migrationSettled && loaded.sessions.length > 0) {
-    void sweepSessionWorkspaces(loaded.sessions.map((s) => s.id))
+    void sweepSessionWorkspaces(
+      useCoworkSessions.getState().sessions.map((s) => s.id)
+    )
   }
 
   // 5. Write-through from here on.
