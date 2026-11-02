@@ -77,7 +77,8 @@ export function capabilityModeRefusal(
 
 /** Named `todo` to match the Rust tool: the plan-mode addendum instructs the
  * model to call `todo` by name, so renaming it here breaks that prompt. */
-export const TODO_TOOL_NAME = 'todo'
+export { TODO_TOOL_NAME } from './coworkTodo'
+import { TODO_TOOL_NAME } from './coworkTodo'
 export const ASK_TOOL_NAME = 'ask'
 export const TASK_TOOL_NAME = 'task'
 

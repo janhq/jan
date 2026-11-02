@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
+import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
 import { startNewSession, useCoworkSessions } from '../useCoworkSessions'
-import type { CoworkTurn, SubagentRun } from '@/types/coworkSession'
+import type { CoworkTurn, SubagentRun, TodoList } from '@/types/coworkSession'
 
 const reset = () =>
   useCoworkSessions.setState({ sessions: [], currentId: null })
@@ -339,5 +340,50 @@ describe('useCoworkSessions pruneEmptySessions', () => {
     const before = useCoworkSessions.getState().sessions
     useCoworkSessions.getState().pruneEmptySessions([])
     expect(useCoworkSessions.getState().sessions).toBe(before)
+  })
+})
+
+
+describe('useCoworkSessions todo history cuts', () => {
+  beforeEach(reset)
+  const empty: TodoList = { phases: [] }
+  const earlier: TodoList = { phases: [{ name: 'Earlier', tasks: [{ content: 'Keep', status: 'pending' }] }] }
+  const stale: TodoList = { phases: [{ name: 'Later', tasks: [{ content: 'Discard', status: 'completed' }] }] }
+  const todo = (list: TodoList): CoworkTurn => ({ role: 'tool', name: 'todo', callId: 'todo', content: '', status: 'done', result: JSON.stringify(list) })
+  const seed = (prefix: CoworkTurn[]) => {
+    const id = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().commitTurns(id, [...prefix, { role: 'user', content: 'Last question' }, todo(stale), { role: 'assistant', content: 'Last answer' }], [], [])
+    useCoworkSessions.setState((state) => ({ sessions: state.sessions.map((session) => ({ ...session, messages: coworkTurnsToUIMessages(session.turns) })) }))
+    useCoworkSessions.getState().setTodos(id, stale)
+    return id
+  }
+  it.each(['rewind', 'drop'] as const)('%s canonicalizes the surviving snapshot, including an explicit empty one', (action) => {
+    for (const list of [earlier, empty]) {
+      reset()
+      const prefix: CoworkTurn[] = [{ role: 'user', content: 'First' }, todo(list)]
+      const id = seed(prefix)
+      const store = useCoworkSessions.getState()
+      if (action === 'rewind') store.rewindToLastUser(id)
+      else store.dropFromTurn(id, prefix.length)
+      const session = useCoworkSessions.getState().sessions[0]
+      expect(session.todos).toEqual(list)
+      expect(session.turns).toEqual(action === 'rewind' ? [...prefix, { role: 'user', content: 'Last question' }] : prefix)
+    }
+  })
+  it.each(['rewind', 'drop', 'clear'] as const)('%s resets a legacy-only sidecar to explicit empty', (action) => {
+    const id = useCoworkSessions.getState().createSession()
+    const store = useCoworkSessions.getState()
+    store.commitTurns(id, [{ role: 'user', content: 'Legacy question' }, { role: 'assistant', content: 'Legacy answer' }], [], [])
+    useCoworkSessions.setState((state) => ({ sessions: state.sessions.map((session) => ({ ...session, messages: coworkTurnsToUIMessages(session.turns) })) }))
+    store.setTodos(id, stale)
+    if (action === 'rewind') store.rewindToLastUser(id)
+    else if (action === 'drop') store.dropFromTurn(id, 0)
+    else store.clearSession(id)
+    expect(useCoworkSessions.getState().sessions[0].todos).toEqual(empty)
+  })
+  it('clear removes transcript-owned and legacy todo state together', () => {
+    const id = seed([{ role: 'user', content: 'First' }, todo(earlier)])
+    useCoworkSessions.getState().clearSession(id)
+    expect(useCoworkSessions.getState().sessions[0]).toMatchObject({ turns: [], messages: [], todos: empty })
   })
 })

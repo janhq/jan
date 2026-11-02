@@ -1,5 +1,6 @@
 import { isToolUIPart, getToolName, type UIMessage } from 'ai'
 import { TODO_TOOL_NAME } from './coworkTools'
+import { isTodoList } from './coworkTodo'
 import type { TodoList } from '@/types/coworkSession'
 
 /** Project the last valid settled snapshot. No mutable state or replay of ops:
@@ -22,38 +23,7 @@ export function conversationTodos(
           typeof part.output === 'string'
             ? JSON.parse(part.output)
             : part.output
-        if (
-          !value ||
-          typeof value !== 'object' ||
-          !('phases' in value) ||
-          !Array.isArray(value.phases)
-        )
-          continue
-        if (
-          !value.phases.every((phase: unknown) => {
-            if (
-              !phase ||
-              typeof phase !== 'object' ||
-              !('name' in phase) ||
-              typeof phase.name !== 'string' ||
-              !('tasks' in phase) ||
-              !Array.isArray(phase.tasks)
-            )
-              return false
-            return phase.tasks.every(
-              (task: unknown) =>
-                task &&
-                typeof task === 'object' &&
-                'content' in task &&
-                typeof task.content === 'string' &&
-                'status' in task &&
-                ['pending', 'in_progress', 'completed', 'abandoned'].includes(
-                  String(task.status)
-                )
-            )
-          })
-        )
-          continue
+        if (!isTodoList(value)) continue
         latest = value as TodoList
       } catch {
         /* An invalid/error result cannot erase the preceding snapshot. */
@@ -61,4 +31,14 @@ export function conversationTodos(
     }
   }
   return latest
+}
+
+/** Legacy snapshots apply only before any settled todo snapshot. A pending
+ * first legacy call must still read its baseline. Rewinds reset that fallback
+ * explicitly in the session store, so discarded snapshots cannot revive. */
+export function resolveConversationTodos(
+  messages: readonly UIMessage[],
+  legacy?: TodoList
+): TodoList | undefined {
+  return conversationTodos(messages) ?? legacy
 }

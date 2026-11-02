@@ -7,6 +7,8 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { usePrompt } from '@/hooks/usePrompt'
 import { CoworkPage } from '../CoworkPage'
+import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
+import type { CoworkTurn, TodoList } from '@/types/coworkSession'
 
 const mocks = vi.hoisted(() => ({ run: vi.fn(), sandbox: vi.fn(), refresh: vi.fn(), cancelShells: vi.fn(), dispatch: vi.fn(), handoff: vi.fn() }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
@@ -36,10 +38,10 @@ vi.mock('@/containers/ChatInput', () => ({ default: ({ onSubmit }: { onSubmit: (
 } }))
 vi.mock('@/components/ai-elements/conversation-column', () => ({ ConversationColumn: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/containers/HeaderPage', () => ({ default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
-vi.mock('@/containers/CoworkOverviewPanel', () => ({ CoworkOverviewPanel: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
+vi.mock('@/containers/CoworkOverviewPanel', () => ({ CoworkOverviewPanel: ({ todos }: { todos?: TodoList }) => <output data-testid="rail-todos">{JSON.stringify(todos)}</output> }))
 vi.mock('@/containers/ConversationHeaderTitle', () => ({ ConversationHeaderTitle: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/containers/CoworkComposerMenu', () => ({ CoworkComposerMenu: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
-vi.mock('@/containers/MessageItem', () => ({ MessageItem: (props: Record<string, unknown>) => <div>{['onRegenerate', 'onEdit', 'onRetry', 'onDelete'].map((name) => typeof props[name] === 'function' ? <button key={name}>{name}</button> : null)}</div> }))
+vi.mock('@/containers/MessageItem', () => ({ MessageItem: (props: Record<string, unknown>) => <div>{['onRegenerate', 'onEdit', 'onRetry', 'onDelete'].map((name) => typeof props[name] === 'function' ? <button key={name} onClick={() => (props[name] as (...args: string[]) => void)((props.message as { id: string }).id, 'Edited question')}>{name}</button> : null)}</div> }))
 vi.mock('@/components/PromptProgress', () => ({ PromptProgress: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/components/ai-elements/conversation', () => ({ Conversation: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>, ConversationContent: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>, ConversationScrollButton: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/containers/CoworkWorkspacePill', () => ({ CoworkWorkspacePill: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
@@ -60,6 +62,8 @@ vi.mock('@/containers/CoworkParkedNotice', () => ({ CoworkParkedNotice: ({ child
 let finish: () => void
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.dispatch.mockReset()
+  mocks.run.mockReset()
   __resetCoworkRunCloseForTests()
   mocks.handoff.mockReturnValue(undefined)
   useCoworkSessions.setState({ sessions: [{ id: 'test', title: 'New session', folder: null, turns: [], messages: [], updated: 0 }], currentId: 'test' })
@@ -303,5 +307,129 @@ describe('CoworkPage request acceptance', () => {
     expect(mocks.sandbox).not.toHaveBeenCalled()
     expect(mocks.refresh).not.toHaveBeenCalled()
     expect(mocks.dispatch).not.toHaveBeenCalled()
+  })
+})
+
+
+// Exercise the mounted callbacks, not a pre-truncated fixture: both the rail
+// and the next run's real conversation-tool handler must forget discarded work.
+describe('CoworkPage todo rewind authority', () => {
+  const empty: TodoList = { phases: [] }
+  const snapshot = (content: string): TodoList => ({ phases: [{ name: '', tasks: [{ content, status: 'pending' }] }] })
+  const earlier = snapshot('Earlier task')
+  const discarded = snapshot('Discarded task')
+  const todo = (list: TodoList, callId: string): CoworkTurn => ({ role: 'tool', name: 'todo', callId, content: '', status: 'done', result: JSON.stringify(list) })
+  const seed = (turns: CoworkTurn[], todos = discarded) => {
+    useCoworkSessions.setState({ sessions: [{ id: 'test', title: 'Todo history', folder: null, turns, messages: coworkTurnsToUIMessages(turns), todos, updated: 0 }] })
+  }
+  const mountRail = () => {
+    render(<CoworkPage />)
+    fireEvent.click(screen.getByTestId('overview-toggle'))
+  }
+  const expectRail = (list: TodoList) => expect(screen.getByTestId('rail-todos').textContent).toBe(JSON.stringify(list))
+  const arrangeModelRead = (list: TodoList) => {
+    mocks.dispatch.mockImplementationOnce(async (_call, ctx) => {
+      // `view` passes through createConversationToolHandlers.getTodo, exactly
+      // the read the model makes. Assert before onTodo can update the sidecar.
+      expect(useCoworkSessions.getState().sessions[0].todos).toEqual(list)
+      const result = await ctx.onTodo({ op: 'view' }, 'read-after-rewind')
+      expect(result.isError).not.toBe(true)
+      expect(useCoworkSessions.getState().sessions[0].todos).toEqual(list)
+      return result
+    })
+    mocks.run.mockImplementationOnce(async ({ deps }) => {
+      await deps.dispatch({ toolCallId: 'read-after-rewind', toolName: 'todo', input: { op: 'view' } })
+      return { stoppedBy: 'done', messages: [], usage: null }
+    })
+  }
+
+  it.each(['onRegenerate', 'onEdit', 'onDelete'] as const)('%s clears the last snapshot instead of resurrecting the legacy sidecar', async (action) => {
+    seed([{ role: 'user', content: 'Question' }, todo(discarded, 'last'), { role: 'assistant', content: 'Answer' }])
+    mountRail()
+    expectRail(discarded)
+    arrangeModelRead(empty)
+    await act(async () => { fireEvent.click(screen.getAllByText(action).at(-1)!) })
+    expectRail(empty)
+    if (action === 'onDelete') fireEvent.click(screen.getByText('Submit'))
+    await waitFor(() => expect(mocks.dispatch).toHaveBeenCalledOnce())
+    await waitFor(() => expect(useCoworkRun.getState().runId.test).toBeUndefined())
+    expectRail(empty)
+    expect(useCoworkSessions.getState().sessions[0].turns.some((turn) => turn.callId === 'last')).toBe(false)
+  })
+
+  it.each(['onRegenerate', 'onEdit', 'onDelete'] as const)('%s restores the earlier surviving snapshot in rail and model', async (action) => {
+    seed([{ role: 'user', content: 'First' }, todo(earlier, 'first'), { role: 'assistant', content: 'First answer' }, { role: 'user', content: 'Second' }, todo(discarded, 'last'), { role: 'assistant', content: 'Second answer' }])
+    mountRail()
+    expectRail(discarded)
+    arrangeModelRead(earlier)
+    await act(async () => { fireEvent.click(screen.getAllByText(action).at(-1)!) })
+    expectRail(earlier)
+    if (action === 'onDelete') fireEvent.click(screen.getByText('Submit'))
+    await waitFor(() => expect(mocks.dispatch).toHaveBeenCalledOnce())
+    await waitFor(() => expect(useCoworkRun.getState().runId.test).toBeUndefined())
+    expectRail(earlier)
+  })
+
+  it('permits untouched legacy fallback but clears it when a mounted history is rewound', async () => {
+    seed([{ role: 'user', content: 'Legacy question' }, { role: 'assistant', content: 'Legacy answer' }])
+    mountRail()
+    expectRail(discarded)
+    arrangeModelRead(empty)
+    await act(async () => { fireEvent.click(screen.getAllByText('onRegenerate').at(-1)!) })
+    expectRail(empty)
+    await waitFor(() => expect(mocks.dispatch).toHaveBeenCalledOnce())
+    await waitFor(() => expect(useCoworkRun.getState().runId.test).toBeUndefined())
+    expectRail(empty)
+  })
+
+  it('does not resurrect a stale sidecar after an explicit zero-task transcript snapshot', async () => {
+    seed([{ role: 'user', content: 'Clear tasks' }, todo(discarded, 'old'), todo(empty, 'cleared'), { role: 'assistant', content: 'Cleared' }])
+    mountRail()
+    expectRail(empty)
+    // Here the sidecar is intentionally stale: only the real model read should
+    // replace it with the authoritative empty transcript result.
+    mocks.dispatch.mockImplementationOnce(async (_call, ctx) => {
+      const result = await ctx.onTodo({ op: 'view' }, 'view-empty')
+      expect(useCoworkSessions.getState().sessions[0].todos).toEqual(empty)
+      return result
+    })
+    mocks.run.mockImplementationOnce(async ({ deps }) => {
+      await deps.dispatch({ toolCallId: 'view-empty', toolName: 'todo', input: { op: 'view' } })
+      return { stoppedBy: 'done', messages: [], usage: null }
+    })
+    fireEvent.click(screen.getByText('Submit'))
+    await waitFor(() => expect(mocks.dispatch).toHaveBeenCalledOnce())
+    await waitFor(() => expect(useCoworkRun.getState().runId.test).toBeUndefined())
+    expectRail(empty)
+  })
+})
+
+
+describe('CoworkPage legacy first todo read', () => {
+  it.each([false, true])('preserves legacy tasks through a pending first view (failed operation first: %s)', async (failFirst) => {
+    const legacy: TodoList = { phases: [{ name: '', tasks: [{ content: 'Legacy task', status: 'pending' }] }] }
+    useCoworkSessions.setState({ sessions: [{ id: 'test', title: 'Legacy', folder: null, turns: [{ role: 'user', content: 'Previous question' }, { role: 'assistant', content: 'Previous answer' }], messages: [], todos: legacy, updated: 0 }] })
+    mocks.dispatch.mockImplementation(async (_call, ctx) => {
+      const result = await ctx.onTodo(_call.input, _call.toolCallId)
+      if (_call.toolCallId === 'failed') expect(result.isError).toBe(true)
+      else expect(useCoworkSessions.getState().sessions[0].todos).toEqual(legacy)
+      return result
+    })
+    mocks.run.mockImplementationOnce(async ({ deps }) => {
+      if (failFirst) {
+        deps.sink.onToolStart('failed', 'todo')
+        await deps.dispatch({ toolCallId: 'failed', toolName: 'todo', input: { op: 'not-an-operation' } })
+      }
+      deps.sink.onToolStart('first-view', 'todo')
+      await deps.dispatch({ toolCallId: 'first-view', toolName: 'todo', input: { op: 'view' } })
+      return { stoppedBy: 'done', messages: [], usage: null }
+    })
+    render(<CoworkPage />)
+    fireEvent.click(screen.getByTestId('overview-toggle'))
+    expect(screen.getByTestId('rail-todos').textContent).toBe(JSON.stringify(legacy))
+    fireEvent.click(screen.getByText('Submit'))
+    await waitFor(() => expect(mocks.dispatch).toHaveBeenCalledTimes(failFirst ? 2 : 1))
+    await waitFor(() => expect(useCoworkRun.getState().runId.test).toBeUndefined())
+    expect(screen.getByTestId('rail-todos').textContent).toBe(JSON.stringify(legacy))
   })
 })

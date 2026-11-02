@@ -1,4 +1,11 @@
-import type { TodoItem, TodoList, TodoPhase } from '@/types/coworkSession'
+import type {
+  CoworkTurn,
+  TodoItem,
+  TodoList,
+  TodoPhase,
+} from '@/types/coworkSession'
+
+export const TODO_TOOL_NAME = 'todo'
 
 /**
  * The `todo` tool's reducer, ported from `core/agent/todo.rs`.
@@ -68,7 +75,8 @@ function promoteNext(list: TodoList): void {
 
 function parseTarget(args: TodoArgs): Target | string {
   if (typeof args.task === 'string') return { kind: 'task', value: args.task }
-  if (typeof args.phase === 'string') return { kind: 'phase', value: args.phase }
+  if (typeof args.phase === 'string')
+    return { kind: 'phase', value: args.phase }
   if (args.all === true) return { kind: 'all' }
   return 'target requires exactly one of: task, phase, all'
 }
@@ -236,18 +244,25 @@ export function applyTodoOp(
   }
   if (
     Array.isArray(args.list) &&
-    args.list.some((entry) =>
-      !entry || typeof entry !== 'object' ||
-      (entry.phase != null && typeof entry.phase !== 'string') ||
-      (entry.items != null &&
-        (!Array.isArray(entry.items) || entry.items.some((item) => typeof item !== 'string')))
+    args.list.some(
+      (entry) =>
+        !entry ||
+        typeof entry !== 'object' ||
+        (entry.phase != null && typeof entry.phase !== 'string') ||
+        (entry.items != null &&
+          (!Array.isArray(entry.items) ||
+            entry.items.some((item) => typeof item !== 'string')))
     )
   ) {
-    return { list, error: 'list requires phases with string names and string items' }
+    return {
+      list,
+      error: 'list requires phases with string names and string items',
+    }
   }
   if (
     args.items != null &&
-    (!Array.isArray(args.items) || args.items.some((item) => typeof item !== 'string'))
+    (!Array.isArray(args.items) ||
+      args.items.some((item) => typeof item !== 'string'))
   ) {
     return { list, error: 'items must be strings' }
   }
@@ -314,4 +329,60 @@ export function renderTodoResult(list: TodoList): string {
 export function todoProgress(list: TodoList): { done: number; total: number } {
   const tasks = allTasks(list)
   return { done: tasks.filter(isTerminal).length, total: tasks.length }
+}
+
+/** Shared snapshot validation for transcript projections without SDK/store imports. */
+export function isTodoList(value: unknown): value is TodoList {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    !('phases' in value) ||
+    !Array.isArray(value.phases)
+  )
+    return false
+  return value.phases.every((phase: unknown) => {
+    if (
+      !phase ||
+      typeof phase !== 'object' ||
+      !('name' in phase) ||
+      typeof phase.name !== 'string' ||
+      !('tasks' in phase) ||
+      !Array.isArray(phase.tasks)
+    )
+      return false
+    return phase.tasks.every(
+      (task: unknown) =>
+        task &&
+        typeof task === 'object' &&
+        'content' in task &&
+        typeof task.content === 'string' &&
+        'status' in task &&
+        ['pending', 'in_progress', 'completed', 'abandoned'].includes(
+          String(task.status)
+        )
+    )
+  })
+}
+
+/** Store rewind projection stays pure and does not load SDK/tool registries. */
+export function todosFromTurns(
+  turns: readonly CoworkTurn[]
+): TodoList | undefined {
+  let latest: TodoList | undefined
+  for (const turn of turns) {
+    if (
+      turn.role !== 'tool' ||
+      turn.name !== TODO_TOOL_NAME ||
+      turn.status === 'running' ||
+      turn.isError
+    )
+      continue
+    try {
+      const value: unknown = JSON.parse(turn.result ?? turn.content)
+      if (isTodoList(value)) latest = value
+    } catch {
+      /* A failed result is not a snapshot. */
+    }
+  }
+  return latest
 }

@@ -99,7 +99,7 @@ import { CoworkChatTransport } from '@/lib/coworkTransport'
 import { getCoworkEnvironment } from '@/lib/coworkEnv'
 import { dispatchCoworkTool } from '@/lib/coworkDispatch'
 import { createConversationToolHandlers } from '@/lib/conversationToolHandlers'
-import { conversationTodos } from '@/lib/conversationTaskPresentation'
+import { resolveConversationTodos } from '@/lib/conversationTaskPresentation'
 import { TODO_TOOL_NAME } from '@/lib/coworkTools'
 import {
   EXECUTE_PLAN_LABEL,
@@ -366,6 +366,10 @@ export function CoworkPage() {
         ? appendLiveMessages(committedMessages, liveMessages)
         : committedMessages,
     [viewingRun, committedMessages, liveMessages]
+  )
+  const contextualTodos = useMemo(
+    () => resolveConversationTodos(uiMessages, session?.todos),
+    [uiMessages, session?.todos]
   )
   // Where the live tail begins. Every message from here on is mid-run: its
   // write parts may yet be rewritten, and a <SYSTEM> note (a subagent finishing,
@@ -678,10 +682,10 @@ export function CoworkPage() {
           signal: controller.signal,
           // Transcript results are authoritative; legacy snapshots are only a
           // fallback for old sessions with no recorded todo result.
-          getTodo: () => conversationTodos([
+          getTodo: () => resolveConversationTodos([
             ...coworkTurnsToUIMessages(current?.turns ?? []),
             ...coworkTurnsToUIMessages(runTurns),
-          ]) ?? useCoworkSessions.getState().sessions.find((s) => s.id === sid)?.todos,
+          ], useCoworkSessions.getState().sessions.find((s) => s.id === sid)?.todos),
           onTodo: (list, callId) => {
             const row = typeof callId === 'string' && callId.trim().length > 0
               ? runTurns.find((turn) => turn.role === 'tool' && turn.name === TODO_TOOL_NAME && turn.callId === callId)
@@ -1927,7 +1931,7 @@ export function CoworkPage() {
         )}
         {rail?.kind === 'todos' && (
           <CoworkTodoPanel
-            todos={session?.todos}
+            todos={contextualTodos}
             onClose={() => setRail(null)}
           />
         )}
@@ -1955,7 +1959,7 @@ export function CoworkPage() {
         <AnimatePresence initial={false}>
         {overviewOpen && !dockedRail && (desktopOverview || overviewRequested) && (
           <CoworkOverviewPanel
-            todos={session?.todos}
+            todos={contextualTodos}
             attachments={attachments}
             artifacts={artifacts}
             files={fileDiffs}
