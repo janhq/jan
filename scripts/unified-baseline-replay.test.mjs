@@ -2,9 +2,10 @@
 // streamed response and records timings/usage. Says nothing about real models.
 //   node --test scripts/unified-baseline-replay.test.mjs
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { test } from 'node:test'
-import { assertLoopback, loadScenarios, replay, toMarkdown } from './unified-baseline-replay.mjs'
+import { assertLoopback, assertNoEnvProxy, loadScenarios, replay, toMarkdown } from './unified-baseline-replay.mjs'
 
 const sse = (o) => `data: ${JSON.stringify(o)}\n\n`
 
@@ -116,5 +117,72 @@ test('redacts an echoed key and rejects truncated streams', async () => {
     await assert.rejects(replay({ ...opts, baseUrl: `${base}/v1` }), /without a finish_reason/)
   } finally {
     server.close()
+  }
+})
+
+test('rejects unknown --scenarios even alongside valid ones', () => {
+  assert.throws(() => loadScenarios(undefined, ['chat-bare', 'cowork-exec']), /Unknown scenario\(s\): cowork-exec\. Available: /)
+  assert.deepEqual(loadScenarios(undefined, ['chat-bare']).map((s) => s.name), ['chat-bare'])
+})
+
+test('fails closed when Node env proxy meets any proxy variable', () => {
+  const P = 'http://127.0.0.1:9'
+  for (const v of ['HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy']) {
+    assert.throws(() => assertNoEnvProxy({ NODE_USE_ENV_PROXY: '1', [v]: P }, []), /Refusing to run/, v)
+    assert.throws(() => assertNoEnvProxy({ NODE_OPTIONS: '--max-old-space-size=99 --use-env-proxy', [v]: P }, []), /Refusing/, v)
+    assert.throws(() => assertNoEnvProxy({ [v]: P }, ['--use-env-proxy']), /Refusing/, v)
+    assert.doesNotThrow(() => assertNoEnvProxy({ [v]: P }, []), v) // no opt-in: Node ignores it
+  }
+  // NO_PROXY is not trusted to save us.
+  assert.throws(() => assertNoEnvProxy({ NODE_USE_ENV_PROXY: '1', HTTP_PROXY: P, NO_PROXY: '127.0.0.1' }, []), /Refusing/)
+  assert.doesNotThrow(() => assertNoEnvProxy({ NODE_USE_ENV_PROXY: '1' }, []))
+})
+
+/** Fake model + trap proxy; the CLI runs as a bounded child; only its PID is killed. */
+async function runCliAgainstTraps(extraEnv) {
+  const hits = { model: 0, proxy: 0 }
+  const model = createServer((req, res) => { req.resume(); hits.model++; res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(sse({ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] }) + 'data: [DONE]\n\n') })
+  const proxy = createServer((req, res) => { req.resume(); hits.proxy++; res.writeHead(502); res.end() })
+  proxy.on('connect', (_req, sock) => { hits.proxy++; sock.end('HTTP/1.1 502 trap\r\n\r\n') })
+  const listen = (s) => new Promise((r) => s.listen(0, '127.0.0.1', () => r(s.address().port)))
+  try {
+    const mp = await listen(model), pp = await listen(proxy)
+    const env = { PATH: process.env.PATH, ...extraEnv(`http://127.0.0.1:${pp}`) }
+    const result = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [new URL('./unified-baseline-replay.mjs', import.meta.url).pathname,
+        '--base-url', `http://127.0.0.1:${mp}/v1`, '--model', 'x', '--runs', '1', '--warmup', '0',
+        '--scenarios', 'chat-bare', '--timeout-ms', '5000'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+      let out = ''
+      child.stdout.on('data', (d) => (out += d)); child.stderr.on('data', (d) => (out += d))
+      const timer = setTimeout(() => child.kill('SIGKILL'), 20_000)
+      child.on('close', (code) => { clearTimeout(timer); resolve({ code, out }) })
+    })
+    return { ...result, hits }
+  } finally {
+    for (const s of [model, proxy]) { s.closeAllConnections(); s.close() }
+  }
+}
+
+test('CLI refuses to run under an env proxy: nothing reaches the proxy or the model', async () => {
+  for (const make of [(p) => ({ NODE_USE_ENV_PROXY: '1', HTTP_PROXY: p }), (p) => ({ NODE_USE_ENV_PROXY: '1', http_proxy: p }),
+    (p) => ({ NODE_OPTIONS: '--use-env-proxy', https_proxy: p, HTTP_PROXY: p })]) {
+    const r = await runCliAgainstTraps(make)
+    assert.equal(r.code, 1, r.out)
+    assert.match(r.out, /Refusing to run: Node env proxy/)
+    assert.deepEqual(r.hits, { model: 0, proxy: 0 })
+  }
+  const direct = await runCliAgainstTraps(() => ({}))
+  assert.equal(direct.code, 0, direct.out)
+  assert.deepEqual(direct.hits, { model: 1, proxy: 0 })
+})
+
+test('a stalled server hits the request timeout instead of hanging', async () => {
+  const server = createServer((req) => req.resume()) // never answers
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  try {
+    await assert.rejects(replay({ baseUrl: `http://127.0.0.1:${server.address().port}/v1`, model: 'x', runs: 1, warmup: 0,
+      maxTokens: 1, cachePrompt: false, scenarios: ['chat-bare'], timeoutMs: 300 }), /exceeded 300 ms/)
+  } finally {
+    server.closeAllConnections(); server.close()
   }
 })

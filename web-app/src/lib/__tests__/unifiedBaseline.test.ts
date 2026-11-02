@@ -10,7 +10,6 @@
  * the Cowork step loop run unchanged. Nothing is executed and no model is
  * called.
  */
-import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -196,15 +195,23 @@ describe('unified request-shape fixtures (synthetic bytes only)', () => {
     vi.setSystemTime(FIXTURE_DATE)
   })
 
-  it('native schema fixture matches schema.rs', () => {
+  it('native schema fixture is exactly what schema.rs produces', async () => {
+    // Catches schema.rs changes AND hand edits to the fixture. On failure: run
+    // `node scripts/capture-cowork-schema-fixture.mjs`, review the fixture
+    // diff, then `vitest -u` this file and review the request diffs.
+    const { captureFixture, normalizeEol } = await import(
+      '../../../../scripts/capture-cowork-schema-fixture.mjs'
+    )
     const source = readFileSync(
-      resolve(fixtureDir, '../../..', builtinFixture.sourcePath)
+      resolve(fixtureDir, '../../..', builtinFixture.sourcePath),
+      'utf8'
     )
-    // On failure: run `node scripts/capture-cowork-schema-fixture.mjs`, review
-    // the fixture diff, then `vitest -u` this file and review the request diffs.
-    expect(createHash('sha256').update(source).digest('hex')).toBe(
-      builtinFixture.sourceSha256
+    const committed = normalizeEol(
+      readFileSync(resolve(fixtureDir, 'builtin-schemas.json'), 'utf8')
     )
+    expect(captureFixture(source)).toBe(committed)
+    // A CRLF checkout (Windows core.autocrlf) is not drift.
+    expect(captureFixture(source.replace(/\n/g, '\r\n'))).toBe(committed)
   })
 
   it('writes replayable first-turn requests and their byte summary', async () => {

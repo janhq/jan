@@ -8,9 +8,11 @@
 //
 //   node scripts/unified-baseline-replay.mjs --base-url http://127.0.0.1:PORT/v1 \
 //     --model MODEL_ID [--api-key KEY] [--pid SERVER_PID] [--runs 3] [--warmup 1]
-//     [--max-tokens 256] [--scenarios a,b] [--cache-prompt] [--out result.json]
+//     [--max-tokens 256] [--scenarios a,b] [--cache-prompt] [--timeout-ms 600000]
+//     [--out result.json]
 //
 // Loopback only: this must never send fixtures or keys to a remote provider.
+// It refuses non-loopback hosts, redirects, and Node's opt-in env proxy.
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
@@ -32,8 +34,27 @@ export function assertLoopback(baseUrl) {
   return url.toString().replace(/\/$/, '')
 }
 
+/**
+ * Node 24 fetch honours HTTP(S)_PROXY when NODE_USE_ENV_PROXY / --use-env-proxy
+ * opts in, and then tunnels even 127.0.0.1 through the proxy (verified: a
+ * CONNECT reached a trap proxy and the model got no request). Fail closed
+ * whenever that opt-in meets any proxy variable, whatever NO_PROXY says.
+ */
+const PROXY_VARS = ['HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+export function assertNoEnvProxy(env = process.env, execArgv = process.execArgv) {
+  const optIn = !!env.NODE_USE_ENV_PROXY ||
+    execArgv.includes('--use-env-proxy') ||
+    /(^|\s)--use-env-proxy(\s|$)/.test(env.NODE_OPTIONS ?? '')
+  const set = PROXY_VARS.filter((v) => env[v])
+  if (optIn && set.length) {
+    throw new Error(`Refusing to run: Node env proxy is enabled and ${set.join(', ')} is set, ` +
+      'so loopback requests could be tunnelled through a proxy. Unset NODE_USE_ENV_PROXY ' +
+      '(and --use-env-proxy in NODE_OPTIONS) or the proxy variables.')
+  }
+}
+
 export function loadScenarios(dir = FIXTURE_DIR, only) {
-  return readdirSync(dir)
+  const all = readdirSync(dir)
     .filter((f) => f.endsWith('.json'))
     .sort()
     .map((f) => {
@@ -44,7 +65,14 @@ export function loadScenarios(dir = FIXTURE_DIR, only) {
         request: JSON.parse(raw),
       }
     })
-    .filter((s) => !only || only.includes(s.name))
+  if (!only) return all
+  // A typo must not silently shrink the report.
+  const unknown = only.filter((name) => !all.some((s) => s.name === name))
+  if (unknown.length) {
+    throw new Error(`Unknown scenario(s): ${unknown.join(', ')}. ` +
+      `Available: ${all.map((s) => s.name).join(', ')}`)
+  }
+  return all.filter((s) => only.includes(s.name))
 }
 
 /**
@@ -86,7 +114,7 @@ const hasDelta = (d) =>
     (Array.isArray(d.tool_calls) && d.tool_calls.length > 0))
 
 /** One streamed request; times are wall-clock ms from just before fetch. */
-export async function runOnce({ baseUrl, apiKey, model, request, maxTokens, cachePrompt, pid }) {
+export async function runOnce({ baseUrl, apiKey, model, request, maxTokens, cachePrompt, pid, timeoutMs = 600_000 }) {
   const body = {
     ...request,
     model,
@@ -116,6 +144,8 @@ export async function runOnce({ baseUrl, apiKey, model, request, maxTokens, cach
       body: JSON.stringify(body),
       // A loopback listener must not bounce fixtures or keys elsewhere.
       redirect: 'error',
+      // Covers connect, headers and the whole streamed body.
+      signal: AbortSignal.timeout(timeoutMs),
     })
     if (!res.ok) throw new Error(scrub(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`))
     const type = res.headers.get('content-type') ?? ''
@@ -154,6 +184,9 @@ export async function runOnce({ baseUrl, apiKey, model, request, maxTokens, cach
     totalMs = performance.now() - t0
     if (!sawDone && !finishReason)
       throw new Error('Stream ended without a finish_reason or [DONE]; run not counted')
+  } catch (e) {
+    if (e?.name === 'TimeoutError') throw new Error(`Request exceeded ${timeoutMs} ms; run not counted`)
+    throw e
   } finally {
     peakRssKiB = await sampler.stop()
   }
@@ -178,8 +211,9 @@ const median = (xs) => {
 
 export async function replay(opts) {
   const baseUrl = assertLoopback(opts.baseUrl)
+  assertNoEnvProxy(opts.env, opts.execArgv)
   const scenarios = loadScenarios(opts.fixtureDir, opts.scenarios)
-  if (!scenarios.length) throw new Error('No matching scenarios')
+  if (!scenarios.length) throw new Error('No scenarios')
   if (opts.pid && (await rssKiB(opts.pid)) == null) {
     // Report "not measured" honestly instead of a column of blanks.
     if (process.platform !== 'win32') throw new Error(`--pid ${opts.pid}: no such process`)
@@ -206,7 +240,7 @@ export async function replay(opts) {
     },
     settings: {
       model: opts.model, runs: opts.runs, warmup: opts.warmup, maxTokens: opts.maxTokens,
-      cachePrompt: opts.cachePrompt, pidSampled: opts.pid ?? null,
+      cachePrompt: opts.cachePrompt, pidSampled: opts.pid ?? null, timeoutMs: opts.timeoutMs ?? 600_000,
     },
     results,
   }
@@ -234,6 +268,7 @@ async function main() {
       runs: { type: 'string', default: '3' }, warmup: { type: 'string', default: '1' },
       'max-tokens': { type: 'string', default: '256' }, scenarios: { type: 'string' },
       'cache-prompt': { type: 'boolean', default: false }, out: { type: 'string' },
+      'timeout-ms': { type: 'string', default: '600000' },
     },
   })
   if (!values['base-url'] || !values.model) {
@@ -251,6 +286,7 @@ async function main() {
     pid: values.pid ? int('pid', 1) : undefined,
     runs: int('runs', 1), warmup: int('warmup', 0),
     maxTokens: int('max-tokens', 1), cachePrompt: values['cache-prompt'],
+    timeoutMs: int('timeout-ms', 1),
     scenarios: values.scenarios?.split(','),
   })
   if (values.out) writeFileSync(values.out, JSON.stringify(report, null, 2) + '\n')
