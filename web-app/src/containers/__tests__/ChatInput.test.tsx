@@ -450,6 +450,26 @@ describe('ChatInput', () => {
       ).toBeInTheDocument()
     })
 
+    it('stays reachable outside the narrow-hidden tool group and while streaming', () => {
+      threadsMockState['thread-1'] = persistentThread
+      getCurrentThreadMock.mockReturnValue(persistentThread)
+      renderInput({ chatStatus: 'streaming' })
+      const trigger = screen.getByTestId('conversation-scope-trigger')
+      // Revocation surface: never inside the @max-[520px] hidden group, never
+      // under an inert (pointer-events-none) ancestor during streaming
+      // (revocation applies to the next dispatch). Checks ancestors only: the
+      // button's own utility classes legitimately contain prefixed
+      // pointer-events-none variants.
+      let node = trigger.parentElement
+      while (node) {
+        const cls = node.getAttribute('class') ?? ''
+        expect(cls).not.toMatch(/(?:^|\s)pointer-events-none(?:\s|$)/)
+        expect(cls).not.toContain('@max-[520px]/composer:hidden')
+        node = node.parentElement
+      }
+      expect(trigger).toBeEnabled()
+    })
+
     it('is absent with no current thread', () => {
       renderInput()
       expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()

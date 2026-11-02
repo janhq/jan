@@ -20,12 +20,13 @@ const h = vi.hoisted(() => ({
   lastSubmitResult: undefined as unknown,
   setCaps: vi.fn(async () => undefined),
   prepareOutcome: undefined as unknown,
+  projectId: 'project-1',
 }))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: any) => ({ ...config, id: '/project/$projectId' }),
   useNavigate: () => h.navigate,
-  useParams: () => ({ projectId: 'project-1' }),
+  useParams: () => ({ projectId: h.projectId }),
 }))
 
 vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.coworkEnabled }))
@@ -66,7 +67,7 @@ vi.mock('@/hooks/useThreads', () => {
 
 vi.mock('@/hooks/useThreadManagement', () => ({
   useThreadManagement: () => ({
-    getFolderById: () => h.project,
+    getFolderById: (id: string) => ({ ...h.project, id }),
     updateFolder: vi.fn(),
   }),
 }))
@@ -152,6 +153,7 @@ describe('Project route Chat/Cowork selector', () => {
     h.selectedProvider = ''
     h.startCoworkConversation.mockReturnValue('session-1')
     h.lastSubmitResult = undefined
+    h.projectId = 'project-1'
     useHomeMode.setState({ mode: 'chat' })
   })
 
@@ -284,6 +286,27 @@ describe('Project route Chat/Cowork selector', () => {
       'Conversation permissions (pending)'
     )
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+  })
+
+  it('switching projects under the same mounted component resets the draft synchronously', async () => {
+    const Component = Route.component as React.ComponentType
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    const view = renderComponent()
+    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
+    fireEvent.click(
+      await screen.findByLabelText('Allow shell commands to access the network')
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+    // Same component instance, new project param: project A's elevated draft
+    // must not survive into project B even for one committed render.
+    h.projectId = 'project-2'
+    view.rerender(<Component />)
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
+      /^Conversation permissions$/
+    )
+    fireEvent.click(screen.getByTestId('invoke-prepare'))
+    expect(h.setCaps).not.toHaveBeenCalled()
   })
 
   it('keeps the draft path when the Cowork handoff cannot be stored', () => {

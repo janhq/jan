@@ -2769,39 +2769,43 @@ const ChatInput = memo(function ChatInput({
                       </DropdownMenuContent>
                     </DropdownMenu>
                     {leadingControls}
+                    {/* The permissions shield is the revocation surface, so it
+                        must stay reachable at every width and during
+                        streaming (revocation applies to the next dispatch,
+                        including within the current turn). It therefore lives
+                        OUTSIDE the narrow-hidden tool group. */}
+                    {scopeControlThread && (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label="Conversation permissions"
+                            data-testid="conversation-scope-trigger"
+                          >
+                            <IconShield
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          align="start"
+                          className="w-[min(380px,calc(100vw-16px))] p-2"
+                        >
+                          <ConversationScopeControl
+                            threadId={scopeControlThread.id}
+                            pickFolder={pickScopeFolder}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    )}
                     <div
                       className={cn(
                         'flex items-center gap-1 @max-[520px]/composer:hidden',
                         isStreaming && 'opacity-50 pointer-events-none'
                       )}
                     >
-                      {scopeControlThread && (
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
-                              aria-label="Conversation permissions"
-                              data-testid="conversation-scope-trigger"
-                              disabled={isStreaming}
-                            >
-                              <IconShield
-                                size={18}
-                                className="text-muted-foreground"
-                              />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent
-                            align="start"
-                            className="w-[min(380px,calc(100vw-16px))] p-2"
-                          >
-                            <ConversationScopeControl
-                              threadId={scopeControlThread.id}
-                              pickFolder={pickScopeFolder}
-                            />
-                          </PopoverContent>
-                        </Popover>
-                      )}
                       {showToolControls &&
                         hasJanBrowserMCPConfig &&
                         modelSupportsBrowser &&

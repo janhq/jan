@@ -78,8 +78,30 @@ function ProjectPageContent() {
   // Draft consent for the NEXT persistent chat in this project; applied only
   // through the strict setter after creation (prepareThreadCreation). A Jan
   // project grants no filesystem access by itself.
-  const [scopeDraft, setScopeDraft] = useState<ConversationCapabilitiesV1>(
-    defaultConversationCapabilities
+  //
+  // Keyed by projectId with a SYNCHRONOUS render-phase reset: navigating
+  // project A -> B keeps this component mounted, and an effect-based reset
+  // would leave one committed render in which A's elevated draft could be
+  // sent as B's first-chat grant. The render-phase state adjustment re-renders
+  // before anything can be clicked.
+  const [scopeDraftState, setScopeDraftState] = useState<{
+    forProject: string
+    draft: ConversationCapabilitiesV1
+  }>(() => ({ forProject: projectId, draft: defaultConversationCapabilities() }))
+  if (scopeDraftState.forProject !== projectId) {
+    setScopeDraftState({
+      forProject: projectId,
+      draft: defaultConversationCapabilities(),
+    })
+  }
+  const scopeDraft =
+    scopeDraftState.forProject === projectId
+      ? scopeDraftState.draft
+      : defaultConversationCapabilities()
+  const setScopeDraft = useCallback(
+    (next: ConversationCapabilitiesV1) =>
+      setScopeDraftState({ forProject: projectId, draft: next }),
+    [projectId]
   )
   const scopeDraftElevated =
     scopeDraft.shellNetwork ||
