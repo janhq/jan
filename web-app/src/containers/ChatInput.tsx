@@ -815,15 +815,22 @@ const ChatInput = memo(function ChatInput({
 
         setCurrentAssistant(assistant)
 
-        const newThread = await createThread(
+        let newThread: Thread
+        try {
+          newThread = await createThread(
           {
             id: selectedModel?.id ?? defaultModel(selectedProvider),
             provider: selectedProvider,
           },
           prompt, // Use prompt as thread title
           assistant,
-          projectMetadata
-        )
+          projectMetadata,
+          ...(finishThreadCreation ? [false, { strict: true }] as const : [])
+          )
+        } catch {
+          toast.error('Unable to create chat. Your draft has been kept.')
+          return
+        }
 
         if (finishThreadCreation) {
           if (!newThread?.id) {

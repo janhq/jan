@@ -39,4 +39,6 @@ Independent code review findings were fixed and the final retained-bulk-delete d
 
 ## Refused-creation rollback
 
+Prepared creation requests consent-only strict persistence: service creation errors/unavailability reject before store insertion or selection changes, while ordinary legacy creation keeps its existing fallback. Creation failure shows a safe error and preserves the draft without invoking consent or guessing deletion.
+
 Consent false/throw invokes `rollbackCreatedThread(newId, previousId)` before returning the retained draft. This awaits a narrow native `rollback_created_thread` compare-and-delete under the thread writer lock. Its expected value is the raw successful creation response kept by the service, not a reconstructed UI snapshot. Only conversation-capability metadata may differ; messages, sidecars, other content or external metadata changes refuse deletion. Store cleanup occurs only after native success; prior selection is restored only when still selecting this creation and the prior thread still exists. Cleanup failure surfaces a retained-chat warning; concurrent local edits after storage deletion surface a distinct conflict warning. Missing IDs produce a safe error without guessed deletion. No controls are mounted.

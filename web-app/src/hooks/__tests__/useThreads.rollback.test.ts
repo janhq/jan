@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useThreads } from '../useThreads'
 
-const { disk, remove, messages, sessions } = vi.hoisted(() => ({
-  disk: new Map<string, Thread>(), remove: vi.fn(), messages: new Map<string, unknown[]>(), sessions: {} as Record<string, unknown>,
+const { disk, remove, messages, sessions, creation } = vi.hoisted(() => ({
+  creation: { fail: false }, disk: new Map<string, Thread>(), remove: vi.fn(), messages: new Map<string, unknown[]>(), sessions: {} as Record<string, unknown>,
 }))
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({
     path: () => ({ sep: () => '/' }),
     threads: () => ({
-      createThread: async (thread: Thread) => { disk.set(thread.id, structuredClone(thread)); return thread },
+      createThread: async (thread: Thread, options?: { strict?: boolean }) => { if (creation.fail && options?.strict) throw new Error('disk create failed'); disk.set(thread.id, structuredClone(thread)); return thread },
       rollbackCreatedThread: remove,
       releaseCreatedThread: vi.fn(),
       updateThread: vi.fn(),
@@ -33,7 +33,7 @@ const rollback = (id: string) => useThreads.getState().rollbackCreatedThread(id,
 
 describe('created chat rollback', () => {
   beforeEach(() => {
-    disk.clear(); messages.clear()
+    creation.fail = false; disk.clear(); messages.clear()
     for (const id of Object.keys(sessions)) delete sessions[id]
     remove.mockReset().mockImplementation(async (id: string) => { disk.delete(id) })
     useThreads.setState({ threads: { prior: { id: 'prior', title: 'Prior', updated: 1 } }, currentThreadId: 'prior', searchIndex: null })
@@ -133,6 +133,19 @@ describe('created chat rollback', () => {
     await expect(rollback(created.id)).rejects.toThrow('refusing cleanup')
     expect(remove).not.toHaveBeenCalled()
     expect(disk.has(created.id)).toBe(true)
+  })
+
+  it('strict failed creation never inserts or selects a phantom on repeated retries', async () => {
+    creation.fail = true
+    const before = useThreads.getState().threads
+    const prior = useThreads.getState().currentThreadId
+    for (let retry = 0; retry < 2; retry++) {
+      await expect(useThreads.getState().createThread({ id: 'm', provider: 'test' }, 'Draft', undefined, undefined, false, { strict: true })).rejects.toThrow('disk create failed')
+      expect(useThreads.getState().threads).toBe(before)
+      expect(useThreads.getState().currentThreadId).toBe(prior)
+      expect(disk.size).toBe(0)
+    }
+    expect(remove).not.toHaveBeenCalled()
   })
 
 })

@@ -606,6 +606,25 @@ describe('ChatInput', () => {
       expect(clearAttachmentsMock).not.toHaveBeenCalled()
     })
 
+    it('requests strict creation and keeps failed creates out of delivery on repeated retry', async () => {
+      createThreadMock.mockRejectedValue(new Error('native disk unavailable'))
+      const apply = vi.fn(async () => true)
+      const prepare = () => apply
+      renderInput({ prepareThreadCreation: prepare })
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        send()
+        await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(attempt))
+        await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Unable to create chat. Your draft has been kept.'))
+      }
+      expect(createThreadMock.mock.calls[0].slice(-2)).toEqual([false, { strict: true }])
+      expect(apply).not.toHaveBeenCalled()
+      expect(rollbackCreatedThreadMock).not.toHaveBeenCalled()
+      expect(navigateMock).not.toHaveBeenCalled()
+      expect(setPromptMock).not.toHaveBeenCalled()
+      expect(clearAttachmentsMock).not.toHaveBeenCalled()
+      createThreadMock.mockResolvedValue({ id: 'created-thread' })
+    })
+
     it('does not prepare for an onSubmit surface', async () => {
       const prepare = vi.fn(() => async () => true)
       const onSubmit = vi.fn()

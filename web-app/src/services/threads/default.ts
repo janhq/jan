@@ -91,7 +91,7 @@ export class DefaultThreadsService implements ThreadsService {
     })
   }
 
-  async createThread(thread: Thread): Promise<Thread> {
+  async createThread(thread: Thread, options?: { strict?: boolean }): Promise<Thread> {
     // For temporary threads, bypass the conversational extension (in-memory only)
     if (thread.id === TEMPORARY_CHAT_ID) {
       return thread
@@ -106,10 +106,10 @@ export class DefaultThreadsService implements ThreadsService {
       ? [{ ...thread.assistants![0], model: modelPayload }]
       : [{ id: 'model-only', name: 'Model', model: modelPayload }]
 
+    const extension = ExtensionManager.getInstance().get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+    if (options?.strict && !extension) throw new Error('Chat persistence unavailable')
     return (
-      ExtensionManager.getInstance()
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.createThread({
+      extension?.createThread({
           ...thread,
           assistants: assistantsPayload,
           metadata: {
@@ -118,6 +118,7 @@ export class DefaultThreadsService implements ThreadsService {
           },
         })
         .then((e) => {
+          if (options?.strict && (!e?.id || e.id !== thread.id)) throw new Error('Invalid persisted chat response')
           const model = fromModelResponse(e.assistants?.[0]?.model, thread.model)
 
           const assistants = e.assistants
@@ -132,7 +133,7 @@ export class DefaultThreadsService implements ThreadsService {
           creationReceipts.set(created, JSON.parse(JSON.stringify(e)))
           return created
         })
-        .catch(() => thread) ?? thread
+        .catch((error) => { if (options?.strict) throw error; return thread }) ?? thread
     )
   }
 

@@ -588,4 +588,17 @@ describe('conversation capability persistence', () => {
     expect(invoke).not.toHaveBeenCalled()
   })
 
+  it('strict creation rejects actual unavailable or failing persistence while legacy fallback remains', async () => {
+    const service = new DefaultThreadsService()
+    const input = { id: 'strict-create', title: 'Draft', updated: 1 }
+    vi.mocked(ExtensionManager.getInstance).mockReturnValue({ get: () => undefined } as never)
+    await expect(service.createThread(input, { strict: true })).rejects.toThrow('unavailable')
+    await expect(service.createThread(input)).resolves.toBe(input)
+    vi.mocked(ExtensionManager.getInstance).mockReturnValue({ get: () => ({ createThread: vi.fn().mockRejectedValue(new Error('disk error')) }) } as never)
+    await expect(service.createThread(input, { strict: true })).rejects.toThrow('disk error')
+    await expect(service.createThread(input)).resolves.toBe(input)
+    await expect(service.rollbackCreatedThread(input.id, input)).rejects.toThrow('receipt')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
 })

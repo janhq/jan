@@ -44,7 +44,8 @@ type ThreadState = {
     title?: string,
     assistant?: Assistant,
     projectMetadata?: { id: string; name: string; updated_at: number },
-    isTemporary?: boolean
+    isTemporary?: boolean,
+    options?: { strict?: boolean }
   ) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
@@ -499,7 +500,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     title,
     assistant,
     projectMetadata,
-    isTemporary
+    isTemporary,
+    options
   ) => {
     const newThread: Thread = {
       id: isTemporary ? TEMPORARY_CHAT_ID : ulid(),
@@ -522,7 +524,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     }
     return await getServiceHub()
       .threads()
-      .createThread(newThread)
+      .createThread(newThread, options)
       .then((createdThread) => {
         set((state) => {
           // Get all existing threads as an array
