@@ -108,7 +108,7 @@ const seedThread = (id: string, metadata: Record<string, unknown> | undefined) =
 describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
   beforeEach(() => {
     seedSessions([])
-    useThreads.setState({ threads: {} })
+    useThreads.setState({ threads: {}, threadsHydrated: false })
     fetchThreadsMock.mockClear()
     fetchThreadsMock.mockImplementation(() =>
       Promise.resolve(healthyUnrelatedList)
@@ -341,6 +341,54 @@ describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
       vi.useRealTimers()
     }
     expect(fetchThreadsMock).toHaveBeenCalledTimes(THREAD_LOOKUP_ATTEMPTS)
+  })
+
+  it('success-hydrated store + genuinely empty list: a miss is authoritative, no fetch, no error', async () => {
+    useThreads.setState({ threads: {}, threadsHydrated: true })
+    expect(await runBeforeLoad('fresh-install-id')).toBeNull()
+    expect(fetchThreadsMock).not.toHaveBeenCalled()
+  })
+
+  it('isLoadingThreads=false alone (DataProvider failure exhaustion) is NOT hydrated: still fails closed', async () => {
+    useThreads.setState({ threads: {}, isLoadingThreads: false, threadsHydrated: false })
+    fetchThreadsMock.mockImplementation(() => Promise.resolve([]))
+    vi.useFakeTimers()
+    try {
+      const pending = Promise.resolve(
+        (Route as unknown as RouteOpts).beforeLoad({
+          params: { threadId: 'cw-hidden-2' },
+        })
+      ).then(
+        () => null,
+        (e) => e
+      )
+      await vi.runAllTimersAsync()
+      expect(await pending).toBeInstanceOf(ThreadClassificationUnavailableError)
+    } finally {
+      vi.useRealTimers()
+      useThreads.setState({ isLoadingThreads: true })
+    }
+    expect(fetchThreadsMock).toHaveBeenCalledTimes(THREAD_LOOKUP_ATTEMPTS)
+  })
+
+  it('hydrated flag never overrides a store-resident cowork record (persisted metadata wins)', async () => {
+    seedThread('cw-hyd', { mode: 'cowork' })
+    useThreads.setState({ threadsHydrated: true })
+    expect(await runBeforeLoad('cw-hyd')).toMatchObject({
+      to: '/cowork/$sessionId',
+    })
+    expect(fetchThreadsMock).not.toHaveBeenCalled()
+  })
+
+  it('a record committed during the fetch wins even when hydration lands in the same window', async () => {
+    fetchThreadsMock.mockImplementation(() => {
+      seedThread('cw-mid', { mode: 'cowork' })
+      useThreads.setState({ threadsHydrated: true })
+      return Promise.resolve([])
+    })
+    expect(await runBeforeLoad('cw-mid')).toMatchObject({
+      to: '/cowork/$sessionId',
+    })
   })
 
   it('the temporary chat id never triggers a backend fetch', async () => {

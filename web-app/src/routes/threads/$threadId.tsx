@@ -441,15 +441,15 @@ export const Route = createFileRoute('/threads/$threadId')({
     // route-local errorComponent renders a Retry screen; a writable chat
     // never mounts over an undecidable thread.
     //
-    // Not gated on useThreads.isLoadingThreads: DataProvider also flips that
-    // flag false when its own retries exhaust, so it is not an authoritative
-    // hydration signal — trusting it would re-open the race this fetch
-    // closes. Store residency is the only fetch skip.
+    // Skips the fetch only on store residency or the SUCCESS-ONLY
+    // threadsHydrated flag; never on isLoadingThreads, which DataProvider
+    // also clears when its retries exhaust.
     if (!thread && threadId !== TEMPORARY_CHAT_ID) {
       thread = await resolveThreadForRoute<Thread>({
         threadId,
         readThread: () => useThreads.getState().threads[threadId],
         fetchThreads: () => getServiceHub().threads().fetchThreads(),
+        isHydrated: () => useThreads.getState().threadsHydrated,
       })
     }
     if (

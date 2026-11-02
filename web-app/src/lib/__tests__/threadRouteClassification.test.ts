@@ -87,6 +87,36 @@ describe('resolveThreadForRoute', () => {
     expect(fetchThreads).toHaveBeenCalledTimes(THREAD_LOOKUP_ATTEMPTS)
   })
 
+  it('isHydrated=true: a store miss is authoritative and never fetches', async () => {
+    const fetchThreads = vi.fn()
+    const result = await resolveThreadForRoute<T>(
+      base({ fetchThreads, isHydrated: () => true })
+    )
+    expect(result).toBeUndefined()
+    expect(fetchThreads).not.toHaveBeenCalled()
+  })
+
+  it('isHydrated=true still lets a resident record win', async () => {
+    const resident = { id: 't1', metadata: { mode: 'cowork' } }
+    const result = await resolveThreadForRoute<T>(
+      base({ readThread: () => resident, isHydrated: () => true })
+    )
+    expect(result).toBe(resident)
+  })
+
+  it('hydration succeeding during an empty fetch ends in an authoritative miss, not an error', async () => {
+    let hydrated = false
+    const fetchThreads = vi.fn<() => Promise<T[]>>(async () => {
+      hydrated = true
+      return []
+    })
+    const result = await resolveThreadForRoute<T>(
+      base({ fetchThreads, isHydrated: () => hydrated })
+    )
+    expect(result).toBeUndefined()
+    expect(fetchThreads).toHaveBeenCalledTimes(1)
+  })
+
   it('exhausted window throws the typed recoverable error, never a silent chat classification', async () => {
     const boom = new Error('Conversational extension not available yet')
     const fetchThreads = vi.fn<() => Promise<T[]>>().mockRejectedValue(boom)

@@ -34,19 +34,16 @@
  *   bounded retry window before erroring — accepted. Only a NON-empty list
  *   is authoritative for the existing unknown-id (`undefined`) behavior.
  *
- * Deliberately NOT gated on `useThreads.isLoadingThreads`: DataProvider also
- * flips that flag to false when ITS fetch retries exhaust, so "not loading"
- * is not an authoritative "hydrated" signal — skipping the backend lookup on
- * it would mount a writable chat over a persisted cowork thread precisely in
- * the failure state. The store-resident record is the only authoritative
- * skip.
- *
- * DEFERRED (explicit disposition, not an oversight): the full-list fetch
- * still runs once per store-missed id even after a successful hydration
- * (unknown or deleted ids). The single `fetchThreads()` API carries no
- * success/"hydration complete" flag, so there is nothing authoritative to
- * gate on without re-opening the race above. Misses are rare (deleted or
- * mistyped ids); revisit only when a success-only hydration signal exists.
+ * Hydration signal: `useThreads.threadsHydrated` is a SUCCESS-ONLY flag set
+ * by DataProvider's success branch after the service validated an actual
+ * array response (the service now throws on a non-array, so `[]` is a real
+ * zero-thread listing). It is deliberately NOT `isLoadingThreads`, which
+ * DataProvider also clears when its retries exhaust. When hydrated, a
+ * store miss is authoritative (`undefined`) and the backend lookup is
+ * skipped; the store is still re-read first and after every await, so a
+ * newer store record (cowork commit / migration race) always wins and its
+ * persisted metadata drives classification. When NOT hydrated (fresh
+ * startup) an empty fallback list stays UNKNOWN and fails closed.
  */
 
 export class ThreadClassificationUnavailableError extends Error {
@@ -56,8 +53,8 @@ export class ThreadClassificationUnavailableError extends Error {
 
   constructor(threadId: string, causeError: unknown) {
     super(
-      `Could not determine whether conversation "${threadId}" is a chat or a ` +
-        'Cowork session: the conversation backend is not ready yet.'
+      `Could not confirm whether conversation "${threadId}" is a chat or a ` +
+        'Cowork session. Please retry; if this persists, restart the app.'
     )
     this.name = 'ThreadClassificationUnavailableError'
     this.threadId = threadId
@@ -80,6 +77,8 @@ export interface ResolveThreadForRouteOptions<T extends { id: string }> {
   readThread: () => T | undefined
   /** Backend lookup; may reject while the extension is still registering. */
   fetchThreads: () => Promise<T[]>
+  /** Success-only hydration flag; true makes a store miss authoritative. */
+  isHydrated?: () => boolean
   attempts?: number
   delayMs?: (attempt: number) => number
   sleep?: (ms: number) => Promise<void>
@@ -102,6 +101,7 @@ export async function resolveThreadForRoute<T extends { id: string }>(
     threadId,
     readThread,
     fetchThreads,
+    isHydrated = () => false,
     attempts = THREAD_LOOKUP_ATTEMPTS,
     delayMs = threadLookupDelayMs,
     sleep = defaultSleep,
@@ -112,6 +112,8 @@ export async function resolveThreadForRoute<T extends { id: string }>(
     // A hydration may have landed while we backed off.
     const resident = readThread()
     if (resident) return resident
+    // Success-only hydration already applied the full listing: a miss is real.
+    if (isHydrated()) return undefined
     try {
       const fetched = await fetchThreads()
       // Mid-await store-wins: a record committed during the fetch is newer
@@ -123,6 +125,9 @@ export async function resolveThreadForRoute<T extends { id: string }>(
         // or is a genuine miss (existing unknown-id behavior).
         return fetched.find((t) => t.id === threadId)
       }
+      // Hydration may have succeeded while we awaited (store re-read above
+      // found no record), so a miss is authoritative now.
+      if (isHydrated()) return undefined
       // Empty list: the bridge coerces a not-ready backend to [], so this
       // is indistinguishable from "not ready" and may hide persisted
       // cowork threads. Treat as a failed attempt — never as a healthy
@@ -139,5 +144,6 @@ export async function resolveThreadForRoute<T extends { id: string }>(
   // The store can also hydrate during the FINAL failed attempt.
   const resident = readThread()
   if (resident) return resident
+  if (isHydrated()) return undefined
   throw new ThreadClassificationUnavailableError(threadId, lastError)
 }
