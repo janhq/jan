@@ -12,7 +12,7 @@ import {
   InvalidToolInputError,
   lastAssistantMessageIsCompleteWithToolCalls,
 } from 'ai'
-import { uniqueMcpTools } from './chatMcpIdentity'
+import { uniqueMcpTools, warnWithheldMcpTools } from './chatMcpIdentity'
 import { repairToolArgs } from './toolCallRepair'
 import {
   encodeMcpToolImages,
@@ -1201,6 +1201,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           identityInventory = mcpTools
         }
 
+        warnWithheldMcpTools(identityInventory)
         if (Array.isArray(mcpTools) && mcpTools.length > 0) {
           const eligible = uniqueMcpTools(identityInventory)
           uniqueMcpTools(mcpTools).forEach((tool) => {

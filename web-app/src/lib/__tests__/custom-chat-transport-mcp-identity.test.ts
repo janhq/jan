@@ -5,6 +5,8 @@ import type { MCPTool } from '@/types/completion'
 
 // Reuse the isolated shell-switch fixture: no providers, IPC or network calls.
 const h = vi.hoisted(() => ({
+  routing: false,
+  routedTools: [] as MCPTool[],
   shellEnabled: false,
   webEnabled: false,
   documents: false,
@@ -30,7 +32,11 @@ vi.mock('@/hooks/useServiceHub', () => ({
   useServiceStore: {
     getState: () => ({
       serviceHub: {
-        mcp: () => ({ getTools: async () => h.mcpTools }),
+        mcp: () => ({
+          getTools: async () => h.mcpTools,
+          getToolsForServers: async () => h.routedTools,
+          getServerSummaries: async () => [],
+        }),
         rag: () => ({ getTools: async () => h.ragTools }),
       },
     }),
@@ -59,7 +65,7 @@ vi.mock('@/hooks/useAttachments', () => ({
 }))
 vi.mock('@/hooks/useMCPServers', () => ({
   useMCPServers: {
-    getState: () => ({ settings: { enableSmartToolRouting: false } }),
+    getState: () => ({ settings: { enableSmartToolRouting: h.routing } }),
   },
 }))
 vi.mock('@/hooks/useWebSearchConfig', () => ({
@@ -69,7 +75,7 @@ vi.mock('@/lib/extension', () => ({
   ExtensionManager: { getInstance: () => ({ get: () => null }) },
 }))
 vi.mock('@/lib/mcp-orchestrator', () => ({
-  mcpOrchestrator: { getRelevantTools: vi.fn() },
+  mcpOrchestrator: { getRelevantTools: async () => h.routedTools },
 }))
 vi.mock('@/lib/mcp-router-model-filter', () => ({
   isRouterModelSelectable: () => false,
@@ -101,6 +107,8 @@ describe('transport advertised MCP identity', () => {
   let transport: CustomChatTransport
 
   beforeEach(() => {
+    h.routing = false
+    h.routedTools = []
     h.shellEnabled = false
     h.webEnabled = false
     h.documents = false
@@ -138,6 +146,24 @@ describe('transport advertised MCP identity', () => {
     expect(Object.keys(transport.getTools())).toEqual(['write'])
     expect(transport.getMcpServerForTool('read')).toBeUndefined()
     expect(transport.getMcpServerForTool('write')).toBe('alpha')
+  })
+
+  it('warns for hidden/disabled rivals and missing identities without logging tool data', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      h.routing = true
+      h.disabled = ['beta::read']
+      h.mcpTools = [tool('read', 'alpha', 'SECRET_DESCRIPTION'), tool('read', 'beta'), tool('orphan', '')]
+      h.routedTools = [h.mcpTools[0]]
+      await transport.refreshTools()
+      expect(transport.getTools()).toEqual({})
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Withheld MCP tool "read".*name collision.*"alpha".*"beta"/))
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Withheld MCP tool "orphan".*missing server identity/))
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('SECRET_DESCRIPTION')
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('inputSchema')
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('withholds absent identity and disabled pairs and drops their old bindings', async () => {

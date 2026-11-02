@@ -298,14 +298,17 @@ function turnModelOf(threadId: string) {
 // tool the user turned off could save a permission for it. With the switch off
 // the built-in is not offered, so an MCP tool of the same name is the user's
 // own: it is served as an MCP tool and prompts like any other.
-function chatShellRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
-  if (!CHAT_AGENT_TOOL_NAMES.has(toolName)) return 'other'
+function chatShellRoute(toolName: string, serverName?: string): 'builtin' | 'disabled' | 'other' {
+  // A bound MCP identity means the native schema was not advertised for this
+  // request (e.g. shell is on but no sandbox can enforce it). Never substitute
+  // a native shell for that approved server, even if availability changes.
+  if (serverName || !CHAT_AGENT_TOOL_NAMES.has(toolName)) return 'other'
   if (useChatShell.getState().shellEnabled) return 'builtin'
   return useAppState.getState().mcpToolNames.has(toolName) ? 'other' : 'disabled'
 }
 
-function isDisabledChatAgentTool(toolName: string): boolean {
-  return chatShellRoute(toolName) === 'disabled'
+function isDisabledChatAgentTool(toolName: string, serverName?: string): boolean {
+  return chatShellRoute(toolName, serverName) === 'disabled'
 }
 
 // How a call to a built-in web tool name is served. Same contract as the shell:
@@ -843,7 +846,7 @@ function ThreadDetail() {
               continue
             }
 
-            if (isDisabledChatAgentTool(toolName)) {
+            if (isDisabledChatAgentTool(toolName, serverName)) {
               record({
                 state: 'output-error',
                 tool: toolCall.toolName,
@@ -857,7 +860,7 @@ function ThreadDetail() {
               await untilAborted(checkMcp(), stopSignal)
               if (stoppedByUser() || isChatClosing() || signal.aborted) break
             }
-            if (serverName && (webRoute(toolName) === 'builtin' || chatShellRoute(toolName) === 'builtin')) {
+            if (serverName && (webRoute(toolName) === 'builtin' || chatShellRoute(toolName, serverName) === 'builtin')) {
               throw new Error(`Tool identity changed for ${toolName}; start a new turn`)
             }
 
@@ -870,7 +873,8 @@ function ThreadDetail() {
                       toolCall.toolCallId,
                       toolName,
                       threadId,
-                      serverName
+                      serverName,
+                      checkMcp
                     ))
             approvalsOf(threadId).delete(toolCall.toolCallId)
             // Only an explicit Stop skips the result. Deleting the thread also
@@ -912,14 +916,14 @@ function ThreadDetail() {
             // a hung MCP server) must not hold the loop, and the thread, busy.
             const result = await untilAborted<ToolRunResult>(
               (async () => {
-                if (serverName && (webRoute(toolName) === 'builtin' || chatShellRoute(toolName) === 'builtin')) {
+                if (serverName && (webRoute(toolName) === 'builtin' || chatShellRoute(toolName, serverName) === 'builtin')) {
                   throw new Error(`Tool identity changed for ${toolName}; start a new turn`)
                 }
                 if (webRoute(toolName) === 'builtin') {
                   return await executeWebTool(toolName, toolCall.input, {
                     maxOutputChars,
                   })
-                } else if (chatShellRoute(toolName) === 'builtin') {
+                } else if (chatShellRoute(toolName, serverName) === 'builtin') {
                   // Chat's shell runs with the sandbox network closed: the
                   // default `allowNetwork = false` is the contract here, not an
                   // accident.
@@ -950,7 +954,7 @@ function ThreadDetail() {
                 } else if (serverName) {
                   await checkMcp()
                   if (stopSignal.aborted) throw new DOMException('Aborted', 'AbortError')
-                  if (webRoute(toolName) === 'builtin' || chatShellRoute(toolName) === 'builtin') {
+                  if (webRoute(toolName) === 'builtin' || chatShellRoute(toolName, serverName) === 'builtin') {
                     throw new Error(`Tool identity changed for ${toolName}; start a new turn`)
                   }
                   // Give the backend the budget scaled to the window; it narrows
@@ -1120,7 +1124,7 @@ function ThreadDetail() {
     },
     onToolCall: ({ toolCall }) => {
       // Collect the tool for the onFinish execution loop, and request approval
-      // right now so the popup appears immediately instead of waiting for the
+      // now (after validating its bound identity) instead of waiting for the
       // stream's terminal finish chunk (a stalled stream would otherwise leave
       // the tool at "Running..." with no popup). Execution itself stays in
       // onFinish so the tool result lands on a completed message. Internal tools
@@ -1132,7 +1136,7 @@ function ThreadDetail() {
       callMcpIdentities.get(threadId)!.set(toolCall.toolCallId, serverName)
       if (
         serverName &&
-        !isDisabledChatAgentTool(toolCall.toolName) &&
+        !isDisabledChatAgentTool(toolCall.toolName, serverName) &&
         webRoute(toolCall.toolName) !== 'disabled' &&
         !approvalsOf(threadId).has(toolCall.toolCallId)
       ) {
@@ -1144,7 +1148,11 @@ function ThreadDetail() {
               toolCall.toolCallId,
               toolCall.toolName,
               threadId,
-              serverName
+              serverName,
+              () => assertMcpIdentityAvailable(
+                toolCall.toolName, serverName, () => serviceHub.mcp().getTools(),
+                (server, name) => useToolAvailable.getState().isToolDisabled(server, name)
+              )
             )
         )
       }

@@ -8,7 +8,7 @@ Base: `origin/jamesdam/unified-flow-foundation` including #9531. Capability inve
 
 - Existing model-visible MCP names remain unchanged. Missing server identities and duplicate names are withheld, including rivals outside smart routing or disabled by the user. No name mangling, runtime, provider call, or new permission default.
 - Chat snapshots the advertised MCP server mapping with the request schemas. Each received call retains that mapping for approval and execution; live menu refresh cannot replace it. Dispatch checks the full current inventory and disabled pair before approval and again after approval; replacement/disconnect/ambiguity/disablement fails closed.
-- Enabled native web/shell retain precedence. An MCP call cannot turn into a newly enabled native tool while awaiting approval. Internal advertised RAG schemas retain precedence over MCP; an MCP tool sharing an unadvertised RAG name still needs MCP approval.
+- Advertised native web/shell retain precedence. A request-bound MCP shell remains MCP even when the global shell switch is on but the sandbox withheld the native schema. An MCP call cannot turn into a newly enabled native tool while awaiting approval. Internal advertised RAG schemas retain precedence over MCP; an MCP tool sharing an unadvertised RAG name still needs MCP approval.
 - MCP `allow-thread` persists structured `(threadId, serverName, toolName)` grants. Legacy bare thread/global tool grants remain readable for no-server compatibility but do not authorize server-qualified MCP calls. Existing explicit server-wide trust and explicit allow-all setting remain unchanged. No implicit migration/widening of trust.
 - Rust explicit `server_name` never falls back. Legacy unnamed API calls remain supported only after complete, unambiguous discovery. Discovery failures fail closed. One configured timeout/cancellation boundary covers mutex wait, discovery and execution.
 - Pending prompts are dismissed without granting trust when a call fails validation or ends. Cancellation retains the existing cancellable MCP service path.
@@ -39,3 +39,27 @@ Observed browser results:
 4. Real approval cancellation: pending alpha request resolved false, prompt disappeared, and a late `allow-always` saved no trust. All three checks returned true.
 
 Only fixture-origin localStorage was used and cleared. These browser checks supplement automated route/cancellation tests; they do not claim native UI rendering, real MCP interoperability, credentials, or live provider verification.
+
+
+## External review follow-up (2026-11-02)
+
+Rebased the existing READY PR #9533 onto parent foundation `6e8207fa333803dcbd9f2d9fb2c8459e62b1bc05` before editing (previous PR tip `182af979e0cc80eae2e6c611d6da28f030642933`).
+
+- Shell dispatch now respects the request-bound MCP identity, not just the global shell switch. Tests cover native switch on/no native schema: approve and execute the same MCP server, never native; genuinely advertised native shell still wins over a same-name MCP inventory entry.
+- Full-inventory diagnostics name withheld tool names and all colliding servers (including disabled/smart-routing-hidden rivals), or explicitly mark missing/blank server identity. Only names are logged; no descriptions, schemas, arguments, connection config or credentials.
+- Independent review additionally found an early-approval trust race in the previous slice. Chat now supplies a bound identity validator to the approval store, which validates before publishing an actionable prompt (including existing-trust fast paths), and revalidates before granting/persisting a decision. Cancellation/clear-thread cover both initial and decision-time validation; late completion cannot revive prompts or save trust. Existing non-validator callers retain their synchronous behavior.
+
+Validation commands use workspace-local/root binaries because `yarn workspace @janhq/web-app test` could not resolve the hoisted `cross-env` binary in this installation:
+
+- `yarn install --immutable`, core build, and plugin API build passed; pre-existing peer warnings, no dependency changes retained.
+- From `web-app`: `NODE_OPTIONS=--max-old-space-size=4096 ../node_modules/.bin/vitest --run src/lib/__tests__/custom-chat-transport*.test.ts src/lib/__tests__/chatMcpIdentity.test.ts src/hooks/__tests__/useToolApproval*.test.ts src/hooks/__tests__/useTools.test.ts 'src/routes/threads/__tests__/$threadId.test.tsx'` — 13 files / 322 tests passed at the initial follow-up validation; final rerun recorded below.
+- `./node_modules/.bin/tsc -b --pretty false` and focused ESLint on all four changed production TypeScript files passed. `git diff --check` passed.
+- No Rust changes in this follow-up; previous nine routing/cancellation Rust tests are documented above, not claimed rerun.
+
+Separate controlled verifier used minimal Vite on `127.0.0.1:5197`, no application bootstrap, and isolated headless Chrome with a fresh temporary user-data directory. Browser automation connection was unavailable, so Chrome ran directly. Actual production identity helpers passed **13/13** checks: collisions/missing/blank diagnostics, names-only logging against canary descriptions/schema/args/config, unique inventory silent, valid alpha shell, rejection of collision/replacement/disconnect/disabled/missing identity, and disablement during discovery. Separate filtered route checks passed **5 tests**. Temporary page/test/server/profile cleaned up. Evidence retained locally in `/tmp/jan-pr9533-verifier-dom.txt` and `/tmp/jan-pr9533-verifier-shell-tests.log` (not committed).
+
+All verification is controlled fixture/module/route QA, **not native Desktop E2E**, actual sandbox enforcement, live provider, or real MCP interoperability QA. No production/provider MCP connections or data, installed Jan profile, global settings changes, alternate backend selection, or merge.
+
+Final follow-up evidence: **13 files / 324 tests passed**, TypeScript build and four-file production ESLint passed. Independent final read-only review found no concrete issues (155 focused tests plus final 48-test hook rerun). Separate controlled trust verifier passed **23/23** scenarios using real approval/availability stores, real persistence middleware/serialization and only in-memory backend storage: invalid identities before prompt; removal/rebinding/collision/disablement after prompt for thread/server grants; cancellation/clear/deny during initial and decision validation; valid alpha trust persisted while beta still prompted. Evidence: `/tmp/jan-pr9533-controlled-trust-race.log`, with fixture/config retained in `/tmp`; temporary workspace files removed.
+
+Before push, remote foundation advanced to `c831c103de2ae98a6d88d0807e728c462f3d9698` (capability docs and Cowork skills-test merges only). Rebased onto that parent too and reran the targeted validation; no production overlap/conflicts.

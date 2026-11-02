@@ -1569,7 +1569,11 @@ describe('ThreadDetail route', () => {
       h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
     })
 
-    it('runs the shell without a prompt while the switch is on', async () => {
+    it('runs the advertised native shell without a prompt even with a same-name MCP tool', async () => {
+      h.appStateState.mcpToolNames = new Set(['shell'])
+      h.chatSessionsState.sessions['thread-1'] = {
+        transport: { getTurnModelSelection: () => null, getMcpServerForTool: () => undefined },
+      }
       renderComponent()
       await act(async () => {
         await (h as any).capturedOnToolCall(shellCall('sh1'))
@@ -1624,8 +1628,8 @@ describe('ThreadDetail route', () => {
     // Turning the built-in off must not break a user's own MCP tool that happens
     // to be called `shell`: it is not offered by the built-in any more, so the
     // call is served by the MCP server and prompts like any MCP call.
-    it('serves an MCP tool named shell while the switch is off', async () => {
-      shell.enabled = false
+    it.each([false, true])('serves the advertised MCP shell with native switch %s (no native schema)', async (enabled) => {
+      shell.enabled = enabled
       h.appStateState.mcpToolNames = new Set(['shell'])
       h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
       const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
@@ -1646,7 +1650,12 @@ describe('ThreadDetail route', () => {
         await finish()
       })
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-      expect(callTool).toHaveBeenCalledTimes(1)
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+        'sh4', 'shell', 'thread-1', 'test-server', expect.any(Function)
+      )
+      expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        toolName: 'shell', serverName: 'test-server',
+      }))
       expect(shell.execute).not.toHaveBeenCalled()
       expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(
         expect.objectContaining({ toolCallId: 'sh4', state: 'output-error' })
@@ -1749,7 +1758,7 @@ describe('ThreadDetail route', () => {
       const callTool = serveMcp()
       await run(webCall('web-identity-change'))
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
-        'web-identity-change', 'web_search', 'thread-1', 'search-server'
+        'web-identity-change', 'web_search', 'thread-1', 'search-server', expect.any(Function)
       )
       expect(callTool).not.toHaveBeenCalled()
       expect(webTool.executeWebTool).not.toHaveBeenCalled()
@@ -1785,7 +1794,7 @@ describe('ThreadDetail route', () => {
       try {
         await run(webCall('mcp-retrieve', 'retrieve'))
         expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
-          'mcp-retrieve', 'retrieve', 'thread-1', 'retrieval-server'
+          'mcp-retrieve', 'retrieve', 'thread-1', 'retrieval-server', expect.any(Function)
         )
         expect(callTool).not.toHaveBeenCalled()
         expect(ragCallTool).not.toHaveBeenCalled()
@@ -1869,11 +1878,21 @@ describe('ThreadDetail route', () => {
           await finishWithToolCalls()
         })
         expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
-          'bound-call', 'fetch', 'thread-1', advertisedServer
+          'bound-call', 'fetch', 'thread-1', advertisedServer, expect.any(Function)
         )
         expect(callTool).not.toHaveBeenCalled()
         expect(getMcpTools).toHaveBeenCalledTimes(1)
       }
+
+      it('supplies the request-bound validator to early approval before onFinish', async () => {
+        renderComponent()
+        await act(async () => { await (h as any).capturedOnToolCall(toolCall('validator-call')) })
+        const validate = h.toolApprovalState.requestApproval.mock.calls[0][4]
+        await expect(validate()).resolves.toBeUndefined()
+        getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }])
+        await expect(validate()).rejects.toThrow(/stale|ambiguous|unavailable/)
+        expect(callTool).not.toHaveBeenCalled()
+      })
 
       it('executes only the server advertised by the session, even if the menu disagrees', async () => {
         await waitForApproval()
@@ -1943,7 +1962,7 @@ describe('ThreadDetail route', () => {
           await finishWithToolCalls()
         })
         expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
-          'bound-call', 'fetch', 'thread-1', advertisedServer
+          'bound-call', 'fetch', 'thread-1', advertisedServer, expect.any(Function)
         )
         expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledExactlyOnceWith('bound-call')
         expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
@@ -2002,7 +2021,8 @@ describe('ThreadDetail route', () => {
         'tc1',
         'fetch',
         'thread-1',
-        'test-server'
+        'test-server',
+        expect.any(Function)
       )
     })
 
@@ -2021,7 +2041,8 @@ describe('ThreadDetail route', () => {
         'tc-server',
         'fetch',
         'thread-1',
-        'fetch-server'
+        'fetch-server',
+        expect.any(Function)
       )
     })
 
