@@ -1583,6 +1583,7 @@ describe('ThreadDetail route', () => {
       })
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
       expect(shell.execute).toHaveBeenCalledTimes(1)
+      expect(useToolCallRuntime.getState().origins.sh1).toBeNull()
     })
 
     it('does not run the shell, and says why, once the switch is off', async () => {
@@ -1796,6 +1797,7 @@ describe('ThreadDetail route', () => {
         expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
           'mcp-retrieve', 'retrieve', 'thread-1', 'retrieval-server', expect.any(Function)
         )
+        expect(useToolCallRuntime.getState().origins['mcp-retrieve']).toBe('retrieval-server')
         expect(callTool).not.toHaveBeenCalled()
         expect(ragCallTool).not.toHaveBeenCalled()
 
@@ -2044,6 +2046,27 @@ describe('ThreadDetail route', () => {
         'fetch-server',
         expect.any(Function)
       )
+    })
+
+    it('persists only this message’s captured tool identities in minimal metadata', async () => {
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      renderComponent()
+      await act(async () => { await (h as any).capturedOnToolCall(toolCall('origin-persist')) })
+      useToolCallRuntime.getState().recordOrigin('other-message-call', 'unrelated')
+      await act(async () => {
+        await (h as any).capturedOnFinish({
+          message: { id: 'origin-message', role: 'assistant', parts: [
+            { type: 'text', text: 'fixture result' },
+            { type: 'tool-fetch', toolCallId: 'origin-persist', input: { url: 'fixture' }, state: 'input-available' },
+          ] },
+          isAbort: false,
+        })
+      })
+      expect(h.messagesState.addMessage).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'origin-message', metadata: expect.objectContaining({
+          toolOrigins: { 'origin-persist': 'test-server' },
+        }),
+      }))
     })
 
     it('does NOT execute the tool from onToolCall (execution deferred to onFinish)', async () => {

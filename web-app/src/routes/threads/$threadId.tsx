@@ -624,12 +624,21 @@ function ThreadDetail() {
         message.role === 'assistant' &&
         uiMessageHasMeaningfulContent(message)
       ) {
+        // Only this message's request-bound identities accompany the shared
+        // serializer metadata; keep the foundation codec as persistence owner.
+        const toolOrigins = Object.fromEntries(message.parts.flatMap((part) => {
+          if (!('toolCallId' in part) || typeof part.toolCallId !== 'string') return []
+          const origin = useToolCallRuntime.getState().origins[part.toolCallId]
+          return origin === undefined ? [] : [[part.toolCallId, origin]]
+        }))
         const { content: contentParts, metadata: messageMetadata } =
           assistantRecordFields(
             message,
-            message.metadata as Record<string, unknown> | undefined,
+            { ...((message.metadata || {}) as Record<string, unknown>),
+              ...(Object.keys(toolOrigins).length ? { toolOrigins } : {}) },
             { stopped: isStoppedTurn }
           )
+
 
         if (isStoppedTurn) {
           const retained = useChatSessions.getState().sessions[threadId]?.chat
@@ -1132,6 +1141,7 @@ function ThreadDetail() {
       sessionData.tools.push(toolCall)
       const serverName = useChatSessions.getState().sessions[threadId]?.transport
         .getMcpServerForTool(toolCall.toolName)
+      useToolCallRuntime.getState().recordOrigin(toolCall.toolCallId, serverName)
       if (!callMcpIdentities.has(threadId)) callMcpIdentities.set(threadId, new Map())
       callMcpIdentities.get(threadId)!.set(toolCall.toolCallId, serverName)
       if (

@@ -32,7 +32,7 @@ export const ToolCallCard = memo(
   ({ part, messageId, citationOffset = 0, className }: ToolCallCardProps) => {
     const { t } = useTranslation()
     const toolName = part.type.split('-').slice(1).join('-')
-    const origin = useToolOrigin(toolName)
+    const origin = useToolOrigin(toolName, part.toolCallId, messageId)
     if (!isToolPart(part)) return null
 
     const isError = part.state === 'output-error'

@@ -42,6 +42,8 @@ export type ToolCallRuntimeSnapshot = {
    * settles, since the diff is the whole point of the finished card.
    */
   diffs: Record<string, string>
+  /** Request-bound origin, retained across card unmounts; null means internal. */
+  origins: Record<string, string | null>
 }
 
 type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
@@ -51,6 +53,7 @@ type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
    * otherwise lose the duration they had been showing.
    */
   enqueue: (toolCallIds: string[], owner?: string) => void
+  recordOrigin: (toolCallId: string, server: string | undefined) => void
   markRunning: (toolCallId: string, server?: string) => void
   markSettled: (toolCallId: string) => void
   /**
@@ -124,6 +127,10 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
   timings: {},
   progress: {},
   diffs: {},
+  origins: {},
+
+  recordOrigin: (toolCallId, server) =>
+    set((s) => ({ origins: { ...s.origins, [toolCallId]: server ?? null } })),
 
   enqueue: (toolCallIds, owner = NO_OWNER) =>
     set((s) => {
@@ -235,7 +242,7 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
       }
     }),
 
-  reset: () => set({ queue: [], timings: {}, progress: {}, diffs: {} }),
+  reset: () => set({ queue: [], timings: {}, progress: {}, diffs: {}, origins: {} }),
 }))
 
 /**

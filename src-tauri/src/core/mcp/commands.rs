@@ -410,22 +410,30 @@ fn select_tool_server<'a>(
     }
 }
 
-/// Bound the entire routing operation, including mutex acquisition and discovery.
-/// Dropping the losing future releases its mutex guard and prevents dispatch after
-/// cancellation or a discovery timeout.
-async fn run_tool_call<T>(
+/// Cancellation covers mutex acquisition as well as discovery and execution.
+/// Start the shared discovery/execution budget only after acquiring the guard;
+/// dropping the losing future releases the guard (or queued mutex waiter).
+async fn run_tool_call<T, G, F>(
     tool_name: &str,
     timeout_duration: Duration,
     cancellation_enabled: bool,
     cancel_rx: oneshot::Receiver<()>,
-    operation: impl std::future::Future<Output = Result<T, String>>,
-) -> Result<T, String> {
+    acquire: impl std::future::Future<Output = G>,
+    operation: impl FnOnce(G) -> F,
+) -> Result<T, String>
+where
+    F: std::future::Future<Output = Result<T, String>>,
+{
+    let timed_operation = async {
+        let guard = acquire.await;
+        timeout(timeout_duration, operation(guard)).await
+    };
     tokio::select! {
         biased;
         _ = cancel_rx, if cancellation_enabled => {
             Err(format!("Tool call '{tool_name}' was cancelled"))
         }
-        result = timeout(timeout_duration, operation) => {
+        result = timed_operation => {
             result.unwrap_or_else(|_| Err(format!(
                 "Tool call '{tool_name}' timed out after {} seconds",
                 timeout_duration.as_secs()
@@ -499,92 +507,97 @@ pub async fn call_tool(
         timeout_duration,
         cancellation_token.is_some(),
         cancel_rx,
-        async {
-            let servers = state.mcp_servers.lock().await;
+        state.mcp_servers.lock(),
+        |servers| {
+            let tool_name = tool_name.as_str();
+            let server_name = &server_name;
+            let arguments = &arguments;
+            let state = &state;
+            async move {
+                // If server_name is provided, only check that specific server
+                let servers_to_check: Vec<(&String, &RunningMcpService)> =
+                    if let Some(ref server) = server_name {
+                        servers.iter().filter(|(name, _)| *name == server).collect()
+                    } else {
+                        servers.iter().collect()
+                    };
 
-            // If server_name is provided, only check that specific server
-            let servers_to_check: Vec<(&String, &RunningMcpService)> =
-                if let Some(ref server) = server_name {
-                    servers.iter().filter(|(name, _)| *name == server).collect()
-                } else {
-                    servers.iter().collect()
-                };
-
-            if servers_to_check.is_empty() {
-                if let Some(server) = &server_name {
-                    return Err(format!("Server '{server}' not found"));
+                if servers_to_check.is_empty() {
+                    if let Some(server) = &server_name {
+                        return Err(format!("Server '{server}' not found"));
+                    }
+                    return Err(format!(
+                        "Tool {tool_name} not found — no MCP servers connected"
+                    ));
                 }
-                return Err(format!(
-                    "Tool {tool_name} not found — no MCP servers connected"
-                ));
-            }
 
-            let mut failed_servers: Vec<String> = Vec::new();
+                let mut failed_servers: Vec<String> = Vec::new();
 
-            // Discover every match before dispatching so duplicate tool names fail closed.
-            let mut matching_servers = Vec::new();
-            for (srv_name, service) in servers_to_check.iter() {
-                let tools = match service.list_all_tools().await {
-                    Ok(tools) => tools,
-                    Err(e) => {
-                        let err_str = e.to_string();
-                        log::warn!(
-                            "MCP server {} failed to list tools during call_tool: {}",
-                            srv_name,
-                            err_str
-                        );
-                        if is_transport_error(&err_str) {
+                // Discover every match before dispatching so duplicate tool names fail closed.
+                let mut matching_servers = Vec::new();
+                for (srv_name, service) in servers_to_check.iter() {
+                    let tools = match service.list_all_tools().await {
+                        Ok(tools) => tools,
+                        Err(e) => {
+                            let err_str = e.to_string();
+                            log::warn!(
+                                "MCP server {} failed to list tools during call_tool: {}",
+                                srv_name,
+                                err_str
+                            );
+                            if is_transport_error(&err_str) {
+                                state.mcp_reconnect_notify.notify_waiters();
+                            }
+                            failed_servers.push(srv_name.to_string());
+                            continue;
+                        }
+                    };
+
+                    if !tools.iter().any(|t| t.name == tool_name) {
+                        continue; // Tool not found in this server, try next
+                    }
+
+                    matching_servers.push(srv_name.as_str());
+                }
+
+                ensure_complete_tool_discovery(&failed_servers)?;
+                let selected_server =
+                    select_tool_server(&tool_name, server_name.as_deref(), &matching_servers)?;
+
+                if let Some(srv_name) = selected_server {
+                    // The server map remains locked throughout discovery and dispatch.
+                    let service = servers.get(srv_name).expect("discovered MCP server exists");
+                    log::info!("Found tool {tool_name} in server {srv_name}");
+
+                    // Call the tool with timeout and cancellation support
+                    let mut params = CallToolRequestParams::new(tool_name.to_owned());
+                    if let Some(args) = arguments.clone() {
+                        params = params.with_arguments(args);
+                    }
+                    let tool_call = service.call_tool(params);
+
+                    let result = tool_call.await.map_err(|e| e.to_string());
+
+                    // Signal reconnect if the tool call itself hit a transport error
+                    if let Err(ref e) = result {
+                        if is_transport_error(e) {
+                            log::warn!(
+                                "MCP server {} transport error during tool call: {}",
+                                srv_name,
+                                e
+                            );
                             state.mcp_reconnect_notify.notify_waiters();
                         }
-                        failed_servers.push(srv_name.to_string());
-                        continue;
                     }
-                };
 
-                if !tools.iter().any(|t| t.name == tool_name) {
-                    continue; // Tool not found in this server, try next
+                    // Cap here rather than at each caller: this is the single point every
+                    // desktop MCP tool result passes through on its way into conversation
+                    // history, so an unbounded result can never reach the model.
+                    return result.map(|res| truncate_tool_result(&res, tool_output_cap));
                 }
 
-                matching_servers.push(srv_name.as_str());
+                Err(format!("Tool {tool_name} not found"))
             }
-
-            ensure_complete_tool_discovery(&failed_servers)?;
-            let selected_server =
-                select_tool_server(&tool_name, server_name.as_deref(), &matching_servers)?;
-
-            if let Some(srv_name) = selected_server {
-                // The server map remains locked throughout discovery and dispatch.
-                let service = servers.get(srv_name).expect("discovered MCP server exists");
-                log::info!("Found tool {tool_name} in server {srv_name}");
-
-                // Call the tool with timeout and cancellation support
-                let mut params = CallToolRequestParams::new(tool_name.clone());
-                if let Some(args) = arguments.clone() {
-                    params = params.with_arguments(args);
-                }
-                let tool_call = service.call_tool(params);
-
-                let result = tool_call.await.map_err(|e| e.to_string());
-
-                // Signal reconnect if the tool call itself hit a transport error
-                if let Err(ref e) = result {
-                    if is_transport_error(e) {
-                        log::warn!(
-                            "MCP server {} transport error during tool call: {}",
-                            srv_name,
-                            e
-                        );
-                        state.mcp_reconnect_notify.notify_waiters();
-                    }
-                }
-
-                // Cap here rather than at each caller: this is the single point every
-                // desktop MCP tool result passes through on its way into conversation
-                // history, so an unbounded result can never reach the model.
-                return result.map(|res| truncate_tool_result(&res, tool_output_cap));
-            }
-
-            Err(format!("Tool {tool_name} not found"))
         },
     )
     .await;
@@ -984,17 +997,34 @@ mod call_tool_routing_tests {
         assert!(ensure_complete_tool_discovery(&[]).is_ok());
     }
 
-    #[tokio::test]
+    // Poll once without relying on scheduler timing or wall-clock sleeps.
+    async fn assert_pending<F: std::future::Future>(mut future: std::pin::Pin<&mut F>) {
+        assert!(
+            std::future::poll_fn(|cx| {
+                std::task::Poll::Ready(future.as_mut().poll(cx).is_pending())
+            })
+            .await
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn discovery_timeout_releases_lock_without_dispatch() {
         let mutex = Mutex::new(());
         let (_tx, rx) = oneshot::channel();
         let mut dispatched = false;
-        let result = run_tool_call("search", Duration::from_millis(10), false, rx, async {
-            let _guard = mutex.lock().await;
-            pending::<()>().await; // controlled hanging list_all_tools
-            dispatched = true;
-            Ok(())
-        })
+        let result = run_tool_call(
+            "search",
+            Duration::from_secs(10),
+            false,
+            rx,
+            mutex.lock(),
+            |guard| async {
+                let _guard = guard;
+                pending::<()>().await; // controlled hanging list_all_tools
+                dispatched = true;
+                Ok(())
+            },
+        )
         .await;
         assert!(result.unwrap_err().contains("timed out"));
         assert!(!dispatched);
@@ -1008,54 +1038,116 @@ mod call_tool_routing_tests {
     async fn discovery_cancellation_releases_lock_without_dispatch() {
         let mutex = Mutex::new(());
         let (tx, rx) = oneshot::channel();
-        let (started_tx, started_rx) = oneshot::channel();
         let mut dispatched = false;
-        let call = run_tool_call("search", Duration::from_secs(5), true, rx, async {
-            let _guard = mutex.lock().await;
-            started_tx.send(()).unwrap();
-            pending::<()>().await;
-            dispatched = true;
-            Ok(())
-        });
-        let cancel = async {
-            started_rx.await.unwrap();
+        {
+            let call = run_tool_call(
+                "search",
+                Duration::from_secs(5),
+                true,
+                rx,
+                mutex.lock(),
+                |guard| async {
+                    let _guard = guard;
+                    pending::<()>().await;
+                    dispatched = true;
+                    Ok(())
+                },
+            );
+            tokio::pin!(call);
+            assert_pending(call.as_mut()).await;
+            assert!(mutex.try_lock().is_err(), "discovery must hold the guard");
             tx.send(()).unwrap();
-        };
-        let (result, ()) =
-            tokio::time::timeout(Duration::from_secs(1), async { tokio::join!(call, cancel) })
-                .await
-                .expect("cancellation should interrupt discovery immediately");
-        assert!(result.unwrap_err().contains("cancelled"));
+            assert!(call.await.unwrap_err().contains("cancelled"));
+        }
         assert!(!dispatched);
         assert!(mutex.try_lock().is_ok());
     }
 
-    #[tokio::test]
-    async fn mutex_acquisition_is_bounded_by_timeout_and_cancellation() {
+    #[tokio::test(start_paused = true)]
+    async fn queued_call_gets_full_discovery_and_execution_budget() {
         let mutex = Mutex::new(());
-        let _guard = mutex.lock().await;
+        let guard = mutex.lock().await;
         let (_tx, rx) = oneshot::channel();
-        let result = run_tool_call("search", Duration::from_millis(10), false, rx, async {
-            let _guard = mutex.lock().await;
-            Ok(())
-        })
-        .await;
-        assert!(result.unwrap_err().contains("timed out"));
+        let call = run_tool_call(
+            "search",
+            Duration::from_secs(10),
+            false,
+            rx,
+            mutex.lock(),
+            |guard| async {
+                let _guard = guard;
+                tokio::time::sleep(Duration::from_secs(6)).await; // discovery
+                tokio::time::sleep(Duration::from_secs(3)).await; // execution
+                Ok(42)
+            },
+        );
+        tokio::pin!(call);
+        assert_pending(call.as_mut()).await; // queued behind the first call
+        tokio::time::advance(Duration::from_secs(20)).await;
+        assert_pending(call.as_mut()).await; // waiting does not consume the budget
+        drop(guard);
+        assert_pending(call.as_mut()).await; // start discovery and its budget
+        tokio::time::advance(Duration::from_secs(6)).await;
+        assert_pending(call.as_mut()).await; // start execution, six seconds used
+        tokio::time::advance(Duration::from_secs(3)).await;
+        assert_eq!(call.await, Ok(42));
+        assert!(mutex.try_lock().is_ok());
+    }
 
+    #[tokio::test(start_paused = true)]
+    async fn discovery_and_execution_share_one_timeout_budget() {
+        let mutex = Mutex::new(());
+        let (_tx, rx) = oneshot::channel();
+        let call = run_tool_call(
+            "search",
+            Duration::from_secs(10),
+            false,
+            rx,
+            mutex.lock(),
+            |guard| async {
+                let _guard = guard;
+                tokio::time::sleep(Duration::from_secs(6)).await;
+                tokio::time::sleep(Duration::from_secs(6)).await;
+                Ok(())
+            },
+        );
+        tokio::pin!(call);
+        assert_pending(call.as_mut()).await;
+        tokio::time::advance(Duration::from_secs(6)).await;
+        assert_pending(call.as_mut()).await;
+        tokio::time::advance(Duration::from_secs(4)).await;
+        assert!(call.await.unwrap_err().contains("timed out"));
+        assert!(mutex.try_lock().is_ok());
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_mutex_wait_removes_waiter_without_late_dispatch() {
+        let mutex = Mutex::new(());
+        let guard = mutex.lock().await;
         let (tx, rx) = oneshot::channel();
-        let call = run_tool_call("search", Duration::from_secs(5), true, rx, async {
-            let _guard = mutex.lock().await;
-            Ok(())
-        });
-        let cancel = async {
-            tokio::task::yield_now().await;
+        let mut dispatched = false;
+        {
+            let call = run_tool_call(
+                "search",
+                Duration::from_secs(5),
+                true,
+                rx,
+                mutex.lock(),
+                |guard| async {
+                    let _guard = guard;
+                    dispatched = true;
+                    Ok(())
+                },
+            );
+            tokio::pin!(call);
+            assert_pending(call.as_mut()).await; // register the queued waiter
             tx.send(()).unwrap();
-        };
-        let (result, ()) =
-            tokio::time::timeout(Duration::from_secs(1), async { tokio::join!(call, cancel) })
-                .await
-                .expect("cancellation should interrupt mutex acquisition");
-        assert!(result.unwrap_err().contains("cancelled"));
+            assert!(call.await.unwrap_err().contains("cancelled"));
+        }
+        drop(guard);
+        // A stale queued waiter would reserve the lock instead of releasing it.
+        assert!(mutex.try_lock().is_ok());
+        assert!(!dispatched);
     }
 
     #[tokio::test]
@@ -1063,9 +1155,14 @@ mod call_tool_routing_tests {
         let (tx, rx) = oneshot::channel();
         drop(tx); // absent tokens must not treat a closed channel as cancellation
         assert_eq!(
-            run_tool_call("search", Duration::from_secs(1), false, rx, async {
-                Ok(42)
-            })
+            run_tool_call(
+                "search",
+                Duration::from_secs(1),
+                false,
+                rx,
+                std::future::ready(()),
+                |()| async { Ok(42) }
+            )
             .await,
             Ok(42)
         );

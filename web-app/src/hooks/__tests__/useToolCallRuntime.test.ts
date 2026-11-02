@@ -15,6 +15,19 @@ describe('useToolCallRuntime', () => {
     vi.setSystemTime(new Date('2026-07-31T10:00:00Z'))
   })
 
+  it('keeps request-bound origins through enqueue, settlement and card unmount', () => {
+    store().recordOrigin('mcp', 'alpha')
+    store().recordOrigin('rag', undefined)
+    store().enqueue(['mcp', 'rag'], 'thread')
+    store().markRunning('mcp', 'alpha')
+    store().markSettled('mcp')
+    store().markSettled('rag')
+    store().releaseSettled('thread')
+    expect(store().origins).toEqual({ mcp: 'alpha', rag: null })
+    store().reset()
+    expect(store().origins).toEqual({})
+  })
+
   it('reports the position of each waiting call', () => {
     store().enqueue(['a', 'b', 'c'])
     expect(store().queue).toEqual(['a', 'b', 'c'])
