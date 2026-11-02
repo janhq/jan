@@ -458,6 +458,9 @@ fn skill_list(ctx: &ToolContext<'_>) -> String {
             .map(|m| (m.name, m.description))
             .collect(),
     };
+    if entries.is_empty() {
+        return "No skills.".to_string();
+    }
     entries
         .into_iter()
         .map(|(name, description)| {
@@ -5081,6 +5084,30 @@ mod tests {
         .await
         .0;
         assert!(out.starts_with("ERROR: scope 'user'"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An empty catalog says so, rather than returning an empty string the
+    /// model cannot tell from a failed call.
+    #[tokio::test]
+    async fn an_empty_skill_list_says_no_skills() {
+        struct Empty;
+        impl crate::tools::SkillProvider for Empty {
+            fn catalog(&self) -> Vec<(String, String)> {
+                Vec::new()
+            }
+            fn read(&self, name: &str) -> Result<String, String> {
+                Err(format!("ERROR: skill '{name}' not found"))
+            }
+        }
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx =
+            ToolContext::new(&root, &store, &[]).with_skill_source(std::sync::Arc::new(Empty));
+        let list = super::execute_builtin(lookup("skill_list").unwrap(), &json!({}), &ctx)
+            .await
+            .0;
+        assert_eq!(list, "No skills.");
         let _ = std::fs::remove_dir_all(&root);
     }
 
