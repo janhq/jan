@@ -223,7 +223,7 @@ async fn execute_text(
         "write" if ctx.workspace_readonly
             && in_read_only_root(project_root, scratch, arg_str(args, "path").unwrap_or("")) =>
         {
-            read_only_refusal(args, project_root)
+            read_only_refusal(args, scratch)
         }
         "write" => {
             write(
@@ -238,7 +238,7 @@ async fn execute_text(
         "edit" if ctx.workspace_readonly
             && in_read_only_root(project_root, scratch, arg_str(args, "path").unwrap_or("")) =>
         {
-            read_only_refusal(args, project_root)
+            read_only_refusal(args, scratch)
         }
         "edit" => {
             edit(
@@ -1035,13 +1035,17 @@ async fn edit(
 
 /// The refusal a `write`/`edit` gets for a path in a read-only root. Refused
 /// here rather than left to the prompt, which auto-approval would answer.
-fn read_only_refusal(args: &serde_json::Value, root: &Path) -> String {
+/// Names the scratch only where there is one, by the spelling the tools use.
+fn read_only_refusal(args: &serde_json::Value, scratch: Option<&Path>) -> String {
     let path = arg_str(args, "path").unwrap_or_default();
-    format!(
-        "ERROR: {path} is in a read-only checkout ({}): this agent cannot change the project. \
-         Write temporary files to the scratch directory instead.",
-        root.display()
-    )
+    let head = format!("ERROR: {path} is in a read-only checkout; this run cannot change it.");
+    match scratch {
+        Some(s) => format!(
+            "{head} Write temporary files under {} instead.",
+            scratch_display_path(Some(s), s)
+        ),
+        None => head,
+    }
 }
 
 /// The shell a confined command launches with: the (possibly jail-wrapped)
@@ -2587,7 +2591,20 @@ mod tests {
         ] {
             let (out, _) = super::execute_builtin(lookup(tool).unwrap(), &args, &ctx).await;
             assert!(out.starts_with("ERROR") && out.contains("read-only"), "{tool}: {out}");
+            // The host checkout path is not the model's business.
+            assert!(!out.contains(&*root.to_string_lossy()), "{tool}: {out}");
+            let shown = crate::tools::sandbox::scratch_display_path(Some(&scratch), &scratch);
+            assert!(out.ends_with(&format!("Write temporary files under {shown} instead.")), "{out}");
         }
+        // No scratch, no pointer at one.
+        let bare = ToolContext::new(&root, &store, &[]).with_workspace_readonly(true);
+        let (out, _) = super::execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "a.txt", "content": "x"}),
+            &bare,
+        )
+        .await;
+        assert_eq!(out, "ERROR: a.txt is in a read-only checkout; this run cannot change it.");
         assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "one");
         assert!(!root.join("new").exists());
         let (read, _) =
