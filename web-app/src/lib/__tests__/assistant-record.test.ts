@@ -748,6 +748,69 @@ describe('traps', () => {
     ])
   })
 
+  // An old build's Stop rewrite of a call that never produced output leaves
+  // `content` byte-identical and only adds `metadata.toolErrors`; the carrier
+  // still says in flight, so it must not be replayed.
+  describe('a metadata-only tool state rewrite falls back', () => {
+    const inFlight = assistant([
+      { type: 'step-start' },
+      { type: 'text', text: 'checking ' },
+      { type: 'tool-x', toolCallId: 'c1', state: 'input-available', input: { a: 1 } },
+    ])
+    const rewrites: Record<string, any[]> = {
+      'stopped -> error': [
+        { type: 'step-start' },
+        { type: 'text', text: 'checking ' },
+        { type: 'tool-x', toolCallId: 'c1', state: 'output-error', input: { a: 1 }, errorText: 'Stopped by user' },
+      ],
+      'denied -> error': [
+        { type: 'step-start' },
+        { type: 'text', text: 'checking ' },
+        { type: 'tool-x', toolCallId: 'c1', state: 'output-error', input: { a: 1 }, errorText: 'Tool execution denied by user' },
+      ],
+    }
+    for (const [name, parts] of Object.entries(rewrites)) {
+      it(name, () => {
+        const record = persist(build(inFlight))
+        expect(record.metadata?.uiParts).toBeDefined()
+        const old = oldFields(assistant(parts), record.metadata as any, true)
+        // Precondition: content alone cannot tell the two apart.
+        expect(old.content).toEqual(record.content)
+        const rewritten = persist({ ...record, ...old } as ThreadMessage)
+        expect((rewritten.metadata as any).uiParts).toBeDefined()
+        const back = convertThreadMessageToUIMessage(rewritten).parts as any[]
+        expect(back).toEqual(legacyReload(rewritten))
+        expect(back.find((p) => p.toolCallId === 'c1')).toMatchObject({
+          state: 'output-error',
+          errorText: parts[2].errorText,
+        })
+      })
+    }
+
+    it('a carrier whose own errors match metadata still validates', () => {
+      const errored = assistant([
+        { type: 'step-start' },
+        { type: 'tool-x', toolCallId: 'c1', state: 'output-error', input: { a: 1 }, errorText: 'boom' },
+      ])
+      const record = persist(build(errored))
+      expect(record.metadata?.uiParts).toBeDefined()
+      expect(convertThreadMessageToUIMessage(record).parts).toEqual([
+        { type: 'step-start' },
+        { type: 'tool-x', toolCallId: 'c1', state: 'output-error', input: { a: 1 }, errorText: 'boom' },
+      ])
+    })
+
+    it('a toolErrors entry removed from metadata also falls back', () => {
+      const errored = assistant([
+        { type: 'step-start' },
+        { type: 'tool-x', toolCallId: 'c1', state: 'output-error', input: { a: 1 }, errorText: 'boom' },
+      ])
+      const record = persist(build(errored)) as any
+      delete record.metadata.toolErrors
+      expect(convertThreadMessageToUIMessage(record).parts).toEqual(legacyReload(record))
+    })
+  })
+
   it('raw <think> in live text round-trips as text', () => {
     const message = assistant([{ type: 'text', text: 'see <think>x</think> y' }])
     expect(build(message).metadata?.uiParts).toBeDefined()

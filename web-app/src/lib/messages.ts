@@ -261,7 +261,7 @@ export function convertThreadMessageToUIMessage(
   >
   // `uiPartsSkipped` stays visible: that turn reloads (and is re-sent) lossy.
   const parts: any[] =
-    rehydrateUIParts(uiParts, threadMessage.content || []) ??
+    rehydrateUIParts(uiParts, threadMessage.content || [], metadata.toolErrors) ??
     contentToUIParts(threadMessage)
 
   return {
@@ -752,12 +752,14 @@ function resolveContentPointers(part: unknown, content: any[]): unknown {
   return rest
 }
 
-// The stored parts, when the carrier is intact and re-deriving `content` from
-// them gives back the record's `content`: any writer that changed `content`
-// since (an older build's Stop rewrite, an edit) invalidates them.
+// The stored parts, when the carrier is intact and re-deriving the record's
+// `content` and `metadata.toolErrors` from them gives back exactly what is
+// stored: any writer that changed either since (an older build's Stop rewrite,
+// which may touch only `toolErrors`, or an edit) invalidates them.
 function rehydrateUIParts(
   carrier: unknown,
-  content: ThreadContent[]
+  content: ThreadContent[],
+  toolErrors: unknown
 ): Record<string, unknown>[] | undefined {
   const { v, parts } = (carrier ?? {}) as { v?: unknown; parts?: unknown }
   if (v !== 1 || !Array.isArray(parts) || parts.length === 0) return undefined
@@ -768,7 +770,9 @@ function rehydrateUIParts(
     const derived = extractContentPartsFromUIMessage({
       parts: rehydrated,
     } as unknown as UIMessage)
-    return canonicalJson(derived) === canonicalJson(content)
+    const derivedErrors = toolErrorsOf({ parts: rehydrated } as unknown as UIMessage)
+    return canonicalJson(derived) === canonicalJson(content) &&
+      canonicalJson(derivedErrors ?? {}) === canonicalJson(toolErrors ?? {})
       ? rehydrated
       : undefined
   } catch {
@@ -817,7 +821,8 @@ function uiPartsFor(
       throw new SkipUIParts('size')
     // Never store a carrier the reader would reject (e.g. a call still in
     // flight that already has an output, which `content` keeps).
-    if (!rehydrateUIParts(uiParts, content)) throw new SkipUIParts('mismatch')
+    if (!rehydrateUIParts(uiParts, content, metadata.toolErrors))
+      throw new SkipUIParts('mismatch')
     return { uiParts }
   } catch (error) {
     // The carrier is optional: whatever goes wrong building it, the turn is
