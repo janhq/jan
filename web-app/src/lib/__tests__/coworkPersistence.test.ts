@@ -689,6 +689,26 @@ describe('loadCoworkSessions', () => {
     const r = await loadCoworkSessions(b.invoke, { migrationSettled: false })
     expect(r.deletionJournalError).toBeUndefined()
   })
+
+  it.each([
+    ['no legacy blob', undefined],
+    [
+      'nothing mergeable in the blob',
+      // Already committed + empty: nothing the journal could protect.
+      JSON.stringify({
+        state: { sessions: [session('committed'), session('empty', { turns: [], messages: [] })] },
+        version: 1,
+      }),
+    ],
+  ])('a corrupt journal with %s raises no false journal error', async (_name, blob) => {
+    commit('committed')
+    b.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    if (blob) b.settings.set(CODE_SESSIONS_KEY, blob)
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(r.deletionJournalError).toBeUndefined()
+    expect(r.sessions.map((s) => s.id)).toEqual(['committed'])
+    expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe('{corrupt')
+  })
 })
 
 describe('sidecar version/shape containment', () => {

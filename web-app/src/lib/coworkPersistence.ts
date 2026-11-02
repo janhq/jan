@@ -210,38 +210,44 @@ export async function loadCoworkSessions(
   const legacyIds = new Set<string>()
   let deletionJournalError: string | undefined
   if (!opts.migrationSettled) {
-    // With deletion intent unreadable, merging the blob could resurrect
-    // deleted sessions, so the merge is skipped entirely (fail closed;
-    // committed threads still load) — and the state is reported to the
-    // caller so it is shown to the user, never hidden silently.
-    let deleted: Set<string> | null = null
     try {
-      deleted = await readDeletedIds(invoke)
-    } catch (e) {
-      deletionJournalError = e instanceof Error ? e.message : String(e)
-      console.warn(
-        '[cowork] deletion journal unreadable; skipping the legacy sessions blob:',
-        e
+      const have = new Set(sessions.map((s) => s.id))
+      const blob = readCoworkSessions(
+        await invoke<string | null>('settings_get', { key: CODE_SESSIONS_KEY })
       )
-    }
-    if (deleted) {
-      try {
-        const have = new Set(sessions.map((s) => s.id))
-        const blob = readCoworkSessions(
-          await invoke<string | null>('settings_get', { key: CODE_SESSIONS_KEY })
-        )
-        for (const s of blob) {
-          if (have.has(s.id) || deleted.has(s.id) || isEmpty(s)) continue
-          if (chatIds.has(s.id)) {
-            sessions.push({ ...s, unavailable: 'id-collision' })
-          } else {
-            sessions.push(s)
-            legacyIds.add(s.id)
+      const mergeable = blob.filter((s) => !have.has(s.id) && !isEmpty(s))
+      // The journal is read (strictly) only when there is actually something
+      // it could protect: with nothing mergeable, a corrupt journal must not
+      // raise a false warning on every launch. With deletion intent
+      // unreadable AND mergeable sessions present, the merge is skipped
+      // entirely (fail closed against resurrection; committed threads still
+      // load, the corrupt bytes are never rewritten) and the state is
+      // reported to the caller so it is shown to the user, never hidden.
+      if (mergeable.length > 0) {
+        let deleted: Set<string> | null = null
+        try {
+          deleted = await readDeletedIds(invoke)
+        } catch (e) {
+          deletionJournalError = e instanceof Error ? e.message : String(e)
+          console.warn(
+            '[cowork] deletion journal unreadable; skipping the legacy sessions blob:',
+            e
+          )
+        }
+        if (deleted) {
+          for (const s of mergeable) {
+            if (deleted.has(s.id)) continue
+            if (chatIds.has(s.id)) {
+              sessions.push({ ...s, unavailable: 'id-collision' })
+            } else {
+              sessions.push(s)
+              legacyIds.add(s.id)
+            }
           }
         }
-      } catch (e) {
-        console.warn('[cowork] skipping the legacy sessions blob:', e)
       }
+    } catch (e) {
+      console.warn('[cowork] skipping the legacy sessions blob:', e)
     }
   }
 

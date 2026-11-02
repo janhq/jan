@@ -410,11 +410,34 @@ describe('coworkSync startup', () => {
     expect(useCoworkSessions.getState().sessions.some((s) => s.id === 'hidden')).toBe(true)
   })
 
+  it('a corrupt journal with nothing to migrate raises no warning and blocks nothing', async () => {
+    backend.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    await startCoworkSync()
+    // No legacy data ⇒ the corrupt journal protects nothing: no false
+    // warning, migration settles, and normal deletion flows stay unblocked.
+    expect(sonner.warning).not.toHaveBeenCalled()
+    expect(backend.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
+    expect(isCoworkMigrationDone()).toBe(true)
+    const id = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().commitTurns(id, [{ role: 'user', content: 'x' }], [], [])
+    await flushCowork()
+    useCoworkSessions.getState().deleteSession(id)
+    await vi.waitFor(() => expect(backend.threads.has(id)).toBe(false))
+    // The corrupt value itself is still never rewritten.
+    expect(backend.settings.get(COWORK_DELETED_IDS_KEY)).toBe('{corrupt')
+  })
+
   it('the post-mount flush re-raises the journal warning with the same id, and only while it applies', async () => {
     // Before any start (or after reset) there is nothing to flush.
     flushCoworkStartupWarnings()
     expect(sonner.warning).not.toHaveBeenCalled()
     backend.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    // A mergeable legacy session must exist: the journal (and therefore the
+    // warning) only matters when there is something it could protect.
+    backend.settings.set(
+      CODE_SESSIONS_KEY,
+      JSON.stringify({ state: { sessions: [legacy('pending')] }, version: 1 })
+    )
     await startCoworkSync()
     expect(sonner.warning).toHaveBeenCalledTimes(1)
     // The Toaster host mounts after startup gates: the flush re-raises the

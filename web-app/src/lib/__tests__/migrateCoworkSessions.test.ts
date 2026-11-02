@@ -215,6 +215,50 @@ describe('migrateCoworkSessionsToThreads', () => {
     expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe('{corrupt')
   })
 
+  it.each([
+    ['no blob at all', null],
+    ['only empty sessions', envelope([session('empty', { turns: [], messages: [] })])],
+  ])('a corrupt journal with %s does not block: nothing-to-migrate, journal untouched', async (_name, blob) => {
+    if (blob) b.settings.set(CODE_SESSIONS_KEY, blob)
+    b.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    const r = await migrateCoworkSessionsToThreads(b.invoke)
+    // Nothing a corrupt journal could resurrect ⇒ it must not poison startup.
+    expect(r.status).toBe('nothing-to-migrate')
+    expect(b.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
+    expect(b.calls).not.toContain('create_thread')
+    expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe('{corrupt')
+  })
+
+  it('crash window: everything committed but flag unset settles even with a corrupt journal', async () => {
+    // A previous launch copied every session but died before writing the
+    // flag. Skipping already-committed copies can never resurrect anything,
+    // so the corrupt journal must not keep this permanently partial
+    // (blocking deletions with no warning, since nothing is mergeable).
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    b.threads.set('s1', { id: 's1', metadata: { mode: 'cowork' } })
+    b.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    const r = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(r.status).toBe('complete')
+    expect(r.skipped).toContain('s1')
+    expect(b.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
+    expect(b.calls).not.toContain('create_thread')
+    expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe('{corrupt')
+  })
+
+  it('an empty-string journal is unreadable intent: fail closed with candidates, harmless without', async () => {
+    // Writers always store at least '[]', so '' can only be a damaged value.
+    b.settings.set(COWORK_DELETED_IDS_KEY, '')
+    let r = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(r.status).toBe('nothing-to-migrate')
+    expect(b.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
+    b.settings.delete(COWORK_MIGRATION_FLAG_KEY)
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    r = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(r.status).toBe('partial')
+    expect(b.calls).not.toContain('create_thread')
+    expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe('')
+  })
+
   it('a corrupt blob does not throw into startup and leaves the marker unset', async () => {
     b.settings.set(CODE_SESSIONS_KEY, '{not json')
     const r = await migrateCoworkSessionsToThreads(b.invoke)
