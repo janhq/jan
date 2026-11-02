@@ -95,19 +95,32 @@ export function ConversationScopeControl({ threadId, pickFolder, disabled = fals
 
   const apply = async (next: ConversationCapabilitiesV1) => {
     const seq = ++applySeq.current
+    // Captured BEFORE the setter's synchronous deny overwrites the store: the
+    // ACK-failure copy depends on what was live or persisted before this
+    // change. Conservative on purpose -- a persisted grant counts even when
+    // the overlay already denies it (host confirmation state unknown), so a
+    // failed revoke of a stale snapshot still warns.
+    const hadElevated =
+      effective.shellNetwork ||
+      effective.memoryWrite ||
+      effective.folderScope !== null ||
+      persisted.shellNetwork ||
+      persisted.memoryWrite ||
+      persisted.folderScope !== null
     setSaving(true)
     setError('')
     try {
       await useThreads.getState().setConversationCapabilities(threadId, next)
     } catch (error) {
       if (applySeq.current === seq) {
-        // Two different truths. A failed SAVE still narrowed the host first,
-        // so elevated access really is off. A failed host ACK means neither
-        // narrow path ran: claiming "off" would be false -- background agent
-        // tasks may still hold the previous access and a stop was only
-        // attempted, not confirmed.
+        // Three different truths. A failed SAVE narrowed the host first, so
+        // elevated access really is off. A failed host ACK with a prior
+        // grant means neither narrow path ran: background agent tasks may
+        // still hold that access, and claiming "off" would be false. A
+        // failed host ACK with NO prior grant left nothing running to warn
+        // about -- the plain save-failure copy is the whole truth.
         setError(
-          error instanceof HostRevokeUnconfirmedError
+          error instanceof HostRevokeUnconfirmedError && hadElevated
             ? 'The app did not confirm this permission change. Background agent tasks may ' +
               'still have the previous access; stopping them was attempted but is not ' +
               'confirmed. Retry, or quit Jan to guarantee they stop.'

@@ -145,9 +145,33 @@ describe('ConversationScopeControl', () => {
     expect(useThreads.getState().getConversationCapabilities(id).shellNetwork).toBe(false)
   })
 
-  it('a failed host ACK warns that background access is not confirmed stopped', async () => {
+  it('a failed host ACK while granting from default fails plain, with no background warning', async () => {
     const id = freshId()
     useThreads.setState({ threads: { [id]: thread(id) } })
+    revokeHost.mockRejectedValueOnce(new Error('ipc bridge down'))
+    mount(id)
+    fireEvent.click(screen.getByLabelText(SHELL_LABEL))
+    // Nothing was elevated before this change, so there is no previous access
+    // for background work to keep: the plain save-failure copy is the truth,
+    // and the uncertainty warning would be noise.
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Permission change could not be saved. Elevated access stays off until a save succeeds.'
+      )
+    )
+    expect(screen.getByRole('alert')).not.toHaveTextContent('previous access')
+    expect(persist).not.toHaveBeenCalled()
+    expect(screen.getByLabelText(SHELL_LABEL)).not.toBeChecked()
+    expect(useThreads.getState().getConversationCapabilities(id).shellNetwork).toBe(false)
+  })
+
+  it('a failed host ACK while revoking an elevated grant warns that background access is not confirmed stopped', async () => {
+    const id = freshId()
+    useThreads.setState({ threads: { [id]: thread(id) } })
+    // Establish a live grant through the real setter first.
+    await useThreads.getState().setConversationCapabilities(id, elevated)
+    revokeHost.mockClear()
+    persist.mockClear()
     revokeHost.mockRejectedValueOnce(new Error('ipc bridge down'))
     mount(id)
     fireEvent.click(screen.getByLabelText(SHELL_LABEL))
@@ -160,7 +184,7 @@ describe('ConversationScopeControl', () => {
     // provably off when the host never acknowledged the narrow.
     expect(screen.getByRole('alert')).not.toHaveTextContent('Elevated access stays off')
     expect(screen.getByRole('alert')).toHaveTextContent('quit Jan to guarantee they stop')
-    // Nothing persisted, a stop was attempted, the toggle stays off.
+    // Nothing persisted, a stop was attempted, the toggles read denied.
     expect(persist).not.toHaveBeenCalled()
     expect(stopAllMonitors).toHaveBeenCalledExactlyOnceWith(id)
     expect(screen.getByLabelText(SHELL_LABEL)).not.toBeChecked()
