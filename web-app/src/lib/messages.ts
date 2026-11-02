@@ -616,8 +616,9 @@ class SkipUIParts extends Error {
   }
 }
 
-// JSON with object keys sorted: storage goes through serde_json::Value, which
-// hands objects back with their keys sorted.
+// JSON with object keys sorted, so a comparison does not depend on key order:
+// storage goes through serde_json::Value, which keeps insertion order only
+// while some dependency enables its `preserve_order` feature (genai does today).
 function canonicalJson(value: unknown): string {
   return JSON.stringify(value, (_key, v) =>
     v && typeof v === 'object' && !Array.isArray(v)
@@ -663,6 +664,11 @@ function sanitizeUIPart(part: any): Record<string, unknown> {
     const settled = SETTLED_TOOL_STATES.has(part.state)
     const state = settled ? part.state : 'input-available'
     const approval = part.approval
+    const hasApproval = !!approval && typeof approval === 'object'
+    // convertToModelMessages dereferences the approval of a denied call, so a
+    // denied call without one could never be re-sent.
+    if (state === 'output-denied' && !hasApproval)
+      throw new SkipUIParts('unsupported-part')
     return {
       type,
       ...(type === 'dynamic-tool' ? { toolName: part.toolName } : {}),
@@ -676,7 +682,7 @@ function sanitizeUIPart(part: any): Record<string, unknown> {
       // convertToModelMessages reads the approval of a settled call (and
       // requires it on `output-denied`).
       approval:
-        settled && approval && typeof approval === 'object'
+        settled && hasApproval
           ? { id: approval.id, approved: approval.approved, reason: approval.reason }
           : undefined,
     }
@@ -712,6 +718,33 @@ function contentMediaUrl(
   return typeof data === 'string' ? `data:${mediaType};base64,${data}` : undefined
 }
 
+// The `content` tool_call entry for a tool part's call id.
+function contentToolCall(content: any[], toolCallId: unknown): any {
+  return content.find(
+    (c) => c?.type === 'tool_call' && c.tool_call_id === toolCallId
+  )
+}
+
+// A stored part with what it points at in `content` filled back in: a data
+// URL (`contentRef`) or a tool output (`outputInContent`). Throws when the
+// pointer does not resolve.
+function resolveContentPointers(part: unknown, content: any[]): unknown {
+  if (!part || typeof part !== 'object') return part
+  const { contentRef, outputInContent, ...rest } = part as Record<string, unknown>
+  if (contentRef !== undefined) {
+    const url = contentMediaUrl(content, contentRef, rest.mediaType)
+    if (url === undefined) throw new SkipUIParts('unsupported-part')
+    rest.url = url
+  }
+  if (outputInContent !== undefined) {
+    const entry = contentToolCall(content, rest.toolCallId)
+    if (outputInContent !== true || !entry || entry.output === undefined)
+      throw new SkipUIParts('unsupported-part')
+    rest.output = entry.output
+  }
+  return rest
+}
+
 // The stored parts, when the carrier is intact and re-deriving `content` from
 // them gives back the record's `content`: any writer that changed `content`
 // since (an older build's Stop rewrite, an edit) invalidates them.
@@ -723,14 +756,7 @@ function rehydrateUIParts(
   if (v !== 1 || !Array.isArray(parts) || parts.length === 0) return undefined
   try {
     const rehydrated = sanitizeUIParts(
-      parts.map((part) => {
-        if (!part || typeof part !== 'object' || !('contentRef' in part))
-          return part
-        const { contentRef, ...rest } = part as Record<string, unknown>
-        const url = contentMediaUrl(content, contentRef, rest.mediaType)
-        if (url === undefined) throw new SkipUIParts('unsupported-part')
-        return { ...rest, url }
-      })
+      parts.map((part) => resolveContentPointers(part, content))
     )
     const derived = extractContentPartsFromUIMessage({
       parts: rehydrated,
@@ -757,18 +783,27 @@ function uiPartsFor(
     if (canonicalJson(legacy) === canonicalJson(sanitized)) return {}
     const uiParts = {
       v: 1 as const,
-      // A data URL already stored in `content` is kept once: the part points
-      // at it.
+      // The two large payloads `content` already holds are kept once: a
+      // media data URL and a tool output. The part points at them instead.
       parts: sanitized.map((part) => {
-        if (part.type !== 'file' || typeof part.url !== 'string' || !part.url.startsWith('data:'))
-          return part
-        const ref = content.findIndex(
-          (_, i) => contentMediaUrl(content, i, part.mediaType) === part.url
-        )
-        if (ref < 0) return part
-        const stored: Record<string, unknown> = { ...part, contentRef: ref }
-        delete stored.url
-        return stored
+        if (part.type === 'file' && typeof part.url === 'string' && part.url.startsWith('data:')) {
+          const ref = content.findIndex(
+            (_, i) => contentMediaUrl(content, i, part.mediaType) === part.url
+          )
+          if (ref < 0) return part
+          const stored: Record<string, unknown> = { ...part, contentRef: ref }
+          delete stored.url
+          return stored
+        }
+        if (part.state === 'output-available' && part.output !== undefined) {
+          const entry = contentToolCall(content, part.toolCallId)
+          if (!entry || canonicalJson(entry.output) !== canonicalJson(part.output))
+            return part
+          const stored: Record<string, unknown> = { ...part, outputInContent: true }
+          delete stored.output
+          return stored
+        }
+        return part
       }),
     }
     if (JSON.stringify(uiParts).length > UI_PARTS_MAX_CHARS)
@@ -791,7 +826,9 @@ function uiPartsFor(
  * turn: its UIMessage parts, sanitized to plain JSON, so the turn reloads (and
  * is re-sent to the model) exactly as it streamed. It is written only when
  * reloading from `content` alone would lose something. A data URL already in
- * `content` is stored as `contentRef: <index>` instead of a second copy.
+ * `content` is stored as `contentRef: <index>`, and a tool output `content`
+ * already holds for the same call id as `outputInContent: true`, instead of a
+ * second copy (text and reasoning are duplicated: they are small).
  * When the parts cannot be stored whole (oversized provider metadata, over
  * 256 KB, an unsupported part), `uiParts` is omitted and
  * `metadata.uiPartsSkipped` says why; nothing is silently truncated.
@@ -801,6 +838,10 @@ function uiPartsFor(
  * re-deriving `content` from it gives back the stored `content`, and otherwise
  * (including every record written before this field existed) reloads from
  * `content` as before. Existing records are not migrated or rewritten.
+ *
+ * Trust: like `content`, the carrier is the user's own local data and is
+ * re-sent to the model, including provider metadata (as provider options) and
+ * `providerExecuted`. It grants nothing `content` could not already say.
  *
  * `baseMetadata` is spread first, minus any `uiParts` / `uiPartsSkipped` it
  * carries from an earlier version of the turn.

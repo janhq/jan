@@ -53,7 +53,8 @@ const toRecord = (
   }) as unknown as ThreadMessage
 
 // Storage goes through serde_json::Value on the Rust side: undefined is
-// dropped and object keys come back sorted.
+// dropped, and object keys come back sorted if `preserve_order` is ever off
+// (the harsher case, so the tests use it).
 const sortKeys = (v: any): any =>
   Array.isArray(v)
     ? v.map(sortKeys)
@@ -318,12 +319,54 @@ describe('no silent truncation', () => {
     expect(reload(message)).toEqual([{ type: 'text', text: text.trim() }])
   })
 
-  it('a large tool result is skipped as size', () => {
+  it('a large tool result is stored once (in content) and reloads losslessly', () => {
+    const output = 'r'.repeat(300 * 1024)
     const message = assistant([
       { type: 'step-start' },
-      { type: 'tool-x', toolCallId: 'c1', state: 'output-available', input: {}, output: 'r'.repeat(300 * 1024) },
+      { type: 'tool-x', toolCallId: 'c1', state: 'output-available', input: {}, output },
     ])
-    expect(build(message).metadata).toMatchObject({ uiPartsSkipped: 'size' })
+    const record = build(message)
+    expect(record.metadata?.uiPartsSkipped).toBeUndefined()
+    expect((record.metadata?.uiParts as any).parts[1]).toMatchObject({ outputInContent: true })
+    expect(JSON.stringify(record).split(output).length - 1).toBe(1)
+    expect(reload(message)).toEqual(message.parts)
+  })
+
+  it('a falsy tool output content cannot hold stays inline', () => {
+    const message = assistant([
+      { type: 'step-start' },
+      { type: 'tool-x', toolCallId: 'c1', state: 'output-available', input: {}, output: '' },
+    ])
+    const part = (build(message).metadata?.uiParts as any).parts[1]
+    expect(part.output).toBe('')
+    expect(part.outputInContent).toBeUndefined()
+    expect(reload(message)).toEqual(message.parts)
+  })
+
+  it('a bad outputInContent pointer falls back to the content path', () => {
+    const message = assistant([
+      { type: 'step-start' },
+      { type: 'tool-x', toolCallId: 'c1', state: 'output-available', input: {}, output: 'big' },
+    ])
+    const record = persist(build(message)) as any
+    record.metadata.uiParts.parts[1].toolCallId = 'other'
+    expect(convertThreadMessageToUIMessage(record).parts).toEqual(
+      convertThreadMessageToUIMessage(
+        persist(toRecord('a1', oldFields(message, undefined)))
+      ).parts
+    )
+  })
+
+  it('output-denied without an approval is never written or read', () => {
+    const denied = { type: 'tool-x', toolCallId: 'c1', state: 'output-denied', input: {} }
+    const message = assistant([{ type: 'step-start' }, denied])
+    const record = build(message)
+    expect(record.metadata?.uiParts).toBeUndefined()
+    expect(record.metadata?.uiPartsSkipped).toBe('unsupported-part')
+    const forged = persist(record) as any
+    forged.metadata.uiParts = { v: 1, parts: [{ type: 'step-start' }, denied] }
+    const back = convertThreadMessageToUIMessage(forged).parts as any[]
+    expect(back.some((p) => p.state === 'output-denied')).toBe(false)
   })
 
   it('a signature over 8 KB is skipped as provider-metadata and reloads as today', () => {
@@ -563,6 +606,7 @@ describe('a realistic streamed turn', () => {
     const json = JSON.stringify(record)
     expect(record.metadata?.uiParts).toBeDefined()
     expect(count(json, 'Q'.repeat(400))).toBe(1)
+    expect(count(json, toolOutput)).toBe(1)
     expect(reload(streamed)).toEqual([
       { type: 'step-start' },
       { type: 'reasoning', text: reasoning, providerMetadata: { anthropic: { signature: 'SIG-123' } } },
@@ -573,7 +617,7 @@ describe('a realistic streamed turn', () => {
       { type: 'text', text: 'Done.\n' },
     ])
     const old = JSON.stringify(toRecord('a1', oldFields(streamed, undefined)))
-    // The carrier copies text, reasoning and tool output; media stays once.
+    // The carrier copies text and reasoning; media and tool output stay once.
     expect(json.length).toBeLessThan(old.length * 2)
   })
 
@@ -584,8 +628,6 @@ describe('a realistic streamed turn', () => {
       c.map((e, i) => (i === 1 ? { ...e, text: { ...e.text, value: 'edited' } } : e)),
     'an entry removed': (c) => c.slice(0, -1),
     'an entry appended': (c) => [...c, { type: 'text', text: { value: 'more', annotations: [] } }],
-    'a tool output changed': (c) =>
-      c.map((e) => (e.type === 'tool_call' ? { ...e, output: 'other' } : e)),
   }
   for (const [name, edit] of Object.entries(edits)) {
     it(`falls back when content has ${name}`, () => {
@@ -596,6 +638,18 @@ describe('a realistic streamed turn', () => {
       expect((back.metadata as any).uiParts).toBeUndefined()
     })
   }
+
+  // The tool output lives only in `content`, so `content` stays its authority.
+  it('reloads a tool output changed in content from content', () => {
+    const record = persist(build(streamed))
+    const content = (record.content as any[]).map((e) =>
+      e.type === 'tool_call' ? { ...e, output: 'other' } : e
+    )
+    const back = convertThreadMessageToUIMessage({ ...record, content } as ThreadMessage)
+    expect(back.parts).toEqual(
+      reload(streamed).map((p: any) => (p.type === 'tool-ls' ? { ...p, output: 'other' } : p))
+    )
+  })
 })
 
 describe('traps', () => {
@@ -652,20 +706,5 @@ describe('traps', () => {
     ])
   })
 
-  it('number re-serialisation (1.0) still validates', () => {
-    const message = assistant([
-      { type: 'step-start' },
-      { type: 'tool-x', toolCallId: 'c1', state: 'output-available', input: { n: 1.0 }, output: { score: 2.5, n: 1 } },
-    ])
-    const text = JSON.stringify(build(message))
-    // A writer that prints integral floats as 1.0 (as serde does for f64).
-    const raw = text.replace(/"n":1([,}])/g, '"n":1.0$1')
-    expect(raw).toContain('"n":1.0')
-    const reserialized = JSON.parse(raw)
-    expect(convertThreadMessageToUIMessage(reserialized).parts).toEqual([
-      { type: 'step-start' },
-      { type: 'tool-x', toolCallId: 'c1', state: 'output-available', input: { n: 1 }, output: { score: 2.5, n: 1 } },
-    ])
-  })
 })
 

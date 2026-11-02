@@ -261,6 +261,12 @@ export const makeSibling = (
   const sourceMeta = { ...(source.metadata ?? {}) } as Record<string, unknown>
   delete sourceMeta.activeChildId
   delete sourceMeta.error
+  // An edited copy has new content; the assistant-record carrier of the
+  // source (see assistantRecordFields) would only be dead bytes.
+  if (opts.text !== undefined) {
+    delete sourceMeta.uiParts
+    delete sourceMeta.uiPartsSkipped
+  }
   return {
     ...source,
     id: opts.id,
