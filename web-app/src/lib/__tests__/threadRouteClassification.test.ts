@@ -4,8 +4,8 @@
  * Conversational extension is still registering must not strand the deep
  * link, and an exhausted window must surface as the typed recoverable error
  * (never an implicit "ordinary chat" classification). An EMPTY fetched list
- * is NOT authoritative either: the native listThreads bridge coerces a
- * not-ready backend to [], so [] retries and then fails closed.
+ * before store hydration does not prove the startup inventory has committed,
+ * so [] retries and then fails closed until successful hydration.
  */
 import { describe, it, expect, vi } from 'vitest'
 import {
@@ -58,10 +58,9 @@ describe('resolveThreadForRoute', () => {
   })
 
   it('empty list then success: [] is not authoritative, the retry classifies the cowork thread', async () => {
-    // The bridge coerces a not-ready/non-array backend response to [], so an
-    // empty list must be treated like a failed attempt, never as a healthy
-    // "id unknown" — resolving undefined here would mount a writable chat
-    // over a persisted cowork thread hidden behind the coercion.
+    // An empty fallback before store hydration does not prove the startup
+    // inventory has committed. Wait for the record or authoritative hydration
+    // rather than mounting writable Chat over an undecidable conversation.
     const cowork = { id: 't1', metadata: { mode: 'cowork' } }
     const fetchThreads = vi
       .fn<() => Promise<T[]>>()

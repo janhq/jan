@@ -41,8 +41,8 @@ vi.mock('@/lib/webSearchTool', () => ({
 // beforeLoad falls back to a direct backend lookup when the threads store has
 // no record (R3 hydration race). Default to a HEALTHY backend: a NON-empty
 // list not containing the looked-up id. An empty list is no longer an
-// authoritative answer (the native bridge coerces a not-ready backend to []),
-// so [] now retries and fails closed; individual tests override per-case.
+// authoritative answer before the startup inventory has committed, so it
+// retries and fails closed; individual tests override per-case.
 const healthyUnrelatedList = [
   { id: '__unrelated__', title: 'other', metadata: {} },
 ]
@@ -299,9 +299,9 @@ describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
   })
 
   it('empty list then success: [] is treated as not-ready, the retry still redirects the cowork thread', async () => {
-    // The native listThreads bridge coerces a not-ready backend to [], so an
-    // empty first answer must not classify the id as a healthy unknown and
-    // mount a writable chat over the hidden cowork thread.
+    // Before successful store hydration, an empty fallback cannot prove the
+    // startup inventory has committed. Retry rather than mounting writable
+    // Chat over an undecidable conversation.
     fetchThreadsMock
       .mockImplementationOnce(() => Promise.resolve([]))
       .mockImplementationOnce(() =>
