@@ -23,7 +23,7 @@ Discovery commands ran against Windows hosts only. Local Orca agent schema saved
 ## Fresh source handoff / build readiness
 
 - Snapshot `/tmp/jan-windows-native-round/source.tar.gz`, SHA256 `2361245c07a833ab1e460f3109f3f503b48e546c85d6b811d4c6f73d3c3d98b6`.
-- Per-file manifest `/tmp/jan-windows-native-round/source-manifest.json`, SHA256 `3cadbd175a9ad49366cb6a76f727bc3316d4816a7797875dbaa292ae917b4b27`, embedded as `QA-SOURCE-MANIFEST.json`. Includes tracked and nonignored untracked files, excluding `docs/qa/` reporting output. This captures dirty source, not merely HEAD.
+- Per-file manifest `/tmp/jan-windows-native-round/source-manifest.json`, SHA256 `3cadbd175a9ad49366cb6a76f727bc3316d4816a7797875dbaa292ae917b4b27`, embedded as `QA-SOURCE-MANIFEST.json`. Includes tracked and nonignored untracked files, excluding `qa/` reporting output. This captures dirty source, not merely HEAD.
 - Transfer endpoint `http://100.64.0.101:18764/` owned server PID **51469**; no public/global installation. Exact PID only on cleanup.
 - Requested NEW destination `C:/Users/James/orca/workspaces/jan/windows-native-current-20261031`, never overwriting stale snapshot. Remote report target `C:/Users/James/orca/workspaces/jan/audit-artifacts/windows-native-current-20261031/QA-REPORT.md`.
 - Local agent inventoried existing isolated Rust/Cargo 1.98.0, ARM64 clang 19.1.5, Node 24.20.0, Yarn 4.5.3, MSVC and Windows SDK. Completed native compile/launch unverified. Local agent created disposable state/four synthetic files/30 pending cases. None counts as native UI evidence.

@@ -16,7 +16,7 @@ Installed Claude Code is **2.1.316**, actual executable `C:/Users/James/.local/b
 
 ## Final snapshot captured after explicit parent approval
 
-- Captured 2860 source files (tracked + nonignored untracked, mutable `docs/qa/` excluded), base HEAD `0cee6f00545e05b3738283b3a8f0c5f533e96498`. Parent reported full 4810 tests/363 files, ESLint and TypeScript PASS; these are parent automated results, not native evidence.
+- Captured 2860 source files (tracked + nonignored untracked, mutable `qa/` excluded), base HEAD `0cee6f00545e05b3738283b3a8f0c5f533e96498`. Parent reported full 4810 tests/363 files, ESLint and TypeScript PASS; these are parent automated results, not native evidence.
 - Archive `/tmp/jan-windows-adversarial-final/source.tar.gz`, SHA256 `74ca6a4cc3af50303015df26a48f4fc2e2fc1380de59754100a1ac04d1fc1fc5` (241948401 bytes).
 - Manifest `/tmp/jan-windows-adversarial-final/source-manifest.json`, SHA256 `f7b57e7927f6f21ce4db0fafa3a8e1f975f64651370f50ffda44a7fea854badb`; embedded as `QA-SOURCE-MANIFEST.json`.
 - Owned transfer server `http://100.64.0.101:18769/`, PID **85000**, restricted tailnet bind. No transfer/build yet: parent requires successful Claude local native read verification first. Parent may provide equivalent pushed commit; compare production file hashes before substitution.
@@ -271,7 +271,7 @@ is frozen and local automated tests are 4857 tests / 366 files PASS, lint and
 TypeScript PASS; these are not Windows native results.
 
 Generated snapshot using **git archive of that exact commit**, not working-tree
-bytes, excluding mutable `docs/qa/` only:
+bytes, excluding mutable `qa/` only:
 
 - `/tmp/jan-windows-delta-2fff5e64/source.tar.gz`, 242119356 bytes, SHA256
   `f34d0b08d0bb17c8df0f55b5b91590e6f85b5ed9fb714d85e031c4d2f7545b89`.
