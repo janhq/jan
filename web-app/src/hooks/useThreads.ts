@@ -18,6 +18,7 @@ import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { abortRun } from '@/lib/coworkRunner'
 import { dropMonitorLane } from '@/lib/coworkMonitor'
 import { isCoworkThread, workspaceScopeFor } from '@/lib/threadMode'
+import { defaultConversationCapabilities, resolveConversationCapabilities, type ConversationCapabilitiesV1 } from '@/lib/conversationCapabilities'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -48,9 +49,19 @@ type ThreadState = {
   updateThreadAssistantIfUnchanged: (threadId: string, expected: Assistant, parameters: Record<string, unknown>) => Promise<Assistant | undefined>
   updateThreadTimestamp: (threadId: string) => void
   updateThread: (threadId: string, updates: Partial<Thread>) => void
+  setConversationCapabilities: (threadId: string, value: unknown) => Promise<void>
+  getConversationCapabilities: (threadId: string) => ConversationCapabilitiesV1
   deleteAllThreadsByProject: (projectId: string) => Promise<void>
   searchIndex: Fzf<Thread[]> | null
 }
+
+// Serialize capability writes per conversation so a slower save cannot restore
+// older grants. Rejected writes must not block subsequent attempts.
+const capabilityWrites = new Map<string, Promise<void>>()
+const capabilityRequests = new Map<string, symbol>()
+// Process-local authority after an explicit change: background fetches may
+// complete with stale disk snapshots even after a successful revoke.
+const effectiveCapabilities = new Map<string, ConversationCapabilitiesV1>()
 
 // Helper function to clean up vector DB collection for a thread
 const cleanupVectorDB = async (threadId: string) => {
@@ -108,10 +119,17 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   setThreadsLoading: (loading) => set({ isLoadingThreads: loading }),
   searchIndex: null,
   setThreads: (threads) => {
+    const ids = new Set(threads.map((thread) => thread.id))
+    for (const id of capabilityRequests.keys()) {
+      if (!ids.has(id)) capabilityRequests.delete(id)
+    }
     const threadMap = threads.reduce(
       (acc: Record<string, Thread>, thread) => {
         acc[thread.id] = {
           ...thread,
+          ...(effectiveCapabilities.has(thread.id) && { metadata: {
+            ...thread.metadata, conversationCapabilities: effectiveCapabilities.get(thread.id),
+          } }),
           model: thread.model
             ? {
                 provider:
@@ -201,6 +219,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     })
   },
   deleteThread: (threadId) => {
+    capabilityRequests.delete(threadId)
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [threadId]: _, ...remainingThreads } = state.threads
@@ -225,6 +244,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     })
   },
   deleteAllThreads: () => {
+    capabilityRequests.clear()
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
 
@@ -278,6 +298,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     })
   },
   clearAllThreads: () => {
+    capabilityRequests.clear()
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
 
@@ -321,6 +342,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
     // Reconcile each durable success immediately, even if a later delete fails.
     const reconcile = (id: string, cowork: boolean) => {
+      capabilityRequests.delete(id)
       const thread = get().threads[id]
       useAgentMode.getState().removeThread(id)
       useChatSessions.getState().removeSession(id)
@@ -573,6 +595,53 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       }
     })
   },
+  getConversationCapabilities: (threadId) => {
+    const thread = get().threads[threadId]
+    if (!thread || threadId === TEMPORARY_CHAT_ID || isCoworkThread(thread)) return defaultConversationCapabilities()
+    return resolveConversationCapabilities(effectiveCapabilities.get(threadId) ?? thread.metadata?.conversationCapabilities)
+  },
+  setConversationCapabilities: async (threadId, value) => {
+    const assertChatThread = () => {
+      const thread = get().threads[threadId]
+      if (!thread) throw new Error(`Unknown thread: ${threadId}`)
+      if (threadId === TEMPORARY_CHAT_ID) throw new Error('Conversation permissions require a regular chat')
+      if (isCoworkThread(thread)) {
+        throw new Error('Conversation capabilities cannot be set on Cowork threads')
+      }
+      return thread
+    }
+    const original = assertChatThread()
+    const capabilities = resolveConversationCapabilities(value)
+    const request = Symbol(threadId)
+    capabilityRequests.set(threadId, request)
+    effectiveCapabilities.set(threadId, defaultConversationCapabilities())
+    // Revoke synchronously before any await. Pending/failed persistence never
+    // leaves old scoped authority live; ordinary Chat tools/MCP are separate.
+    set((state) => ({ threads: { ...state.threads, [threadId]: {
+      ...original,
+      metadata: { ...original.metadata, conversationCapabilities: defaultConversationCapabilities() },
+    } } }))
+    const previous = capabilityWrites.get(threadId)
+    const write = (async () => {
+      if (previous) await previous.catch(() => {})
+      assertChatThread()
+      await getServiceHub().threads().setConversationCapabilities(threadId, capabilities)
+      assertChatThread()
+      if (capabilityRequests.get(threadId) !== request) throw new Error('Conversation changed while saving permissions')
+      effectiveCapabilities.set(threadId, capabilities)
+      set((state) => ({ threads: { ...state.threads, [threadId]: {
+        ...state.threads[threadId],
+        metadata: { ...state.threads[threadId].metadata, conversationCapabilities: capabilities },
+      } } }))
+    })()
+    capabilityWrites.set(threadId, write)
+    try {
+      await write
+    } finally {
+      if (capabilityWrites.get(threadId) === write) capabilityWrites.delete(threadId)
+      if (capabilityRequests.get(threadId) === request) capabilityRequests.delete(threadId)
+    }
+  },
   updateThread: (threadId, updates) => {
     set((state) => {
       const thread = state.threads[threadId]
@@ -581,7 +650,17 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       const updatedThread = {
         ...thread,
         ...updates,
+        // Ordinary metadata writers cannot grant or restore stale consent.
+        metadata: {
+          ...(updates.metadata ?? thread.metadata),
+          ...(thread.metadata && Object.prototype.hasOwnProperty.call(thread.metadata, 'conversationCapabilities')
+            ? { conversationCapabilities: thread.metadata.conversationCapabilities }
+            : {}),
+        },
         updated: Date.now() / 1000,
+      }
+      if (!Object.prototype.hasOwnProperty.call(thread.metadata ?? {}, 'conversationCapabilities')) {
+        delete updatedThread.metadata.conversationCapabilities
       }
 
       getServiceHub().threads().updateThread(updatedThread)

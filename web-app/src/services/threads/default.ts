@@ -6,6 +6,8 @@ import { ExtensionManager } from '@/lib/extension'
 import { ConversationalExtension, ExtensionTypeEnum } from '@janhq/core'
 import type { ThreadsService } from './types'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { getServiceHub } from '@/hooks/useServiceHub'
+import { resolveConversationCapabilities, type ConversationCapabilitiesV1 } from '@/lib/conversationCapabilities'
 
 function toModelPayload(model?: Thread['model']) {
   return { id: model?.id ?? '*', engine: model?.provider ?? 'llamacpp' }
@@ -22,6 +24,16 @@ function fromModelResponse(
 }
 
 export class DefaultThreadsService implements ThreadsService {
+  async setConversationCapabilities(threadId: string, value: ConversationCapabilitiesV1): Promise<void> {
+    // Temporary conversations cannot own persistent capability consent.
+    if (threadId === TEMPORARY_CHAT_ID) throw new Error('Conversation permissions require a regular chat')
+    const capabilities = resolveConversationCapabilities(value)
+    await getServiceHub().core().invoke('set_thread_conversation_capabilities', {
+      threadId,
+      value: capabilities,
+    })
+  }
+
   async fetchThreads(): Promise<Thread[]> {
     const ext = ExtensionManager.getInstance().get<ConversationalExtension>(
       ExtensionTypeEnum.Conversational

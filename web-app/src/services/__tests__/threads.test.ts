@@ -516,3 +516,34 @@ describe('DefaultThreadsService', () => {
     })
   })
 })
+
+describe('conversation capability persistence', () => {
+  const invoke = vi.hoisted(() => vi.fn())
+  vi.mock('@/hooks/useServiceHub', () => ({
+    getServiceHub: () => ({ core: () => ({ invoke }) }),
+  }))
+  const grants = { version: 1 as const, folderScope: null, shellNetwork: true, memoryWrite: false }
+
+  beforeEach(() => invoke.mockReset())
+
+  it('uses only the dedicated native patch, not the extension', async () => {
+    await new DefaultThreadsService().setConversationCapabilities('thread-1', grants)
+    expect(invoke).toHaveBeenCalledWith('set_thread_conversation_capabilities', {
+      threadId: 'thread-1', value: grants,
+    })
+  })
+  it('resolves malformed and unknown-version input fail closed', async () => {
+    await new DefaultThreadsService().setConversationCapabilities('thread-1', { ...grants, version: 2 } as never)
+    expect(invoke).toHaveBeenCalledWith('set_thread_conversation_capabilities', {
+      threadId: 'thread-1', value: { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false },
+    })
+  })
+  it('propagates native errors', async () => {
+    invoke.mockRejectedValueOnce(new Error('deleted thread'))
+    await expect(new DefaultThreadsService().setConversationCapabilities('thread-1', grants)).rejects.toThrow('deleted thread')
+  })
+  it('does not persist temporary conversation consent', async () => {
+    await expect(new DefaultThreadsService().setConversationCapabilities('temporary-chat', grants)).rejects.toThrow('regular chat')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+})

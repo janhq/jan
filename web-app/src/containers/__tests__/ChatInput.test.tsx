@@ -259,8 +259,15 @@ vi.mock('@/containers/ComposerModelPicker', () => ({
   default: ({ className }: { className?: string }) => <button aria-label="Select model" className={className}>Model</button>,
 }))
 
+const navigateMock = vi.fn()
+const expandPromptReferencesMock = vi.fn(async (text: string) => ({ text, resolvedContents: '' }))
+vi.mock('@/lib/path-references', () => ({
+  expandPromptReferences: (text: string) => expandPromptReferencesMock(text),
+  searchFiles: vi.fn().mockResolvedValue([]),
+}))
+
 vi.mock('@tanstack/react-router', () => ({
-  useRouter: () => ({ navigate: vi.fn() }),
+  useRouter: () => ({ navigate: navigateMock }),
   Link: ({ children, ...props }: any) => <a {...props}>{children}</a>,
 }))
 
@@ -338,12 +345,18 @@ vi.mock('@/components/ui/tooltip', async (importOriginal) => {
   ]))
 })
 
+vi.mock('@/lib/agentTools', () => ({
+  getSandboxStatus: vi.fn().mockResolvedValue({ enforces: false }),
+  cancelAgentThreadBash: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('@/lib/platform/utils', () => ({
   isPlatformTauri: () => false,
 }))
 
 // Import component AFTER all mocks
 import { toast } from 'sonner'
+import { SESSION_STORAGE_PREFIX, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 import ChatInput from '../ChatInput'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
@@ -399,6 +412,165 @@ const renderInput = (props: any = {}) =>
 describe('ChatInput', () => {
   beforeEach(() => {
     resetAll()
+  })
+
+  describe('next-thread preparation', () => {
+    const initialMessageKey = `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}created-thread`
+    const deferred = <T,>() => {
+      let resolve!: (value: T) => void
+      const promise = new Promise<T>((done) => { resolve = done })
+      return { promise, resolve }
+    }
+    const send = () => fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+
+    beforeEach(() => {
+      promptState = 'Keep this draft'
+      attachmentsList = [{ type: 'document', name: 'notes.txt', path: '/notes.txt' }]
+      sessionStorage.clear()
+      window.history.replaceState({}, '', '/')
+      createThreadMock.mockClear()
+      navigateMock.mockClear()
+      clearAttachmentsMock.mockClear()
+      transferAttachmentsMock.mockClear()
+      vi.mocked(toast.error).mockClear()
+      vi.mocked(toast.info).mockClear()
+      expandPromptReferencesMock.mockReset().mockImplementation(async (text: string) => ({ text, resolvedContents: '' }))
+    })
+
+    it('applies the captured callback only after creation and before mode, message, navigation or draft clearing', async () => {
+      agentModeOn = true
+      const creation = deferred<{ id: string }>()
+      const approval = deferred<boolean>()
+      createThreadMock.mockReturnValueOnce(creation.promise)
+      const apply = vi.fn(() => approval.promise)
+      const prepare = vi.fn(() => apply)
+      renderInput({ prepareThreadCreation: prepare })
+      send()
+      expect(prepare).toHaveBeenCalledTimes(1)
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      expect(apply).not.toHaveBeenCalled()
+      await act(async () => { creation.resolve({ id: 'created-thread' }) })
+      expect(apply).toHaveBeenCalledWith('created-thread')
+      expect(setAgentModeMock).not.toHaveBeenCalled()
+      expect(removeAgentThreadMock).not.toHaveBeenCalled()
+      expect(sessionStorage.getItem(initialMessageKey)).toBeNull()
+      expect(navigateMock).not.toHaveBeenCalled()
+      expect(setPromptMock).not.toHaveBeenCalled()
+      await act(async () => { approval.resolve(true) })
+      expect(setAgentModeMock).toHaveBeenCalledWith('created-thread', true)
+      expect(JSON.parse(sessionStorage.getItem(initialMessageKey)!)).toMatchObject({ text: 'Keep this draft' })
+      expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({ params: { threadId: 'created-thread' } }))
+      expect(setPromptMock).toHaveBeenCalledWith('')
+    })
+
+    it('snapshots before reference expansion and project loading, not from a newer draft', async () => {
+      const expansion = deferred<{ text: string; resolvedContents: string }>()
+      const project = deferred<any>()
+      expandPromptReferencesMock.mockReturnValueOnce(expansion.promise)
+      const getProject = vi.fn(() => project.promise)
+      Object.assign(getServiceHub(), { projects: () => ({ getProjectById: getProject }) })
+      let consent = 'original'
+      const applied: string[] = []
+      const prepare = vi.fn(() => {
+        const snapshot = consent
+        return async () => { applied.push(snapshot); return true }
+      })
+      const newerPrepare = vi.fn(() => async () => false)
+      const view = renderInput({ projectId: 'project-1', prepareThreadCreation: prepare })
+      send()
+      expect(prepare).toHaveBeenCalledTimes(1)
+      expect(getProject).not.toHaveBeenCalled()
+      consent = 'changed during expansion'
+      promptState = 'Newer draft'
+      view.rerender(<ChatInput projectId="project-1" prepareThreadCreation={newerPrepare} />)
+      await act(async () => { expansion.resolve({ text: 'Expanded original', resolvedContents: '' }) })
+      expect(getProject).toHaveBeenCalledWith('project-1')
+      expect(createThreadMock).not.toHaveBeenCalled()
+      consent = 'changed during project loading'
+      await act(async () => { project.resolve({ id: 'project-1', name: 'Project', updated_at: 1 }) })
+      expect(applied).toEqual(['original'])
+      expect(newerPrepare).not.toHaveBeenCalled()
+      expect(JSON.parse(sessionStorage.getItem(initialMessageKey)!)).toMatchObject({ text: 'Expanded original', draft: 'Keep this draft' })
+    })
+
+    it.each(['false', 'throw', 'prepare throw'] as const)('retains draft and attachments without delivery on %s', async (outcome) => {
+      agentModeOn = true
+      const originalAttachments = attachmentsList
+      const apply = vi.fn(async () => {
+        if (outcome === 'throw') throw new Error('sensitive native detail')
+        return false
+      })
+      const prepare = vi.fn(() => {
+        if (outcome === 'prepare throw') throw new Error('sensitive preparation detail')
+        return apply
+      })
+      renderInput({ prepareThreadCreation: prepare })
+      send()
+      await waitFor(() => expect(outcome === 'prepare throw' ? toast.error : apply).toHaveBeenCalled())
+      expect(promptState).toBe('Keep this draft')
+      expect(setPromptMock).not.toHaveBeenCalled()
+      expect(attachmentsList).toBe(originalAttachments)
+      expect(clearAttachmentsMock).not.toHaveBeenCalled()
+      expect(navigateMock).not.toHaveBeenCalled()
+      expect(sessionStorage.length).toBe(0)
+      expect(setAgentModeMock).not.toHaveBeenCalled()
+      expect(removeAgentThreadMock).not.toHaveBeenCalled()
+      if (outcome !== 'false') {
+        expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Your draft has been kept'))
+        expect(JSON.stringify(vi.mocked(toast.error).mock.calls)).not.toContain('sensitive')
+      }
+    })
+
+    it('rejects temporary chat before preparation, expansion or other send side effects', () => {
+      window.history.replaceState({}, '', `/?${TEMPORARY_CHAT_QUERY_ID}=true`)
+      const prepare = vi.fn(() => async () => true)
+      renderInput({ prepareThreadCreation: prepare })
+      send()
+      expect(toast.info).toHaveBeenCalledWith(expect.stringContaining('regular chat'))
+      expect(prepare).not.toHaveBeenCalled()
+      expect(expandPromptReferencesMock).not.toHaveBeenCalled()
+      expect(createThreadMock).not.toHaveBeenCalled()
+      expect(addToHistoryMock).not.toHaveBeenCalled()
+      expect(navigateMock).not.toHaveBeenCalled()
+      expect(sessionStorage.length).toBe(0)
+      expect(setPromptMock).not.toHaveBeenCalled()
+      expect(clearAttachmentsMock).not.toHaveBeenCalled()
+      window.history.replaceState({}, '', '/')
+    })
+
+    it('never applies permissions without a successfully created thread id', async () => {
+      createThreadMock.mockResolvedValueOnce({})
+      const apply = vi.fn(async () => true)
+      renderInput({ prepareThreadCreation: () => apply })
+      send()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalled())
+      expect(apply).not.toHaveBeenCalled()
+      expect(navigateMock).not.toHaveBeenCalled()
+      expect(sessionStorage.length).toBe(0)
+      expect(setPromptMock).not.toHaveBeenCalled()
+    })
+
+    it('does not prepare for an onSubmit surface', async () => {
+      const prepare = vi.fn(() => async () => true)
+      const onSubmit = vi.fn()
+      renderInput({ onSubmit, prepareThreadCreation: prepare })
+      send()
+      await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+      expect(prepare).not.toHaveBeenCalled()
+      expect(createThreadMock).not.toHaveBeenCalled()
+      expect(setPromptMock).toHaveBeenCalledWith('')
+    })
+
+    it.each([false, true])('keeps default creation unchanged without preparation (temporary=%s)', async (temporary) => {
+      if (temporary) window.history.replaceState({}, '', `/?${TEMPORARY_CHAT_QUERY_ID}=true`)
+      renderInput()
+      send()
+      await waitFor(() => expect(navigateMock).toHaveBeenCalled())
+      expect(createThreadMock).toHaveBeenCalledTimes(temporary ? 0 : 1)
+      expect(sessionStorage.length).toBeGreaterThan(0)
+      expect(setPromptMock).toHaveBeenCalledWith('')
+      window.history.replaceState({}, '', '/')
+    })
   })
 
   it('renders the textarea with placeholder and send button', () => {

@@ -132,7 +132,9 @@ pub async fn read_thread_extra<R: Runtime>(
         return Ok(None);
     }
     let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&data).map(Some).map_err(|e| e.to_string())
+    serde_json::from_str(&data)
+        .map(Some)
+        .map_err(|e| e.to_string())
 }
 
 /// Writes a per-thread sidecar atomically (temp file + rename) under the
@@ -167,7 +169,7 @@ pub async fn write_thread_extra<R: Runtime>(
 #[tauri::command]
 pub async fn modify_thread<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
-    thread: serde_json::Value,
+    mut thread: serde_json::Value,
 ) -> Result<(), String> {
     if should_use_sqlite() {
         #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -180,13 +182,55 @@ pub async fn modify_thread<R: Runtime>(
         .get("id")
         .and_then(|id| id.as_str())
         .ok_or("Missing thread id")?;
+    let lock = get_lock_for_thread(thread_id).await;
+    let _guard = lock.lock().await;
     let thread_dir = get_thread_dir(&data_folder, thread_id)?;
     if !thread_dir.exists() {
         return Err("Thread directory does not exist".to_string());
     }
     let path = get_thread_metadata_path(&data_folder, thread_id)?;
+    if !path.is_file() {
+        return Err("Thread does not exist".into());
+    }
+    // Ordinary whole-record updates are not consent authority. A stale UI
+    // snapshot must not restore a revoked grant (or erase a newer grant).
+    let stored: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    let current = stored
+        .get("metadata")
+        .and_then(|m| m.get("conversationCapabilities"))
+        .cloned();
+    if let Some(metadata) = thread.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+        metadata.remove("conversationCapabilities");
+    }
+    if let Some(current) = current {
+        if !thread.get("metadata").is_some_and(|m| m.is_object()) {
+            thread["metadata"] = serde_json::json!({});
+        }
+        thread["metadata"]["conversationCapabilities"] = current;
+    }
     let data = serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())?;
     write_file_atomic(&path, data.as_bytes())
+}
+
+/// Patch only explicit conversation consent. Mobile storage is unsupported and
+/// must reject rather than falsely report that a grant/revocation was saved.
+#[tauri::command]
+pub async fn set_thread_conversation_capabilities<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    thread_id: String,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    super::capabilities::validate_conversation_capabilities(&value)?;
+    validate_thread_id(&thread_id)?;
+    if should_use_sqlite() {
+        return Err("Conversation capabilities persistence is not supported on mobile".into());
+    }
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let lock = get_lock_for_thread(&thread_id).await;
+    let _guard = lock.lock().await;
+    super::capabilities::patch_conversation_capabilities(&data_folder, &thread_id, value)
 }
 
 /// Deletes a thread and all its associated files by removing its directory.
@@ -202,6 +246,8 @@ pub async fn delete_thread<R: Runtime>(
 
     // Use file-based storage on desktop
     let data_folder = get_jan_data_folder_path(app_handle);
+    let lock = get_lock_for_thread(&thread_id).await;
+    let _guard = lock.lock().await;
     let thread_dir = get_thread_dir(&data_folder, &thread_id)?;
     if thread_dir.exists() {
         fs::remove_dir_all(thread_dir).map_err(|error| error.to_string())?;
@@ -422,6 +468,8 @@ pub async fn create_thread_assistant<R: Runtime>(
 
     // Use file-based storage on desktop
     let data_folder = get_jan_data_folder_path(app_handle);
+    let lock = get_lock_for_thread(&thread_id).await;
+    let _guard = lock.lock().await;
     let path = get_thread_metadata_path(&data_folder, &thread_id)?;
     if !path.exists() {
         return Err("Thread not found".to_string());
@@ -454,6 +502,8 @@ pub async fn modify_thread_assistant<R: Runtime>(
 
     // Use file-based storage on desktop
     let data_folder = get_jan_data_folder_path(app_handle);
+    let lock = get_lock_for_thread(&thread_id).await;
+    let _guard = lock.lock().await;
     let path = get_thread_metadata_path(&data_folder, &thread_id)?;
     if !path.exists() {
         return Err("Thread not found".to_string());

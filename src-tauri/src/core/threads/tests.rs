@@ -974,3 +974,208 @@ async fn test_thread_json_writes_leave_no_temp_files() {
         serde_json::from_str(&fs::read_to_string(dir.join(THREADS_FILE)).unwrap()).unwrap();
     assert_eq!(on_disk["title"], "Atomic 2");
 }
+
+fn capability_grant(enabled: bool) -> serde_json::Value {
+    json!({"version":1,"folderScope":null,"shellNetwork":enabled,"memoryWrite":enabled})
+}
+
+#[test]
+fn conversation_capabilities_reject_invalid_shapes_and_paths() {
+    use super::capabilities::validate_conversation_capabilities as validate;
+    assert!(validate(&capability_grant(false)).is_ok());
+    for path in ["/work/tree", "C:\\work\\tree"] {
+        let mut value = capability_grant(true);
+        value["folderScope"] = json!({"path":path,"access":"write"});
+        assert!(validate(&value).is_ok(), "{path}");
+    }
+    for path in [
+        "",
+        "/",
+        "relative",
+        "/work/../etc",
+        "/work/",
+        "//host/share",
+        "C:\\",
+        "C:\\work\\..",
+        "/a\\b",
+        "/a\n",
+    ] {
+        let mut value = capability_grant(true);
+        value["folderScope"] = json!({"path":path,"access":"read"});
+        assert!(validate(&value).is_err(), "{path}");
+    }
+    for value in [
+        json!(null),
+        json!({}),
+        json!({"version":2,"folderScope":null,"shellNetwork":true,"memoryWrite":true}),
+        json!({"version":1,"folderScope":null,"shellNetwork":1,"memoryWrite":false}),
+        json!({"version":1,"folderScope":null,"shellNetwork":false,"memoryWrite":false,"extra":true}),
+        json!({"version":1,"folderScope":{"path":"/work","access":"execute"},"shellNetwork":false,"memoryWrite":false}),
+    ] {
+        assert!(validate(&value).is_err(), "{value}");
+    }
+}
+
+#[tokio::test]
+async fn conversation_capabilities_patch_preserves_fields_and_rejects_missing() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let mut seed = create_test_thread("preserve");
+    seed["metadata"] = json!({"project":{"id":"p1"},"other":{"nested":true}});
+    seed["model"] = json!({"id":"test-model"});
+    let original = create_thread(app.handle().clone(), seed).await.unwrap();
+    let id = original["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    let path = get_thread_metadata_path(&data_dir, &id).unwrap();
+    let mut stored: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(
+        stored["metadata"]["conversationCapabilities"],
+        capability_grant(true)
+    );
+    stored["metadata"]
+        .as_object_mut()
+        .unwrap()
+        .remove("conversationCapabilities");
+    assert_eq!(stored, original);
+    assert!(set_thread_conversation_capabilities(
+        app.handle().clone(),
+        "missing-thread".into(),
+        capability_grant(true)
+    )
+    .await
+    .is_err());
+    assert!(!get_thread_dir(&data_dir, "missing-thread")
+        .unwrap()
+        .exists());
+    assert!(
+        set_thread_conversation_capabilities(app.handle().clone(), id, json!({"version":2}))
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn conversation_capabilities_stale_writer_cannot_restore_revocation() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let mut seed = create_test_thread("stale");
+    seed["metadata"] = json!({"conversationCapabilities":capability_grant(true),"project":"old"});
+    let mut stale = create_thread(app.handle().clone(), seed).await.unwrap();
+    let id = stale["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(false))
+        .await
+        .unwrap();
+    stale["metadata"]["project"] = json!("new");
+    modify_thread(app.handle().clone(), stale).await.unwrap();
+    let stored: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(stored["metadata"]["project"], "new");
+    assert_eq!(
+        stored["metadata"]["conversationCapabilities"],
+        capability_grant(false)
+    );
+}
+
+#[tokio::test]
+async fn conversation_capabilities_delete_and_writers_share_lock() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let original = create_thread(app.handle().clone(), create_test_thread("race"))
+        .await
+        .unwrap();
+    let id = original["id"].as_str().unwrap().to_string();
+    let lock = get_lock_for_thread(&id).await;
+    let guard = lock.lock().await;
+    let handle = app.handle().clone();
+    let delete_id = id.clone();
+    let deleting = tokio::spawn(async move { delete_thread(handle, delete_id).await });
+    tokio::task::yield_now().await; // queue deletion before late writers
+    let handle = app.handle().clone();
+    let patch_id = id.clone();
+    let patching = tokio::spawn(async move {
+        set_thread_conversation_capabilities(handle, patch_id, capability_grant(true)).await
+    });
+    let handle = app.handle().clone();
+    let modifying = tokio::spawn(async move { modify_thread(handle, original).await });
+    tokio::task::yield_now().await;
+    assert!(!deleting.is_finished());
+    assert!(!patching.is_finished());
+    assert!(!modifying.is_finished());
+    drop(guard);
+    deleting.await.unwrap().unwrap();
+    assert!(patching.await.unwrap().is_err());
+    assert!(modifying.await.unwrap().is_err());
+    assert!(!get_thread_dir(&data_dir, &id).unwrap().exists());
+}
+
+#[tokio::test]
+async fn conversation_capabilities_concurrent_unrelated_writer_keeps_both_changes() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let mut original = create_thread(app.handle().clone(), create_test_thread("writer"))
+        .await
+        .unwrap();
+    let id = original["id"].as_str().unwrap().to_string();
+    original["metadata"] = json!({"project":"latest", "unrelated":{"keep":42}, "conversationCapabilities":capability_grant(false)});
+    let (patched, modified) = tokio::join!(
+        set_thread_conversation_capabilities(
+            app.handle().clone(),
+            id.clone(),
+            capability_grant(true)
+        ),
+        modify_thread(app.handle().clone(), original),
+    );
+    patched.unwrap();
+    modified.unwrap();
+    let stored: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        stored["metadata"]["conversationCapabilities"],
+        capability_grant(true)
+    );
+    assert_eq!(stored["metadata"]["project"], "latest");
+    assert_eq!(stored["metadata"]["unrelated"], json!({"keep":42}));
+}
+
+#[tokio::test]
+async fn conversation_capabilities_ordinary_writer_cannot_introduce_grant() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let mut original = create_thread(app.handle().clone(), create_test_thread("no-authority"))
+        .await
+        .unwrap();
+    let id = original["id"].as_str().unwrap().to_string();
+    original["metadata"] = json!({"conversationCapabilities":capability_grant(true),"keep":true});
+    modify_thread(app.handle().clone(), original).await.unwrap();
+    let stored: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert!(stored["metadata"].get("conversationCapabilities").is_none());
+    assert_eq!(stored["metadata"]["keep"], true);
+}
+
+#[tokio::test]
+async fn conversation_capabilities_reject_non_chat_and_malformed_stored_records() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let original = create_thread(app.handle().clone(), create_test_thread("invalid-stored")).await.unwrap();
+    let id = original["id"].as_str().unwrap().to_string();
+    let path = get_thread_metadata_path(&data_dir, &id).unwrap();
+    for patch in [json!({"metadata":{"mode":"cowork"}}), json!({"metadata":[]}), json!({"id":"different-id"})] {
+        let mut stored = original.clone();
+        for (key, value) in patch.as_object().unwrap() { stored[key] = value.clone(); }
+        let bytes = serde_json::to_vec(&stored).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        assert!(set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true)).await.is_err());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+    let temp_path = get_thread_metadata_path(&data_dir, "temporary-chat").unwrap();
+    fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
+    let temp = json!({"id":"temporary-chat","metadata":{}});
+    let bytes = serde_json::to_vec(&temp).unwrap();
+    fs::write(&temp_path, &bytes).unwrap();
+    assert!(set_thread_conversation_capabilities(app.handle().clone(), "temporary-chat".into(), capability_grant(true)).await.is_err());
+    assert_eq!(fs::read(&temp_path).unwrap(), bytes);
+}

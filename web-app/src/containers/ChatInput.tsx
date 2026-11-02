@@ -136,6 +136,9 @@ type ChatInputProps = {
      * `text`, so a cancelled send can hand it back unchanged. */
     draft?: string
   ) => void | boolean | Promise<void | boolean>
+  /** Snapshot next-thread consent synchronously at submit, then apply it only
+   * after a persistent thread exists. Returning false keeps the draft unsent. */
+  prepareThreadCreation?: () => (threadId: string) => Promise<boolean>
   onStop?: () => void
   chatStatus?: ChatStatus
   /**
@@ -205,6 +208,7 @@ const ChatInput = memo(function ChatInput({
   projectAssistantId,
   supportsAssistants = true,
   onSubmit,
+  prepareThreadCreation,
   onStop,
   chatStatus,
   toolsRunning,
@@ -646,6 +650,26 @@ const ChatInput = memo(function ChatInput({
       return
     }
 
+    // Capture consent before reference expansion or project loading can yield.
+    // Custom submit surfaces own their lifecycle; temporary chats cannot own
+    // persistent grants and must refuse before any send side effects.
+    const isTemporaryChat = window.location.search.includes(
+      `${TEMPORARY_CHAT_QUERY_ID}=true`
+    )
+    let finishThreadCreation: ((threadId: string) => Promise<boolean>) | undefined
+    if (!onSubmit && prepareThreadCreation) {
+      if (isTemporaryChat) {
+        toast.info('Start a regular chat to use these permissions.')
+        return
+      }
+      try {
+        finishThreadCreation = prepareThreadCreation()
+      } catch {
+        toast.error('Unable to prepare chat permissions. Your draft has been kept.')
+        return
+      }
+    }
+
     // Expand @path references that resolve to a file or folder; any other
     // `@token` (a pasted decorator) stays in the text as typed.
     const { text: resolvedText, resolvedContents } =
@@ -737,10 +761,6 @@ const ChatInput = memo(function ChatInput({
       // (esp. video). They live in the in-memory attachments store and are
       // transferred to the new thread's key on the detail page (see the
       // transferAttachments effect); processAndSendMessage reads them there.
-      const isTemporaryChat = window.location.search.includes(
-        `${TEMPORARY_CHAT_QUERY_ID}=true`
-      )
-
       const messagePayload = {
         text: effectivePrompt,
         draft: prompt,
@@ -801,6 +821,16 @@ const ChatInput = memo(function ChatInput({
           assistant,
           projectMetadata
         )
+
+        if (finishThreadCreation) {
+          if (!newThread?.id) return
+          try {
+            if ((await finishThreadCreation(newThread.id)) === false) return
+          } catch {
+            toast.error('Unable to apply chat permissions. Your draft has been kept.')
+            return
+          }
+        }
 
         // Transfer agent mode from home screen to the new thread
         if (effectiveAgentMode) {
