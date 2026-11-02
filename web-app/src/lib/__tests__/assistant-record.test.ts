@@ -509,6 +509,8 @@ describe('no silent truncation', () => {
           { type: 'text', text: 't', futureField: 1 },
           { type: 'file', mediaType: 'image/png', url: 'data:image/png;base64,AA', futureField: 1 },
           { type: 'tool-x', toolCallId: 'c1', state: 'output-available', input: {}, output: 'o', futureField: 1 },
+          { type: 'tool-x', toolCallId: 'c1', state: 'output-denied', input: {}, approval: { id: 'ap', approved: false, futureField: 1 } },
+          { type: 'tool-x', toolCallId: 'c1', state: 'output-denied', input: {}, approval: { id: 7, approved: false } },
         ]) {
           const record = build(assistant([{ type: 'step-start' }, part]))
           expect(record.metadata).not.toHaveProperty('uiParts')
@@ -518,6 +520,19 @@ describe('no silent truncation', () => {
         warn.mockRestore()
       }
     })
+  })
+
+  it('oversized settled-only metadata on an in-flight call does not skip the turn', () => {
+    const message = assistant([
+      { type: 'step-start' },
+      { type: 'tool-x', toolCallId: 'c1', state: 'input-streaming', input: { a: 1 }, resultProviderMetadata: { p: { blob: 'x'.repeat(9 * 1024) } } },
+    ])
+    const record = build(message)
+    expect(record.metadata?.uiPartsSkipped).toBeUndefined()
+    expect(reload(message)).toEqual([
+      { type: 'step-start' },
+      { type: 'tool-x', toolCallId: 'c1', state: 'input-available', input: { a: 1 } },
+    ])
   })
 
   it('a carrier the reader would reject is skipped as mismatch', () => {

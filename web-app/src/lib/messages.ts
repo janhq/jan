@@ -646,8 +646,12 @@ const PART_FIELDS: Record<string, readonly string[]> = {
   'file': ['type', 'mediaType', 'filename', 'url', 'providerMetadata'],
   'source-url': ['type', 'sourceId', 'url', 'title', 'providerMetadata'],
   'source-document': ['type', 'sourceId', 'mediaType', 'title', 'filename', 'providerMetadata'],
+  // `rawInput` is set on dynamic tools by the SDK runtime though its type omits it.
   'dynamic-tool': ['toolName', ...TOOL_FIELDS],
+  // No `data-*` kind: Jan writes none. If it ever does, add it here, or every
+  // such turn reloads lossy (visibly, as `unsupported-part`).
 }
+const APPROVAL_FIELDS = ['id', 'approved', 'reason']
 // Opaque provider/tool metadata objects: bounded, and plain JSON objects only.
 const METADATA_FIELDS = new Set([
   'providerMetadata', 'callProviderMetadata', 'resultProviderMetadata', 'toolMetadata',
@@ -680,22 +684,31 @@ function sanitizeUIPart(part: any): Record<string, unknown> {
   for (const key of Object.keys(part))
     if (part[key] !== undefined && !fields.includes(key))
       throw new SkipUIParts('unsupported-part')
-  const out: Record<string, unknown> = {}
-  for (const field of fields)
-    out[field] = METADATA_FIELDS.has(field) ? providerField(part[field]) : part[field]
-  if (fields !== TOOL_FIELDS && type !== 'dynamic-tool') return out
-
+  const isTool = fields === TOOL_FIELDS || type === 'dynamic-tool'
   // A call still in flight is stored as `input-available`, as reloading from
   // `content` has always done: onFinish runs it and rewrites the turn. It keeps
   // none of a settled call's fields.
-  if (!SETTLED_TOOL_STATES.has(part.state)) {
+  const settled = !isTool || SETTLED_TOOL_STATES.has(part.state)
+  const out: Record<string, unknown> = {}
+  for (const field of fields) {
+    if (!settled && SETTLED_ONLY_FIELDS.includes(field)) continue
+    out[field] = METADATA_FIELDS.has(field) ? providerField(part[field]) : part[field]
+  }
+  if (!isTool) return out
+  if (!settled) {
     out.state = 'input-available'
-    for (const field of SETTLED_ONLY_FIELDS) delete out[field]
     return out
   }
   const approval = part.approval
   if (approval !== undefined) {
-    if (!approval || typeof approval !== 'object')
+    if (
+      !approval ||
+      typeof approval !== 'object' ||
+      typeof approval.id !== 'string' ||
+      Object.keys(approval).some(
+        (k) => approval[k] !== undefined && !APPROVAL_FIELDS.includes(k)
+      )
+    )
       throw new SkipUIParts('unsupported-part')
     out.approval = { id: approval.id, approved: approval.approved, reason: approval.reason }
   } else if (part.state === 'output-denied') {

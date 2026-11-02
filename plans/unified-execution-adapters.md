@@ -46,6 +46,10 @@ Paths are relative to `web-app/src`.
   - user and legacy records unchanged;
   - prompt-cache stability: the model messages from the reloaded history equal those from the live history, and the same check fails on the old path.
 
+Known capacity limits (visible skips, not drops; candidates for a later bounded change, if measured):
+- The 8 KB cap per metadata field can skip turns with large reasoning signatures (e.g. Gemini `thoughtSignature` with `includeThoughts`). The re-sent history then lacks the signature.
+- Tool `input` is duplicated in `content` and `uiParts` (only `output` is deduplicated), so a write over ~128 KB can hit the 256 KB `size` skip.
+
 **Not globally lossless.** A turn with an unsupported part, provider metadata over 8 KB, or a carrier over 256 KB reloads from `content` alone, as before this PR. It still loses `step-start` and reasoning signatures. Such a turn is not partially stored: `metadata.uiPartsSkipped` is kept on the record and on the reloaded message, and a warning is logged on write. Any later transition must check `uiPartsSkipped` on the history it carries forward. That includes migrating Cowork into this store, and a runtime switch or prefix-sensitive replay. It must then refuse, or keep the authoritative parts elsewhere; it must never treat the history as lossless.
 
 Not covered: Cowork sidecar storage, approvals persistence (grants remain in `useToolApproval`), and migration of Cowork into `messages.jsonl`.
