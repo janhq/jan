@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
-import type { UIMessage } from 'ai'
+import type { Tool, UIMessage } from 'ai'
 import type * as CoworkRunner from '@/lib/coworkRunner'
 
 const backend = vi.hoisted(() => ({
@@ -16,6 +16,7 @@ const backend = vi.hoisted(() => ({
     | null
     | ((deps: CoworkRunner.RunDeps, signal: AbortSignal) => Promise<void>),
   files: new Map<string, string>(),
+  transports: new Map<string, { refreshTools: () => Promise<void> }>(),
   runs: [] as {
     signal: AbortSignal
     sink: CoworkRunner.StreamSink
@@ -60,15 +61,48 @@ vi.mock('@/lib/backendStorage', () => ({
     },
   },
 }))
-vi.mock('@/lib/coworkTransport', () => ({
-  CoworkChatTransport: class {
-    setConfig() {}
-    unfreezeTools() {}
-    async refreshTools() {
-      if (backend.preparationError) throw new Error('Tool preparation failed')
-    }
-  },
-}))
+vi.mock('@/lib/coworkTransport', async () => {
+  const { PLAN_DENIED_TOOLS } = await vi.importActual<
+    typeof import('@/lib/coworkTools')
+  >('@/lib/coworkTools')
+  // Mirrors the real freeze: `refreshTools` snapshots the record for the
+  // current config, `unfreezeTools` drops it at a run boundary, and dispatch
+  // checks calls against `advertisedTools`. Plan mode withholds mutating tools.
+  // Only the tools these tests dispatch are listed: a test that dispatches any
+  // other tool must add it here, or the call is refused as unadvertised.
+  const build = (planMode: boolean) =>
+    Object.fromEntries(
+      ['read', 'write', 'ask', 'todo']
+        .filter((name) => !(planMode && PLAN_DENIED_TOOLS.has(name)))
+        .map((name) => [name, {}])
+    ) as Record<string, Tool>
+  return {
+    CoworkChatTransport: class {
+      private frozen: Record<string, Tool> | null = null
+      private tools: Record<string, Tool> = {}
+      constructor(
+        sid: string,
+        private config: { planMode: boolean }
+      ) {
+        backend.transports.set(sid, this)
+      }
+      setConfig(config: { planMode: boolean }) {
+        this.config = config
+      }
+      unfreezeTools() {
+        this.frozen = null
+      }
+      get advertisedTools() {
+        return this.frozen ?? this.tools
+      }
+      async refreshTools() {
+        if (backend.preparationError) throw new Error('Tool preparation failed')
+        this.frozen ??= build(this.config.planMode)
+        this.tools = this.frozen
+      }
+    },
+  }
+})
 vi.mock('@/lib/coworkEnv', () => ({ getCoworkEnvironment: async () => ({}) }))
 vi.mock('@/lib/coworkRunner', async (original) => ({
   ...(await original<typeof CoworkRunner>()),
@@ -272,6 +306,7 @@ beforeEach(() => {
   backend.runs = []
   backend.exercise = null
   backend.files.clear()
+  backend.transports.clear()
   const browserStorage = new Map<string, string>()
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => browserStorage.get(key) ?? null,
@@ -521,6 +556,9 @@ it('requires plan approval before a failed-read loop can create the requested fi
       { toolCallId: 'r2', toolName: 'read', input: { path: 'cat.html' } },
       signal
     )
+    // The next model step: the real transport refreshes the record here, so
+    // the approved run now advertises `write`.
+    await backend.transports.get(sid)?.refreshTools()
     writeResult = await deps.dispatch(
       {
         toolCallId: 'w1',
