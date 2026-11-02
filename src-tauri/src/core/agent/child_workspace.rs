@@ -254,15 +254,18 @@ pub(crate) struct ChildScope {
     pub(crate) env_set: Vec<(String, String)>,
 }
 
-/// `~/.jan/worktrees/<slug>` for the project `root` belongs to: its
-/// subagents' worktrees and their shared build directory. Keyed like the
-/// project store, so a session running in a Jan worktree finds the same one.
+/// `~/.jan/worktrees/<slug>` for the repository `root` belongs to: its
+/// subagents' worktrees and their shared build directory. Keyed on the main
+/// checkout's top level, so a session running in a Jan worktree or in any
+/// subdirectory finds the same one, and so the slug is the one `project_key`
+/// checks a clone's alternates (which name that top level) against.
 pub(crate) fn project_worktrees_dir(root: &Path) -> Option<PathBuf> {
     let key = tauri_plugin_agent_tools::workspace::project_key(root);
+    let top = key.ancestors().find(|dir| dir.join(".git").exists()).unwrap_or(&key);
     Some(
         crate::core::agent::project::jan_home()?
             .join("worktrees")
-            .join(tauri_plugin_agent_tools::workspace::path_slug(&key)),
+            .join(tauri_plugin_agent_tools::workspace::path_slug(top)),
     )
 }
 
@@ -1272,6 +1275,10 @@ mod git_tests {
         let (here, _l) = ledger.assign(&root.join("tracked"), "a", true, None).unwrap();
         let wt = here.worktree.clone().unwrap();
         assert_eq!(here.root, wt.path.join("tracked"), "a tracked subdirectory maps across");
+        // Filed under the repository's slug, the one its alternates name, or
+        // `project_key` would not trust them and the child would get an
+        // empty store.
+        assert_eq!(project_worktrees_dir(&root.join("tracked")), project_worktrees_dir(&root));
         assert!(!here.note().contains("not in this checkout"), "{}", here.note());
 
         let (untracked, _l) = ledger.assign(&root.join("scratch"), "b", true, None).unwrap();
