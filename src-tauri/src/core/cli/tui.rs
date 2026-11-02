@@ -41286,12 +41286,21 @@ fn a() {}
         if !std::process::Command::new("mkfifo").arg(&exclude).status().is_ok_and(|s| s.success()) {
             return;
         }
+        // Let the settle's status read through a second from now, before the
+        // switch: a switch that ran the git itself would then come back late
+        // and fail, rather than wait on the FIFO forever. On a thread, as
+        // opening a FIFO waits for its reader. Status opens the file twice,
+        // so a plain one takes the FIFO's place before it is let go.
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(1));
+            let held = std::fs::OpenOptions::new().write(true).open(&exclude);
+            let _ = std::fs::remove_file(&exclude);
+            let _ = std::fs::write(&exclude, "");
+            drop(held);
+        });
         let started = Instant::now();
         app.reset_session();
         let took = started.elapsed();
-        // Let the settle's status read through (on a thread: opening a FIFO
-        // waits for its reader), then wait for the settle.
-        std::thread::spawn(move || drop(std::fs::OpenOptions::new().write(true).open(&exclude)));
         let report = tokio::time::timeout(Duration::from_secs(30), app.cleanup_rx.recv()).await;
         assert!(took < Duration::from_millis(500), "/new took {took:?}");
         assert!(matches!(report, Ok(Some(_))), "the settle reports: {report:?}");
