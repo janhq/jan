@@ -22,7 +22,7 @@ export function CoworkComposerMenu({ section, projects = [], projectId, onAttach
   const { t } = useTranslation()
   if (section === 'controls') return (
     <DropdownMenuCheckboxItem
-      className="pl-2 pr-8 [&>span:first-child]:left-auto [&>span:first-child]:right-2 [&>span:first-child]:text-primary"
+      indicatorAlign="right"
       disabled={!onPlanChange} checked={planMode} onCheckedChange={onPlanChange}
     >
       <ClipboardList className="size-4 text-muted-foreground" />
