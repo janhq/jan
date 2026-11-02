@@ -632,8 +632,15 @@ function canonicalJson(value: unknown): string {
 }
 
 function providerField(value: unknown): unknown {
-  if (value != null && (JSON.stringify(value)?.length ?? 0) > PROVIDER_METADATA_MAX_CHARS)
-    throw new SkipUIParts('provider-metadata')
+  if (value == null) return value
+  let size: number
+  try {
+    size = JSON.stringify(value)?.length ?? 0
+  } catch {
+    // BigInt, a cycle, a throwing getter: not plain JSON, so not storable.
+    throw new SkipUIParts('unsupported-part')
+  }
+  if (size > PROVIDER_METADATA_MAX_CHARS) throw new SkipUIParts('provider-metadata')
   return value
 }
 
@@ -813,13 +820,13 @@ function uiPartsFor(
     if (!rehydrateUIParts(uiParts, content)) throw new SkipUIParts('mismatch')
     return { uiParts }
   } catch (error) {
-    if (error instanceof SkipUIParts) {
-      console.warn(
-        `Assistant turn ${message.id} will reload from content only (lossy): ${error.reason}`
-      )
-      return { uiPartsSkipped: error.reason }
-    }
-    throw error
+    // The carrier is optional: whatever goes wrong building it, the turn is
+    // still saved (legacy content), never lost.
+    const reason = error instanceof SkipUIParts ? error.reason : 'unsupported-part'
+    console.warn(
+      `Assistant turn ${message.id} will reload from content only (lossy): ${reason}`
+    )
+    return { uiPartsSkipped: reason }
   }
 }
 

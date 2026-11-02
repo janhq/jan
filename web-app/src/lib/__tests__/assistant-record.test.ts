@@ -396,6 +396,49 @@ describe('no silent truncation', () => {
     expect(reload(message)).toEqual([{ type: 'text', text: 'a' }])
   })
 
+  describe('non-JSON provider metadata never blocks the save', () => {
+    const circular: Record<string, unknown> = { a: 1 }
+    circular.self = circular
+    const throwing = {
+      get boom() {
+        throw new Error('getter')
+      },
+    }
+    const cases: Record<string, any[]> = {
+      'BigInt providerMetadata': [
+        { type: 'step-start' },
+        { type: 'text', text: 'hi', providerMetadata: { p: { n: BigInt(1) } } },
+      ],
+      'circular callProviderMetadata': [
+        { type: 'step-start' },
+        { type: 'tool-x', toolCallId: 'c1', state: 'output-available', input: {}, output: 'o', callProviderMetadata: circular },
+      ],
+      'throwing getter in providerMetadata': [
+        { type: 'step-start' },
+        { type: 'reasoning', text: 'r', providerMetadata: throwing },
+      ],
+    }
+    for (const [name, parts] of Object.entries(cases)) {
+      it(name, () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          const message = assistant(parts)
+          let fields!: ReturnType<typeof assistantRecordFields>
+          expect(() => {
+            fields = assistantRecordFields(message, undefined, {})
+          }).not.toThrow()
+          expect(fields.content).toEqual(oldFields(message, undefined).content)
+          expect(fields.metadata).not.toHaveProperty('uiParts')
+          expect(fields.metadata.uiPartsSkipped).toBe('unsupported-part')
+          // The legacy record is still plain JSON, so the save goes through.
+          expect(() => JSON.stringify(toRecord('a1', fields))).not.toThrow()
+        } finally {
+          warn.mockRestore()
+        }
+      })
+    }
+  })
+
   it('a carrier the reader would reject is skipped as mismatch', () => {
     // In flight but already carrying an output: the sanitized part drops the
     // output while `content` keeps it, so the carrier could never validate.
