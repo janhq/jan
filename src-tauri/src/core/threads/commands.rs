@@ -85,14 +85,25 @@ pub async fn create_thread<R: Runtime>(
         .and_then(|v| v.as_str())
         .filter(|id| validate_thread_id(id).is_ok())
         .map(str::to_string);
-    if let Some(id) = &supplied {
-        let existing = get_thread_metadata_path(&data_folder, id)?;
-        if existing.exists() {
-            let data = fs::read_to_string(&existing).map_err(|e| e.to_string())?;
-            return serde_json::from_str(&data).map_err(|e| e.to_string());
-        }
-    }
     let uuid = supplied.unwrap_or_else(|| Uuid::new_v4().to_string());
+    // Creation shares the consent/modify/delete lock, including its idempotent
+    // existing-record check. Concurrent supplied-id creates cannot overwrite a
+    // successfully patched grant or each other's initial record.
+    let lock = get_lock_for_thread(&uuid).await;
+    let _guard = lock.lock().await;
+    let existing = get_thread_metadata_path(&data_folder, &uuid)?;
+    if existing.exists() {
+        let data = fs::read_to_string(&existing).map_err(|e| e.to_string())?;
+        return serde_json::from_str(&data).map_err(|e| e.to_string());
+    }
+    // Only the narrow consent setter may mint authority. Creation metadata is
+    // ordinary caller content (including migration), not explicit consent.
+    if let Some(metadata) = thread
+        .get_mut("metadata")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        metadata.remove("conversationCapabilities");
+    }
     thread["id"] = serde_json::Value::String(uuid.clone());
     let thread_dir = get_thread_dir(&data_folder, &uuid)?;
     if !thread_dir.exists() {

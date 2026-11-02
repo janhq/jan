@@ -549,10 +549,6 @@ export async function cleanupThreadWorkspace(
 }
 
 /**
- * Delete sandboxes left behind by threads that no longer exist, returning how
- * many were removed. Best-effort, same reasoning as above.
- */
-/**
  * Collect Cowork (session-scope) sandboxes whose conversation is gone. The
  * caller must only run this once the Cowork migration has finished: while it is
  * partial, the live-id list is incomplete and the sweep would delete the
@@ -571,6 +567,10 @@ export async function sweepSessionWorkspaces(
   }
 }
 
+/**
+ * Delete sandboxes left behind by threads that no longer exist, returning how
+ * many were removed. Best-effort, same reasoning as above.
+ */
 export async function sweepThreadWorkspaces(
   liveThreadIds: string[]
 ): Promise<number> {
