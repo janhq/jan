@@ -479,12 +479,23 @@ fn classify_agent_path(path: &str) -> Option<(&'static str, String)> {
 /// decisions") instead of the raw tool name + path. Everything else falls back
 /// to `name` + compact args.
 pub fn describe_tool_call(name: &str, args: &serde_json::Value) -> String {
+    tool_label(name, args, false)
+}
+
+/// `describe_tool_call` once the call has finished: the same label with its
+/// verb in the past tense ("Updated memory: decisions"), so a resolved row
+/// stops reading as work still in flight.
+pub fn describe_finished_tool_call(name: &str, args: &serde_json::Value) -> String {
+    tool_label(name, args, true)
+}
+
+fn tool_label(name: &str, args: &serde_json::Value, past: bool) -> String {
     // Dedicated skill/memory tools are self-describing via their name + `name` arg.
     let dedicated = match name {
         "memory" => Some(memory_label(args)),
-        "skill_list" => Some(("Reading", "skill", String::new())),
-        "skill_read" => Some(("Reading", "skill", arg_name(args))),
-        "skill_write" => Some(("Updating", "skill", arg_name(args))),
+        "skill_list" => Some((Verb::Read, "skill", String::new())),
+        "skill_read" => Some((Verb::Read, "skill", arg_name(args))),
+        "skill_write" => Some((Verb::Update, "skill", arg_name(args))),
         _ => None,
     };
     // Fallback: generic read/write/edit hitting the workspace by path.
@@ -494,14 +505,15 @@ pub fn describe_tool_call(name: &str, args: &serde_json::Value) -> String {
             .and_then(classify_agent_path)
             .map(|(kind, item)| {
                 let verb = if matches!(name, "write" | "edit") {
-                    "Updating"
+                    Verb::Update
                 } else {
-                    "Reading"
+                    Verb::Read
                 };
                 (verb, kind, item)
             })
     });
     if let Some((verb, kind, item)) = labelled {
+        let verb = verb.word(past);
         return if item.is_empty() {
             let plural = if kind == "memory" { "memory notes" } else { "skills" };
             format!("{verb} {plural}")
@@ -512,14 +524,42 @@ pub fn describe_tool_call(name: &str, args: &serde_json::Value) -> String {
     format!("{name} {args}")
 }
 
+/// What a skill or memory call does to its store, worded by `word`.
+#[derive(Clone, Copy)]
+enum Verb {
+    Read,
+    Search,
+    Update,
+    Delete,
+    Move,
+}
+
+impl Verb {
+    /// The verb while the call runs, or once it has finished when `past`.
+    fn word(self, past: bool) -> &'static str {
+        match (self, past) {
+            (Verb::Read, false) => "Reading",
+            (Verb::Read, true) => "Read",
+            (Verb::Search, false) => "Searching",
+            (Verb::Search, true) => "Searched",
+            (Verb::Update, false) => "Updating",
+            (Verb::Update, true) => "Updated",
+            (Verb::Delete, false) => "Deleting",
+            (Verb::Delete, true) => "Deleted",
+            (Verb::Move, false) => "Moving",
+            (Verb::Move, true) => "Moved",
+        }
+    }
+}
+
 /// The verb and target of one `memory` op: reads list or open, the rest change.
-fn memory_label(args: &serde_json::Value) -> (&'static str, &'static str, String) {
+fn memory_label(args: &serde_json::Value) -> (Verb, &'static str, String) {
     let verb = match args.get("op").and_then(|v| v.as_str()) {
-        Some("write") | Some("edit") => "Updating",
-        Some("delete") => "Deleting",
-        Some("move") => "Moving",
-        Some("search") => "Searching",
-        _ => "Reading",
+        Some("write") | Some("edit") => Verb::Update,
+        Some("delete") => Verb::Delete,
+        Some("move") => Verb::Move,
+        Some("search") => Verb::Search,
+        _ => Verb::Read,
     };
     let item = match args.get("op").and_then(|v| v.as_str()) {
         Some("search") => args.get("query").and_then(|v| v.as_str()).unwrap_or_default().to_string(),

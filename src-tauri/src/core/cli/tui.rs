@@ -61,7 +61,9 @@ use super::{
     SessionBudgetSource, SessionLimits,
 };
 use crate::core::agent::compaction::{estimate_token_count, trigger_tokens};
-use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
+use crate::core::agent::events::{
+    describe_finished_tool_call, describe_tool_call, StreamEvent, Usage,
+};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{
     run_orchestration_steered, OrchestrationArgs, PermissionRegistry, SteeringRequest,
@@ -11470,7 +11472,7 @@ fn todo_target_label(args: &serde_json::Value) -> String {
 }
 
 /// Past-tense counterpart to `tool_activity` for a finalized single call
-/// ("Reading main.rs" -> "Read main.rs"); falls back to `describe_tool_call`.
+/// ("Reading main.rs" -> "Read main.rs"); falls back to `describe_finished_tool_call`.
 fn tool_finished(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let base = |p: &str| {
@@ -11523,7 +11525,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "ask" => "Asked a question".to_string(),
         "todo" => format!("{} {}", todo_op_verb(args, true), todo_target_label(args)),
         "monitor" => monitor_activity(args, true),
-        _ => describe_tool_call(name, args),
+        _ => describe_finished_tool_call(name, args),
     }
 }
 
@@ -31088,6 +31090,53 @@ mod tests {
             tool_activity("memory", &json!({ "op": "write", "name": "decisions" })),
             "Updating memory: decisions"
         );
+    }
+
+    /// A finished memory or skill call reads in the past tense like every
+    /// other tool row, live and after a resume replays it.
+    #[test]
+    fn memory_and_skill_rows_settle_into_the_past_tense() {
+        let cases = [
+            ("memory", json!({ "op": "view", "name": "drift.md" }), "Read memory: drift"),
+            ("memory", json!({ "op": "view" }), "Read memory notes"),
+            ("memory", json!({ "op": "search", "query": "yarn" }), "Searched memory: yarn"),
+            ("memory", json!({ "op": "write", "name": "decisions" }), "Updated memory: decisions"),
+            ("memory", json!({ "op": "edit", "name": "decisions" }), "Updated memory: decisions"),
+            ("memory", json!({ "op": "delete", "name": "old" }), "Deleted memory: old"),
+            ("memory", json!({ "op": "move", "name": "old", "to": "tui/old" }), "Moved memory: old"),
+            ("skill_read", json!({ "name": "deploy" }), "Read skill: deploy"),
+            ("skill_list", json!({}), "Read skills"),
+            ("skill_write", json!({ "name": "deploy" }), "Updated skill: deploy"),
+        ];
+        for (tool, args, done) in cases {
+            assert_eq!(tool_finished(tool, &args), done);
+            let mut app = test_app();
+            app.apply(StreamEvent::ToolCall {
+                id: "c1".into(),
+                name: tool.into(),
+                args: args.clone(),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: "c1".into(),
+                content: "ok".into(),
+                is_error: false,
+                diff: None,
+            });
+            app.apply(StreamEvent::Token { text: "Done.".into() });
+            app.transcript.flush_assistant();
+            let live = transcript_text(&app);
+            assert!(!live.contains("ing "), "{tool} {args}: {live}");
+            let mut resumed = test_app();
+            replay_display_log(&mut resumed, app.transcript.display_log.clone());
+            let replayed = transcript_text(&resumed);
+            assert!(!replayed.contains("ing "), "{tool} {args}: {replayed}");
+            // A read lists its target on the `Explored` row; a change is
+            // titled by its own past-tense label.
+            if !done.starts_with("Read") && !done.starts_with("Searched") {
+                assert!(live.contains(&format!("\u{2022} {done}")), "{live}");
+                assert!(replayed.contains(&format!("\u{2022} {done}")), "{replayed}");
+            }
+        }
     }
 
     /// A `monitor` call must never fall through to the raw-JSON fallback: a
