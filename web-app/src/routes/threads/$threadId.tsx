@@ -435,11 +435,10 @@ export const Route = createFileRoute('/threads/$threadId')({
     // fetched list is NOT written into the store (a stale write could
     // overwrite a newer hydration), and the store is re-read around every
     // await so a hydration landing mid-fetch wins over the stale snapshot.
-    // When the whole window fails — every attempt rejected OR returned an
-    // empty list before successful store hydration — classification is UNKNOWN.
-    // The typed error below propagates: the
-    // route-local errorComponent renders a Retry screen; a writable chat
-    // never mounts over an undecidable thread.
+    // If every lookup fails or returns an empty list before successful
+    // store hydration, classification stays unknown. The route-local
+    // error component offers Retry; writable Chat never mounts over an
+    // undecidable thread.
     //
     // Skips the fetch only on store residency or the SUCCESS-ONLY
     // threadsHydrated flag; never on isLoadingThreads, which DataProvider
