@@ -45,6 +45,26 @@ pub enum CompactionReason {
     SessionBudget,
 }
 
+/// What a finished compaction did, carried on [`StreamEvent::Compaction`] so
+/// a consumer can show the summarizer as an agent of its own: what it read,
+/// which model wrote the summary, what it cost and what it wrote.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct CompactionReport {
+    /// The model that wrote the summary: the `smol` model when it answered,
+    /// else the run's own. `None` when no model answered and the history was
+    /// folded into Jan's fallback note instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Estimated tokens of the span that was folded, before it was clamped
+    /// for the summarizer: how much conversation the summary stands in for.
+    pub input_tokens: u64,
+    /// The summarizer's own reported usage, every request it took included.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+    /// The summary that now stands in for the folded span.
+    pub summary: String,
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamEvent {
@@ -120,6 +140,11 @@ pub enum StreamEvent {
         /// checkout it was given, marked when read-only.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         workspace: Option<String>,
+        /// An agent Jan runs for itself (memory tidy) rather than one the
+        /// model dispatched. A consumer lists it with the other subagents,
+        /// marked as Jan's own, and keeps its run out of the conversation.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        internal: bool,
     },
     /// A backgrounded subagent dispatch found the parent run's concurrency cap
     /// (`max_parallel_subagents`) exhausted and queued the child in FIFO order.
@@ -182,14 +207,16 @@ pub enum StreamEvent {
     /// `Started` before the summarizer call and `Finished` or `Failed` after
     /// it, so a consumer can show progress for what is otherwise a silent
     /// round trip. `reason` says which path asked. `messages` is how many were
-    /// folded into the summary, `None` except on `Finished`. Display-only and
-    /// never journaled; the compacted history itself arrives as
-    /// `MessagesUpdated`.
+    /// folded into the summary and `report` what the summarizer did, both
+    /// `None` except on `Finished`. Display-only and never journaled; the
+    /// compacted history itself arrives as `MessagesUpdated`.
     Compaction {
         phase: CompactionPhase,
         reason: CompactionReason,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         messages: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        report: Option<CompactionReport>,
     },
     /// The upstream request failed before anything streamed and is about to be
     /// sent again after `delay_ms`. `attempt` is the 1-based attempt that
@@ -620,6 +647,7 @@ pub(crate) mod tests {
                     name: "scout".into(),
                     task: Some("look".into()),
                     workspace: None,
+                    internal: true,
                 },
             ),
             (
@@ -668,6 +696,16 @@ pub(crate) mod tests {
                     phase: CompactionPhase::Finished,
                     reason: CompactionReason::SessionBudget,
                     messages: Some(12),
+                    report: Some(CompactionReport {
+                        model: Some("smol".into()),
+                        input_tokens: 40_000,
+                        usage: Some(Usage {
+                            prompt_tokens: Some(9_000),
+                            completion_tokens: Some(400),
+                            ..Default::default()
+                        }),
+                        summary: "The user is building a parser.".into(),
+                    }),
                 },
             ),
             (
@@ -1125,6 +1163,7 @@ pub(crate) mod tests {
             name: "rust-reviewer".into(),
             task: None,
             workspace: None,
+            internal: false,
         })
         .unwrap();
         assert_eq!(

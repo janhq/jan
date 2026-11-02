@@ -772,6 +772,11 @@ pub struct SubagentRequest {
     /// Jan's own tidy subagent sets this. It is never read from a tool call, so
     /// neither the model nor a definition can ask for it.
     pub memory_access: bool,
+    /// Whether this is an agent Jan runs for itself (memory tidy) rather than
+    /// one the model dispatched. Carried on its `SubagentStart` so a consumer
+    /// can mark it as internal. Never read from a tool call, like
+    /// `memory_access`.
+    pub internal: bool,
     /// Where it works, when the dispatch said (see
     /// [`crate::core::agent::child_workspace`]); `None` takes the default.
     pub workspace: Option<crate::core::agent::child_workspace::WorkspaceRequest>,
@@ -2066,6 +2071,7 @@ async fn run_subagent(
     parent_link: ParentLink,
     transcript_dir: Option<PathBuf>,
     memory_access: bool,
+    internal: bool,
     placed: Option<(
         crate::core::agent::child_workspace::ChildWorkspace,
         crate::core::agent::child_workspace::Placement,
@@ -2144,6 +2150,7 @@ async fn run_subagent(
         name: name.clone(),
         task: Some(description.clone()),
         workspace: workspace.as_ref().map(|ws| ws.label()),
+        internal,
     });
 
     let (child_tx, mut child_rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
@@ -2283,6 +2290,8 @@ struct PreparedDispatch {
     parent: ParentRun,
     /// See [`SubagentRequest::memory_access`].
     memory_access: bool,
+    /// See [`SubagentRequest::internal`].
+    internal: bool,
     workspace: crate::core::agent::child_workspace::ChildWorkspace,
     /// What the child's args take from `workspace`, read from git with it.
     placement: crate::core::agent::child_workspace::Placement,
@@ -2397,6 +2406,7 @@ async fn assign_dispatch(
         resolved,
         parent: parent.clone(),
         memory_access: req.memory_access,
+        internal: req.internal,
         workspace,
         placement,
         lease: LeaseSlot::new(lease),
@@ -2423,6 +2433,7 @@ fn start_dispatch(
         resolved,
         parent,
         memory_access,
+        internal,
         workspace,
         placement,
         lease,
@@ -2561,6 +2572,7 @@ fn start_dispatch(
             parent_link,
             transcript_dir,
             memory_access,
+            internal,
             Some((workspace, placement)),
         )
         .await;
@@ -2726,6 +2738,7 @@ fn memory_tidy_dispatch() -> (ResolvedDispatch, SubagentRequest) {
         allowed_tools: None,
         agent: MEMORY_TIDY_AGENT.to_string(),
         memory_access: true,
+        internal: true,
         // Never a worktree: with no write or edit tool the tidy is a reader,
         // so it gets the default, the parent's checkout read-only.
         workspace: None,
@@ -3708,6 +3721,7 @@ pub fn parse_dispatch_plan(
             allowed_tools: optional_tool_list(sub),
             agent,
             memory_access: false,
+            internal: false,
             workspace,
         });
     }
@@ -4414,6 +4428,7 @@ pub(crate) mod tests {
             allowed_tools: allowed,
             agent: name.to_string(),
             memory_access: false,
+            internal: false,
             workspace: None,
         }
     }
@@ -6975,6 +6990,7 @@ pub(crate) mod tests {
     fn the_tidy_subagent_keeps_memory_and_nothing_else() {
         let (resolved, req) = memory_tidy_dispatch();
         assert!(req.memory_access);
+        assert!(req.internal, "a tidy is Jan's own agent, listed as internal");
         assert_eq!(resolved.allowed_tools, Some(vec!["memory".to_string()]));
         assert_eq!(resolved.definition.model.as_deref(), Some(SMOL_ROLE));
         let child = without_memory(max_par_args(&unique_root("tidy-child")), req.memory_access);
@@ -7066,10 +7082,11 @@ pub(crate) mod tests {
         assert!(!tidy.project_memory, "a tidy run still indexes nothing");
         // Nothing a model writes can set it.
         let plan = parse_dispatch_plan_fresh(&serde_json::json!({
-            "subagents": [{ "agent": "general", "task": "t", "memory_access": true }]
+            "subagents": [{ "agent": "general", "task": "t", "memory_access": true, "internal": true }]
         }))
         .unwrap();
         assert!(!plan.phases[0].subagents[0].memory_access);
+        assert!(!plan.phases[0].subagents[0].internal, "nor pass as Jan's own agent");
     }
 
     /// A name is held from the moment a dispatch hands it out -- a later-phase

@@ -351,6 +351,7 @@ async fn compacted(history: &[Value]) -> Vec<Value> {
     compact_conversation(history, "test-model", &StubSummarizer, KEEP_RECENT)
         .await
         .expect("the stub summarizer always answers")
+        .0
 }
 
 /// A user turn with a given text.
