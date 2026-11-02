@@ -181,8 +181,8 @@ server ever bound.
 ## Isolation
 
 Each run gets a throwaway profile in a temp dir to redirect Jan application
-data. This is not complete isolation: macOS WebKit storage and the other gaps
-below can still touch the real user profile. The desktop app resolves its data folder from
+data. This is not a filesystem sandbox; platform gaps below remain. In e2e builds,
+WebKit uses an ephemeral store rather than the real account’s browser profile. The desktop app resolves its data folder from
 `core::app::paths::data_dir()`; which variables that leaves you needing to
 override depends on the platform.
 
@@ -192,24 +192,70 @@ override depends on the platform.
 | Linux | `$XDG_DATA_HOME`, else `$HOME/.local/share` | `HOME` **and** `XDG_DATA_HOME` |
 | Windows | `FOLDERID_RoamingAppData` | nothing the OS provides — see below |
 
-### Known macOS WebKit gap — follow-up
+### Native browser isolation (e2e builds only)
 
-HOME redirection does **not** isolate WKWebView localStorage. In native macOS
-arm64 validation on [#9457](https://github.com/janhq/jan/pull/9457) and
-[#9464](https://github.com/janhq/jan/pull/9464), thinhlpg observed writes under the
-real `~/Library/WebKit/<bundle id>/WebsiteData/Default/.../LocalStorage/`
-(`jan.ai.app`), shared with an installed Jan. The redirected profile contained
-no `Library/WebKit`; `Library/Caches/jan.ai.app` did redirect. Therefore both
-normal and migration launches may read or modify installed-Jan browser state;
-a passing migration smoke does not prove browser-storage isolation or migration.
-Use a disposable macOS account/VM for separation, not merely `JAN_E2E_HOME`.
+Do not use an ordinary desktop binary for native QA. `HOME` and `JAN_DATA_ROOT`
+alone do **not** isolate WKWebView: previous macOS validation observed localStorage
+under the real account's `Library/WebKit/jan.ai.app`. Never inspect, copy, modify,
+or symlink an installed profile to test separation.
 
-**Follow-up ([jan-internal#496](https://github.com/janhq/jan-internal/issues/496),
-not fixed here):** isolate macOS e2e WebKit storage, evaluating a
-distinct e2e bundle identifier, and verify with real installed-Jan storage that
-launches do not touch it. The possible connection to a missing setup wizard on
-an already-used Mac is unproven. This PR changes neither bundle IDs nor WebKit
-storage behavior.
+`src-tauri/src/e2e_isolation.rs` changes the generated context **before**
+`Builder::build`: every initial window is incognito. Source proof in the locked
+stack (paths relative to the Cargo registry crate):
+
+- `tauri-2.11.5/src/webview/mod.rs`: `WebviewBuilder::from_config` forwards
+  `WindowConfig.incognito`; `tauri-runtime-wry-2.11.4/src/lib.rs` forwards it to Wry.
+- `wry-0.55.1/src/wkwebview/mod.rs`: the `attributes.incognito` branch selects
+  `WKWebsiteDataStore::nonPersistentDataStore` and assigns it to the webview
+  configuration **before** constructing WKWebView. There is no persistent storage
+  root in this mode. `data_directory` is unsupported on macOS. A
+  `data_store_identifier` needs macOS 14+, with a default-store fallback on older
+  systems, so it is deliberately not used.
+- Frontend-created auxiliary webviews do not inherit the initial config. An
+  e2e-only dynamic capability denies both `create_webview` and
+  `create_webview_window` before construction. `tauri-2.11.5/src/ipc/authority.rs`
+  checks denied commands before allowed commands. Logs/system-monitor auxiliary
+  windows are therefore intentionally unavailable in this test build.
+- The separate native screenshot builder in `tauri-plugin-agent-tools` receives
+  an e2e feature and also sets incognito before build. ACLs do not govern Rust
+  builders. New native builders must receive the same isolation before QA.
+
+No production config, bundle identifier, capability file, or default feature is
+changed. The e2e feature unconditionally disables provider OS keyring access
+(read/write/delete use the isolated fallback), single-instance handoff, and
+existing Windows/Linux deep-link registration. No credentials or external model
+are needed. Browser localStorage survives a webview reload but **not process
+restart**; migration smoke tests backend persistence, not browser migration.
+
+#### Safe manual macOS launch
+
+Build first (does not launch): `yarn build:e2e:app`. Check the Rust e2e isolation
+tests and review the locked source chain above before launching a changed stack.
+Use a fresh absolute canonical root, not an existing profile:
+
+```bash
+# From repo root; leave HOME/TMPDIR unchanged in this shell.
+unset JAN_DATA_ROOT JAN_DATA_FOLDER JAN_E2E_HOME
+QA_ROOT="$(mktemp -d "$(cd "${TMPDIR:-/tmp}" && pwd -P)/jan-native-qa-XXXXXX")"
+(cd e2e && yarn check:native-isolation "$QA_ROOT")
+# The existing guarded harness seeds only this root, suppresses model bootstrap,
+# runs the native app and owns its process cleanup. KEEP retains evidence.
+(cd e2e && JAN_E2E_HOME="$QA_ROOT" JAN_E2E_KEEP=1 yarn test)
+```
+
+The read-only preflight rejects relative/noncanonical/nonempty roots and uses
+`launch-guard.ts` to reject real homes, Jan paths, and inherited bypass variables.
+It never reads installed browser contents. The harness revalidates before seeding.
+Use the native first-run window for visual QA while the owned run is active;
+record that separately from driver assertions. Do not kill by process name or
+port; stop only the owned run. Inspect only the printed temporary profile and
+logs. Do not claim real-profile unchanged evidence: this procedure intentionally
+never inspects user data. Source-backed ephemeral storage and native behavior
+checks are the evidence, not a before/after scan of an installed profile.
+
+This guard is not a sandbox or a defense against concurrent filesystem changes.
+For stronger separation use a disposable OS account/VM. The Windows gaps below
+are unchanged by this focused macOS storage fix.
 
 ### Launch guard (limited guarantee)
 
@@ -242,7 +288,7 @@ than `Jan` (including empty) are rejected too.
 This is an accidental-launch guard, **not a filesystem sandbox** or a proof of
 complete confinement. It does not prevent concurrent symlink changes, hard-link
 aliases, every possible legacy/plugin/config escape, Windows registry folder
-redirection, the macOS WebKit gap, or the Windows CLI/updater gaps below. Use a disposable OS account
+redirection, or the Windows CLI/updater gaps below. Use a disposable OS account
 or VM if stronger separation is needed. Existing profiles should be disposable;
 the harness merges a bootstrap seed into their backend settings.
 

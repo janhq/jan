@@ -15,6 +15,8 @@ links = "tauri-plugin-agent-tools"
 # keep the whole GUI stack out of the graph.
 [features]
 default = ["tauri"]
+# Only the desktop e2e build enables this: never share browser state with Jan.
+e2e = []
 # The Linux GUI crates back the webview `screenshot` renderer and only exist on
 # that target, so they are enabled by the `tauri` feature but stay absent from
 # the CLI graph (which never turns `tauri` on).

@@ -6,6 +6,7 @@
   "scripts": {
     "test": "wdio run ./wdio.conf.ts",
     "test:migration": "tsx run-migration.ts",
+    "check:native-isolation": "tsx check-native-isolation.ts",
     "test:unit": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },

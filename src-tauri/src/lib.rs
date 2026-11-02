@@ -11,6 +11,9 @@ compile_error!(
 
 pub mod core;
 
+#[cfg(all(feature = "e2e", not(feature = "cli")))]
+mod e2e_isolation;
+
 #[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
@@ -336,6 +339,14 @@ pub fn run() {
         core::server::remote_provider_commands::abort_remote_stream,
     ]);
 
+    let context = tauri::generate_context!();
+    #[cfg(feature = "e2e")]
+    let context = {
+        let mut context = context;
+        e2e_isolation::configure(&mut context);
+        context
+    };
+
     let app = app_builder
         .manage(AppState {
             app_token: Some(generate_app_token()),
@@ -490,7 +501,7 @@ pub fn run() {
             setup::setup_theme_listener(app)?;
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while running tauri application");
     // Handle app lifecycle events
     app.run(|app, event| {

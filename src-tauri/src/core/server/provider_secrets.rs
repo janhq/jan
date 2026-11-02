@@ -52,10 +52,9 @@ static KEYRING_DOWN: AtomicBool = AtomicBool::new(false);
 
 fn keyring_down() -> bool {
     // Native QA must never access the installed app's shared OS credential
-    // namespace. This opt-in exists only in e2e builds; the encrypted fallback
-    // stays under the separately isolated JAN_DATA_FOLDER.
-    #[cfg(feature = "e2e")]
-    if std::env::var_os("JAN_E2E_NO_KEYRING").is_some_and(|value| value == "1") {
+    // namespace, even if the launcher forgets an environment flag. The fallback
+    // stays under the separately isolated desktop data folder.
+    if cfg!(feature = "e2e") {
         return true;
     }
     KEYRING_DOWN.load(Ordering::Relaxed)
@@ -462,6 +461,14 @@ mod tests {
     fn file_remove_missing_is_ok() {
         let _tmp = TempDataFolder::new();
         assert!(file_remove("never-stored").is_ok());
+    }
+
+    #[cfg(feature = "e2e")]
+    #[test]
+    fn e2e_never_uses_os_keyring() {
+        // Independent of environment flags and the infrastructure-failure latch.
+        KEYRING_DOWN.store(false, Ordering::Relaxed);
+        assert!(keyring_down());
     }
 
     /// The Secret Service backend is async underneath, and `load_provider_keys`
