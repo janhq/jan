@@ -393,6 +393,9 @@ describe('coworkSync startup', () => {
     // The blocked-deletion claim covers ALL Cowork conversations, not only
     // imported ones: every removal records intent while migration is unsettled.
     expect(sonner.warning.mock.calls[0][1].description).toContain('any Cowork conversation')
+    // Manual recovery must say to quit first: the settings store rewrites the
+    // whole file from memory (debounced + exit flush), clobbering live edits.
+    expect(sonner.warning.mock.calls[0][1].description).toContain('quit Jan completely')
     // The warning repeats on the next launch until the journal is repaired.
     __resetCoworkSyncForTests()
     useCoworkSessions.setState({ sessions: [], currentId: null })

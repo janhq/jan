@@ -147,9 +147,11 @@ async function doStart() {
           "Jan can't read its deletion record, so conversations imported from an " +
           'older version stay hidden rather than risk restoring ones you already ' +
           'deleted, and deleting any Cowork conversation is temporarily blocked. ' +
-          "Your data is untouched. To recover, fix or remove the 'cowork_deleted_ids' " +
-          "entry in Jan's settings.json — removing it restores every imported " +
-          'conversation, including any you had deleted.',
+          'Your data is untouched. To recover: quit Jan completely first — Jan ' +
+          'rewrites settings.json from memory while it runs, which would undo ' +
+          "your edit — then fix or remove the 'cowork_deleted_ids' entry in " +
+          'settings.json. Removing it restores every imported conversation, ' +
+          'including any you had deleted.',
       })
     // This startup is what gates provider render, so the Toaster is usually
     // NOT mounted yet, and sonner drops toasts created before its <Toaster>
