@@ -21,7 +21,7 @@
 - Parent reports folder-below focused tests **23/23 PASS** at source freeze; not represented as Linux native passes.
 
 ## Bounded matrix
-Reference: `docs/qa/ui-matrix-full-round.md`; fresh Linux representative pairwise round at 1600/1280/1024, light/dark. All rows currently blocked by the explicit permission denial above, not inferred app failures.
+Reference: `qa/ui-matrix-full-round.md`; fresh Linux representative pairwise round at 1600/1280/1024, light/dark. All rows currently blocked by the explicit permission denial above, not inferred app failures.
 
 |ID|Native case|Status|Evidence / limit|
 |---|---|---|---|
