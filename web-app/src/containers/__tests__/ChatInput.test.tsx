@@ -616,7 +616,10 @@ describe('ChatInput', () => {
         await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(attempt))
         await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Unable to create chat. Your draft has been kept.'))
       }
-      expect(createThreadMock.mock.calls[0].slice(-2)).toEqual([false, { strict: true }])
+      for (const call of createThreadMock.mock.calls) {
+        expect(call).toHaveLength(6)
+        expect(call.slice(-2)).toEqual([false, { strict: true }])
+      }
       expect(apply).not.toHaveBeenCalled()
       expect(rollbackCreatedThreadMock).not.toHaveBeenCalled()
       expect(navigateMock).not.toHaveBeenCalled()
@@ -642,6 +645,7 @@ describe('ChatInput', () => {
       send()
       await waitFor(() => expect(navigateMock).toHaveBeenCalled())
       expect(createThreadMock).toHaveBeenCalledTimes(temporary ? 0 : 1)
+      if (!temporary) expect(createThreadMock.mock.calls[0]).toHaveLength(4)
       expect(sessionStorage.length).toBeGreaterThan(0)
       expect(setPromptMock).toHaveBeenCalledWith('')
       window.history.replaceState({}, '', '/')
