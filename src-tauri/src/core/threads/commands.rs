@@ -252,14 +252,41 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
     // nothing keeps running under the authority being replaced.
     let token = tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
     super::capabilities::patch_conversation_capabilities(&data_folder, &thread_id, value.clone())?;
+    // Test seam for the reviewed interleaving: `stop_all_thread_monitors`
+    // takes no per-thread lock, so its barrier bump can land between this
+    // setter's narrow and its confirm in production. The seam reproduces
+    // exactly that, deterministically.
+    #[cfg(test)]
+    if SETTER_BUMP_BEFORE_CONFIRM.lock().unwrap().as_deref() == Some(thread_id.as_str()) {
+        tauri_plugin_agent_tools::thread_capabilities::bump_generation(&thread_id);
+    }
     // Only a write that actually succeeded confirms, and only when no newer
     // narrow intervened. A skipped confirm leaves the thread denied, which the
-    // per-poll intersection enforces regardless of what is on disk.
+    // per-poll intersection enforces regardless of what is on disk -- so a
+    // dropped confirmation MUST surface as an error, never as success: the
+    // grant is on disk but the host denies it, and an Ok here would have the
+    // UI show it active. The error leaves the frontend overlay denied
+    // (consistent with the host) and the on-disk value reachable through the
+    // reconfirm flow; a retry simply runs the setter again.
     let grant = serde_json::from_value(value)
         .map_err(|e| format!("Invalid version 1 conversation capabilities: {e}"))?;
-    tauri_plugin_agent_tools::confirm_thread_consent(&thread_id, grant, token);
+    if !tauri_plugin_agent_tools::confirm_thread_consent(&thread_id, grant, token) {
+        return Err(
+            "The permission change was written but a concurrent change prevented its \
+             activation; elevated access stays off. Try again."
+                .into(),
+        );
+    }
     Ok(())
 }
+
+/// Test seam: forces a `stop_all_thread_monitors`-style barrier bump between
+/// the strict setter's narrow and its confirm (per-thread id, so parallel
+/// tests never collide). stop-all takes no per-thread lock, which is exactly
+/// why this interleaving is reachable in production.
+#[cfg(test)]
+pub(super) static SETTER_BUMP_BEFORE_CONFIRM: std::sync::Mutex<Option<String>> =
+    std::sync::Mutex::new(None);
 
 /// Roll back only an unchanged, empty desktop creation. The expected raw
 /// creation response is a compare-and-delete receipt, not arbitrary authority

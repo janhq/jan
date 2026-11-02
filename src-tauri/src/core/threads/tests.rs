@@ -1325,6 +1325,48 @@ async fn deleting_a_thread_kills_its_running_shells() {
     assert!(!status.success(), "killed, not run to completion");
 }
 
+/// Bot finding on d9508e1b3: the setter must never report success when its
+/// confirmation was dropped. `stop_all_thread_monitors` takes no per-thread
+/// lock, so its barrier bump can land between the setter's narrow and its
+/// confirm; the grant is then on disk but host-denied, and an Ok would have
+/// the UI show it active while every poll and one-shot is refused.
+#[tokio::test]
+async fn a_dropped_confirmation_fails_the_setter_instead_of_faking_success() {
+    use tauri_plugin_agent_tools::thread_capabilities::current;
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("dropped-confirm"))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    *SETTER_BUMP_BEFORE_CONFIRM.lock().unwrap() = Some(id.clone());
+    let result =
+        set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+            .await;
+    *SETTER_BUMP_BEFORE_CONFIRM.lock().unwrap() = None;
+    let message = result.expect_err("a dropped confirmation must surface, not read as saved");
+    assert!(message.contains("prevented its activation"), "{message}");
+    assert!(
+        !current(&id).0.shell_network,
+        "the host stays denied -- fail closed"
+    );
+    // The written grant is on disk (reachable via the reconfirm flow), never
+    // silently active.
+    let stored: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        stored["metadata"]["conversationCapabilities"]["shellNetwork"],
+        json!(true)
+    );
+    // Positive control: without the interleaving, the identical call confirms
+    // and succeeds, so the error above is the seam's doing and nothing else.
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    assert!(current(&id).0.shell_network, "retry activates the grant");
+}
+
 #[tokio::test]
 async fn conversation_capabilities_stale_writer_cannot_restore_revocation() {
     let (app, data_dir) = mock_app_with_temp_data_dir();
