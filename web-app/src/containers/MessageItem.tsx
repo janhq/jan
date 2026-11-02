@@ -150,9 +150,10 @@ export const MessageItem = memo(
       onContinue?.(message.id)
     }, [onContinue, message.id])
 
-    // Shared with the route's working paths: a capped turn resumes from its
-    // kept history (tool-only included); a user-stopped turn resumes only from
-    // partial text/reasoning. The cap notice itself never qualifies.
+    // The button renders only where the route has a working path: a capped
+    // turn resumes from its kept history (tool-only included); a user-stopped
+    // turn resumes only from partial text/reasoning. The cap notice itself
+    // never qualifies.
     const canContinue = canContinueStoppedTurn(metadata, message.parts)
 
     const handleEdit = useCallback(

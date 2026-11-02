@@ -170,6 +170,31 @@ const partialOf = (message: UIMessage) => {
   return { text: collect('text'), reasoning: collect('reasoning') }
 }
 
+// Once a thread has branches, every new user turn must link into the active
+// path so the assistant reply attaches to it: a record without a parentId is
+// invisible to computeActivePath and silently drops off the thread on reload.
+// Legacy threads stay linear. Registers the pending assistant parent, which
+// onFinish consumes for the reply's own link.
+const linkUserTurnToActivePath = (
+  threadId: string,
+  userMessage: ReturnType<typeof newUserThreadContent>
+): ReturnType<typeof newUserThreadContent> => {
+  const branchedMessages = useMessages.getState().getMessages(threadId)
+  if (!hasBranching(branchedMessages)) return userMessage
+  const activeRootId = (
+    useThreads.getState().threads[threadId]?.metadata as
+      | Record<string, unknown>
+      | undefined
+  )?.activeRootId as string | undefined
+  const path = computeActivePath(branchedMessages, activeRootId)
+  const parentId = path.length ? path[path.length - 1].id : null
+  pendingAssistantParents.set(threadId, userMessage.id)
+  return {
+    ...userMessage,
+    metadata: { ...(userMessage.metadata ?? {}), parentId },
+  }
+}
+
 const takeFrom = <V,>(map: Map<string, V>, threadId: string) => {
   const value = map.get(threadId)
   map.delete(threadId)
@@ -1599,24 +1624,7 @@ function ThreadDetail() {
         processedAttachments,
         messageId
       )
-      // Once a thread has branches, link new turns into the active path so the
-      // assistant reply attaches to this message. Legacy threads stay linear.
-      const branchedMessages = useMessages.getState().getMessages(threadId)
-      let userMessage = baseUserMessage
-      if (hasBranching(branchedMessages)) {
-        const activeRootId = (
-          useThreads.getState().threads[threadId]?.metadata as
-            | Record<string, unknown>
-            | undefined
-        )?.activeRootId as string | undefined
-        const path = computeActivePath(branchedMessages, activeRootId)
-        const parentId = path.length ? path[path.length - 1].id : null
-        userMessage = {
-          ...baseUserMessage,
-          metadata: { ...(baseUserMessage.metadata ?? {}), parentId },
-        }
-        pendingAssistantParents.set(threadId, messageId)
-      }
+      const userMessage = linkUserTurnToActivePath(threadId, baseUserMessage)
       addMessage(userMessage)
 
       // Build parts for AI SDK. Derive media file parts from the resolved
@@ -1680,7 +1688,10 @@ function ThreadDetail() {
   const sendQueuedMessage = useCallback(
     async (text: string) => {
       const messageId = generateId()
-      const userMessage = newUserThreadContent(threadId, text, [], messageId)
+      const userMessage = linkUserTurnToActivePath(
+        threadId,
+        newUserThreadContent(threadId, text, [], messageId)
+      )
       addMessage(userMessage)
 
       try {
@@ -1691,6 +1702,8 @@ function ThreadDetail() {
         })
       } catch (error) {
         deleteMessage(threadId, messageId)
+        if (pendingAssistantParents.get(threadId) === messageId)
+          pendingAssistantParents.delete(threadId)
         throw error // queue owner restores the dequeued item
       }
     },
@@ -1934,6 +1947,9 @@ function ThreadDetail() {
     async (messageId: string) => {
       const msg = chatMessages.find((m) => m.id === messageId)
       if (!msg) return
+      // MessageItem renders the button from canContinueStoppedTurn; the
+      // handler itself stays tolerant of the stop-stamp race (a click landing
+      // before `stopped` metadata) and so only branches on the cap marker.
       if (isCappedTurn(msg.metadata)) {
         // A capped run resumes as a new turn through the normal send path: the
         // capped assistant (tool calls and results) stays canonical history,

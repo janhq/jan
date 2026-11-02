@@ -551,6 +551,7 @@ import {
   resolveAutoInlineBudget,
 } from '@/lib/attachmentProcessing'
 import { usePrompt } from '@/hooks/usePrompt'
+import { computeActivePath } from '@/lib/message-branching'
 
 // The global setup mock is a shared object, so an overridden factory has to be
 // put back or it leaks into every later test.
@@ -2479,6 +2480,57 @@ describe('ThreadDetail route', () => {
       expect(chat.messages.filter(message => message.role === 'assistant')).toHaveLength(2)
       expect(chat.messages.at(-1)!.parts).toContainEqual(expect.objectContaining({ type: 'text', text: 'continued' }))
       expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+    })
+
+    it('branched Continue links the user turn and reply into the active path across reload', async () => {
+      integrationMaxSteps = 1
+      const run = vi.fn(() => Promise.resolve({ content: 'A' }))
+      hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: cancellable(run) }) as never
+      const { chat, steps, rerender } = setup(['tcA'])
+      await act(async () => { await chat.sendMessage({ text: 'go' }) })
+      await waitFor(() => expect(chat.status).toBe('ready'))
+      const capped = chat.messages.find(message => message.role === 'assistant')!
+      expect(capped.metadata).toMatchObject({ stopped: true, runStopReason: 'steps' })
+
+      // The thread was edited/regenerated before: an older sibling root with
+      // its own reply, and the capped pair linked as the active branch.
+      const records = h.messagesState.getMessages('thread-1')
+      const goRecord = records.find((record: any) => record.role === 'user')!
+      const cappedRecord = records.find((record: any) => record.id === capped.id)!
+      goRecord.created_at = 10
+      goRecord.metadata = { ...goRecord.metadata, parentId: null }
+      cappedRecord.created_at = 11
+      cappedRecord.metadata = { ...cappedRecord.metadata, parentId: goRecord.id }
+      records.unshift(
+        { id: 'old-root', thread_id: 'thread-1', role: 'user', created_at: 1, metadata: { parentId: null }, content: [{ type: 'text', text: { value: 'old', annotations: [] } }] },
+        { id: 'old-reply', thread_id: 'thread-1', role: 'assistant', created_at: 2, metadata: { parentId: 'old-root' }, content: [{ type: 'text', text: { value: 'old reply', annotations: [] } }] },
+      )
+      h.threadsState.threads['thread-1'].metadata = {
+        ...(h.threadsState.threads['thread-1'].metadata ?? {}),
+        activeRootId: goRecord.id,
+      }
+
+      const Component = Route.component as React.ComponentType
+      rerender(<Component />)
+      await act(async () => { screen.getByTestId(`continue-${capped.id}`).click() })
+      await waitFor(() => expect(steps).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(chat.status).toBe('ready'))
+      expect(run).toHaveBeenCalledTimes(1)
+
+      // The Continue user turn and its reply are linked, so a reload's active
+      // path keeps them instead of silently dropping the exchange.
+      const after = h.messagesState.getMessages('thread-1')
+      const continueUser = after.find((record: any) =>
+        record.role === 'user' && record.content?.[0]?.text?.value === 'Continue.')!
+      expect(continueUser.metadata).toMatchObject({ parentId: capped.id })
+      const reply = after.find((record: any) =>
+        record.role === 'assistant' && record.id !== capped.id && record.id !== 'old-reply')!
+      expect(reply.metadata).toMatchObject({ parentId: continueUser.id })
+      const persisted = JSON.parse(JSON.stringify(after))
+      const path = computeActivePath(persisted, goRecord.id)
+      expect(path.map((record: any) => record.id)).toEqual([
+        goRecord.id, capped.id, continueUser.id, reply.id,
+      ])
     })
 
     it('Stop during approval never executes, settles queued cards, and ignores a late approval', async () => {
