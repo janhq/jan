@@ -1,6 +1,6 @@
 # Route test adaptation parity matrix — current, not final verification
 
-Latest route execution: **106 passed / 106 tests**, including all **20 newly merged MCP identity cases**. Current full suite: **384 files / 5328 tests**, with TypeScript and production ESLint passing after parent `c2b9b4458`. Command: `./node_modules/.bin/vitest run --project @janhq/web-app 'web-app/src/routes/threads/__tests__/$threadId.test.tsx'`.
+Latest route execution: **106 passed / 106 tests**, including all **20 newly merged MCP identity cases**. Current full suite: **386 files / 5381 tests**, with TypeScript and production ESLint passing after parent `cdecd19d4`. Command: `./node_modules/.bin/vitest run --project @janhq/web-app 'web-app/src/routes/threads/__tests__/$threadId.test.tsx'`.
 
 Owned file: `web-app/src/routes/threads/__tests__/$threadId.test.tsx`. No production edits.
 
