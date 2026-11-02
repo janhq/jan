@@ -1134,6 +1134,12 @@ pub(crate) fn sweep_orphans(root: &Path) -> Settled {
         .and_then(lock) else {
             continue;
         };
+        // The owner may have unlinked this lock (it settled the worktree)
+        // between the open and the lock, and a new owner of a reused id made
+        // a fresh one: the lock taken is then on a file no one else sees.
+        if !still_at(&hold, &entry.path()) {
+            continue;
+        }
         let path = dir.join(id);
         let present = std::fs::symlink_metadata(&path);
         let meta = match std::fs::read(meta_file(&dir, id, "json")) {
@@ -1179,6 +1185,25 @@ pub(crate) fn spawn_startup_sweep(root: PathBuf, mut report: impl FnMut(String) 
             report(notice);
         }
     });
+}
+
+/// Whether `file` is still the file at `path`, not one unlinked since it was
+/// opened.
+#[cfg(all(feature = "cli", unix))]
+fn still_at(file: &std::fs::File, path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (file.metadata(), std::fs::symlink_metadata(path)) {
+        (Ok(open), Ok(named)) => open.dev() == named.dev() && open.ino() == named.ino(),
+        _ => false,
+    }
+}
+
+/// Not checked off Unix: std has no stable file index to compare. A swap
+/// there leaves the new owner's worktree unswept (a leak, never a loss: a
+/// sweep only removes a lock with no record and no checkout).
+#[cfg(all(feature = "cli", not(unix)))]
+fn still_at(_file: &std::fs::File, _path: &Path) -> bool {
+    true
 }
 
 /// `<worker name>-<4 hex>`, the only ids [`create`] makes.
@@ -2600,6 +2625,22 @@ mod git_tests {
         drop(first);
         let _ = std::fs::remove_file(dir.join(META_DIR).join(format!("{id}.lock")));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A lock file swapped for a new one after the sweep opened it is not the
+    /// one it locked.
+    #[cfg(unix)]
+    #[test]
+    fn a_lock_file_replaced_since_it_was_opened_is_not_still_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("general-0000.lock");
+        std::fs::write(&path, "").unwrap();
+        let open = std::fs::File::open(&path).unwrap();
+        assert!(still_at(&open, &path));
+        std::fs::remove_file(&path).unwrap();
+        assert!(!still_at(&open, &path), "unlinked");
+        std::fs::write(&path, "").unwrap();
+        assert!(!still_at(&open, &path), "replaced");
     }
 
     /// Where the filesystem has no locks (some NFS, SMB, FUSE or WSL homes)
