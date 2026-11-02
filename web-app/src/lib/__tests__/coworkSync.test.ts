@@ -85,6 +85,7 @@ import {
   startCoworkSync,
   flushCowork,
   flushCoworkDeletes,
+  flushCoworkStartupWarnings,
   isCoworkMigrationDone,
   __resetCoworkSyncForTests,
 } from '../coworkSync'
@@ -404,6 +405,27 @@ describe('coworkSync startup', () => {
     await startCoworkSync()
     expect(sonner.warning).toHaveBeenCalledTimes(2)
     expect(useCoworkSessions.getState().sessions.some((s) => s.id === 'hidden')).toBe(true)
+  })
+
+  it('the post-mount flush re-raises the journal warning with the same id, and only while it applies', async () => {
+    // Before any start (or after reset) there is nothing to flush.
+    flushCoworkStartupWarnings()
+    expect(sonner.warning).not.toHaveBeenCalled()
+    backend.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    await startCoworkSync()
+    expect(sonner.warning).toHaveBeenCalledTimes(1)
+    // The Toaster host mounts after startup gates: the flush re-raises the
+    // same stable-id warning (sonner drops the pre-mount one).
+    flushCoworkStartupWarnings()
+    expect(sonner.warning).toHaveBeenCalledTimes(2)
+    expect(sonner.warning.mock.calls[1][1].id).toBe(sonner.warning.mock.calls[0][1].id)
+    // A later healthy start clears the pending warning: flush becomes a no-op.
+    backend.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify([]))
+    __resetCoworkSyncForTests()
+    useCoworkSessions.setState({ sessions: [], currentId: null })
+    await startCoworkSync()
+    flushCoworkStartupWarnings()
+    expect(sonner.warning).toHaveBeenCalledTimes(2)
   })
 
   it('the sandbox sweep keep-list includes sessions created before hydration finished', async () => {

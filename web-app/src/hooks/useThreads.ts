@@ -171,7 +171,10 @@ const deleteThreadOnDisk = (threadId: string, thread?: Thread) => {
       // (inherited ordering), so attachments index / cached state may already
       // be gone; only the conversation record itself is restored, and only
       // when there is actually something to restore.
+      // Stable id: a bulk delete hitting locked storage coalesces into one
+      // toast instead of stacking one per thread.
       toast.error('Failed to delete chat', {
+        id: 'thread-delete-failed',
         description: restoredThread
           ? 'It could not be removed from storage. The conversation was restored, but some auxiliary data (attachment index, cache) may have been cleaned up.'
           : 'It could not be fully removed from storage.',

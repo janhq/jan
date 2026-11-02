@@ -38,6 +38,18 @@ let startPromise: Promise<void> | null = null
 let migrationSettled = false
 const pendingDeletes = new Set<Promise<void>>()
 let deleteFailure: unknown = null
+let pendingStartupWarning: (() => void) | null = null
+
+/**
+ * Re-raise startup warnings once a sonner `<Toaster>` is mounted. Sonner drops
+ * toasts created before its Toaster subscribes, and startup warnings are
+ * raised while the providers still gate rendering on startup itself — so the
+ * Toaster host calls this from its mount effect. Idempotent: warnings use
+ * stable toast ids, so a re-fire updates rather than duplicates.
+ */
+export function flushCoworkStartupWarnings(): void {
+  pendingStartupWarning?.()
+}
 
 const getInvoke = (): Invoke => {
   const core = getServiceHub().core()
@@ -127,17 +139,27 @@ async function doStart() {
   // or drop the journal: rewriting it could resurrect sessions the user
   // deleted. The corrupt value itself is left byte-for-byte untouched.
   if (loaded.deletionJournalError) {
-    toast.warning('Some imported Cowork conversations are hidden', {
-      id: 'cowork-deletion-journal-unreadable',
-      duration: Infinity,
-      description:
-        "Jan can't read its deletion record, so conversations imported from an " +
-        'older version stay hidden rather than risk restoring ones you already ' +
-        'deleted, and deleting any Cowork conversation is temporarily blocked. ' +
-        "Your data is untouched. To recover, fix or remove the 'cowork_deleted_ids' " +
-        "entry in Jan's settings.json — removing it restores every imported " +
-        'conversation, including any you had deleted.',
-    })
+    const warn = () =>
+      toast.warning('Some imported Cowork conversations are hidden', {
+        id: 'cowork-deletion-journal-unreadable',
+        duration: Infinity,
+        description:
+          "Jan can't read its deletion record, so conversations imported from an " +
+          'older version stay hidden rather than risk restoring ones you already ' +
+          'deleted, and deleting any Cowork conversation is temporarily blocked. ' +
+          "Your data is untouched. To recover, fix or remove the 'cowork_deleted_ids' " +
+          "entry in Jan's settings.json — removing it restores every imported " +
+          'conversation, including any you had deleted.',
+      })
+    // This startup is what gates provider render, so the Toaster is usually
+    // NOT mounted yet, and sonner drops toasts created before its <Toaster>
+    // subscribes. Fire now for any already-mounted toaster (e.g. a retried
+    // start) AND keep the warning for the post-mount flush; the stable id
+    // makes double delivery idempotent (it updates, never duplicates).
+    pendingStartupWarning = warn
+    warn()
+  } else {
+    pendingStartupWarning = null
   }
 
   const p = createCoworkPersistence(invoke, {
@@ -268,4 +290,5 @@ export function __resetCoworkSyncForTests() {
   migrationSettled = false
   pendingDeletes.clear()
   deleteFailure = null
+  pendingStartupWarning = null
 }
