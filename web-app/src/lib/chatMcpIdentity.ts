@@ -31,7 +31,8 @@ export async function assertMcpIdentityAvailable(
   serverName: string | undefined,
   getTools: () => Promise<MCPTool[]>,
   isDisabled: (server: string, tool: string) => boolean,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  timeoutSeconds = 30
 ): Promise<void> {
   if (!serverName || isDisabled(serverName, toolName)) {
     throw new Error(`MCP tool '${toolName}' is unavailable or disabled`)
@@ -42,7 +43,7 @@ export async function assertMcpIdentityAvailable(
   const tools = await new Promise<MCPTool[]>((resolve, reject) => {
     const abort = () => reject(new DOMException('Aborted', 'AbortError'))
     if (signal?.aborted) { abort(); return }
-    const timer = setTimeout(() => reject(new Error('MCP identity validation timed out; retry')), 15_000)
+    const timer = setTimeout(() => reject(new Error('MCP identity validation timed out; retry')), Math.max(1, Number.isFinite(timeoutSeconds) ? timeoutSeconds : 30) * 1000)
     signal?.addEventListener('abort', abort, { once: true })
     cleanup = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort) }
     Promise.resolve().then(() => {
@@ -55,3 +56,33 @@ export async function assertMcpIdentityAvailable(
     throw new Error(`MCP identity for '${toolName}' is stale or unavailable`)
   }
 }
+
+/** One fresh pre-prompt snapshot per call; local policy/inventory changes refuse
+ * reuse rather than silently approving a stale snapshot. Rust rechecks live at dispatch. */
+export function memoizeMcpValidation(
+  validate: (signal?: AbortSignal) => Promise<void>,
+  snapshot: () => readonly unknown[]
+): (signal?: AbortSignal) => Promise<void> {
+  let pending: Promise<void> | undefined
+  let version: readonly unknown[] | undefined
+  return async (signal) => {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const current = snapshot()
+    if (version && version.some((value, i) => value !== current[i])) {
+      throw new Error('MCP identity or approval settings changed; retry the call')
+    }
+    version ??= current
+    pending ??= validate(signal)
+    await pending
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    if (version.some((value, i) => value !== snapshot()[i])) {
+      throw new Error('MCP identity or approval settings changed; retry the call')
+    }
+  }
+}
+
+// Invalidated synchronously when the existing MCP_UPDATE refresh begins, before
+// potentially slow advertisement discovery returns.
+let inventoryRevision = 0
+export const mcpValidationRevision = () => inventoryRevision
+export const invalidateMcpValidation = () => { inventoryRevision += 1 }

@@ -1,3 +1,4 @@
+import { invalidateMcpValidation } from '@/lib/chatMcpIdentity'
 import { useEffect } from 'react'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { SystemEvent } from '@/types/events'
@@ -15,6 +16,7 @@ export const useTools = () => {
 
   useEffect(() => {
     async function setTools() {
+      invalidateMcpValidation()
       try {
         // A server connect/disconnect/tools-refresh fired this (mcp-update);
         // the orchestrator's per-request tool cache would otherwise only

@@ -1,4 +1,4 @@
-import { assertMcpIdentityAvailable } from '@/lib/chatMcpIdentity'
+import { assertMcpIdentityAvailable, memoizeMcpValidation, mcpValidationRevision } from '@/lib/chatMcpIdentity'
 import { isChatClosing, setChatCloseStop, trackChatFinalization } from '@/lib/chatClose'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -88,6 +88,7 @@ import {
 import { usePrompt } from '@/hooks/usePrompt'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
+import { useMCPServers } from '@/hooks/useMCPServers'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { useChatShell } from '@/hooks/useChatShell'
 import {
@@ -229,6 +230,7 @@ useChatSessions.subscribe((state) => {
 // thread switches), so one thread finishing or being left would drop another
 // thread's pending approvals and prompt the user again.
 const callMcpIdentities = new Map<string, Map<string, string | undefined>>()
+const callMcpValidators = new Map<string, Map<string, (signal?: AbortSignal) => Promise<void>>>()
 const toolApprovalPromises = new Map<string, Map<string, Promise<ApprovalResult>>>()
 const approvalsOf = (threadId: string) => {
   let approvals = toolApprovalPromises.get(threadId)
@@ -241,6 +243,7 @@ const approvalsOf = (threadId: string) => {
 const forgetApprovals = (threadId: string) => {
   toolApprovalPromises.delete(threadId)
   callMcpIdentities.delete(threadId)
+  callMcpValidators.delete(threadId)
 }
 
 // Recorded for a call that never ran because its chat was closed (the thread was
@@ -390,6 +393,20 @@ export const Route = createFileRoute('/threads/$threadId')({
 
 function ThreadDetail() {
   const serviceHub = useServiceHub()
+  const makeMcpValidator = (toolName: string, serverName?: string) => memoizeMcpValidation(
+    (signal) => assertMcpIdentityAvailable(
+      toolName, serverName,
+      () => serviceHub.mcp().getTools({ validationServer: serverName, validationTool: toolName }),
+      (server, name) => useToolAvailable.getState().isToolDisabled(server, name), signal,
+      useMCPServers.getState().settings.toolCallTimeoutSeconds
+    ),
+    () => [mcpValidationRevision(), useMCPServers.getState().settings, useMCPServers.getState().mcpServers,
+      useToolAvailable.getState().disabledTools,
+      serverName ? useToolAvailable.getState().isToolDisabled(serverName, toolName) : true,
+      useAppState.getState().tools,
+      useToolApproval.getState().allowAllMCPPermissions]
+  )
+
   const { threadId } = useParams({ from: Route.id })
   const search = useSearch({ from: Route.id })
   const searchThreadModel = search.threadModel
@@ -748,6 +765,9 @@ function ThreadDetail() {
       // prompts stay up, and a late "Allow" would run the tool and resume the
       // reply the user just stopped.
       if (isAbort) {
+        // The shared serializer above has retained these origins in metadata.
+        // Streaming Stop may precede enqueue, so no timing entry can release them.
+        useToolCallRuntime.getState().releaseOrigins(sessionData.tools.map((call) => call.toolCallId), threadId)
         forgetApprovals(threadId)
         sessionData.tools = []
         useToolApprovalRequests.getState().clearPendingForThread(threadId)
@@ -840,11 +860,8 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
             const serverName = callMcpIdentities.get(threadId)?.get(toolCall.toolCallId)
-            const checkMcp = (validationSignal: AbortSignal = stopSignal) => assertMcpIdentityAvailable(
-              toolName, serverName, () => serviceHub.mcp().getTools({ freshOnly: true, validationServer: serverName, validationTool: toolName }),
-              (server, name) => useToolAvailable.getState().isToolDisabled(server, name),
-              validationSignal
-            )
+            const checkMcp = callMcpValidators.get(threadId)?.get(toolCall.toolCallId) ??
+              makeMcpValidator(toolName, serverName)
 
             if (webRoute(toolName) === 'disabled') {
               record({
@@ -867,7 +884,7 @@ function ThreadDetail() {
             }
 
             if (serverName || !isAutoAllowedTool(toolName)) {
-              await untilAborted(checkMcp(), stopSignal)
+              await untilAborted(checkMcp(stopSignal), stopSignal)
               if (stoppedByUser() || isChatClosing() || signal.aborted) break
             }
             if (serverName && (webRoute(toolName) === 'builtin' || chatShellRoute(toolName, serverName) === 'builtin')) {
@@ -963,7 +980,7 @@ function ThreadDetail() {
                     scope: projectId ? 'project' : 'thread',
                   })
                 } else if (serverName) {
-                  await checkMcp()
+                  await checkMcp(stopSignal)
                   if (stopSignal.aborted) throw new DOMException('Aborted', 'AbortError')
                   if (webRoute(toolName) === 'builtin' || chatShellRoute(toolName, serverName) === 'builtin') {
                     throw new Error(`Tool identity changed for ${toolName}; start a new turn`)
@@ -1161,11 +1178,12 @@ function ThreadDetail() {
               toolCall.toolName,
               threadId,
               serverName,
-              (validationSignal) => assertMcpIdentityAvailable(
-                toolCall.toolName, serverName, () => serviceHub.mcp().getTools({ freshOnly: true, validationServer: serverName, validationTool: toolCall.toolName }),
-                (server, name) => useToolAvailable.getState().isToolDisabled(server, name),
-                validationSignal
-              )
+              (() => {
+                const validate = makeMcpValidator(toolCall.toolName, serverName)
+                if (!callMcpValidators.has(threadId)) callMcpValidators.set(threadId, new Map())
+                callMcpValidators.get(threadId)!.set(toolCall.toolCallId, validate)
+                return validate
+              })()
             )
         )
       }

@@ -245,7 +245,11 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
                 (None, _) => true,
                 _ => false,
             };
-            if !still_same { continue; } // A replacement owns this name now.
+            // A replacement owns this name and its monitoring lifecycle now.
+            // Retrying here would leave an orphan monitor probing that replacement.
+            if !still_same {
+                return;
+            }
             servers.remove(&name)
         };
         if let Some(service) = dead_service {

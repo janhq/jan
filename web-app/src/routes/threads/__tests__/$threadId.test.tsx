@@ -1893,7 +1893,8 @@ describe('ThreadDetail route', () => {
         const validate = h.toolApprovalState.requestApproval.mock.calls[0][4]
         await expect(validate()).resolves.toBeUndefined()
         getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }])
-        await expect(validate()).rejects.toThrow(/stale|ambiguous|unavailable/)
+        h.appStateState.tools = [{ name: 'fetch', server: otherServer }]
+        await expect(validate()).rejects.toThrow(/stale|ambiguous|unavailable|changed/)
         expect(callTool).not.toHaveBeenCalled()
       })
 
@@ -1906,7 +1907,7 @@ describe('ThreadDetail route', () => {
         expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
           toolName: 'fetch', serverName: advertisedServer, arguments: { url: 'x' },
         }))
-        expect(getMcpTools).toHaveBeenCalledTimes(2)
+        expect(getMcpTools).toHaveBeenCalledTimes(1)
         expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
           toolCallId: 'bound-call', output: [],
         }))
@@ -1917,13 +1918,13 @@ describe('ThreadDetail route', () => {
         async (change) => {
           await waitForApproval()
           if (change === 'revoked') h.toolAvailableState.isToolDisabled.mockReturnValue(true)
-          if (change === 'disconnected') getMcpTools.mockResolvedValue([])
-          if (change === 'replaced') getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }])
+          if (change === 'disconnected') { getMcpTools.mockResolvedValue([]); h.appStateState.tools = [] }
+          if (change === 'replaced') { getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }]); h.appStateState.tools = [{ name: 'fetch', server: otherServer }] }
           await act(async () => { approve(true) })
           expect(callTool).not.toHaveBeenCalled()
           expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
             toolCallId: 'bound-call', state: 'output-error',
-            errorText: expect.stringMatching(/unavailable|disabled|ambiguous/),
+            errorText: expect.stringMatching(/unavailable|disabled|ambiguous|changed/g),
           }))
           expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
         }
@@ -2085,6 +2086,26 @@ describe('ThreadDetail route', () => {
         toolCallId: 'validation-error', state: 'output-error', errorText: expect.stringContaining('MCP target unavailable during approval'),
       }))
       expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(expect.objectContaining({ errorText: 'Tool execution denied by user' }))
+    })
+
+    it('streaming Stop releases pre-enqueue origins after persisting serializer metadata', async () => {
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      renderComponent()
+      await act(async () => { await (h as any).capturedOnToolCall(toolCall('stream-stop-origin')) })
+      useToolCallRuntime.getState().recordOrigin('stream-stop-origin', 'sibling', 'other-thread')
+      await act(async () => {
+        await (h as any).capturedOnFinish({
+          message: { id: 'stopped-origin-message', role: 'assistant', parts: [
+            { type: 'text', text: 'partial' },
+            { type: 'tool-fetch', toolCallId: 'stream-stop-origin', input: { url: 'fixture' }, state: 'input-available' },
+          ] }, isAbort: true,
+        })
+      })
+      expect(h.messagesState.addMessage).toHaveBeenCalledWith(expect.objectContaining({
+        metadata: expect.objectContaining({ toolOrigins: { 'stream-stop-origin': 'test-server' } }),
+      }))
+      expect(useToolCallRuntime.getState().origins[toolOriginKey('thread-1', 'stream-stop-origin')]).toBeUndefined()
+      expect(useToolCallRuntime.getState().origins[toolOriginKey('other-thread', 'stream-stop-origin')]).toBe('sibling')
     })
 
     it('does NOT execute the tool from onToolCall (execution deferred to onFinish)', async () => {

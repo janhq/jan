@@ -15,17 +15,47 @@ describe('useToolCallRuntime', () => {
     vi.setSystemTime(new Date('2026-07-31T10:00:00Z'))
   })
 
-  it('keeps request-bound origins through enqueue, settlement and card unmount', () => {
-    store().recordOrigin('mcp', 'alpha')
-    store().recordOrigin('rag', undefined)
+  it('prunes request-bound origins only when settled calls are released', () => {
+    store().recordOrigin('mcp', 'alpha', 'thread')
+    store().recordOrigin('rag', undefined, 'thread')
     store().enqueue(['mcp', 'rag'], 'thread')
     store().markRunning('mcp', 'alpha')
     store().markSettled('mcp')
     store().markSettled('rag')
     store().releaseSettled('thread')
-    expect(Object.values(store().origins)).toEqual(['alpha', null])
+    expect(store().origins).toEqual({})
     store().reset()
     expect(store().origins).toEqual({})
+  })
+
+  it('bounds origin growth and preserves other threads plus queued/running calls', () => {
+    store().recordOrigin('shared', 'beta', 'other')
+    for (let i = 0; i < 100; i++) {
+      const id = `call-${i}`
+      store().recordOrigin(id, 'alpha', 'thread')
+      store().enqueue([id], 'thread')
+      store().markSettled(id)
+      store().releaseSettled('thread')
+    }
+    store().recordOrigin('shared', 'alpha', 'thread')
+    store().enqueue(['shared'], 'thread')
+    store().markRunning('shared')
+    store().releaseSettled('thread')
+    expect(Object.values(store().origins)).toEqual(['beta', 'alpha'])
+    store().markSettled('shared')
+    store().releaseSettled('thread')
+    expect(Object.values(store().origins)).toEqual(['beta'])
+  })
+
+  it('releases origins on streaming Stop before enqueue without touching sibling IDs', () => {
+    for (let i = 0; i < 100; i++) {
+      store().recordOrigin('shared', 'alpha', 'thread')
+      store().recordOrigin('shared', 'beta', 'other')
+      store().releaseOrigins(['shared'], 'thread')
+      store().releaseSettled('thread')
+    }
+    expect(Object.values(store().origins)).toEqual(['beta'])
+    expect(store().timings).toEqual({})
   })
 
   it('reports the position of each waiting call', () => {

@@ -79,6 +79,7 @@ type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
    * in the background, and what it settles from now on is there on return.
    */
   releaseSettled: (owner?: string) => void
+  releaseOrigins: (toolCallIds: string[], owner?: string) => void
   reset: () => void
 }
 
@@ -224,6 +225,12 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
       return { queue: s.queue.filter((id) => !settled.includes(id)), timings }
     }),
 
+  releaseOrigins: (toolCallIds, owner = NO_OWNER) =>
+    set((s) => {
+      const released = new Set(toolCallIds.map((id) => toolOriginKey(owner, id)))
+      return { origins: Object.fromEntries(Object.entries(s.origins).filter(([key]) => !released.has(key))) }
+    }),
+
   releaseSettled: (owner = NO_OWNER) =>
     set((s) => {
       const released = new Set(
@@ -235,6 +242,7 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
         )
       )
       if (released.size === 0) return s
+      const releasedOrigins = new Set([...released].map((id) => toolOriginKey(owner, id)))
       const keep = <T>(record: Record<string, T>) =>
         Object.fromEntries(
           Object.entries(record).filter(([id]) => !released.has(id))
@@ -243,6 +251,9 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
         timings: keep(s.timings),
         progress: keep(s.progress),
         diffs: keep(s.diffs),
+        origins: Object.fromEntries(Object.entries(s.origins).filter(([key]) =>
+          !releasedOrigins.has(key)
+        )),
       }
     }),
 

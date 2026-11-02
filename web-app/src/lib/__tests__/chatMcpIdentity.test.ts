@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MCPTool } from '@/types/completion'
-import { assertMcpIdentityAvailable, uniqueMcpTools } from '../chatMcpIdentity'
+import { assertMcpIdentityAvailable, uniqueMcpTools, memoizeMcpValidation, mcpValidationRevision, invalidateMcpValidation } from '../chatMcpIdentity'
 
 const tool = (name: string, server: string): MCPTool => ({
   name, server, description: `${server}/${name}`, inputSchema: { type: 'object' },
@@ -74,7 +74,7 @@ describe('chat MCP identity', () => {
     try {
       const validation = assertMcpIdentityAvailable('read', 'alpha', () => new Promise(() => {}), () => false)
       const rejected = expect(validation).rejects.toThrow(/validation timed out/)
-      await vi.advanceTimersByTimeAsync(15_000)
+      await vi.advanceTimersByTimeAsync(30_000)
       await rejected
       expect(vi.getTimerCount()).toBe(0)
     } finally { vi.useRealTimers() }
@@ -93,6 +93,47 @@ describe('chat MCP identity', () => {
       late([tool('read', 'alpha')])
       expect(vi.getTimerCount()).toBe(0)
     } finally { vi.useRealTimers() }
+  })
+
+  it('honors configured longer timeout and backend minimum', async () => {
+    vi.useFakeTimers()
+    try {
+      const validation = assertMcpIdentityAvailable('read', 'alpha', async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20_000))
+        return [tool('read', 'alpha')]
+      }, () => false, undefined, 60)
+      await vi.advanceTimersByTimeAsync(20_000)
+      await expect(validation).resolves.toBeUndefined()
+      const minimum = assertMcpIdentityAvailable('read', 'alpha', () => new Promise(() => {}), () => false, undefined, 0)
+      const failure = expect(minimum).rejects.toThrow(/timed out/)
+      await vi.advanceTimersByTimeAsync(1_000)
+      await failure
+    } finally { vi.useRealTimers() }
+  })
+
+  it('shares one call snapshot then refuses changed policy/inventory and late Stop', async () => {
+    const fresh = vi.fn().mockResolvedValue(undefined)
+    let inventory = {}
+    const validate = memoizeMcpValidation(fresh, () => [inventory])
+    await validate()
+    await validate()
+    await validate()
+    expect(fresh).toHaveBeenCalledTimes(1)
+    inventory = {}
+    await expect(validate()).rejects.toThrow(/changed/)
+    const stopped = new AbortController()
+    stopped.abort()
+    await expect(validate(stopped.signal)).rejects.toThrow(/Aborted/)
+    expect(fresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('invalidates a call snapshot immediately on MCP refresh/disconnect events', async () => {
+    const fresh = vi.fn().mockResolvedValue(undefined)
+    const validate = memoizeMcpValidation(fresh, () => [mcpValidationRevision()])
+    await validate()
+    invalidateMcpValidation()
+    await expect(validate()).rejects.toThrow(/changed/)
+    expect(fresh).toHaveBeenCalledTimes(1)
   })
 
 })

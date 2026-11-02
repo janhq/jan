@@ -1073,3 +1073,144 @@ async fn initialize_identifies_the_client_as_jan() {
     assert_eq!(seen.name, "Jan");
     assert_eq!(seen.version, env!("CARGO_PKG_VERSION"));
 }
+
+/// A failed probe may finish after a new connection has taken over the name.
+/// The old monitor must end, not wake again and probe/reconnect the replacement.
+#[tokio::test]
+async fn superseded_health_monitor_exits_after_in_flight_probe_fails() {
+    use super::helpers::monitor_mcp_server_handle;
+    use super::progress::JanClientHandler;
+    use rmcp::{ServerHandler, ServiceExt};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+    use tokio::sync::Notify;
+
+    #[derive(Clone)]
+    struct ProbeServer {
+        entered: Arc<Notify>,
+        release: Option<Arc<Notify>>,
+        probes: Arc<AtomicUsize>,
+    }
+
+    impl ServerHandler for ProbeServer {
+        fn get_info(&self) -> rmcp::model::ServerInfo {
+            rmcp::model::ServerInfo::new(
+                rmcp::model::ServerCapabilities::builder()
+                    .enable_tools()
+                    .build(),
+            )
+        }
+
+        async fn list_tools(
+            &self,
+            _: Option<rmcp::model::PaginatedRequestParams>,
+            _: rmcp::service::RequestContext<rmcp::RoleServer>,
+        ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
+            self.probes.fetch_add(1, Ordering::SeqCst);
+            self.entered.notify_one();
+            if let Some(release) = &self.release {
+                release.notified().await;
+                return Err(rmcp::ErrorData::internal_error("old peer failed", None));
+            }
+            Ok(rmcp::model::ListToolsResult::with_all_items(vec![]))
+        }
+    }
+
+    let app = mock_app();
+    let servers: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers.clone(),
+        ..Default::default()
+    });
+    let state = app.state::<AppState>();
+    state
+        .mcp_active_servers
+        .lock()
+        .await
+        .insert("alpha".into(), serde_json::json!({}));
+    state
+        .mcp_server_pids
+        .lock()
+        .await
+        .insert("alpha".into(), 12345);
+
+    let entered = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let replacement_probes = Arc::new(AtomicUsize::new(0));
+    let mut connections = Vec::new();
+    for fixture in [
+        ProbeServer {
+            entered: entered.clone(),
+            release: Some(release.clone()),
+            probes: Arc::new(AtomicUsize::new(0)),
+        },
+        ProbeServer {
+            entered: Arc::new(Notify::new()),
+            release: None,
+            probes: replacement_probes.clone(),
+        },
+    ] {
+        let (server_io, client_io) = tokio::io::duplex(8192);
+        tokio::spawn(async move {
+            let running = fixture.serve(server_io).await.unwrap();
+            let _ = running.waiting().await;
+        });
+        connections.push(
+            JanClientHandler::new(jan_client_info(), "alpha".into(), app.handle().clone())
+                .serve(client_io)
+                .await
+                .unwrap(),
+        );
+    }
+    let replacement = connections.pop().unwrap();
+    let replacement_info = replacement.peer_info().unwrap().clone();
+    servers
+        .lock()
+        .await
+        .insert("alpha".into(), connections.pop().unwrap());
+
+    let reconnect = Arc::new(Notify::new());
+    reconnect.notify_one();
+    let mut monitor = tokio::spawn(monitor_mcp_server_handle(
+        app.handle().clone(),
+        servers.clone(),
+        "alpha".into(),
+        serde_json::json!({}),
+        Arc::new(Mutex::new(false)),
+        reconnect.clone(),
+    ));
+    tokio::time::timeout(Duration::from_secs(1), entered.notified())
+        .await
+        .expect("old peer probe started");
+    let old = servers
+        .lock()
+        .await
+        .insert("alpha".into(), replacement)
+        .unwrap();
+    // If the monitor incorrectly continues, wake it immediately rather than
+    // waiting for the next 30-second interval.
+    reconnect.notify_one();
+    release.notify_one();
+    let finished = tokio::time::timeout(Duration::from_secs(1), &mut monitor).await;
+    monitor.abort();
+
+    let current = servers
+        .lock()
+        .await
+        .remove("alpha")
+        .expect("replacement retained");
+    let retained = Arc::ptr_eq(&replacement_info, &current.peer_info().unwrap());
+    let pid = state.mcp_server_pids.lock().await.get("alpha").copied();
+    let _ = old.cancel().await;
+    let _ = current.cancel().await;
+    finished
+        .expect("superseded monitor must terminate")
+        .expect("monitor must not panic");
+    assert!(retained, "old monitor must not reconnect the replacement");
+    assert_eq!(pid, Some(12345), "replacement PID must not be removed");
+    assert_eq!(
+        replacement_probes.load(Ordering::SeqCst),
+        0,
+        "old monitor must not probe the replacement"
+    );
+}
