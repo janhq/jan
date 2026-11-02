@@ -240,7 +240,10 @@ QA_ROOT="$(mktemp -d "$(cd "${TMPDIR:-/tmp}" && pwd -P)/jan-native-qa-XXXXXX")"
 (cd e2e && yarn check:native-isolation "$QA_ROOT")
 # The existing guarded harness seeds only this root, suppresses model bootstrap,
 # runs the native app and owns its process cleanup. KEEP retains evidence.
-(cd e2e && JAN_E2E_HOME="$QA_ROOT" JAN_E2E_KEEP=1 yarn test)
+(cd e2e && JAN_E2E_HOME="$QA_ROOT" JAN_E2E_KEEP=1 yarn test --spec ./specs/smoke.e2e.ts)
+# Repeat only the smoke with the same disposable root to prove browser storage
+# is fresh again after process restart (the probe intentionally leaves a marker).
+(cd e2e && JAN_E2E_HOME="$QA_ROOT" JAN_E2E_KEEP=1 yarn test --spec ./specs/smoke.e2e.ts)
 ```
 
 The read-only preflight rejects relative/noncanonical/nonempty roots and uses
