@@ -824,7 +824,8 @@ function uiPartsFor(
     // still saved (legacy content), never lost.
     const reason = error instanceof SkipUIParts ? error.reason : 'unsupported-part'
     console.warn(
-      `Assistant turn ${message.id} will reload from content only (lossy): ${reason}`
+      `Assistant turn ${message.id} will reload from content only (lossy): ${reason}`,
+      ...(error instanceof SkipUIParts ? [] : [error])
     )
     return { uiPartsSkipped: reason }
   }
