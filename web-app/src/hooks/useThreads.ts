@@ -27,6 +27,13 @@ type ThreadState = {
   threads: Record<string, Thread>
   isLoadingThreads: boolean
   setThreadsLoading: (loading: boolean) => void
+  /**
+   * SUCCESS-ONLY: true once a validated, successful full thread listing has
+   * been applied. Unlike `isLoadingThreads` (which DataProvider also clears
+   * when its retries are exhausted) this is never set on failure.
+   */
+  threadsHydrated: boolean
+  markThreadsHydrated: () => void
   currentThreadId?: string
   getCurrentThread: () => Thread | undefined
   setThreads: (threads: Thread[]) => void
@@ -203,6 +210,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   threads: {},
   isLoadingThreads: true,
   setThreadsLoading: (loading) => set({ isLoadingThreads: loading }),
+  threadsHydrated: false,
+  markThreadsHydrated: () => set({ threadsHydrated: true }),
   searchIndex: null,
   setThreads: (threads) => {
     const ids = new Set(threads.map((thread) => thread.id))

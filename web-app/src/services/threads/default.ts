@@ -53,7 +53,11 @@ export class DefaultThreadsService implements ThreadsService {
     // ready / errored", not "no threads" — the caller retries instead of
     // wiping the list with [].
     const threads = await ext.listThreads()
-    if (!Array.isArray(threads)) return []
+    // A non-array is a malformed/not-ready response, not "zero threads".
+    // Only a real [] may be reported as an empty listing.
+    if (!Array.isArray(threads)) {
+      throw new Error('Thread listing returned a non-array response')
+    }
 
     // new String("id") !== "id"
     threads.forEach((e) => {

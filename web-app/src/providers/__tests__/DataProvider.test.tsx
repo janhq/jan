@@ -17,6 +17,7 @@ const h = vi.hoisted(() => {
     setAssistants: vi.fn(),
     setThreads: vi.fn(),
     setThreadsLoading: vi.fn(),
+    markThreadsHydrated: vi.fn(),
     threadsInStore: {} as Record<string, unknown>,
     registrationListeners: new Set<() => void>(),
     setLastServerModels: vi.fn(),
@@ -89,6 +90,7 @@ vi.mock('@/hooks/useThreads', () => {
   const state = () => ({
     setThreads: h.setThreads,
     setThreadsLoading: h.setThreadsLoading,
+    markThreadsHydrated: h.markThreadsHydrated,
     threads: h.threadsInStore,
   })
   const useThreads = vi.fn((selector?: (s: unknown) => unknown) =>
@@ -97,7 +99,10 @@ vi.mock('@/hooks/useThreads', () => {
     (selector?: (s: unknown) => unknown): unknown
     getState: () => { threads: Record<string, unknown> }
   }
-  useThreads.getState = () => ({ threads: h.threadsInStore })
+  useThreads.getState = () => ({
+    threads: h.threadsInStore,
+    markThreadsHydrated: h.markThreadsHydrated,
+  })
   return { useThreads }
 })
 
@@ -299,7 +304,7 @@ describe('DataProvider', () => {
     expect(h.setThreads).not.toHaveBeenCalled()
   })
 
-  it('writes an empty thread list when the store is also empty', async () => {
+  it('writes an empty thread list when the store is also empty and marks hydration', async () => {
     hubState.fetchThreads.mockResolvedValue([])
 
     render(<DataProvider />)
@@ -307,6 +312,15 @@ describe('DataProvider', () => {
     await waitFor(() => {
       expect(h.setThreads).toHaveBeenCalledWith([])
     })
+    expect(h.markThreadsHydrated).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT mark hydration for an empty fetch ignored over a populated store', async () => {
+    h.threadsInStore = { t1: { id: 't1' } }
+    hubState.fetchThreads.mockResolvedValue([])
+    render(<DataProvider />)
+    await waitFor(() => expect(hubState.fetchThreads).toHaveBeenCalled())
+    expect(h.markThreadsHydrated).not.toHaveBeenCalled()
   })
 
   it('refetches threads when an extension registers after retries are exhausted', async () => {
@@ -322,6 +336,9 @@ describe('DataProvider', () => {
       })
       expect(hubState.fetchThreads).toHaveBeenCalledTimes(21)
       expect(h.setThreads).not.toHaveBeenCalled()
+      // Retry exhaustion clears loading but must never mark success.
+      expect(h.setThreadsLoading).toHaveBeenCalledWith(false)
+      expect(h.markThreadsHydrated).not.toHaveBeenCalled()
 
       // A late extension registration re-arms the fetch.
       hubState.fetchThreads.mockResolvedValue([{ id: 't1' }])

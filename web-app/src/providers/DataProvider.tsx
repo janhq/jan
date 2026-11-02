@@ -309,6 +309,10 @@ export function DataProvider() {
           }
           setThreads(threads)
           setThreadsLoading(false)
+          // SUCCESS branch only (never the retry-exhaustion catch): the service
+          // throws on a non-array response, so reaching here means a validated
+          // listing, including a genuinely empty one.
+          useThreads.getState().markThreadsHydrated()
           // Collect agent sandboxes whose thread is gone (crash, or a thread
           // deleted while the app was closed). Once per session, and only on a
           // non-empty result: sweeping against an empty list would delete live

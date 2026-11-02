@@ -122,12 +122,11 @@ describe('DefaultThreadsService', () => {
       expect(result).toEqual([])
     })
 
-    it('should handle null/undefined response', async () => {
+    it('rejects a null/undefined response (not-ready), never an empty listing', async () => {
       mockConversationalExtension.listThreads.mockResolvedValue(null)
-
-      const result = await threadsService.fetchThreads()
-
-      expect(result).toEqual([])
+      await expect(threadsService.fetchThreads()).rejects.toThrow(/non-array/)
+      mockConversationalExtension.listThreads.mockResolvedValue(undefined)
+      await expect(threadsService.fetchThreads()).rejects.toThrow(/non-array/)
     })
   })
 
@@ -475,12 +474,10 @@ describe('DefaultThreadsService', () => {
       )
     })
 
-    it('should handle fetchThreads with non-array response', async () => {
+    it('throws on a non-array response instead of coercing it to an empty listing', async () => {
       mockConversationalExtension.listThreads.mockResolvedValue('not-an-array')
 
-      const result = await threadsService.fetchThreads()
-
-      expect(result).toEqual([])
+      await expect(threadsService.fetchThreads()).rejects.toThrow(/non-array/)
     })
 
     it('should handle createThread with missing metadata in response', async () => {
