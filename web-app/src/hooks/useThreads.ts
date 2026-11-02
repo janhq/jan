@@ -87,6 +87,15 @@ const effectiveCapabilities = new Map<string, ConversationCapabilitiesV1>()
  * -- the host is provably denied from then on, whatever the persist does. */
 const hostUncertainGrants = new Set<string>()
 
+/** The capabilities each thread was most recently ASKED to save, recorded
+ * synchronously at request start. A successor's `priorGrant` must count an
+ * in-flight predecessor's requested elevation: that persist may land -- and
+ * host-confirm -- after the successor has already read the optimistic deny
+ * the predecessor wrote. Rolled back only when a request provably never
+ * reached the strict setter; once a persist was attempted, a lost response
+ * may still have confirmed host-side, so the value stays. */
+const lastRequestedCapabilities = new Map<string, ConversationCapabilitiesV1>()
+
 // Helper function to clean up vector DB collection for a thread
 const cleanupVectorDB = async (threadId: string) => {
   try {
@@ -769,10 +778,13 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     // synchronous deny below, which erases both sources it reads.
     const elevatedIn = (c: ConversationCapabilitiesV1) =>
       c.shellNetwork || c.memoryWrite || c.folderScope !== null
+    const previousRequested = lastRequestedCapabilities.get(threadId)
     const priorGrant =
       hostUncertainGrants.has(threadId) ||
       elevatedIn(resolveConversationCapabilities(effectiveCapabilities.get(threadId))) ||
-      elevatedIn(resolveConversationCapabilities(original.metadata?.conversationCapabilities))
+      elevatedIn(resolveConversationCapabilities(original.metadata?.conversationCapabilities)) ||
+      (previousRequested !== undefined && elevatedIn(previousRequested))
+    lastRequestedCapabilities.set(threadId, capabilities)
     const request = Symbol(threadId)
     capabilityRequests.set(threadId, request)
     effectiveCapabilities.set(threadId, defaultConversationCapabilities())
@@ -784,6 +796,15 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     } } }))
     const previous = capabilityWrites.get(threadId)
     const write = (async () => {
+      // This request provably never reached the strict setter, so its value
+      // can never be host-confirmed: stop counting it as a possible grant for
+      // successors, resurfacing the predecessor's value, which still might be.
+      const rollbackRequested = () => {
+        if (lastRequestedCapabilities.get(threadId) === capabilities) {
+          if (previousRequested === undefined) lastRequestedCapabilities.delete(threadId)
+          else lastRequestedCapabilities.set(threadId, previousRequested)
+        }
+      }
       // Narrow the host process before anything is persisted, and ahead of
       // the queue wait below, which may still be draining an earlier write.
       // The synchronous revoke above only clears this window's overlay; the
@@ -802,6 +823,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         // truth; nothing is persisted and the denied overlay above stays.
         // Grants are never restored.
         await stopAllThreadAgentMonitors(threadId)
+        rollbackRequested()
         if (priorGrant) hostUncertainGrants.add(threadId)
         throw new HostRevokeUnconfirmedError(threadId, priorGrant, cause)
       }
@@ -810,16 +832,22 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       // resolved even if the persist below never runs or fails.
       hostUncertainGrants.delete(threadId)
       if (previous) await previous.catch(() => {})
-      assertChatThread()
-      // A newer request may have superseded this one while the narrow or the
-      // earlier write settled. Checked BEFORE the strict setter runs:
-      // persisting a superseded GRANT would have the native setter re-confirm
-      // it -- narrow, write and confirm of THIS value -- leaving host and disk
-      // authorizing a grant the user has already replaced, live until the
-      // newer request's own setter lands and indefinitely if that request
-      // fails first. The post-persist check below cannot prevent that.
-      if (capabilityRequests.get(threadId) !== request) {
-        throw new Error('Conversation changed while saving permissions')
+      try {
+        assertChatThread()
+        // A newer request may have superseded this one while the narrow or
+        // the earlier write settled. Checked BEFORE the strict setter runs:
+        // persisting a superseded GRANT would have the native setter
+        // re-confirm it -- narrow, write and confirm of THIS value -- leaving
+        // host and disk authorizing a grant the user has already replaced,
+        // live until the newer request's own setter lands and indefinitely if
+        // that request fails first. The post-persist check below cannot
+        // prevent that.
+        if (capabilityRequests.get(threadId) !== request) {
+          throw new Error('Conversation changed while saving permissions')
+        }
+      } catch (error) {
+        rollbackRequested()
+        throw error
       }
       await getServiceHub().threads().setConversationCapabilities(threadId, capabilities)
       assertChatThread()

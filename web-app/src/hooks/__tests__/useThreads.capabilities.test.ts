@@ -180,6 +180,41 @@ describe('useThreads conversation capabilities', () => {
     await expect(save(granted, id)).rejects.toMatchObject({ backgroundMayPersist: false })
   })
 
+  // Reviewer residual: a revoke superseding an IN-FLIGHT grant reads only the
+  // grant's optimistic deny, yet that grant's persist may land -- and
+  // host-confirm -- after it. If the revoke then fails, the user-approved
+  // grant can be live while a plain copy claims everything is off.
+  it('a revoke superseding an in-flight grant stays uncertain when it fails', async () => {
+    const id = 'inflight'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    const pendingPersist = deferred()
+    persist.mockReturnValueOnce(pendingPersist.promise)
+    const saveA = save(granted, id)
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
+    // B revokes while A's persist is in flight; B's narrow fails.
+    revokeHost.mockRejectedValueOnce(new Error('bridge down'))
+    await expect(save(null, id)).rejects.toMatchObject({ backgroundMayPersist: true })
+    pendingPersist.resolve()
+    // A lands host-side but is superseded, so its overlay never applies.
+    await expect(saveA).rejects.toThrow('Conversation changed while saving permissions')
+  })
+
+  // The in-flight tracking must not over-warn: a request that provably never
+  // reached the strict setter cannot have been confirmed, so a repeated grant
+  // attempt from default stays plain.
+  it('a repeated grant attempt after an ACK failure stays plain', async () => {
+    const id = 'replain'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    revokeHost.mockRejectedValueOnce(new Error('bridge down'))
+    await expect(save(granted, id)).rejects.toMatchObject({ backgroundMayPersist: false })
+    revokeHost.mockRejectedValueOnce(new Error('bridge down'))
+    await expect(save(granted, id)).rejects.toMatchObject({ backgroundMayPersist: false })
+  })
+
   it('narrows the host before it persists', async () => {
     await save(granted)
     expect(calls).toEqual(['narrow:chat', 'persist:chat'])
