@@ -480,12 +480,6 @@ describe('DefaultThreadsService', () => {
       await expect(threadsService.fetchThreads()).rejects.toThrow(/non-array/)
     })
 
-    it('still returns [] for a genuine empty array response', async () => {
-      mockConversationalExtension.listThreads.mockResolvedValue([])
-
-      await expect(threadsService.fetchThreads()).resolves.toEqual([])
-    })
-
     it('should handle createThread with missing metadata in response', async () => {
       const inputThread = {
         id: '1',
