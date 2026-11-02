@@ -2418,12 +2418,27 @@ fn is_insecure_public_bind(host: &str, api_key: &str) -> bool {
 /// (Windows error 10048 / WSAEADDRINUSE, Unix EADDRINUSE) almost always means
 /// a leftover Jan process or another service still owns the port after a
 /// restart, so name the port and the remedy instead of surfacing a bare OS
-/// errno. Any other error is passed through unchanged.
+/// errno. When the OS can tell us which process holds the port (lsof on
+/// macOS/Linux, netstat + tasklist on Windows), name it and its PID — mirroring
+/// the MCP port-conflict handling — so the user knows exactly what to close.
+/// Falls back to the generic remedy when the owner cannot be determined. Any
+/// other error is passed through unchanged.
 fn map_bind_error(
     addr: SocketAddr,
     err: std::io::Error,
 ) -> Box<dyn std::error::Error + Send + Sync> {
     if err.kind() == std::io::ErrorKind::AddrInUse {
+        let port = addr.port();
+        if let Some(occupant) = jan_utils::network::find_process_using_port(port) {
+            let msg = format!(
+                "Port {port} ({addr}) is already in use by {name} (PID {pid}). \
+                 Close that process and try again, or pick a different port in \
+                 Settings > Local API Server.",
+                name = occupant.name,
+                pid = occupant.pid
+            );
+            return msg.into();
+        }
         let msg = format!(
             "Port {port} ({addr}) is already in use. A previous Jan process may still be \
              running or another application may be using the port. Close the leftover \
@@ -3111,6 +3126,30 @@ mod tests {
             msg.contains("already in use") && msg.contains("process"),
             "should explain the leftover-process remedy: {msg}"
         );
+    }
+
+    #[test]
+    fn addr_in_use_names_process_when_port_has_a_known_owner() {
+        // Bind a real socket so the port has a known owner (this test process).
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .expect("should bind a loopback listener");
+        let port = listener.local_addr().unwrap().port();
+        let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+        let err = std::io::Error::new(std::io::ErrorKind::AddrInUse, "Address already in use");
+        let msg = map_bind_error(addr, err).to_string();
+
+        assert!(msg.contains(&port.to_string()), "should name the port: {msg}");
+        assert!(msg.contains("already in use"), "should explain the conflict: {msg}");
+
+        // When the platform tooling (lsof / netstat) can resolve the owner,
+        // the message must name it by PID; otherwise the generic remedy
+        // applies and there is nothing to assert on.
+        if let Some(occupant) = jan_utils::network::find_process_using_port(port) {
+            assert!(
+                msg.contains(&format!("PID {}", occupant.pid)),
+                "should name the owning process: {msg}"
+            );
+        }
     }
 
     #[test]
