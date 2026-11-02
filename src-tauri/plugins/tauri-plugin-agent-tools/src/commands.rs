@@ -587,6 +587,9 @@ pub async fn start_monitor(
     scope: Option<WorkspaceScope>,
     on_update: tauri::ipc::Channel<crate::tools::monitor::MonitorUpdate>,
 ) -> Result<String, AgentToolsError> {
+    if !matches!(scope, Some(WorkspaceScope::Session)) {
+        return Err("monitor is unavailable for Chat threads".to_string().into());
+    }
     let data_folder = workspace::host_data_folder(&data_folder);
     use crate::tools::monitor;
     if !jail::backend().enforces() {
@@ -785,6 +788,14 @@ pub async fn execute_tool<R: tauri::Runtime>(
     scope: Option<WorkspaceScope>,
     call_id: Option<String>,
 ) -> Result<ToolResult, AgentToolsError> {
+    reject_legacy_thread_elevation(
+        scope,
+        &name,
+        &args,
+        allow_network,
+        read_only_project.as_deref(),
+        project_writable,
+    )?;
     execute_tool_inner(
         screenshot_backend(&app),
         data_folder,
@@ -798,6 +809,96 @@ pub async fn execute_tool<R: tauri::Runtime>(
         project_writable,
         scope,
         call_id,
+        None,
+    )
+    .await
+}
+
+/// Chat-only execution: both persisted consent and the caller's narrower
+/// effective limits must authorize each capability. Legacy Cowork is separate.
+#[tauri::command]
+pub async fn execute_thread_tool<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    thread_id: String,
+    tool_name: String,
+    args: serde_json::Value,
+    effective_grant: crate::thread_capabilities::ThreadCapabilities,
+) -> Result<ToolResult, AgentToolsError> {
+    let (data_folder, stored) = crate::thread_capabilities::snapshot(thread_id.clone()).await?;
+    execute_thread_tool_inner(
+        screenshot_backend(&app),
+        data_folder,
+        thread_id,
+        tool_name,
+        args,
+        stored,
+        effective_grant,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_thread_tool_inner(
+    backend: Option<crate::tools::ScreenshotBackend>,
+    data_folder: PathBuf,
+    thread_id: String,
+    name: String,
+    args: serde_json::Value,
+    stored: serde_json::Value,
+    effective: crate::thread_capabilities::ThreadCapabilities,
+) -> Result<ToolResult, AgentToolsError> {
+    // No loop-dispatched monitor/subagent tools, management commands, legacy
+    // aliases or unknown tools can enter this narrow surface.
+    if !matches!(
+        name.as_str(),
+        "read"
+            | "ls"
+            | "find"
+            | "grep"
+            | "write"
+            | "edit"
+            | "shell"
+            | "memory"
+            | "skill_list"
+            | "skill_read"
+            | "skill_write"
+    ) || lookup(&name).is_none()
+    {
+        return Err(format!("unknown Chat tool '{name}'").into());
+    }
+    let stored: crate::thread_capabilities::ThreadCapabilities = serde_json::from_value(stored)
+        .map_err(|e| AgentToolsError::from(format!("Invalid stored consent: {e}")))?;
+    let grant = stored.intersect(effective)?;
+    if (name == "skill_write"
+        || (name == crate::tools::MEMORY_TOOL
+            && !matches!(
+                args.get("op").and_then(|v| v.as_str()),
+                Some("view" | "search")
+            )))
+        && !grant.memory_write
+    {
+        return Err(
+            format!("tool '{name}' mutation is not authorized for this conversation").into(),
+        );
+    }
+    let folder = grant.folder_scope.as_ref().map(|f| f.path.clone());
+    let writable = grant
+        .folder_scope
+        .as_ref()
+        .is_some_and(|f| f.access == "write");
+    execute_tool_inner(
+        backend,
+        data_folder.to_string_lossy().into_owned(),
+        thread_id,
+        None,
+        name,
+        args,
+        None,
+        Some(grant.shell_network),
+        folder,
+        Some(writable),
+        Some(WorkspaceScope::Thread),
+        None,
         None,
     )
     .await
@@ -848,6 +949,14 @@ pub async fn execute_tool_streaming<R: tauri::Runtime>(
     on_output: tauri::ipc::Channel<ToolOutputChunk>,
 ) -> Result<ToolResult, AgentToolsError> {
     let sink = output_sink(on_output, call_id.clone());
+    reject_legacy_thread_elevation(
+        scope,
+        &name,
+        &args,
+        allow_network,
+        read_only_project.as_deref(),
+        project_writable,
+    )?;
     execute_tool_inner(
         screenshot_backend(&app),
         data_folder,
@@ -864,6 +973,39 @@ pub async fn execute_tool_streaming<R: tauri::Runtime>(
         Some(sink),
     )
     .await
+}
+
+// Both legacy IPC entry points share this guard. Session/Cowork retains its
+// existing contract; only the dedicated Chat command may supply authority for
+// a thread. The private executor is not an IPC surface.
+fn reject_legacy_thread_elevation(
+    scope: Option<WorkspaceScope>,
+    name: &str,
+    args: &serde_json::Value,
+    network: Option<bool>,
+    folder: Option<&str>,
+    writable: Option<bool>,
+) -> Result<(), AgentToolsError> {
+    if matches!(scope, Some(WorkspaceScope::Session)) {
+        return Ok(());
+    }
+    let mutation = name == "skill_write"
+        || (name == crate::tools::MEMORY_TOOL
+            && !matches!(
+                args.get("op").and_then(|v| v.as_str()),
+                Some("view" | "search")
+            ));
+    // Renderers may fetch remote subresources outside the shell jail. Native
+    // web tools have their separate approved frontend path, not this legacy
+    // thread executor. Neither can bypass scoped Chat via old IPC dispatch.
+    let outbound = name == "screenshot"
+        || lookup(name).is_some_and(|tool| matches!(tool.capability, crate::tools::Capability::Net));
+    if network == Some(true) || writable == Some(true) || folder.is_some() || mutation || outbound {
+        return Err("Chat capability access requires execute_thread_tool"
+            .to_string()
+            .into());
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1183,6 +1325,343 @@ mod tests {
     type SeenChunks = Arc<Mutex<Vec<(u64, Option<String>, String)>>>;
 
     /// A temp dir standing in for the Jan data folder.
+    #[test]
+    fn legacy_thread_entry_points_cannot_supply_capability_authority() {
+        for scope in [None, Some(WorkspaceScope::Thread)] {
+            for (name, args, network, folder, writable) in [
+                ("read", serde_json::json!({}), Some(true), None, None),
+                ("read", serde_json::json!({}), None, Some("/forged"), None),
+                ("write", serde_json::json!({}), None, None, Some(true)),
+                (
+                    "memory",
+                    serde_json::json!({"op":"write"}),
+                    None,
+                    None,
+                    None,
+                ),
+                ("skill_write", serde_json::json!({}), None, None, None),
+                ("screenshot", serde_json::json!({}), None, None, None),
+                ("web_fetch", serde_json::json!({}), None, None, None),
+                ("web_search", serde_json::json!({}), None, None, None),
+            ] {
+                assert!(reject_legacy_thread_elevation(
+                    scope, name, &args, network, folder, writable
+                )
+                .is_err());
+                assert!(reject_legacy_thread_elevation(
+                    Some(WorkspaceScope::Session),
+                    name,
+                    &args,
+                    network,
+                    folder,
+                    writable
+                )
+                .is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_thread_guard_preserves_unprivileged_scratch_tools() {
+        for scope in [None, Some(WorkspaceScope::Thread)] {
+            for (name, args) in [
+                ("read", json!({"path":"scratch.txt"})),
+                ("write", json!({"path":"scratch.txt","content":"scratch"})),
+                ("shell", json!({"command":"printf scratch"})),
+            ] {
+                for disabled in [None, Some(false)] {
+                    assert!(reject_legacy_thread_elevation(
+                        scope, name, &args, disabled, None, disabled
+                    )
+                    .is_ok(), "{name} with {scope:?} and {disabled:?}");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn monitor_requires_session_scope_before_any_setup() {
+        let data = unique_data_folder();
+        let id = format!("monitor-scope-{}", data.file_name().unwrap().to_string_lossy());
+        assert!(!data.exists());
+        assert!(!workspace::scratch_dir(&id).exists());
+        for scope in [None, Some(WorkspaceScope::Thread)] {
+            let channel = tauri::ipc::Channel::new(|_| {
+                panic!("a refused monitor must not emit updates")
+            });
+            let err = start_monitor(
+                data.to_string_lossy().into_owned(),
+                id.clone(),
+                json!({}), // Invalid arguments must never reach monitor parsing.
+                None,
+                None,
+                None,
+                scope,
+                channel,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(err.message, "monitor is unavailable for Chat threads");
+            assert!(!data.exists(), "refusal must not create a workspace");
+            assert!(!workspace::scratch_dir(&id).exists(), "refusal must not create scratch");
+            assert!(!session_monitors().lock().unwrap().contains_key(&id));
+        }
+    }
+
+    #[test]
+    fn shell_network_requires_both_stored_and_effective_consent() {
+        use crate::thread_capabilities::ThreadCapabilities;
+        for stored in [false, true] {
+            for effective in [false, true] {
+                let stored: ThreadCapabilities =
+                    serde_json::from_value(consent(None, false, stored, false)).unwrap();
+                let effective: ThreadCapabilities =
+                    serde_json::from_value(consent(None, false, effective, false)).unwrap();
+                let expected = stored.shell_network && effective.shell_network;
+                assert_eq!(stored.intersect(effective).unwrap().shell_network, expected);
+            }
+        }
+    }
+
+    fn consent(
+        folder: Option<&Path>,
+        writable: bool,
+        network: bool,
+        memory: bool,
+    ) -> serde_json::Value {
+        serde_json::json!({"version":1,"folderScope":folder.map(|p| serde_json::json!({"path":p,"access":if writable {"write"} else {"read"}})),"shellNetwork":network,"memoryWrite":memory})
+    }
+
+    async fn chat_call(
+        data: &Path,
+        name: &str,
+        args: serde_json::Value,
+        stored: serde_json::Value,
+        effective: serde_json::Value,
+    ) -> Result<ToolResult, AgentToolsError> {
+        execute_thread_tool_inner(
+            None,
+            data.to_path_buf(),
+            "chat-boundary-test".into(),
+            name.into(),
+            args,
+            stored,
+            serde_json::from_value(effective).unwrap(),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn postfix_verifier_chat_rejects_outbound_aliases_before_setup() {
+        let data = unique_data_folder();
+        let on = consent(None, false, true, true);
+        for name in [
+            "web_search", "web_fetch", "screenshot", "Screenshot", "screenshotx",
+            "WEB_FETCH", "WEB_SEARCH", "webfetch", "websearch", "bash", "memory_write",
+            "not_a_tool",
+        ] {
+            let err = chat_call(&data, name, json!({}), on.clone(), on.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(err.message, format!("unknown Chat tool '{name}'"));
+            assert!(!data.exists(), "{name} must fail before workspace setup");
+        }
+    }
+
+    #[tokio::test]
+    async fn postfix_verifier_legacy_unknown_aliases_cannot_dispatch() {
+        let data = unique_data_folder();
+        let id = format!("postfix-alias-{}", data.file_name().unwrap().to_string_lossy());
+        for scope in [None, Some(WorkspaceScope::Thread)] {
+            for name in ["Screenshot", "screenshotx", "WEB_FETCH", "WEB_SEARCH", "webfetch", "websearch"] {
+                assert!(lookup(name).is_none(), "{name} must not resolve as an alias");
+                // Unknown names need not trip the elevation guard: the exact
+                // lookup in the executor must still prevent dispatch.
+                reject_legacy_thread_elevation(scope, name, &json!({}), None, None, None)
+                    .unwrap();
+                let err = execute_tool_inner(
+                    None, data.to_string_lossy().into_owned(), id.clone(), None,
+                    name.into(), json!({}), None, None, None, None, scope, None, None,
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(err.message, format!("unknown built-in tool '{name}'"));
+            }
+        }
+        let _ = std::fs::remove_dir_all(workspace::scratch_dir(&id));
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[tokio::test]
+    async fn postfix_verifier_overlay_parent_root_cannot_widen_attachment() {
+        let data = unique_data_folder();
+        let parent = repo_outside_tmp("postfix-overlay-parent");
+        let selected = parent.join("selected");
+        std::fs::create_dir_all(&selected).unwrap();
+        let outside = parent.join("outside.txt");
+        std::fs::write(&outside, "unchanged").unwrap();
+        let stored = consent(Some(&selected), true, true, true);
+        let overlay = consent(Some(&parent), true, true, true);
+        let err = chat_call(
+            &data, "read", json!({"path": outside}), stored, overlay,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.message.contains("ReadEscape"), "{}", err.message);
+        assert_eq!(std::fs::read_to_string(outside).unwrap(), "unchanged");
+        let _ = std::fs::remove_dir_all(parent);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[tokio::test]
+    async fn chat_consent_intersection_blocks_forged_and_locally_revoked_memory() {
+        let data = unique_data_folder();
+        let off = consent(None, false, false, false);
+        let on = consent(None, false, true, true);
+        assert!(chat_call(
+            &data,
+            "memory",
+            serde_json::json!({"op":"write","name":"forged","content":"no"}),
+            serde_json::Value::Null,
+            on.clone()
+        )
+        .await
+        .is_err());
+        for (stored, effective) in [(off.clone(), on.clone()), (on.clone(), off.clone())] {
+            let err = chat_call(
+                &data,
+                "memory",
+                serde_json::json!({"op":"write","name":"no","content":"no"}),
+                stored,
+                effective,
+            )
+            .await
+            .unwrap_err();
+            assert!(err.message.contains("not authorized"));
+        }
+        for name in [
+            "monitor",
+            "dispatch_subagent",
+            "task",
+            "bash",
+            "memory_write",
+            "web_fetch",
+            "screenshot",
+        ] {
+            assert!(
+                chat_call(&data, name, serde_json::json!({}), on.clone(), on.clone())
+                    .await
+                    .is_err(),
+                "{name}"
+            );
+        }
+        assert!(chat_call(
+            &data,
+            "skill_write",
+            serde_json::json!({}),
+            off.clone(),
+            on.clone()
+        )
+        .await
+        .is_err());
+        assert!(!workspace::permanent_store(&data).exists());
+    }
+
+    #[tokio::test]
+    async fn chat_folder_authority_is_intersected_and_canonicalized() {
+        let data = unique_data_folder();
+        let folder = repo_outside_tmp("chat-consent-folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("input.txt"), "original").unwrap();
+        let read = consent(Some(&folder), false, false, false);
+        let write = consent(Some(&folder), true, true, true);
+        let args = serde_json::json!({"path":folder.join("input.txt"),"content":"changed"});
+        for (stored, effective) in [(read.clone(), write.clone()), (write.clone(), read.clone())] {
+            assert!(chat_call(&data, "write", args.clone(), stored, effective)
+                .await
+                .is_err());
+        }
+        assert_eq!(
+            std::fs::read_to_string(folder.join("input.txt")).unwrap(),
+            "original"
+        );
+        let allowed = chat_call(&data, "write", args.clone(), write.clone(), write.clone())
+            .await
+            .unwrap();
+        assert!(!allowed.is_error);
+        assert_eq!(
+            std::fs::read_to_string(folder.join("input.txt")).unwrap(),
+            "changed"
+        );
+        std::fs::write(folder.join("input.txt"), "original").unwrap();
+        let memory = chat_call(
+            &data,
+            "memory",
+            serde_json::json!({"op":"write","name":"allowed","content":"remember"}),
+            write.clone(),
+            write.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(!memory.is_error, "{}", memory.content);
+        assert!(workspace::permanent_store(&data)
+            .join("memory/allowed.md")
+            .exists());
+        assert!(!folder.join("memory/allowed.md").exists());
+
+        let out = chat_call(
+            &data,
+            "read",
+            serde_json::json!({"path":folder.join("input.txt")}),
+            read.clone(),
+            read.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(out.content.contains("original"));
+        let off = consent(None, false, false, false);
+        assert!(chat_call(
+            &data,
+            "read",
+            serde_json::json!({"path":folder.join("input.txt")}),
+            off,
+            write.clone()
+        )
+        .await
+        .is_err());
+        #[cfg(unix)]
+        {
+            let outside = repo_outside_tmp("chat-outside");
+            std::fs::create_dir_all(&outside).unwrap();
+            std::os::unix::fs::symlink(&outside, folder.join("escape")).unwrap();
+            let escaped = chat_call(
+                &data,
+                "write",
+                serde_json::json!({"path":folder.join("escape/pwn.txt"),"content":"no"}),
+                write.clone(),
+                write.clone(),
+            )
+            .await;
+            assert!(escaped.is_err() || escaped.unwrap().is_error);
+            assert!(!outside.join("pwn.txt").exists());
+            let _ = std::fs::remove_dir_all(outside);
+            let link = folder.join("forbidden-link");
+            std::os::unix::fs::symlink(&data, &link).unwrap();
+            let grant = consent(Some(&link), true, false, false);
+            assert!(chat_call(
+                &data,
+                "read",
+                serde_json::json!({"path":"."}),
+                grant.clone(),
+                grant
+            )
+            .await
+            .is_err());
+        }
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
     fn unique_data_folder() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         std::env::temp_dir().join(format!("jan_cmd_test_{}_{}", std::process::id(), n))

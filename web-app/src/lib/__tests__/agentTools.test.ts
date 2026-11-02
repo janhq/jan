@@ -11,7 +11,15 @@ const subagentResultReserve = vi.fn()
 const subagentResultFill = vi.fn()
 const getJanDataFolder = vi.fn()
 
+vi.mock('@/hooks/useThreads', () => ({
+  useThreads: { getState: () => ({ getConversationCapabilities: () => ({
+    version: 1, folderScope: null, shellNetwork: false, memoryWrite: false,
+  }) }) },
+}))
+
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
+  executeThreadTool: (id: string, name: string, args: unknown) =>
+    executeTool('/data', id, name, args, undefined, undefined, false, undefined, false, 'thread'),
   toolSchemas: () => toolSchemas(),
   executeTool: (...args: unknown[]) => executeTool(...args),
   threadWorkspaceDelete: (...args: unknown[]) => threadWorkspaceDelete(...args),
@@ -135,7 +143,7 @@ describe('agentTools', () => {
     })
     const { executeAgentTool } = await import('../agentTools')
     expect(
-      (await executeAgentTool('screenshot', { path: 'a.html' }, 'thread-1'))
+      (await executeAgentTool('read', { path: 'a.html' }, 'thread-1'))
         .images
     ).toEqual(images)
     executeTool.mockResolvedValue({ content: 'x', diff: null, isError: false })
@@ -192,7 +200,7 @@ describe('agentTools', () => {
   })
 
   // Cowork opens the sandbox network per call.
-  it('opens the network when the caller asks', async () => {
+  it('ignores caller network flags in thread scope', async () => {
     executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
     const { executeAgentTool } = await import('../agentTools')
     await executeAgentTool(
@@ -210,7 +218,7 @@ describe('agentTools', () => {
       { command: 'ls' },
       undefined,
       undefined,
-      true,
+      false,
       undefined,
       false,
       'thread'
@@ -253,7 +261,7 @@ describe('agentTools', () => {
 
   // The workspace UI promises "reads from <folder>", so the folder has to reach
   // the plugin; Rust is what makes it read-only.
-  it('forwards an attached folder as the read-only project', async () => {
+  it('ignores an unconsented caller project in thread scope', async () => {
     vi.mocked(executeTool).mockResolvedValue({
       content: 'ok',
       isError: false,
@@ -269,7 +277,7 @@ describe('agentTools', () => {
       undefined,
       undefined,
       false,
-      '/home/u/repo',
+      undefined,
       false,
       'thread'
     )
@@ -449,7 +457,7 @@ describe('agentTools', () => {
     const { executeAgentTool, getMemoryCatalog } = await import('../agentTools')
     memoryCatalog.mockResolvedValue([])
     await getMemoryCatalog()
-    await executeAgentTool('memory', { op: 'write', name: 'a', content: 'b' }, 't1')
+    await executeAgentTool('memory', { op: 'write', name: 'a', content: 'b' }, 't1', undefined, 'session')
     await getMemoryCatalog()
     expect(memoryCatalog).toHaveBeenCalledTimes(2)
   })

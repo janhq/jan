@@ -1232,3 +1232,36 @@ async fn rollback_created_thread_checks_external_edit_under_writer_lock() {
     assert!(rollback.await.unwrap().is_err());
     assert!(get_thread_metadata_path(&data_dir, &id).unwrap().exists());
 }
+
+#[tokio::test]
+async fn conversation_capabilities_dispatch_reader_rejects_non_chat_and_reads_revocation() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let original = create_thread(app.handle().clone(), create_test_thread("dispatch-reader"))
+        .await
+        .unwrap();
+    let id = original["id"].as_str().unwrap().to_string();
+    let read = super::capabilities::read_conversation_capabilities;
+    assert_eq!(read(&data_dir, &id).await.unwrap(), capability_grant(false));
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    assert_eq!(read(&data_dir, &id).await.unwrap(), capability_grant(true));
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(false))
+        .await
+        .unwrap();
+    assert_eq!(read(&data_dir, &id).await.unwrap(), capability_grant(false));
+    for invalid in ["missing-dispatch-thread", "temporary-chat", "../escape"] {
+        assert!(read(&data_dir, invalid).await.is_err());
+    }
+    let path = get_thread_metadata_path(&data_dir, &id).unwrap();
+    for metadata in [
+        json!({"mode":"cowork"}),
+        json!([]),
+        json!({"conversationCapabilities":{"version":2}}),
+    ] {
+        let mut stored = original.clone();
+        stored["metadata"] = metadata;
+        fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
+        assert!(read(&data_dir, &id).await.is_err());
+    }
+}
