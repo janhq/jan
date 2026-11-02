@@ -2421,31 +2421,17 @@ fn is_insecure_public_bind(host: &str, api_key: &str) -> bool {
 /// errno. When the OS can tell us which process holds the port (lsof on
 /// macOS/Linux, netstat + tasklist on Windows), name it and its PID — mirroring
 /// the MCP port-conflict handling — so the user knows exactly what to close.
-/// Falls back to the generic remedy when the owner cannot be determined. Any
-/// other error is passed through unchanged.
+/// Message formatting lives in `jan_utils::network::port_in_use_message` so it
+/// is unit-testable without platform tooling; the lookup here returns None and
+/// the generic remedy applies when the owner cannot be determined. Any other
+/// error is passed through unchanged.
 fn map_bind_error(
     addr: SocketAddr,
     err: std::io::Error,
 ) -> Box<dyn std::error::Error + Send + Sync> {
     if err.kind() == std::io::ErrorKind::AddrInUse {
-        let port = addr.port();
-        if let Some(occupant) = jan_utils::network::find_process_using_port(port) {
-            let msg = format!(
-                "Port {port} ({addr}) is already in use by {name} (PID {pid}). \
-                 Close that process and try again, or pick a different port in \
-                 Settings > Local API Server.",
-                name = occupant.name,
-                pid = occupant.pid
-            );
-            return msg.into();
-        }
-        let msg = format!(
-            "Port {port} ({addr}) is already in use. A previous Jan process may still be \
-             running or another application may be using the port. Close the leftover \
-             process and try again, or pick a different port in Settings > Local API Server.",
-            port = addr.port()
-        );
-        return msg.into();
+        let occupant = jan_utils::network::find_process_using_port(addr.port());
+        return jan_utils::network::port_in_use_message(addr, occupant.as_ref()).into();
     }
     Box::new(err)
 }
