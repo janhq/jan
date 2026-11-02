@@ -414,6 +414,11 @@ export async function runTurn(opts: {
   maxSteps?: number
   /** Tokens already spent by this session, which the caps apply across. */
   sessionTokens?: number
+  /** Surface-owned cap policy; Cowork retains its existing defaults. */
+  budgetPolicy?: {
+    exceeded: (state: { step: number; sessionTokens: number }, maxSteps: number) => BudgetStop
+    record: typeof recordSpend
+  }
 }): Promise<RunOutcome> {
   const { deps, signal } = opts
   const maxSteps = opts.maxSteps ?? MAX_AGENT_STEPS
@@ -434,7 +439,7 @@ export async function runTurn(opts: {
         stoppedBy: 'aborted',
       }
     }
-    const overBudget = budgetExceeded(
+    const overBudget = (opts.budgetPolicy?.exceeded ?? budgetExceeded)(
       { step, sessionTokens: spend.spent },
       maxSteps
     )
@@ -540,7 +545,7 @@ export async function runTurn(opts: {
     step += 1
     if (result.usage) {
       usage = result.usage
-      spend = recordSpend(spend, result.usage)
+      spend = (opts.budgetPolicy?.record ?? recordSpend)(spend, result.usage)
     }
 
     if (result.errorText) {

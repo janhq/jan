@@ -30,6 +30,8 @@ type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
     onTokenUsage?: (usage: LanguageModelUsage, messageId: string) => void;
   }
 
+const admissions = new WeakMap<object, () => void>()
+
 // This is a wrapper around the AI SDK's useChat hook
 // It implements model switching and uses the custom chat transport,
 // making a nice reusable hook for chat functionality.
@@ -100,6 +102,8 @@ export function useChat(
             sendMessages: async (request) => {
               const abort = new AbortController()
               const releaseSnapshot = transport.beginChatRun(() => abort.abort('Turn replaced'))
+              admissions.get(instance)?.()
+              admissions.delete(instance)
               const stop = () => {
                 abort.abort(request.abortSignal?.reason)
                 useToolApprovalRequests.getState().clearPendingForThread(sessionId)
@@ -116,6 +120,12 @@ export function useChat(
                 messages: request.messages,
                 messageId: generateId(),
                 signal: abort.signal,
+                // Read after first send resolves its frozen model selection,
+                // not the previous turn's model or mutable global selection.
+                getModelContextTokens: () => {
+                  const value = transport.getTurnModelSelection()?.selectedModel?.settings?.ctx_len?.controller_props?.value
+                  return typeof value === 'number' ? value : undefined
+                },
                 sendStep: (messages, signal) => transport.sendMessages({ ...request, messages, abortSignal: signal }),
                 dispatch: dispatchTool ?? (async () => ({ output: 'Chat tool executor unavailable', isError: true })),
                 onFinally: () => {
@@ -205,8 +215,34 @@ export function useChat(
     [transport]
   )
 
+  // Composer submission waits for admission, not the entire model/tool run.
+  // The retained Chat still exposes/tracks the full operation for Stop/close.
+  const sendMessageAccepted = useCallback<typeof chatResult.sendMessage>(async (...args) => {
+    const retained = sessionId ? useChatSessions.getState().sessions[sessionId]?.chat : undefined
+    const owner = retained ?? chatResult
+    if (owner.status === 'submitted' || owner.status === 'streaming') {
+      throw new Error('Chat turn already running')
+    }
+    if (!retained) throw new Error('Chat session unavailable')
+    await new Promise<void>((resolve, reject) => {
+      admissions.set(retained, resolve)
+      const operation = retained.sendMessage(...args)
+      // Transport entry acknowledges SDK enqueue before streaming/dispatch.
+      // Preflight rejection still reaches the route's rollback; accepted runs
+      // remain tracked by trackChat independently for Stop/close finalization.
+      void operation.then(() => {
+        admissions.delete(retained)
+        resolve()
+      }, error => {
+        admissions.delete(retained)
+        reject(error)
+      })
+    })
+  }, [sessionId, chatResult])
+
   return {
     ...chatResult,
+    sendMessage: sendMessageAccepted,
     updateRagToolsAvailability,
     setContinueFromContent,
   }

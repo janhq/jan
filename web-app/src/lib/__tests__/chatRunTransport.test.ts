@@ -155,11 +155,18 @@ describe('Chat runTurn stream adapter (real SDK reader and runner)', () => {
     expect(message.parts.at(-1)).toMatchObject({ type: 'text', text: expect.stringContaining('step limit') })
   })
   it('surfaces token exhaustion as a stopped turn with continuation text', async () => {
-    const send = vi.fn().mockResolvedValue(stream([{ type: 'tool-input-available', toolCallId: 'c', toolName: 'fixture', input: {} }, { type: 'finish', messageMetadata: { usage: { totalTokens: 200001 } } }]))
-    const message = await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, sendStep: send, dispatch: async () => ({ output: 'done' }) }))
+    const send = vi.fn().mockResolvedValue(stream([{ type: 'tool-input-available', toolCallId: 'c', toolName: 'fixture', input: {} }, { type: 'finish', messageMetadata: { usage: { inputTokens: 250000, outputTokens: 1001, totalTokens: 251001 } } }]))
+    const message = await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, modelContextTokens: 1000, sendStep: send, dispatch: async () => ({ output: 'done' }) }))
     expect(send).toHaveBeenCalledTimes(1)
     expect(message.metadata).toMatchObject({ stopped: true, runStopReason: 'tokens' })
     expect(message.parts.at(-1)).toMatchObject({ type: 'text', text: expect.stringContaining('token limit') })
+  })
+  it('does not charge a 250k replayed prompt against a 1M Chat model budget', async () => {
+    const send = vi.fn().mockResolvedValueOnce(stream([{ type: 'tool-input-available', toolCallId: 'large', toolName: 'fixture', input: {} }, { type: 'finish', messageMetadata: { usage: { inputTokens: 250000, outputTokens: 10, totalTokens: 250010 } } }])).mockResolvedValueOnce(stream(answer))
+    const outcome = vi.fn()
+    await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, modelContextTokens: 1000000, sendStep: send, dispatch: async () => ({ output: 'done' }), onOutcome: outcome }))
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(outcome.mock.calls[0][0]).toMatchObject({ stoppedBy: 'done', sessionTokens: 10 })
   })
   it('direct unsupported-model path makes exactly one request and no dispatch', async () => {
     const send = vi.fn().mockResolvedValue(stream(answer))

@@ -18,6 +18,9 @@ export function createChatRunStream(options: {
   onOutcome?: (outcome: RunOutcome) => void
   onFinally?: () => void
   maxSteps?: number
+  /** Selected model context; prompt replay is not generated-token spend. */
+  modelContextTokens?: number
+  getModelContextTokens?: () => number | undefined
 }): ReadableStream<UIMessageChunk> {
   const controller = new AbortController()
   const abort = () => controller.abort(options.signal.reason)
@@ -35,6 +38,7 @@ export function createChatRunStream(options: {
         if (typeof outcome.output !== 'string') throw new Error('Tool image sentinels require a string output')
         return outcome.output + outcome.images.map(image => encodeToolImageSentinel(image.dataUrl)).join('')
       }
+      let contextTokens = options.modelContextTokens
       let protocolError: unknown
       let outcomeNotified = false
       const notify = (outcome: RunOutcome) => {
@@ -53,6 +57,12 @@ export function createChatRunStream(options: {
         messages: options.messages,
         signal: controller.signal,
         maxSteps: options.maxSteps,
+        budgetPolicy: {
+          exceeded: ({ step, sessionTokens }, maxSteps) => step >= maxSteps
+            ? 'steps'
+            : contextTokens && sessionTokens >= contextTokens ? 'tokens' : null,
+          record: (spend, usage) => ({ ...spend, spent: spend.spent + Math.max(0, usage?.completion_tokens ?? 0) }),
+        },
         deps: {
           sendStep: async (_messages, signal) => {
             canonical = undefined
@@ -61,6 +71,10 @@ export function createChatRunStream(options: {
             const messages = completed ? [...options.messages, completed] : options.messages
             const prefix = `${step++}:`
             const source = (await options.sendStep(messages, signal)).getReader()
+            if (step === 1) {
+              const selectedLimit = options.getModelContextTokens?.()
+              if (selectedLimit && Number.isFinite(selectedLimit) && selectedLimit > 0) contextTokens = selectedLimit
+            }
             // Abort the shared source, not one tee branch (whose cancellation
             // waits for the other branch and can strand the SDK parser).
             const cancelSource = () => { void source.cancel(signal.reason).catch(() => {}) }

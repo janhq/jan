@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, renderHook, waitFor } from '@testing-library/react'
+import React, { useState } from 'react'
+import { act, render, screen, fireEvent, renderHook, waitFor } from '@testing-library/react'
 import type { UIMessageChunk } from 'ai'
 
 const h = vi.hoisted(() => ({ send: vi.fn(), begin: vi.fn(), release: vi.fn() }))
@@ -15,6 +16,7 @@ vi.mock('@/lib/custom-chat-transport', () => ({
       return () => { h.release(); this.abort = undefined; finish() }
     }
     async cancelChatRun() { this.abort?.(); await this.done }
+    getTurnModelSelection() { return { selectedModel: { settings: { ctx_len: { controller_props: { value: 1000000 } } } } } }
     sendMessages = h.send
     reconnectToStream = async () => null
     updateSystemMessage() {}
@@ -46,6 +48,7 @@ describe('production useChat wrapper with real SDK Chat and runTurn', () => {
     expect(result.current.status).toBe('streaming')
     expect(useChatSessions.getState().sessions.fixture.isStreaming).toBe(true)
     await act(async () => { finish({ output: { typed: false } }); await sent })
+    await waitFor(() => expect(result.current.status).toBe('ready'))
     expect(h.send).toHaveBeenCalledTimes(2)
     expect(h.begin).toHaveBeenCalledTimes(1)
     expect(h.release).toHaveBeenCalledTimes(1)
@@ -66,12 +69,34 @@ describe('production useChat wrapper with real SDK Chat and runTurn', () => {
     expect(result.current.status).toBe('streaming')
     await act(async () => { await result.current.stop(); await sent })
     expect(h.send).toHaveBeenCalledTimes(1)
-    expect(h.release).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(h.release).toHaveBeenCalledTimes(1))
     expect(result.current.status).toBe('ready')
     h.send.mockResolvedValueOnce(answer())
     await act(async () => { await result.current.sendMessage({ text: 'next accepted' }) })
     expect(h.send).toHaveBeenCalledTimes(2)
     expect(h.begin).toHaveBeenCalledTimes(2)
+  })
+  it('acknowledges enqueue before a held tool finishes so later composer text survives', async () => {
+    h.send.mockResolvedValueOnce(wave()).mockResolvedValueOnce(answer())
+    let finish!: (v: { output: string }) => void
+    const dispatch = vi.fn().mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    function Composer() {
+      const chat = useChat({ sessionId: 'fixture', dispatchTool: dispatch })
+      const [draft, setDraft] = useState('original draft')
+      return React.createElement('div', {},
+        React.createElement('input', { 'aria-label': 'draft', value: draft, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setDraft(event.target.value) }),
+        React.createElement('button', { onClick: async () => { await chat.sendMessage({ text: draft }); setDraft('') } }, 'Submit'),
+        React.createElement('span', { 'data-testid': 'status' }, chat.status))
+    }
+    render(React.createElement(Composer))
+    await act(async () => { fireEvent.click(screen.getByText('Submit')) })
+    await waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1))
+    expect(screen.getByLabelText('draft')).toHaveValue('')
+    expect(screen.getByTestId('status')).toHaveTextContent('streaming')
+    fireEvent.change(screen.getByLabelText('draft'), { target: { value: 'typed during held tool' } })
+    await act(async () => { finish({ output: 'done' }) })
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('ready'))
+    expect(screen.getByLabelText('draft')).toHaveValue('typed during held tool')
   })
   it('deleting the retained session alone aborts a hung dispatch and prevents follow-up', async () => {
     h.send.mockResolvedValue(wave())
@@ -82,6 +107,6 @@ describe('production useChat wrapper with real SDK Chat and runTurn', () => {
     await waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1))
     await act(async () => { useChatSessions.getState().removeSession('fixture'); await sent })
     expect(h.send).toHaveBeenCalledTimes(1)
-    expect(h.release).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(h.release).toHaveBeenCalledTimes(1))
   })
 })

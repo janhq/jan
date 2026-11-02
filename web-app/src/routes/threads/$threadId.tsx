@@ -1093,7 +1093,6 @@ function ThreadDetail() {
   const handleStop = useCallback(() => {
     // The retained SDK Chat owns the single current run and its abort signal.
     // There is no route-local tool controller or auto-resubmit authority.
-    const turnId: string | undefined = undefined
     useToolApprovalRequests.getState().clearPendingForThread(threadId)
     const retained = useChatSessions.getState().sessions[threadId]?.chat
     if (retained) void retained.stop()
@@ -1106,16 +1105,16 @@ function ThreadDetail() {
     const live =
       useChatSessions.getState().sessions[threadId]?.chat.messages ??
       chatMessagesRef.current
-    const settled = settleStoppedToolCalls(live, turnId)
+    const settled = settleStoppedToolCalls(live)
     if (settled === live) return
-    if (retained) retained.messages = settleStoppedToolCalls(retained.messages, turnId)
-    else setChatMessages((prev) => settleStoppedToolCalls(prev, turnId))
+    if (retained) retained.messages = settleStoppedToolCalls(retained.messages)
+    else setChatMessages((prev) => settleStoppedToolCalls(prev))
     // A turn that was still streaming is persisted by onFinish; one that is
     // already stored (its tools were running) has to be rewritten here. It was
     // stored before any tool ran, so the output of a call that did finish is
     // only in the rendered message, and the follow-up reply that would have
     // persisted it never happens.
-    const stoppedId = turnId ?? live[live.length - 1].id
+    const stoppedId = live[live.length - 1].id
     const stoppedTurn = settled.find((m) => m.id === stoppedId)
     if (stoppedTurn) rewriteStoredTurn(threadId, stoppedTurn, true)
   }, [threadId, stop, setChatMessages])
