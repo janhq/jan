@@ -1427,15 +1427,13 @@ impl BashCapture {
         // yet), so dumping it captures the full prefix before we start
         // dropping from the front.
         if self.spill.is_none() && self.tail.len() + chunk.len() > BASH_MAX_BYTES {
-            if let Some(path) = new_temp_path(self.scratch.as_deref()) {
-                if let Ok(file) = open_spill_file(&path) {
-                    let mut w = std::io::BufWriter::new(file);
-                    let (a, b) = self.tail.as_slices();
-                    let _ = w.write_all(a);
-                    let _ = w.write_all(b);
-                    self.spill = Some(w);
-                    self.spill_path = Some(path);
-                }
+            if let Some((path, file)) = create_spill_file(self.scratch.as_deref()) {
+                let mut w = std::io::BufWriter::new(file);
+                let (a, b) = self.tail.as_slices();
+                let _ = w.write_all(a);
+                let _ = w.write_all(b);
+                self.spill = Some(w);
+                self.spill_path = Some(path);
             }
         }
         if let Some(w) = self.spill.as_mut() {
@@ -1687,9 +1685,21 @@ fn spill_dir(scratch: Option<&Path>) -> Option<PathBuf> {
     crate::tools::spill::validated_subdir(&base, "jan-bash")
 }
 
+/// A spill name no file holds yet. A pid is reused across runs, so an earlier
+/// process can have left its spills under the very names this one would
+/// count up to; a backgrounded command's file would then read as finished
+/// (stale) before the command ends. Creation still goes through
+/// [`open_spill_file`], which refuses a name taken in between.
 fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
-    let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-    Some(spill_dir(scratch)?.join(format!("jan-bash-{}-{}.txt", std::process::id(), n)))
+    let dir = spill_dir(scratch)?;
+    loop {
+        let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let path = dir.join(format!("jan-bash-{}-{}.txt", std::process::id(), n));
+        let taken = |p: &Path| std::fs::symlink_metadata(p).is_ok();
+        if !taken(&path) && !taken(&path.with_extension("part")) {
+            return Some(path);
+        }
+    }
 }
 
 /// Open a spill file atomically; see [`crate::tools::spill::open_excl`].
@@ -1699,12 +1709,26 @@ fn open_spill_file(path: &Path) -> std::io::Result<std::fs::File> {
     crate::tools::spill::open_excl(path)
 }
 
+/// Create a fresh spill file through [`open_spill_file`]. A name taken after
+/// [`new_temp_path`] checked it is skipped for the next one rather than
+/// losing the spill; any other error, or a run of taken names, gives up.
+fn create_spill_file(scratch: Option<&Path>) -> Option<(PathBuf, std::fs::File)> {
+    for _ in 0..64 {
+        let path = new_temp_path(scratch)?;
+        match open_spill_file(&path) {
+            Ok(file) => return Some((path, file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
 /// Write `content` to a uniquely named temp file, returning its path on
 /// success. Uses [`open_spill_file`] so the write never follows a symlink.
 fn write_temp_output(content: &str, scratch: Option<&Path>) -> Option<PathBuf> {
     use std::io::Write;
-    let path = new_temp_path(scratch)?;
-    let mut file = open_spill_file(&path).ok()?;
+    let (path, mut file) = create_spill_file(scratch)?;
     file.write_all(content.as_bytes()).ok()?;
     Some(path)
 }
@@ -3396,6 +3420,28 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
+    /// A stale spill from an earlier process with the same (reused) pid must
+    /// not cost this one its spill file: the next free name is taken instead.
+    #[test]
+    fn a_stale_spill_name_is_skipped_not_fatal() {
+        let scratch = unique_root();
+        let dir = spill_dir(Some(&scratch)).unwrap();
+        let next = TEMP_COUNTER.load(Ordering::SeqCst);
+        for n in next..next + 4 {
+            let stale = dir.join(format!("jan-bash-{}-{n}.txt", std::process::id()));
+            std::fs::write(stale, b"stale").unwrap();
+        }
+        let path = write_temp_output("fresh", Some(&scratch)).expect("a spill file");
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "fresh");
+        // A backgrounded command's file is named but not created up front: the
+        // name must be free too, or a stale file reads as its finished output.
+        let next = TEMP_COUNTER.load(Ordering::SeqCst);
+        let stale = dir.join(format!("jan-bash-{}-{next}.txt", std::process::id()));
+        std::fs::write(&stale, b"stale").unwrap();
+        assert_ne!(new_temp_path(Some(&scratch)), Some(stale));
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
     /// A spill *file* that is a planted symlink must never be opened (truncated
     /// and written through), so the host target it points at stays intact.
     #[cfg(unix)]
@@ -4315,6 +4361,13 @@ mod tests {
         assert!(!out.contains("START"), "front was not dropped: {}", &out[..80]);
         assert!(out.contains("output truncated at"), "silent truncation: end of {}", &out[out.len() - 200..]);
         assert!(out.ends_with("[exit 0]"), "exit marker not last: {}", &out[out.len() - 300..]);
+        if let Some(spill) = out
+            .rsplit("full output written to ")
+            .next()
+            .and_then(|s| s.split(". Use the read tool").next())
+        {
+            let _ = std::fs::remove_file(spill);
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -4322,7 +4375,8 @@ mod tests {
     /// notice goes above it, never after it.
     #[test]
     fn bash_capture_puts_the_exit_marker_last_when_truncated() {
-        let mut cap = BashCapture::new(None);
+        let scratch = unique_root();
+        let mut cap = BashCapture::new(Some(scratch.clone()));
         for i in 0..5000 {
             cap.push(format!("line {i:060}\n").as_bytes());
         }
@@ -4331,6 +4385,7 @@ mod tests {
         assert_eq!(last, "[exit 2]");
         assert!(head.rsplit_once('\n').unwrap().1.starts_with("[output truncated at"), "{head}");
         assert!(bash_result_failed(&out));
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     /// The sandbox hint is spliced in above the exit marker, so the marker
