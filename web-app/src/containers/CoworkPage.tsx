@@ -910,15 +910,16 @@ export function CoworkPage() {
                           },
                           signal: controller.signal,
                           sessionTokens: 0,
+                          // The live run state: plan approval clears
+                          // `runConfig.planMode` mid-run, while `current` is the
+                          // session snapshot taken when the run started.
+                          mode: () => ({
+                            planMode: runConfig.planMode,
+                            webSearch,
+                          }),
                           // A child never gets `todo`/`ask`/`task`, so these refuse
                           // rather than execute: a model can still emit a call to a
                           // tool that was never advertised.
-                          // Same values as the dispatch context below, so a
-                          // withheld tool's refusal names the same reason.
-                          mode: () => ({
-                            planMode: current?.planMode ?? false,
-                            webSearch,
-                          }),
                           dispatch: (call) =>
                             dispatchCoworkTool(call, {
                               advertisedTools: transport.advertisedTools,
