@@ -1004,7 +1004,7 @@ mod tests {
     /// A session scratch as subagents leave it: session files under
     /// `subagents/` and results on `blackboard/`.
     fn seed_subagent_files(scratch: &Path) -> [PathBuf; 2] {
-        let session = scratch.join("subagents").join("explore-transcript.json");
+        let session = scratch.join("subagents").join("explore-session.jsonl");
         let result = scratch.join("blackboard").join("explore.md");
         for file in [&session, &result] {
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();

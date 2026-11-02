@@ -264,6 +264,7 @@ fn load_legacy_record(base: &std::path::Path, thread_id: &str) -> Result<Loaded,
         record: SessionRecord {
             messages: rebuild_wire_history(&messages),
             display,
+            meta: None,
         },
         skipped: skipped_m + skipped_d,
     })
@@ -653,6 +654,7 @@ pub fn fork_thread(
     let SessionRecord {
         messages: mut history,
         mut display,
+        meta: _,
     } = load_thread_record(base, source_id)?.record;
     if let Some(turn) = at_user_turn {
         // Cutting immediately before a user turn leaves tool pairing intact:

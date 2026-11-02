@@ -3500,6 +3500,19 @@ impl Transcript {
         }
     }
 
+    /// A system note row at `level`.
+    fn push_note(&mut self, glyph: &'static str, level: Level, text: &str) {
+        self.gap(Kind::Meta);
+        let (gutter, body) = level.styles();
+        self.push_row(RowKind::System {
+            glyph,
+            cont: " ",
+            gutter,
+            body: vec![Span::styled(text.to_string(), body)],
+            bg: None,
+        });
+    }
+
     /// Commit whatever the stream left open once it is over: the buffered
     /// answer, the open tool group, and rows still waiting on a result, which
     /// `interrupted` marks as cut short rather than done.
@@ -5312,10 +5325,11 @@ impl SubagentPanel {
     }
 
     /// Replace this child's rows with its run as its session file records it
-    /// (see `run_record`): the whole run, where the live rows were capped. The
-    /// task is the detail header's, so the record's `prompt` is not repeated.
-    fn replay_record(&mut self, doc: &crate::core::agent::run_record::Transcript) {
-        use crate::core::agent::run_record::{Entry, Status};
+    /// (see `subagent_session`): the whole run, where the live rows were
+    /// capped. The task is the detail header's, so the prompt is not repeated.
+    /// The entries are the kinds the main conversation journals, and replay
+    /// the way `replay_display_log` replays those.
+    fn replay_record(&mut self, record: &session_log::SessionRecord) {
         let fresh = Transcript {
             show_reasoning: self.transcript.show_reasoning,
             stream_reasoning: self.transcript.stream_reasoning,
@@ -5323,24 +5337,53 @@ impl SubagentPanel {
         };
         let t = &mut self.transcript;
         *t = fresh;
-        for entry in &doc.transcript {
+        for entry in &record.display {
             match entry {
-                Entry::User { text } => {
+                DisplayEntry::User { text, images } => {
                     t.flush_assistant();
                     t.finalize_tool_group();
-                    t.push_user_line(text, &[]);
+                    t.push_user_line(text, images);
                 }
-                Entry::Prose { text } => t.token(text),
-                Entry::Reasoning { text } => t.reasoning(text.clone()),
-                Entry::ToolCall { id, name, args } => t.tool_call(id.clone(), name, args),
-                Entry::ToolResult {
+                DisplayEntry::Invocation { label, detail } => {
+                    t.flush_assistant();
+                    t.finalize_tool_group();
+                    if !label.is_empty() {
+                        t.push_user_line(format!("{label} {detail}").trim_end(), &[]);
+                    }
+                }
+                DisplayEntry::Assistant {
+                    text,
+                    reasoning,
+                    reasoning_ms,
+                } => {
+                    t.assistant_buf = text.clone();
+                    t.reset_buf_scan();
+                    t.reasoning_segs = reasoning.clone();
+                    t.thought_for = reasoning_ms.map(Duration::from_millis);
+                    t.flush_assistant();
+                    t.thought_for = None;
+                }
+                DisplayEntry::ToolCall { id, name, args } => t.tool_call(id.clone(), name, args),
+                DisplayEntry::ToolResult {
                     id,
                     content,
                     is_error,
-                } => t.tool_result(id.clone(), content.clone(), *is_error, None),
+                    diff,
+                } => t.tool_result(id.clone(), content.clone(), *is_error, diff.clone()),
+                // A child dispatches no children of its own.
+                DisplayEntry::Subagent { .. } => {}
+                DisplayEntry::Note { text, level } => {
+                    t.finalize_tool_group();
+                    let level = Level::of_note(*level);
+                    t.push_note(level.glyph(), level, text);
+                }
             }
         }
-        t.settle(doc.status != Status::Finished);
+        let finished = record
+            .meta
+            .as_ref()
+            .is_some_and(|m| m.status == session_log::RunStatus::Finished);
+        t.settle(!finished);
         self.active = None;
     }
 
@@ -6173,15 +6216,7 @@ impl App {
     /// category and `level` carries severity.
     fn system_marked(&mut self, glyph: &'static str, level: Level, text: &str) {
         self.scrollback = 0;
-        self.transcript.gap(Kind::Meta);
-        let (gutter, body) = level.styles();
-        self.transcript.push_row(RowKind::System {
-            glyph,
-            cont: " ",
-            gutter,
-            body: vec![Span::styled(text.to_string(), body)],
-            bg: None,
-        });
+        self.transcript.push_note(glyph, level, text);
     }
 
     /// A note at `level`, recorded so a resumed transcript shows it too.
@@ -21208,13 +21243,10 @@ fn replay_finished_agent(app: &mut App, run_id: &str) {
     else {
         return;
     };
-    let path = crate::core::agent::run_record::session_path(
-        &tauri_plugin_agent_tools::workspace::scratch_dir(&session),
-        &block.panel.name,
-    );
-    match crate::core::agent::run_record::load(&path) {
-        Ok(doc) if doc.run_id == run_id => {
-            block.panel.replay_record(&doc);
+    let scratch = tauri_plugin_agent_tools::workspace::scratch_dir(&session);
+    match crate::core::agent::subagent_session::load(&scratch, &block.panel.name) {
+        Ok(loaded) if loaded.record.meta.as_ref().is_some_and(|m| m.run_id == run_id) => {
+            block.panel.replay_record(&loaded.record);
             block.flat = std::cell::OnceCell::new();
         }
         Ok(_) => {}
@@ -39594,7 +39626,7 @@ mod tests {
     /// A finished child's session file, as its run would have left it in the
     /// session scratch, for the `/agents` replay tests.
     fn app_with_finished_child_file(record_run_id: &str) -> (TestApp, std::path::PathBuf) {
-        use crate::core::agent::run_record::{session_path, write_atomic, Entry, Transcript};
+        use crate::core::agent::subagent_session::{session_file, Recorder};
         let mut app = test_app();
         let session = format!(
             "replay-{}-{}",
@@ -39616,21 +39648,33 @@ mod tests {
         });
         let scratch = tauri_plugin_agent_tools::workspace::scratch_dir(&session);
         std::fs::create_dir_all(scratch.join("subagents")).unwrap();
-        let mut doc = Transcript::new("alpha", record_run_id, "the brief");
-        doc.transcript = vec![
-            Entry::Reasoning { text: "weighing it".into() },
-            Entry::Prose { text: "Reading the record.".into() },
-            Entry::ToolCall {
+        let dir = tauri_plugin_agent_tools::tools::spill::validated_subdir(
+            &scratch,
+            tauri_plugin_agent_tools::tools::spill::SUBAGENT_DIR,
+        )
+        .unwrap();
+        let mut rec = Recorder::start(&dir, "alpha", record_run_id, "the brief");
+        for ev in [
+            StreamEvent::Reasoning { text: "weighing it".into() },
+            StreamEvent::Token { text: "Reading the record.".into() },
+            StreamEvent::ToolCall {
                 id: "c1".into(),
                 name: "read".into(),
                 args: json!({ "path": "notes.txt" }),
             },
-            Entry::ToolResult { id: "c1".into(), content: "notes".into(), is_error: false },
-            Entry::User { text: "also check b".into() },
-            Entry::Prose { text: "From the record file.".into() },
-        ];
-        doc.finish(&Ok("From the record file.".into()));
-        write_atomic(&session_path(&scratch, "alpha"), &doc).unwrap();
+            StreamEvent::ToolResult {
+                id: "c1".into(),
+                content: "notes".into(),
+                is_error: false,
+                diff: None,
+            },
+        ] {
+            rec.record(&ev);
+        }
+        rec.user_message(&json!({ "role": "user", "content": "also check b" }));
+        rec.record(&StreamEvent::Token { text: "From the record file.".into() });
+        rec.finish(&Ok("From the record file.".into()));
+        assert!(session_file(&dir, "alpha").is_file());
         (app, scratch)
     }
 
