@@ -46,6 +46,7 @@ import {
   defaultConversationCapabilities,
   type ConversationCapabilitiesV1,
 } from '@/lib/conversationCapabilities'
+import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 import type { Attachment } from '@/types/attachment'
 import { useThreads } from '@/hooks/useThreads'
 
@@ -96,8 +97,18 @@ function Index() {
     scopeDraft.shellNetwork ||
     scopeDraft.memoryWrite ||
     scopeDraft.folderScope !== null
+  // Same temporary-mode source ChatInput's send path reads. useSearch above
+  // subscribes this component to location changes, so toggling temporary chat
+  // re-renders and this stays current. A temporary chat gets no consent
+  // control, not even a draft: the pending draft is preserved but the prepare
+  // path is removed, so ordinary temporary scratch sends are unchanged.
+  const isTemporaryChat =
+    typeof window !== 'undefined' &&
+    window.location.search.includes(`${TEMPORARY_CHAT_QUERY_ID}=true`)
   const chatScopeAvailable =
-    mode === 'chat' && (selectedModel?.capabilities?.includes('tools') ?? false)
+    mode === 'chat' &&
+    !isTemporaryChat &&
+    (selectedModel?.capabilities?.includes('tools') ?? false)
   const pickScopeFolder = useCallback(async () => {
     const picked = await serviceHub.dialog().open({ directory: true })
     return typeof picked === 'string' ? picked : null

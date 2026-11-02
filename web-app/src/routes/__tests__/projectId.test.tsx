@@ -263,6 +263,29 @@ describe('Project route Chat/Cowork selector', () => {
     expect(h.prepareOutcome).toBe(true)
   })
 
+  it('an elevated draft hidden by a non-tools model cannot apply and resurfaces visibly pending', async () => {
+    const Component = Route.component as React.ComponentType
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    const view = renderComponent()
+    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
+    fireEvent.click(
+      await screen.findByLabelText('Allow shell commands to access the network')
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+    // A non-tools model hides the consent UI and removes the prepare path.
+    h.selectedModel = { id: 'model-b', capabilities: [] }
+    view.rerender(<Component />)
+    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    // Back on a tool-capable model the draft resurfaces explicitly pending.
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
+      'Conversation permissions (pending)'
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+  })
+
   it('keeps the draft path when the Cowork handoff cannot be stored', () => {
     h.coworkEnabled = true
     useHomeMode.setState({ mode: 'cowork' })

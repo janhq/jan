@@ -260,6 +260,42 @@ describe('ConversationScopeControl', () => {
     expect(useThreads.getState().getConversationCapabilities(id).shellNetwork).toBe(false)
   })
 
+  it('revocation stays available during a busy save and supersedes it without a stale error', async () => {
+    const id = freshId()
+    useThreads.setState({ threads: { [id]: thread(id) } })
+    const pendingGrant = deferred()
+    persist.mockReturnValueOnce(pendingGrant.promise)
+    mount(id)
+    // Start an elevation whose native write hangs.
+    fireEvent.click(screen.getByLabelText(SHELL_LABEL))
+    const revoke = await screen.findByTestId('scope-revoke-now')
+    expect(revoke).toBeEnabled()
+    // Revoke while the grant save is still in flight.
+    fireEvent.click(revoke)
+    expect(useThreads.getState().getConversationCapabilities(id).shellNetwork).toBe(false)
+    // The hung grant write settles afterwards; it is superseded and must not
+    // restore access or surface a stale error over the successful revoke.
+    await act(async () => {
+      pendingGrant.resolve()
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(screen.queryByTestId('scope-revoke-now')).not.toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByLabelText(SHELL_LABEL)).not.toBeChecked()
+    expect(useThreads.getState().getConversationCapabilities(id)).toEqual({
+      version: 1,
+      folderScope: null,
+      shellNetwork: false,
+      memoryWrite: false,
+    })
+    expect(persist).toHaveBeenLastCalledWith(id, {
+      version: 1,
+      folderScope: null,
+      shellNetwork: false,
+      memoryWrite: false,
+    })
+  })
+
   it('a cancelled folder pick persists nothing', async () => {
     const id = freshId()
     useThreads.setState({ threads: { [id]: thread(id) } })
@@ -269,6 +305,67 @@ describe('ConversationScopeControl', () => {
     await waitFor(() => expect(pickFolder).toHaveBeenCalledTimes(1))
     expect(persist).not.toHaveBeenCalled()
     expect(screen.getByText('No folder access selected.')).toBeInTheDocument()
+  })
+
+  it('a pending folder pick survives unrelated re-renders and applies exactly once', async () => {
+    const id = freshId()
+    useThreads.setState({ threads: { [id]: thread(id) } })
+    let resolvePick!: (path: string | null) => void
+    const pickFolder = vi.fn(
+      () => new Promise<string | null>((resolve) => { resolvePick = resolve })
+    )
+    mount(id, pickFolder)
+    fireEvent.click(screen.getByRole('button', { name: 'Choose folder to read' }))
+    // Unrelated re-render with unchanged authority: this thread's title
+    // changes, so the subscribed thread object is new but the effective value
+    // identity must stay stable (the consent child would otherwise discard
+    // the pending pick).
+    act(() => {
+      useThreads.setState((state) => ({
+        threads: { ...state.threads, [id]: { ...state.threads[id], title: 'Renamed' } },
+      }))
+    })
+    await act(async () => {
+      resolvePick('/workspace/project')
+      await Promise.resolve()
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Read only: /workspace/project')
+    )
+    expect(persist).toHaveBeenCalledExactlyOnceWith(id, {
+      version: 1,
+      folderScope: { path: '/workspace/project', access: 'read' },
+      shellNetwork: false,
+      memoryWrite: false,
+    })
+  })
+
+  it('an authority change while the dialog is open still discards the pick', async () => {
+    const id = freshId()
+    useThreads.setState({ threads: { [id]: thread(id) } })
+    let resolvePick!: (path: string | null) => void
+    const pickFolder = vi.fn(
+      () => new Promise<string | null>((resolve) => { resolvePick = resolve })
+    )
+    mount(id, pickFolder)
+    fireEvent.click(screen.getByRole('button', { name: 'Choose folder to read' }))
+    // Real authority change while the native dialog is open.
+    await act(async () => {
+      await useThreads.getState().setConversationCapabilities(id, {
+        version: 1,
+        folderScope: null,
+        shellNetwork: true,
+        memoryWrite: false,
+      })
+    })
+    persist.mockClear()
+    await act(async () => {
+      resolvePick('/workspace/project')
+      await Promise.resolve()
+    })
+    // The stale pick is discarded: no folder save, no folder shown.
+    expect(persist).not.toHaveBeenCalled()
+    expect(screen.getByRole('status')).toHaveTextContent('No folder access selected.')
   })
 
   it('selecting a folder through the injected picker saves read-only folder scope', async () => {

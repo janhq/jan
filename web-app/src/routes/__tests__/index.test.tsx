@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
@@ -143,6 +143,11 @@ const renderComponent = () => {
 }
 
 describe('Index route', () => {
+  // A failed assertion between replaceState calls must not leak
+  // ?temporary-chat=true into later tests.
+  afterEach(() => {
+    window.history.replaceState({}, '', '/')
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     h.providers = []
@@ -304,6 +309,52 @@ describe('Index route', () => {
         })
       )
       expect(h.prepareOutcome).toBe(true)
+    })
+
+    it('temporary mode hides the draft consent entirely and passes no prepare path', async () => {
+      const Component = Route.component as React.ComponentType
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      const view = renderComponent()
+      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
+      fireEvent.click(
+        await screen.findByLabelText('Allow shell commands to access the network')
+      )
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+      // Temporary mode: no consent control at all, not even a draft, and no
+      // prepare path — an ordinary temporary scratch send cannot be refused
+      // by a hidden stale grant.
+      window.history.replaceState({}, '', '/?temporary-chat=true')
+      view.rerender(<Component />)
+      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+      // Leaving temporary mode resurfaces the preserved draft, explicitly pending.
+      window.history.replaceState({}, '', '/')
+      view.rerender(<Component />)
+      expect(screen.getByTestId('home-scope-consent-trigger')).toHaveTextContent(
+        'Conversation permissions (pending)'
+      )
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+    })
+
+    it('an elevated draft hidden by a mode switch cannot apply and resurfaces visibly pending', async () => {
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      h.coworkEnabled = true
+      renderComponent()
+      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
+      fireEvent.click(
+        await screen.findByLabelText('Allow shell commands to access the network')
+      )
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+      // Hidden in cowork mode: no consent UI and no prepare path at all.
+      fireEvent.click(screen.getByTestId('home-mode-cowork'))
+      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+      // Switching back resurfaces the draft with an explicit pending label.
+      fireEvent.click(screen.getByTestId('home-mode-chat'))
+      expect(screen.getByTestId('home-scope-consent-trigger')).toHaveTextContent(
+        'Conversation permissions (pending)'
+      )
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     })
 
     it('is hidden where Cowork is not available', () => {

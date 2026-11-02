@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/shallow'
 import { Button } from '@/components/ui/button'
 import { useThreads } from '@/hooks/useThreads'
@@ -56,18 +56,29 @@ export function ConversationScopeControl({ threadId, pickFolder, disabled = fals
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // Later applies supersede earlier ones (the store's request tokens make the
+  // newest call authoritative); a superseded apply must not clobber the
+  // latest apply's error or saving state.
+  const applySeq = useRef(0)
+  // Stable VALUE IDENTITY matters, not just stable primitives: the consent
+  // child discards a pending folder pick whenever its `value` prop identity
+  // changes. useShallow returns the same effectiveFlat reference while the
+  // grant is unchanged, so this memo keeps `effective` identity stable across
+  // unrelated re-renders and changes it exactly when authority changes.
+  const effective: ConversationCapabilitiesV1 = useMemo(
+    () => ({
+      version: 1,
+      folderScope:
+        effectiveFlat.folderPath !== null && effectiveFlat.folderAccess !== null
+          ? { path: effectiveFlat.folderPath, access: effectiveFlat.folderAccess }
+          : null,
+      shellNetwork: effectiveFlat.shellNetwork,
+      memoryWrite: effectiveFlat.memoryWrite,
+    }),
+    [effectiveFlat]
+  )
 
   if (!thread || threadId === TEMPORARY_CHAT_ID || isCoworkThread(thread)) return null
-
-  const effective: ConversationCapabilitiesV1 = {
-    version: 1,
-    folderScope:
-      effectiveFlat.folderPath !== null && effectiveFlat.folderAccess !== null
-        ? { path: effectiveFlat.folderPath, access: effectiveFlat.folderAccess }
-        : null,
-    shellNetwork: effectiveFlat.shellNetwork,
-    memoryWrite: effectiveFlat.memoryWrite,
-  }
   const persisted = resolveConversationCapabilities(thread.metadata?.conversationCapabilities)
   const unconfirmed =
     (persisted.shellNetwork && !effective.shellNetwork) ||
@@ -78,18 +89,24 @@ export function ConversationScopeControl({ threadId, pickFolder, disabled = fals
         (persisted.folderScope.access === 'write' && effective.folderScope.access !== 'write')))
 
   const apply = async (next: ConversationCapabilitiesV1) => {
+    const seq = ++applySeq.current
     setSaving(true)
     setError('')
     try {
       await useThreads.getState().setConversationCapabilities(threadId, next)
     } catch {
-      setError(
-        'Permission change could not be saved. Elevated access stays off until a save succeeds.'
-      )
+      if (applySeq.current === seq) {
+        setError(
+          'Permission change could not be saved. Elevated access stays off until a save succeeds.'
+        )
+      }
     } finally {
-      setSaving(false)
+      if (applySeq.current === seq) setSaving(false)
     }
   }
+
+  const effectiveElevated =
+    effective.shellNetwork || effective.memoryWrite || effective.folderScope !== null
 
   return (
     <div className="min-w-0 space-y-2">
@@ -130,6 +147,20 @@ export function ConversationScopeControl({ threadId, pickFolder, disabled = fals
             </Button>
           </div>
         </div>
+      )}
+      {(effectiveElevated || saving) && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          // Revocation is never blocked by a busy save: a newer setter call
+          // synchronously denies in memory and supersedes the pending write.
+          disabled={disabled}
+          data-testid="scope-revoke-now"
+          onClick={() => void apply(defaultConversationCapabilities())}
+        >
+          Turn all permissions off
+        </Button>
       )}
       <p className="text-xs leading-5 text-muted-foreground">
         Turning a permission off applies from the next tool call. A command that is already
