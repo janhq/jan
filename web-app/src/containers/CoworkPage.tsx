@@ -693,6 +693,7 @@ export function CoworkPage() {
             if (row) {
               row.result = JSON.stringify(list)
               row.status = 'done'
+              syncLive()
             }
             // Compatibility projection for the existing rail, not authority.
             useCoworkSessions.getState().setTodos(sid, list)

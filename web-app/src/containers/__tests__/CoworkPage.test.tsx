@@ -343,6 +343,37 @@ describe('CoworkPage todo rewind authority', () => {
     })
   }
 
+  it('publishes live todo progress before a same-step ask suspends', async () => {
+    seed([{ role: 'user', content: 'Previous' }, todo(earlier, 'old'), { role: 'assistant', content: 'Previous answer' }], earlier)
+    let answer!: () => void
+    mocks.dispatch.mockImplementation(async (call, ctx) => {
+      if (call.toolName === 'todo') return ctx.onTodo(call.input, call.toolCallId)
+      return ctx.onAsk(call.toolCallId, call.input)
+    })
+    mocks.run.mockImplementationOnce(async ({ deps }) => {
+      // Materialize and flush both running rows before dispatch, as a streamed
+      // model step does. No later onStep/text delta may refresh the rail.
+      deps.sink.onToolStart('live-todo', 'todo')
+      deps.sink.onToolCall({ toolCallId: 'live-todo', toolName: 'todo', input: { op: 'init', items: ['Updated live task'] } })
+      deps.sink.onToolStart('live-ask', 'ask')
+      deps.sink.onToolCall({ toolCallId: 'live-ask', toolName: 'ask', input: {} })
+      await deps.dispatch({ toolCallId: 'live-todo', toolName: 'todo', input: { op: 'init', items: ['Updated live task'] } })
+      const pending = deps.dispatch({ toolCallId: 'live-ask', toolName: 'ask', input: { questions: [{ id: 'q', question: 'Wait here?', options: [{ label: 'Yes' }, { label: 'No' }] }] } })
+      answer = () => { void import('@/lib/coworkRunner').then(({ answerAsk }) => answerAsk('test', 'live-ask', [{ id: 'q', selected: ['Yes'] }])) }
+      await pending
+      return { stoppedBy: 'done', messages: [], usage: null }
+    })
+    mountRail()
+    expectRail(earlier)
+    await act(async () => { fireEvent.click(screen.getByText('Submit')) })
+    await waitFor(() => expect(useCoworkRun.getState().pendingAsks.test).toHaveLength(1))
+    expect(screen.getByTestId('rail-todos').textContent).toContain('Updated live task')
+    expect(screen.getByTestId('rail-todos').textContent).not.toContain('Earlier task')
+    expect(useCoworkRun.getState().runId.test).toBeTruthy()
+    await act(async () => { answer(); await Promise.resolve() })
+    await waitFor(() => expect(useCoworkRun.getState().runId.test).toBeUndefined())
+  })
+
   it.each(['onRegenerate', 'onEdit', 'onDelete'] as const)('%s clears the last snapshot instead of resurrecting the legacy sidecar', async (action) => {
     seed([{ role: 'user', content: 'Question' }, todo(discarded, 'last'), { role: 'assistant', content: 'Answer' }])
     mountRail()
