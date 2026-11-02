@@ -1367,6 +1367,54 @@ async fn a_dropped_confirmation_fails_the_setter_instead_of_faking_success() {
     assert!(current(&id).0.shell_network, "retry activates the grant");
 }
 
+/// Bot question on ddd2d07df: a grant that passes the lexical check but can
+/// never pass `ThreadCapabilities::validate()` (a Windows drive path is
+/// lexically fine everywhere but `Path::is_absolute` only on Windows) must be
+/// rejected UP FRONT -- not narrowed, not persisted, and never misreported as
+/// a concurrency race whose retry can never succeed.
+#[cfg(unix)]
+#[tokio::test]
+async fn an_unconfirmable_grant_is_rejected_before_anything_changes() {
+    use tauri_plugin_agent_tools::thread_capabilities::current;
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("unconfirmable"))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    assert!(current(&id).0.shell_network, "a real grant is live");
+
+    let unconfirmable = json!({
+        "version": 1,
+        "folderScope": { "path": "C:\\Users\\someone\\project", "access": "read" },
+        "shellNetwork": false,
+        "memoryWrite": false
+    });
+    let message =
+        set_thread_conversation_capabilities(app.handle().clone(), id.clone(), unconfirmable)
+            .await
+            .expect_err("an unconfirmable grant must be rejected");
+    assert!(
+        !message.contains("concurrent change"),
+        "must not be misreported as a race: {message}"
+    );
+    assert!(
+        current(&id).0.shell_network,
+        "rejected input must not narrow the live confirmation"
+    );
+    let stored: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        stored["metadata"]["conversationCapabilities"]["shellNetwork"],
+        json!(true),
+        "rejected input must not be persisted"
+    );
+}
+
 #[tokio::test]
 async fn conversation_capabilities_stale_writer_cannot_restore_revocation() {
     let (app, data_dir) = mock_app_with_temp_data_dir();

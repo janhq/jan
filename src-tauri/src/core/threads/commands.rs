@@ -250,8 +250,19 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
     // `revoke_thread_capabilities` before this command is ever awaited.
     // This also stops the thread's monitors and reaps their poll children, so
     // nothing keeps running under the authority being replaced.
+    // Deserialize and host-validate BEFORE narrowing or writing: a grant that
+    // cannot pass `ThreadCapabilities::validate()` could never be confirmed,
+    // so writing it first would persist a dead value, revoke the live one,
+    // and misreport the dropped confirm as a concurrency race whose retry can
+    // never succeed. The lexical check above is necessary but not sufficient:
+    // a Windows drive path is lexically valid everywhere, while
+    // `Path::is_absolute` accepts it only on Windows.
+    let grant: tauri_plugin_agent_tools::thread_capabilities::ThreadCapabilities =
+        serde_json::from_value(value.clone())
+            .map_err(|e| format!("Invalid version 1 conversation capabilities: {e}"))?;
+    grant.validate()?;
     let token = tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
-    super::capabilities::patch_conversation_capabilities(&data_folder, &thread_id, value.clone())?;
+    super::capabilities::patch_conversation_capabilities(&data_folder, &thread_id, value)?;
     // Test seam for the reviewed interleaving: `stop_all_thread_monitors`
     // takes no per-thread lock, so its barrier bump can land between this
     // setter's narrow and its confirm in production. The seam reproduces
@@ -267,9 +278,8 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
     // grant is on disk but the host denies it, and an Ok here would have the
     // UI show it active. The error leaves the frontend overlay denied
     // (consistent with the host) and the on-disk value reachable through the
-    // reconfirm flow; a retry simply runs the setter again.
-    let grant = serde_json::from_value(value)
-        .map_err(|e| format!("Invalid version 1 conversation capabilities: {e}"))?;
+    // reconfirm flow; a retry simply runs the setter again. The grant was
+    // validated before the write, so this false really is concurrency.
     if !tauri_plugin_agent_tools::confirm_thread_consent(&thread_id, grant, token) {
         return Err(
             "The permission change was written but a concurrent change prevented its \
