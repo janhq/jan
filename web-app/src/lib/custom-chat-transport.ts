@@ -12,6 +12,7 @@ import {
   InvalidToolInputError,
   lastAssistantMessageIsCompleteWithToolCalls,
 } from 'ai'
+import { uniqueMcpTools } from './chatMcpIdentity'
 import { repairToolArgs } from './toolCallRepair'
 import {
   encodeMcpToolImages,
@@ -865,6 +866,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private routerModel: LanguageModel | null = null
   private routerModelKey = ''
   protected tools: Record<string, Tool> = {}
+  private mcpIdentities = new Map<string, string>()
+  private turnMcpIdentities?: Map<string, string>
+
+  getMcpServerForTool(name: string): string | undefined {
+    return (this.turnMcpIdentities ?? this.mcpIdentities).get(name)
+  }
   // Smart tool routing selects tools from the latest user message, which would
   // change the tool set (and thus the cached prompt prefix) every turn. Freeze
   // the routed set for the thread's lifetime so the prefix stays stable;
@@ -1067,11 +1074,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // cached inside agentTools, so this is one IPC round-trip per store change.
     await refreshMemoryDigest()
     if (!this.serviceHub) {
+      this.mcpIdentities.clear()
       this.tools = {}
       return
     }
 
     const toolsRecord: Record<string, Tool> = {}
+    const mcpIdentities = new Map<string, string>()
 
     // Tool availability is global (shared across all chats).
     const disabledToolKeys = useToolAvailable.getState().getDisabledTools()
@@ -1145,6 +1154,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       try {
         const mcpService = this.serviceHub.mcp()
         let mcpTools: MCPTool[]
+        let identityInventory: MCPTool[]
         const mcpSettings = useMCPServers.getState().settings
         const routingEnabled = mcpSettings.enableSmartToolRouting
 
@@ -1153,6 +1163,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           mcpService.getToolsForServers &&
           mcpService.getServerSummaries
         ) {
+          // Routing/disabled filtering must not conceal a colliding rival.
+          identityInventory = await mcpService.getTools()
           const summaries = await mcpService.getServerSummaries!()
           const routedSig = JSON.stringify({
             servers: summaries.map((s) => s.name).sort(),
@@ -1186,20 +1198,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           }
         } else {
           mcpTools = await mcpService.getTools()
+          identityInventory = mcpTools
         }
 
         if (Array.isArray(mcpTools) && mcpTools.length > 0) {
-          const seenBy = new Map<string, string>()
-          mcpTools.forEach((tool) => {
-            const serverName = tool.server || 'unknown'
-            if (isToolDisabled(serverName, tool.name)) return
-            const prevServer = seenBy.get(tool.name)
-            if (prevServer && prevServer !== serverName) {
-              console.warn(
-                `[tools] MCP tool name collision: "${tool.name}" exposed by both "${prevServer}" and "${serverName}". Using "${serverName}".`
-              )
-            }
-            seenBy.set(tool.name, serverName)
+          const eligible = uniqueMcpTools(identityInventory)
+          uniqueMcpTools(mcpTools).forEach((tool) => {
+            if (!eligible.some((candidate) => candidate.name === tool.name && candidate.server === tool.server)) return
+            const serverName = tool.server!
+            // Internal retrieval owns its names; MCP must not replace its schema.
+            if (isToolDisabled(serverName, tool.name) || toolsRecord[tool.name]) return
+            mcpIdentities.set(tool.name, serverName)
             toolsRecord[tool.name] = {
               description: tool.description,
               inputSchema: jsonSchema(
@@ -1222,6 +1231,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Native web tools, provided by the websearch plugin (not an MCP server).
       // Advertised whenever the user has web search enabled.
       if (policy.webSearch) {
+        mcpIdentities.delete('web_search')
+        mcpIdentities.delete('web_fetch')
         toolsRecord['web_search'] = {
           description: WEB_SEARCH_DESCRIPTION,
           inputSchema: jsonSchema(WEB_SEARCH_INPUT_SCHEMA as Record<string, unknown>),
@@ -1240,6 +1251,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       try {
         for (const schema of policy.loadNativeTools ? await getAgentToolSchemas() : []) {
           if (!policy.allowsNativeTool(schema.function.name)) continue
+          mcpIdentities.delete(schema.function.name)
           toolsRecord[schema.function.name] = {
             description: schema.function.description,
             inputSchema: jsonSchema(schema.function.parameters),
@@ -1250,6 +1262,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
     }
 
+    this.mcpIdentities = mcpIdentities
     this.tools = toolsRecord
   }
 
@@ -1497,6 +1510,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
 
     await this.refreshTools(options.abortSignal, turnModelSelection)
+    const turnMcpIdentities = new Map(this.mcpIdentities)
+    const turnTools = this.tools
 
     // Split assistant turns that place text after tool calls into separate
     // messages. Required by the Claude API (tool_use / tool_result pairing) and
@@ -1644,7 +1659,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       : baseMessages
 
     // Include tools only if we have tools loaded AND model supports them
-    const hasTools = Object.keys(this.tools).length > 0
+    const hasTools = Object.keys(turnTools).length > 0
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
@@ -1660,6 +1675,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     useAppState.getState().updateLiveTokenStats(undefined)
     useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
 
+    // Bind callbacks to this request, not a background menu refresh.
+    this.turnMcpIdentities = turnMcpIdentities
     const result = streamText({
       model: this.model,
       messages: modelMessages,
@@ -1667,7 +1684,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Hosted providers keep the SDK's two backoff retries for transient
       // 429/5xx; local servers fail at once (see isLocalChatServer).
       maxRetries: isLocalChatServer(providerId, provider.base_url) ? 0 : 2,
-      tools: shouldEnableTools ? this.tools : undefined,
+      tools: shouldEnableTools ? turnTools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystem,
       // 0 means "no cap" in assistant params; the SDK rejects anything below 1.

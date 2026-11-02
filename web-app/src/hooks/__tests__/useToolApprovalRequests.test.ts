@@ -23,6 +23,7 @@ describe('useToolApprovalRequests', () => {
     useToolApprovalRequests.setState({ pending: {} })
     useToolApproval.setState({
       approvedTools: {},
+      approvedMCPTools: [],
       approvedServers: [],
       approvedToolsGlobal: [],
       allowAllMCPPermissions: false,
@@ -104,6 +105,44 @@ describe('useToolApprovalRequests', () => {
     expect(approval.isToolApproved('thread-2', 'tool-a')).toBe(false)
   })
 
+  it('allow-thread preserves the server identity for subsequent requests', async () => {
+    const requests = useToolApprovalRequests.getState()
+    const initial = requests.requestApproval('first', 'read_file', 'thread-1', 'server-a')
+    requests.resolveApproval('first', 'allow-thread')
+    await expect(initial).resolves.toBe(true)
+    await expect(
+      requests.requestApproval('same', 'read_file', 'thread-1', 'server-a')
+    ).resolves.toBe(true)
+    expect(useToolApprovalRequests.getState().pending).toEqual({})
+
+    const other = requests.requestApproval('other', 'read_file', 'thread-1', 'server-b')
+    expect(useToolApprovalRequests.getState().pending.other.serverName).toBe('server-b')
+    requests.resolveApproval('other', 'deny')
+    await expect(other).resolves.toBe(false)
+    expect(useToolApproval.getState().approvedTools).toEqual({})
+  })
+
+  it('prompts for server tools despite legacy bare grants', async () => {
+    useToolApproval.setState({
+      approvedTools: { 'thread-1': ['read_file'] },
+      approvedToolsGlobal: ['read_file'],
+    })
+    const requests = useToolApprovalRequests.getState()
+    const pending = requests.requestApproval('legacy', 'read_file', 'thread-1', 'server-a')
+    expect(useToolApprovalRequests.getState().pending.legacy).toBeDefined()
+    requests.resolveApproval('legacy', 'deny')
+    await expect(pending).resolves.toBe(false)
+  })
+
+  it('allowAll still bypasses approvals for server-qualified tools', async () => {
+    useToolApproval.getState().setAllowAllMCPPermissions(true)
+    await expect(
+      useToolApprovalRequests.getState().requestApproval('all', 'read_file', 'thread-1', 'server-a')
+    ).resolves.toBe(true)
+    expect(useToolApprovalRequests.getState().pending).toEqual({})
+    expect(useToolApproval.getState().approvedMCPTools).toEqual([])
+  })
+
   // "Always" has to mean always, which is what the thread scope could not say.
   it('resolveApproval allow-always trusts the whole server, in every thread', async () => {
     const { result } = renderHook(() => useToolApprovalRequests())
@@ -181,6 +220,70 @@ describe('useToolApprovalRequests', () => {
 
     await expect(p!).resolves.toBe(false)
     expect(useToolApproval.getState().isToolApproved('thread-1', 'tool-a')).toBe(false)
+  })
+
+  it.each([
+    ['allow-thread', 'github'],
+    ['allow-always', 'github'],
+    ['allow-always', undefined],
+  ] as const)(
+    'cancelApproval denies without letting a stale %s decision persist trust (server: %s)',
+    async (decision, serverName) => {
+      const requests = useToolApprovalRequests.getState()
+      const pending = requests.requestApproval('cancelled', 'tool-a', 'thread-1', serverName)
+      // The UI can retain the action after the request has been cancelled.
+      const staleResolve = requests.resolveApproval
+
+      requests.cancelApproval('cancelled')
+      await expect(pending).resolves.toBe(false)
+      expect(useToolApprovalRequests.getState().pending.cancelled).toBeUndefined()
+      staleResolve('cancelled', decision)
+
+      const approval = useToolApproval.getState()
+      expect(approval.approvedTools).toEqual({})
+      expect(approval.approvedMCPTools).toEqual([])
+      expect(approval.approvedServers).toEqual([])
+      expect(approval.approvedToolsGlobal).toEqual([])
+    }
+  )
+
+  it('cancelApproval leaves other calls pending, including calls in the same thread', async () => {
+    const requests = useToolApprovalRequests.getState()
+    const cancelled = requests.requestApproval('cancelled', 'tool-a', 'thread-1')
+    const sameThread = requests.requestApproval('same-thread', 'tool-b', 'thread-1')
+    const otherThread = requests.requestApproval('other-thread', 'tool-c', 'thread-2')
+    const sameThreadSettled = vi.fn()
+    const otherThreadSettled = vi.fn()
+    void sameThread.then(sameThreadSettled)
+    void otherThread.then(otherThreadSettled)
+
+    requests.cancelApproval('cancelled')
+    await expect(cancelled).resolves.toBe(false)
+    expect(Object.keys(useToolApprovalRequests.getState().pending)).toEqual([
+      'same-thread',
+      'other-thread',
+    ])
+    expect(sameThreadSettled).not.toHaveBeenCalled()
+    expect(otherThreadSettled).not.toHaveBeenCalled()
+
+    requests.resolveApproval('same-thread', 'allow-once')
+    requests.resolveApproval('other-thread', 'deny')
+    await expect(sameThread).resolves.toBe(true)
+    await expect(otherThread).resolves.toBe(false)
+  })
+
+  it('cancelApproval is a no-op for missing or already settled calls', async () => {
+    const requests = useToolApprovalRequests.getState()
+    const pending = requests.requestApproval('approved', 'tool-a', 'thread-1', 'github')
+    requests.resolveApproval('approved', 'allow-always')
+    const state = useToolApprovalRequests.getState()
+
+    requests.cancelApproval('missing')
+    requests.cancelApproval('approved')
+
+    await expect(pending).resolves.toBe(true)
+    expect(useToolApprovalRequests.getState()).toBe(state)
+    expect(useToolApproval.getState().approvedServers).toEqual(['github'])
   })
 
   it('clearPendingForThread resolves matching promises false and removes only that thread', async () => {

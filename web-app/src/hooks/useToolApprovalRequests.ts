@@ -33,6 +33,7 @@ type ToolApprovalRequestsState = {
     serverName?: string
   ) => Promise<boolean>
   resolveApproval: (toolCallId: string, decision: ApprovalDecision) => void
+  cancelApproval: (toolCallId: string) => void
   clearPendingForThread: (threadId: string) => void
 }
 
@@ -71,7 +72,11 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       if (!entry) return
       const approval = useToolApproval.getState()
       if (decision === 'allow-thread') {
-        approval.approveToolForThread(entry.threadId, entry.toolName)
+        approval.approveToolForThread(
+          entry.threadId,
+          entry.toolName,
+          entry.serverName
+        )
       } else if (decision === 'allow-always') {
         if (entry.serverName) {
           approval.approveServer(entry.serverName)
@@ -85,6 +90,18 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
         return { pending: next }
       })
       entry.resolve(decision !== 'deny')
+    },
+
+    cancelApproval: (toolCallId) => {
+      const entry = get().pending[toolCallId]
+      if (!entry) return
+      set((s) => {
+        const next = { ...s.pending }
+        delete next[toolCallId]
+        return { pending: next }
+      })
+      // Remove first so a late UI decision cannot persist a grant.
+      entry.resolve(false)
     },
 
     clearPendingForThread: (threadId) => {

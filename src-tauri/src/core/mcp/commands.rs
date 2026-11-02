@@ -382,6 +382,72 @@ pub async fn get_server_summaries(
     Ok(summaries)
 }
 
+/// Resolve discovered matches before dispatching: legacy unqualified calls must
+/// never depend on HashMap iteration order, and a named call must never fall back.
+fn select_tool_server<'a>(
+    tool_name: &str,
+    server_name: Option<&str>,
+    matching_servers: &[&'a str],
+) -> Result<Option<&'a str>, String> {
+    if let Some(server) = server_name {
+        return Ok(matching_servers
+            .iter()
+            .copied()
+            .find(|name| *name == server));
+    }
+
+    match matching_servers {
+        [] => Ok(None),
+        [server] => Ok(Some(*server)),
+        _ => {
+            let mut names = matching_servers.to_vec();
+            names.sort_unstable();
+            Err(format!(
+                "Tool '{tool_name}' is ambiguous across MCP servers [{}]; specify server_name",
+                names.join(", ")
+            ))
+        }
+    }
+}
+
+/// Bound the entire routing operation, including mutex acquisition and discovery.
+/// Dropping the losing future releases its mutex guard and prevents dispatch after
+/// cancellation or a discovery timeout.
+async fn run_tool_call<T>(
+    tool_name: &str,
+    timeout_duration: Duration,
+    cancellation_enabled: bool,
+    cancel_rx: oneshot::Receiver<()>,
+    operation: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    tokio::select! {
+        biased;
+        _ = cancel_rx, if cancellation_enabled => {
+            Err(format!("Tool call '{tool_name}' was cancelled"))
+        }
+        result = timeout(timeout_duration, operation) => {
+            result.unwrap_or_else(|_| Err(format!(
+                "Tool call '{tool_name}' timed out after {} seconds",
+                timeout_duration.as_secs()
+            )))
+        }
+    }
+}
+
+/// Incomplete discovery cannot prove that an unqualified name is unique.
+/// Named calls also fail closed if their selected server could not be queried.
+fn ensure_complete_tool_discovery(failed_servers: &[String]) -> Result<(), String> {
+    if failed_servers.is_empty() {
+        return Ok(());
+    }
+    let mut names = failed_servers.to_vec();
+    names.sort_unstable();
+    Err(format!(
+        "Cannot safely route tool: discovery failed for MCP server(s) [{}]; retry or specify a healthy server_name",
+        names.join(", ")
+    ))
+}
+
 /// Calls a tool on an MCP server by name with optional arguments
 ///
 /// # Arguments
@@ -400,7 +466,7 @@ pub async fn get_server_summaries(
 /// This function:
 /// 1. Locks the MCP servers mutex to access server connections
 /// 2. If server_name is provided, looks for the tool in that specific server
-/// 3. Otherwise, searches through all servers for one containing the named tool
+/// 3. Otherwise, searches all servers and requires an unambiguous tool match
 /// 4. When found, calls the tool on that server with the provided arguments
 /// 5. Supports cancellation via cancellation_token
 /// 6. Returns error if no server has the requested tool or if specified server not found
@@ -428,117 +494,102 @@ pub async fn call_tool(
         cancellations.insert(token.clone(), cancel_tx);
     }
 
-    let servers = state.mcp_servers.lock().await;
+    let result = run_tool_call(
+        &tool_name,
+        timeout_duration,
+        cancellation_token.is_some(),
+        cancel_rx,
+        async {
+            let servers = state.mcp_servers.lock().await;
 
-    // If server_name is provided, only check that specific server
-    let servers_to_check: Vec<(&String, &RunningMcpService)> =
-        if let Some(ref server) = server_name {
-            servers.iter().filter(|(name, _)| *name == server).collect()
-        } else {
-            servers.iter().collect()
-        };
+            // If server_name is provided, only check that specific server
+            let servers_to_check: Vec<(&String, &RunningMcpService)> =
+                if let Some(ref server) = server_name {
+                    servers.iter().filter(|(name, _)| *name == server).collect()
+                } else {
+                    servers.iter().collect()
+                };
 
-    if servers_to_check.is_empty() {
-        cleanup_cancellation_token(&state, &cancellation_token).await;
-        if let Some(server) = server_name {
-            return Err(format!("Server '{server}' not found"));
-        }
-        return Err(format!(
-            "Tool {tool_name} not found — no MCP servers connected"
-        ));
-    }
-
-    let mut transport_error_servers: Vec<String> = Vec::new();
-
-    // Iterate through servers and find the one that contains the tool
-    for (srv_name, service) in servers_to_check.iter() {
-        let tools = match service.list_all_tools().await {
-            Ok(tools) => tools,
-            Err(e) => {
-                let err_str = e.to_string();
-                log::warn!(
-                    "MCP server {} failed to list tools during call_tool: {}",
-                    srv_name,
-                    err_str
-                );
-                if is_transport_error(&err_str) {
-                    transport_error_servers.push(srv_name.to_string());
+            if servers_to_check.is_empty() {
+                if let Some(server) = &server_name {
+                    return Err(format!("Server '{server}' not found"));
                 }
-                continue;
+                return Err(format!(
+                    "Tool {tool_name} not found — no MCP servers connected"
+                ));
             }
-        };
 
-        if !tools.iter().any(|t| t.name == tool_name) {
-            continue; // Tool not found in this server, try next
-        }
+            let mut failed_servers: Vec<String> = Vec::new();
 
-        log::info!("Found tool {tool_name} in server {srv_name}");
+            // Discover every match before dispatching so duplicate tool names fail closed.
+            let mut matching_servers = Vec::new();
+            for (srv_name, service) in servers_to_check.iter() {
+                let tools = match service.list_all_tools().await {
+                    Ok(tools) => tools,
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        log::warn!(
+                            "MCP server {} failed to list tools during call_tool: {}",
+                            srv_name,
+                            err_str
+                        );
+                        if is_transport_error(&err_str) {
+                            state.mcp_reconnect_notify.notify_waiters();
+                        }
+                        failed_servers.push(srv_name.to_string());
+                        continue;
+                    }
+                };
 
-        // Call the tool with timeout and cancellation support
-        let mut params = CallToolRequestParams::new(tool_name.clone());
-        if let Some(args) = arguments.clone() {
-            params = params.with_arguments(args);
-        }
-        let tool_call = service.call_tool(params);
+                if !tools.iter().any(|t| t.name == tool_name) {
+                    continue; // Tool not found in this server, try next
+                }
 
-        // Race between timeout, tool call, and cancellation
-        let result = if cancellation_token.is_some() {
-            tokio::select! {
-                result = timeout(timeout_duration, tool_call) => {
-                    match result {
-                        Ok(call_result) => call_result.map_err(|e| e.to_string()),
-                        Err(_) => Err(format!(
-                            "Tool call '{tool_name}' timed out after {} seconds",
-                            timeout_duration.as_secs()
-                        )),
+                matching_servers.push(srv_name.as_str());
+            }
+
+            ensure_complete_tool_discovery(&failed_servers)?;
+            let selected_server =
+                select_tool_server(&tool_name, server_name.as_deref(), &matching_servers)?;
+
+            if let Some(srv_name) = selected_server {
+                // The server map remains locked throughout discovery and dispatch.
+                let service = servers.get(srv_name).expect("discovered MCP server exists");
+                log::info!("Found tool {tool_name} in server {srv_name}");
+
+                // Call the tool with timeout and cancellation support
+                let mut params = CallToolRequestParams::new(tool_name.clone());
+                if let Some(args) = arguments.clone() {
+                    params = params.with_arguments(args);
+                }
+                let tool_call = service.call_tool(params);
+
+                let result = tool_call.await.map_err(|e| e.to_string());
+
+                // Signal reconnect if the tool call itself hit a transport error
+                if let Err(ref e) = result {
+                    if is_transport_error(e) {
+                        log::warn!(
+                            "MCP server {} transport error during tool call: {}",
+                            srv_name,
+                            e
+                        );
+                        state.mcp_reconnect_notify.notify_waiters();
                     }
                 }
-                _ = cancel_rx => {
-                    Err(format!("Tool call '{tool_name}' was cancelled"))
-                }
+
+                // Cap here rather than at each caller: this is the single point every
+                // desktop MCP tool result passes through on its way into conversation
+                // history, so an unbounded result can never reach the model.
+                return result.map(|res| truncate_tool_result(&res, tool_output_cap));
             }
-        } else {
-            match timeout(timeout_duration, tool_call).await {
-                Ok(call_result) => call_result.map_err(|e| e.to_string()),
-                Err(_) => Err(format!(
-                    "Tool call '{tool_name}' timed out after {} seconds",
-                    timeout_duration.as_secs()
-                )),
-            }
-        };
 
-        // Signal reconnect if the tool call itself hit a transport error
-        if let Err(ref e) = result {
-            if is_transport_error(e) {
-                log::warn!(
-                    "MCP server {} transport error during tool call: {}",
-                    srv_name,
-                    e
-                );
-                state.mcp_reconnect_notify.notify_waiters();
-            }
-        }
-
-        cleanup_cancellation_token(&state, &cancellation_token).await;
-        // Cap here rather than at each caller: this is the single point every
-        // desktop MCP tool result passes through on its way into conversation
-        // history, so an unbounded result can never reach the model.
-        return result.map(|res| truncate_tool_result(&res, tool_output_cap));
-    }
-
-    // No server had the tool — check if it's because of transport errors
-    if !transport_error_servers.is_empty() {
-        state.mcp_reconnect_notify.notify_waiters();
-        cleanup_cancellation_token(&state, &cancellation_token).await;
-        return Err(format!(
-            "MCP server(s) [{}] disconnected while looking for tool '{}'. Reconnecting — please retry.",
-            transport_error_servers.join(", "),
-            tool_name
-        ));
-    }
-
+            Err(format!("Tool {tool_name} not found"))
+        },
+    )
+    .await;
     cleanup_cancellation_token(&state, &cancellation_token).await;
-    Err(format!("Tool {tool_name} not found"))
+    result
 }
 
 /// Cancels a running tool call by its cancellation token
@@ -635,7 +686,10 @@ pub async fn authorize_mcp_server<R: Runtime>(
     if !oauth::is_allowed_oauth_url(&pending.authorization_url) {
         return Err(format!("'{name}' produced a sign-in URL Jan will not open"));
     }
-    if let Err(e) = app.opener().open_url(&pending.authorization_url, None::<&str>) {
+    if let Err(e) = app
+        .opener()
+        .open_url(&pending.authorization_url, None::<&str>)
+    {
         log::warn!("Could not open the browser for '{name}': {e}");
     }
 
@@ -646,10 +700,7 @@ pub async fn authorize_mcp_server<R: Runtime>(
 /// Forget one server's stored tokens. `false` when there were none, so the UI
 /// can tell "cleared" from "nothing to clear".
 #[tauri::command]
-pub async fn clear_mcp_auth<R: Runtime>(
-    app: AppHandle<R>,
-    name: String,
-) -> Result<bool, String> {
+pub async fn clear_mcp_auth<R: Runtime>(app: AppHandle<R>, name: String) -> Result<bool, String> {
     let folder = get_jan_data_folder_path(app);
     oauth::clear(&folder, &name)
 }
@@ -851,9 +902,8 @@ async fn try_browser_snapshot_tool(service: &RunningMcpService) -> Result<bool, 
         // Snapshot tool is very time-consuming
         // Extend timeout to make sure the tool call has enough time to succeed
         Duration::from_secs(20),
-        service.call_tool(
-            CallToolRequestParams::new("browser_snapshot").with_arguments(Map::new()),
-        ),
+        service
+            .call_tool(CallToolRequestParams::new("browser_snapshot").with_arguments(Map::new())),
     )
     .await;
 
@@ -916,4 +966,148 @@ pub async fn save_mcp_configs<R: Runtime>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod call_tool_routing_tests {
+    use super::{ensure_complete_tool_discovery, run_tool_call, select_tool_server};
+    use std::{future::pending, time::Duration};
+    use tokio::sync::{oneshot, Mutex};
+
+    #[test]
+    fn failed_rival_prevents_dispatch_to_the_survivor() {
+        for matches in [vec!["alpha"], vec![]] {
+            let result = ensure_complete_tool_discovery(&["beta".into()])
+                .and_then(|()| select_tool_server("search", None, &matches));
+            assert!(result.unwrap_err().contains("discovery failed"));
+        }
+        assert!(ensure_complete_tool_discovery(&[]).is_ok());
+    }
+
+    #[tokio::test]
+    async fn discovery_timeout_releases_lock_without_dispatch() {
+        let mutex = Mutex::new(());
+        let (_tx, rx) = oneshot::channel();
+        let mut dispatched = false;
+        let result = run_tool_call("search", Duration::from_millis(10), false, rx, async {
+            let _guard = mutex.lock().await;
+            pending::<()>().await; // controlled hanging list_all_tools
+            dispatched = true;
+            Ok(())
+        })
+        .await;
+        assert!(result.unwrap_err().contains("timed out"));
+        assert!(!dispatched);
+        assert!(
+            mutex.try_lock().is_ok(),
+            "timeout must drop the discovery guard"
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_cancellation_releases_lock_without_dispatch() {
+        let mutex = Mutex::new(());
+        let (tx, rx) = oneshot::channel();
+        let (started_tx, started_rx) = oneshot::channel();
+        let mut dispatched = false;
+        let call = run_tool_call("search", Duration::from_secs(5), true, rx, async {
+            let _guard = mutex.lock().await;
+            started_tx.send(()).unwrap();
+            pending::<()>().await;
+            dispatched = true;
+            Ok(())
+        });
+        let cancel = async {
+            started_rx.await.unwrap();
+            tx.send(()).unwrap();
+        };
+        let (result, ()) =
+            tokio::time::timeout(Duration::from_secs(1), async { tokio::join!(call, cancel) })
+                .await
+                .expect("cancellation should interrupt discovery immediately");
+        assert!(result.unwrap_err().contains("cancelled"));
+        assert!(!dispatched);
+        assert!(mutex.try_lock().is_ok());
+    }
+
+    #[tokio::test]
+    async fn mutex_acquisition_is_bounded_by_timeout_and_cancellation() {
+        let mutex = Mutex::new(());
+        let _guard = mutex.lock().await;
+        let (_tx, rx) = oneshot::channel();
+        let result = run_tool_call("search", Duration::from_millis(10), false, rx, async {
+            let _guard = mutex.lock().await;
+            Ok(())
+        })
+        .await;
+        assert!(result.unwrap_err().contains("timed out"));
+
+        let (tx, rx) = oneshot::channel();
+        let call = run_tool_call("search", Duration::from_secs(5), true, rx, async {
+            let _guard = mutex.lock().await;
+            Ok(())
+        });
+        let cancel = async {
+            tokio::task::yield_now().await;
+            tx.send(()).unwrap();
+        };
+        let (result, ()) =
+            tokio::time::timeout(Duration::from_secs(1), async { tokio::join!(call, cancel) })
+                .await
+                .expect("cancellation should interrupt mutex acquisition");
+        assert!(result.unwrap_err().contains("cancelled"));
+    }
+
+    #[tokio::test]
+    async fn operation_succeeds_without_cancellation_token() {
+        let (tx, rx) = oneshot::channel();
+        drop(tx); // absent tokens must not treat a closed channel as cancellation
+        assert_eq!(
+            run_tool_call("search", Duration::from_secs(1), false, rx, async {
+                Ok(42)
+            })
+            .await,
+            Ok(42)
+        );
+    }
+
+    #[test]
+    fn legacy_call_selects_the_only_matching_server() {
+        assert_eq!(
+            select_tool_server("search", None, &["alpha"]),
+            Ok(Some("alpha"))
+        );
+        assert_eq!(select_tool_server("search", None, &[]), Ok(None));
+    }
+
+    #[test]
+    fn legacy_call_rejects_ambiguous_matches_in_either_order() {
+        let error = select_tool_server("search", None, &["beta", "alpha"])
+            .expect_err("ambiguous legacy calls must not dispatch");
+        assert_eq!(
+            error,
+            "Tool 'search' is ambiguous across MCP servers [alpha, beta]; specify server_name"
+        );
+        assert_eq!(
+            select_tool_server("search", None, &["alpha", "beta"]),
+            Err(error)
+        );
+    }
+
+    #[test]
+    fn explicit_server_disambiguates_duplicate_tools() {
+        assert_eq!(
+            select_tool_server("search", Some("beta"), &["alpha", "beta"]),
+            Ok(Some("beta"))
+        );
+    }
+
+    #[test]
+    fn explicit_server_never_falls_back_to_another_server() {
+        assert_eq!(
+            select_tool_server("search", Some("missing"), &["alpha"]),
+            Ok(None)
+        );
+        assert_eq!(select_tool_server("search", Some("alpha"), &[]), Ok(None));
+    }
 }

@@ -125,6 +125,7 @@ const h = vi.hoisted(() => {
 
   const toolAvailableState: any = {
     getDisabledToolsForThread: vi.fn(() => []),
+    isToolDisabled: vi.fn(() => false),
   }
   const useToolAvailableMock: any = (selector: any) => selector(toolAvailableState)
   useToolAvailableMock.getState = () => toolAvailableState
@@ -132,6 +133,7 @@ const h = vi.hoisted(() => {
   const toolApprovalState: any = {
     approveToolForThread: vi.fn(),
     clearPendingForThread: vi.fn(),
+    cancelApproval: vi.fn(),
     requestApproval: vi.fn().mockResolvedValue(true),
   }
   const useToolApprovalMock: any = (selector: any) => selector(toolApprovalState)
@@ -399,6 +401,20 @@ vi.mock('zustand/react/shallow', () => ({
 
 vi.mock('@/hooks/use-chat', () => ({
   useChat: (_args: any) => {
+    // Model the session transport's last advertised identity, not the live menu.
+    const threadId = h.routeParams.threadId
+    const session = (h.chatSessionsState.sessions[threadId] ??= {})
+    session.chat ??= {
+      get messages() { return h.chatState.messages },
+      set messages(messages) { h.chatState.messages = messages },
+      stop: h.mockStop,
+    }
+    session.transport ??= { getTurnModelSelection: () => null }
+    session.transport.setContinueFromContent ??= h.mockSetContinueFromContent
+    session.transport.getMcpServerForTool ??= (name: string) =>
+      h.appStateState.mcpToolNames.has(name)
+        ? h.appStateState.tools.find((tool) => tool.name === name)?.server ?? 'test-server'
+        : undefined
     ;(h as any).capturedOnFinish = _args?.onFinish
     ;(h as any).capturedOnToolCall = _args?.onToolCall
     ;(h as any).capturedSendAutomaticallyWhen = _args?.sendAutomaticallyWhen
@@ -511,6 +527,13 @@ import { usePrompt } from '@/hooks/usePrompt'
 // put back or it leaks into every later test.
 const hub = getServiceHub() as unknown as Record<string, unknown>
 const realMcp = hub.mcp
+// Live discovery is independently controllable from the advertised transport.
+const getMcpTools = vi.fn(async () =>
+  [...h.appStateState.mcpToolNames].map((name) => ({
+    name,
+    server: h.appStateState.tools.find((tool) => tool.name === name)?.server ?? 'test-server',
+  }))
+)
 
 const renderComponent = () => {
   const Component = Route.component as React.ComponentType
@@ -523,6 +546,7 @@ describe('ThreadDetail route', () => {
     // left waiting would keep its approvals. Deleting the threads ends them.
     h.removeChatSession('thread-1')
     h.removeChatSession('thread-2')
+    h.chatSessionsState.sessions = {}
     vi.clearAllMocks()
     h.chatState.messages = []
     h.chatState.status = 'ready'
@@ -562,7 +586,14 @@ describe('ThreadDetail route', () => {
     h.appStateState.mcpToolNames = new Set<string>()
     h.appStateState.tools = []
     h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
-    hub.mcp = realMcp
+    getMcpTools.mockImplementation(async () =>
+      [...h.appStateState.mcpToolNames].map((name) => ({
+        name,
+        server: h.appStateState.tools.find((tool) => tool.name === name)?.server ?? 'test-server',
+      }))
+    )
+    h.toolAvailableState.isToolDisabled.mockReturnValue(false)
+    hub.mcp = () => ({ ...(realMcp as () => object)(), getTools: getMcpTools })
     useToolCallRuntime.getState().reset()
     sessionStorage.clear()
   })
@@ -1600,6 +1631,7 @@ describe('ThreadDetail route', () => {
       const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
       hub.mcp = () =>
         ({
+          getTools: getMcpTools,
           callToolWithCancellation: (args: unknown) => ({
             promise: callTool(args),
             cancel: vi.fn().mockResolvedValue(undefined),
@@ -1660,6 +1692,7 @@ describe('ThreadDetail route', () => {
       const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
       hub.mcp = () =>
         ({
+          getTools: getMcpTools,
           callToolWithCancellation: (args: unknown) => ({
             promise: callTool(args),
             cancel: vi.fn().mockResolvedValue(undefined),
@@ -1699,6 +1732,78 @@ describe('ThreadDetail route', () => {
       }
     )
 
+    it('refuses an advertised MCP web_search if native web search is enabled during approval', async () => {
+      webConfig.enabled = false
+      h.appStateState.mcpToolNames = new Set(['web_search'])
+      h.chatSessionsState.sessions['thread-1'] = {
+        transport: {
+          getTurnModelSelection: () => null,
+          getMcpServerForTool: vi.fn(() => 'search-server'),
+        },
+      }
+      getMcpTools.mockResolvedValue([{ name: 'web_search', server: 'search-server' }])
+      let approve!: (allowed: boolean) => void
+      h.toolApprovalState.requestApproval = vi.fn(() =>
+        new Promise<boolean>((resolve) => { approve = resolve })
+      )
+      const callTool = serveMcp()
+      await run(webCall('web-identity-change'))
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
+        'web-identity-change', 'web_search', 'thread-1', 'search-server'
+      )
+      expect(callTool).not.toHaveBeenCalled()
+      expect(webTool.executeWebTool).not.toHaveBeenCalled()
+
+      webConfig.enabled = true
+      await act(async () => { approve(true) })
+
+      expect(callTool).not.toHaveBeenCalled()
+      expect(webTool.executeWebTool).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
+        toolCallId: 'web-identity-change', state: 'output-error',
+        errorText: expect.stringMatching(/identity changed/i),
+      }))
+    })
+
+    it('approves and dispatches advertised MCP retrieve rather than an unadvertised RAG tool', async () => {
+      h.appStateState.ragToolNames = new Set(['retrieve'])
+      h.chatSessionsState.sessions['thread-1'] = {
+        transport: {
+          getTurnModelSelection: () => null,
+          getMcpServerForTool: vi.fn(() => 'retrieval-server'),
+        },
+      }
+      getMcpTools.mockResolvedValue([{ name: 'retrieve', server: 'retrieval-server' }])
+      let approve!: (allowed: boolean) => void
+      h.toolApprovalState.requestApproval = vi.fn(() =>
+        new Promise<boolean>((resolve) => { approve = resolve })
+      )
+      const callTool = serveMcp()
+      const originalRag = hub.rag
+      const ragCallTool = vi.fn()
+      hub.rag = () => ({ callTool: ragCallTool })
+      try {
+        await run(webCall('mcp-retrieve', 'retrieve'))
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
+          'mcp-retrieve', 'retrieve', 'thread-1', 'retrieval-server'
+        )
+        expect(callTool).not.toHaveBeenCalled()
+        expect(ragCallTool).not.toHaveBeenCalled()
+
+        await act(async () => { approve(true) })
+
+        expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          toolName: 'retrieve', serverName: 'retrieval-server', arguments: { query: 'jan' },
+        }))
+        expect(ragCallTool).not.toHaveBeenCalled()
+        expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
+          toolCallId: 'mcp-retrieve', output: [],
+        }))
+      } finally {
+        hub.rag = originalRag
+      }
+    })
+
     it('refuses the call, before any prompt, when web search is off and no server provides the tool', async () => {
       webConfig.enabled = false
       h.appStateState.mcpToolNames = new Set(['fetch'])
@@ -1730,6 +1835,157 @@ describe('ThreadDetail route', () => {
         isAbort: false,
       })
 
+    describe('advertised MCP identity stays paired with approval and execution', () => {
+      const advertisedServer = 'advertised-server'
+      const otherServer = 'menu-server'
+      let approve: (allowed: boolean) => void
+      let callTool: ReturnType<typeof vi.fn>
+
+      beforeEach(() => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        // A stale/live menu must not choose the identity for this turn.
+        h.appStateState.tools = [{ name: 'fetch', server: otherServer }]
+        h.chatSessionsState.sessions['thread-1'] = {
+          transport: {
+            getTurnModelSelection: () => null,
+            getMcpServerForTool: vi.fn(() => advertisedServer),
+          },
+        }
+        getMcpTools.mockResolvedValue([{ name: 'fetch', server: advertisedServer }])
+        h.toolApprovalState.requestApproval = vi.fn(() =>
+          new Promise<boolean>((resolve) => { approve = resolve })
+        )
+        callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
+        hub.mcp = () => ({
+          getTools: getMcpTools,
+          callToolWithCancellation: cancellable(callTool),
+        })
+      })
+
+      const waitForApproval = async () => {
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(toolCall('bound-call'))
+          await finishWithToolCalls()
+        })
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
+          'bound-call', 'fetch', 'thread-1', advertisedServer
+        )
+        expect(callTool).not.toHaveBeenCalled()
+        expect(getMcpTools).toHaveBeenCalledTimes(1)
+      }
+
+      it('executes only the server advertised by the session, even if the menu disagrees', async () => {
+        await waitForApproval()
+        // Even a transport refresh after arrival cannot rebind this call.
+        h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool
+          .mockReturnValue(otherServer)
+        await act(async () => { approve(true) })
+        expect(callTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          toolName: 'fetch', serverName: advertisedServer, arguments: { url: 'x' },
+        }))
+        expect(getMcpTools).toHaveBeenCalledTimes(2)
+        expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
+          toolCallId: 'bound-call', output: [],
+        }))
+      })
+
+      it.each(['revoked', 'disconnected', 'replaced', 'ambiguous'] as const)(
+        'does not dispatch when the advertised pair is %s while approval is pending',
+        async (change) => {
+          await waitForApproval()
+          if (change === 'revoked') h.toolAvailableState.isToolDisabled.mockReturnValue(true)
+          if (change === 'disconnected') getMcpTools.mockResolvedValue([])
+          if (change === 'replaced') getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }])
+          if (change === 'ambiguous') getMcpTools.mockResolvedValue([
+            { name: 'fetch', server: advertisedServer },
+            { name: 'fetch', server: otherServer },
+          ])
+          await act(async () => { approve(true) })
+          expect(callTool).not.toHaveBeenCalled()
+          expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
+            toolCallId: 'bound-call', state: 'output-error',
+            errorText: expect.stringMatching(/unavailable|disabled|ambiguous/),
+          }))
+          expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+        }
+      )
+
+      it('Stop releases the thread while inventory is unresolved and ignores a late inventory result', async () => {
+        let resolveInventory!: (tools: Array<{ name: string; server: string }>) => void
+        getMcpTools.mockImplementation(() => new Promise((resolve) => {
+          resolveInventory = resolve
+        }))
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(toolCall('bound-call'))
+          await finishWithToolCalls()
+        })
+        expect(getMcpTools).toHaveBeenCalledTimes(1)
+        const earlyPrompts = h.toolApprovalState.requestApproval.mock.calls.length
+        await act(async () => { screen.getByTestId('chat-stop').click() })
+        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+        expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledWith('bound-call')
+        await act(async () => {
+          resolveInventory([{ name: 'fetch', server: advertisedServer }])
+          approve(true)
+        })
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(earlyPrompts)
+        expect(callTool).not.toHaveBeenCalled()
+        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+      })
+
+      it('dismisses the early approval when inventory rejects the advertised identity before approval', async () => {
+        getMcpTools.mockResolvedValue([{ name: 'fetch', server: otherServer }])
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(toolCall('bound-call'))
+          await finishWithToolCalls()
+        })
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
+          'bound-call', 'fetch', 'thread-1', advertisedServer
+        )
+        expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledExactlyOnceWith('bound-call')
+        expect(h.mockAddToolOutput).toHaveBeenCalledWith(expect.objectContaining({
+          toolCallId: 'bound-call', state: 'output-error',
+          errorText: expect.stringMatching(/unavailable|stale|ambiguous/),
+        }))
+        await act(async () => { approve(true) })
+        expect(callTool).not.toHaveBeenCalled()
+        expect(h.toolApprovalState.approveToolForThread).not.toHaveBeenCalled()
+      })
+
+      it('does not execute a late approval after Stop', async () => {
+        await waitForApproval()
+        await act(async () => { screen.getByTestId('chat-stop').click() })
+        await act(async () => { approve(true) })
+        expect(callTool).not.toHaveBeenCalled()
+        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+      })
+
+      it('cancels the running bound call and ignores its late result after Stop', async () => {
+        let resolveResult!: (result: unknown) => void
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        const dispatch = vi.fn(() => ({
+          promise: new Promise((resolve) => { resolveResult = resolve }),
+          cancel,
+          token: 'bound-token',
+        }))
+        hub.mcp = () => ({ getTools: getMcpTools, callToolWithCancellation: dispatch })
+        await waitForApproval()
+        await act(async () => { approve(true) })
+        expect(dispatch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          toolName: 'fetch', serverName: advertisedServer,
+        }))
+        await act(async () => { screen.getByTestId('chat-stop').click() })
+        expect(cancel).toHaveBeenCalledTimes(1)
+        await act(async () => { resolveResult({ error: '', content: [{ text: 'late' }] }) })
+        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+      })
+    })
+
     it('requests approval as soon as a tool call arrives, before onFinish', async () => {
       h.appStateState.mcpToolNames = new Set(['fetch'])
       h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
@@ -1746,7 +2002,7 @@ describe('ThreadDetail route', () => {
         'tc1',
         'fetch',
         'thread-1',
-        undefined
+        'test-server'
       )
     })
 
@@ -1824,7 +2080,7 @@ describe('ThreadDetail route', () => {
       h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
       const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
       hub.mcp = () =>
-        ({ callToolWithCancellation: cancellable(callTool) }) as never
+        ({ getTools: getMcpTools, callToolWithCancellation: cancellable(callTool) }) as never
       renderComponent()
 
       const onToolCall = (
@@ -1852,7 +2108,7 @@ describe('ThreadDetail route', () => {
       h.modelProviderState.selectedModel.settings = {}
       const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
       hub.mcp = () =>
-        ({ callToolWithCancellation: cancellable(callTool) }) as never
+        ({ getTools: getMcpTools, callToolWithCancellation: cancellable(callTool) }) as never
 
       try {
         renderComponent()
@@ -1943,7 +2199,7 @@ describe('ThreadDetail route', () => {
           return Promise.resolve({ error: '', content: [] })
         })
         hub.mcp = () =>
-          ({ callToolWithCancellation: cancellable(callTool) }) as never
+          ({ getTools: getMcpTools, callToolWithCancellation: cancellable(callTool) }) as never
 
         renderComponent()
         await act(async () => {
@@ -1982,6 +2238,7 @@ describe('ThreadDetail route', () => {
         const never = new Promise(() => {})
         hub.mcp = () =>
           ({
+            getTools: getMcpTools,
             callToolWithCancellation: () => ({
               promise: never,
               cancel,
@@ -2025,6 +2282,7 @@ describe('ThreadDetail route', () => {
         const cancel = vi.fn().mockResolvedValue(undefined)
         hub.mcp = () =>
           ({
+            getTools: getMcpTools,
             callToolWithCancellation: () => ({
               promise: new Promise(() => {}),
               cancel,
@@ -2058,6 +2316,7 @@ describe('ThreadDetail route', () => {
         const cancel = vi.fn().mockResolvedValue(undefined)
         hub.mcp = () =>
           ({
+            getTools: getMcpTools,
             callToolWithCancellation: () => ({
               promise: new Promise(() => {}),
               cancel,
@@ -2092,6 +2351,7 @@ describe('ThreadDetail route', () => {
         const cancel = vi.fn().mockResolvedValue(undefined)
         hub.mcp = () =>
           ({
+            getTools: getMcpTools,
             callToolWithCancellation: () => ({
               promise: new Promise(() => {}),
               cancel,
@@ -2116,6 +2376,7 @@ describe('ThreadDetail route', () => {
         const cancel = vi.fn().mockResolvedValue(undefined)
         hub.mcp = () =>
           ({
+            getTools: getMcpTools,
             callToolWithCancellation: () => ({
               promise: new Promise(() => {}),
               cancel,
@@ -2174,6 +2435,7 @@ describe('ThreadDetail route', () => {
         const finish: Array<(r: unknown) => void> = []
         hub.mcp = () =>
           ({
+            getTools: getMcpTools,
             callToolWithCancellation: (args: any) => {
               started.push(args.arguments.id)
               return {
@@ -2234,6 +2496,7 @@ describe('ThreadDetail route', () => {
         const results: Array<(r: unknown) => void> = []
         hub.mcp = () =>
           ({
+            getTools: getMcpTools,
             callToolWithCancellation: () => ({
               promise: new Promise((resolve) => results.push(resolve)),
               cancel: vi.fn().mockResolvedValue(undefined),
@@ -2275,6 +2538,7 @@ describe('ThreadDetail route', () => {
         const cancel = vi.fn().mockResolvedValue(undefined)
         hub.mcp = () =>
           ({
+            getTools: getMcpTools,
             callToolWithCancellation: () => ({
               promise: new Promise(() => {}),
               cancel,
@@ -2365,6 +2629,7 @@ describe('ThreadDetail route', () => {
         h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
         hub.mcp = () =>
           ({
+            getTools: getMcpTools,
             callToolWithCancellation: () => ({
               promise: new Promise(() => {}),
               cancel: vi.fn().mockResolvedValue(undefined),
@@ -2615,6 +2880,7 @@ describe('ThreadDetail route', () => {
         let finish: (r: unknown) => void = () => {}
         hub.mcp = () =>
           ({
+            getTools: getMcpTools,
             callToolWithCancellation: () => ({
               promise: new Promise((resolve) => (finish = resolve)),
               cancel: vi.fn().mockResolvedValue(undefined),
@@ -2662,6 +2928,7 @@ describe('ThreadDetail route', () => {
         const started: string[] = []
         hub.mcp = () =>
           ({
+            getTools: getMcpTools,
             callToolWithCancellation: (call: any) => {
               started.push(call.toolName)
               return {
