@@ -282,6 +282,12 @@ const grantKeyOf = (grant: unknown): string => {
 }
 const callMcpIdentities = new Map<string, Map<string, string | undefined>>()
 const callMcpValidators = new Map<string, Map<string, (signal?: AbortSignal) => Promise<void>>>()
+// Who a call id was first bound to (root model vs a child run, and which tool).
+// A root call id can textually equal a child's tuple id, so a cached
+// identity/validator/approval never carries across origins, tools, or (for a
+// child) different arguments presented under the same id.
+type McpCallBinding = { origin: 'root' | 'child'; toolName: string; input?: string }
+const callMcpBindings = new Map<string, Map<string, McpCallBinding>>()
 const approvalsOf = (threadId: string) => {
   let approvals = toolApprovalPromises.get(threadId)
   if (!approvals) {
@@ -290,11 +296,27 @@ const approvalsOf = (threadId: string) => {
   }
   return approvals
 }
+// Call ids already dispatched this turn. An id is consumed once per actual
+// dispatch, so a model that reuses one (even for the same tool with other
+// arguments) can never inherit the first call's approval promise.
+const dispatchedCalls = new Map<string, Set<string>>()
+const claimDispatch = (threadId: string, callId: string): boolean => {
+  let ids = dispatchedCalls.get(threadId)
+  if (!ids) {
+    ids = new Set()
+    dispatchedCalls.set(threadId, ids)
+  }
+  if (ids.has(callId)) return false
+  ids.add(callId)
+  return true
+}
 const forgetApprovals = (threadId: string) => {
+  dispatchedCalls.delete(threadId)
   toolApprovalPromises.delete(threadId)
   callNativeGrants.delete(threadId)
   callMcpIdentities.delete(threadId)
   callMcpValidators.delete(threadId)
+  callMcpBindings.delete(threadId)
   useChildApprovalCalls.getState().clearThread(threadId)
 }
 
@@ -572,7 +594,21 @@ function ThreadDetail() {
   )
 
   const { threadId } = useParams({ from: Route.id })
-  const bindMcpCall = (toolCall: { toolName: string; toolCallId: string }, child?: ChildBinding) => {
+  const bindMcpCall = (toolCall: { toolName: string; toolCallId: string; input?: unknown }, child?: ChildBinding) => {
+    let bindings = callMcpBindings.get(threadId)
+    if (!bindings) {
+      bindings = new Map()
+      callMcpBindings.set(threadId, bindings)
+    }
+    const origin = child ? 'child' : 'root'
+    // Only a child pins its input: the root SDK presents one id to onToolCall and
+    // then dispatch (input may be finalized between), a child never repeats an id.
+    const input = child ? JSON.stringify(toolCall.input ?? null) : undefined
+    const bound = bindings.get(toolCall.toolCallId)
+    if (bound && (bound.origin !== origin || bound.toolName !== toolCall.toolName || bound.input !== input)) {
+      throw new Error(`Duplicate tool call id: ${toolCall.toolCallId}`)
+    }
+    if (!bound) bindings.set(toolCall.toolCallId, { origin, toolName: toolCall.toolName, input })
     let identities = callMcpIdentities.get(threadId)
     if (!identities) {
       identities = new Map()
@@ -1037,7 +1073,11 @@ function ThreadDetail() {
       // Show approval on arrival, but do not execute from the SDK callback.
       // runTurn dispatches after canonical parsing completes and reuses this
       // one promise. Internal tools retain the existing Chat policy.
-      const { serverName, checkMcp } = bindMcpCall(toolCall)
+      // A conflicting id must not throw out of this SDK callback (that would
+      // stop the whole turn): open no prompt, and dispatch refuses that call.
+      let bound: ReturnType<typeof bindMcpCall>
+      try { bound = bindMcpCall(toolCall) } catch { return }
+      const { serverName, checkMcp } = bound
       // Conversation todo/ask never prompt: dispatch serves or refuses them.
       if (!serverName && isConversationClientTool(toolCall.toolName)) return
       const isNative = !serverName && chatShellRoute(toolCall.toolName) === 'builtin'
@@ -1093,6 +1133,12 @@ function ThreadDetail() {
       }
       if (signal.aborted || isChatClosing() || !useChatSessions.getState().sessions[threadId]) {
         return { output: CHAT_CLOSED_TOOL_ERROR, isError: true }
+      }
+      // One dispatch per call id, claimed synchronously before any await or store
+      // write. A duplicate returns here, outside the try/finally, so it has no side
+      // effects and never cancels the original call's still-pending approval card.
+      if (!claimDispatch(threadId, toolCall.toolCallId)) {
+        return { output: `Duplicate tool call id: ${toolCall.toolCallId}. This call was not run.`, isError: true }
       }
       useToolCallRuntime.getState().enqueue([toolCall.toolCallId], threadId)
       // A child call owns its approval card from here (before any await) until

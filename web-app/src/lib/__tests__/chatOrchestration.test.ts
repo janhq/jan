@@ -142,6 +142,99 @@ describe('bounded child tools', () => {
   })
 })
 
+describe('child tool-call identity', () => {
+  const twoCalls = (a: [string, string], b: [string, string]) =>
+    streamOf([a, b].flatMap(([name, id]) => [
+      { type: 'tool-input-start', toolCallId: id, toolName: name },
+      { type: 'tool-input-available', toolCallId: id, toolName: name, input: {} },
+    ]))
+
+  it('a child that reuses one toolCallId for a different tool in the same step never reaches dispatch twice with that id', async () => {
+    const { ctx, dispatch } = ctxFor()
+    let step = 0
+    hoisted.childStep.mockImplementation(async () => (step++ === 0 ? twoCalls(['read', 'dup'], ['write', 'dup']) : textStep('ok')))
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle(60)
+    const ids = (dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolCallId: string }).toolCallId)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect((dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolName: string }).toolName)).not.toContain('write')
+  })
+
+  it('a step that repeats an id fails closed before ANY dispatch: the first call is not run', async () => {
+    const { ctx, dispatch } = ctxFor()
+    let step = 0
+    hoisted.childStep.mockImplementation(async () => (step++ === 0 ? twoCalls(['write', 'dup'], ['write', 'dup']) : textStep('ok')))
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle(60)
+    expect(dispatch).not.toHaveBeenCalled()
+    // The malformed step ended the child run; the model was not asked again.
+    expect(step).toBe(1)
+  })
+
+  it('a child that reuses a toolCallId in a later step is refused, not re-dispatched under the same id', async () => {
+    const { ctx, dispatch } = ctxFor()
+    let step = 0
+    hoisted.childStep.mockImplementation(async () => (step++ === 0 ? callStep('read', 'dup') : step === 2 ? callStep('write', 'dup') : textStep('ok')))
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle(60)
+    const ids = (dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolCallId: string }).toolCallId)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect((dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolName: string }).toolName)).toEqual(['read'])
+  })
+
+  it('a later step that mixes a fresh write with a reused id is refused whole: the fresh call never dispatches and the first outcome stands', async () => {
+    const { ctx, dispatch } = ctxFor()
+    const call = (name: string, id: string, input: unknown) => [
+      { type: 'tool-input-start', toolCallId: id, toolName: name },
+      { type: 'tool-input-available', toolCallId: id, toolName: name, input },
+    ]
+    let step = 0
+    hoisted.childStep.mockImplementation(async () => {
+      step++
+      if (step === 1) return streamOf(call('write', 'X', { path: 'x' }))
+      // Fresh Y first, then the id step 1 already used. Only the child's own
+      // cross-step id set can refuse this before Y runs; the per-call dispatch
+      // check would run Y and only then reject X.
+      if (step === 2) return streamOf([...call('write', 'Y', { path: 'y' }), ...call('write', 'X', { path: 'x2' })])
+      return textStep('ok')
+    })
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle(80)
+    const calls = (dispatch.mock.calls as unknown[][]).map((c) => c[0] as { toolName: string; input: unknown })
+    // Only step 1's X ran; Y was never dispatched and X was not run again.
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ toolName: 'write', input: { path: 'x' } })
+    // The refused step ended the child run; the model was not asked a third time.
+    expect(step).toBe(2)
+  })
+
+  it('crafted task call ids and names whose `${callId}-${name}` joins collide still get distinct child tool ids', async () => {
+    const { ctx, dispatch } = ctxFor()
+    hoisted.childStep.mockImplementation(async (o: { messages: unknown[] }) => (o.messages.length === 1 ? callStep('read', 'k') : textStep('ok')))
+    // ('a','n-m') and ('a-n','m') both join to 'a-n-m'.
+    await runChatTask({ subagents: [{ name: 'n-m', task: 'go' }] }, 'a', ctx)
+    await runChatTask({ subagents: [{ name: 'm', task: 'go' }] }, 'a-n', ctx)
+    await settle(80)
+    const ids = (dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolCallId: string }).toolCallId)
+    expect(ids).toHaveLength(2)
+    expect(new Set(ids).size).toBe(2)
+  })
+
+  it('a repeated task run with the same parent call id, child name and child call id still gets a distinct execution id', async () => {
+    const { ctx, dispatch } = ctxFor()
+    hoisted.childStep.mockImplementation(async (o: { messages: unknown[] }) => (o.messages.length === 1 ? callStep('read', 'k', { path: 'a' }) : textStep('ok')))
+    // Every part of the tuple is model-chosen; the root may reuse a task call id.
+    await runChatTask(oneChild(), 'same-task-call', ctx)
+    await settle(80)
+    await runChatTask(oneChild(), 'same-task-call', ctx)
+    await settle(80)
+    const calls = (dispatch.mock.calls as unknown[][]).map((c) => c[0] as { toolCallId: string; toolName: string; input: unknown })
+    expect(calls).toHaveLength(2)
+    expect(calls.map((c) => [c.toolName, c.input])).toEqual([['read', { path: 'a' }], ['read', { path: 'a' }]])
+    expect(calls[0].toolCallId).not.toBe(calls[1].toolCallId)
+  })
+})
+
 describe('parent grant frozen at dispatch', () => {
   it('passes the grant frozen at task time (and frozen MCP identity) to every child dispatch', async () => {
     let live: unknown = grant({ folderScope: { path: '/p', access: 'read' } })

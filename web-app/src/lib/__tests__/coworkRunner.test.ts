@@ -423,6 +423,69 @@ describe('runTurn', () => {
     expect(d.sendStep).toHaveBeenCalledTimes(1)
   })
 
+  describe('duplicate tool call ids', () => {
+    const dupWave = (): UIMessageChunk[] => [
+      ...toolStep('write', 'dup'),
+      {
+        type: 'tool-input-available',
+        toolCallId: 'dup',
+        toolName: 'write',
+        input: { path: 'b.txt' },
+      } as UIMessageChunk,
+    ]
+    const signal = () => new AbortController().signal
+
+    it('dispatches nothing from a step that repeats an id, and says so (default Cowork: no seenCallIds)', async () => {
+      const dispatch = vi.fn(async (): Promise<ToolOutcome> => ({ output: 'wrote' }))
+      const d = deps([dupWave(), textStep('done')], dispatch)
+      const out = await runTurn({ messages: [user('hi')], deps: d, signal: signal() })
+      expect(dispatch).toHaveBeenCalledTimes(0)
+      expect(out.stoppedBy).toBe('error')
+      expect(out.errorText).toContain('Duplicate tool call id: dup')
+      expect(d.sendStep).toHaveBeenCalledTimes(1)
+      // No phantom success and no orphaned tool part in the committed history.
+      const info = d.onStep.mock.calls[0][0]
+      expect(info.outcomes.size).toBe(0)
+      expect(info.turns.some((t: any) => t.role === 'tool')).toBe(false)
+      expect(JSON.stringify(out.messages)).not.toContain('wrote')
+      expect(JSON.stringify(out.messages)).not.toContain('tool-write')
+    })
+
+    it('fails a whole step closed even when the first call is valid', async () => {
+      const dispatch = vi.fn(async (): Promise<ToolOutcome> => ({ output: 'wrote' }))
+      const d = deps([[...toolStep('write', 'a'), ...dupWave()]], dispatch)
+      const out = await runTurn({ messages: [user('hi')], deps: d, signal: signal() })
+      expect(dispatch).not.toHaveBeenCalled()
+      expect(out.stoppedBy).toBe('error')
+    })
+
+    it('refuses an id seen in an earlier step of a shared set, keeping the earlier outcome', async () => {
+      const dispatch = vi.fn(async (): Promise<ToolOutcome> => ({ output: 'wrote' }))
+      const d = deps([toolStep('write', 'x'), toolStep('write', 'x'), textStep('done')], dispatch)
+      const out = await runTurn({
+        messages: [user('hi')],
+        deps: d,
+        signal: signal(),
+        seenCallIds: new Set(),
+      })
+      expect(dispatch).toHaveBeenCalledTimes(1)
+      expect(out.stoppedBy).toBe('error')
+      expect(out.errorText).toContain('Duplicate tool call id: x')
+      const toolParts = out.messages.flatMap((m: any) => m.parts).filter((p: any) => p.toolCallId === 'x')
+      expect(toolParts).toHaveLength(1)
+      expect(toolParts[0].state).toBe('output-available')
+      expect(toolParts[0].output).toBe('wrote')
+    })
+
+    it('keeps allowing a reused id across steps when no seen set is given (Cowork)', async () => {
+      const dispatch = vi.fn(async (): Promise<ToolOutcome> => ({ output: 'ok' }))
+      const d = deps([toolStep('read', 'x'), toolStep('read', 'x'), textStep('done')], dispatch)
+      const out = await runTurn({ messages: [user('hi')], deps: d, signal: signal() })
+      expect(dispatch).toHaveBeenCalledTimes(2)
+      expect(out.stoppedBy).toBe('done')
+    })
+  })
+
   it('feeds each step tool results before the next one', async () => {
     const d = deps([toolStep('read'), textStep('done')])
     await runTurn({
