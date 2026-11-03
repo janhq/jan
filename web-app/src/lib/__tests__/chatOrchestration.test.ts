@@ -182,6 +182,20 @@ describe('child tool-call identity', () => {
     expect(ids).toHaveLength(2)
     expect(new Set(ids).size).toBe(2)
   })
+
+  it('a repeated task run with the same parent call id, child name and child call id still gets a distinct execution id', async () => {
+    const { ctx, dispatch } = ctxFor()
+    hoisted.childStep.mockImplementation(async (o: { messages: unknown[] }) => (o.messages.length === 1 ? callStep('read', 'k', { path: 'a' }) : textStep('ok')))
+    // Every part of the tuple is model-chosen; the root may reuse a task call id.
+    await runChatTask(oneChild(), 'same-task-call', ctx)
+    await settle(80)
+    await runChatTask(oneChild(), 'same-task-call', ctx)
+    await settle(80)
+    const calls = (dispatch.mock.calls as unknown[][]).map((c) => c[0] as { toolCallId: string; toolName: string; input: unknown })
+    expect(calls).toHaveLength(2)
+    expect(calls.map((c) => [c.toolName, c.input])).toEqual([['read', { path: 'a' }], ['read', { path: 'a' }]])
+    expect(calls[0].toolCallId).not.toBe(calls[1].toolCallId)
+  })
 })
 
 describe('parent grant frozen at dispatch', () => {

@@ -2586,6 +2586,39 @@ describe('ThreadDetail route', () => {
           expect(out).not.toMatchObject({ isError: true })
           expect(run).toHaveBeenCalledTimes(1)
         })
+        it('a later root turn reusing a call id for a different tool gets a valid, fresh approval', async () => {
+          const requestApproval = vi.fn().mockResolvedValue(true)
+          h.toolApprovalState.requestApproval = requestApproval
+          const run = serveMcp()
+          h.appStateState.mcpToolNames = new Set(['fetch', 'search'])
+          h.appStateState.tools = [{ name: 'fetch', server: 'frozen-server' }, { name: 'search', server: 'frozen-server' }]
+          getMcpTools.mockResolvedValue([{ name: 'fetch', server: 'frozen-server' }, { name: 'search', server: 'frozen-server' }])
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          await act(async () => { await arrive(call('call_0', 'fetch', { url: 'x' })) })
+          expect(await dispatch(call('call_0', 'fetch', { url: 'x' }))).not.toMatchObject({ isError: true })
+          await act(async () => { await finish() })
+          // Provider restarts its ids on the next turn.
+          await act(async () => { await arrive(call('call_0', 'search', { q: 'y' })) })
+          const out = await dispatch(call('call_0', 'search', { q: 'y' }))
+          expect(out).not.toMatchObject({ isError: true })
+          expect(requestApproval).toHaveBeenCalledTimes(2)
+          expect(requestApproval).toHaveBeenLastCalledWith('call_0', 'search', 'thread-1', 'frozen-server', expect.any(Function))
+          expect(run).toHaveBeenCalledTimes(2)
+        })
+        it('a reused root id with another tool inside one turn is refused for that call only, never thrown from onToolCall', async () => {
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          const run = serveMcp()
+          h.appStateState.mcpToolNames = new Set(['fetch', 'search'])
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          await act(async () => { await arrive(call('dup-root', 'fetch', { url: 'x' })) })
+          // The SDK callback must not abort the whole turn; dispatch refuses the call.
+          expect(() => arrive(call('dup-root', 'search', { q: 'y' }))).not.toThrow()
+          const out = await dispatch(call('dup-root', 'search', { q: 'y' }))
+          expect(out).toMatchObject({ isError: true })
+          expect(run).not.toHaveBeenCalled()
+        })
       })
 
       it('a denied child call is recorded as denial and is released', async () => {

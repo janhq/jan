@@ -1058,7 +1058,11 @@ function ThreadDetail() {
       // Show approval on arrival, but do not execute from the SDK callback.
       // runTurn dispatches after canonical parsing completes and reuses this
       // one promise. Internal tools retain the existing Chat policy.
-      const { serverName, checkMcp } = bindMcpCall(toolCall)
+      // A conflicting id must not throw out of this SDK callback (that would
+      // stop the whole turn): open no prompt, and dispatch refuses that call.
+      let bound: ReturnType<typeof bindMcpCall>
+      try { bound = bindMcpCall(toolCall) } catch { return }
+      const { serverName, checkMcp } = bound
       // Conversation todo/ask never prompt: dispatch serves or refuses them.
       if (!serverName && isConversationClientTool(toolCall.toolName)) return
       const isNative = !serverName && chatShellRoute(toolCall.toolName) === 'builtin'

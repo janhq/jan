@@ -372,6 +372,11 @@ async function runChild(
     // Route caches (MCP identity, validator, approval promise) are keyed by call
     // id, so one child run may never present the same id twice.
     const seenCalls = new Set<string>()
+    // Host-owned and never reused: every part of the model-chosen tuple (parent
+    // task call id, child name, child call id) can repeat across task runs, so
+    // each execution gets its own nonce. Fixed for the whole run, so a call's
+    // identity stays stable between its approval and its dispatch.
+    const executionId = crypto.randomUUID()
     const outcome = await runTurn({
       messages: [{ id: 'sub-user-0', role: 'user', parts: [{ type: 'text', text: description }] } as UIMessage],
       signal: controller.signal,
@@ -406,7 +411,7 @@ async function runChild(
           seenCalls.add(call.toolCallId)
           // An unambiguous tuple: `${callId}-${name}` / `${id}:${toolCallId}` joins
           // collide across crafted ids ('a','n-m' vs 'a-n','m').
-          const toolCallId = JSON.stringify(['child', callId, req.name, call.toolCallId])
+          const toolCallId = JSON.stringify(['child', callId, req.name, executionId, call.toolCallId])
           const outcome = await ctx.dispatch({ ...call, toolCallId }, signal, binding)
           return { ...outcome, output: text(outcome.output) }
         },
