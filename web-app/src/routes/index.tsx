@@ -100,7 +100,7 @@ function Index() {
   // an explanation. Ordinary direct chat is never refused — a model without
   // tool support still answers one-call questions through the same composer.
   const scopeUnsupportedReason =
-    !isTemporaryChat && !modelSupportsTools
+    !isTemporaryChat && selectedModel && !modelSupportsTools
       ? t('common:conversationScope.unsupported') + (scopeDraftElevated ? ` ${t('common:conversationScope.pendingKept')}` : '')
       : null
   const pickScopeFolder = useCallback(async () => {

@@ -106,7 +106,7 @@ function ProjectPageContent() {
   const isTemporaryChat = isTemporaryChatSearch(searchStr)
   const chatScopeAvailable = modelSupportsTools && !isTemporaryChat
   // Truthful unsupported reason; ordinary direct chat is never refused.
-  const scopeUnsupportedReason = !isTemporaryChat && !modelSupportsTools
+  const scopeUnsupportedReason = !isTemporaryChat && selectedModel && !modelSupportsTools
     ? t('common:conversationScope.unsupported') + (scopeDraftElevated ? ` ${t('common:conversationScope.pendingKept')}` : '')
     : null
   const pickScopeFolder = useCallback(async () => {

@@ -361,6 +361,30 @@ describe('Index route', () => {
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     })
 
+    it('no selected model shows no unsupported notice, keeps the control hidden and prepare off, then resurfaces the pending draft', async () => {
+      const Component = Route.component as React.ComponentType
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      const view = renderComponent()
+      expect(screen.queryByTestId('home-scope-unsupported')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
+      fireEvent.click(
+        await screen.findByLabelText('Allow shell commands to access the network')
+      )
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+      // No model selected yet: not a "model without tools", so no false notice.
+      h.selectedModel = undefined
+      view.rerender(<Component />)
+      expect(screen.queryByTestId('home-scope-unsupported')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      view.rerender(<Component />)
+      expect(screen.getByTestId('home-scope-consent-trigger')).toHaveTextContent(
+        'Conversation permissions (pending)'
+      )
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+    })
+
     it('announces a hidden pending draft when the model loses tool support', async () => {
       const Component = Route.component as React.ComponentType
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
