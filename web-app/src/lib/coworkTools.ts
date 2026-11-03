@@ -174,11 +174,15 @@ export const askTool: Tool = {
  * name runs as a focused general-purpose agent, so there is no `system_prompt`
  * and no unknown-name failure. Wording tracks the Rust description.
  */
-export function taskTool(subagentNames: string[]): Tool {
+export function taskTool(subagentNames: string[], opts: { blackboard?: boolean } = {}): Tool {
+  // Cowork has a scratch directory; Chat has none (its writeBlackboard is a
+  // no-op), so its schema must not promise files.
+  const blackboard = opts.blackboard !== false
   const phasesDesc =
     ' List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase\'s results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes).'
-  const bg =
-    " Subagents run in the BACKGROUND, concurrently (more than the running cap are queued). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to."
+  const bg = blackboard
+    ? " Subagents run in the BACKGROUND, concurrently (more than the running cap are queued). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to."
+    : " Subagents run in the BACKGROUND, concurrently (more than the running cap are queued). You keep working and get a note the moment each finishes; that note carries the subagent's answer. No files are written and there is no shared scratch directory."
   const saved = subagentNames.length
     ? ` A subagent whose name matches a saved one uses that role and tools; otherwise it runs as a focused general-purpose agent. Saved subagents: ${subagentNames.join(', ')}.`
     : ' No saved subagents yet; each runs as a focused general-purpose agent defined by its task.'
@@ -200,8 +204,9 @@ export function taskTool(subagentNames: string[]): Tool {
             properties: {
               name: {
                 type: 'string',
-                description:
-                  "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It is also the blackboard file its answer is written to (blackboard/<name>.md). If it matches a saved subagent, that role and tools are used; otherwise it runs as a focused general-purpose agent.",
+                description: blackboard
+                  ? "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It is also the blackboard file its answer is written to (blackboard/<name>.md). If it matches a saved subagent, that role and tools are used; otherwise it runs as a focused general-purpose agent."
+                  : "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It labels the subagent's status and completion note; no file is written. If it matches a saved subagent, that role and tools are used; otherwise it runs as a focused general-purpose agent.",
               },
               task: {
                 type: 'string',

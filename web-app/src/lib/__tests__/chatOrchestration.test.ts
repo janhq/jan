@@ -221,8 +221,8 @@ describe('semaphore waiters', () => {
     expect(state.waiters).toHaveLength(0)
     expect(state.active).toBe(0)
     expect(state.children.size).toBe(0)
-    expect(chatRunInbox(ctx.threadId).pending()).toBe(false)
-    expect(chatRunInbox(ctx.threadId).take()).toEqual([])
+    expect(chatRunInbox(ctx.threadId, ctx.signal).pending()).toBe(false)
+    expect(chatRunInbox(ctx.threadId, ctx.signal).take()).toEqual([])
     expect(dispatch).not.toHaveBeenCalled()
   })
 
@@ -248,7 +248,7 @@ describe('task result + inbox', () => {
     expect(out.isError).toBeUndefined()
     expect(out.output).toMatch(/a/)
     expect(out.output).not.toContain('the answer')
-    const inbox = chatRunInbox(ctx.threadId)
+    const inbox = chatRunInbox(ctx.threadId, ctx.signal)
     expect(inbox.pending()).toBe(true)
     await inbox.wait(new AbortController().signal)
     const taken = inbox.take()
@@ -286,7 +286,7 @@ describe('monitor host boundary', () => {
       return started()
     })
     await runChatMonitor({ op: 'start' }, ctx)
-    const inbox = chatRunInbox(ctx.threadId)
+    const inbox = chatRunInbox(ctx.threadId, ctx.signal)
     // A running monitor never parks the run.
     expect(inbox.pending()).toBe(false)
     expect(__testing.stateOf(ctx.threadId).lane.onPing).toBeNull()
@@ -306,11 +306,11 @@ describe('monitor host boundary', () => {
       return started('mon-9')
     })
     await runChatMonitor({ op: 'start' }, ctx)
-    await cancelChatOrchestration(ctx.threadId)
+    await cancelChatOrchestration(ctx.threadId, ctx.signal)
     expect(hoisted.stop).toHaveBeenCalledWith(ctx.threadId, 'mon-9')
     push({ monitorId: 'mon-9', headline: 'late', text: 'stale' })
-    expect(chatRunInbox(ctx.threadId).pending()).toBe(false)
-    expect(chatRunInbox(ctx.threadId).take()).toEqual([])
+    expect(chatRunInbox(ctx.threadId, ctx.signal).pending()).toBe(false)
+    expect(chatRunInbox(ctx.threadId, ctx.signal).take()).toEqual([])
     // Another thread's monitors are untouched.
     expect(hoisted.stop).toHaveBeenCalledTimes(1)
   })
@@ -321,7 +321,7 @@ describe('monitor host boundary', () => {
     hoisted.start.mockImplementation(() => new Promise((r) => (resolveStart = r)))
     const pending = runChatMonitor({ op: 'start' }, ctx)
     await settle(2)
-    await cancelChatOrchestration(ctx.threadId)
+    await cancelChatOrchestration(ctx.threadId, ctx.signal)
     resolveStart(started('mon-3'))
     expect((await pending).isError).toBe(true)
     expect(hoisted.stop).toHaveBeenCalledWith(ctx.threadId, 'mon-3')
@@ -379,7 +379,7 @@ describe('monitor completion notice (display only)', () => {
   it('Stop makes late callbacks publish nothing', async () => {
     const { ctx } = ctxFor()
     const push = await arm(ctx, 'mon-9')
-    await cancelChatOrchestration(ctx.threadId)
+    await cancelChatOrchestration(ctx.threadId, ctx.signal)
     push({ monitorId: 'mon-9', headline: 'late', text: 'stale' })
     expect(notices(ctx.threadId)).toHaveLength(0)
   })
@@ -401,7 +401,7 @@ describe('monitor completion notice (display only)', () => {
     const [n] = notices(ctx.threadId)
     useMonitorNotices.getState().dismiss(ctx.threadId, n.id)
     expect(notices(ctx.threadId)).toHaveLength(0)
-    const inbox = chatRunInbox(ctx.threadId)
+    const inbox = chatRunInbox(ctx.threadId, ctx.signal)
     expect(inbox.pending()).toBe(true)
     expect(inbox.take()).toEqual(['file changed'])
     expect(inbox.take()).toEqual([])
@@ -451,7 +451,7 @@ describe('task status lifecycle', () => {
     await runChatTask(oneChild(), 'call', ctx)
     await settle()
     takeTaskStatus(ctx.threadId)
-    await cancelChatOrchestration(ctx.threadId)
+    await cancelChatOrchestration(ctx.threadId, ctx.signal)
     const rows = takeTaskStatus(ctx.threadId)
     expect(rows.map((r) => r.status)).toEqual(['error'])
     await settle(40)
@@ -618,6 +618,197 @@ describe('aggregate child spend ceiling', () => {
   })
 })
 
+describe('run-scoped status and Stop (two runs on one thread)', () => {
+  const started = (id: string) => ({ output: `Started. monitor_id=${id}` })
+  const twoRuns = () => {
+    const a = ctxFor()
+    const b = ctxFor({ threadId: a.ctx.threadId })
+    return { a, b }
+  }
+
+  it('an inbox bound to one run signal drains only that run\'s status rows; the other run keeps its own', async () => {
+    const { a, b } = twoRuns()
+    hang()
+    await runChatTask(oneChild({ name: 'a' }), 'a', a.ctx)
+    await runChatTask(oneChild({ name: 'b' }), 'b', b.ctx)
+    await settle()
+    const t = a.ctx.threadId
+    const aRows = chatRunInbox(t, a.ctx.signal).takeStatus!() as Array<{ runId: string }>
+    expect(aRows.map((r) => r.runId)).toEqual(['a-a'])
+    // A second drain of A finds nothing, and never steals B's queued row.
+    expect(chatRunInbox(t, a.ctx.signal).takeStatus!()).toEqual([])
+    const bRows = chatRunInbox(t, b.ctx.signal).takeStatus!() as Array<{ runId: string }>
+    expect(bRows.map((r) => r.runId)).toEqual(['b-b'])
+    // A signal that never dispatched owns nothing.
+    expect(chatRunInbox(t, new AbortController().signal).takeStatus!()).toEqual([])
+    a.controller.abort()
+    b.controller.abort()
+  })
+
+  it('settled rows stay with their run and monitor notices stay thread-owned', async () => {
+    const { a, b } = twoRuns()
+    hang()
+    let push: (u: unknown) => void = () => {}
+    hoisted.start.mockImplementation(async (_t: string, _a: unknown, cb: (u: unknown) => void) => {
+      push = cb
+      return started('mon-x')
+    })
+    await runChatTask(oneChild({ name: 'a' }), 'a', a.ctx)
+    await runChatTask(oneChild({ name: 'b' }), 'b', b.ctx)
+    await runChatMonitor({ op: 'start' }, a.ctx)
+    await settle()
+    a.controller.abort()
+    const t = a.ctx.threadId
+    const bInbox = chatRunInbox(t, b.ctx.signal)
+    expect((bInbox.takeStatus!() as Array<{ runId: string }>).map((r) => r.runId)).toEqual(['b-b'])
+    expect(bInbox.takeStatus!()).toEqual([])
+    // A's terminal row is still A's.
+    const aRows = chatRunInbox(t, a.ctx.signal).takeStatus!() as Array<{ runId: string; status: string }>
+    expect(aRows.map((r) => [r.runId, r.status])).toEqual([['a-a', 'running'], ['a-a', 'error']])
+    // Monitor pings reach whichever run's inbox drains next (thread-owned lane).
+    push({ monitorId: 'mon-x', headline: 'h', text: 'ping' })
+    expect(bInbox.take()).toEqual(['ping'])
+    b.controller.abort()
+  })
+
+  it('Stop of a later run cancels its children but not an earlier finished run\'s monitor', async () => {
+    const { a, b } = twoRuns()
+    const t = a.ctx.threadId
+    const pushes: Record<string, (u: unknown) => void> = {}
+    let n = 0
+    hoisted.start.mockImplementation(async (_t: string, _a: unknown, cb: (u: unknown) => void) => {
+      const id = `mon-${++n}`
+      pushes[id] = cb
+      return started(id)
+    })
+    await runChatMonitor({ op: 'start' }, a.ctx) // earlier turn's monitor
+    a.controller.abort() // earlier turn finished
+    await runChatMonitor({ op: 'start' }, b.ctx) // later turn
+    hang()
+    await runChatTask(oneChild({ name: 'b' }), 'b', b.ctx)
+    await settle()
+    const state = __testing.stateOf(t)
+    expect(state.children.size).toBe(1)
+    b.controller.abort() // production: the run signal aborts, then Stop scopes to it
+    await cancelChatOrchestration(t, b.ctx.signal)
+    await settle()
+    expect(state.children.size).toBe(0)
+    // Only the later run's monitor was stopped.
+    expect(hoisted.stop.mock.calls).toEqual([[t, 'mon-2']])
+    expect([...state.monitorIds]).toEqual(['mon-1'])
+    // The earlier monitor still pings; the stopped one is silent.
+    pushes['mon-2']({ monitorId: 'mon-2', headline: 'late', text: 'stale' })
+    expect(chatRunInbox(t, b.ctx.signal).pending()).toBe(false)
+    pushes['mon-1']({ monitorId: 'mon-1', headline: 'live', text: 'still here' })
+    expect(chatRunInbox(t, b.ctx.signal).take()).toEqual(['still here'])
+  })
+
+  it('Stop of one run leaves another running run\'s child and rows alone', async () => {
+    const { a, b } = twoRuns()
+    hang()
+    await runChatTask(oneChild({ name: 'a' }), 'a', a.ctx)
+    await runChatTask(oneChild({ name: 'b' }), 'b', b.ctx)
+    await settle()
+    const t = a.ctx.threadId
+    const state = __testing.stateOf(t)
+    expect(state.children.size).toBe(2)
+    await cancelChatOrchestration(t, b.ctx.signal)
+    await settle()
+    expect(state.children.size).toBe(1)
+    expect(state.statusRows.get('a-a')?.status).toBe('running')
+    expect(state.statusRows.get('b-b')?.status).toBe('error')
+    a.controller.abort()
+  })
+
+  it('a start still resolving when ITS run is stopped is stopped on the host', async () => {
+    const { a, b } = twoRuns()
+    let resolveStart: (v: unknown) => void = () => {}
+    hoisted.start.mockImplementation(() => new Promise((r) => (resolveStart = r)))
+    const pending = runChatMonitor({ op: 'start' }, b.ctx)
+    await settle(2)
+    await cancelChatOrchestration(a.ctx.threadId, a.ctx.signal) // unrelated run: no effect
+    await cancelChatOrchestration(b.ctx.threadId, b.ctx.signal)
+    resolveStart(started('mon-7'))
+    expect((await pending).isError).toBe(true)
+    expect(hoisted.stop).toHaveBeenCalledWith(b.ctx.threadId, 'mon-7')
+  })
+
+  it('an unrelated run\'s Stop does not cancel a monitor that is still starting', async () => {
+    const { a, b } = twoRuns()
+    let resolveStart: (v: unknown) => void = () => {}
+    hoisted.start.mockImplementation(() => new Promise((r) => (resolveStart = r)))
+    const pending = runChatMonitor({ op: 'start' }, a.ctx)
+    await settle(2)
+    await cancelChatOrchestration(b.ctx.threadId, b.ctx.signal)
+    resolveStart(started('mon-8'))
+    expect((await pending).isError).toBeUndefined()
+    expect(hoisted.stop).not.toHaveBeenCalled()
+    expect([...__testing.stateOf(a.ctx.threadId).monitorIds]).toEqual(['mon-8'])
+  })
+
+  it("'all' (thread teardown) stops every run's children and monitors", async () => {
+    const { a, b } = twoRuns()
+    const t = a.ctx.threadId
+    let n = 0
+    hoisted.start.mockImplementation(async () => started(`mon-${++n}`))
+    await runChatMonitor({ op: 'start' }, a.ctx)
+    await runChatMonitor({ op: 'start' }, b.ctx)
+    hang()
+    await runChatTask(oneChild({ name: 'a' }), 'a', a.ctx)
+    await runChatTask(oneChild({ name: 'b' }), 'b', b.ctx)
+    await settle()
+    await cancelChatOrchestration(t, 'all')
+    await settle()
+    expect(__testing.stateOf(t).children.size).toBe(0)
+    expect(hoisted.stop.mock.calls.map((c) => c[1]).sort()).toEqual(['mon-1', 'mon-2'])
+    expect(__testing.stateOf(t).monitorIds.size).toBe(0)
+  })
+
+  it('thread deletion stops every tracked and untracked monitor', async () => {
+    const { a, b } = twoRuns()
+    let n = 0
+    hoisted.start.mockImplementation(async () => started(`mon-${++n}`))
+    await runChatMonitor({ op: 'start' }, a.ctx)
+    await runChatMonitor({ op: 'start' }, b.ctx)
+    dropConversationClientThread(a.ctx.threadId)
+    expect(hoisted.stopAll).toHaveBeenCalledWith(a.ctx.threadId)
+    expect(hoisted.stop.mock.calls.map((c) => c[1]).sort()).toEqual(['mon-1', 'mon-2'])
+  })
+
+  it('createChatRunStream binds an inbox factory to the same signal it dispatches children with', async () => {
+    const outer = new AbortController()
+    let boundTo: AbortSignal | undefined
+    let dispatchedWith: AbortSignal | undefined
+    let step = 0
+    const stream = createChatRunStream({
+      messages: [{ id: 'u', role: 'user', parts: [{ type: 'text', text: 'go' }] }],
+      messageId: 'a',
+      signal: outer.signal,
+      sendStep: async () =>
+        ++step === 1
+          ? streamOf([
+              { type: 'start-step' },
+              { type: 'tool-input-available', toolCallId: 'tk', toolName: 'task', input: {} },
+              { type: 'finish-step' },
+              { type: 'finish' },
+            ])
+          : textStep('ok'),
+      inbox: (signal) => {
+        boundTo = signal
+        return { take: () => [], pending: () => false, wait: async () => {} }
+      },
+      dispatch: async (_call, signal) => {
+        dispatchedWith = signal
+        return { output: 'ok' }
+      },
+    })
+    for await (const _ of readUIMessageStream({ stream })) void _
+    expect(boundTo).toBeDefined()
+    expect(boundTo).toBe(dispatchedWith)
+    expect(boundTo).not.toBe(outer.signal)
+  })
+})
+
 describe('terminal flush ordering through the real run stream', () => {
   const taskCall = () =>
     streamOf([
@@ -644,7 +835,7 @@ describe('terminal flush ordering through the real run stream', () => {
       signal: outer.signal,
       maxSteps: opts.maxSteps,
       sendStep,
-      inbox: chatRunInbox(ctx.threadId),
+      inbox: (runSignal) => chatRunInbox(ctx.threadId, runSignal),
       dispatch: async (_call, signal) => {
         const out = await runChatTask(oneChild(), 'tk', { ...ctx, signal })
         await settle(5)

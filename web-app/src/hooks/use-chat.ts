@@ -26,7 +26,7 @@ type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
     dispatchTool?: (call: PendingToolCall, signal: AbortSignal) => Promise<ChatToolOutcome>
     /** Per-run inbox lane for child completions / monitor pings. */
-    runInbox?: () => ChatRunInbox | undefined
+    runInbox?: (runSignal: AbortSignal) => ChatRunInbox | undefined
     sessionId?: string
     sessionTitle?: string
     systemMessage?: string
@@ -108,10 +108,14 @@ export function useChat(
               const releaseSnapshot = transport.beginChatRun(() => abort.abort('Turn replaced'))
               admissions.get(instance)?.()
               admissions.delete(instance)
+              // The signal createChatRunStream dispatches children with; Stop
+              // scopes children and monitors to exactly this run.
+              let runSignal: AbortSignal | undefined
               const stop = () => {
                 abort.abort(request.abortSignal?.reason)
-                // User Stop: children abort with the run; stop only monitors this lane started.
-                void cancelChatOrchestration(sessionId)
+                // User Stop: cancel only THIS run's children and the monitors it
+                // started; monitors of earlier finished turns keep running.
+                if (runSignal) void cancelChatOrchestration(sessionId, runSignal)
                 useToolApprovalRequests.getState().clearPendingForThread(sessionId)
               }
               request.abortSignal?.addEventListener('abort', stop, { once: true })
@@ -133,7 +137,10 @@ export function useChat(
                   return typeof value === 'number' ? value : undefined
                 },
                 sendStep: (messages, signal) => transport.sendMessages({ ...request, messages, abortSignal: signal }),
-                inbox: runInbox?.(),
+                inbox: (signal) => {
+                  runSignal = signal
+                  return runInbox?.(signal)
+                },
                 dispatch: dispatchTool ?? (async () => ({ output: 'Chat tool executor unavailable', isError: true })),
                 onFinally: () => {
                   // createChatRunStream aborts its own controller and settles

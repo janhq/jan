@@ -725,7 +725,7 @@ function ThreadDetail() {
     sessionId: threadId,
     sessionTitle: thread?.title,
     systemMessage,
-    runInbox: () => chatRunInbox(threadId),
+    runInbox: (runSignal) => chatRunInbox(threadId, runSignal),
     experimental_throttle: 50,
     onFinish: ({ message: finishedMessage, isAbort, isError }) => {
       // A stopped turn can end with a tool call that never got to run; settle

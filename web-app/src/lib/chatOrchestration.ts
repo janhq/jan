@@ -63,6 +63,10 @@ export type TaskStatusRow = {
   error?: string
 }
 
+/** A monitor's owner is the run (signal) that started it. A monitor outlives its
+ * run; only Stop of THAT run (or thread deletion) cancels it. */
+type MonitorToken = { owner: AbortSignal; stopped: boolean; id?: string }
+
 type ThreadState = {
   /** Status rows not yet handed to the run stream (dispatch + completion). */
   statusQueue: TaskStatusRow[]
@@ -70,7 +74,11 @@ type ThreadState = {
   inbox: SubagentInbox
   lane: MonitorLane
   monitorIds: Set<string>
+  /** Live (starting or open) monitors, each tagged with the run that started it. */
+  monitors: Set<MonitorToken>
   children: Set<AbortController>
+  /** The run signal each child hangs off, so Stop can scope to one run. */
+  childOwner: WeakMap<AbortController, AbortSignal>
   active: number
   waiters: Array<() => void>
   spawned: WeakMap<AbortSignal, number>
@@ -93,7 +101,9 @@ const stateOf = (threadId: string): ThreadState => {
       inbox: new SubagentInbox(),
       lane: new MonitorLane(),
       monitorIds: new Set(),
+      monitors: new Set(),
       children: new Set(),
+      childOwner: new WeakMap(),
       active: 0,
       waiters: [],
       spawned: new WeakMap(),
@@ -107,12 +117,15 @@ const stateOf = (threadId: string): ThreadState => {
 }
 
 /** The ONE inbox lane runTurn drains for a Chat thread: child completion
- * notices (SubagentInbox) and monitor pings (MonitorLane). No second loop. */
-export function chatRunInbox(threadId: string): ChatRunInbox {
+ * notices (SubagentInbox) and monitor pings (MonitorLane). No second loop.
+ * `signal` MUST be the run signal its children are dispatched with (the one
+ * createChatRunStream hands to `dispatch`): status rows are drained per run,
+ * while monitor notices stay thread-owned. */
+export function chatRunInbox(threadId: string, signal: AbortSignal): ChatRunInbox {
   const { inbox, lane } = stateOf(threadId)
   return {
     take: () => [...inbox.take(), ...lane.take()].map((n) => n.text),
-    takeStatus: () => takeTaskStatus(threadId),
+    takeStatus: () => takeTaskStatus(threadId, signal),
     // A running monitor never parks a run; only owed child work / queued pings.
     pending: () => inbox.pending() || lane.hasQueued(),
     wait: (signal) =>
@@ -120,11 +133,22 @@ export function chatRunInbox(threadId: string): ChatRunInbox {
   }
 }
 
-/** Rows changed since the last call, each a copy (never a live reference). */
-export function takeTaskStatus(threadId: string): TaskStatusRow[] {
+/** Rows changed since the last call, each a copy (never a live reference).
+ * With `signal`, only rows started under that run are taken; every other
+ * run's rows stay queued. Without it, every row of the thread is taken. */
+export function takeTaskStatus(threadId: string, signal?: AbortSignal): TaskStatusRow[] {
   const state = threads.get(threadId)
   if (!state || !state.statusQueue.length) return []
-  return state.statusQueue.splice(0).map((row) => ({ ...row }))
+  if (!signal) return state.statusQueue.splice(0).map((row) => ({ ...row }))
+  const owned = state.runRows.get(signal)
+  if (!owned) return []
+  const taken: TaskStatusRow[] = []
+  state.statusQueue = state.statusQueue.filter((row) => {
+    if (!owned.has(row.runId)) return true
+    taken.push({ ...row })
+    return false
+  })
+  return taken
 }
 
 /** Persisted into the transcript, so child text is bounded (UTF-16 code units,
@@ -263,6 +287,7 @@ async function runChild(
 ): Promise<{ output: string; usage: null; isError?: boolean; sessionTokens: number }> {
   const controller = new AbortController()
   state.children.add(controller)
+  state.childOwner.set(controller, ctx.signal)
   const abort = () => controller.abort(ctx.signal.reason)
   if (ctx.signal.aborted) abort()
   else ctx.signal.addEventListener('abort', abort, { once: true })
@@ -443,16 +468,21 @@ export async function runChatMonitor(input: unknown, ctx: Pick<ChatOrchestration
   if (op === 'start') {
     if (ctx.signal.aborted) return { output: 'ERROR: the run was stopped', isError: true }
     const epoch = state.epoch
+    const token: MonitorToken = { owner: ctx.signal, stopped: false }
+    state.monitors.add(token)
+    const dead = () => token.stopped || state.epoch !== epoch || threads.get(ctx.threadId) !== state
     const early = new Set<string>()
     const started = await startThreadAgentMonitor(ctx.threadId, input, (update: MonitorUpdate) => {
-      // Stopped/deleted since start: this callback is stale and must not ping.
-      if (state.epoch !== epoch || threads.get(ctx.threadId) !== state) return
+      // Stopped (its run's Stop / deletion) since start: stale, must not ping.
+      if (dead()) return
       early.add(update.monitorId)
+      token.id = update.monitorId
+      state.monitors.delete(token)
       state.monitorIds.delete(update.monitorId)
       // Same MonitorLane the Cowork route uses; drained only by runTurn's inbox.
       state.lane.update(update)
-      // Display-only notice (no authority, no run, no inbox drain). The epoch
-      // guard above already dropped stale/deleted-thread callbacks.
+      // Display-only notice (no authority, no run, no inbox drain). The guard
+      // above already dropped stale/deleted-thread callbacks.
       useMonitorNotices.getState().publish({
         threadId: ctx.threadId,
         monitorId: update.monitorId,
@@ -460,43 +490,63 @@ export async function runChatMonitor(input: unknown, ctx: Pick<ChatOrchestration
         text: update.text,
       })
     })
-    if (state.epoch !== epoch || threads.get(ctx.threadId) !== state) {
+    if (dead()) {
       // Stop/delete landed while the host was starting: do not leak the monitor.
+      state.monitors.delete(token)
       const id = parseMonitorId(started.output)
       if (!started.isError && id) void stopThreadAgentMonitor(ctx.threadId, id).catch(() => {})
       return { output: 'ERROR: the run was stopped', isError: true }
     }
-    if (!started.isError) {
-      const id = parseMonitorId(started.output)
-      // An update that already fired ended this monitor; do not track it as open.
-      if (!id || !early.has(id)) {
-        state.lane.started(started.output, monitorSpecFromArgs(input))
-        if (id) state.monitorIds.add(id)
-      }
-    }
+    const id = started.isError ? undefined : parseMonitorId(started.output)
+    // An update that already fired ended this monitor; do not track it as open.
+    if (!started.isError && (!id || !early.has(id))) {
+      state.lane.started(started.output, monitorSpecFromArgs(input))
+      if (id) {
+        token.id = id
+        state.monitorIds.add(id)
+      } else state.monitors.delete(token)
+    } else state.monitors.delete(token)
     return { output: started.output, isError: started.isError }
   }
   if (op === 'stop') {
     const id = typeof args.monitor_id === 'string' ? args.monitor_id : ''
     const result = await stopThreadAgentMonitor(ctx.threadId, id)
     state.lane.stopped(id, result)
-    if (!result.startsWith('ERROR')) state.monitorIds.delete(id)
+    if (!result.startsWith('ERROR')) {
+      state.monitorIds.delete(id)
+      for (const token of [...state.monitors]) if (token.id === id) state.monitors.delete(token)
+    }
     return { output: result, isError: result.startsWith('ERROR') }
   }
   if (op === 'list') return { output: await listThreadAgentMonitors(ctx.threadId) }
   return { output: `ERROR: unknown monitor op '${op}'`, isError: true }
 }
 
-/** Stop: abort children and stop only the monitors this thread's lane owns. */
-export async function cancelChatOrchestration(threadId: string, opts: { monitors: boolean } = { monitors: true }): Promise<void> {
+/** Stop of ONE run (`scope` = that run's signal, the one its children and
+ * monitors were dispatched with): abort that run's children and approvals-side
+ * rows, and stop only the monitors that run started. Monitors owned by earlier,
+ * finished turns keep running and keep pinging. `'all'` (thread teardown) hits
+ * every run and every monitor of the thread. */
+export async function cancelChatOrchestration(threadId: string, scope: AbortSignal | 'all'): Promise<void> {
   const state = threads.get(threadId)
   if (!state) return
-  state.epoch += 1
-  settleRunningRows(state)
-  for (const child of [...state.children]) child.abort('Chat run stopped')
-  if (!opts.monitors) return
-  const ids = [...state.monitorIds]
-  state.monitorIds.clear()
+  const all = scope === 'all'
+  if (all) state.epoch += 1
+  settleRunningRows(state, all ? undefined : scope)
+  for (const child of [...state.children]) {
+    if (all || state.childOwner.get(child) === scope) child.abort('Chat run stopped')
+  }
+  const ids: string[] = []
+  for (const token of [...state.monitors]) {
+    if (!all && token.owner !== scope) continue
+    token.stopped = true
+    state.monitors.delete(token)
+    if (token.id) {
+      ids.push(token.id)
+      state.monitorIds.delete(token.id)
+      state.lane.stopped(token.id, 'Stopped')
+    }
+  }
   await Promise.all(ids.map((id) => stopThreadAgentMonitor(threadId, id).catch(() => {})))
 }
 
@@ -504,7 +554,8 @@ export async function cancelChatOrchestration(threadId: string, opts: { monitors
 onConversationThreadDropped((threadId) => {
   const state = threads.get(threadId)
   if (!state) return
-  void cancelChatOrchestration(threadId, { monitors: false })
+  // 'all' also stops each tracked monitor; stopAll below covers any untracked one.
+  void cancelChatOrchestration(threadId, 'all')
   void stopAllThreadAgentMonitors(threadId)
   useMonitorNotices.getState().clearThread(threadId)
   state.waiters.length = 0

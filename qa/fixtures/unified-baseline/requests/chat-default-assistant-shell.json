@@ -320,7 +320,7 @@
       "type": "function",
       "function": {
         "name": "task",
-        "description": "Dispatch one or more subagents -- nested, isolated agents -- to do work for you. List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase's results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes). Subagents run in the BACKGROUND, concurrently (more than the running cap are queued). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to. No saved subagents yet; each runs as a focused general-purpose agent defined by its task.",
+        "description": "Dispatch one or more subagents -- nested, isolated agents -- to do work for you. List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase's results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes). Subagents run in the BACKGROUND, concurrently (more than the running cap are queued). You keep working and get a note the moment each finishes; that note carries the subagent's answer. No files are written and there is no shared scratch directory. No saved subagents yet; each runs as a focused general-purpose agent defined by its task.",
         "parameters": {
           "type": "object",
           "properties": {
@@ -332,7 +332,7 @@
                 "properties": {
                   "name": {
                     "type": "string",
-                    "description": "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It is also the blackboard file its answer is written to (blackboard/<name>.md). If it matches a saved subagent, that role and tools are used; otherwise it runs as a focused general-purpose agent."
+                    "description": "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It labels the subagent's status and completion note; no file is written. If it matches a saved subagent, that role and tools are used; otherwise it runs as a focused general-purpose agent."
                   },
                   "task": {
                     "type": "string",

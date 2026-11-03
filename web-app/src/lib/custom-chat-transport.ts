@@ -1392,7 +1392,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ).advertisedOrchestrationTools
       for (const name of orchestration) {
         mcpIdentities.delete(name)
-        toolsRecord[name] = name === TASK_TOOL_NAME ? taskTool([]) : monitorTool()
+        toolsRecord[name] = name === TASK_TOOL_NAME ? taskTool([], { blackboard: false }) : monitorTool()
       }
     }
 

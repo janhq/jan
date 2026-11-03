@@ -111,9 +111,12 @@ export function createChatRunStream(options: {
   modelContextTokens?: number
   getModelContextTokens?: () => number | undefined
   /** Child completions and monitor pings; consumed ONLY by runTurn's inbox. */
-  inbox?: ChatRunInbox
+  inbox?: ChatRunInbox | ((runSignal: AbortSignal) => ChatRunInbox | undefined)
 }): ReadableStream<UIMessageChunk> {
   const controller = new AbortController()
+  // A factory is bound to THIS controller's signal: the very signal runTurn
+  // hands to `dispatch` (and so to child tasks/monitors), never the outer one.
+  const inbox = typeof options.inbox === 'function' ? options.inbox(controller.signal) : options.inbox
   const abort = () => controller.abort(options.signal.reason)
   if (options.signal.aborted) abort()
   else options.signal.addEventListener('abort', abort, { once: true })
@@ -139,7 +142,7 @@ export function createChatRunStream(options: {
         options.onOutcome?.(outcome)
       }
       const flushTaskStatus = () => {
-        for (const row of options.inbox?.takeStatus?.() ?? []) {
+        for (const row of inbox?.takeStatus?.() ?? []) {
           const runId = (row as { runId?: unknown }).runId
           if (typeof runId !== 'string') continue
           emit({ type: TASK_STATUS_PART, id: `task-status:${runId}`, data: { subagents: [row] } } as UIMessageChunk)
@@ -182,17 +185,17 @@ export function createChatRunStream(options: {
           record: (spend, usage) => ({ ...spend, spent: spend.spent + Math.max(0, usage?.completion_tokens ?? 0) }),
         },
         deps: {
-          inbox: options.inbox && {
+          inbox: inbox && {
             take: () => {
               flushTaskStatus()
-              const taken = options.inbox!.take()
+              const taken = inbox.take()
               flushTaskStatus()
               if (taken.length) pingMarks.push({ at: completed?.parts.length ?? 0, message: { id: `${id}:ping:${pingMarks.length}`, role: 'user', parts: [{ type: 'text', text: `${PING_OPEN}\n${taken.join('\n')}\n${PING_CLOSE}` }] } as UIMessage })
               return taken
             },
-            pending: () => options.inbox!.pending(),
-            wait: () => options.inbox!.wait(controller.signal),
-            onParked: options.inbox.onParked,
+            pending: () => inbox.pending(),
+            wait: () => inbox.wait(controller.signal),
+            onParked: inbox.onParked,
           },
           sendStep: async (_messages, signal) => {
             canonical = undefined
