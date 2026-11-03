@@ -24,8 +24,8 @@
 
 use app_lib::core::mcp::models::McpSettings;
 use app_lib::core::setup::{
-    is_default_exa_server, is_hosted_default_exa_server, remove_default_exa_from_config,
-    schema_after_exa_cutover, CURRENT_MCP_SCHEMA_VERSION,
+    is_default_exa_server, is_hosted_default_exa_server, mcp_migration_start,
+    remove_default_exa_from_config, schema_after_exa_cutover, CURRENT_MCP_SCHEMA_VERSION,
 };
 use app_lib::core::threads::helpers::read_messages_from_file;
 use app_lib::core::threads::utils::{get_messages_path, get_thread_dir, get_thread_metadata_path};
@@ -432,6 +432,26 @@ fn a_failed_exa_cutover_is_retried_at_the_next_startup() {
     let nothing = remove_default_exa_from_config(&path).map(|_| ());
     assert_eq!(
         schema_after_exa_cutover(&nothing),
+        CURRENT_MCP_SCHEMA_VERSION
+    );
+}
+
+/// A first start has no `mcp_config.json` and an empty store. Every migration
+/// step edits an entry of an existing config, so each would fail on the missing
+/// file and log an error (#9469); such a profile has nothing to migrate and
+/// starts at the current schema, which `setup_mcp` then writes the default for.
+#[test]
+fn a_profile_without_an_mcp_config_has_nothing_to_migrate() {
+    assert_eq!(mcp_migration_start(0, false), CURRENT_MCP_SCHEMA_VERSION);
+    // A deleted config on an old store is the same: there is nothing to edit.
+    assert_eq!(mcp_migration_start(3, false), CURRENT_MCP_SCHEMA_VERSION);
+
+    // An existing config keeps the gates it has not passed yet, so a real
+    // upgrade still walks them.
+    assert_eq!(mcp_migration_start(0, true), 0);
+    assert_eq!(mcp_migration_start(3, true), 3);
+    assert_eq!(
+        mcp_migration_start(CURRENT_MCP_SCHEMA_VERSION, true),
         CURRENT_MCP_SCHEMA_VERSION
     );
 }
