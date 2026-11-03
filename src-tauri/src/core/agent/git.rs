@@ -182,6 +182,20 @@ fn outcome(out: &std::process::Output, args: &[&str]) -> Result<String, String> 
     }
 }
 
+/// A path git printed, as this platform names it: any bytes on Unix, valid
+/// UTF-8 elsewhere (git writes paths as UTF-8 there).
+#[cfg(feature = "cli")]
+fn os_path(bytes: &[u8]) -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        Some(PathBuf::from(<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(bytes)))
+    }
+    #[cfg(not(unix))]
+    {
+        std::str::from_utf8(bytes).ok().map(PathBuf::from)
+    }
+}
+
 /// A unique throwaway index path so one-off git operations (restore) never
 /// disturb the real index.
 #[cfg(feature = "cli")]
@@ -751,14 +765,26 @@ impl Checkout {
     /// `git <args>` in the checkout, its git dir and work tree named
     /// explicitly.
     fn run(&self, args: &[&str]) -> Result<String, String> {
+        let out = self.output(args)?;
+        outcome(&out, args)
+    }
+
+    /// [`Self::run`] with stdout as git wrote it: paths are bytes, and a
+    /// lossy decoding can name a file that does not exist.
+    fn run_raw(&self, args: &[&str]) -> Result<Vec<u8>, String> {
+        let out = self.output(args)?;
+        outcome(&out, args)?;
+        Ok(out.stdout)
+    }
+
+    fn output(&self, args: &[&str]) -> Result<std::process::Output, String> {
         let opts = self.hardened();
         let mut full: Vec<&str> = opts.iter().map(String::as_str).collect();
         full.extend_from_slice(args);
         let mut cmd = repo_command(&self.path, &full)?;
         cmd.env("GIT_DIR", self.path.join(".git"))
             .env("GIT_WORK_TREE", &self.path);
-        let out = cmd.output().map_err(|e| format!("failed to launch git: {e}"))?;
-        outcome(&out, args)
+        cmd.output().map_err(|e| format!("failed to launch git: {e}"))
     }
 
     /// The branch checked out there, `None` when detached or unreadable.
@@ -822,11 +848,14 @@ impl Checkout {
             return Ok(true);
         }
         // `<mode> <object> <stage>\t<path>`; mode 160000 is a submodule.
-        for entry in self.run(&["ls-files", "--stage", "-z"])?.split('\0') {
-            let Some((stat, path)) = entry.split_once('\t') else { continue };
-            if !stat.starts_with("160000 ") {
+        let listed = self.run_raw(&["ls-files", "--stage", "-z"])?;
+        for entry in listed.split(|&b| b == 0) {
+            let Some(tab) = entry.iter().position(|&b| b == b'\t') else { continue };
+            if !entry.starts_with(b"160000 ") {
                 continue;
             }
+            // A path this platform cannot name is unknown, never clean.
+            let Some(path) = os_path(&entry[tab + 1..]) else { return Ok(true) };
             let at = self.path.join(path);
             match std::fs::symlink_metadata(&at) {
                 Ok(m) if m.is_dir() => {
@@ -1552,6 +1581,45 @@ mod tests {
         assert_eq!(child.is_clean(), Ok(false), "a repository at the submodule");
         let _ = std::fs::remove_dir_all(&wt);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A submodule path that is not UTF-8 is checked as the bytes git gave,
+    /// not a lossy decoding of them that names a path which does not exist:
+    /// a filled one still counts as work.
+    #[cfg(unix)]
+    #[test]
+    fn a_filled_submodule_at_a_non_utf8_path_counts_as_work() {
+        use std::os::unix::ffi::OsStrExt;
+        let Some(root) = init_repo() else { return };
+        let r = root.to_string_lossy().to_string();
+        let head = head_sha(&root).unwrap();
+        let name = std::ffi::OsStr::from_bytes(b"sub-\xff");
+        // `update-index --index-info` reads raw path bytes from stdin.
+        let mut add = std::process::Command::new("git")
+            .args(["-C", &r, "update-index", "--index-info"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut line = format!("160000 {head}\t").into_bytes();
+        line.extend_from_slice(name.as_bytes());
+        line.push(b'\n');
+        std::io::Write::write_all(add.stdin.as_mut().unwrap(), &line).unwrap();
+        drop(add.stdin.take());
+        assert!(add.wait().unwrap().success());
+        run(&root, None, &["commit", "-q", "-m", "sub", "--no-gpg-sign"]).unwrap();
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("rawsub");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/rawsub-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        assert_eq!(child.is_clean(), Ok(true), "an empty submodule path is nothing");
+        std::fs::create_dir_all(wt.join(name)).unwrap();
+        std::fs::write(wt.join(name).join("work.txt"), "x").unwrap();
+        let clean = child.is_clean();
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(clean, Ok(false), "a filled submodule at a non-UTF-8 path");
     }
 
     /// `current_branch` re-reads `HEAD` live rather than caching it, so a

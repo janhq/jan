@@ -595,6 +595,10 @@ fn meta_file(dir: &Path, id: &str, ext: &str) -> PathBuf {
     dir.join(META_DIR).join(format!("{id}.{ext}"))
 }
 
+/// Beside a lock file its owner could not lock: the checkout is never a
+/// sweep's to decide (see [`reserve`]).
+const UNLOCKED_EXT: &str = "unlocked";
+
 /// Drop what was recorded of `wt` once it is gone: the record, then its
 /// lock, which only the holder of that lock may unlink (a new owner never
 /// reopens an existing lock file, see [`reserve`]).
@@ -602,6 +606,7 @@ fn forget_meta(wt: &ChildWorktree) {
     let (Some(dir), Some(id)) = (wt.path.parent(), wt.path.file_name()) else { return };
     let id = id.to_string_lossy();
     let _ = std::fs::remove_file(meta_file(dir, &id, "json"));
+    let _ = std::fs::remove_file(meta_file(dir, &id, UNLOCKED_EXT));
     let _ = std::fs::remove_file(meta_file(dir, &id, "lock"));
 }
 
@@ -650,9 +655,11 @@ fn lock(file: std::fs::File) -> std::io::Result<std::fs::File> {
 
 /// Claim checkout id `id` in `dir` before cloning into it: its lock file is
 /// created, never opened if it exists (`AlreadyExists`), so two processes
-/// picking the same id cannot both own it. `None` where the filesystem has
-/// no locks: the file still reserves the id, and a sweep that cannot lock
-/// it leaves the checkout alone, so writers keep working there.
+/// picking the same id cannot both own it. `None` when it cannot be locked
+/// for any reason but another owner (a filesystem without locks, or a
+/// transient `ENOLCK`, which look the same): the file still reserves the id,
+/// so writers keep working there, and a marker beside it keeps every sweep
+/// off the checkout, since no lock can show its owner has gone.
 #[cfg(feature = "cli")]
 fn reserve(dir: &Path, id: &str) -> std::io::Result<Option<std::fs::File>> {
     reserve_with(dir, id, lock)
@@ -674,7 +681,17 @@ fn reserve_with(
     )?;
     match lock(file) {
         Ok(file) => Ok(Some(file)),
-        Err(e) if e.kind() != std::io::ErrorKind::WouldBlock => Ok(None),
+        Err(e) if e.kind() != std::io::ErrorKind::WouldBlock => {
+            // No lock to prove this owner alive, so no sweep may decide the
+            // checkout: a later lock on the file (the error was transient, or
+            // another process's filesystem view has locks) would read it as
+            // an orphan. Its own owner still settles it.
+            if let Err(marked) = std::fs::write(meta_file(dir, id, UNLOCKED_EXT), b"") {
+                let _ = std::fs::remove_file(&path);
+                return Err(marked);
+            }
+            Ok(None)
+        }
         Err(e) => {
             let _ = std::fs::remove_file(&path);
             Err(e)
@@ -923,6 +940,10 @@ pub(crate) struct Batch {
     /// Name a worktree a writer is still in rather than leave it unreported:
     /// at the session's end nothing later would mention it.
     report_busy: bool,
+    /// Leave a kept worktree unmarked until its notice is taken (see
+    /// [`Settled::report`]): its report may never be shown, and the next
+    /// start must then name it. Session end prints its own and marks at once.
+    mark_when_told: bool,
 }
 
 #[cfg(feature = "cli")]
@@ -935,12 +956,14 @@ impl Batch {
     /// the slowest one rather than the sum (bringing a branch back may take a
     /// fetch).
     pub(crate) fn settle(self) -> Settled {
-        let Batch { ledger, owned, report_busy } = self;
+        let Batch { ledger, owned, report_busy, mark_when_told } = self;
         let ledger = ledger.as_ref();
         let outcomes: Vec<Outcome> = std::thread::scope(|scope| {
             let settling: Vec<_> = owned
                 .into_iter()
-                .map(|one| scope.spawn(move || settle_one(ledger, one, report_busy)))
+                .map(|one| {
+                    scope.spawn(move || settle_one(ledger, one, report_busy, mark_when_told))
+                })
                 .collect();
             settling.into_iter().filter_map(|t| t.join().ok()).collect()
         });
@@ -1002,8 +1025,21 @@ impl Settled {
         })
     }
 
-    /// The user has been told about the kept orphans: no later sweep repeats
-    /// them. Their locks drop once each is marked.
+    /// Hand each notice to `report`, which says whether it reached the user,
+    /// and mark the kept worktrees reported only when theirs did: an untold
+    /// one must come up again at the next start, or the user never learns it
+    /// holds work.
+    pub(crate) fn report(mut self, report: &mut impl FnMut(String) -> bool) {
+        if self.kept_notice().is_some_and(&mut *report) {
+            self.mark_reported();
+        }
+        if let Some(notice) = self.trash_notice() {
+            report(notice);
+        }
+    }
+
+    /// The user has been told about the kept worktrees: no later sweep
+    /// repeats them. Their locks drop once each is marked.
     fn mark_reported(&mut self) {
         for Owned { wt, hold } in self.unmarked.drain(..) {
             let _ = write_meta(&wt, true);
@@ -1017,8 +1053,8 @@ impl Settled {
 enum Outcome {
     /// It holds work (or a writer is still in it): its kept line.
     Kept(String),
-    /// An orphan that holds work: its kept line, and the worktree with its
-    /// lock, to be marked reported once the user has been told.
+    /// It holds work and is reported later: its kept line, and the worktree
+    /// with its lock, to be marked reported once the user has been told.
     KeptUnmarked(String, Owned),
     /// It held nothing and went into the trash at this path.
     Trashed(PathBuf),
@@ -1031,7 +1067,12 @@ enum Outcome {
 /// claim (a writer is back in it, or an undo is deciding it) stays the
 /// ledger's, lock included, for the next end.
 #[cfg(feature = "cli")]
-fn settle_one(ledger: Option<&Arc<Ledger>>, one: Owned, report_busy: bool) -> Outcome {
+fn settle_one(
+    ledger: Option<&Arc<Ledger>>,
+    one: Owned,
+    report_busy: bool,
+    mark_when_told: bool,
+) -> Outcome {
     let Owned { wt, hold } = one;
     if let Some(ledger) = ledger {
         if !ledger.claim(&wt.path) {
@@ -1062,9 +1103,10 @@ fn settle_one(ledger: Option<&Arc<Ledger>>, one: Owned, report_busy: bool) -> Ou
         // has the branch to merge.
         let brought = bring_back(&wt).err();
         let line = kept_line(&wt, brought.as_deref());
-        if ledger.is_none() {
-            // An orphan, reported by a startup sweep through a sender the
-            // run may have dropped: marked only once its notice is taken.
+        if mark_when_told {
+            if let Some(ledger) = ledger {
+                ledger.state.lock().unwrap().removing.remove(&wt.path);
+            }
             return Outcome::KeptUnmarked(line, Owned { wt, hold });
         }
         // This process names it at its own end, so the user owns it now: no
@@ -1087,7 +1129,7 @@ impl Ledger {
     /// conversation's. A busy one stays recorded for the next end. Takes the
     /// ledger's lock only: no git, no I/O.
     pub(crate) fn end_conversation(self: &Arc<Self>) -> Batch {
-        self.take(false)
+        Batch { mark_when_told: true, ..self.take(false) }
     }
 
     /// End of session: remove every checkout that holds nothing (no commit
@@ -1117,7 +1159,7 @@ impl Ledger {
             let hold = state.holds.remove(&wt.path);
             owned.push(Owned { wt, hold });
         }
-        Batch { ledger: Some(self.clone()), owned, report_busy: busy_too }
+        Batch { ledger: Some(self.clone()), owned, report_busy: busy_too, mark_when_told: false }
     }
 
     /// The session's subagent worktrees still on disk, for `/worktree`. Runs
@@ -1158,6 +1200,10 @@ pub(crate) fn sweep_orphans(root: &Path) -> Settled {
         if !is_checkout_id(id) {
             continue;
         }
+        // Reserved without a lock: nothing can show its owner is gone.
+        if meta_file(&dir, id, UNLOCKED_EXT).exists() {
+            continue;
+        }
         // Once: a lock that is not free right now has a live owner, and
         // skipping is always safe.
         let Ok(hold) = crate::core::agent::session_log::open_no_follow(
@@ -1195,7 +1241,7 @@ pub(crate) fn sweep_orphans(root: &Path) -> Settled {
             Ok(_) => {}
         }
     }
-    Batch { ledger: None, owned, report_busy: false }.settle()
+    Batch { ledger: None, owned, report_busy: false, mark_when_told: true }.settle()
 }
 
 /// What a session start sweeps, without holding the start up: the stale and
@@ -1222,18 +1268,11 @@ pub(crate) fn spawn_startup_sweep(
     });
 }
 
-/// Settle `root`'s orphaned worktrees and report them, marking the kept ones
-/// reported only when `report` takes their notice: an untold one must come up
-/// again at the next start, or the user never learns it holds work.
+/// Settle `root`'s orphaned worktrees and report them (see
+/// [`Settled::report`]).
 #[cfg(feature = "cli")]
 fn sweep_and_report(root: &Path, report: &mut impl FnMut(String) -> bool) {
-    let mut settled = sweep_orphans(root);
-    if settled.kept_notice().is_some_and(&mut *report) {
-        settled.mark_reported();
-    }
-    if let Some(notice) = settled.trash_notice() {
-        report(notice);
-    }
+    sweep_orphans(root).report(report);
 }
 
 /// Whether `file` is still the file at `path`, not one unlinked since it was
@@ -2364,6 +2403,32 @@ mod git_tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A replaced conversation's kept worktree is marked reported only once
+    /// its notice is taken: exit may stop waiting for it, and the next start
+    /// must then name it.
+    #[test]
+    fn a_replaced_conversations_kept_worktree_is_marked_only_once_reported() {
+        let Some(root) = repo("conv-unsent") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        commit(&ws.root, "b.txt");
+        let untold = ledger.end_conversation().settle();
+        assert_eq!(untold.kept.len(), 1);
+        drop(untold);
+        let named = sweep_orphans(&root).kept;
+        let mut told = 0;
+        sweep_and_report(&root, &mut |_| {
+            told += 1;
+            true
+        });
+        let after = sweep_orphans(&root).kept;
+        let _ = std::fs::remove_dir_all(&ws.root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(named.len(), 1, "an untold one is named at the next start: {named:?}");
+        assert!(after.is_empty(), "and once told, never again: {after:?}");
+    }
+
     /// The batch is taken when the conversation ends; a worktree the next
     /// conversation makes before the batch is settled is not in it.
     #[test]
@@ -2744,5 +2809,52 @@ mod git_tests {
         assert!(!lock_file(&taken).exists());
         let _ = std::fs::remove_file(lock_file(&id));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A lock that fails for any reason but another owner (`ENOLCK`, which
+    /// is both what an NFS home without a lock daemon returns and a transient
+    /// shortage) reserves the id unlocked and marks it so: whether or not a
+    /// later lock would succeed, no sweep may take that checkout.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_lock_reserves_the_id_and_marks_it_unsweepable() {
+        let Some(root) = repo("enolck") else { return };
+        let dir = project_worktrees_dir(&root).unwrap();
+        let id = format!("enolck-{:04x}", N.fetch_add(1, Ordering::SeqCst));
+        let enolck = |_| Err(std::io::Error::from_raw_os_error(libc::ENOLCK));
+        let hold = reserve_with(&dir, &id, enolck).unwrap();
+        let reserved = meta_file(&dir, &id, "lock").is_file();
+        let marked = meta_file(&dir, &id, UNLOCKED_EXT).is_file();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(hold.is_none());
+        assert!(reserved && marked, "reserved and marked");
+    }
+
+    /// A checkout reserved without a lock is live as far as any sweep can
+    /// tell, even one that can lock its file later: it is never taken for an
+    /// orphan.
+    #[test]
+    fn a_sweep_never_takes_a_checkout_reserved_without_a_lock() {
+        let Some(root) = repo("nolock-sweep") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        commit(&ws.root, "b.txt");
+        let dir = meta_of(&root).parent().unwrap().to_path_buf();
+        let id = id_of(&ws);
+        // As the reservation would have been made where locks are unsupported.
+        let lock_file = meta_file(&dir, &id, "lock");
+        std::fs::remove_file(&lock_file).unwrap();
+        let unsupported = |_| Err(std::io::Error::from(std::io::ErrorKind::Unsupported));
+        assert!(reserve_with(&dir, &id, unsupported).unwrap().is_none());
+        // The writer's process died: no lock on the new file, which a sweep on
+        // a filesystem with locks can now take.
+        drop(ledger);
+        let kept = sweep_orphans(&root).kept;
+        let there = ws.root.is_dir();
+        let _ = std::fs::remove_dir_all(&ws.root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(kept.is_empty(), "{kept:?}");
+        assert!(there, "never touched");
     }
 }

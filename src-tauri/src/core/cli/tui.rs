@@ -6882,13 +6882,13 @@ impl App {
             return;
         }
         let reports = self.cleanup_reports.clone();
+        // A notice counts as told once it is queued for the transcript; exit
+        // stops taking them after a while (see `EXIT_SETTLE_WAIT`), and an
+        // untold kept worktree is left for the next start to name.
         let settle = move || {
-            let notices = batch.settle().notices();
-            if let Some(reports) = reports {
-                for notice in notices {
-                    let _ = reports.send(notice);
-                }
-            }
+            batch.settle().report(&mut |notice| {
+                reports.as_ref().is_some_and(|reports| reports.send(notice).is_ok())
+            });
         };
         // A sync caller (a plain test) has no runtime, and no worktrees.
         match tokio::runtime::Handle::try_current() {
@@ -14230,15 +14230,39 @@ pub async fn run(
         tokio::task::spawn_blocking(move || workspaces.finish_session())
     );
     // A conversation replaced just before exit may still be bringing its
-    // branches back: wait for it, so what it kept is named too.
+    // branches back: wait a little for it, so what it kept is named too, but
+    // never the fetch's full limit. One still settling is marked only once
+    // told, so the next start's sweep names it instead.
     app.cleanup_reports = None;
-    while let Some(earlier) = app.cleanup_rx.recv().await {
+    for earlier in drain_cleanup_reports(&mut app.cleanup_rx, EXIT_SETTLE_WAIT).await {
         eprintln!("{earlier}");
     }
     for notice in kept.map(|kept| kept.notices()).unwrap_or_default() {
         eprintln!("{notice}");
     }
     res
+}
+
+/// How long exit waits for a replaced conversation's settle to report.
+const EXIT_SETTLE_WAIT: Duration = Duration::from_secs(2);
+
+/// What the settles still running report within `wait`. The channel is closed
+/// before the last read, so a report sent later fails and its settle leaves
+/// the worktree unmarked rather than counting it as shown.
+async fn drain_cleanup_reports(
+    rx: &mut mpsc::UnboundedReceiver<String>,
+    wait: Duration,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let deadline = tokio::time::Instant::now() + wait;
+    while let Ok(Some(report)) = tokio::time::timeout_at(deadline, rx.recv()).await {
+        out.push(report);
+    }
+    rx.close();
+    while let Ok(report) = rx.try_recv() {
+        out.push(report);
+    }
+    out
 }
 
 const CLAUDE_ALIAS_NOTICE: &str = crate::core::cli::auth::account::CLAUDE_ALIAS_NOTICE;
@@ -41267,6 +41291,22 @@ fn a() {}
         assert!(ledger.assign(root.path(), "next", true, Some(&reuse)).is_ok());
         let _ = tokio::task::spawn_blocking(move || ledger.finish_session()).await;
         let _ = std::fs::remove_dir_all(&kept);
+    }
+
+    /// Exit takes the reports already sent, then stops waiting: a settle
+    /// still fetching is not waited for, and its later report is refused, so
+    /// it does not count as shown.
+    #[tokio::test]
+    async fn exit_waits_for_a_replaced_conversations_settle_only_so_long() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        tx.send("kept a".to_string()).unwrap();
+        let late = tx.clone();
+        let started = Instant::now();
+        let got = super::drain_cleanup_reports(&mut rx, Duration::from_millis(200)).await;
+        let took = started.elapsed();
+        assert_eq!(got, ["kept a"]);
+        assert!(took < Duration::from_secs(2), "waited {took:?}");
+        assert!(late.send("kept b".to_string()).is_err(), "a late report is refused");
     }
 
     /// `/new` hands the git to the blocking pool: a slow worktree does not
