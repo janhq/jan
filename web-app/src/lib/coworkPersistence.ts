@@ -291,7 +291,7 @@ export function isMissingThreadError(error: unknown): boolean {
 
 export type CoworkPersistence = {
   /** Record a new snapshot of a session; written after the debounce. */
-  schedule(session: CoworkSession, opts?: { legacy?: boolean }): void
+  schedule(session: CoworkSession, opts?: { legacy?: boolean; allowEmpty?: boolean }): void
   /** Delete a session: tombstone, drain, then delete its thread. */
   remove(id: string, opts?: { recordDeleted?: boolean; preserveThread?: boolean }): Promise<void>
   setCurrentId(id: string | null): void
@@ -300,6 +300,12 @@ export type CoworkPersistence = {
   isPersisted(id: string): boolean
   /** Drains queued/in-flight work; rejects if writes remain after bounded retries. */
   flush(): Promise<void>
+  /**
+   * Bounded, target-only drain: settles just this session's queued/in-flight
+   * write (and its own pending deletion rollback). Never touches other sessions
+   * or the current-id write; rejects if the target is still unwritten.
+   */
+  flushSession(id: string): Promise<void>
 }
 
 export function createCoworkPersistence(
@@ -486,7 +492,7 @@ export function createCoworkPersistence(
     schedule(session, o) {
       const id = session.id
       if ((tombstones.has(id) && !pendingRollbacks.has(id)) || session.unavailable || missing.has(id)) return
-      if (!persisted.has(id) && isEmpty(session)) return
+      if (!persisted.has(id) && isEmpty(session) && !o?.allowEmpty) return
       const prev = latest.get(id)
       latest.set(id, { session, legacy: o?.legacy ?? prev?.legacy ?? false })
       dirty.add(id)
@@ -574,6 +580,27 @@ export function createCoworkPersistence(
     },
 
     isPersisted: (id) => persisted.has(id),
+
+    async flushSession(id) {
+      // A target being deleted (or whose thread the host confirmed gone) must
+      // never report success: the caller would start work on a doomed record.
+      const assertUsable = () => {
+        if (tombstones.has(id)) throw new Error(`Cowork session ${id} is being deleted or was deleted`)
+        if (missing.has(id)) throw new Error(`Cowork session ${id} thread is missing`)
+      }
+      if (pendingRollbacks.has(id)) await rollbackDeletion(id)
+      assertUsable()
+      for (let pass = 0; pass < 3; pass++) {
+        if (dirty.has(id)) {
+          clearTimer(id)
+          enqueue(id)
+        }
+        await (chains.get(id) ?? Promise.resolve())
+        assertUsable()
+        if (!dirty.has(id)) return
+      }
+      throw new Error(`Cowork persistence flush failed; pending writes: ${id}`)
+    },
 
     async flush() {
       // A flush must not report success with failed recovery still queued.

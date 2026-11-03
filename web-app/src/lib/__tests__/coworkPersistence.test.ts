@@ -132,6 +132,19 @@ describe('coworkPersistence write protocol', () => {
     expect(b.extras.get('a').turns).toHaveLength(0)
   })
 
+  it('explicitly writes an empty new session only when allowEmpty is set', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
+    p.schedule(session('a', { turns: [], messages: [] }), { allowEmpty: false })
+    await p.flush()
+    expect(p.isPersisted('a')).toBe(false)
+
+    p.schedule(session('a', { turns: [], messages: [] }), { allowEmpty: true })
+    await p.flush()
+    expect(p.isPersisted('a')).toBe(true)
+    expect(b.threads.get('a')!.metadata.mode).toBe('cowork')
+    expect(b.extras.get('a').turns).toHaveLength(0)
+  })
+
   it('a failed write keeps the session dirty and retries', async () => {
     b = makeBackend({ failNext: { cmd: 'create_thread', times: 1 } })
     const onError = vi.fn()
@@ -438,6 +451,122 @@ describe('coworkPersistence write protocol', () => {
     expect((await loadCoworkSessions(b.invoke, { migrationSettled: false })).sessions.map((s) => s.id)).toEqual(['a'])
     await p.flush()
     expect(rollbackAttempts).toBe(7)
+  })
+
+  it('flushSession drains only the target: unrelated dirty failures and current-id never block or run', async () => {
+    let brokenOther = true
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'write_thread_extra' && args.threadId === 'other' && brokenOther) throw new Error('other failed')
+      if (cmd === 'settings_set' && args.key === COWORK_CURRENT_ID_KEY) throw new Error('current-id failed')
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any, { debounceMs: 10, retryMs: 1_000_000 })
+    p.setCurrentId('other')
+    p.schedule(session('other'))
+    p.schedule(session('target', { turns: [], messages: [] }), { allowEmpty: true })
+    b.log.length = 0
+    await expect(p.flushSession('target')).resolves.toBeUndefined()
+    expect(p.isPersisted('target')).toBe(true)
+    expect(p.isPersisted('other')).toBe(false)
+    expect(b.log).not.toContain('write_thread_extra:other')
+    expect(b.log).not.toContain('settings_set')
+    // The unrelated failure is still pending for a full flush.
+    await expect(p.flush()).rejects.toThrow()
+    brokenOther = false
+  })
+
+  it('flushSession fails closed when the target write fails, keeping it dirty for retry', async () => {
+    let broken = true
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'write_thread_extra' && args.threadId === 'target' && broken) throw new Error('target failed')
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any, { debounceMs: 10, retryMs: 1_000_000 })
+    p.schedule(session('target'))
+    await expect(p.flushSession('target')).rejects.toThrow('pending writes: target')
+    expect(p.isPersisted('target')).toBe(false)
+    broken = false
+    await expect(p.flushSession('target')).resolves.toBeUndefined()
+    expect(p.isPersisted('target')).toBe(true)
+  })
+
+  it('flushSession respects a pending rollback of the same id and ignores other ids', async () => {
+    b.settings.set(CODE_SESSIONS_KEY, JSON.stringify({ state: { sessions: [session('a')] }, version: 1 }))
+    let broken = true
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread') throw new Error('delete failed')
+      if (cmd === 'settings_set' && args.key === COWORK_DELETED_IDS_KEY && args.value === '[]' && broken) throw new Error('rollback failed')
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any, { debounceMs: 10 })
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('deletion recovery pending')
+    p.schedule(session('a', { title: 'restored' }), { legacy: true })
+    await expect(p.flushSession('a')).rejects.toThrow('rollback failed')
+    expect(b.threads.has('a')).toBe(false)
+    // An unrelated id does not retry the pending rollback of 'a'.
+    await expect(p.flushSession('zzz')).resolves.toBeUndefined()
+    broken = false
+    await expect(p.flushSession('a')).resolves.toBeUndefined()
+    expect(b.threads.get('a')!.title).toBe('restored')
+  })
+
+  it('flushSession on an already durable clean id makes no storage call and schedules no write', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
+    p.adopt([{ id: 'a' }])
+    b.log.length = 0
+    await expect(p.flushSession('a')).resolves.toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(b.log).toEqual([])
+  })
+
+  it('flushSession denies the same id while its deletion is in flight and after it completes', async () => {
+    let releaseDelete!: () => void
+    const gate = new Promise<void>((resolve) => (releaseDelete = resolve))
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread') await gate
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any, { debounceMs: 10 })
+    p.schedule(session('a'))
+    await p.flushSession('a')
+    expect(p.isPersisted('a')).toBe(true)
+    const removal = p.remove('a')
+    await expect(p.flushSession('a')).rejects.toThrow('being deleted')
+    // Another session is unaffected.
+    await expect(p.flushSession('other')).resolves.toBeUndefined()
+    releaseDelete()
+    await removal
+    await expect(p.flushSession('a')).rejects.toThrow('being deleted')
+    expect(b.threads.has('a')).toBe(false)
+  })
+
+  it('flushSession rejects a target whose thread the host confirmed missing', async () => {
+    const onThreadMissing = vi.fn()
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10, onThreadMissing })
+    p.adopt([{ id: 'gone' }]) // adopted, but no thread.json on disk
+    p.schedule(session('gone'))
+    await expect(p.flushSession('gone')).rejects.toThrow('thread is missing')
+    expect(onThreadMissing).toHaveBeenCalledOnce()
+    expect(b.threads.has('gone')).toBe(false)
+  })
+
+  it('a failed deletion with failed rollback still blocks flushSession of a durable id until rollback settles', async () => {
+    let broken = true
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread') throw new Error('delete failed')
+      if (cmd === 'settings_set' && args.key === COWORK_DELETED_IDS_KEY && args.value === '[]' && broken) throw new Error('rollback failed')
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any, { debounceMs: 10 })
+    p.schedule(session('a'))
+    await p.flushSession('a')
+    expect(p.isPersisted('a')).toBe(true) // durable and clean
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('deletion recovery pending')
+    expect(p.isPersisted('a')).toBe(true) // still durable, deletion intent still journaled
+    await expect(p.flushSession('a')).rejects.toThrow('rollback failed')
+    broken = false
+    await expect(p.flushSession('a')).resolves.toBeUndefined()
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual([])
   })
 
   it('rollback preserves concurrent deletion intent and successful deletes cannot resurrect', async () => {

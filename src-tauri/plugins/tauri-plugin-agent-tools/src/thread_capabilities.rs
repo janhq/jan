@@ -40,6 +40,50 @@ pub async fn snapshot(id: String) -> Result<(PathBuf, serde_json::Value), String
     .await
 }
 
+/// What the host knows about a conversation id, independent of anything the
+/// webview claims. `scope=Session` is a caller-chosen IPC argument, so it is
+/// never evidence of identity: elevated legacy Session calls are bound to this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThreadKind {
+    /// A persisted Chat thread, or temporary Chat. Its consent lives in the
+    /// stored grant, so legacy Session dispatch must never act for it.
+    Chat,
+    /// A host-recorded Cowork thread (`metadata.mode == "cowork"`).
+    Cowork,
+    /// No thread record, but the id is a session in the host's own legacy
+    /// `code-sessions` settings blob (and not in the deletion journal). The
+    /// host verified it; a renderer-chosen fresh id can never reach this.
+    LegacyCowork,
+    /// Invalid id, no record and not a legacy session, unreadable or malformed
+    /// record or settings, no resolver installed, or an unsupported platform.
+    /// Fails closed for elevated Session calls.
+    Unknown,
+}
+
+impl ThreadKind {
+    /// Whether an elevated (network, folder, write, memory/skill mutation,
+    /// outbound) legacy `scope=Session` call may proceed for this id.
+    pub fn allows_elevated_session(self) -> bool {
+        matches!(self, Self::Cowork | Self::LegacyCowork)
+    }
+}
+
+pub type KindFuture = Pin<Box<dyn Future<Output = ThreadKind> + Send>>;
+pub type KindResolver = Arc<dyn Fn(String) -> KindFuture + Send + Sync>;
+static KIND_RESOLVER: OnceLock<KindResolver> = OnceLock::new();
+/// Installed by the native host, like [`set_resolver`]. First call wins.
+pub fn set_kind_resolver(resolver: KindResolver) {
+    let _ = KIND_RESOLVER.set(resolver);
+}
+/// The host's classification of `id`; [`ThreadKind::Unknown`] when the host
+/// has not installed a resolver.
+pub async fn thread_kind(id: &str) -> ThreadKind {
+    match KIND_RESOLVER.get() {
+        Some(resolve) => resolve(id.to_string()).await,
+        None => ThreadKind::Unknown,
+    }
+}
+
 /// A grant with nothing elevated: what an unconfirmed thread resolves to, and
 /// what a narrowed entry holds.
 pub fn denied() -> ThreadCapabilities {
@@ -282,6 +326,20 @@ mod tests {
         assert!(current(id).0.shell_network);
         // Replaying the same token cannot confirm a second time.
         assert!(!confirm_if_current(id, elevated(), token));
+    }
+
+    #[test]
+    fn only_host_verified_cowork_kinds_allow_elevated_session() {
+        assert!(ThreadKind::Cowork.allows_elevated_session());
+        assert!(ThreadKind::LegacyCowork.allows_elevated_session());
+        assert!(!ThreadKind::Chat.allows_elevated_session());
+        assert!(!ThreadKind::Unknown.allows_elevated_session());
+    }
+
+    #[tokio::test]
+    async fn no_installed_kind_resolver_is_unknown() {
+        // This test binary never installs a resolver.
+        assert_eq!(thread_kind("anything").await, ThreadKind::Unknown);
     }
 
     /// Revoke landing between persist and confirm: the later narrow wins and

@@ -590,6 +590,19 @@ pub async fn start_monitor(
     if !matches!(scope, Some(WorkspaceScope::Session)) {
         return Err("monitor is unavailable for Chat threads".to_string().into());
     }
+    // Same host-kind guard as `execute_tool`: an elevated Session monitor
+    // (network, attached folder, or writable project) needs a host-verified
+    // Cowork identity, and the check runs before any setup side effect.
+    guard_caller_session(
+        scope,
+        &thread_id,
+        crate::tools::monitor::MONITOR_TOOL_NAME,
+        &args,
+        allow_network,
+        read_only_project.as_deref(),
+        project_writable,
+    )
+    .await?;
     let data_folder = workspace::host_data_folder(&data_folder);
     use crate::tools::monitor;
     if !jail::backend().enforces() {
@@ -1084,14 +1097,16 @@ pub async fn execute_tool<R: tauri::Runtime>(
     scope: Option<WorkspaceScope>,
     call_id: Option<String>,
 ) -> Result<ToolResult, AgentToolsError> {
-    reject_legacy_thread_elevation(
+    guard_caller_session(
         scope,
+        &thread_id,
         &name,
         &args,
         allow_network,
         read_only_project.as_deref(),
         project_writable,
-    )?;
+    )
+    .await?;
     execute_tool_inner(
         screenshot_backend(&app),
         data_folder,
@@ -1252,14 +1267,16 @@ pub async fn execute_tool_streaming<R: tauri::Runtime>(
     on_output: tauri::ipc::Channel<ToolOutputChunk>,
 ) -> Result<ToolResult, AgentToolsError> {
     let sink = output_sink(on_output, call_id.clone());
-    reject_legacy_thread_elevation(
+    guard_caller_session(
         scope,
+        &thread_id,
         &name,
         &args,
         allow_network,
         read_only_project.as_deref(),
         project_writable,
-    )?;
+    )
+    .await?;
     execute_tool_inner(
         screenshot_backend(&app),
         data_folder,
@@ -1278,20 +1295,22 @@ pub async fn execute_tool_streaming<R: tauri::Runtime>(
     .await
 }
 
-// Both legacy IPC entry points share this guard. Session/Cowork retains its
-// existing contract; only the dedicated Chat command may supply authority for
-// a thread. The private executor is not an IPC surface.
-fn reject_legacy_thread_elevation(
-    scope: Option<WorkspaceScope>,
+// Both legacy IPC entry points share these guards. `scope=Session` is a
+// caller-chosen IPC argument, so it is never identity: an elevated Session call
+// proceeds only when the host itself classifies the thread id as Cowork (see
+// `thread_capabilities::thread_kind`). Only the dedicated Chat command may
+// supply authority for a Chat thread. The private executor is not an IPC surface.
+
+/// Whether a call asks for anything beyond unprivileged scratch tools:
+/// network, an attached folder, folder writes, memory/skill mutation, or an
+/// outbound (renderer/net) tool.
+fn requests_elevation(
     name: &str,
     args: &serde_json::Value,
     network: Option<bool>,
     folder: Option<&str>,
     writable: Option<bool>,
-) -> Result<(), AgentToolsError> {
-    if matches!(scope, Some(WorkspaceScope::Session)) {
-        return Ok(());
-    }
+) -> bool {
     let mutation = name == "skill_write"
         || (name == crate::tools::MEMORY_TOOL
             && !matches!(
@@ -1303,12 +1322,73 @@ fn reject_legacy_thread_elevation(
     // thread executor. Neither can bypass scoped Chat via old IPC dispatch.
     let outbound = name == "screenshot"
         || lookup(name).is_some_and(|tool| matches!(tool.capability, crate::tools::Capability::Net));
-    if network == Some(true) || writable == Some(true) || folder.is_some() || mutation || outbound {
+    network == Some(true) || writable == Some(true) || folder.is_some() || mutation || outbound
+}
+
+/// Pure decision for a legacy call: `scope=Session` elevation depends on the
+/// host-resolved kind, every other scope may never elevate.
+fn legacy_elevation_decision(
+    scope: Option<WorkspaceScope>,
+    kind: crate::thread_capabilities::ThreadKind,
+    elevated: bool,
+) -> Result<(), AgentToolsError> {
+    if !elevated {
+        return Ok(());
+    }
+    if !matches!(scope, Some(WorkspaceScope::Session)) {
         return Err("Chat capability access requires execute_thread_tool"
             .to_string()
             .into());
     }
-    Ok(())
+    if kind.allows_elevated_session() {
+        Ok(())
+    } else {
+        Err("Elevated Session access requires a host-verified Cowork session"
+            .to_string()
+            .into())
+    }
+}
+
+/// Test-only model of the pre-host-kind guard (`scope=Session` always passes,
+/// every other scope is judged with an `Unknown` kind). Production dispatch
+/// goes through [`guard_caller_session`].
+#[cfg(test)]
+fn reject_legacy_thread_elevation(
+    scope: Option<WorkspaceScope>,
+    name: &str,
+    args: &serde_json::Value,
+    network: Option<bool>,
+    folder: Option<&str>,
+    writable: Option<bool>,
+) -> Result<(), AgentToolsError> {
+    if matches!(scope, Some(WorkspaceScope::Session)) {
+        return Ok(());
+    }
+    legacy_elevation_decision(
+        scope,
+        crate::thread_capabilities::ThreadKind::Unknown,
+        requests_elevation(name, args, network, folder, writable),
+    )
+}
+
+/// Runs before any setup side effect. The host kind is consulted only for an
+/// elevated Session call; scratch-only calls keep their existing contract.
+async fn guard_caller_session(
+    scope: Option<WorkspaceScope>,
+    thread_id: &str,
+    name: &str,
+    args: &serde_json::Value,
+    network: Option<bool>,
+    folder: Option<&str>,
+    writable: Option<bool>,
+) -> Result<(), AgentToolsError> {
+    let elevated = requests_elevation(name, args, network, folder, writable);
+    let kind = if elevated && matches!(scope, Some(WorkspaceScope::Session)) {
+        crate::thread_capabilities::thread_kind(thread_id).await
+    } else {
+        crate::thread_capabilities::ThreadKind::Unknown
+    };
+    legacy_elevation_decision(scope, kind, elevated)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1665,6 +1745,58 @@ mod tests {
     }
 
     #[test]
+    fn session_elevation_matrix_follows_host_kind() {
+        use crate::thread_capabilities::ThreadKind::{self, *};
+        let none = serde_json::json!({});
+        let cases: [(&str, serde_json::Value, Option<bool>, Option<&str>, Option<bool>); 6] = [
+            ("shell", none.clone(), Some(true), None, None),
+            ("read", none.clone(), None, Some("/folder"), None),
+            ("write", none.clone(), None, Some("/folder"), Some(true)),
+            ("memory", serde_json::json!({"op":"write"}), None, None, None),
+            ("skill_write", none.clone(), None, None, None),
+            ("web_fetch", none.clone(), None, None, None),
+        ];
+        for (name, args, net, folder, writable) in cases {
+            assert!(requests_elevation(name, &args, net, folder, writable), "{name}");
+            for kind in [Chat, Unknown, Cowork, LegacyCowork] {
+                let allowed = legacy_elevation_decision(Some(WorkspaceScope::Session), kind, true).is_ok();
+                assert_eq!(allowed, matches!(kind, Cowork | LegacyCowork), "{name} {kind:?}");
+                for scope in [None, Some(WorkspaceScope::Thread)] {
+                    assert!(legacy_elevation_decision(scope, kind, true).is_err(), "{name} {kind:?}");
+                }
+            }
+        }
+        // Unelevated scratch calls never consult the kind.
+        let scratch = serde_json::json!({"op":"view"});
+        assert!(!requests_elevation("memory", &scratch, None, None, Some(false)));
+        for kind in [Chat, Unknown, Cowork, LegacyCowork] {
+            let _: ThreadKind = kind;
+            assert!(legacy_elevation_decision(Some(WorkspaceScope::Session), kind, false).is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn unconfirmed_session_elevation_fails_before_any_setup() {
+        let data = unique_data_folder();
+        let id = format!("session-elev-{}", data.file_name().unwrap().to_string_lossy());
+        assert!(!data.exists());
+        // No kind resolver is installed in this binary, so the kind is Unknown.
+        let err = guard_caller_session(
+            Some(WorkspaceScope::Session), &id, "shell", &json!({}), Some(true), None, None,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.message.contains("host-verified Cowork"), "{}", err.message);
+        guard_caller_session(
+            Some(WorkspaceScope::Session), &id, "shell", &json!({}), None, None, None,
+        )
+        .await
+        .unwrap();
+        assert!(!data.exists());
+        assert!(!workspace::scratch_dir(&id).exists());
+    }
+
+    #[test]
     fn legacy_thread_guard_preserves_unprivileged_scratch_tools() {
         for scope in [None, Some(WorkspaceScope::Thread)] {
             for (name, args) in [
@@ -1705,6 +1837,38 @@ mod tests {
             .await
             .unwrap_err();
             assert_eq!(err.message, "monitor is unavailable for Chat threads");
+            assert!(!data.exists(), "refusal must not create a workspace");
+            assert!(!workspace::scratch_dir(&id).exists(), "refusal must not create scratch");
+            assert!(!session_monitors().lock().unwrap().contains_key(&id));
+        }
+    }
+
+    #[tokio::test]
+    async fn elevated_session_monitor_requires_host_verified_cowork_before_setup() {
+        let data = unique_data_folder();
+        let id = format!("monitor-elev-{}", data.file_name().unwrap().to_string_lossy());
+        let folder = data.join("attached");
+        for (network, folder, writable) in [
+            (Some(true), None, None),
+            (None, Some(folder.to_string_lossy().into_owned()), None),
+            (None, None, Some(true)),
+        ] {
+            let channel = tauri::ipc::Channel::new(|_| {
+                panic!("a refused monitor must not emit updates")
+            });
+            let err = start_monitor(
+                data.to_string_lossy().into_owned(),
+                id.clone(),
+                json!({}), // Must be refused before argument parsing.
+                network,
+                folder,
+                writable,
+                Some(WorkspaceScope::Session),
+                channel,
+            )
+            .await
+            .unwrap_err();
+            assert!(err.message.contains("host-verified Cowork"), "{}", err.message);
             assert!(!data.exists(), "refusal must not create a workspace");
             assert!(!workspace::scratch_dir(&id).exists(), "refusal must not create scratch");
             assert!(!session_monitors().lock().unwrap().contains_key(&id));

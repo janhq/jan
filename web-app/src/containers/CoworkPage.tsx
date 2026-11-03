@@ -29,6 +29,7 @@ import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
 import { getModelDisplayName, getProviderTitle } from '@/lib/utils'
 import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
+import { ensureCoworkRecorded } from '@/lib/coworkSync'
 import { INIT_PROMPT, runSlashCommand, SLASH_COMMANDS } from '@/lib/coworkCommands'
 import {
   compactMessages,
@@ -598,6 +599,11 @@ export function CoworkPage() {
           ? [userTurn(text, attachments?.media, attachments?.files)]
           : []
         syncLive()
+
+        // The host reads the session record before the first tool, so the
+        // accepted run's (possibly still empty) session must be durable first.
+        await ensureCoworkRecorded(sid)
+        controller.signal.throwIfAborted()
 
         let files = attachments?.files
         const baseMessages = current?.messages ?? []
