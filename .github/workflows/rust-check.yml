@@ -30,6 +30,12 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # No debuginfo: it is most of a debug target dir, and so of every cache
+  # below, against the repo's 10GB cap. Failing tests still report file and
+  # line (from the panic location, not debuginfo). rust-cache hashes CARGO*
+  # variables into its key, so this starts one fresh, smaller set on main.
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
 
 jobs:
   # Classifies the PR's files (.github/scripts/changed-areas.sh) so each job
@@ -138,9 +144,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: test-cli
-          # Branches restore but never save: one 3.5GB cache set on main
-          # rather than one per branch, which is what breached the 10GB cap.
+          # One cache for the three jobs that build the jan binary in the cli
+          # feature set (this one, schema, adk): their target dirs are the same
+          # debug build, so separate keys stored it three times. Only this job,
+          # which builds the most of it, saves.
+          shared-key: jan-cli
+          # Branches restore but never save: one cache set on main rather than
+          # one per branch, which is what breached the 10GB cap.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # The plugin-install tests build fixture repositories and commit in
@@ -239,10 +249,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: protocol-schema
-          # Branches restore but never save: one 3.5GB cache set on main
-          # rather than one per branch, which is what breached the 10GB cap.
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Restores the `test` job's cache; see the note there.
+          shared-key: jan-cli
+          save-if: false
 
       # --locked: the generated document is a function of the locked schemars,
       # so the only thing that may move it is a commit.
@@ -349,8 +358,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: adk
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Restores the `test` job's cache; see the note there.
+          shared-key: jan-cli
+          save-if: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:

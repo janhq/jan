@@ -211,6 +211,12 @@ jobs:
   test-rust:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
+    env:
+      # No debuginfo in test builds: it is most of the target dir's size (and
+      # so of the cache), and a failing test still reports file and line, which
+      # come from the panic location rather than debuginfo.
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
     strategy:
       fail-fast: false
       matrix:
@@ -247,6 +253,24 @@ jobs:
       - name: Set up Xcode version
         if: runner.os == 'macOS'
         run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+
+      # Linux only, and saved only on main: the repo's 10GB cache cap already
+      # holds rust-check's caches, and a pull request's own cache is readable
+      # by nothing but that pull request, so saving per PR only evicts main's.
+      # macOS and Windows build cold; they run only when Rust changed.
+      # The workspaces are the five `make test-rust` builds, each its own
+      # target dir (the plugins and utils are standalone crates).
+      - uses: Swatinem/rust-cache@v2
+        if: runner.os == 'Linux'
+        with:
+          workspaces: |
+            src-tauri
+            src-tauri/plugins/tauri-plugin-hardware
+            src-tauri/plugins/tauri-plugin-llamacpp
+            src-tauri/plugins/tauri-plugin-agent-tools
+            src-tauri/utils
+          shared-key: test-rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Config Yarn
         run: |
