@@ -113,7 +113,7 @@ function ProjectPageContent() {
     : 'common:conversationScope.pendingKept'
   const pendingKeptNote = scopeDraftElevated ? ` ${t(pendingKeptKey)}` : ''
   const scopeUnsupportedReason = isTemporaryChat
-    ? t('common:conversationScope.temporary') + pendingKeptNote
+    ? t('common:conversationScope.temporaryPermissions') + pendingKeptNote
     : selectedModel && !modelSupportsTools
       ? t('common:conversationScope.unsupported') + pendingKeptNote
       : null

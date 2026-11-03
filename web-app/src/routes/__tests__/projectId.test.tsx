@@ -240,7 +240,7 @@ describe('Project route single Chat flow', () => {
     // A tool-capable model in temporary mode is not "unsupported", but the
     // hidden control is explained and the elevated draft is stated as kept.
     expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
-      'common:conversationScope.temporary common:conversationScope.pendingKeptTemporary'
+      'common:conversationScope.temporaryPermissions common:conversationScope.pendingKeptTemporary'
     )
     window.history.replaceState({}, '', '/')
     view.rerender(<Component />)
@@ -256,7 +256,7 @@ describe('Project route single Chat flow', () => {
     renderComponent()
     expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
     expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
-      'common:conversationScope.temporary'
+      'common:conversationScope.temporaryPermissions'
     )
   })
 
@@ -299,7 +299,7 @@ describe('Project route single Chat flow', () => {
     // unsupported-model one) is shown, with the draft kept, and no prepare path.
     expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
     expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
-      'common:conversationScope.temporary common:conversationScope.pendingKeptTemporary'
+      'common:conversationScope.temporaryPermissions common:conversationScope.pendingKeptTemporary'
     )
     expect(screen.getByTestId('project-scope-unsupported')).not.toHaveTextContent(
       'common:conversationScope.unsupported'

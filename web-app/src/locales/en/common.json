@@ -769,6 +769,7 @@
     "pendingKept": "Your pending permission draft is kept and will be available when you select a tool-capable model.",
     "pendingKeptTemporary": "Your pending permission draft is kept and will be available when you start a regular chat with a tool-capable model.",
     "temporary": "A temporary chat keeps no folder access.",
+    "temporaryPermissions": "Temporary chats cannot use granted folder, shell network, or persistent memory access.",
     "folderSelectModel": "Select a tool-capable model before adding folder access.",
     "folderUnsupported": "The selected model does not support tools, so folder access cannot be granted. Ordinary chat still works.",
     "invalidFolder": "This folder path is not supported. Choose another folder.",

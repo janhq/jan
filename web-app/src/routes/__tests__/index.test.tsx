@@ -356,7 +356,7 @@ describe('Index route', () => {
       // The control disappears with a persistent explanation; the elevated draft
       // is stated as kept, and temporary tools are never enabled.
       expect(screen.getByTestId('home-scope-unsupported').textContent).toBe(
-        'common:conversationScope.temporary common:conversationScope.pendingKeptTemporary'
+        'common:conversationScope.temporaryPermissions common:conversationScope.pendingKeptTemporary'
       )
       // Leaving temporary mode resurfaces the preserved draft, explicitly pending.
       window.history.replaceState({}, '', '/')
@@ -373,7 +373,7 @@ describe('Index route', () => {
       renderComponent()
       expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
       expect(screen.getByTestId('home-scope-unsupported').textContent).toBe(
-        'common:conversationScope.temporary'
+        'common:conversationScope.temporaryPermissions'
       )
     })
 
