@@ -1739,7 +1739,28 @@ describe('ThreadDetail route', () => {
           chat: { messages: [], stop: vi.fn() },
         }
         getMcpTools.mockResolvedValue([{ name: 'fetch', server: 'frozen-server' }])
-        useChildApprovalCalls.setState({ owned: {} })
+        useChildApprovalCalls.setState({ owned: {}, inputs: {} })
+      })
+
+      it('bounds native child authority by its frozen ceiling despite a later widen', async () => {
+        renderComponent()
+        h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedNativeTool = () => true
+        h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: true }))
+        const child = { ceiling: { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }, mcpServers: new Map([['skill_write', undefined]]) }
+        const outcome = await childDispatch(call('child-ceiling', 'skill_write', { name: 'x', content: 'y' }), child)
+        expect(outcome.isError).toBe(true)
+        expect(shell.execute).not.toHaveBeenCalled()
+        expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      })
+
+      it('refuses unmapped and recursive client tools before child execution', async () => {
+        renderComponent()
+        for (const name of ['shell', 'task', 'monitor', 'ask', 'todo']) {
+          const outcome = await childDispatch(call(`child-deny-${name}`, name, {}), { ceiling: {}, mcpServers: new Map([['task', undefined]]) })
+          expect(outcome).toMatchObject({ isError: true, output: expect.stringContaining('not available') })
+        }
+        expect(shell.execute).not.toHaveBeenCalled()
+        expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
       })
 
       it('registers the child call before any await and releases it when the call settles', async () => {
@@ -1802,6 +1823,118 @@ describe('ThreadDetail route', () => {
         await act(async () => { ctl.abort(); await outcome })
         expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledWith('task1:c4', 'thread-1')
         expect(useChildApprovalCalls.getState().owned['thread-1']).toBeUndefined()
+      })
+
+      describe('native child calls under the frozen grant ceiling', () => {
+        type Grant = { version: number; folderScope: { path: string; access: 'read' | 'write' } | null; shellNetwork: boolean; memoryWrite: boolean }
+        const grant = (over: Partial<Grant> = {}): Grant => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false, ...over })
+        let current: Grant
+        const nativeBinding = (ceiling: Grant, ...names: string[]) => ({
+          ceiling,
+          mcpServers: new Map<string, string | undefined>(names.map((name) => [name, undefined])),
+        })
+        beforeEach(() => {
+          current = grant()
+          h.threadsState.getConversationCapabilities.mockImplementation(() => current)
+          h.appStateState.mcpToolNames = new Set()
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedNativeTool = () => true
+          shell.execute.mockClear()
+        })
+        afterEach(() => {
+          h.threadsState.getConversationCapabilities.mockImplementation(() => grant())
+        })
+        const skillWrite = { name: 'x', content: 'y' }
+
+        it('control: a child skill_write inside its ceiling is approved and runs under the effective grant', async () => {
+          current = grant({ memoryWrite: true })
+          renderComponent()
+          const result = await childDispatch(call('task-n:ctl', 'skill_write', skillWrite), nativeBinding(grant({ memoryWrite: true }), 'skill_write'))
+          expect(result).not.toMatchObject({ isError: true })
+          expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_write', skillWrite, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }))
+        })
+
+        it('a later widen cannot enlarge a child: skill_write is denied before approval or execution', async () => {
+          // The parent dispatched the task without memory writes; the user widens afterwards.
+          current = grant({ memoryWrite: true })
+          renderComponent()
+          const result = await childDispatch(call('task-n:widen', 'skill_write', skillWrite), nativeBinding(grant({ memoryWrite: false }), 'skill_write'))
+          expect(result).toMatchObject({ isError: true, output: expect.stringContaining('has not granted durable memory writes') })
+          expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+          expect(shell.execute).not.toHaveBeenCalled()
+          expect(useChildApprovalCalls.getState().owned['thread-1']).toBeUndefined()
+        })
+
+        it('a later revoke denies the subsequent child call, while the earlier one already ran', async () => {
+          current = grant({ memoryWrite: true })
+          renderComponent()
+          const frozen = nativeBinding(grant({ memoryWrite: true }), 'skill_write')
+          expect(await childDispatch(call('task-n:before', 'skill_write', skillWrite), frozen)).not.toMatchObject({ isError: true })
+          expect(shell.execute).toHaveBeenCalledTimes(1)
+          current = grant({ memoryWrite: false })
+          const denied = await childDispatch(call('task-n:after', 'skill_write', skillWrite), frozen)
+          expect(denied).toMatchObject({ isError: true, output: expect.stringContaining('has not granted durable memory writes') })
+          expect(shell.execute).toHaveBeenCalledTimes(1)
+          expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+        })
+
+        it.each([
+          ['widen memory', grant({ memoryWrite: true }), grant({ memoryWrite: false }), { memoryWrite: false }],
+          ['revoke memory', grant({ memoryWrite: false }), grant({ memoryWrite: true }), { memoryWrite: false }],
+          ['widen network', grant({ shellNetwork: true }), grant({ shellNetwork: false }), { shellNetwork: false }],
+          ['widen folder access', grant({ folderScope: { path: '/p', access: 'write' } }), grant({ folderScope: { path: '/p', access: 'read' } }), { folderScope: { path: '/p', access: 'read' } }],
+          ['switch folder', grant({ folderScope: { path: '/other', access: 'read' } }), grant({ folderScope: { path: '/p', access: 'read' } }), { folderScope: null }],
+        ])('skill_read executes under the intersection of current and frozen grants: %s', async (_label, now, ceiling, expected) => {
+          current = now
+          renderComponent()
+          const result = await childDispatch(call(`task-n:read-${_label}`, 'skill_read', { name: 'x' }), nativeBinding(ceiling, 'skill_read'))
+          expect(result).not.toMatchObject({ isError: true })
+          expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_read', { name: 'x' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining(expected))
+        })
+      })
+
+      describe('frozen child map entries', () => {
+        beforeEach(() => {
+          h.appStateState.mcpToolNames = new Set(['read', 'fetch'])
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedNativeTool = () => true
+          shell.execute.mockClear()
+          getMcpTools.mockClear()
+        })
+
+        it('an undefined frozen entry is native: no MCP validator runs even though the live transport now maps the name to a server', async () => {
+          const run = serveMcp()
+          renderComponent()
+          const result = await childDispatch(call('task-m:native', 'read', { path: 'scratch.txt' }), { ceiling: h.threadsState.getConversationCapabilities(), mcpServers: new Map([['read', undefined]]) })
+          expect(result).not.toMatchObject({ isError: true })
+          expect(getMcpTools).not.toHaveBeenCalled()
+          expect(run).not.toHaveBeenCalled()
+          expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }))
+        })
+
+        it('an unmapped child tool name is refused before binding, validation, approval or execution', async () => {
+          const run = serveMcp()
+          renderComponent()
+          const result = await childDispatch(call('task-m:unmapped', 'fetch', { url: 'x' }), { ceiling: h.threadsState.getConversationCapabilities(), mcpServers: new Map([['read', undefined]]) })
+          expect(result).toMatchObject({ isError: true, output: expect.stringContaining('not available to this run') })
+          expect(getMcpTools).not.toHaveBeenCalled()
+          expect(run).not.toHaveBeenCalled()
+          expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+          expect(shell.execute).not.toHaveBeenCalled()
+          expect(useChildApprovalCalls.getState().owned['thread-1']).toBeUndefined()
+        })
+
+        it.each(['todo', 'ask', 'task', 'monitor'])('client tool %s is refused for a child even when the frozen map lists it', async (name) => {
+          renderComponent()
+          const result = await childDispatch(call(`task-m:client-${name}`, name, {}), { ceiling: h.threadsState.getConversationCapabilities(), mcpServers: new Map([[name, undefined]]) })
+          expect(result).toMatchObject({ isError: true, output: expect.stringContaining('not available to this run') })
+          expect(conversationAskCard('thread-1')).toBeNull()
+          expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+          expect(shell.execute).not.toHaveBeenCalled()
+        })
       })
     })
 

@@ -251,6 +251,62 @@ describe('Chat runTurn stream adapter (real SDK reader and runner)', () => {
     expect(stored.metadata).not.toHaveProperty('uiPartsSkipped')
     expect(taskStatusRows([convertThreadMessageToUIMessage(stored)])).toEqual(taskStatusRows([message]))
   })
+  it('round-trips data-task-status and data-tool-diff together canonically and omits both from the model', async () => {
+    const diff = '-    1 | secretdiffbody\n+    1 | other'
+    const calls: UIMessageChunk[] = [
+      { type: 'start-step' },
+      { type: 'tool-input-available', toolCallId: 'tk', toolName: 'task', input: {} },
+      { type: 'tool-input-available', toolCallId: 'e1', toolName: 'edit', input: { path: 'a.txt' } },
+      { type: 'finish-step' }, { type: 'finish' },
+    ]
+    const send = vi.fn().mockResolvedValueOnce(stream(calls)).mockResolvedValueOnce(stream(answer)).mockResolvedValueOnce(stream(answer))
+    const rows: unknown[][] = []
+    const notices: string[] = []
+    let owed = false
+    let wake: () => void = () => {}
+    const dispatch = vi.fn(async (call: { toolName: string }) => {
+      if (call.toolName === 'edit') return { output: 'Edited a.txt', diff }
+      owed = true
+      rows.push([{ runId: 'tk:a', name: 'a', status: 'running', startedAt: 10 }])
+      setTimeout(() => {
+        rows.push([{ runId: 'tk:a', name: 'a', status: 'done', startedAt: 10, endedAt: 20, finalOutput: 'child answer' }])
+        notices.push("Subagent 'a' (tk:a) finished. Its answer:\n\nchild answer")
+        wake()
+      }, 5)
+      return { output: 'Dispatched 1 subagent(s)' }
+    })
+    const inbox = {
+      take: () => { const t = notices.splice(0); if (t.length) owed = false; return t },
+      pending: () => owed || notices.length > 0,
+      wait: () => new Promise<void>((resolve) => { wake = resolve; if (notices.length) resolve() }),
+      takeStatus: () => rows.splice(0).flat(),
+    }
+    const message = await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, sendStep: send, dispatch, inbox }))
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    expect(message.parts.filter(p => p.type === TASK_STATUS_PART)).toHaveLength(1)
+    expect(message.parts.filter(p => p.type === 'data-tool-diff')).toHaveLength(1)
+    // The model never sees either display-only part, at any step.
+    for (const call of send.mock.calls) {
+      const model = JSON.stringify(await convertToModelMessages(call[0] as UIMessage[]))
+      expect(model).not.toContain('task-status')
+      expect(model).not.toContain('tool-diff')
+      expect(model).not.toContain('secretdiffbody')
+    }
+    const fields = assistantRecordFields(message, {}, { stopped: false })
+    expect(fields.metadata).not.toHaveProperty('uiPartsSkipped')
+    expect(fields.metadata).not.toHaveProperty('uiDiffsOmitted')
+    expect(JSON.stringify(fields.content)).not.toContain('secretdiffbody')
+    const stored = JSON.parse(JSON.stringify({ id: 'a', thread_id: 't', role: 'assistant', status: 'ready', object: 'thread.message', created_at: 1, completed_at: 1, ...fields })) as ThreadMessage
+    const reloaded = convertThreadMessageToUIMessage(stored)
+    // Canonical: the same parts, in the same order, with the same ids.
+    expect(reloaded.parts).toEqual(message.parts)
+    expect(taskStatusRows([reloaded])).toEqual([{ runId: 'tk:a', name: 'a', status: 'done', startedAt: 10, endedAt: 20, finalOutput: 'child answer' }])
+    expect(conversationDiffs([reloaded]).map(f => [f.path, f.operations[0].diff])).toEqual([['a.txt', diff]])
+    // Model projection of the reloaded message equals the one with both data parts removed.
+    const displayOnly = (p: { type: string }) => p.type === TASK_STATUS_PART || p.type === 'data-tool-diff'
+    expect(await convertToModelMessages([user, reloaded])).toEqual(await convertToModelMessages([user, { ...message, parts: message.parts.filter(p => !displayOnly(p)) }]))
+    expect(JSON.stringify(await convertToModelMessages([user, reloaded]))).not.toMatch(/secretdiffbody|task-status|tool-diff/)
+  })
   it('keeps working without a status source: a plain inbox emits no data parts', async () => {
     const send = vi.fn().mockResolvedValue(stream(answer))
     const message = await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, sendStep: send, dispatch: vi.fn(), inbox: { take: () => [], pending: () => false, wait: async () => {} } }))
