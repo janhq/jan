@@ -944,7 +944,7 @@ function ThreadDetail() {
       useToolApprovalRequests.getState().clearPendingForThread(threadId)
       if (isAbort) return
       // Persisted: the transcript is canonical, so the todo bridge can go.
-      if (!isError) finishConversationClientRun(threadId)
+      finishConversationClientRun(threadId)
 
       if (!isAbort && !isChatClosing()) {
         const localMessages = useMessages.getState().getMessages(threadId)

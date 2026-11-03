@@ -76,8 +76,13 @@ export function dropConversationClientThread(threadId: string): void {
   prune(threadId, entry)
 }
 
-/** Successful terminal onFinish, after persistence: the transcript is now
- * canonical, so release the todo bridge. Never touches a card or a pending
+/** Explicit session reset also settles any orphan runtime entries. */
+export function dropAllConversationClientThreads(): void {
+  for (const threadId of [...entries.keys()]) dropConversationClientThread(threadId)
+}
+
+/** Terminal onFinish, after any persistence attempt: release the run-local
+ * todo bridge even on provider errors. Never touches a card or a pending
  * ask: a handler still waiting on the user is not finished. */
 export function finishConversationClientRun(threadId: string): void {
   const entry = entries.get(threadId)

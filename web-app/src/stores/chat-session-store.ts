@@ -1,5 +1,5 @@
 import { forgetChat } from '@/lib/chatClose';
-import { dropConversationClientThread } from '@/lib/conversationClientTools';
+import { dropAllConversationClientThreads, dropConversationClientThread } from '@/lib/conversationClientTools';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { create } from "zustand";
 import type { Chat, UIMessage } from "@ai-sdk/react";
@@ -213,6 +213,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     dropConversationClientThread(sessionId);
   },
   clearSessions: () => {
+    dropAllConversationClientThreads();
     const sessions = get().sessions;
 
     // Clear all queued messages

@@ -3,6 +3,7 @@ import type { UIMessage } from 'ai'
 import {
   conversationAskCard,
   dispatchConversationClientTool,
+  dropAllConversationClientThreads,
   dropConversationClientThread,
   finishConversationClientRun,
   respondConversationAsk,
@@ -205,6 +206,17 @@ describe('conversationClientTools: ask', () => {
     expect(conversationAskCard('t1')).toMatchObject({ id: 'ask1' })
     respondConversationAsk('t1', 'ask1', good)
     await pending
+  })
+})
+
+describe('conversation runtime global cleanup', () => {
+  it('settles an orphan ask even when no Chat session was created', async () => {
+    const pending = run('t1').call('ask', 'orphan-ask', askInput)
+    await flush()
+    expect(conversationAskCard('t1')).not.toBeNull()
+    dropAllConversationClientThreads()
+    await expect(pending).resolves.toBeDefined()
+    expect(conversationAskCard('t1')).toBeNull()
   })
 })
 
