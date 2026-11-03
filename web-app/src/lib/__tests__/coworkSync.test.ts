@@ -66,7 +66,7 @@ const agentTools = vi.hoisted(() => ({
   stopAgentSessionMonitors: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('@/lib/agentTools', () => agentTools)
-const sonner = vi.hoisted(() => ({ warning: vi.fn(), error: vi.fn() }))
+const sonner = vi.hoisted(() => ({ warning: vi.fn(), error: vi.fn(), dismiss: vi.fn() }))
 vi.mock('sonner', () => ({ toast: sonner }))
 const closeWindow = vi.hoisted(() => ({ callback: null as null | ((event: { preventDefault: () => void }) => Promise<void>) }))
 vi.mock('@tauri-apps/api/window', () => ({
@@ -114,6 +114,7 @@ describe('coworkSync startup', () => {
     agentTools.sweepSessionWorkspaces.mockClear()
     sonner.warning.mockClear()
     sonner.error.mockClear()
+    sonner.dismiss.mockClear()
     __resetCoworkSyncForTests()
     useCoworkSessions.setState({ sessions: [], currentId: null })
     useThreads.setState({ threads: {} })

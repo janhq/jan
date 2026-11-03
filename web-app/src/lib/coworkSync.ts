@@ -166,7 +166,12 @@ async function doStart() {
 
   const p = createCoworkPersistence(invoke, {
     onThreadWritten: upsertThread,
-    onThreadRemoved: removeThread,
+    onThreadRemoved: (id) => {
+      removeThread(id)
+      // The conversation is gone: its persistent "could not be saved" warning
+      // would otherwise linger forever.
+      toast.dismiss(`cowork-missing-thread-${id}`)
+    },
     onError: (id, e) => console.warn(`[cowork] write failed for ${id}:`, e),
     onThreadMissing: (id) => {
       // Keep the readable in-memory session (delete/export still work); it is
