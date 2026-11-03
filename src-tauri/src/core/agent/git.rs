@@ -680,16 +680,22 @@ pub(crate) fn tidy_facts(repo: &Path, today: &str) -> Option<String> {
 /// a feature branch" would read as landed when it is not.
 #[cfg(feature = "cli")]
 fn default_branch(git: &impl Fn(&[&str]) -> Option<String>) -> Option<String> {
+    // `symbolic-ref` answers even when the target is gone (the remote renamed
+    // its default and a prune deleted the old one), so the target must also
+    // resolve, or every later `git log` on it fails and the facts are lost.
+    let resolves = |full: &str| git(&["rev-parse", "--verify", "--quiet", full]).is_some();
     let remote = git(&["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
     if let Some(remote) = remote.filter(|r| !r.is_empty()) {
-        return Some(remote);
+        if resolves("refs/remotes/origin/HEAD") {
+            return Some(remote);
+        }
     }
     let known = ["main", "master", "origin/main", "origin/master"].into_iter().find(|b| {
         let full = match b.strip_prefix("origin/") {
             Some(name) => format!("refs/remotes/origin/{name}"),
             None => format!("refs/heads/{b}"),
         };
-        git(&["rev-parse", "--verify", "--quiet", &full]).is_some()
+        resolves(&full)
     });
     known.map(str::to_string)
 }
@@ -2043,6 +2049,25 @@ mod tests {
         assert!(facts.contains("Default branch: origin/trunk, head "), "{facts}");
         assert!(facts.contains("  - main\n"), "a local branch is listed: {facts}");
         assert!(!facts.contains("origin/HEAD"), "{facts}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An `origin/HEAD` left pointing at a pruned branch (the remote renamed
+    /// its default) falls through to a local `main` instead of dropping the
+    /// facts.
+    #[test]
+    fn the_tidy_facts_skip_a_dangling_origin_head() {
+        let Some(root) = init_repo() else { return };
+        let r = root.to_string_lossy().to_string();
+        git(&["-C", &r, "branch", "-M", "main"]).expect("rename");
+        run(
+            &root,
+            None,
+            &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master"],
+        )
+        .expect("dangling origin/HEAD");
+        let facts = tidy_facts(&root, "2026-11-03").expect("facts from the local main");
+        assert!(facts.contains("Default branch: main, head "), "{facts}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
