@@ -27,6 +27,7 @@ import {
 import { onConversationThreadDropped } from './conversationClientTools'
 import { intersectConversationCapabilities } from './scopedToolDispatch'
 import type { ChatRunInbox, ChatToolOutcome } from './chatRunTransport'
+import { truncateUtf16 } from './truncateUtf16'
 
 /** Hard bounds for a Chat child. Parent grant stays the ceiling; these only cut. */
 export const CHAT_CHILD_MAX_STEPS = 12
@@ -67,11 +68,23 @@ export type TaskStatusRow = {
  * run; only Stop of THAT run (or thread deletion) cancels it. */
 type MonitorToken = { owner: AbortSignal; stopped: boolean; id?: string }
 
+/** Child completion notices owned by ONE parent run (its signal). A run's
+ * pings are never visible to another run or branch of the same thread. */
+type RunInbox = {
+  inbox: SubagentInbox
+  /** Dispatched work (child id, or a multi-phase plan's call id) whose result
+   * was not delivered, mapped to the cancellation notice owed if the run ends first. */
+  unfinished: Map<string, string>
+  /** Terminal: nothing may be queued for this run any more. */
+  closed: boolean
+}
+
 type ThreadState = {
   /** Status rows not yet handed to the run stream (dispatch + completion). */
   statusQueue: TaskStatusRow[]
   statusRows: Map<string, TaskStatusRow>
-  inbox: SubagentInbox
+  /** Per-run child inboxes. Monitor pings stay on the thread-owned `lane`. */
+  runInboxes: WeakMap<AbortSignal, RunInbox>
   lane: MonitorLane
   monitorIds: Set<string>
   /** Live (starting or open) monitors, each tagged with the run that started it. */
@@ -100,7 +113,7 @@ const stateOf = (threadId: string): ThreadState => {
     state = {
       statusQueue: [],
       statusRows: new Map(),
-      inbox: new SubagentInbox(),
+      runInboxes: new WeakMap(),
       lane: new MonitorLane(),
       monitorIds: new Set(),
       monitors: new Set(),
@@ -119,22 +132,60 @@ const stateOf = (threadId: string): ThreadState => {
   return state
 }
 
-/** The ONE inbox lane runTurn drains for a Chat thread: child completion
- * notices (SubagentInbox) and monitor pings (MonitorLane). No second loop.
+const runInboxOf = (state: ThreadState, signal: AbortSignal): RunInbox => {
+  let run = state.runInboxes.get(signal)
+  if (!run) {
+    run = { inbox: new SubagentInbox(), unfinished: new Map(), closed: signal.aborted || state.finalized.has(signal) }
+    state.runInboxes.set(signal, run)
+  }
+  return run
+}
+
+/** The ONE inbox lane runTurn drains for a Chat thread: this run's child
+ * completion notices (a per-run SubagentInbox) and the thread's monitor pings
+ * (MonitorLane, thread-owned by design). No second loop.
  * `signal` MUST be the run signal its children are dispatched with (the one
- * createChatRunStream hands to `dispatch`): status rows are drained per run,
- * while monitor notices stay thread-owned. */
+ * createChatRunStream hands to `dispatch`): status rows and child notices are
+ * drained per run, while monitor notices stay thread-owned. */
 export function chatRunInbox(threadId: string, signal: AbortSignal): ChatRunInbox {
-  const { inbox, lane } = stateOf(threadId)
+  const state = stateOf(threadId)
+  const { lane } = state
+  const run = runInboxOf(state, signal)
   return {
-    take: () => [...inbox.take(), ...lane.take()].map((n) => n.text),
+    take: () => [...run.inbox.take(), ...lane.take()].map((n) => n.text),
     takeStatus: () => takeTaskStatus(threadId, signal),
+    closeRun: () => closeChatRun(threadId, signal),
     finalize: () => finalizeChatRun(threadId, signal),
     // A running monitor never parks a run; only owed child work / queued pings.
-    pending: () => inbox.pending() || lane.hasQueued(),
+    pending: () => run.inbox.pending() || lane.hasQueued(),
     wait: (signal) =>
-      Promise.race([inbox.wait(signal), lane.wait(signal)]),
+      Promise.race([run.inbox.wait(signal), lane.wait(signal)]),
   }
+}
+
+/** Model-visible text for a child that was cancelled with its run. */
+export const cancelledChildNotice = (name: string, id: string): string =>
+  `Subagent '${name}' (${id}) was cancelled before it finished because this run ended. ` +
+  'Its result is not available and will not arrive; do not wait for it. Dispatch it again only if it is still needed.'
+
+/** Model-visible text for a multi-phase plan that was cancelled with its run. */
+export const cancelledPlanNotice = (callId: string, total: number): string =>
+  `The multi-phase subagent plan (${callId}, ${total} subagent(s)) was cancelled before it finished because this run ended. ` +
+  'Its result is not available and will not arrive; do not wait for it. Dispatch it again only if it is still needed.'
+
+/** Terminal hand-off for ONE run, called before its controller aborts and the
+ * final flush: the run's undrained child notices, then a cancellation notice for
+ * every dispatched child/plan that never delivered a result. The caller persists
+ * them as run context. The run's child inbox is closed (nothing queues
+ * afterwards). Monitor pings are thread-owned and untouched. Idempotent. */
+export function closeChatRun(threadId: string, signal: AbortSignal): string[] {
+  const run = threads.get(threadId)?.runInboxes.get(signal)
+  if (!run || run.closed) return []
+  run.closed = true
+  const out = run.inbox.take().map((n) => n.text)
+  out.push(...run.unfinished.values())
+  run.unfinished.clear()
+  return out
 }
 
 /** Rows changed since the last call, each a copy (never a live reference).
@@ -160,16 +211,7 @@ export function takeTaskStatus(threadId: string, signal?: AbortSignal): TaskStat
 export const TASK_STATUS_TEXT_LIMIT = 100_000
 export const TASK_STATUS_TRUNCATION_MARKER = '\n\n[truncated: output exceeded 100000 characters]'
 
-/** Cut to at most `limit` UTF-16 units ending in `marker`, never leaving half
- * of a surrogate pair at the cut. Text within the limit is returned as is. */
-export function truncateUtf16(value: string, limit: number, marker: string): string {
-  if (value.length <= limit) return value
-  let keep = Math.max(0, limit - marker.length)
-  const last = value.charCodeAt(keep - 1)
-  // A trailing high surrogate here is the first half of a pair (or lone): drop it.
-  if (keep > 0 && last >= 0xd800 && last <= 0xdbff) keep -= 1
-  return value.slice(0, keep) + marker.slice(0, limit)
-}
+export { truncateUtf16 }
 
 const bound = (value: string | undefined): string | undefined =>
   value === undefined ? value : truncateUtf16(value, TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER)
@@ -210,6 +252,15 @@ export function finalizeChatRun(threadId: string, signal: AbortSignal): void {
   const state = threads.get(threadId)
   if (!state) return
   state.finalized.add(signal)
+  const run = state.runInboxes.get(signal)
+  if (run) {
+    // Anything still owned here was not handed to a stream: purge it so it can
+    // never reach another run or branch.
+    run.closed = true
+    run.inbox.take()
+    run.unfinished.clear()
+    state.runInboxes.delete(signal)
+  }
   for (const child of [...state.children]) {
     if (state.childOwner.get(child) === signal) child.abort('Chat run finished')
   }
@@ -429,7 +480,9 @@ export async function runChatTask(input: unknown, callId: string, ctx: ChatOrche
     ctx.signal.addEventListener('abort', () => settleRunningRows(state, ctx.signal), { once: true })
   }
   const multi = plan.phases.length > 1
-  const { inbox } = state
+  const run = runInboxOf(state, ctx.signal)
+  const { inbox } = run
+  if (multi && !run.closed) run.unfinished.set(callId, cancelledPlanNotice(callId, total))
   inbox.begin() // plan hold: pending() never reads false mid-plan
   void (async () => {
     try {
@@ -442,12 +495,16 @@ export async function runChatTask(input: unknown, callId: string, ctx: ChatOrche
         writeBlackboard: async () => null,
         onDispatch: (id, name) => {
           inbox.begin()
+          if (!multi && !run.closed) run.unfinished.set(id, cancelledChildNotice(name, id))
           if (threads.get(ctx.threadId) === state && !ctx.signal.aborted && !state.finalized.has(ctx.signal)) {
             state.runRows.get(ctx.signal)?.add(id)
             recordStatus(state, { runId: id, name, status: 'running', startedAt: Date.now() })
           }
         },
         onComplete: (id, name, result) => {
+          // A result that lands after the run ended is not delivered: it stays owed
+          // and is reported as cancelled (closeChatRun), never as a late answer.
+          if (!ctx.signal.aborted && !run.closed) run.unfinished.delete(id)
           const began = state.statusRows.get(id)
           if (began?.status === 'running' && threads.get(ctx.threadId) === state && !ctx.signal.aborted && !state.finalized.has(ctx.signal)) {
             const endedAt = Date.now()
@@ -459,12 +516,13 @@ export async function runChatTask(input: unknown, callId: string, ctx: ChatOrche
             )
           }
           // A stopped/deleted run has nobody to tell; never leave a stale ping.
-          if (multi || ctx.signal.aborted || threads.get(ctx.threadId) !== state) return inbox.abandon()
+          if (multi || run.closed || ctx.signal.aborted || threads.get(ctx.threadId) !== state) return inbox.abandon()
           inbox.finish(subagentCompletionNotice({ name, callId: id, savedPath: null, output: result.output, isError: result.isError }))
         },
       })
-      if (multi && !ctx.signal.aborted && threads.get(ctx.threadId) === state) {
+      if (multi && !run.closed && !ctx.signal.aborted && threads.get(ctx.threadId) === state) {
         inbox.note(planCompletionNotice({ phaseCount: plan.phases.length, totalSubagents: total, finalPhase }))
+        run.unfinished.delete(callId)
       }
     } catch {
       // runDispatchPlan never throws; the hold is released below regardless.

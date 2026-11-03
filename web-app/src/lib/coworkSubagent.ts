@@ -19,6 +19,7 @@ import {
 import { MONITOR_TOOL_NAME } from '@/lib/coworkMonitor'
 import { MAX_SUBAGENT_STEPS } from '@/lib/coworkBudget'
 import { createStepMetadata } from '@/lib/stepMetadata'
+import { truncateUtf16 } from '@/lib/truncateUtf16'
 import {
   runTurn,
   type PendingToolCall,
@@ -111,6 +112,14 @@ export function formatDispatchedPlan(
  */
 export type SubagentNotice = { headline: string; text: string }
 
+const SUBAGENT_OUTPUT_TRUNCATION_MARKER = `\n\n[truncated: subagent output exceeded ${SUBAGENT_INLINE_MAX} characters]`
+
+/** Inline subagent output, bounded to SUBAGENT_INLINE_MAX UTF-16 units with an
+ * explicit marker (surrogate-pair safe). Exactly-at-limit output is unchanged. */
+function boundInlineOutput(output: string): string {
+  return truncateUtf16(output, SUBAGENT_INLINE_MAX, SUBAGENT_OUTPUT_TRUNCATION_MARKER)
+}
+
 export function subagentCompletionNotice(opts: {
   name: string
   callId: string
@@ -120,13 +129,13 @@ export function subagentCompletionNotice(opts: {
 }): SubagentNotice {
   const who = `Subagent '${opts.name}' (${opts.callId})`
   if (opts.isError) {
-    const headline = `${who} failed: ${opts.output}`
+    const headline = `${who} failed: ${boundInlineOutput(opts.output)}`
     return { headline, text: headline }
   }
   const headline = `${who} finished`
   const detail = opts.savedPath
     ? `Its full answer is in ${opts.savedPath} -- read that file when you need it.`
-    : `Its answer:\n\n${opts.output.slice(0, SUBAGENT_INLINE_MAX)}`
+    : `Its answer:\n\n${boundInlineOutput(opts.output)}`
   return { headline, text: `${headline}. ${detail}` }
 }
 
@@ -146,10 +155,10 @@ export function planCompletionNotice(opts: {
   const headline = `Subagent plan finished: ${totalSubagents} subagent(s) across ${phaseCount} phases`
   const parts = finalPhase.map(({ name, result, savedPath }) => {
     const body = result.isError
-      ? `failed: ${result.output}`
+      ? `failed: ${boundInlineOutput(result.output)}`
       : savedPath
         ? `see ${savedPath}`
-        : result.output.slice(0, SUBAGENT_INLINE_MAX)
+        : boundInlineOutput(result.output)
     return `### ${name}\n\n${body}`
   })
   const text = parts.length
