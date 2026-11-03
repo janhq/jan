@@ -267,6 +267,7 @@ export const makeSibling = (
     delete sourceMeta.uiParts
     delete sourceMeta.uiPartsSkipped
     delete sourceMeta.uiDiffsOmitted
+    delete sourceMeta.uiTaskStatusShed
   }
   return {
     ...source,

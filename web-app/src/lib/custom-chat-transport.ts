@@ -58,7 +58,10 @@ import {
   TODO_TOOL_NAME,
   askTool,
   todoTool,
+  TASK_TOOL_NAME,
+  taskTool,
 } from '@/lib/coworkTools'
+import { MONITOR_TOOL_NAME, monitorTool } from '@/lib/coworkMonitor'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
@@ -94,6 +97,7 @@ import {
 } from '@/lib/video-sentinel'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import { PING_OPEN } from '@/lib/coworkPing'
+import { expandChatRunContext } from '@/lib/chatRunContext'
 import { paramsSettings } from '@/lib/predefinedParams'
 import { CHAT_SLOT_ID } from '@/constants/models'
 import { createStepMetadata } from '@/lib/stepMetadata'
@@ -887,11 +891,22 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return isScopedThreadTool(name) && Object.prototype.hasOwnProperty.call(tools, name) && !this.getMcpServerForTool(name)
   }
 
+  /** The run's frozen advertised record (a copy). Children narrow from this,
+   * never from a live refresh. */
+  getAdvertisedTools(): Record<string, Tool> {
+    return { ...(this.chatRunSnapshot?.tools ?? this.tools) }
+  }
+
+  /** The model instance this turn runs on, for bounded child steps. */
+  getChildModel(): LanguageModel | null {
+    return this.model
+  }
+
   /** Conversation-owned todo/ask: advertised in this run's frozen record. */
   hasAdvertisedClientTool(name: string): boolean {
     const tools = this.chatRunSnapshot?.tools ?? this.tools
     return (
-      (name === TODO_TOOL_NAME || name === ASK_TOOL_NAME) &&
+      (name === TODO_TOOL_NAME || name === ASK_TOOL_NAME || name === TASK_TOOL_NAME || name === MONITOR_TOOL_NAME) &&
       Object.prototype.hasOwnProperty.call(tools, name) &&
       !this.getMcpServerForTool(name)
     )
@@ -1076,12 +1091,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Refresh tools based on current state
-   * Reloads both RAG and MCP tools and merges them
-   * Filters out disabled tools based on thread settings
-   * @private
-   */
-  /**
    * llama.cpp slot pin for this surface. Every surface shares slot 0 -- the one
    * index guaranteed to exist -- and overrides only `thread_id`, which is what
    * the engine parks and restores the slot's KV cache by. See CHAT_SLOT_ID.
@@ -1123,6 +1132,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
+   * Refresh tools based on current state.
+   * Reloads both RAG and MCP tools and merges them, and filters out disabled
+   * tools based on thread settings.
    * @param modelSelection The model the tools are built for: the request's own
    * when called from sendMessages, else the current selection.
    */
@@ -1370,6 +1382,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
       toolsRecord[TODO_TOOL_NAME] = todoTool
       toolsRecord[ASK_TOOL_NAME] = askTool
+      // Bounded task + consent-gated monitor: same model/sandbox gate and the
+      // thread's CURRENT grant snapshot as the scoped native namespace.
+      const orchestration = resolveScopedChatToolPolicy(
+        { modelSupportsTools, sandboxAvailable: sandboxEnforces() },
+        this.turnGrantSnapshot()
+      ).advertisedOrchestrationTools
+      for (const name of orchestration) {
+        mcpIdentities.delete(name)
+        toolsRecord[name] = name === TASK_TOOL_NAME ? taskTool([], { blackboard: false }) : monitorTool()
+      }
     }
 
     // Never let discovery started outside this run, or a slower competing
@@ -1643,7 +1665,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // messages. Required by the Claude API (tool_use / tool_result pairing) and
     // it keeps the prompt prefix byte-identical across turns so llama.cpp reuses
     // the KV cache. See `splitAssistantToolWaves`.
-    const messagesToConvert = splitAssistantToolWaves(withoutChatRunNotices(options.messages))
+    const messagesToConvert = splitAssistantToolWaves(
+      expandChatRunContext(withoutChatRunNotices(options.messages))
+    )
 
     const inferenceParams = this.getActiveInferenceParams()
 
@@ -1908,7 +1932,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       continuedStream,
       (toolName) =>
         !(toolName in this.tools) &&
-        (toolName === TODO_TOOL_NAME || toolName === ASK_TOOL_NAME
+        (toolName === TODO_TOOL_NAME || toolName === ASK_TOOL_NAME || toolName === TASK_TOOL_NAME || toolName === MONITOR_TOOL_NAME
           ? // Unadvertised conversation todo/ask: dispatch refuses explicitly.
             true
           : CHAT_AGENT_TOOL_NAMES.has(toolName)

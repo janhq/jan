@@ -68,7 +68,16 @@ const prune = (threadId: string, entry: Entry) => {
  * card (listeners are notified, then kept so a mounted view never holds a
  * stale entry) and forget the run projection. This module imports no store,
  * so stores may call it. */
+const dropListeners = new Set<(threadId: string) => void>()
+/** Orchestration runtime (children, monitors) hooks thread deletion here, so
+ * this module stays store-free. */
+export function onConversationThreadDropped(listener: (threadId: string) => void): () => void {
+  dropListeners.add(listener)
+  return () => dropListeners.delete(listener)
+}
+
 export function dropConversationClientThread(threadId: string): void {
+  for (const listener of dropListeners) listener(threadId)
   const entry = entries.get(threadId)
   if (!entry) return
   const resolvers = [...entry.pendingAsks.values()]
@@ -122,7 +131,7 @@ export const respondConversationAsk = (
 }
 
 export const isConversationClientTool = (name: string) =>
-  name === 'todo' || name === 'ask'
+  name === 'todo' || name === 'ask' || name === 'task' || name === 'monitor'
 
 const unsupported = async (): Promise<ToolOutcome> => ({
   output: 'ERROR: tool is not available in chat',
@@ -136,6 +145,9 @@ export function dispatchConversationClientTool(
     threadId: string
     signal: AbortSignal
     getMessages: () => readonly UIMessage[]
+    /** Chat-owned orchestration handlers; absent means unsupported. */
+    onTask?: (toolCallId: string, input: unknown) => Promise<ToolOutcome>
+    onMonitor?: (toolCallId: string, input: unknown) => Promise<ToolOutcome>
   }
 ): Promise<ToolOutcome | undefined> {
   const { threadId, signal } = opts
@@ -175,7 +187,7 @@ export function dispatchConversationClientTool(
   }
   return dispatchClientTool(call, {
     ...handlers,
-    onTask: unsupported,
-    onMonitor: unsupported,
+    onTask: opts.onTask ?? unsupported,
+    onMonitor: opts.onMonitor ? (input) => opts.onMonitor!(call.toolCallId, input) : unsupported,
   })
 }

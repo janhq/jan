@@ -131,7 +131,7 @@ describe('scoped native schema advertisement', () => {
 
   it('advertises the scratch natives and read-only memory, not skill_write/screenshot', async () => {
     await transport.refreshTools()
-    expect(names()).toEqual([...SCRATCH, 'todo', 'ask'].sort())
+    expect(names()).toEqual([...SCRATCH, 'todo', 'ask', 'task'].sort())
     expect(h.grants).toContain('thread-1')
     const mem = transport.getTools()['memory'].inputSchema as { jsonSchema: any }
     expect(mem.jsonSchema.properties.op.enum).toEqual(['view', 'search'])
@@ -215,12 +215,29 @@ describe('scoped native schema advertisement', () => {
   it('withholds a memory schema that is not the expected shape', async () => {
     h.schemas.mockResolvedValue([fn('memory'), fn('read')])
     await transport.refreshTools()
-    expect(names()).toEqual(['ask', 'read', 'todo'])
+    expect(names()).toEqual(['ask', 'read', 'task', 'todo'])
   })
 
-  it('never advertises web/monitor/task natives even if the schema source returns them', async () => {
+  it('never advertises web/monitor natives, and task only as the conversation client tool, even if the schema source returns them', async () => {
     h.schemas.mockResolvedValue([...schemas(), fn('web_search'), fn('monitor'), fn('task')])
     await transport.refreshTools()
-    for (const n of ['web_search', 'monitor', 'task', 'screenshot']) expect(names()).not.toContain(n)
+    for (const n of ['web_search', 'monitor', 'screenshot']) expect(names()).not.toContain(n)
+    // Without folder consent monitor is withheld; the native `task` schema is
+    // replaced by the client-dispatched bounded task tool (not the Rust one).
+    expect(names()).toContain('task')
+    expect(transport.getTools()['task'].description).not.toBe('task')
+    expect(transport.hasAdvertisedClientTool('task')).toBe(true)
+    expect(transport.hasAdvertisedClientTool('monitor')).toBe(false)
+  })
+
+  it('advertises monitor only with explicit folder consent and never without the sandbox', async () => {
+    h.grant = { version: 1, folderScope: { path: '/tmp/consented', access: 'read' }, shellNetwork: false, memoryWrite: false }
+    await transport.refreshTools()
+    expect(names()).toContain('monitor')
+    expect(transport.hasAdvertisedClientTool('monitor')).toBe(true)
+    h.sandbox = false
+    await transport.refreshTools()
+    expect(names()).not.toContain('task')
+    expect(names()).not.toContain('monitor')
   })
 })

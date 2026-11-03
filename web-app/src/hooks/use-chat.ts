@@ -1,4 +1,4 @@
-import { createChatRunStream, type ChatToolOutcome } from '@/lib/chatRunTransport'
+import { createChatRunStream, type ChatRunInbox, type ChatToolOutcome } from '@/lib/chatRunTransport'
 import type { PendingToolCall } from '@/lib/coworkRunner'
 import { generateId } from 'ai'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
@@ -20,10 +20,13 @@ import {
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
+import { cancelChatOrchestration } from '@/lib/chatOrchestration'
 
 type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
     dispatchTool?: (call: PendingToolCall, signal: AbortSignal) => Promise<ChatToolOutcome>
+    /** Per-run inbox lane for child completions / monitor pings. */
+    runInbox?: (runSignal: AbortSignal) => ChatRunInbox | undefined
     sessionId?: string
     sessionTitle?: string
     systemMessage?: string
@@ -46,6 +49,7 @@ export function useChat(
   const {
     sessionId,
     dispatchTool,
+    runInbox,
     sessionTitle,
     systemMessage,
     onTokenUsage,
@@ -104,8 +108,14 @@ export function useChat(
               const releaseSnapshot = transport.beginChatRun(() => abort.abort('Turn replaced'))
               admissions.get(instance)?.()
               admissions.delete(instance)
+              // The signal createChatRunStream dispatches children with; Stop
+              // scopes children and monitors to exactly this run.
+              let runSignal: AbortSignal | undefined
               const stop = () => {
                 abort.abort(request.abortSignal?.reason)
+                // User Stop: cancel only THIS run's children and the monitors it
+                // started; monitors of earlier finished turns keep running.
+                if (runSignal) void cancelChatOrchestration(sessionId, runSignal)
                 useToolApprovalRequests.getState().clearPendingForThread(sessionId)
               }
               request.abortSignal?.addEventListener('abort', stop, { once: true })
@@ -127,8 +137,15 @@ export function useChat(
                   return typeof value === 'number' ? value : undefined
                 },
                 sendStep: (messages, signal) => transport.sendMessages({ ...request, messages, abortSignal: signal }),
+                inbox: (signal) => {
+                  runSignal = signal
+                  return runInbox?.(signal)
+                },
                 dispatch: dispatchTool ?? (async () => ({ output: 'Chat tool executor unavailable', isError: true })),
                 onFinally: () => {
+                  // createChatRunStream already ran the run's inbox finalizer
+                  // (owned rows purged) before this release. Never cancel
+                  // thread-wide work here: a replacement may own it.
                   releaseSnapshot()
                   useToolApprovalRequests.getState().clearPendingForThread(sessionId)
                   unwatch()

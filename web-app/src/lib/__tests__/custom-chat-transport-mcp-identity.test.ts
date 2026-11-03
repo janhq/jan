@@ -127,7 +127,7 @@ describe('transport advertised MCP identity', () => {
   it('binds the original advertised name to its server and refreshes the binding', async () => {
     h.mcpTools = [tool('read', 'alpha')]
     await transport.refreshTools()
-    expect(Object.keys(transport.getTools())).toEqual(['read', 'todo', 'ask'])
+    expect(Object.keys(transport.getTools())).toEqual(['read', 'todo', 'ask', 'task'])
     expect(transport.getTools().read.description).toBe('alpha/read')
     expect(transport.getMcpServerForTool('read')).toBe('alpha')
     h.mcpTools = [tool('read', 'beta')]
@@ -135,7 +135,7 @@ describe('transport advertised MCP identity', () => {
     expect(transport.getMcpServerForTool('read')).toBe('beta')
     h.mcpTools = []
     await transport.refreshTools()
-    expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask'])
+    expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask', 'task'])
     expect(transport.getMcpServerForTool('read')).toBeUndefined()
   })
 
@@ -143,7 +143,7 @@ describe('transport advertised MCP identity', () => {
     h.disabled = disabled
     h.mcpTools = [tool('read', 'alpha'), tool('read', 'beta'), tool('write', 'alpha')]
     await transport.refreshTools()
-    expect(Object.keys(transport.getTools())).toEqual(['write', 'todo', 'ask'])
+    expect(Object.keys(transport.getTools())).toEqual(['write', 'todo', 'ask', 'task'])
     expect(transport.getMcpServerForTool('read')).toBeUndefined()
     expect(transport.getMcpServerForTool('write')).toBe('alpha')
   })
@@ -156,7 +156,7 @@ describe('transport advertised MCP identity', () => {
       h.mcpTools = [tool('read', 'alpha', 'SECRET_DESCRIPTION'), tool('read', 'beta'), tool('orphan', '')]
       h.routedTools = [h.mcpTools[0]]
       await transport.refreshTools()
-      expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask'])
+      expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask', 'task'])
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Withheld MCP tool "read".*name collision.*"alpha".*"beta"/))
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Withheld MCP tool "orphan".*missing server identity/))
       expect(JSON.stringify(warn.mock.calls)).not.toContain('SECRET_DESCRIPTION')
@@ -172,7 +172,7 @@ describe('transport advertised MCP identity', () => {
     h.disabled = ['alpha::read']
     h.mcpTools.push(tool('missing', undefined as unknown as string), tool('blank', '  '))
     await transport.refreshTools()
-    expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask'])
+    expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask', 'task'])
     for (const name of ['read', 'missing', 'blank']) {
       expect(transport.getMcpServerForTool(name)).toBeUndefined()
     }
@@ -246,7 +246,7 @@ describe('transport advertised MCP identity', () => {
 
       h.mcpTools = []
       await transport.refreshTools()
-      expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask'])
+      expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask', 'task'])
       expect(transport.getMcpServerForTool('read')).toBe('alpha')
     } finally {
       controller.close()
@@ -270,14 +270,15 @@ describe('transport advertised conversation client tools', () => {
     h.schemas.mockResolvedValue([])
   })
 
-  it('is true only for advertised todo/ask in the frozen record', async () => {
+  it('is true only for advertised todo/ask/task (monitor needs consent) in the frozen record', async () => {
     const transport = new CustomChatTransport('sys', 'thread-1')
     expect(transport.hasAdvertisedClientTool('todo')).toBe(false)
     await transport.refreshTools()
     expect(transport.hasAdvertisedClientTool('todo')).toBe(true)
-    expect(transport.hasAdvertisedClientTool('ask')).toBe(true)
+    expect(transport.hasAdvertisedClientTool('ask')).toBe(true);
+    expect(transport.hasAdvertisedClientTool('task')).toBe(true)
     // Non-client / missing names are never client tools.
-    for (const name of ['read', 'task', 'shell', 'memory', 'toString', 'constructor', ''])
+    for (const name of ['read', 'shell', 'memory', 'monitor', 'toString', 'constructor', ''])
       expect(transport.hasAdvertisedClientTool(name)).toBe(false)
   })
 
@@ -292,7 +293,8 @@ describe('transport advertised conversation client tools', () => {
       expect(transport.getMcpServerForTool('todo')).toBeUndefined()
       expect(transport.getTools().todo.description).not.toBe('alpha/todo')
       expect(transport.hasAdvertisedClientTool('todo')).toBe(true)
-      expect(transport.hasAdvertisedClientTool('ask')).toBe(true)
+      expect(transport.hasAdvertisedClientTool('ask')).toBe(true);
+    expect(transport.hasAdvertisedClientTool('task')).toBe(true)
       // Unrelated MCP identity is preserved.
       expect(transport.getMcpServerForTool('read')).toBe('alpha')
     } finally {

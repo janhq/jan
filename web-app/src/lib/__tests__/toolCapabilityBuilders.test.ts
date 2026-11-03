@@ -95,13 +95,13 @@ const baselineHashes: Record<string, string> = {
   "chat-0110": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "chat-0111": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "chat-1000": "9d0e392ce5880f6a93724bdec8426d76aadb153a294a458c495de038d5e885d5",
-  "chat-1001": "fe4ae2c022e89ae083812523e3667078a30a8bef00a8dcea8262341076a6191b",
+  "chat-1001": "982db42d5654b24bb4b46ff71b36dfe0a784981a7c36dfd77041cece95d448b5",
   "chat-1010": "47c5ff8863398139899359083e687b3d7d406195aaa3949863572d6555dc74ba",
-  "chat-1011": "28f1783dce5a6734ce225582639cf3c8a5d7663802e8ebf08b6ef23dc1d4e7d3",
+  "chat-1011": "377a1b5fd9d9ba76cb3b0a0213c2be5ded5a25fea12a86428f160c5ffd51fc83",
   "chat-1100": "9d0e392ce5880f6a93724bdec8426d76aadb153a294a458c495de038d5e885d5",
-  "chat-1101": "6771c2d375ebf3c7e12b4e7b8c18a6810790bbaf3226b328be730dd70b112f0a",
+  "chat-1101": "4f698d0ce124af2531fd113799affc15d2226b24100f158caef22d40171620f3",
   "chat-1110": "47c5ff8863398139899359083e687b3d7d406195aaa3949863572d6555dc74ba",
-  "chat-1111": "973b3c09971aec8b1c22966d7e93d6aedd9e15857d4d621930982ea8ac20ae57",
+  "chat-1111": "ef527c1da6b307e006056ecb1501f79af8a992d6c543c47ef252117c8786050a",
   "cowork-0000": "dc03981d10572b13901cc330f4b69d6c8dd16ce7b6a00335ca2fccb91adeade5",
   "cowork-0001": "539830afcb6458728949ff9556d5210e192cdbdef5018a881af6eb6fc1c4f90d",
   "cowork-0010": "1c8c9196997f5fb81e7e545725760672963180bd55a51e88424c649d72e593a7",
@@ -161,7 +161,7 @@ describe('actual Chat builder baseline parity (#503)', () => {
         h.supportsTools = model; h.shellEnabled = shell; h.webSearch = web; h.sandbox = jail
         const transport = new CustomChatTransport('sys', 'thread-1')
         await transport.refreshTools()
-        const expected = !model ? [] : ['mcp_read', ...(web ? ['web_search', 'web_fetch'] : []), ...(jail ? ['read', 'ls', 'find', 'grep', 'write', 'edit', ...(shell ? ['shell'] : []), 'skill_list', 'skill_read'] : []), 'todo', 'ask']
+        const expected = !model ? [] : ['mcp_read', ...(web ? ['web_search', 'web_fetch'] : []), ...(jail ? ['read', 'ls', 'find', 'grep', 'write', 'edit', ...(shell ? ['shell'] : []), 'skill_list', 'skill_read'] : []), 'todo', 'ask', ...(jail ? ['task'] : [])]
         expect(Object.keys(transport.getTools())).toEqual(expected)
         expect(h.schemas).toHaveBeenCalledTimes(model ? 1 : 0)
         matchesBaseline(key, transport.getTools())
@@ -172,7 +172,7 @@ describe('actual Chat builder baseline parity (#503)', () => {
     h.discover.mockImplementation(async () => { h.webSearch = true; h.shellEnabled = true })
     const transport = new CustomChatTransport('sys', 'thread-1')
     await transport.refreshTools()
-    expect(Object.keys(transport.getTools())).toEqual(['mcp_read', 'web_search', 'web_fetch', 'read', 'ls', 'find', 'grep', 'write', 'edit', 'shell', 'skill_list', 'skill_read', 'todo', 'ask'])
+    expect(Object.keys(transport.getTools())).toEqual(['mcp_read', 'web_search', 'web_fetch', 'read', 'ls', 'find', 'grep', 'write', 'edit', 'shell', 'skill_list', 'skill_read', 'todo', 'ask', 'task'])
   })
 })
 

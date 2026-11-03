@@ -63,7 +63,11 @@ import {
   respondConversationAsk,
   subscribeConversationAsk,
 } from '@/lib/conversationClientTools'
+import { chatRunInbox, childEffectiveGrant, runChatMonitor, runChatTask, type ChildBinding } from '@/lib/chatOrchestration'
 import { CoworkAskCard } from '@/containers/CoworkAskCard'
+import { ChatChildApprovals } from '@/containers/ChatChildApprovals'
+import { ChatMonitorNotices } from '@/containers/ChatMonitorNotices'
+import { useChildApprovalCalls } from '@/hooks/useChildApprovalCalls'
 import {
   convertThreadMessagesToUIMessages,
   assistantRecordFields,
@@ -290,6 +294,7 @@ const forgetApprovals = (threadId: string) => {
   callNativeGrants.delete(threadId)
   callMcpIdentities.delete(threadId)
   callMcpValidators.delete(threadId)
+  useChildApprovalCalls.getState().clearThread(threadId)
 }
 
 // Recorded for a call that never ran because its chat was closed (the thread was
@@ -566,15 +571,19 @@ function ThreadDetail() {
   )
 
   const { threadId } = useParams({ from: Route.id })
-  const bindMcpCall = (toolCall: { toolName: string; toolCallId: string }) => {
+  const bindMcpCall = (toolCall: { toolName: string; toolCallId: string }, child?: ChildBinding) => {
     let identities = callMcpIdentities.get(threadId)
     if (!identities) {
       identities = new Map()
       callMcpIdentities.set(threadId, identities)
     }
     if (!identities.has(toolCall.toolCallId)) {
-      const serverName = useChatSessions.getState().sessions[threadId]?.transport
-        .getMcpServerForTool(toolCall.toolName)
+      // A child keeps the parent's identity frozen at task dispatch; a refresh
+      // after that can neither rebind a name to another server nor to native.
+      const serverName = child
+        ? child.mcpServers.get(toolCall.toolName)
+        : useChatSessions.getState().sessions[threadId]?.transport
+            .getMcpServerForTool(toolCall.toolName)
       identities.set(toolCall.toolCallId, serverName)
       useToolCallRuntime.getState().recordOrigin(toolCall.toolCallId, serverName, threadId)
     }
@@ -716,6 +725,7 @@ function ThreadDetail() {
     sessionId: threadId,
     sessionTitle: thread?.title,
     systemMessage,
+    runInbox: (runSignal) => chatRunInbox(threadId, runSignal),
     experimental_throttle: 50,
     onFinish: ({ message: finishedMessage, isAbort, isError }) => {
       // A stopped turn can end with a tool call that never got to run; settle
@@ -1067,7 +1077,7 @@ function ThreadDetail() {
         )
       }
     },
-    dispatchTool: async (toolCall, signal) => {
+    dispatchTool: async function dispatchChatTool(toolCall, signal, child?: ChildBinding): Promise<ChatToolOutcome> {
       const stopSignal = signal
       const ragToolNames = useAppState.getState().ragToolNames
       let recorded: ChatToolOutcome = { output: '(interrupted)', isError: true }
@@ -1083,9 +1093,18 @@ function ThreadDetail() {
         return { output: CHAT_CLOSED_TOOL_ERROR, isError: true }
       }
       useToolCallRuntime.getState().enqueue([toolCall.toolCallId], threadId)
+      // A child call owns its approval card from here (before any await) until
+      // the finally below, so the composer-side card can never outlive it.
+      if (child) useChildApprovalCalls.getState().register(threadId, toolCall.toolCallId, toolCall.input)
       try {
         const toolName = toolCall.toolName
-        const { serverName, checkMcp } = bindMcpCall(toolCall)
+        // A child is bounded by what its parent had at dispatch: it may only use
+        // names in the frozen parent record, never orchestration, and never a
+        // grant wider than the parent's frozen ceiling.
+        if (child && (!child.mcpServers.has(toolName) || isConversationClientTool(toolName))) {
+          return { output: `The \`${toolName}\` tool is not available to this run. Use an advertised tool.`, isError: true }
+        }
+        const { serverName, checkMcp } = bindMcpCall(toolCall, child)
         if (!serverName && isScopedThreadTool(toolName) &&
           !(toolName === 'shell' && chatShellRoute(toolName) === 'disabled') &&
           !useChatSessions.getState().sessions[threadId]?.transport.hasAdvertisedNativeTool(toolName)) {
@@ -1104,13 +1123,31 @@ function ThreadDetail() {
             getMessages: () =>
               useChatSessions.getState().sessions[threadId]?.chat.messages ??
               chatMessagesRef.current,
+            // Children re-enter THIS dispatch (same threadId, per-call grant,
+            // classification and approval stores); never a second executor.
+            onTask: (callId, input) => {
+              const transport = useChatSessions.getState().sessions[threadId]?.transport
+              if (!transport) return Promise.resolve({ output: CHAT_CLOSED_TOOL_ERROR, isError: true })
+              return runChatTask(input, callId, {
+                threadId,
+                signal,
+                getParentTools: () => transport.getAdvertisedTools(),
+                getModel: () => transport.getChildModel(),
+                readGrant: () => classifyScopedGrant(threadId),
+                serverFor: (name) => transport.getMcpServerForTool(name),
+                dispatch: dispatchChatTool,
+              })
+            },
+            onMonitor: (_callId, input) => runChatMonitor(input, { threadId, signal }),
           })
           if (clientOutcome) return clientOutcome
         }
         // Captured at classification, before any approval wait.
         const classifiedGrant =
           !serverName && chatShellRoute(toolName) === 'builtin'
-            ? nativeGrantOf(threadId, toolCall.toolCallId)
+            ? (child
+              ? childEffectiveGrant(nativeGrantOf(threadId, toolCall.toolCallId), child)
+              : nativeGrantOf(threadId, toolCall.toolCallId))
             : undefined
 
         if (!serverName && toolName === 'memory' && !['view', 'search'].includes((toolCall.input as { op?: string } | null)?.op ?? '')) {
@@ -1309,6 +1346,7 @@ function ThreadDetail() {
         }
       } finally {
         useToolApprovalRequests.getState().cancelApproval(toolCall.toolCallId, threadId)
+        if (child) useChildApprovalCalls.getState().release(threadId, toolCall.toolCallId)
         // Covers every exit from the iteration, including the denied path.
         useToolCallRuntime.getState().markSettled(toolCall.toolCallId)
       }
@@ -2735,6 +2773,8 @@ function ThreadDetail() {
           {contextualPanels.controls && (
             <div className="pb-2">{contextualPanels.controls}</div>
           )}
+          <ChatChildApprovals threadId={threadId} />
+          <ChatMonitorNotices threadId={threadId} />
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}
