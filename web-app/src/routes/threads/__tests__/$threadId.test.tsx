@@ -767,6 +767,35 @@ describe('ThreadDetail route', () => {
     log.mockRestore()
   })
 
+  it('keeps queued messages through an SDK error and drains once on ready', async () => {
+    const a = { id: 'q-a', text: 'queued A', createdAt: 1 }
+    const b = { id: 'q-b', text: 'queued B', createdAt: 2 }
+    h.messageQueueState.queues = { 'thread-1': [] }
+    const enqueue = (m: any) => { h.messageQueueState.queues['thread-1'].push(m) }
+    h.messageQueueState.dequeue = vi.fn(() => h.messageQueueState.queues['thread-1'].shift() ?? null)
+    enqueue(a)
+    enqueue(b)
+    h.chatState.status = 'error'
+    h.chatState.error = new Error('SDK stream failed')
+    const Component = Route.component as React.ComponentType
+    const { rerender } = render(<Component />)
+    await act(async () => {})
+    // The error neither auto-sends nor discards the queue.
+    expect(h.mockSendMessage).not.toHaveBeenCalled()
+    expect(h.messageQueueState.dequeue).not.toHaveBeenCalled()
+    expect(h.messageQueueState.clearQueue).not.toHaveBeenCalled()
+    expect(h.messageQueueState.queues['thread-1']).toEqual([a, b])
+    // Explicit retry: the thread becomes ready and exactly one item drains.
+    h.chatState.status = 'ready'
+    h.chatState.error = null
+    rerender(<Component />)
+    await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+    await act(async () => {})
+    expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
+    expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+    expect(h.messageQueueState.queues['thread-1']).toEqual([b])
+  })
+
   it('keeps the thread in its project when attachments are embedded', async () => {
     const project = { id: 'p1', name: 'Proj', updated_at: 1 }
     h.threadsState.threads['thread-1'].metadata = { project }

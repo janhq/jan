@@ -2484,12 +2484,9 @@ function ThreadDetail() {
       })
   }, [status, threadId, sendQueuedMessage])
 
-  // If streaming errors out, discard any queued messages so they don't sit there stuck
-  useEffect(() => {
-    if (status === 'error') {
-      useMessageQueue.getState().clearQueue(threadId)
-    }
-  }, [status, threadId])
+  // A streaming error keeps queued messages: they are user text that has not
+  // been sent. They stay in the queue (visible and clearable from ChatInput)
+  // and drain only once the thread is ready again.
 
   // Attach the error to the assistant turn it belongs to so the banner renders
   // alongside any tool-call parts the model already produced. Falls back to the
