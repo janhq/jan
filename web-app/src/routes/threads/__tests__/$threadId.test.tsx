@@ -20,6 +20,7 @@ const h = vi.hoisted(() => {
   const mockAddToolOutput = vi.fn()
   const mockSetChatMessages = vi.fn()
   const mockUpdateRag = vi.fn()
+  const navigate = vi.fn()
   const mockSetContinueFromContent = vi.fn()
 
   const chatState: { messages: any[]; status: string; error: Error | null } = {
@@ -182,6 +183,7 @@ const h = vi.hoisted(() => {
     mockSendMessage,
     mockRegenerate,
     mockStop,
+    navigate,
     mockClearError,
     mockAddToolOutput,
     mockSetChatMessages,
@@ -225,7 +227,10 @@ vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: any) => ({ ...config, id: '/threads/$threadId' }),
   useParams: () => ({ threadId: h.routeParams.threadId }),
   useSearch: () => ({ threadModel: undefined }),
+  useNavigate: () => h.navigate,
 }))
+
+vi.mock('@/containers/ThreadWorkspacePill', () => ({ ThreadWorkspacePill: () => null, ThreadAddFolderItem: () => null }))
 
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: any) => <div data-testid="header-page">{children}</div>,
@@ -447,6 +452,7 @@ vi.mock('@/hooks/use-chat', () => ({
     session.transport ??= { getTurnModelSelection: () => null }
     session.transport.cancelChatRun ??= vi.fn().mockResolvedValue(undefined)
     session.transport.setContinueFromContent ??= h.mockSetContinueFromContent
+    session.transport.planToolRefusal ??= () => undefined
     session.transport.hasAdvertisedNativeTool ??= () => true
     session.transport.getMcpServerForTool ??= (name: string) =>
       h.appStateState.mcpToolNames.has(name)
@@ -3005,6 +3011,56 @@ describe('ThreadDetail route', () => {
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
       expect(shell.execute).toHaveBeenCalledExactlyOnceWith('shell', { command: 'echo safe' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: true }))
       h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }))
+    })
+
+    it('Plan refuses a mutating tool before either arrival approval or dispatch', async () => {
+      renderComponent()
+      const transport = h.chatSessionsState.sessions['thread-1'].transport
+      transport.planToolRefusal = () => 'Plan mode is read-only'
+      const toolCall = call('plan-write', 'shell', { command: 'touch output' })
+      await arrive(toolCall)
+      expect(await dispatch(toolCall)).toMatchObject({ isError: true, output: 'Plan mode is read-only' })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).not.toHaveBeenCalled()
+    })
+
+    it.each(['Execute plan', 'Exit plan mode'])('validates pending %s against the owning run after toolbar off', async (selection) => {
+      const transport = h.chatSessionsState.sessions['thread-1'].transport
+      transport.hasAdvertisedClientTool = () => true
+      transport.isPlanActive = () => true
+      transport.executeReviewedPlan = vi.fn()
+      transport.cancelChatRun = vi.fn(async () => {})
+      h.appStateState.mcpToolNames = new Set()
+      transport.getMcpServerForTool = () => undefined
+      // Metadata is normal/off while the transport still owns a latched Plan run.
+      h.threadsState.threads['thread-1'].metadata = { ...h.threadsState.threads['thread-1'].metadata, planMode: false }
+      renderComponent()
+      const request = call('review-after-off', 'ask', { questions: [{ id: 'plan_review', question: 'Ready?', options: [{ label: 'Execute plan' }, { label: 'Exit plan mode' }] }] })
+      const pending = dispatch(request)
+      await waitFor(() => expect(conversationAskCard('thread-1')).toMatchObject({ id: 'review-after-off' }))
+      await act(async () => {
+        respondConversationAsk('thread-1', 'review-after-off', [{ id: 'plan_review', selected: [selection] }])
+        await pending
+      })
+      expect(transport.executeReviewedPlan).toHaveBeenCalledTimes(1)
+      expect(transport.cancelChatRun).toHaveBeenCalledTimes(selection === 'Exit plan mode' ? 1 : 0)
+    })
+
+    it('enabling Plan during an approval wait revokes execution', async () => {
+      renderComponent()
+      const transport = h.chatSessionsState.sessions['thread-1'].transport
+      let planning = false
+      transport.planToolRefusal = () => planning ? 'Plan mode is read-only' : undefined
+      let approve!: (allowed: boolean) => void
+      h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>(resolve => { approve = resolve }))
+      const toolCall = call('plan-late', 'fetch', { url: 'x' })
+      await arrive(toolCall)
+      const pending = dispatch(toolCall)
+      await waitFor(() => expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1))
+      planning = true
+      approve(true)
+      expect(await pending).toMatchObject({ isError: true, output: 'Plan mode is read-only' })
+      expect(shell.execute).not.toHaveBeenCalled()
     })
 
     it('refuses unadvertised native calls before approval or execution', async () => {

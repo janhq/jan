@@ -21,6 +21,16 @@ export function CoworkPanelButton({ className, ...props }: React.ComponentProps<
     className={cn('rounded-md text-main-view-fg/70 hover:bg-main-view-fg/10 hover:text-main-view-fg data-[state=open]:bg-main-view-fg/10 dark:hover:bg-main-view-fg/10', className)} />
 }
 
+/** The element whose box the panel is laid out in. A wrapper with
+ * `display: contents` has no box of its own, so measuring it would read zero (or
+ * the panel's own width); look through it to the real containing row. */
+function layoutParent(el: HTMLElement | null): { container: HTMLElement; self: HTMLElement } | null {
+  let self = el
+  while (self?.parentElement && getComputedStyle(self.parentElement).display === 'contents') self = self.parentElement
+  const container = self?.parentElement
+  return self && container ? { container, self } : null
+}
+
 const PANEL_MIN_W = 320
 const TRANSCRIPT_MIN_W = 480
 const RESIZE_STEP = 16
@@ -70,7 +80,7 @@ export function CoworkSidePanel({
   const width = overlay || expanded ? maxWidth : clampWidth(parentWidth * (preferredRatio ?? 0.5))
 
   useLayoutEffect(() => {
-    const parent = asideRef.current?.parentElement
+    const parent = layoutParent(asideRef.current)?.container
     if (!parent) return
     // The containing block is the remaining content area, never the viewport
     // (which includes the navigation sidebar). Keep the overlay below its header.
@@ -114,8 +124,9 @@ export function CoworkSidePanel({
     const panel = asideRef.current
     if (!panel) return
     const previousFocus = document.activeElement as HTMLElement | null
-    const siblings = Array.from(panel.parentElement?.children ?? [])
-      .filter((element): element is HTMLElement => element instanceof HTMLElement && element !== panel)
+    const placed = layoutParent(panel)
+    const siblings = Array.from(placed?.container.children ?? [])
+      .filter((element): element is HTMLElement => element instanceof HTMLElement && element !== placed?.self)
     const previousInert = siblings.map((element) => element.inert)
     siblings.forEach((element) => { element.inert = true })
     const focusable = () => Array.from(panel.querySelectorAll<HTMLElement>(

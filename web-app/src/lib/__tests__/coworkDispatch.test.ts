@@ -15,9 +15,9 @@ vi.mock('@/lib/webSearchTool', () => ({
   executeWebTool,
 }))
 
-const coworkConfig = vi.hoisted(() => ({ networkEnabled: true }))
-vi.mock('@/hooks/useCoworkConfig', () => ({
-  useCoworkConfig: { getState: () => coworkConfig },
+const chatPermissions = vi.hoisted(() => ({ shellNetwork: true }))
+vi.mock('@/hooks/useChatPermissions', () => ({
+  useChatPermissions: { getState: () => chatPermissions },
 }))
 
 import type { Tool } from 'ai'
@@ -148,9 +148,9 @@ describe('dispatchCoworkTool', () => {
     )
   })
 
-  // Cowork's shell network follows the Cowork setting (on by default), read
+  // Shell network follows the app-wide permission (on by default), read
   // per call so a Settings toggle applies to the next command.
-  it('passes the cowork network setting through per call', async () => {
+  it('passes the app-wide network setting through per call', async () => {
     await dispatchCoworkTool(call('shell', { command: 'curl x' }), ctx())
     expect(executeAgentTool).toHaveBeenCalledWith(
       'shell',
@@ -162,7 +162,7 @@ describe('dispatchCoworkTool', () => {
       true,
       null
     )
-    coworkConfig.networkEnabled = false
+    chatPermissions.shellNetwork = false
     try {
       await dispatchCoworkTool(call('shell', { command: 'curl x' }), ctx())
       expect(executeAgentTool).toHaveBeenLastCalledWith(
@@ -176,7 +176,7 @@ describe('dispatchCoworkTool', () => {
         null
       )
     } finally {
-      coworkConfig.networkEnabled = true
+      chatPermissions.shellNetwork = true
     }
   })
 

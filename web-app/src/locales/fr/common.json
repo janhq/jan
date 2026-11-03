@@ -409,5 +409,23 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "agentSettings": "Agent",
+  "workspace": {
+    "readOnly": "lecture seule",
+    "allowChanges": "Autoriser la modification des fichiers",
+    "footnoteReadOnly": "L’agent peut lire ce dossier, mais pas le modifier. Activez « Autoriser la modification des fichiers » pour lui permettre de les modifier.",
+    "a11yWithFolderReadOnly": "Dossier de projet {{folder}}, joint en lecture seule. Le changer ou le détacher."
+  },
+  "conversationScope": {
+    "noToolsModel": "Le modèle sélectionné ne prend pas en charge les outils. Ces autorisations resteront sans effet tant que vous n’aurez pas choisi un modèle compatible.",
+    "noSandbox": "Aucun bac à sable système n’est disponible sur cet appareil. Les commandes shell ne sont donc pas proposées.",
+    "live": "Les modifications s’appliquent immédiatement à cette conversation. Un projet Jan n’accorde pas d’accès aux dossiers.",
+    "draft": "Appliqué à l’envoi de votre message. Un projet Jan n’accorde pas d’accès aux dossiers.",
+    "folderNeedsConfirmation": "Inactif · confirmation requise",
+    "confirmFolder": "Confirmer",
+    "removeFolder": "Retirer",
+    "hostRevokeUnconfirmed": "Jan n’a pas pu confirmer ce changement d’autorisation. Les tâches en arrière-plan peuvent encore disposer de l’accès précédent. Réessayez ou quittez Jan pour les arrêter.",
+    "saveFailed": "Le changement d’autorisation n’a pas pu être enregistré. L’accès étendu reste désactivé jusqu’à la réussite de l’enregistrement."
   }
 }

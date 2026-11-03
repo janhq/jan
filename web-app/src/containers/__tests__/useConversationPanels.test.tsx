@@ -55,6 +55,16 @@ vi.mock('@/containers/CoworkFilesPanel', () => ({
     </div>
   ),
 }))
+vi.mock('@/hooks/useMediaQuery', () => ({ useMediaQuery: () => true }))
+vi.mock('@/containers/CoworkOverviewPanel', () => ({
+  CoworkOverviewPanel: ({ artifacts, onChanges, onClose }: any) => (
+    <aside data-testid="overview">
+      overview:{artifacts.length}
+      <button onClick={onChanges}>open-changes</button>
+      <button onClick={onClose}>close-overview</button>
+    </aside>
+  ),
+}))
 vi.mock('@/containers/CoworkTasksPanel', () => ({ CoworkTasksPanel: () => <div>tasks-panel</div> }))
 vi.mock('@/containers/CoworkTodoPanel', () => ({ CoworkTodoPanel: () => <div>todo-panel</div> }))
 vi.mock('@/containers/CoworkDiffPanel', () => ({
@@ -73,6 +83,11 @@ const msgs = (...parts: any[]): UIMessage[] => [{ id: 'a', role: 'assistant', pa
 function Host({ threadId, messages }: { threadId: string; messages: readonly UIMessage[] }) {
   const { controls, rail } = useConversationPanels({ threadId, messages })
   return <div>{controls}{rail}</div>
+}
+
+function OverviewHost({ threadId, messages }: { threadId: string; messages: readonly UIMessage[] }) {
+  const { toggle, overview, overviewSpacer, rail } = useConversationPanels({ threadId, messages })
+  return <div>{toggle}{overviewSpacer}{rail}{overview}</div>
 }
 
 // Exposes the raw hook result so the test can assert on the value, not on markup.
@@ -103,6 +118,31 @@ afterEach(() => {
 })
 
 describe('useConversationPanels', () => {
+  it('offers the overview toggle on a fresh, empty conversation', async () => {
+    const user = userEvent.setup()
+    render(<OverviewHost threadId="t1" messages={[]} />)
+    const toggle = screen.getByTestId('overview-toggle')
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('overview')).toBeInTheDocument()
+    await user.click(toggle)
+    expect(screen.queryByTestId('overview')).toBeNull()
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await user.click(toggle)
+    expect(screen.getByTestId('overview')).toBeInTheDocument()
+  })
+
+  it('swaps the overview for a docked panel and back, like the Cowork page', async () => {
+    const user = userEvent.setup()
+    render(<OverviewHost threadId="t1" messages={msgs(write('/scratch/t1/a.txt', 'w1'))} />)
+    await user.click(screen.getByRole('button', { name: 'open-changes' }))
+    expect(screen.queryByTestId('overview')).toBeNull()
+    expect(screen.getByTestId('diff-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('overview-toggle')).toHaveAttribute('aria-pressed', 'false')
+    await user.click(screen.getByTestId('overview-toggle'))
+    expect(screen.queryByTestId('diff-panel')).toBeNull()
+    expect(screen.getByTestId('overview')).toBeInTheDocument()
+  })
+
   it('closes files and preview as soon as the effective folder grant is revoked', async () => {
     const user = userEvent.setup()
     const messages = msgs(write('/proj/a.html', 'w1'))

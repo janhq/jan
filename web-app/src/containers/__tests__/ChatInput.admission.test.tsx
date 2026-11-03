@@ -49,16 +49,18 @@ vi.mock('@/lib/custom-chat-transport', async () => {
 // test lives in the real store and the real SDK Chat admission timing.
 
 vi.mock('@/hooks/useThreads', () => ({
-  useThreads: (selector: (s: unknown) => unknown) =>
+  useThreads: Object.assign((selector: (s: unknown) => unknown) =>
     selector({
       currentThreadId: 'thread-1',
+      threads: {},
+      getConversationCapabilities: () => ({ folderScope: null }),
       getCurrentThread: () => undefined,
       updateCurrentThreadAssistant: vi.fn(),
       updateCurrentThreadModel: vi.fn(),
       createThread: vi.fn(),
       acceptCreatedThread: vi.fn(),
       rollbackCreatedThread: vi.fn(),
-    }),
+    }), { getState: () => ({ threads: {} }) }),
 }))
 
 const appState = {

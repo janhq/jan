@@ -13,16 +13,13 @@ import HeaderPage from '@/containers/HeaderPage'
 import ThreadList from '@/containers/ThreadList'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
-import { FolderPenIcon, MessageCircle, MoreHorizontal, PencilIcon, ShieldCheck, Trash2 } from 'lucide-react'
+import { FolderPenIcon, MessageCircle, MoreHorizontal, PencilIcon, Trash2 } from 'lucide-react'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import { ConversationCapabilitiesConsent } from '@/containers/ConversationCapabilitiesConsent'
+import { DraftWorkspacePill } from '@/containers/DraftWorkspacePill'
+import { toast } from 'sonner'
 import {
   defaultConversationCapabilities,
+  isConversationFolderPath,
   type ConversationCapabilitiesV1,
 } from '@/lib/conversationCapabilities'
 import ProjectFiles from '@/containers/ProjectFiles'
@@ -121,6 +118,16 @@ function ProjectPageContent() {
     const picked = await serviceHub.dialog().open({ directory: true })
     return typeof picked === 'string' ? picked : null
   }, [serviceHub])
+  const attachScopeFolder = useCallback(async () => {
+    const picked = await pickScopeFolder()
+    if (picked === null) return
+    if (!isConversationFolderPath(picked)) {
+      toast.error(t('common:conversationScope.invalidFolder'))
+      return
+    }
+    // A newly chosen folder starts read-only; writing is a separate switch.
+    setScopeDraft({ ...scopeDraft, folderScope: { path: picked, access: 'read' } })
+  }, [pickScopeFolder, scopeDraft, setScopeDraft, t])
   const prepareThreadCreation = useCallback(() => {
     const snapshot = scopeDraft
     return async (threadId: string) => {
@@ -213,6 +220,7 @@ function ProjectPageContent() {
             <ChatInput
               showSpeedToken={false}
               initialMessage={true}
+              pendingSkillFolder={scopeDraft.folderScope?.path ?? null}
               projectId={projectId}
               projectAssistantId={project.assistantId}
               supportsAssistants={true}
@@ -223,30 +231,12 @@ function ProjectPageContent() {
               }
             />
             {chatScopeAvailable && (
-              <div className="pt-2" data-testid="project-scope-consent">
-                <Collapsible>
-                  <CollapsibleTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex items-center gap-1.5 rounded-sm p-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      data-testid="project-scope-consent-trigger"
-                    >
-                      <ShieldCheck className="size-4 shrink-0" aria-hidden="true" />
-                      <span>
-                        Conversation permissions
-                        {scopeDraftElevated ? ' (pending)' : ''}
-                      </span>
-                    </button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="pt-2">
-                    <ConversationCapabilitiesConsent
-                      value={scopeDraft}
-                      onChange={setScopeDraft}
-                      onPickFolder={pickScopeFolder}
-                    />
-                  </CollapsibleContent>
-                </Collapsible>
-              </div>
+              <DraftWorkspacePill
+                value={scopeDraft}
+                onChange={setScopeDraft}
+                onPickFolder={() => void attachScopeFolder()}
+                showWhenEmpty
+              />
             )}
             {/* Persistent live region (see home route): stays mounted, inner
                 text changes, no duplicate live attributes. */}

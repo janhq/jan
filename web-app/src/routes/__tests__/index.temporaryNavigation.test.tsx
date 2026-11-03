@@ -22,7 +22,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => false }))
 vi.mock('@/lib/providerReadiness', () => ({ hasUsableProvider: () => true }))
 vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: () => ({ dialog: () => ({ open: vi.fn(async () => null) }) }),
+  useServiceHub: () => ({ dialog: () => ({ open: vi.fn(async () => '/synthetic/workspace') }) }),
 }))
 vi.mock('@/hooks/useCoworkRun', () => ({
   useCoworkRun: { getState: () => ({ runId: {} }) },
@@ -52,11 +52,12 @@ vi.mock('@/hooks/useThreadManagement', () => ({
   useThreadManagement: () => ({ addFolder: vi.fn(), folders: [] }),
 }))
 vi.mock('@/containers/ChatInput', () => ({
-  default: ({ prepareThreadCreation }: any) => (
+  default: ({ prepareThreadCreation, menuWorkspace }: any) => (
     <div
       data-testid="chat-input"
       data-has-prepare={prepareThreadCreation ? 'true' : undefined}
     >
+      {menuWorkspace}
       <button
         data-testid="invoke-prepare"
         onClick={() => {
@@ -67,11 +68,13 @@ vi.mock('@/containers/ChatInput', () => ({
     </div>
   ),
 }))
-vi.mock('@/containers/CoworkComposerMenu', () => ({ CoworkComposerMenu: () => null }))
+vi.mock('@/containers/CoworkComposerMenu', () => ({
+  CoworkComposerMenu: ({ onAttachFolder }: any) => <button onClick={onAttachFolder}>Menu folder</button>,
+}))
 vi.mock('@/containers/HeaderPage', () => ({ default: () => null }))
 vi.mock('@/containers/SetupScreen', () => ({ default: () => null }))
 vi.mock('@/containers/dialogs/AddProjectDialog', () => ({ default: () => null }))
-vi.mock('@/lib/utils', () => ({ cn: (...c: any[]) => c.filter(Boolean).join(' ') }))
+vi.mock('@/lib/utils', () => ({ cn: (...c: any[]) => c.filter(Boolean).join(' '), truncateMiddle: (v: string) => v }))
 
 import {
   createRootRoute,
@@ -97,6 +100,12 @@ const buildRouter = () => {
   })
 }
 
+// Elevate the draft the way users do: attach a folder from the pill.
+const attachDraftFolder = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: 'Menu folder' }))
+  await screen.findByTestId('draft-workspace-pill')
+}
+
 describe('home temporary-chat gating under real router navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -108,10 +117,7 @@ describe('home temporary-chat gating under real router navigation', () => {
     const router = buildRouter()
     render(<RouterProvider router={router as any} />)
     // Elevate the draft through the real consent UI.
-    fireEvent.click(await screen.findByTestId('home-scope-consent-trigger'))
-    fireEvent.click(
-      await screen.findByLabelText('Allow shell commands to access the network')
-    )
+    await attachDraftFolder()
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
 
     // Real navigation setting the flag; validateSearch drops the key, so only
@@ -120,7 +126,7 @@ describe('home temporary-chat gating under real router navigation', () => {
       await router.navigate({ to: '/', search: { 'temporary-chat': true } as any })
     })
     await waitFor(() =>
-      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
     )
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     // The hidden pending grant can never be applied in temporary mode.
@@ -133,9 +139,7 @@ describe('home temporary-chat gating under real router navigation', () => {
       await router.navigate({ to: '/', search: {} as any })
     })
     await waitFor(() =>
-      expect(screen.getByTestId('home-scope-consent-trigger')).toHaveTextContent(
-        'Conversation permissions (pending)'
-      )
+      expect(screen.getByTestId('draft-workspace-pill')).toBeInTheDocument()
     )
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
   })

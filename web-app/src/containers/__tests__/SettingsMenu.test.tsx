@@ -119,16 +119,13 @@ describe('SettingsMenu', () => {
     expect(screen.getByText('common:privacy')).toBeInTheDocument()
   })
 
-  it('lists the Cowork settings entry where Cowork ships', () => {
+  // Network and memory permissions apply to every conversation, so their page
+  // is not tied to whether the legacy Cowork surface ships.
+  it.each([true, false])('lists the Agent settings entry (cowork channel: %s)', (cowork) => {
+    channel.cowork = cowork
     render(<SettingsMenu />)
-    expect(screen.getByText('common:cowork')).toBeInTheDocument()
-  })
-
-  it('omits the Cowork settings entry on builds that do not ship Cowork', () => {
-    channel.cowork = false
-    render(<SettingsMenu />)
+    expect(screen.getByText('common:agentSettings')).toBeInTheDocument()
     expect(screen.queryByText('common:cowork')).not.toBeInTheDocument()
-    expect(screen.getByText('common:general')).toBeInTheDocument()
   })
 
   it('renders integrations links', () => {

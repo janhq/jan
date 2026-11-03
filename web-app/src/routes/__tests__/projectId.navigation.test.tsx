@@ -45,7 +45,7 @@ vi.mock('@/hooks/useThreadManagement', () => ({
 }))
 vi.mock('@/hooks/useAssistant', () => ({ useAssistant: () => ({ assistants: [] }) }))
 vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: () => ({ dialog: () => ({ open: vi.fn(async () => null) }) }),
+  useServiceHub: () => ({ dialog: () => ({ open: vi.fn(async () => '/synthetic/workspace') }) }),
 }))
 vi.mock('@/containers/ChatInput', () => ({
   default: ({ prepareThreadCreation }: any) => (
@@ -73,7 +73,7 @@ vi.mock('@/containers/dialogs/DeleteProjectDialog', () => ({ DeleteProjectDialog
 vi.mock('@/containers/dialogs/DeleteAllThreadsInProjectDialog', () => ({
   DeleteAllThreadsInProjectDialog: () => null,
 }))
-vi.mock('@/lib/utils', () => ({ cn: (...c: any[]) => c.filter(Boolean).join(' ') }))
+vi.mock('@/lib/utils', () => ({ cn: (...c: any[]) => c.filter(Boolean).join(' '), truncateMiddle: (v: string) => v }))
 
 import {
   createRootRoute,
@@ -97,6 +97,16 @@ const buildRouter = () => {
   })
 }
 
+// Elevate the draft the way users do: attach a folder from the pill.
+const attachDraftFolder = async () => {
+  // The popover can already be open (same mounted component across routes).
+  if (!screen.queryByRole('button', { name: 'common:workspace.attach' })) {
+    fireEvent.click(await screen.findByRole('button', { name: 'common:workspace.a11yNoFolder' }))
+  }
+  fireEvent.click(await screen.findByRole('button', { name: 'common:workspace.attach' }))
+  await screen.findByTestId('draft-workspace-pill')
+}
+
 describe('project draft isolation under real router navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -112,16 +122,10 @@ describe('project draft isolation under real router navigation', () => {
       await router.load()
     })
     render(<RouterProvider router={router as any} />)
-    await screen.findByTestId('project-scope-consent-trigger')
+    await screen.findByTestId('draft-workspace-pill')
     await act(async () => {})
     // Elevate grants on project A via the real consent UI.
-    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
-    fireEvent.click(
-      await screen.findByLabelText('Allow shell commands to access the network')
-    )
-    fireEvent.click(
-      screen.getByLabelText('Allow durable memory writes beyond this conversation')
-    )
+    await attachDraftFolder()
     await waitFor(() =>
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     )
@@ -137,17 +141,10 @@ describe('project draft isolation under real router navigation', () => {
     )
     fireEvent.click(screen.getByTestId('invoke-prepare'))
     expect(h.setCaps).not.toHaveBeenCalled()
-    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
-      /^Conversation permissions$/
-    )
+    expect(screen.getByRole('button', { name: 'common:workspace.a11yNoFolder' })).toBeInTheDocument()
 
-    // B can then elevate independently, applying only B's own draft. The
-    // collapsible UI state stays open across the navigation (same mounted
-    // component — exactly why the draft itself must reset), so the controls
-    // are already visible.
-    fireEvent.click(
-      await screen.findByLabelText('Allow shell commands to access the network')
-    )
+    // B can then attach its own folder, applying only B's own draft.
+    await attachDraftFolder()
     await waitFor(() =>
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     )
@@ -155,8 +152,8 @@ describe('project draft isolation under real router navigation', () => {
     await waitFor(() =>
       expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
         version: 1,
-        folderScope: null,
-        shellNetwork: true,
+        folderScope: { path: '/synthetic/workspace', access: 'read' },
+        shellNetwork: false,
         memoryWrite: false,
       })
     )

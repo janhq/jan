@@ -21,6 +21,7 @@ import { abortRun } from '@/lib/coworkRunner'
 import { revokeThreadCapabilitiesInHost, stopAllThreadAgentMonitors } from '@/lib/agentTools'
 import { dropMonitorLane } from '@/lib/coworkMonitor'
 import { isCoworkThread, workspaceScopeFor } from '@/lib/threadMode'
+import { useChatPermissions } from '@/hooks/useChatPermissions'
 import { defaultConversationCapabilities, HostRevokeUnconfirmedError, resolveConversationCapabilities, type ConversationCapabilitiesV1 } from '@/lib/conversationCapabilities'
 
 type ThreadState = {
@@ -769,7 +770,11 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   getConversationCapabilities: (threadId) => {
     const thread = get().threads[threadId]
     if (!thread || threadId === TEMPORARY_CHAT_ID || isCoworkThread(thread)) return defaultConversationCapabilities()
-    return resolveConversationCapabilities(effectiveCapabilities.get(threadId))
+    // Network and memory writes are app-wide settings the host overlays on every
+    // grant; the mirror keeps this view equal to what the host will enforce.
+    // The folder stays a per-conversation grant.
+    const { shellNetwork, memoryWrite } = useChatPermissions.getState()
+    return { ...resolveConversationCapabilities(effectiveCapabilities.get(threadId)), shellNetwork, memoryWrite }
   },
   setConversationCapabilities: async (threadId, value) => {
     const assertChatThread = () => {

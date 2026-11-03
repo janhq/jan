@@ -4,11 +4,11 @@
  *
  * Startup and classification guarantees:
  *
- * - On a NORMAL startup the Conversational extension registers after the
- *   first route render, so a single `fetchThreads()` throws "Conversational
- *   extension not available yet" and the deep link strands on the global
- *   error screen with no retry. The lookup therefore retries over a bounded
- *   startup window before giving up.
+ * - StartupProvider initializes services and extensions BEFORE RouterProvider
+ *   loads the initial route. Root-route providers cannot do this: beforeLoad
+ *   runs before the root component mounts. The bounded lookup retry is only
+ *   for late/recovering extensions (including the setup watchdog), not a
+ *   substitute for initializing services before route loading.
  *
  * - When every attempt fails the classification is UNKNOWN, and a writable
  *   chat must never mount over an undecidable thread (it would fork a cowork

@@ -938,4 +938,50 @@ describe('MessageItem', () => {
       expect(regenerate.parentElement?.className).not.toContain('opacity-0')
     })
   })
+
+  describe('run-end budget notice', () => {
+    const notice = { type: 'text', text: '\n\nStopped at the step limit. You can continue this turn.', providerMetadata: { jan: { chatRunNotice: true } } }
+    const capped = (reason: 'steps' | 'tokens') => makeMsg({
+      parts: [{ type: 'text', text: 'Partial answer' }, notice],
+      metadata: { createdAt: new Date(), stopped: true, runStopReason: reason },
+    })
+
+    it('shows the Cowork budget notice instead of the raw cap sentence, and Keep going continues', () => {
+      const onContinue = vi.fn()
+      render(<MessageItem message={capped('steps') as any} isFirstMessage isLastMessage status={'ready' as any} onContinue={onContinue} />)
+      expect(screen.getByTestId('cowork-budget-notice')).toBeInTheDocument()
+      expect(screen.queryByText(/Stopped at the step limit/)).toBeNull()
+      fireEvent.click(screen.getByText('common:budget.keepGoing'))
+      expect(onContinue).toHaveBeenCalledWith('msg-1')
+    })
+
+    it('offers New conversation (no Compact) when the token budget was hit', () => {
+      const onNewConversation = vi.fn()
+      render(<MessageItem message={capped('tokens') as any} isFirstMessage isLastMessage status={'ready' as any} onNewConversation={onNewConversation} />)
+      expect(screen.queryByText('common:budget.compact')).toBeNull()
+      fireEvent.click(screen.getByText('common:budget.newConversation'))
+      expect(onNewConversation).toHaveBeenCalledOnce()
+    })
+
+    it('marks a user-stopped turn with the quiet Stopped notice, but not a normal or capped one', () => {
+      const stopped = makeMsg({ parts: [{ type: 'text', text: 'Half an ans' }], metadata: { createdAt: new Date(), stopped: true } })
+      const { unmount } = render(<MessageItem message={stopped as any} isFirstMessage isLastMessage status={'ready' as any} />)
+      expect(screen.getByTestId('cowork-run-notice')).toHaveTextContent('common:run.stopped')
+      unmount()
+      render(<MessageItem message={makeMsg() as any} isFirstMessage isLastMessage status={'ready' as any} />)
+      expect(screen.queryByTestId('cowork-run-notice')).toBeNull()
+    })
+
+    it('does not add a second Stopped marker to a capped turn', () => {
+      render(<MessageItem message={capped('steps') as any} isFirstMessage isLastMessage status={'ready' as any} />)
+      expect(screen.queryByTestId('cowork-run-notice')).toBeNull()
+      expect(screen.getByTestId('cowork-budget-notice')).toBeInTheDocument()
+    })
+
+    it('never renders a notice sentence as an answer when the reason is unknown', () => {
+      render(<MessageItem message={makeMsg({ parts: [notice], metadata: { createdAt: new Date() } }) as any} isFirstMessage isLastMessage status={'ready' as any} />)
+      expect(screen.queryByText(/Stopped at the step limit/)).toBeNull()
+      expect(screen.queryByTestId('cowork-budget-notice')).toBeNull()
+    })
+  })
 })

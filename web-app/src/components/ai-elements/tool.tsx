@@ -360,9 +360,12 @@ export const ToolApprovalActions = memo(() => {
         <span>{t('tools:toolApproval.needsApproval')}</span>
       </div>
       <div className="flex flex-wrap gap-2">
+        {/* One accent per card: the persistent grant is the only filled
+            button. Deny stays quiet and turns red only on hover/focus. */}
         <Button
           size="sm"
-          variant="destructive"
+          variant="outline"
+          className="hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive focus-visible:border-destructive/60 focus-visible:text-destructive"
           onClick={() => resolveApproval(toolCallId, 'deny', threadId ?? '')}
         >
           {t('tools:toolApproval.deny')}

@@ -264,5 +264,34 @@
     }
   },
   "backendInstallSuccess": "Backend đã được cài đặt thành công",
-  "backendInstallError": "Không thể cài đặt backend"
+  "backendInstallError": "Không thể cài đặt backend",
+  "cowork": {
+    "title": "Tác nhân",
+    "description": "Những gì Jan có thể làm trên máy tính của bạn: shell trong môi trường cách ly, cùng bộ nhớ và kỹ năng được lưu lâu dài trong thư mục dữ liệu Jan.",
+    "networkDesc": "Cho phép lệnh shell truy cập mạng để cài đặt gói hoặc tải kho mã nguồn. Mặc định bật. Môi trường cách ly vẫn giới hạn các tệp mà lệnh có thể truy cập.",
+    "memoryWrite": "Cho phép lưu bộ nhớ và kỹ năng",
+    "memoryWriteDesc": "Cho phép mô hình lưu bộ nhớ và kỹ năng để sử dụng qua nhiều cuộc trò chuyện. Mặc định bật. Bạn có thể xem lại và chỉnh sửa mọi nội dung bên dưới.",
+    "permissionSaveFailed": "Không thể lưu cài đặt này. Cài đặt chưa bị thay đổi.",
+    "shell": "Lệnh shell",
+    "shellChecking": "Đang kiểm tra môi trường cách ly…",
+    "shellSandboxed": "Các lệnh được giới hạn bởi {{backend}}: chỉ có thể ghi trong không gian làm việc của phiên và không thể đọc tệp trong thư mục cá nhân của bạn.",
+    "shellUnavailable": "Hệ thống này không có môi trường cách ly, nên không cung cấp công cụ shell. Các lệnh không bao giờ được chạy ngoài môi trường cách ly.",
+    "network": "Cho phép truy cập mạng",
+    "openFolder": "Mở thư mục",
+    "memories": "Bộ nhớ",
+    "noMemories": "Chưa có bộ nhớ. Mô hình dùng công cụ bộ nhớ để lưu những thông tin đáng ghi nhớ khi học được.",
+    "skills": "Kỹ năng",
+    "noSkills": "Chưa có kỹ năng. Kỹ năng là tập hợp hướng dẫn có thể tái sử dụng mà mô hình có thể tải khi cần.",
+    "add": "Thêm",
+    "editMemory": "Chỉnh sửa bộ nhớ",
+    "editMemoryDesc": "Mỗi ghi chú dành cho một chủ đề. Mô hình đọc lại các ghi chú bằng công cụ bộ nhớ.",
+    "editSkill": "Chỉnh sửa kỹ năng",
+    "editSkillDesc": "Hướng dẫn ở định dạng Markdown, có thể thêm mô tả trong phần đầu YAML. Mô hình sẽ thấy mô tả này trước khi tải kỹ năng.",
+    "namePlaceholder": "Tên",
+    "contentPlaceholder": "Nội dung",
+    "loadFailed": "Không thể tải không gian làm việc của tác nhân",
+    "saveFailed": "Không thể lưu",
+    "deleteFailed": "Không thể xóa",
+    "revealFailed": "Không thể mở thư mục"
+  }
 }

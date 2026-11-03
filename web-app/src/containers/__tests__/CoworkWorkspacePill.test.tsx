@@ -157,4 +157,39 @@ describe('CoworkWorkspacePill', () => {
     await userEvent.click(screen.getByText('common:workspace.detach'))
     expect(onDetach).toHaveBeenCalled()
   })
+
+  it('offers an Allow changes switch only when the caller can change access', async () => {
+    const onAccessChange = vi.fn()
+    const { rerender } = render(
+      <CoworkWorkspacePill folder="/home/u/app" access="read" onAttach={vi.fn()} onDetach={vi.fn()} />
+    )
+    await userEvent.click(screen.getByRole('button', { name: /a11yWithFolder/ }))
+    expect(screen.queryByRole('switch')).toBeNull()
+
+    rerender(
+      <CoworkWorkspacePill
+        folder="/home/u/app"
+        access="read"
+        onAccessChange={onAccessChange}
+        onAttach={vi.fn()}
+        onDetach={vi.fn()}
+      />
+    )
+    const toggle = screen.getByRole('switch')
+    expect(toggle).not.toBeChecked()
+    await userEvent.click(toggle)
+    expect(onAccessChange).toHaveBeenCalledWith('write')
+
+    rerender(
+      <CoworkWorkspacePill
+        folder="/home/u/app"
+        access="write"
+        onAccessChange={onAccessChange}
+        onAttach={vi.fn()}
+        onDetach={vi.fn()}
+      />
+    )
+    await userEvent.click(screen.getByRole('switch'))
+    expect(onAccessChange).toHaveBeenLastCalledWith('read')
+  })
 })

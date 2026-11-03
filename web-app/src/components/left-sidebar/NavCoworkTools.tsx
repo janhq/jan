@@ -13,7 +13,6 @@ import {
 import SkillsManagerDialog from '@/containers/dialogs/SkillsManagerDialog'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
-import { isCoworkEnabled } from '@/lib/version'
 
 type Item = {
   title: string
@@ -39,7 +38,9 @@ function ToolRow({ item }: { item: Item }) {
           ref={iconRef}
           icon={item.icon}
           preset={item.preset}
-          className="size-4 shrink-0 text-foreground/70"
+          // index.css shrinks every svg.lucide to 14px; a utility overrides it so
+          // these rows match the 16px icons in the rest of the menu.
+          className="size-4 shrink-0 text-foreground/70 [&_svg]:size-4"
           size={16}
         />
         <span className="min-w-0 truncate leading-5">{item.title}</span>
@@ -49,14 +50,13 @@ function ToolRow({ item }: { item: Item }) {
 }
 
 /**
- * Artifacts and Skills, the Cowork-only entries of the one sidebar. They show
- * wherever Cowork is available and never replace the rest of the navigation.
+ * Artifacts and Skills, the entries of the one sidebar that unified threads use
+ * too. They show on every build and never replace the rest of the navigation.
  */
 export function NavCoworkTools({ section = 'customize' }: { section?: 'artifacts' | 'customize' }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [skillsOpen, setSkillsOpen] = useState(false)
-  if (!isCoworkEnabled()) return null
 
   const items: Item[] = [
     {

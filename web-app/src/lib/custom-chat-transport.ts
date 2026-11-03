@@ -1,3 +1,6 @@
+import { chatPlanEnabled, useChatPlan } from '@/hooks/useChatPlan'
+import { chatPlanToolRefusal } from './chatPlan'
+import { PLAN_ADDENDUM } from './coworkPrompt'
 import { type UIMessage } from '@ai-sdk/react'
 import {
   convertToModelMessages,
@@ -883,6 +886,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private routerModel: LanguageModel | null = null
   private routerModelKey = ''
   protected tools: Record<string, Tool> = {}
+  private ragIdentities = new Set<string>()
+  private turnRagIdentities?: Set<string>
   private mcpIdentities = new Map<string, string>()
   private turnMcpIdentities?: Map<string, string>
 
@@ -912,10 +917,38 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     )
   }
 
+  /** Only the validated plan-review answer may transition the active run. */
+  executeReviewedPlan(): void {
+    if (!this.chatRunSnapshot?.planMode) return
+    this.chatRunSnapshot.planMode = false
+    this.chatRunSnapshot.tools = undefined
+    this.chatRunSnapshot.system = undefined
+    this.chatRunSnapshot.systemReady = false
+  }
+
+  isPlanActive(): boolean {
+    if (chatPlanEnabled(this.threadId) && this.chatRunSnapshot && !this.chatRunSnapshot.planMode) {
+      this.chatRunSnapshot.planMode = true
+      this.chatRunSnapshot.tools = undefined
+      this.chatRunSnapshot.system = undefined
+      this.chatRunSnapshot.systemReady = false
+    }
+    return this.chatRunSnapshot?.planMode === true || chatPlanEnabled(this.threadId)
+  }
+
+  /** Run-frozen mode cannot be relaxed mid-turn; enabling Plan revokes writes immediately. */
+  planToolRefusal(name: string, input?: unknown): string | undefined {
+    return chatPlanToolRefusal(
+      this.isPlanActive(),
+      name, input, !!this.getMcpServerForTool(name),
+      (this.turnRagIdentities ?? this.ragIdentities).has(name)
+    )
+  }
+
   getMcpServerForTool(name: string): string | undefined {
     return (this.turnMcpIdentities ?? this.mcpIdentities).get(name)
   }
-  private chatRunSnapshot: { tools?: Record<string, Tool>; system?: string; systemReady?: boolean } | null = null
+  private chatRunSnapshot: { tools?: Record<string, Tool>; system?: string; systemReady?: boolean; planMode?: boolean } | null = null
 
   /** Bracket one runTurn, not each model step. Refresh events during a run
    * must not mutate its advertised schemas or system prefix. */
@@ -934,11 +967,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
   beginChatRun(abort?: () => void): () => void {
     if (this.chatRunSnapshot) throw new Error('Chat turn already running')
-    const snapshot = {}
+    const snapshot = { planMode: chatPlanEnabled(this.threadId) }
     this.chatRunSnapshot = snapshot
+    // Latch even if the toolbar is switched on and off between tool calls.
+    const latch = () => { this.isPlanActive() }
+    const unsubscribeDraft = useChatPlan.subscribe(latch)
+    const unsubscribeThread = useThreads.subscribe?.(latch)
     this.chatRunAbort = abort
     this.chatRunDone = new Promise(resolve => { this.finishChatRun = resolve })
     return () => {
+      unsubscribeDraft()
+      unsubscribeThread?.()
       if (this.chatRunSnapshot === snapshot) {
         this.chatRunSnapshot = null
         this.chatRunAbort = undefined
@@ -1108,6 +1147,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const raw =
       [
         this.systemMessage,
+        this.isPlanActive() ? PLAN_ADDENDUM : undefined,
         this.buildMemorySystemInstruction(),
         this.buildFilesSystemInstruction(messages),
         this.buildWebSearchSystemInstruction(),
@@ -1159,6 +1199,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const toolsRecord: Record<string, Tool> = {}
     const mcpIdentities = new Map<string, string>()
+    const ragIdentities = new Set<string>()
 
     // Tool availability is global (shared across all chats).
     const disabledToolKeys = useToolAvailable.getState().getDisabledTools()
@@ -1213,6 +1254,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               const serverName =
                 (tool as { server?: string }).server || 'unknown'
               if (!isToolDisabled(serverName, tool.name)) {
+                ragIdentities.add(tool.name)
                 toolsRecord[tool.name] = {
                   description: tool.description,
                   inputSchema: jsonSchema(
@@ -1394,9 +1436,20 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
     }
 
+    if (this.isPlanActive()) {
+      for (const name of Object.keys(toolsRecord)) {
+        // Memory has a separately narrowed read-only schema.
+        if (chatPlanToolRefusal(true, name, { op: 'view' }, mcpIdentities.has(name), ragIdentities.has(name))) {
+          delete toolsRecord[name]
+          mcpIdentities.delete(name)
+        }
+      }
+    }
+
     // Never let discovery started outside this run, or a slower competing
     // discovery, overwrite its first committed advertised record.
     if (this.chatRunSnapshot !== owningSnapshot || owningSnapshot?.tools) return
+    this.ragIdentities = ragIdentities
     this.mcpIdentities = mcpIdentities
     this.tools = toolsRecord
     if (owningSnapshot) owningSnapshot.tools = toolsRecord
@@ -1659,12 +1712,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     await this.refreshTools(options.abortSignal, turnModelSelection, true)
     const turnMcpIdentities = new Map(this.mcpIdentities)
+    const turnRagIdentities = new Set(this.ragIdentities)
     const turnTools = this.tools
 
     // Split assistant turns that place text after tool calls into separate
     // messages. Required by the Claude API (tool_use / tool_result pairing) and
     // it keeps the prompt prefix byte-identical across turns so llama.cpp reuses
     // the KV cache. See `splitAssistantToolWaves`.
+    // Skills are resolved and persisted by the composer at submission. Never
+    // reinterpret historical user text (paths and removed skills are valid text).
     const messagesToConvert = splitAssistantToolWaves(
       expandChatRunContext(withoutChatRunNotices(options.messages))
     )
@@ -1831,6 +1887,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
 
     // Bind callbacks to this request, not a background menu refresh.
+    this.turnRagIdentities = turnRagIdentities
     this.turnMcpIdentities = turnMcpIdentities
     const result = streamText({
       model: this.model,

@@ -1850,8 +1850,9 @@ async fn conversation_capabilities_native_setter_grants_after_forged_creation_is
 // ---- ACL invoke harness ----------------------------------------------------
 //
 // Drives the thread-monitor commands through Tauri's real IPC entry point
-// against the PRODUCTION resolved ACL: `tauri::generate_context!()` embeds the
-// shipped capabilities (window "main" holds `agent-tools:default`), so a pass
+// against the PRODUCTION resolved ACL: `generate_context!(test = true)`
+// suppresses duplicate macOS plist symbols, but still embeds the shipped
+// capabilities (window "main" holds `agent-tools:default`), so a pass
 // here is the ACL's own resolution of `plugin:agent-tools|<command>` plus
 // argument deserialization and dispatch -- what the plugin's string-level
 // guard tests cannot see. It is deliberately NOT native UI acceptance.
@@ -1885,7 +1886,7 @@ fn acl_invoke(
 fn thread_monitor_commands_pass_the_real_acl_and_dispatch() {
     let app = tauri::test::mock_builder()
         .plugin(tauri_plugin_agent_tools::init())
-        .build(tauri::generate_context!())
+        .build(tauri::generate_context!(test = true))
         .unwrap();
     let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()

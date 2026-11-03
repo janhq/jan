@@ -35,6 +35,8 @@ import '@testing-library/jest-dom'
 const threadsState = { currentThreadId: 'thread-1' as string | undefined }
 const threadsApi = () => ({
   currentThreadId: threadsState.currentThreadId,
+  threads: {},
+  getConversationCapabilities: () => ({ folderScope: null }),
   getCurrentThread: () => undefined,
   updateCurrentThreadAssistant: vi.fn(),
   updateCurrentThreadModel: vi.fn(),
@@ -249,6 +251,7 @@ vi.mock('@/lib/platform/utils', () => ({
 
 // Import after mocks. usePrompt, useChatAttachments, useMessageQueue and
 // useFailedDrafts are deliberately NOT mocked.
+import { useChatPlan } from '@/hooks/useChatPlan'
 import ChatInput from '../ChatInput'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
@@ -336,6 +339,7 @@ const send = async () => {
 describe('real ChatInput + real stores + production restoreSubmittedDraft', () => {
   beforeEach(() => {
     threadsState.currentThreadId = THREAD
+    useChatPlan.setState({ drafts: {} })
     usePrompt.setState({ prompt: '', promptHistory: [], historyIndex: -1 })
     useChatAttachments.setState({ attachmentsByThread: {} })
     useMessageQueue.setState({ queues: {}, paused: {}, generations: {} })
@@ -346,6 +350,26 @@ describe('real ChatInput + real stores + production restoreSubmittedDraft', () =
     useChatAttachments.getState().setAttachments(THREAD, [doc, img])
     usePrompt.setState({ prompt })
   }
+
+  it('Plan slash action toggles a conversation draft without sending a model turn', async () => {
+    const onSubmit = vi.fn()
+    render(<ChatInput onSubmit={onSubmit} />)
+    fireEvent.change(textarea(), { target: { value: '/plan' } })
+    fireEvent.keyDown(textarea(), { key: 'Enter' })
+    expect(useChatPlan.getState().drafts[THREAD]).toBe(true)
+    expect(textarea()).toHaveValue('')
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'common:planMode.label' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('unavailable old Cowork commands are not sent and retain the draft', async () => {
+    const onSubmit = vi.fn()
+    render(<ChatInput onSubmit={onSubmit} />)
+    fireEvent.change(textarea(), { target: { value: '/clear' } })
+    await send()
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(textarea()).toHaveValue('/clear')
+  })
 
   it('control: an accepted send clears the prompt and attachments', async () => {
     seedComposer('original draft')

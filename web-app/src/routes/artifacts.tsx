@@ -7,30 +7,88 @@ import HeaderPage from '@/containers/HeaderPage'
 import { Button } from '@/components/ui/button'
 import { CoworkArtifactCard } from '@/containers/CoworkArtifactCard'
 import { route } from '@/constants/routes'
-import { ensureCoworkEnabled } from '@/lib/coworkAccess'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { isCoworkEnabled } from '@/lib/version'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
+import { sessionWorkspacePath, threadWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
+import { useThreads } from '@/hooks/useThreads'
+import { isCoworkThread } from '@/lib/threadMode'
+import { convertThreadMessagesToUIMessages } from '@/lib/messages'
+import { resolveConversationCapabilities } from '@/lib/conversationCapabilities'
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import {
   ARTIFACT_GROUP_NAMES,
+  artifactsFromParts,
   artifactsFromTurns,
   type CoworkArtifact,
 } from '@/lib/coworkArtifacts'
 
 export const Route = createFileRoute(route.artifacts as any)({
-  beforeLoad: () => ensureCoworkEnabled(),
   component: ArtifactsPage,
 })
 
 const PAGE = 24
 
+// Threads store seconds, Cowork sessions milliseconds (same rule as mergeHistory).
+const toSeconds = (n: number) => (n > 1e12 ? n / 1000 : n)
+
 type Row = CoworkArtifact & {
+  /** Cowork session or unified thread id; `kind` says which. */
   sessionId: string
+  kind: 'session' | 'thread'
   sessionTitle: string
   updated: number
   roots: Array<string | null>
+}
+
+/** Most recent unified threads scanned for artifacts, and how many load at once.
+ * Messages live on disk, so the scan is bounded rather than reading every thread. */
+const THREAD_SCAN_LIMIT = 100
+const THREAD_SCAN_CONCURRENCY = 4
+
+type ThreadArtifacts = { artifacts: CoworkArtifact[]; scratch: string | null }
+
+/**
+ * Artifacts of unified (Chat-origin) threads, read from their persisted
+ * messages. Legacy Cowork sessions are handled separately from their turns.
+ * Loads the newest threads first and fills in as each one resolves.
+ */
+function useThreadArtifacts(
+  threadIds: string[]
+): Record<string, ThreadArtifacts> {
+  const [found, setFound] = useState<Record<string, ThreadArtifacts>>({})
+  const key = threadIds.join(',')
+
+  useEffect(() => {
+    let alive = true
+    const queue = key.split(',').filter(Boolean)
+    const worker = async () => {
+      const dataFolder = await getServiceHub().app().getJanDataFolder()
+      for (let id = queue.shift(); id; id = queue.shift()) {
+        try {
+          const messages = await getServiceHub().messages().fetchMessages(id)
+          const artifacts = convertThreadMessagesToUIMessages(messages ?? []).flatMap(
+            (message) => artifactsFromParts(message.parts as never)
+          )
+          if (artifacts.length === 0) continue
+          const scratch = dataFolder
+            ? await threadWorkspacePath(dataFolder, id).catch(() => null)
+            : null
+          if (alive) setFound((prev) => ({ ...prev, [id]: { artifacts, scratch } }))
+        } catch {
+          /* An unreadable thread simply contributes no artifacts. */
+        }
+      }
+    }
+    void Promise.all(Array.from({ length: THREAD_SCAN_CONCURRENCY }, worker))
+    return () => {
+      alive = false
+    }
+  }, [key])
+
+  return found
 }
 
 /**
@@ -76,7 +134,14 @@ function useSessionWorkspaces(sessionIds: string[]): Record<string, string> {
 function ArtifactsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const sessions = useCoworkSessions((s) => s.sessions)
+  const storedSessions = useCoworkSessions((s) => s.sessions)
+  // A legacy session opens on /cowork, which a build without that surface
+  // redirects Home; list only what the build can actually open.
+  const sessions = useMemo(
+    () => (isCoworkEnabled() ? storedSessions : []),
+    [storedSessions]
+  )
+  const threads = useThreads((s) => s.threads)
   const [query, setQuery] = useState('')
   const [group, setGroup] = useState<CoworkArtifact['group'] | null>(null)
   // ponytail: a render cap with "show more" rather than paging or a virtual
@@ -92,9 +157,38 @@ function ArtifactsPage() {
     useMemo(() => sessions.map((s) => s.id), [sessions])
   )
 
-  const rows = useMemo<Row[]>(
+  const scanned = useMemo(
     () =>
-      sessions.flatMap((session) => {
+      Object.values(threads)
+        .filter((thread) => thread.id !== TEMPORARY_CHAT_ID && !isCoworkThread(thread))
+        .sort((a, b) => (b.updated || 0) - (a.updated || 0))
+        .slice(0, THREAD_SCAN_LIMIT),
+    [threads]
+  )
+  const threadArtifacts = useThreadArtifacts(useMemo(() => scanned.map((t) => t.id), [scanned]))
+
+  const rows = useMemo<Row[]>(
+    () => [
+      ...scanned.flatMap((thread) => {
+        const hit = threadArtifacts[thread.id]
+        if (!hit) return []
+        const grant = resolveConversationCapabilities(thread.metadata?.conversationCapabilities)
+        const folder = grant.folderScope?.path ?? null
+        // A writable attached folder is the workspace root; otherwise relative
+        // tool paths were written into the thread's own sandbox.
+        const writableFolder = grant.folderScope?.access === 'write' ? folder : null
+        return hit.artifacts.map((artifact) => ({
+          ...artifact,
+          sessionId: thread.id,
+          kind: 'thread' as const,
+          sessionTitle: thread.title,
+          updated: toSeconds(thread.updated || 0),
+          roots: [writableFolder ?? hit.scratch, folder, hit.scratch].filter(
+            (root, i, all): root is string => !!root && all.indexOf(root) === i
+          ),
+        }))
+      }),
+      ...sessions.flatMap((session) => {
         const sandbox = workspaces[session.id] ?? null
         // The attached folder is the workspace root (#8882), so it comes first:
         // a relative tool path resolves against it, the sandbox is the fallback.
@@ -102,12 +196,14 @@ function ArtifactsPage() {
         return artifactsFromTurns(session.turns, root).map((artifact) => ({
           ...artifact,
           sessionId: session.id,
+          kind: 'session' as const,
           sessionTitle: session.title,
-          updated: session.updated,
+          updated: toSeconds(session.updated || 0),
           roots: [session.folder, sandbox],
         }))
-      }).sort((a, b) => b.updated - a.updated),
-    [sessions, workspaces]
+      }),
+    ].sort((a, b) => b.updated - a.updated),
+    [sessions, workspaces, scanned, threadArtifacts]
   )
 
   const shown = useMemo(() => {
@@ -126,6 +222,10 @@ function ArtifactsPage() {
   useEffect(() => setLimit(PAGE), [query, group])
 
   const open = (row: Row) => {
+    if (row.kind === 'thread') {
+      navigate({ to: route.threadsDetail, params: { threadId: row.sessionId } })
+      return
+    }
     useCoworkSessions.getState().selectSession(row.sessionId)
     useCoworkRun.getState().requestPreview(row.sessionId, row.path)
     navigate({ to: route.cowork })
@@ -166,7 +266,7 @@ function ArtifactsPage() {
           ) : (
             <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
               {shown.slice(0, limit).map((row) => (
-                <CoworkArtifactCard key={`${row.sessionId}:${row.path}`} variant="library" artifact={row} roots={row.roots} onPreview={() => open(row)} showPath />
+                <CoworkArtifactCard key={`${row.kind}:${row.sessionId}:${row.path}`} variant="library" artifact={row} roots={row.roots} onPreview={() => open(row)} showPath />
               ))}
             </div>
           )}

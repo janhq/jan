@@ -1,3 +1,5 @@
+import { setChatPlan } from '@/hooks/useChatPlan'
+import { PLAN_REVIEW_QUESTION_ID, EXECUTE_PLAN_LABEL, EXIT_PLAN_LABEL } from '@/lib/coworkPrompt'
 import { isChatRunNotice } from '@/lib/chatRunNotice'
 import type { ChatToolOutcome } from '@/lib/chatRunTransport'
 import { TOOL_DIFF_MAX_CHARS } from '@/lib/toolDiff'
@@ -12,11 +14,14 @@ import type { CSSProperties } from 'react'
 import {
   createFileRoute,
   redirect,
+  useNavigate,
   useParams,
   useRouter,
   useSearch,
 } from '@tanstack/react-router'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { route } from '@/constants/routes'
+import { ThreadAddFolderItem, ThreadWorkspacePill } from '@/containers/ThreadWorkspacePill'
 import { shouldRedirectThreadToCowork } from '@/lib/threadRouteGuard'
 import {
   resolveThreadForRoute,
@@ -576,6 +581,7 @@ export const Route = createFileRoute('/threads/$threadId')({
 })
 
 function ThreadDetail() {
+  const navigate = useNavigate()
   const serviceHub = useServiceHub()
   const makeMcpValidator = (toolName: string, serverName?: string) => memoizeMcpValidation(
     (signal) => assertMcpIdentityAvailable(
@@ -1075,6 +1081,7 @@ function ThreadDetail() {
       // one promise. Internal tools retain the existing Chat policy.
       // A conflicting id must not throw out of this SDK callback (that would
       // stop the whole turn): open no prompt, and dispatch refuses that call.
+      if (useChatSessions.getState().sessions[threadId]?.transport.planToolRefusal(toolCall.toolName, toolCall.input)) return
       let bound: ReturnType<typeof bindMcpCall>
       try { bound = bindMcpCall(toolCall) } catch { return }
       const { serverName, checkMcp } = bound
@@ -1146,6 +1153,8 @@ function ThreadDetail() {
       if (child) useChildApprovalCalls.getState().register(threadId, toolCall.toolCallId, toolCall.input)
       try {
         const toolName = toolCall.toolName
+        const planRefusal = useChatSessions.getState().sessions[threadId]?.transport.planToolRefusal(toolName, toolCall.input)
+        if (planRefusal) return { output: planRefusal, isError: true }
         // A child is bounded by what its parent had at dispatch: it may only use
         // names in the frozen parent record, never orchestration, and never a
         // grant wider than the parent's frozen ceiling.
@@ -1173,6 +1182,18 @@ function ThreadDetail() {
               chatMessagesRef.current,
             // Children re-enter THIS dispatch (same threadId, per-call grant,
             // classification and approval stores); never a second executor.
+            onAnswer: (request, answers) => {
+              if (!useChatSessions.getState().sessions[threadId]?.transport.isPlanActive() || request.questions.length !== 1 || request.questions[0].id !== PLAN_REVIEW_QUESTION_ID) return
+              const selection = answers?.length === 1 && answers[0].id === PLAN_REVIEW_QUESTION_ID && answers[0].selected.length === 1 ? answers[0].selected[0] : undefined
+              if (selection === EXECUTE_PLAN_LABEL || selection === EXIT_PLAN_LABEL) {
+                setChatPlan(threadId, false)
+                useChatSessions.getState().sessions[threadId]?.transport.executeReviewedPlan()
+              }
+              if (answers === null || selection === EXIT_PLAN_LABEL) {
+                // An explicit Exit/cancel stops this run rather than implementing.
+                void useChatSessions.getState().sessions[threadId]?.transport.cancelChatRun()
+              }
+            },
             onTask: (callId, input) => {
               const transport = useChatSessions.getState().sessions[threadId]?.transport
               if (!transport) return Promise.resolve({ output: CHAT_CLOSED_TOOL_ERROR, isError: true })
@@ -1259,6 +1280,9 @@ function ThreadDetail() {
         // closing rather than as the user's refusal.
         if (signal.aborted || isChatClosing()) return { output: CHAT_CLOSED_TOOL_ERROR, isError: true }
 
+        // Plan may have been enabled while an approval card was open.
+        const latePlanRefusal = useChatSessions.getState().sessions[threadId]?.transport.planToolRefusal(toolName, toolCall.input)
+        if (latePlanRefusal) return { output: latePlanRefusal, isError: true }
         throwIfApprovalValidationFailed(approved)
         if (!approved) {
           record({
@@ -2710,10 +2734,11 @@ function ThreadDetail() {
   }, [localThreadMessages])
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
+    <div className="relative flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
           <ConversationHeaderTitle title={thread?.title} project={thread?.metadata?.project} />
+          {contextualPanels.toggle}
         </div>
       </HeaderPage>
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -2761,6 +2786,7 @@ function ThreadDetail() {
                     onReasoningScrollToBottom={forceScrollReasoningToBottom}
                     onRegenerate={handleRegenerate}
                     onContinue={handleContinue}
+                    onNewConversation={() => navigate({ to: route.home })}
                     onEdit={handleEditMessage}
                     onDelete={handleDeleteMessage}
                     versionInfo={versionInfoById[message.id]}
@@ -2896,13 +2922,14 @@ function ThreadDetail() {
               />
             </div>
           )}
-          {contextualPanels.controls && (
-            <div className="pb-2">{contextualPanels.controls}</div>
-          )}
+          {/* The Overview rail (header toggle) lists todos, tasks, files and
+              changes, so the old chip row above the composer is not repeated. */}
           <ChatChildApprovals threadId={threadId} />
           <ChatMonitorNotices threadId={threadId} />
+          <ThreadWorkspacePill threadId={threadId} />
           <ChatInput
             model={threadModel}
+            menuWorkspace={<ThreadAddFolderItem threadId={threadId} />}
             onSubmit={handleSubmit}
             onStop={handleStop}
             onResumeQueue={handleResumeQueue}
@@ -2911,8 +2938,10 @@ function ThreadDetail() {
           />
         </ConversationColumn>
       </div>
+      {contextualPanels.overviewSpacer}
       {contextualPanels.rail}
       </div>
+      {contextualPanels.overview}
     </div>
   )
 }

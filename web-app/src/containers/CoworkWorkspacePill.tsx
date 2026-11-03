@@ -1,4 +1,4 @@
-import { Folder, FolderPlus, GitBranch, PencilLine } from 'lucide-react'
+import { Eye, Folder, FolderPlus, GitBranch, PencilLine } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -7,6 +7,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { basenameOf } from '@/lib/coworkPreview'
@@ -16,6 +17,12 @@ type Props = {
   /** Attached project folder, or null when the session is sandbox-only. */
   folder: string | null
   gitBranch?: string | null
+  /** What the agent may do in the folder. Old Cowork folders were always
+   * read and write, so that stays the default; a unified thread can grant read
+   * only, and the pill must not claim more than the grant. */
+  access?: 'read' | 'write'
+  /** When set, the popover offers an "Allow changes" switch for the folder. */
+  onAccessChange?: (access: 'read' | 'write') => void
   onAttach: () => void
   onDetach: () => void
 }
@@ -35,6 +42,8 @@ type Props = {
 export function CoworkWorkspacePill({
   folder,
   gitBranch,
+  access = 'write',
+  onAccessChange,
   onAttach,
   onDetach,
 }: Props) {
@@ -96,7 +105,7 @@ export function CoworkWorkspacePill({
             : 'shrink-0 text-muted-foreground'}
           aria-label={
             folderName
-              ? t('common:workspace.a11yWithFolder', { folder: folderName })
+              ? t(access === 'write' ? 'common:workspace.a11yWithFolder' : 'common:workspace.a11yWithFolderReadOnly', { folder: folderName })
               : t('common:workspace.a11yNoFolder')
           }
         >
@@ -123,8 +132,8 @@ export function CoworkWorkspacePill({
               <Folder size={14} className="shrink-0 text-muted-foreground" />
               <span className="truncate text-sm font-medium">{folderName}</span>
               <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
-                <PencilLine size={10} />
-                {t('common:workspace.writable')}
+                {access === 'write' ? <PencilLine size={10} /> : <Eye size={10} />}
+                {t(access === 'write' ? 'common:workspace.writable' : 'common:workspace.readOnly')}
               </span>
             </div>
             <p
@@ -161,9 +170,19 @@ export function CoworkWorkspacePill({
           </>
         ) : null}
 
+        {folder && onAccessChange && (
+          <label className="mb-2 flex items-center gap-2 text-sm">
+            <span className="flex-1">{t('common:workspace.allowChanges')}</span>
+            <Switch
+              checked={access === 'write'}
+              onCheckedChange={(on) => onAccessChange(on ? 'write' : 'read')}
+            />
+          </label>
+        )}
+
         <p className="text-xs text-muted-foreground">
           {folder
-            ? t('common:workspace.footnote')
+            ? t(access === 'write' ? 'common:workspace.footnote' : 'common:workspace.footnoteReadOnly')
             : t('common:workspace.footnoteEmpty')}
         </p>
 

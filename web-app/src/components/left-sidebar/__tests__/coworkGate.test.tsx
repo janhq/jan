@@ -68,13 +68,14 @@ it('renders one sidebar: navigation, projects and a single history, with no tab 
   expect(screen.queryByRole('link', { name: 'common:home' })).not.toBeInTheDocument()
 })
 
-it('hides the Cowork-only entries where Cowork is not available', () => {
+it('offers Artifacts and Skills on every build, including where the Cowork surface is off', () => {
+  channel.cowork = false
   render(<LeftSidebar />)
-  expect(screen.queryByTestId('nav-artifacts')).not.toBeInTheDocument()
-  expect(screen.queryByTestId('nav-customize')).not.toBeInTheDocument()
+  expect(screen.getByTestId('nav-artifacts')).toBeInTheDocument()
+  expect(screen.getByTestId('nav-customize')).toBeInTheDocument()
 })
 
-it('shows Artifacts and Skills where Cowork ships, without replacing the rest', () => {
+it('places Artifacts and Skills without replacing the rest of the navigation', () => {
   channel.cowork = true
   render(<LeftSidebar />)
   expect(screen.getByTestId('nav-artifacts')).toBeInTheDocument()
