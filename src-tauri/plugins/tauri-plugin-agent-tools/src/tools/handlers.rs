@@ -668,11 +668,39 @@ fn remember_notes(
     }
 }
 
+/// Open an already-resolved read target by component, refusing any link. The
+/// only place `read` touches the filesystem after `landing`, so a parent swapped
+/// to a symlink between the two is refused here rather than followed.
+async fn read_resolved(resolved: &Path, shown: &str) -> Result<Vec<u8>, String> {
+    let read_path = resolved.to_path_buf();
+    match tokio::task::spawn_blocking(move || nofollow::read(&read_path)).await {
+        Ok(Ok(b)) => Ok(b),
+        Ok(Err(e)) if nofollow::is_link_refused(&e) => Err(format!(
+            "ERROR: refused to read through a symlink out of the workspace: {shown}"
+        )),
+        Ok(Err(e)) => Err(format!("ERROR: {e}")),
+        Err(e) => Err(format!("ERROR: {e}")),
+    }
+}
+
 async fn read(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
     read_roots: &[PathBuf],
+) -> (String, Option<Vec<ImageContentPart>>) {
+    read_with(args, root, scratch, read_roots, |_| {}).await
+}
+
+/// `read` with a hook run after the path is resolved and before it is opened.
+/// Private: production passes a no-op; tests use it to swap a parent in exactly
+/// that window. It receives the resolved path only and can't change it.
+async fn read_with(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    read_roots: &[PathBuf],
+    before_open: impl FnOnce(&Path),
 ) -> (String, Option<Vec<ImageContentPart>>) {
     let Some(path) = arg_str(args, "path") else {
         return ("ERROR: missing required argument 'path'".to_string(), None);
@@ -699,17 +727,10 @@ async fn read(
         }
     };
 
-    let read_path = resolved.clone();
-    let bytes = match tokio::task::spawn_blocking(move || nofollow::read(&read_path)).await {
-        Ok(Ok(b)) => b,
-        Ok(Err(e)) if nofollow::is_link_refused(&e) => {
-            return (
-                format!("ERROR: refused to read through a symlink out of the workspace: {path}"),
-                None,
-            );
-        }
-        Ok(Err(e)) => return (format!("ERROR: {e}"), None),
-        Err(e) => return (format!("ERROR: {e}"), None),
+    before_open(&resolved);
+    let bytes = match read_resolved(&resolved, path).await {
+        Ok(b) => b,
+        Err(msg) => return (msg, None),
     };
 
     // An image file is returned as an OpenAI `image_url` content part rather
@@ -3140,6 +3161,41 @@ mod tests {
             assert!(out.starts_with("ERROR: refused to read"), "{path}: {out}");
             assert!(!out.contains("classified"), "{path}: leaked: {out}");
         }
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// The race itself, made deterministic: the path is clean when `landing`
+    /// classifies it, then a parent directory is swapped for a link to an outside
+    /// tree after resolution and before the open. `read` must refuse and never
+    /// return the outside secret. Kills `nofollow::read` -> `std::fs::read`.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_refuses_a_parent_swapped_after_resolution() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("sub/doc.txt"), b"ordinary").unwrap();
+        std::fs::write(outside.join("doc.txt"), b"classified").unwrap();
+
+        let swap_root = root.clone();
+        let swap_out = outside.clone();
+        let mut swapped = false;
+        let (out, image) = read_with(&json!({"path": "sub/doc.txt"}), &root, None, &[], |resolved| {
+            assert!(resolved.ends_with("sub/doc.txt"), "{resolved:?}");
+            std::fs::rename(swap_root.join("sub"), swap_root.join("sub-real")).unwrap();
+            std::os::unix::fs::symlink(&swap_out, swap_root.join("sub")).unwrap();
+            swapped = true;
+        })
+        .await;
+        assert!(swapped, "hook must run between landing and open");
+        assert!(image.is_none());
+        assert!(out.starts_with("ERROR: refused to read"), "got: {out}");
+        assert!(!out.contains("classified"), "leaked: {out}");
+
+        // No swap: the ordinary in-root file is still read through the same seam.
+        let (ok, _) = read_with(&json!({"path": "sub-real/doc.txt"}), &root, None, &[], |_| {}).await;
+        assert_eq!(ok, "ordinary");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
     }
