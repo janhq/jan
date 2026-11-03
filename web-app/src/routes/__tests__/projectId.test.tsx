@@ -256,6 +256,7 @@ describe('Project route single Chat flow', () => {
     '/?x-temporary-chat=true',
     '/?temporary-chat=truex',
     '/?temporary-chat=false',
+    '/?temporary-chat=false&temporary-chat=true',
     '/?other=temporary-chat%3Dtrue',
   ])('does not treat %s as temporary mode', (url) => {
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
@@ -264,7 +265,7 @@ describe('Project route single Chat flow', () => {
     expect(screen.getByTestId('project-scope-consent-trigger')).toBeInTheDocument()
   })
 
-  it.each(['/?temporary-chat=true', '/?a=1&temporary-chat=true'])(
+  it.each(['/?temporary-chat=true', '/?a=1&temporary-chat=true', '/?temporary%2Dchat=true', '/?temporary-chat=%74rue'])(
     'treats %s as temporary mode exactly',
     (url) => {
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] }

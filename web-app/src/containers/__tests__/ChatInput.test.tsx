@@ -276,6 +276,10 @@ vi.mock('@/containers/ComposerModelPicker', () => ({
 }))
 
 const navigateMock = vi.fn()
+// Router location search the component reads. null falls back to the jsdom URL
+// so URL-driven tests exercise the same string the router would report; set a
+// string to make router and window deliberately disagree.
+let routerSearchOverride: string | null = null
 const expandPromptReferencesMock = vi.fn(async (text: string) => ({ text, resolvedContents: '' }))
 vi.mock('@/lib/path-references', () => ({
   expandPromptReferences: (text: string) => expandPromptReferencesMock(text),
@@ -283,7 +287,10 @@ vi.mock('@/lib/path-references', () => ({
 }))
 
 vi.mock('@tanstack/react-router', () => ({
-  useRouter: () => ({ navigate: navigateMock }),
+  useRouter: () => ({
+    navigate: navigateMock,
+    state: { location: { searchStr: routerSearchOverride ?? window.location.search } },
+  }),
   Link: ({ children, ...props }: any) => <a {...props}>{children}</a>,
 }))
 
@@ -535,6 +542,7 @@ describe('ChatInput', () => {
       attachmentsList = [{ type: 'document', name: 'notes.txt', path: '/notes.txt' }]
       sessionStorage.clear()
       window.history.replaceState({}, '', '/')
+      routerSearchOverride = null
       createThreadMock.mockClear()
       rollbackCreatedThreadMock.mockReset().mockResolvedValue(undefined)
       navigateMock.mockClear()
@@ -772,6 +780,62 @@ describe('ChatInput', () => {
       expect(prepare).not.toHaveBeenCalled()
       expect(createThreadMock).not.toHaveBeenCalled()
       expect(setPromptMock).toHaveBeenCalledWith('')
+    })
+
+    it.each([
+      `?${TEMPORARY_CHAT_QUERY_ID}=true`,
+      `?temporary%2Dchat=true`,
+      `?temporary-chat=%74rue`,
+      `?a=1&temporary-chat=true`,
+    ])('treats %s as temporary: no persistent create, no preparation', (search) => {
+      window.history.replaceState({}, '', `/${search}`)
+      const prepare = vi.fn(() => async () => true)
+      renderInput({ prepareThreadCreation: prepare })
+      send()
+      expect(toast.info).toHaveBeenCalledWith(expect.stringContaining('regular chat'))
+      expect(prepare).not.toHaveBeenCalled()
+      expect(createThreadMock).not.toHaveBeenCalled()
+      expect(navigateMock).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      '?temporary-chat=truex',
+      '?x-temporary-chat=true',
+      '?temporary-chat=false&temporary-chat=true',
+      '?temporary-chat=True',
+      '?other=temporary-chat%3Dtrue',
+    ])('treats %s as a normal chat', async (search) => {
+      window.history.replaceState({}, '', `/${search}`)
+      const prepare = vi.fn(() => async () => true)
+      renderInput({ prepareThreadCreation: prepare })
+      send()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      expect(prepare).toHaveBeenCalledTimes(1)
+      expect(toast.info).not.toHaveBeenCalledWith(expect.stringContaining('regular chat'))
+    })
+
+    it('encoded key creates no persistent thread without preparation either', async () => {
+      window.history.replaceState({}, '', '/?temporary%2Dchat=true')
+      renderInput()
+      send()
+      await waitFor(() => expect(navigateMock).toHaveBeenCalled())
+      expect(createThreadMock).not.toHaveBeenCalled()
+    })
+
+    it('reads the router location, not window.location', async () => {
+      window.history.replaceState({}, '', '/?temporary-chat=true')
+      routerSearchOverride = ''
+      renderInput()
+      send()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      cleanup()
+      createThreadMock.mockClear()
+      window.history.replaceState({}, '', '/')
+      routerSearchOverride = '?temporary-chat=true'
+      renderInput()
+      send()
+      await waitFor(() => expect(navigateMock).toHaveBeenCalled())
+      expect(createThreadMock).not.toHaveBeenCalled()
     })
 
     it.each([false, true])('keeps default creation unchanged without preparation (temporary=%s)', async (temporary) => {

@@ -1,4 +1,4 @@
-import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
+import { isTemporaryChatSearch } from '@/constants/chat'
 import { createFileRoute, useLocation, useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
@@ -103,7 +103,7 @@ function ProjectPageContent() {
   const modelSupportsTools =
     selectedModel?.capabilities?.includes('tools') ?? false
   const searchStr = useLocation({ select: (location) => location.searchStr })
-  const isTemporaryChat = new URLSearchParams(searchStr).get(TEMPORARY_CHAT_QUERY_ID) === 'true'
+  const isTemporaryChat = isTemporaryChatSearch(searchStr)
   const chatScopeAvailable = modelSupportsTools && !isTemporaryChat
   // Truthful unsupported reason; ordinary direct chat is never refused.
   const scopeUnsupportedReason = !modelSupportsTools
