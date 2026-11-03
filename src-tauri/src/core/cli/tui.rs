@@ -2925,6 +2925,11 @@ struct Transcript {
     /// reasoning with prose in emission order, and what lets `reasoning_open`
     /// tell "still reasoning" from "prose has started".
     reasoning_segs: Vec<ReasoningSeg>,
+    /// `(reasoning, answer)` this step committed to the transcript before it
+    /// ended, when an event of its own (a child finishing, a notice) landed
+    /// mid-answer. The rows show it already; it is kept so the turn's answer
+    /// still reaches `history` whole (see `take_answer`). Cleared each step.
+    step_said: (String, String),
     /// What `assistant_buf` has said so far (answer started, think block
     /// open), folded in as tokens append; see `BufScan`. Reset wherever the
     /// buffer is cleared or replaced.
@@ -3105,6 +3110,8 @@ impl Transcript {
 
     /// A new model request began.
     fn step(&mut self) {
+        // The step that just ended went to history with its tool calls.
+        self.step_said = Default::default();
         // Only flush (and thereby close the tool group) once the model
         // has produced answer prose; a turn that only reasoned or only
         // called tools keeps the group open so the next turn's calls
@@ -4484,11 +4491,24 @@ impl Transcript {
         self.scan_buf().answer
     }
 
-    /// Flush the current turn and return its text as the final assistant answer.
+    /// Flush the current turn and return its text as the final assistant
+    /// answer, with whatever an event mid-answer committed early.
     fn take_answer(&mut self) -> String {
-        let answer = self.assistant_buf.trim().to_string();
+        let (_, said) = std::mem::take(&mut self.step_said);
+        let answer = format!("{said}{}", self.assistant_buf).trim().to_string();
         self.flush_assistant();
         answer
+    }
+
+    /// Commit the step's output so far, for an event that lands as a row of
+    /// its own mid-answer, while keeping what it said for `take_answer`.
+    fn commit_mid_step(&mut self) {
+        self.finalize_tool_group();
+        for seg in &self.reasoning_segs {
+            self.step_said.0.push_str(&seg.text);
+        }
+        self.step_said.1.push_str(&self.assistant_buf);
+        self.flush_assistant();
     }
 
     /// The concatenated natively-streamed reasoning text for the current turn.
@@ -4498,10 +4518,8 @@ impl Transcript {
     /// this covers the `reasoning_content` delta case, which never touches the
     /// buffer.
     fn native_reasoning_text(&self) -> String {
-        self.reasoning_segs
-            .iter()
-            .map(|s| s.text.clone())
-            .collect::<String>()
+        let live = self.reasoning_segs.iter().map(|s| s.text.as_str());
+        std::iter::once(self.step_said.0.as_str()).chain(live).collect()
     }
 
     /// Render a user turn: the prompt line, then one dotted connector row per
@@ -6279,6 +6297,7 @@ impl App {
         self.transcript.assistant_buf.clear();
         self.transcript.reset_buf_scan();
         self.transcript.reasoning_segs.clear();
+        self.transcript.step_said = Default::default();
         self.message_queue.clear();
         self.pending_queue.clear();
         self.ask_queue.clear();
@@ -6607,8 +6626,7 @@ impl App {
         // The end is an event of its own: what the parent said and did before
         // it is committed first, so it lands below that and a later call opens
         // a new group under it, as the journal's replay lays it out.
-        self.transcript.finalize_tool_group();
-        self.transcript.flush_assistant();
+        self.transcript.commit_mid_step();
         let name = panel.name.clone();
         let elapsed = panel.started.map(|s| s.elapsed().as_secs());
         self.transcript.log(DisplayEntry::Subagent {
@@ -9006,8 +9024,7 @@ impl App {
             // emitted as the loop delivers the `<SYSTEM>` text to the model.
             // Recorded when it lands as a note (see `notice`).
             StreamEvent::Notice { text } => {
-                self.transcript.finalize_tool_group();
-                self.transcript.flush_assistant();
+                self.transcript.commit_mid_step();
                 self.notice(&text, None);
             }
             // A subagent's message reaching the main agent: its one entry,
@@ -23580,6 +23597,7 @@ fn rebuild_transcript(app: &mut App) {
     app.transcript.assistant_buf.clear();
     app.transcript.reset_buf_scan();
     app.transcript.reasoning_segs.clear();
+    app.transcript.step_said = Default::default();
     app.transcript.last_kind = Kind::None;
     if !app.transcript.display_log.is_empty() {
         let logged = std::mem::take(&mut app.transcript.display_log);
@@ -23671,6 +23689,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     app.transcript.assistant_buf.clear();
     app.transcript.reset_buf_scan();
     app.transcript.reasoning_segs.clear();
+    app.transcript.step_said = Default::default();
     app.turn = (0, 0);
     app.scrollback = 0;
     app.message_queue.clear();
@@ -27466,6 +27485,44 @@ mod tests {
         let mut resumed = test_app();
         replay_display_log(&mut resumed, app.transcript.display_log.clone());
         order(&transcript_text(&resumed), &["a.rs", "Finished explore", "b.rs"]);
+    }
+
+    /// A child ending in the middle of the parent's answer commits the part
+    /// streamed so far to the transcript, but `history` still gets the whole
+    /// answer and its reasoning, not just what streamed after the child ended.
+    #[test]
+    fn a_child_ending_mid_answer_keeps_the_whole_answer_in_history() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            task: Some("look".into()),
+            workspace: None,
+            internal: false,
+        });
+        app.apply(StreamEvent::Reasoning { text: "Think first.".into() });
+        app.apply(StreamEvent::Token { text: "The answer ".into() });
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            error: None,
+        });
+        app.apply(StreamEvent::Reasoning { text: " Then more.".into() });
+        app.apply(StreamEvent::Token { text: "is ".into() });
+        // A notice lands the same way, and a second commit adds nothing twice.
+        app.apply(StreamEvent::Notice { text: "monitor matched".into() });
+        app.apply(StreamEvent::Token { text: "42.".into() });
+        app.on_done("stop".into(), None);
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "The answer is 42.");
+        assert_eq!(last["reasoning_content"], "Think first. Then more.");
+        // A new step's answer starts clean: what the last step said went to
+        // history with that step.
+        app.submit_user("again".into());
+        app.apply(StreamEvent::Token { text: "Fresh.".into() });
+        app.on_done("stop".into(), None);
+        assert_eq!(app.history.last().unwrap()["content"], "Fresh.");
     }
 
     /// A dispatch that names no child it can parse still has its header, so
