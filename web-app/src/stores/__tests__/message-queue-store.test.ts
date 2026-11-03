@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { useMessageQueue } from '../message-queue-store'
 
 function resetStore() {
-  useMessageQueue.setState({ queues: {}, paused: {} })
+  useMessageQueue.setState({ queues: {}, paused: {}, generations: {} })
 }
 
 function makeMessage(id: string, text: string) {
@@ -206,6 +206,28 @@ describe('useMessageQueue', () => {
       expect(useMessageQueue.getState().isPaused('t1')).toBe(true)
       useMessageQueue.getState().resume('t2')
       expect(useMessageQueue.getState().isPaused('t1')).toBe(true)
+    })
+  })
+
+  describe('clear generation', () => {
+    it('bumps on every clearQueue, even of an empty or missing queue', () => {
+      expect(useMessageQueue.getState().getToken('t1')).toBe(0)
+      useMessageQueue.getState().clearQueue('t1')
+      expect(useMessageQueue.getState().getToken('t1')).toBe(1)
+      useMessageQueue.getState().enqueue('t1', makeMessage('a', 'A'))
+      useMessageQueue.getState().clearQueue('t1')
+      expect(useMessageQueue.getState().getToken('t1')).toBe(2)
+    })
+
+    it('is per thread and unaffected by dequeue, pause or resume', () => {
+      const q = useMessageQueue.getState()
+      q.enqueue('t1', makeMessage('a', 'A'))
+      q.dequeue('t1')
+      q.pause('t1')
+      useMessageQueue.getState().resume('t1')
+      useMessageQueue.getState().clearQueue('t2')
+      expect(useMessageQueue.getState().getToken('t1')).toBe(0)
+      expect(useMessageQueue.getState().getToken('t2')).toBe(1)
     })
   })
 })

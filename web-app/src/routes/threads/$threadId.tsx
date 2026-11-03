@@ -542,13 +542,31 @@ function restoreSubmittedDraft(args: {
   return false
 }
 
-/** Puts a dequeued item back at the head of its thread's queue. */
-function restoreQueueHead(threadId: string, item: QueuedMessage) {
+/**
+ * Puts a dequeued item back at the head of its thread's queue, unless the
+ * queue was cleared (explicitly or by leaving the thread) after the dequeue:
+ * `token` is the thread's generation captured at dequeue. When the SDK is
+ * already in error for this same thread, the restored head is held right away:
+ * the error's own pause ran while the queue was empty and was a no-op, so
+ * without this a new submission could drain ahead of the restored item.
+ */
+function restoreQueueHead(
+  threadId: string,
+  item: QueuedMessage,
+  token: number,
+  live: { status: string; threadId: string }
+): boolean {
+  const store = useMessageQueue.getState()
+  if (store.getToken(threadId) !== token) return false
   useMessageQueue.setState((state) => {
     const queue = state.queues[threadId] ?? []
     if (queue.some((m) => m.id === item.id)) return state
     return { queues: { ...state.queues, [threadId]: [item, ...queue] } }
   })
+  if (live.status === 'error' && live.threadId === threadId) {
+    useMessageQueue.getState().pause(threadId)
+  }
+  return true
 }
 
 export const Route = createFileRoute('/threads/$threadId')({
@@ -2537,8 +2555,11 @@ function ThreadDetail() {
   // The epoch object is replaced whenever the thread or the status changes, so
   // a rejection that lands later can tell it no longer owns the current state.
   const statusEpochRef = useRef<{ threadId: string }>({ threadId })
+  // The live (status, thread) a late rejection judges itself against.
+  const liveRef = useRef<{ status: string; threadId: string }>({ status, threadId })
   useEffect(() => {
     statusEpochRef.current = { threadId }
+    liveRef.current = { status, threadId }
   }, [status, threadId])
   // The queue send in flight, with the thread it belongs to.
   const processingQueueRef = useRef<{ threadId: string } | null>(null)
@@ -2566,6 +2587,7 @@ function ThreadDetail() {
     if (!next) return
 
     const owner = statusEpochRef.current
+    const queueToken = useMessageQueue.getState().getToken(threadId)
     const token = { threadId }
     processingQueueRef.current = token
     sendQueuedMessage(next.text)
@@ -2574,8 +2596,9 @@ function ThreadDetail() {
         // this rejection still owns the thread and status it was sent in; a
         // slow rejection after the status moved on or the thread changed must
         // not block a newer epoch.
+        // A queue cleared meanwhile stays cleared: nothing is put back.
         if (statusEpochRef.current === owner) queueRetryBlockedRef.current = owner
-        restoreQueueHead(threadId, next)
+        restoreQueueHead(threadId, next, queueToken, liveRef.current)
         console.error('Failed to send queued message:', err)
       })
       .finally(() => {

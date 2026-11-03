@@ -16,7 +16,13 @@ interface MessageQueueState {
   // its own and later submissions append behind it, until the user resumes or
   // clears it.
   paused: Record<string, boolean>
+  // Per-thread generation, bumped by every clearQueue (even of an empty queue).
+  // An in-flight send captures it at dequeue and may only put its item back
+  // while the generation is unchanged, so a late rejection can never recreate
+  // a queue the user cleared or the thread dropped.
+  generations: Record<string, number>
 
+  getToken: (threadId: string) => number
   pause: (threadId: string) => void
   resume: (threadId: string) => void
   isPaused: (threadId: string) => boolean
@@ -40,6 +46,9 @@ function withoutPause(
 export const useMessageQueue = create<MessageQueueState>((set, get) => ({
   queues: {},
   paused: {},
+  generations: {},
+
+  getToken: (threadId) => get().generations[threadId] ?? 0,
 
   // Only a non-empty queue can be held: there is nothing to protect otherwise.
   pause: (threadId) => {
@@ -93,11 +102,15 @@ export const useMessageQueue = create<MessageQueueState>((set, get) => ({
 
   clearQueue: (threadId) => {
     set((state) => {
+      const generations = {
+        ...state.generations,
+        [threadId]: (state.generations[threadId] ?? 0) + 1,
+      }
       const cleared = withoutPause(state, threadId)
-      if (!state.queues[threadId]?.length) return cleared ?? state
+      if (!state.queues[threadId]?.length) return { generations, ...cleared }
       const updated = { ...state.queues }
       delete updated[threadId]
-      return { queues: updated, ...cleared }
+      return { queues: updated, generations, ...cleared }
     })
   },
 

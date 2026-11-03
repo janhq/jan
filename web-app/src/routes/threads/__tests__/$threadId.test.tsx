@@ -159,6 +159,8 @@ const h = vi.hoisted(() => {
     pause: vi.fn(),
     resume: vi.fn(),
     isPaused: vi.fn(() => false),
+    generations: {} as Record<string, number>,
+    getToken: vi.fn((id: string) => messageQueueState.generations[id] ?? 0),
   }
   const bindPauseMock = () => {
     messageQueueState.paused = {}
@@ -638,6 +640,7 @@ describe('ThreadDetail route', () => {
     h.messageQueueState.dequeue = vi.fn(() => null)
     h.messageQueueState.clearQueue = vi.fn()
     h.messageQueueState.queues = {}
+    h.messageQueueState.generations = {}
     h.bindPauseMock()
     h.mockClearError.mockReset()
     h.mockClearError.mockImplementation(() => {
@@ -890,6 +893,146 @@ describe('ThreadDetail route', () => {
       expect(h.messageQueueState.resume).toHaveBeenCalledWith('thread-1')
       expect(h.messageQueueState.paused['thread-2']).toBe(true)
       expect(h.messageQueueState.queues['thread-2']).toHaveLength(1)
+    })
+  })
+
+  describe('late queue rejection after the queue lifetime moved on', () => {
+    const a = { id: 'q-a', text: 'queued A', createdAt: 1 }
+    const c = { id: 'q-c', text: 'queued C', createdAt: 3 }
+    const deferred = () => {
+      let reject!: (e: Error) => void
+      const promise = new Promise<void>((_res, rej) => { reject = rej })
+      return { promise, reject }
+    }
+    // Mirrors the real store: clearing bumps the generation even when empty.
+    const realClear = () => {
+      h.messageQueueState.clearQueue = vi.fn((id: string) => {
+        h.messageQueueState.generations[id] = (h.messageQueueState.generations[id] ?? 0) + 1
+        delete h.messageQueueState.queues[id]
+        delete h.messageQueueState.paused[id]
+      })
+    }
+    const seed = (queues: Record<string, any[]>) => {
+      h.messageQueueState.queues = queues
+      h.messageQueueState.dequeue = vi.fn((id: string) => h.messageQueueState.queues[id]?.shift() ?? null)
+      realClear()
+    }
+    afterEach(() => {
+      h.routeParams.threadId = 'thread-1'
+      delete h.threadsState.threads['thread-2']
+      h.chatState.status = 'ready'
+      h.chatState.error = null
+    })
+
+    it('holds a single A restored after the SDK errored, so a new C cannot bypass it', async () => {
+      seed({ 'thread-1': [a] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      // Queue is empty while A is in flight, so the error's pause is a no-op.
+      h.chatState.status = 'error'
+      h.chatState.error = new Error('SDK stream failed')
+      rerender(<Component />)
+      await act(async () => {})
+      expect(h.messageQueueState.paused['thread-1']).toBeUndefined()
+
+      await act(async () => { first.reject(new Error('Chat turn already running')) })
+      await act(async () => {})
+      expect(h.messageQueueState.queues['thread-1']).toEqual([a])
+      expect(h.messageQueueState.paused['thread-1']).toBe(true)
+
+      // New C lands behind the held A; ready alone does not drain.
+      h.messageQueueState.queues['thread-1'].push(c)
+      h.chatState.status = 'ready'
+      h.chatState.error = null
+      rerender(<Component />)
+      await act(async () => {})
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+      expect(h.messageQueueState.queues['thread-1']).toEqual([a, c])
+      log.mockRestore()
+    })
+
+    it('does not pause a restored head when the error belongs to another thread', async () => {
+      seed({ 'thread-1': [a], 'thread-2': [] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      h.threadsState.threads['thread-2'] = {
+        id: 'thread-2', title: 'Other', metadata: {}, assistants: [],
+        model: { id: 'gpt-x', provider: 'openai' },
+      }
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      // The view moves to thread-2, which is the one in error. The thread
+      // drop does not clear thread-1 here (mocked generation stays), so the
+      // restore lands, but it must not be held by thread-2's error.
+      h.messageQueueState.clearQueue = vi.fn()
+      h.routeParams.threadId = 'thread-2'
+      h.chatState.status = 'error'
+      h.chatState.error = new Error('SDK stream failed')
+      rerender(<Component />)
+      await act(async () => {})
+      await act(async () => { first.reject(new Error('Chat turn already running')) })
+      await act(async () => {})
+      expect(h.messageQueueState.queues['thread-1']).toEqual([a])
+      expect(h.messageQueueState.paused['thread-1']).toBeUndefined()
+      expect(h.messageQueueState.paused['thread-2']).toBeUndefined()
+      log.mockRestore()
+    })
+
+    it('explicit Clear while A is in flight: the late rejection re-adds nothing', async () => {
+      seed({ 'thread-1': [a] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      // The queue is empty (A dequeued); the user's Clear still invalidates A.
+      act(() => { h.messageQueueState.clearQueue('thread-1') })
+      h.chatState.status = 'error'
+      h.chatState.error = new Error('SDK stream failed')
+      rerender(<Component />)
+      await act(async () => {})
+
+      await act(async () => { first.reject(new Error('Chat turn already running')) })
+      await act(async () => {})
+      expect(h.messageQueueState.queues['thread-1']).toBeUndefined()
+      expect(h.messageQueueState.paused['thread-1']).toBeUndefined()
+      expect(log).toHaveBeenCalledWith('Failed to send queued message:', expect.any(Error))
+      log.mockRestore()
+    })
+
+    it('thread navigation clears the old queue and a late rejection does not resurrect it', async () => {
+      seed({ 'thread-1': [a], 'thread-2': [] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      h.threadsState.threads['thread-2'] = {
+        id: 'thread-2', title: 'Other', metadata: {}, assistants: [],
+        model: { id: 'gpt-x', provider: 'openai' },
+      }
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const Component = Route.component as React.ComponentType
+      const { rerender, unmount } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      h.routeParams.threadId = 'thread-2'
+      rerender(<Component />)
+      await act(async () => {})
+      expect(h.messageQueueState.clearQueue).toHaveBeenCalledWith('thread-1')
+
+      await act(async () => { first.reject(new Error('Chat turn already running')) })
+      await act(async () => {})
+      expect(h.messageQueueState.queues['thread-1']).toBeUndefined()
+      expect(h.messageQueueState.paused['thread-1']).toBeUndefined()
+
+      // Unmounting the route likewise leaves nothing behind for thread-2.
+      unmount()
+      expect(h.messageQueueState.clearQueue).toHaveBeenCalledWith('thread-2')
+      log.mockRestore()
     })
   })
 
