@@ -39,7 +39,7 @@ import {
   isConversationFolderPath,
   type ConversationCapabilitiesV1,
 } from '@/lib/conversationCapabilities'
-import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
+import { isTemporaryChatSearch } from '@/constants/chat'
 import { useThreads } from '@/hooks/useThreads'
 
 export const Route = createFileRoute(route.home as any)({
@@ -92,7 +92,7 @@ function Index() {
   // preserved but the prepare path is removed, so ordinary temporary scratch
   // sends are unchanged.
   const searchStr = useLocation({ select: (location) => location.searchStr })
-  const isTemporaryChat = new URLSearchParams(searchStr).get(TEMPORARY_CHAT_QUERY_ID) === 'true'
+  const isTemporaryChat = isTemporaryChatSearch(searchStr)
   const modelSupportsTools =
     selectedModel?.capabilities?.includes('tools') ?? false
   const chatScopeAvailable = !isTemporaryChat && modelSupportsTools

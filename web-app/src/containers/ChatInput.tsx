@@ -63,7 +63,7 @@ import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import {
   TEMPORARY_CHAT_ID,
-  TEMPORARY_CHAT_QUERY_ID,
+  isTemporaryChatSearch,
   SESSION_STORAGE_KEY,
   SESSION_STORAGE_PREFIX,
 } from '@/constants/chat'
@@ -681,8 +681,9 @@ const ChatInput = memo(function ChatInput({
     // Capture consent before reference expansion or project loading can yield.
     // Custom submit surfaces own their lifecycle; temporary chats cannot own
     // persistent grants and must refuse before any send side effects.
-    const isTemporaryChat = window.location.search.includes(
-      `${TEMPORARY_CHAT_QUERY_ID}=true`
+    // Same source and parser as the home/project routes (router location).
+    const isTemporaryChat = isTemporaryChatSearch(
+      router.state.location.searchStr
     )
     const previousThreadId = currentThreadId
     let finishThreadCreation: ((threadId: string) => Promise<boolean>) | undefined

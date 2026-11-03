@@ -377,13 +377,23 @@ describe('Index route', () => {
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     })
 
-    it.each(['/?x-temporary-chat=true', '/?temporary-chat=truex', '/?temporary-chat=false', '/?other=temporary-chat%3Dtrue'])(
+    it.each(['/?x-temporary-chat=true', '/?temporary-chat=truex', '/?temporary-chat=false', '/?temporary-chat=false&temporary-chat=true', '/?other=temporary-chat%3Dtrue'])(
       'does not treat %s as temporary mode',
       (url) => {
         h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
         window.history.replaceState({}, '', url)
         renderComponent()
         expect(screen.getByTestId('home-scope-consent-trigger')).toBeInTheDocument()
+      }
+    )
+
+    it.each(['/?temporary%2Dchat=true', '/?temporary-chat=%74rue'])(
+      'treats encoded %s as temporary mode',
+      (url) => {
+        h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+        window.history.replaceState({}, '', url)
+        renderComponent()
+        expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
       }
     )
 
