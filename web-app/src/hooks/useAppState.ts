@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
 import { MCPTool } from '@/types/completion'
+import { MCPPrompt } from '@janhq/core'
 
 export type PromptProgress = {
   cache: number
@@ -30,9 +31,11 @@ type AppErrorMessage = {
 }
 
 type AppState = {
+  inputFromPrompt: string,
   streamingContent?: ThreadMessage
   loadingModel?: boolean
-  tools: MCPTool[]
+  tools: MCPTool[],
+  mcpPrompts: MCPPrompt[],
   ragToolNames: Set<string>
   mcpToolNames: Set<string>
   serverStatus: 'running' | 'stopped' | 'pending'
@@ -64,10 +67,12 @@ type AppState = {
 
   setOomError: (line: string | undefined) => void
   setBackendError: (line: string | undefined) => void
+  setInputFromPrompt: (input: string) => void
 
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
-  updateLoadingModel: (loading: boolean) => void
+  updateLoadingModel: (loading: boolean) => void,
+  updateMcpPrompts: (prompts: MCPPrompt[]) => void,
   updateTools: (tools: MCPTool[]) => void
   updateRagToolNames: (names: string[]) => void
   updateMcpToolNames: (names: string[]) => void
@@ -117,9 +122,11 @@ type AppState = {
 }
 
 export const useAppState = create<AppState>()((set) => ({
+  inputFromPrompt: '',
   streamingContent: undefined,
   loadingModel: false,
   tools: [],
+  mcpPrompts: [],
   ragToolNames: new Set<string>(),
   mcpToolNames: new Set<string>(),
   serverStatus: 'stopped',
@@ -172,6 +179,7 @@ export const useAppState = create<AppState>()((set) => ({
   updateLoadingModel: (loading) => {
     set({ loadingModel: loading })
   },
+  updateMcpPrompts: (mcpPrompts) => set({ mcpPrompts }),
   updateTools: (tools) => {
     set({ tools })
   },
@@ -181,6 +189,7 @@ export const useAppState = create<AppState>()((set) => ({
   updateMcpToolNames: (names) => {
     set({ mcpToolNames: new Set(names) })
   },
+  setInputFromPrompt: (input) => set({ pendingInput: input }),
   setServerStatus: (value) => set({ serverStatus: value }),
   setAbortController: (threadId, controller) => {
     set((state) => ({

@@ -13,6 +13,7 @@ import { useMessages } from '@/hooks/useMessages'
 import { useMessageErrors } from '@/stores/message-errors'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
+import { usePrompts } from '@/hooks/usePrompts'
 import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
@@ -391,6 +392,7 @@ function ThreadDetail() {
   const currentThread = useRef<string | undefined>(undefined)
 
   useTools()
+  usePrompts()
 
   // Get attachments for this thread
   const attachmentsKey = threadId ?? NEW_THREAD_ATTACHMENT_KEY

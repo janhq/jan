@@ -196,8 +196,15 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
                 match timeout(Duration::from_secs(2), service.list_all_tools()).await {
                     Ok(Ok(_)) => true,
                     Ok(Err(e)) => {
-                        log::warn!("MCP server {name} health check failed: {e}");
-                        false
+                        let err_str = e.to_string();
+                        if err_str.contains("-32601") || err_str.to_lowercase().contains("method not found") {
+                            // Server is healthy but doesn't support tool listing
+                            log::debug!("MCP server {name} does not support tools");
+                            true
+                        } else {
+                            log::warn!("MCP server {name} health check failed: {e}");
+                            false
+                        }
                     }
                     Err(_) => {
                         log::warn!("MCP server {name} health check timed out");
