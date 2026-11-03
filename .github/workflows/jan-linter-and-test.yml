@@ -20,25 +20,14 @@ on:
       - 'src-tauri/**'
       - 'web-app/**'
 
+  # No paths filter on pull requests: a workflow a filter skips never reports,
+  # so its required ci-ok check would sit pending and block the merge. The
+  # changes job does the filtering instead, and a PR that reaches no area runs
+  # only that job and ci-ok.
   pull_request:
     branches:
       - main
       - release/**
-    paths:
-      - .github/workflows/jan-linter-and-test.yml
-      - '.github/actions/changed-areas/**'
-      - '.github/scripts/changed-areas*'
-      - 'vitest.config.ts'
-      - 'rust-toolchain.toml'
-      - 'scripts/stub-tauri-resources.mjs'
-      - 'scripts/rust-coverage.sh'
-      - 'package.json'
-      - 'yarn.lock'
-      - 'Makefile'
-      - 'extensions/**'
-      - 'core/**'
-      - 'src-tauri/**'
-      - 'web-app/**'
 
 concurrency:
   group: linter-test-${{ github.ref }}
