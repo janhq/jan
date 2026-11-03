@@ -244,18 +244,30 @@ export function useConversationPanels({
       : available[requestedRail.kind])
       ? requestedRail
       : null
+  // The derived `rail` above only hides an unavailable request. Forget the
+  // request itself so a later re-grant or returning content cannot reopen it.
+  // Cleared in an effect (never during render), and only if the state is still
+  // the exact request that was judged stale, so a newer user request is never
+  // overwritten by a late compare.
+  useEffect(() => {
+    if (requested.rail === null || rail !== null) return
+    setRequested((current) => (current === requested ? { threadId, rail: null } : current))
+  }, [requested, rail, threadId])
   const set = (next: ConversationRail | null) => setRequested({ threadId, rail: next })
   const active = rail && rail.kind !== 'preview' ? rail.kind : rail ? 'files' : null
+  const hasControls = CONVERSATION_PANEL_ORDER.some((kind) => available[kind])
 
   return {
-    controls: (
+    // No available kind means no element at all, not an empty wrapper, so the
+    // caller's own `controls &&` guard and spacing stay correct.
+    controls: hasControls ? (
       <ConversationPanelControls
         content={content}
         active={active}
         panelId={panelId}
         onToggle={(kind) => set(active === kind ? null : { kind })}
       />
-    ),
+    ) : null,
     rail: (
       <ConversationPanelRail
         rail={rail}

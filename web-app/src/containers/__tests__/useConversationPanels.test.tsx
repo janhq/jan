@@ -75,6 +75,13 @@ function Host({ threadId, messages }: { threadId: string; messages: readonly UIM
   return <div>{controls}{rail}</div>
 }
 
+// Exposes the raw hook result so the test can assert on the value, not on markup.
+const seen: { controls: unknown } = { controls: undefined }
+function Probe({ threadId, messages }: { threadId: string; messages: readonly UIMessage[] }) {
+  seen.controls = useConversationPanels({ threadId, messages }).controls
+  return null
+}
+
 const deferred = <T,>() => {
   let resolve!: (v: T) => void
   const promise = new Promise<T>((r) => { resolve = r })
@@ -112,11 +119,35 @@ describe('useConversationPanels', () => {
     expect(screen.queryByRole('button', { name: 'common:overview.files' })).toBeNull()
 
     // Content is derived from the same canonical messages, so a new grant
-    // makes the control available again.
+    // makes the control available again, but the earlier request is forgotten:
+    // nothing reopens by itself.
     await setFolder('t1', '/proj')
     expect(screen.getByRole('button', { name: 'common:overview.files' })).toBeInTheDocument()
-    // NOTE: the requested rail state is not cleared by a revoke, so a re-grant
-    // reopens the earlier preview (see handoff gaps). Deliberately not asserted.
+    expect(screen.queryByTestId('preview')).toBeNull()
+    expect(screen.queryByTestId('files')).toBeNull()
+  })
+
+  it('returns plain null controls when no panel kind is available', async () => {
+    render(<Probe threadId="t1" messages={msgs({ type: 'text', text: 'hi' })} />)
+    await act(async () => {})
+    expect(seen.controls).toBeNull()
+  })
+
+  it('stays closed when content disappears and then returns', async () => {
+    const user = userEvent.setup()
+    await setFolder('t1', '/proj')
+    const withFile = msgs(write('/proj/a.html', 'w1'))
+    const view = render(<Host threadId="t1" messages={withFile} />)
+    await user.click(screen.getByRole('button', { name: 'common:overview.files' }))
+    expect(screen.getByTestId('files')).toBeInTheDocument()
+
+    view.rerender(<Host threadId="t1" messages={msgs({ type: 'text', text: 'rewound' })} />)
+    expect(screen.queryByTestId('files')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'common:overview.files' })).toBeNull()
+
+    view.rerender(<Host threadId="t1" messages={withFile} />)
+    expect(screen.getByRole('button', { name: 'common:overview.files' })).toBeInTheDocument()
+    expect(screen.queryByTestId('files')).toBeNull()
   })
 
   it('narrowing to another folder drops preview of the old folder', async () => {

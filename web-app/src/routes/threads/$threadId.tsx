@@ -1231,10 +1231,11 @@ function ThreadDetail() {
                 undefined,
                 classifiedGrant
               )
-              // The diff is display-only, so it goes to the runtime store
-              // rather than into `result`: anything in `result` reaches the
-              // model, and a full diff there would duplicate the file it
-              // just wrote.
+              // The diff is display-only. It is returned as a separate
+              // outcome field (see `record`), never as part of `output`, so
+              // the canonical carrier persists it for panels while the model
+              // never sees it: a full diff there would duplicate the file it
+              // just wrote. The runtime store only serves the live view.
               const { diff, ...rest } = agentResult
               if (diff) {
                 useToolCallRuntime
