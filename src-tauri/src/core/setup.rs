@@ -47,9 +47,13 @@ pub fn migrate_mcp_servers(
     app_handle: tauri::AppHandle,
     store: Arc<Store<Wry>>,
 ) -> Result<(), String> {
+    // `exists()` reads a stat error as "missing", which would pin the current
+    // schema for a profile that does have a config. An inconclusive check counts
+    // as present so the steps run and a failed read retries at the next start.
     let config_exists = get_jan_data_folder_path(app_handle.clone())
         .join("mcp_config.json")
-        .exists();
+        .try_exists()
+        .unwrap_or(true);
     let mcp_version = mcp_migration_start(
         store
             .get("mcp_version")
