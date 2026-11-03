@@ -90,7 +90,7 @@ describe('isolated synthetic UI with the installed real AI SDK', () => {
     expect(model.doStreamCalls).toHaveLength(2)
     expect(f.pendingAsks.size).toBe(1)
     fireEvent.click(screen.getByText('Small'))
-    fireEvent.click(screen.getByLabelText('common:submit'))
+    fireEvent.click(await screen.findByLabelText('common:submit'))
     let result!: Awaited<typeof pending>
     await act(async () => { result = await pending })
     expect(result.stoppedBy).toBe('done')
@@ -146,7 +146,7 @@ describe('isolated synthetic UI with the installed real AI SDK', () => {
     await screen.findByText('Choose synthetic scope')
     const stale = f.pendingAsks.get('ask-reused')!
     fireEvent.click(screen.getByText('Small'))
-    fireEvent.click(screen.getByLabelText('common:submit'))
+    fireEvent.click(await screen.findByLabelText('common:submit'))
     await screen.findByText('Choose later scope')
     expect(model.doStreamCalls).toHaveLength(3)
     expect(f.pendingAsks.has('ask-reused')).toBe(false)
@@ -173,7 +173,7 @@ describe('isolated synthetic UI with the installed real AI SDK', () => {
     expect(f.onAnswer).toHaveBeenCalledTimes(1)
     expect(model.doStreamCalls).toHaveLength(3)
     fireEvent.click(screen.getByText('Fresh'))
-    fireEvent.click(screen.getByLabelText('common:submit'))
+    fireEvent.click(await screen.findByLabelText('common:submit'))
     let result!: Awaited<typeof pending>
     await act(async () => { result = await pending })
     expect(result.stoppedBy).toBe('done')
