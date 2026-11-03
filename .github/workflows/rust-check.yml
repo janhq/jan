@@ -32,34 +32,56 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Classifies the PR's files (.github/scripts/changed-areas.sh) so each job
+  # below runs only when something it compiles changed. Pushes, dispatches and
+  # an unreadable file list run everything.
+  changes:
+    name: changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.areas.outputs.rust }}
+      cli: ${{ steps.areas.outputs.cli }}
+      jan_cli: ${{ steps.areas.outputs.jan_cli }}
+      adk: ${{ steps.areas.outputs.adk }}
+      app: ${{ steps.areas.outputs.app }}
+      crates: ${{ steps.areas.outputs.crates }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          sparse-checkout: .github
+      - id: areas
+        uses: ./.github/actions/changed-areas
+      - name: Self-test the classifier
+        run: bash .github/scripts/changed-areas.test.sh
+
   # The desktop and CLI feature sets are mutually exclusive configs of the same
-  # crate, so neither one alone proves the other compiles.
+  # crate, so neither one alone proves the other compiles. A change reaching
+  # only desktop code (a desktop-only plugin) skips the cli config, and one
+  # reaching only the cli surface (protocol/) skips the two desktop ones; any
+  # change to app_lib itself runs all three.
   app:
     name: app (${{ matrix.name }})
+    needs: changes
+    if: needs.changes.outputs.app != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: desktop
-            features: test-tauri
-            targets: --all-targets
-            tauri: true
-          # --all-targets matters here: modules like core::agent::global_config
-          # are #[cfg(feature = "cli")], so their tests exist in no other config
-          # and --lib --bins would leave them unlinted.
-          - name: cli
-            features: cli
-            targets: --all-targets
-            tauri: false
-          # The e2e feature gates the embedded WebDriver server and turns off
-          # single-instance. No other matrix entry compiles that code, so
-          # without this the cfg block silently bit-rots. This only type-checks
-          # the gate; it does not run the e2e suite.
-          - name: e2e
-            features: test-tauri,e2e
-            targets: --all-targets
-            tauri: true
+        # The configs' properties are looked up by name below rather than
+        # listed under `include`: an include entry naming a config the
+        # classifier left out would add that config back as a new job.
+        name: ${{ fromJSON(needs.changes.outputs.app) }}
+    env:
+      # desktop: the app as it ships.
+      # cli: --all-targets matters here: modules like core::agent::global_config
+      #   are #[cfg(feature = "cli")], so their tests exist in no other config
+      #   and --lib --bins would leave them unlinted.
+      # e2e: the e2e feature gates the embedded WebDriver server and turns off
+      #   single-instance. No other config compiles that code, so without this
+      #   the cfg block silently bit-rots. This only type-checks the gate; it
+      #   does not run the e2e suite.
+      FEATURES: ${{ fromJSON('{"desktop":"test-tauri","cli":"cli","e2e":"test-tauri,e2e"}')[matrix.name] }}
+      TAURI: ${{ matrix.name != 'cli' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -76,24 +98,24 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Tauri dependencies
-        if: matrix.tauri
+        if: env.TAURI == 'true'
         run: |
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
 
       - name: Create Tauri resource stubs
-        if: matrix.tauri
+        if: env.TAURI == 'true'
         run: node scripts/stub-tauri-resources.mjs
 
       - name: cargo check
         run: |
           cargo check --locked --manifest-path src-tauri/Cargo.toml \
-            --no-default-features --features ${{ matrix.features }} ${{ matrix.targets }}
+            --no-default-features --features "$FEATURES" --all-targets
 
       - name: cargo clippy
         run: |
           cargo clippy --locked --manifest-path src-tauri/Cargo.toml \
-            --no-default-features --features ${{ matrix.features }} ${{ matrix.targets }} \
+            --no-default-features --features "$FEATURES" --all-targets \
             -- -D warnings
 
   # `cargo check` and `clippy --all-targets` compile the tests but never run
@@ -105,6 +127,8 @@ jobs:
   # among these tests.
   test:
     name: cargo test (cli)
+    needs: changes
+    if: needs.changes.outputs.jan_cli == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -126,34 +150,29 @@ jobs:
           git config --global user.email "ci@jan.ai"
           git config --global user.name "Jan CI"
 
+      # The Linux shell sandbox, which the agent tests reach.
+      - name: Install the shell sandbox
+        run: |
+          sudo apt update
+          sudo apt install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       # One thread: a few tests set process-wide state (env vars, the global
-      # config), and the same convention is what `make test-rust` uses.
+      # config), and the same convention is what `make test-rust` uses. A
+      # change that reaches only jan-cli or the ADK examples skips it.
       - name: cargo test
+        if: needs.changes.outputs.cli == 'true'
         run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml \
             --no-default-features --features cli --lib -- --test-threads=1
 
-      # The standalone CLI is not a workspace member. Its binary-level RPC
-      # tests are not run by the app library command above.
-      - name: cargo test (RPC CLI)
-        run: |
-          cargo test --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
-            --no-default-features --features cli --test agent_rpc
-
-      # The experimental ACP server (`jan acp`), driven over stdio the way an
-      # editor drives it, against a stub provider.
-      - name: cargo test (ACP CLI)
-        run: |
-          cargo test --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
-            --no-default-features --features cli --test acp
-
-      # The ADK cookbook's runnable source, run with the runner's own
-      # node and python3 against the jan binary this commit builds, plus the
-      # check that every docs excerpt still matches the file it quotes.
-      - name: cargo test (ADK examples)
-        run: |
-          cargo test --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
-            --no-default-features --features cli --test adk_examples
+      # The standalone CLI is not a workspace member, so the command above never
+      # reaches it. This is its whole suite (`make check-cli`): the binary-level
+      # RPC and ACP tests, stream-json, the TUI, telemetry, and adk_examples,
+      # which runs the ADK cookbook's source with the runner's own node and
+      # python3 and checks every docs excerpt still matches the file it quotes.
+      - name: cargo test (jan-cli)
+        run: make check-cli
 
   # `jan --version` on a build without JAN_CLI_BUILD_VERSION reports the
   # committed app version, so a bump that skips jan-cli or tauri.conf.json
@@ -209,6 +228,8 @@ jobs:
   # command a human would, in the CLI's own feature set, and prints the diff.
   schema:
     name: protocol schema
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -267,28 +288,25 @@ jobs:
   # what it differs by: it commits a Cargo.lock (so --locked), it only builds
   # with the cli feature, that feature is Tauri-free (no system libraries), and
   # its .cargo/config.toml puts the target dir at src-tauri/target.
+  #
+  # The crate list comes from the classifier: a crate is linted when it or a
+  # path dependency of it changed. tauri-plugin-mlx is Apple-Silicon-only and
+  # a macOS target dependency, not part of any Linux build, so it has no entry.
   crates:
     name: ${{ matrix.crate }}
+    needs: changes
+    if: needs.changes.outputs.crates != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # tauri-plugin-mlx is Apple-Silicon-only and is a macOS target
-        # dependency, not part of any Linux build.
-        crate:
-          - jan-cli
-          - plugins/tauri-plugin-agent-tools
-          - plugins/tauri-plugin-hardware
-          - plugins/tauri-plugin-llamacpp
-          - plugins/tauri-plugin-rag
-          - plugins/tauri-plugin-vector-db
-          - plugins/tauri-plugin-websearch
-          - utils
-        include:
-          - crate: jan-cli
-            flags: --locked --no-default-features --features cli
-            target_dir: ../target
-            skip_tauri: true
+        crate: ${{ fromJSON(needs.changes.outputs.crates) }}
+    # jan-cli's differences are keyed on its name, not an `include` entry, for
+    # the reason given on the app matrix.
+    env:
+      FLAGS: ${{ matrix.crate == 'jan-cli' && '--locked --no-default-features --features cli' || '' }}
+      TARGET_DIR: ${{ matrix.crate == 'jan-cli' && '../target' || 'target' }}
+      SKIP_TAURI: ${{ matrix.crate == 'jan-cli' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -298,53 +316,30 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri/${{ matrix.crate }} -> ${{ matrix.target_dir || 'target' }}
+          workspaces: src-tauri/${{ matrix.crate }} -> ${{ env.TARGET_DIR }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Tauri dependencies
-        if: ${{ !matrix.skip_tauri }}
+        if: env.SKIP_TAURI != 'true'
         run: |
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
 
       - name: cargo check
-        run: cargo check ${{ matrix.flags }} --manifest-path src-tauri/${{ matrix.crate }}/Cargo.toml --all-targets
+        run: cargo check $FLAGS --manifest-path src-tauri/${{ matrix.crate }}/Cargo.toml --all-targets
 
       - name: cargo clippy
-        run: cargo clippy ${{ matrix.flags }} --manifest-path src-tauri/${{ matrix.crate }}/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy $FLAGS --manifest-path src-tauri/${{ matrix.crate }}/Cargo.toml --all-targets -- -D warnings
 
   # The ADKs are clients of the same channel the CLI tests drive, so they are
   # built and run here rather than in the linter workflow: the subject is a real
   # runtime binary, and a client that only agreed with itself would pass. The
   # committed wire types are checked against protocol/rpc-schema.json in the
   # same job, since that document is what generates them.
-  adk-changes:
-    name: ADK paths
-    runs-on: ubuntu-latest
-    outputs:
-      run: ${{ steps.filter.outputs.run }}
-    steps:
-      # A PR that touches nothing the ADKs build from skips the job's ~5 minute
-      # runtime build. Pushes, dispatches and an unreadable file list run it.
-      - id: filter
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          if [ -z "$PR" ] || ! files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only); then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if grep -qE '^(src-tauri/|adk/|packages/adk/|protocol/|package\.json$|yarn\.lock$|\.github/workflows/rust-check\.yml$)' <<< "$files"; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          fi
-
   adk:
     name: ADKs
-    needs: adk-changes
-    if: needs.adk-changes.outputs.run == 'true'
+    needs: changes
+    if: needs.changes.outputs.adk == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -388,3 +383,25 @@ jobs:
         run: |
           env -i PATH="$(dirname "$JAN_BIN"):/usr/bin:/bin" HOME="$HOME" \
             JAN_BIN="$JAN_BIN" python3 -m unittest discover -s adk/python/tests -t adk/python
+
+  # The one check to mark required. Path-gated jobs report "skipped" when a PR
+  # does not reach them, and a required check that never reports blocks the
+  # merge; this job always reports, and fails only on a real failure or
+  # cancellation among the jobs it waits for.
+  ci-ok:
+    name: Rust Check passed
+    if: always()
+    needs: [changes, app, test, versions, schema, crates, adk]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail on a failed or cancelled job
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in
+              success | skipped) ;;
+              *) exit 1 ;;
+            esac
+          done
