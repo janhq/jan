@@ -2515,6 +2515,155 @@ describe('ThreadDetail route', () => {
         expect(run).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ serverName: 'frozen-server' }))
       })
 
+      describe('a reused child call id cannot carry identity or approval to another tool', () => {
+        const twoTools = () => ({
+          ceiling: h.threadsState.getConversationCapabilities(),
+          mcpServers: new Map([['fetch', 'frozen-server'], ['wipe', 'frozen-server']]),
+        })
+        it('same child toolCallId, changed toolName, same server: second tool is not validated/approved by the first', async () => {
+          // Only `fetch` exists on the server; `wipe` would fail validation if it were ever checked.
+          h.appStateState.tools = [{ name: 'fetch', server: 'frozen-server' }]
+          getMcpTools.mockResolvedValue([{ name: 'fetch', server: 'frozen-server' }])
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          const run = serveMcp()
+          renderComponent()
+          const first = await childDispatch(call('task1:dup', 'fetch'), twoTools())
+          expect(first).not.toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+          const second = await childDispatch(call('task1:dup', 'wipe', { target: 'everything' }), twoTools())
+          // Fail closed: the second tool must neither run nor ride the first approval.
+          expect(second).toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+        })
+      })
+
+      describe('root and child origins never share a call id binding', () => {
+        // Mirrors the real child id shape built in chatOrchestration:
+        // [child, parent, name, synthetic-execution-nonce, toolId]. An adversarial
+        // root may guess the other fields, but the host-generated nonce is
+        // unpredictable; this fixture uses a fixed one to model the worst case
+        // (defence in depth: the route still keeps origins apart).
+        const tuple = JSON.stringify(['child', 'task1', 'worker', 'exec-nonce', 'c1'])
+        it('root call id equal to a child tuple, then that child id with same name and different args: no approval transfer', async () => {
+          const requestApproval = vi.fn().mockResolvedValue(true)
+          h.toolApprovalState.requestApproval = requestApproval
+          const run = serveMcp()
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          // The root model picks the exact string the child will later produce.
+          await act(async () => { await arrive(call(tuple, 'fetch', { url: 'safe' })) })
+          const first = await dispatch(call(tuple, 'fetch', { url: 'safe' }))
+          expect(first).not.toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+          const approvals = requestApproval.mock.calls.length
+          const second = await childDispatch(call(tuple, 'fetch', { url: 'evil' }), binding())
+          expect(second).toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+          expect(requestApproval).toHaveBeenCalledTimes(approvals)
+        })
+        it('a child id later presented by the root fails closed', async () => {
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          const run = serveMcp()
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          const first = await childDispatch(call(tuple, 'fetch', { url: 'a' }), binding())
+          expect(first).not.toMatchObject({ isError: true })
+          const second = await dispatch(call(tuple, 'fetch', { url: 'a' }))
+          expect(second).toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+        })
+        it('the same child id, name and server with different args is refused by the route itself', async () => {
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          const run = serveMcp()
+          renderComponent()
+          await childDispatch(call(tuple, 'fetch', { url: 'a' }), binding())
+          const second = await childDispatch(call(tuple, 'fetch', { url: 'b' }), binding())
+          expect(second).toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+        })
+        it('a root call may still present one id to onToolCall and then dispatch', async () => {
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          const run = serveMcp()
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          await act(async () => { await arrive(call('root-ok', 'fetch', { url: 'x' })) })
+          const out = await dispatch(call('root-ok', 'fetch', { url: 'x', extra: 1 }))
+          expect(out).not.toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+        })
+        it('a later root turn reusing a call id for a different tool gets a valid, fresh approval', async () => {
+          const requestApproval = vi.fn().mockResolvedValue(true)
+          h.toolApprovalState.requestApproval = requestApproval
+          const run = serveMcp()
+          h.appStateState.mcpToolNames = new Set(['fetch', 'search'])
+          h.appStateState.tools = [{ name: 'fetch', server: 'frozen-server' }, { name: 'search', server: 'frozen-server' }]
+          getMcpTools.mockResolvedValue([{ name: 'fetch', server: 'frozen-server' }, { name: 'search', server: 'frozen-server' }])
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          await act(async () => { await arrive(call('call_0', 'fetch', { url: 'x' })) })
+          expect(await dispatch(call('call_0', 'fetch', { url: 'x' }))).not.toMatchObject({ isError: true })
+          await act(async () => { await finish() })
+          // Provider restarts its ids on the next turn.
+          await act(async () => { await arrive(call('call_0', 'search', { q: 'y' })) })
+          const out = await dispatch(call('call_0', 'search', { q: 'y' }))
+          expect(out).not.toMatchObject({ isError: true })
+          expect(requestApproval).toHaveBeenCalledTimes(2)
+          expect(requestApproval).toHaveBeenLastCalledWith('call_0', 'search', 'thread-1', 'frozen-server', expect.any(Function))
+          expect(run).toHaveBeenCalledTimes(2)
+        })
+        it('a root id reused for the SAME tool with different args after approval is refused: not run, no second approval', async () => {
+          const requestApproval = vi.fn().mockResolvedValue(true)
+          h.toolApprovalState.requestApproval = requestApproval
+          const run = serveMcp()
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          await act(async () => { await arrive(call('reuse', 'fetch', { url: 'safe' })) })
+          expect(await dispatch(call('reuse', 'fetch', { url: 'safe' }))).not.toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+          // Later step in the same turn reuses the id with new arguments.
+          await act(async () => { await arrive(call('reuse', 'fetch', { url: 'evil' })) })
+          const out = await dispatch(call('reuse', 'fetch', { url: 'evil' }))
+          expect(out).toMatchObject({ isError: true })
+          expect(String(out.output)).toContain('Duplicate tool call id')
+          expect(run).toHaveBeenCalledTimes(1)
+          expect(requestApproval).toHaveBeenCalledTimes(1)
+        })
+        it('a duplicate dispatch while the first is pending does not cancel the first approval card or run', async () => {
+          let decide!: (v: boolean) => void
+          const requestApproval = vi.fn(() => new Promise<boolean>((r) => { decide = r }))
+          h.toolApprovalState.requestApproval = requestApproval
+          const cancelApproval = vi.fn()
+          h.toolApprovalState.cancelApproval = cancelApproval
+          const run = serveMcp()
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          await act(async () => { await arrive(call('pend', 'fetch', { url: 'a' })) })
+          const first = dispatch(call('pend', 'fetch', { url: 'a' }))
+          await act(async () => { await Promise.resolve() })
+          const dup = await dispatch(call('pend', 'fetch', { url: 'b' }))
+          expect(dup).toMatchObject({ isError: true })
+          expect(cancelApproval).not.toHaveBeenCalled()
+          expect(requestApproval).toHaveBeenCalledTimes(1)
+          expect(run).not.toHaveBeenCalled()
+          decide(true)
+          expect(await first).not.toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+        })
+        it('a reused root id with another tool inside one turn is refused for that call only, never thrown from onToolCall', async () => {
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          const run = serveMcp()
+          h.appStateState.mcpToolNames = new Set(['fetch', 'search'])
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          await act(async () => { await arrive(call('dup-root', 'fetch', { url: 'x' })) })
+          // The SDK callback must not abort the whole turn; dispatch refuses the call.
+          expect(() => arrive(call('dup-root', 'search', { q: 'y' }))).not.toThrow()
+          const out = await dispatch(call('dup-root', 'search', { q: 'y' }))
+          expect(out).toMatchObject({ isError: true })
+          expect(run).not.toHaveBeenCalled()
+        })
+      })
+
       it('a denied child call is recorded as denial and is released', async () => {
         h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
         const run = serveMcp()
@@ -3250,7 +3399,12 @@ describe('ThreadDetail route', () => {
         expect(await dispatch(call('tcB'))).toEqual({ output: ['result'] })
         expect(run).toHaveBeenCalledTimes(2)
         expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(2)
-      } finally { h.routeParams.threadId = 'thread-1' }
+      } finally {
+        h.routeParams.threadId = 'thread-1'
+        // Thread-1's turn ends too, so its consumed-id set does not leak into later tests.
+        rerender(<Component />)
+        await finish()
+      }
     })
 
     it('unmounting does not cancel a retained running dispatch', async () => {
