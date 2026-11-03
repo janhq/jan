@@ -243,20 +243,22 @@ vi.mock('@/containers/ChatInput', () => ({
       <span data-testid="chat-status">{chatStatus}</span>
       <button
         data-testid="chat-send"
-        onClick={() => onSubmit('hello world', undefined)}
+        onClick={async () => {
+          ;(globalThis as any).__submitResult = await onSubmit('hello world', undefined)
+        }}
       >
         send
       </button>
       <button
         data-testid="chat-send-ref"
-        onClick={() =>
-          onSubmit(
+        onClick={async () => {
+          ;(globalThis as any).__submitResult = await onSubmit(
             'summarise\n\n---\nReferenced file contents:\n\nbody',
             undefined,
             undefined,
             'summarise @notes.md'
           )
-        }
+        }}
       >
         send with reference
       </button>
@@ -1036,7 +1038,7 @@ describe('ThreadDetail route', () => {
     })
   })
 
-  it('does not retry a rejected queue head after a model or callback rerender until status leaves ready', async () => {
+  it('holds a rejected queue head after a model or callback rerender and retries once only on explicit Resume', async () => {
     const head = { id: 'q-head', text: 'queued head', createdAt: 1 }
     h.messageQueueState.queues = { 'thread-1': [head] }
     h.messageQueueState.dequeue = vi.fn(
@@ -1070,13 +1072,20 @@ describe('ThreadDetail route', () => {
     expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
     expect(h.messageQueueState.queues['thread-1']).toEqual([head])
 
-    // Leaving ready and returning allows exactly one more attempt.
+    // The rejection latched while the SDK stayed ready, so the head is HELD
+    // (visible Resume), not merely latched: a status cycle does not retry it.
+    expect(h.messageQueueState.paused['thread-1']).toBe(true)
     h.chatState.status = 'submitted'
     rerender(<Component />)
     await act(async () => {})
-    expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
     h.chatState.status = 'ready'
     rerender(<Component />)
+    await act(async () => {})
+    expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
+    expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+
+    // Explicit Resume allows exactly one more attempt.
+    await act(async () => { screen.getByTestId('chat-resume-queue').click() })
     await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(2))
     await act(async () => {})
     expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(2)
@@ -1560,6 +1569,8 @@ describe('ThreadDetail route', () => {
         )
       })
       expect(usePrompt.getState().prompt).toBe('hello world')
+      // onSubmit returns false so the real ChatInput keeps prompt and files.
+      await waitFor(() => expect((globalThis as any).__submitResult).toBe(false))
       expect(processAttachmentsForSend).not.toHaveBeenCalled()
       expect(h.mockSendMessage).not.toHaveBeenCalled()
       expect(h.messagesState.addMessage).not.toHaveBeenCalled()
@@ -1577,9 +1588,17 @@ describe('ThreadDetail route', () => {
         screen.getByTestId('chat-send').click()
       })
       await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
-      // The typed text is never overwritten and the composer bucket untouched.
+      // The typed text is never overwritten. The cancel happens before the
+      // bucket is cleared, so the route passes bucketHoldsAttachments: the
+      // failed entry's files are removed from the bucket (no ride-along with
+      // the newer prompt) and nothing else is touched.
       expect(usePrompt.getState().prompt).toBe('typed during dialog')
-      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalledWith('thread-1', expect.any(Function))
+      await waitFor(() => expect((globalThis as any).__submitResult).toBe(false))
+      expect(h.attachmentsState.setAttachments).toHaveBeenCalledTimes(1)
+      const [key, updater] = h.attachmentsState.setAttachments.mock.calls[0]
+      expect(key).toBe('thread-1')
+      const newerFile = { name: 'newer.png', type: 'image', path: '/newer.png' }
+      expect(updater([sheet, newerFile])).toEqual([newerFile])
       expect(useFailedDrafts.getState().drafts['thread-1'][0]).toMatchObject({
         text: 'hello world',
         attachments: [sheet],
@@ -1603,7 +1622,11 @@ describe('ThreadDetail route', () => {
       })
       await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
       expect(usePrompt.getState().prompt).toBe('typed newer')
-      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalled()
+      await waitFor(() => expect((globalThis as any).__submitResult).toBe(false))
+      // Only the whole failed entry's files leave the bucket; the newer file stays.
+      expect(h.attachmentsState.setAttachments).toHaveBeenCalledTimes(1)
+      const updater = h.attachmentsState.setAttachments.mock.calls[0][1]
+      expect(updater([sheet, newer])).toEqual([newer])
       expect(useFailedDrafts.getState().drafts['thread-1'][0]).toMatchObject({
         text: 'hello world',
         attachments: [sheet],

@@ -101,7 +101,6 @@ import {
   createImageAttachment,
   createAudioAttachment,
   createVideoAttachment,
-  type Attachment,
 } from '@/types/attachment'
 import {
   useChatAttachments,
@@ -114,7 +113,6 @@ import {
   promptIngestionChoices,
   resolveAutoInlineBudget,
 } from '@/lib/attachmentProcessing'
-import { usePrompt } from '@/hooks/usePrompt'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useMCPServers } from '@/hooks/useMCPServers'
@@ -146,11 +144,9 @@ import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
-import { useMessageQueue, type QueuedMessage } from '@/stores/message-queue-store'
-import {
-  useFailedDrafts,
-  mergeRestoredAttachments,
-} from '@/stores/failed-draft-store'
+import { useMessageQueue } from '@/stores/message-queue-store'
+import { useFailedDrafts } from '@/stores/failed-draft-store'
+import { restoreSubmittedDraft, restoreQueueHead } from '@/lib/composer-restore'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
 import {
@@ -496,79 +492,6 @@ function ThreadRouteError({ error }: { error: Error }) {
 }
 
 // as route.threadsDetail
-/**
- * Hands a submitted draft (text + attachments) back after a send was
- * cancelled, failed in processing, or was rejected, without clobbering
- * anything newer.
- *
- * - Thread open and the prompt empty: the draft returns to the composer
- *   immediately. Attachments go through a functional updater (unique by
- *   identity, submitted ones first, newer files kept).
- * - Otherwise (a newer draft was typed, or the thread is no longer open and the
- *   prompt store is shared with Home and other threads): the prompt and the
- *   composer are never touched. The COMPLETE draft, text and attachment
- *   snapshot together, is kept as one recoverable entry in the failed-draft
- *   store. It is never auto-sent; ChatInput offers Restore draft / Dismiss.
- */
-function restoreSubmittedDraft(args: {
-  threadId: string
-  attachmentsKey: string
-  draft: string
-  attachments: Attachment[]
-  /** Lifetime token captured when the send started (see failed-draft-store). */
-  token: string
-  setAttachments: (
-    key: string,
-    updater: (prev: Attachment[]) => Attachment[]
-  ) => void
-}): boolean {
-  const { threadId, attachmentsKey, draft, attachments, token, setAttachments } =
-    args
-  // The thread was deleted, reset, or (temporary chat) left while this send was
-  // in flight: its text and media must not come back anywhere, composer included.
-  if (useFailedDrafts.getState().getToken(threadId) !== token) return false
-  const composer = usePrompt.getState()
-  const open = useThreads.getState().currentThreadId === threadId
-  if (open && !composer.prompt) {
-    if (attachments.length > 0) {
-      setAttachments(attachmentsKey, (prev) =>
-        mergeRestoredAttachments(attachments, prev)
-      )
-    }
-    composer.setPrompt(draft)
-    return true
-  }
-  useFailedDrafts.getState().add(threadId, { text: draft, attachments }, token)
-  return false
-}
-
-/**
- * Puts a dequeued item back at the head of its thread's queue, unless the
- * queue was cleared (explicitly or by leaving the thread) after the dequeue:
- * `token` is the thread's generation captured at dequeue. When the SDK is
- * already in error for this same thread, the restored head is held right away:
- * the error's own pause ran while the queue was empty and was a no-op, so
- * without this a new submission could drain ahead of the restored item.
- */
-function restoreQueueHead(
-  threadId: string,
-  item: QueuedMessage,
-  token: number,
-  live: { status: string; threadId: string }
-): boolean {
-  const store = useMessageQueue.getState()
-  if (store.getToken(threadId) !== token) return false
-  useMessageQueue.setState((state) => {
-    const queue = state.queues[threadId] ?? []
-    if (queue.some((m) => m.id === item.id)) return state
-    return { queues: { ...state.queues, [threadId]: [item, ...queue] } }
-  })
-  if (live.status === 'error' && live.threadId === threadId) {
-    useMessageQueue.getState().pause(threadId)
-  }
-  return true
-}
-
 export const Route = createFileRoute('/threads/$threadId')({
   // A Cowork conversation has no chat transcript: its messages live in a
   // sidecar the Cowork view reads. Decide before the chat view mounts (it would
@@ -1842,9 +1765,10 @@ function ThreadDetail() {
       if (unrouted.length > 0) {
         const choices = await promptIngestionChoices(unrouted)
         if (!choices) {
-          // ChatInput cleared the input on submit; hand the draft back so
-          // cancelling only cancels the send. `text` has @path references
-          // expanded, so restore what the user actually typed.
+          // ChatInput keeps the prompt until onSubmit settles and clears it
+          // only for an accepted send, so returning false leaves it alone.
+          // `text` has @path references expanded, so restore what the user
+          // actually typed.
           // Text and attachments return together or not at all: a draft typed
           // while the dialog was open, or another thread, is left alone.
           restoreSubmittedDraft({
@@ -1854,8 +1778,10 @@ function ThreadDetail() {
             attachments: allAttachments,
             token: draftToken,
             setAttachments: setAttachmentsForThread,
+            // Cancelled before the bucket was cleared below.
+            bucketHoldsAttachments: true,
           })
-          return
+          return false
         }
         combinedAttachments = applyIngestionChoices(
           combinedAttachments,
@@ -1942,9 +1868,9 @@ function ThreadDetail() {
               prev.filter((m) => m.id !== messageId)
             )
           }
-          // ChatInput cleared the input on submit and nothing was sent, so
-          // hand the draft and attachments back; the user fixes the cause and
-          // sends again. Same policy as cancel and rejection: the draft returns
+          // Nothing was sent: hand the attachments (cleared when processing
+          // began) back and return false so ChatInput keeps the prompt; the
+          // user fixes the cause and sends again. Same policy as cancel and rejection: the draft returns
           // immediately when this thread is open with an empty prompt, else it
           // is kept whole as one recoverable failed draft. Text is never queued
           // here: it would auto-send without the attachments that failed.
@@ -1956,7 +1882,7 @@ function ThreadDetail() {
             token: draftToken,
             setAttachments: setAttachmentsForThread,
           })
-          return
+          return false
         } finally {
           useAppState.getState().setThreadEmbedding(threadId, false)
           useAppState.getState().setThreadBusy(threadId, false)
@@ -2597,8 +2523,9 @@ function ThreadDetail() {
         // slow rejection after the status moved on or the thread changed must
         // not block a newer epoch.
         // A queue cleared meanwhile stays cleared: nothing is put back.
-        if (statusEpochRef.current === owner) queueRetryBlockedRef.current = owner
-        restoreQueueHead(threadId, next, queueToken, liveRef.current)
+        const latched = statusEpochRef.current === owner
+        if (latched) queueRetryBlockedRef.current = owner
+        restoreQueueHead(threadId, next, queueToken, liveRef.current, latched)
         console.error('Failed to send queued message:', err)
       })
       .finally(() => {

@@ -51,6 +51,7 @@ import {
   useFailedDrafts,
   mergeRestoredAttachments,
   type FailedDraft,
+  attachmentIdentity,
 } from '@/stores/failed-draft-store'
 import { SamplerPopover } from '@/containers/SamplerPopover'
 import ComposerModelPicker from '@/containers/ComposerModelPicker'
@@ -839,8 +840,21 @@ const ChatInput = memo(function ChatInput({
         prompt
       )
       if (accepted === false) return
-      setPrompt('')
-      clearAttachmentsForThread(attachmentsKey)
+      // onSubmit may have been held (attachment processing). Clear only what
+      // was submitted: text or files added since then are newer and stay.
+      if (usePrompt.getState().prompt === prompt) setPrompt('')
+      const submitted = new Set(attachments.map(attachmentIdentity))
+      const hasNewer = useChatAttachments
+        .getState()
+        .getAttachments(attachmentsKey)
+        .some((a) => !submitted.has(attachmentIdentity(a)))
+      if (hasNewer) {
+        setAttachmentsForThread(attachmentsKey, (prev) =>
+          prev.filter((a) => !submitted.has(attachmentIdentity(a)))
+        )
+      } else {
+        clearAttachmentsForThread(attachmentsKey)
+      }
     } else {
       // No onSubmit provided - create a new thread and navigate to it.
       // Media attachments (image/audio/video) are NOT serialized into

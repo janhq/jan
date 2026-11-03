@@ -22,15 +22,19 @@ const setPromptMock = vi.fn((val: string) => {
 const addToHistoryMock = vi.fn()
 const navigateHistoryMock = vi.fn()
 
-vi.mock('@/hooks/usePrompt', () => ({
-  usePrompt: (selector: any) =>
-    selector({
-      prompt: promptState,
-      setPrompt: setPromptMock,
-      addToHistory: addToHistoryMock,
-      navigateHistory: navigateHistoryMock,
+vi.mock('@/hooks/usePrompt', () => {
+  const snapshot = () => ({
+    prompt: promptState,
+    setPrompt: setPromptMock,
+    addToHistory: addToHistoryMock,
+    navigateHistory: navigateHistoryMock,
+  })
+  return {
+    usePrompt: Object.assign((selector: any) => selector(snapshot()), {
+      getState: snapshot,
     }),
-}))
+  }
+})
 
 const updateCurrentThreadAssistantMock = vi.fn()
 const updateCurrentThreadModelMock = vi.fn()
