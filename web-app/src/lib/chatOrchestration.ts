@@ -16,6 +16,7 @@ import {
 import { chatChildTools } from './chatChildTools'
 import { unadvertisedToolRefusal } from './coworkTools'
 import { MonitorLane, monitorSpecFromArgs, parseMonitorId } from './coworkMonitor'
+import { useMonitorNotices } from '@/stores/monitor-notice-store'
 import {
   listThreadAgentMonitors,
   startThreadAgentMonitor,
@@ -450,6 +451,14 @@ export async function runChatMonitor(input: unknown, ctx: Pick<ChatOrchestration
       state.monitorIds.delete(update.monitorId)
       // Same MonitorLane the Cowork route uses; drained only by runTurn's inbox.
       state.lane.update(update)
+      // Display-only notice (no authority, no run, no inbox drain). The epoch
+      // guard above already dropped stale/deleted-thread callbacks.
+      useMonitorNotices.getState().publish({
+        threadId: ctx.threadId,
+        monitorId: update.monitorId,
+        headline: update.headline,
+        text: update.text,
+      })
     })
     if (state.epoch !== epoch || threads.get(ctx.threadId) !== state) {
       // Stop/delete landed while the host was starting: do not leak the monitor.
@@ -497,6 +506,7 @@ onConversationThreadDropped((threadId) => {
   if (!state) return
   void cancelChatOrchestration(threadId, { monitors: false })
   void stopAllThreadAgentMonitors(threadId)
+  useMonitorNotices.getState().clearThread(threadId)
   state.waiters.length = 0
   threads.delete(threadId)
 })

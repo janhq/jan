@@ -9,6 +9,8 @@ const hoisted = vi.hoisted(() => ({
   list: vi.fn(),
 }))
 
+import { useMonitorNotices } from '@/stores/monitor-notice-store'
+
 vi.mock('../coworkSubagent', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../coworkSubagent')>()),
   childStep: hoisted.childStep,
@@ -337,6 +339,73 @@ describe('monitor host boundary', () => {
     expect(hoisted.stopAll).toHaveBeenCalledWith(ctx.threadId)
     push({ monitorId: 'mon-1', headline: 'x', text: 'stale' })
     expect(__testing.threads.has(ctx.threadId)).toBe(false)
+  })
+})
+
+describe('monitor completion notice (display only)', () => {
+  const started = (id = 'mon-1') => ({ output: `Started. monitor_id=${id}` })
+  const notices = (t: string) => useMonitorNotices.getState().byThread[t] ?? []
+  const arm = async (ctx: ReturnType<typeof ctxFor>['ctx'], id = 'mon-1') => {
+    let push: (u: unknown) => void = () => {}
+    hoisted.start.mockImplementation(async (_t: string, _a: unknown, cb: (u: unknown) => void) => {
+      push = cb
+      return started(id)
+    })
+    await runChatMonitor({ op: 'start' }, ctx)
+    return (u: unknown) => push(u)
+  }
+  beforeEach(() => useMonitorNotices.setState({ byThread: {} }))
+
+  it('callback after the run is idle publishes a bounded notice with no model request', async () => {
+    const { ctx } = ctxFor()
+    const push = await arm(ctx)
+    push({ monitorId: 'mon-1', headline: 'hit', text: 'x'.repeat(5000) })
+    expect(notices(ctx.threadId)).toHaveLength(1)
+    expect(notices(ctx.threadId)[0].headline).toBe('hit')
+    expect(notices(ctx.threadId)[0].detail.length).toBeLessThanOrEqual(600)
+    expect(hoisted.childStep).not.toHaveBeenCalled()
+    expect(__testing.stateOf(ctx.threadId).lane.onPing).toBeNull()
+  })
+
+  it('is scoped to the owning thread only', async () => {
+    const a = ctxFor().ctx
+    const b = { ...ctxFor().ctx, threadId: `${a.threadId}-other` }
+    const push = await arm(a)
+    push({ monitorId: 'mon-1', headline: 'hit', text: 'done' })
+    expect(notices(a.threadId)).toHaveLength(1)
+    expect(notices(b.threadId)).toHaveLength(0)
+  })
+
+  it('Stop makes late callbacks publish nothing', async () => {
+    const { ctx } = ctxFor()
+    const push = await arm(ctx, 'mon-9')
+    await cancelChatOrchestration(ctx.threadId)
+    push({ monitorId: 'mon-9', headline: 'late', text: 'stale' })
+    expect(notices(ctx.threadId)).toHaveLength(0)
+  })
+
+  it('thread deletion clears notices and drops late callbacks', async () => {
+    const { ctx } = ctxFor()
+    const push = await arm(ctx)
+    push({ monitorId: 'mon-1', headline: 'hit', text: 'done' })
+    dropConversationClientThread(ctx.threadId)
+    expect(notices(ctx.threadId)).toHaveLength(0)
+    push({ monitorId: 'mon-1', headline: 'x', text: 'stale' })
+    expect(notices(ctx.threadId)).toHaveLength(0)
+  })
+
+  it('dismiss does not consume the inbox; the next turn still gets the ping once', async () => {
+    const { ctx } = ctxFor()
+    const push = await arm(ctx)
+    push({ monitorId: 'mon-1', headline: 'hit', text: 'file changed' })
+    const [n] = notices(ctx.threadId)
+    useMonitorNotices.getState().dismiss(ctx.threadId, n.id)
+    expect(notices(ctx.threadId)).toHaveLength(0)
+    const inbox = chatRunInbox(ctx.threadId)
+    expect(inbox.pending()).toBe(true)
+    expect(inbox.take()).toEqual(['file changed'])
+    expect(inbox.take()).toEqual([])
+    expect(hoisted.childStep).not.toHaveBeenCalled()
   })
 })
 

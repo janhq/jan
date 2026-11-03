@@ -66,6 +66,7 @@ import {
 import { chatRunInbox, childEffectiveGrant, runChatMonitor, runChatTask, type ChildBinding } from '@/lib/chatOrchestration'
 import { CoworkAskCard } from '@/containers/CoworkAskCard'
 import { ChatChildApprovals } from '@/containers/ChatChildApprovals'
+import { ChatMonitorNotices } from '@/containers/ChatMonitorNotices'
 import { useChildApprovalCalls } from '@/hooks/useChildApprovalCalls'
 import {
   convertThreadMessagesToUIMessages,
@@ -2773,6 +2774,7 @@ function ThreadDetail() {
             <div className="pb-2">{contextualPanels.controls}</div>
           )}
           <ChatChildApprovals threadId={threadId} />
+          <ChatMonitorNotices threadId={threadId} />
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}
