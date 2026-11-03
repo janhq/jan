@@ -142,11 +142,24 @@ lint: install-and-build
 # Both go through `test-rust`, which owns `stub-resources`: the app's build
 # script fails on any missing bundle.resources path, and neither entry point
 # builds the engine worker or the ggml backends.
-test-prepare: lint
-	yarn download:bin
+test-prepare: test-ts rust-test-assets
+
+# The two halves of test-ci. CI runs them as separate jobs so a pull request
+# runs only the half its files can break, and the TypeScript half on one OS.
+test-ts: lint
 	yarn test
+
+# The steps test-ci ran before test-rust, without the lint/vitest half. They
+# need node_modules (download:bin unpacks with it, build:icon is the Tauri CLI),
+# which lint's install-and-build used to provide.
+rust-test-assets:
+	yarn install
+	yarn download:bin
 	yarn copy:assets:tauri
 	yarn build:icon
+
+test-ci-rust: rust-test-assets
+	$(MAKE) test-rust
 
 test-rust: stub-resources
 	cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
