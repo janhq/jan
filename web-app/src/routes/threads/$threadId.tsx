@@ -123,7 +123,9 @@ import { useToolApprovalRequests, throwIfApprovalValidationFailed, type Approval
 import { toolOriginKey, useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
-import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
+import { executeAgentTool } from '@/lib/agentTools'
+import { authorizeThreadTool, isElevatedThreadCall, isScopedThreadTool } from '@/lib/scopedToolDispatch'
+import { defaultConversationCapabilities } from '@/lib/conversationCapabilities'
 import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -241,6 +243,27 @@ useChatSessions.subscribe((state) => {
 // Retained per-thread callbacks survive navigation; terminal cleanup disposes
 // every promise so a later turn cannot inherit an Allow once decision.
 const toolApprovalPromises = new Map<string, Map<string, Promise<ApprovalResult>>>()
+// One classification grant per native toolCallId: captured on arrival and
+// reused by dispatch, so arrival and dispatch can never disagree about whether
+// the call was elevated (no orphan prompt if the grant is revoked in between).
+const callNativeGrants = new Map<string, Map<string, unknown>>()
+const nativeGrantOf = (threadId: string, callId: string): unknown => {
+  let grants = callNativeGrants.get(threadId)
+  if (!grants) {
+    grants = new Map()
+    callNativeGrants.set(threadId, grants)
+  }
+  if (!grants.has(callId)) grants.set(callId, classifyScopedGrant(threadId))
+  return grants.get(callId)
+}
+// Stable key for the grant a native approval is bound to.
+const grantKeyOf = (grant: unknown): string => {
+  const sort = (v: unknown): unknown =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, sort(x)]))
+      : v
+  try { return JSON.stringify(sort(grant)) ?? 'none' } catch { return 'unserializable' }
+}
 const callMcpIdentities = new Map<string, Map<string, string | undefined>>()
 const callMcpValidators = new Map<string, Map<string, (signal?: AbortSignal) => Promise<void>>>()
 const approvalsOf = (threadId: string) => {
@@ -253,6 +276,7 @@ const approvalsOf = (threadId: string) => {
 }
 const forgetApprovals = (threadId: string) => {
   toolApprovalPromises.delete(threadId)
+  callNativeGrants.delete(threadId)
   callMcpIdentities.delete(threadId)
   callMcpValidators.delete(threadId)
 }
@@ -316,7 +340,11 @@ function chatShellRoute(toolName: string, serverName?: string): 'builtin' | 'dis
   // A bound MCP identity means the native schema was not advertised for this
   // request (e.g. shell is on but no sandbox can enforce it). Never substitute
   // a native shell for that approved server, even if availability changes.
-  if (serverName || !CHAT_AGENT_TOOL_NAMES.has(toolName)) return 'other'
+  if (serverName || !isScopedThreadTool(toolName)) return 'other'
+  // Only shell has a user switch. Every other scoped native name is served by
+  // the dispatch boundary, which refuses it with a reason when the current
+  // grant does not allow it (advertisement is not authority).
+  if (toolName !== 'shell') return 'builtin'
   if (useChatShell.getState().shellEnabled) return 'builtin'
   return useAppState.getState().mcpToolNames.has(toolName) ? 'other' : 'disabled'
 }
@@ -342,11 +370,41 @@ function webRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
 // Internal tools never prompt: RAG and the native web tools are Jan's own, and
 // the built-in shell is gated in Rust (execute_tool refuses anything needing
 // approval), so only workspace-confined calls ever reach here.
-function isAutoAllowedTool(toolName: string): boolean {
+// Native scoped calls auto-allow only while they stay inside the conversation
+// scratch root under the CURRENT grant; elevated ones (network/folder shell,
+// folder writes, memory or skill mutation) take the normal per-call approval.
+// Grant read once at classification; the same snapshot bounds execution.
+// A throwing getter fails closed to the default (no folder/network/memory).
+function classifyScopedGrant(threadId: string): unknown {
+  try {
+    return useThreads.getState().getConversationCapabilities(threadId)
+  } catch {
+    return defaultConversationCapabilities()
+  }
+}
+
+function isAutoAllowedTool(
+  toolName: string,
+  threadId: string,
+  input: unknown,
+  classifiedGrant?: unknown
+): boolean {
+  if (chatShellRoute(toolName) === 'builtin') {
+    const args =
+      input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
+    let grant: unknown
+    try {
+      grant = classifiedGrant !== undefined
+        ? classifiedGrant
+        : useThreads.getState().getConversationCapabilities(threadId)
+    } catch {
+      return false
+    }
+    return !isElevatedThreadCall(toolName, args, grant)
+  }
   return (
     useAppState.getState().ragToolNames.has(toolName) ||
-    webRoute(toolName) === 'builtin' ||
-    chatShellRoute(toolName) === 'builtin'
+    webRoute(toolName) === 'builtin'
   )
 }
 
@@ -545,10 +603,6 @@ function ThreadDetail() {
   const setAttachmentsForThread = useChatAttachments(
     (state) => state.setAttachments
   )
-
-  // Session data for tool call tracking
-  const getSessionData = useChatSessions((state) => state.getSessionData)
-  const sessionData = getSessionData(threadId)
 
   // The thread on screen. onFinish is a closure of the render that created its
   // chat, so this is how a turn finishing in the background tells it is not.
@@ -872,14 +926,12 @@ function ThreadDetail() {
       // Stopped: none of this turn's tools will run. Left alone, their approval
       // prompts stay up, and a late "Allow" would run the tool and resume the
       // reply the user just stopped.
-      if (isAbort) {
-        // Origins are persisted above before a stopped stream releases them.
-        useToolCallRuntime.getState().releaseOrigins(
-          [...(callMcpIdentities.get(threadId)?.keys() ?? [])], threadId
-        )
-      }
+      // Persisted above before cleanup on every terminal, including a provider
+      // error after tool input arrived but before the runner dispatched it.
+      useToolCallRuntime.getState().releaseOrigins(
+        [...(callMcpIdentities.get(threadId)?.keys() ?? [])], threadId
+      )
       forgetApprovals(threadId)
-      sessionData.tools = []
       useToolApprovalRequests.getState().clearPendingForThread(threadId)
       if (isAbort) return
 
@@ -961,8 +1013,26 @@ function ThreadDetail() {
       // runTurn dispatches after canonical parsing completes and reuses this
       // one promise. Internal tools retain the existing Chat policy.
       const { serverName, checkMcp } = bindMcpCall(toolCall)
+      const isNative = !serverName && chatShellRoute(toolCall.toolName) === 'builtin'
+      // A call dispatch will refuse as unadvertised must not open a prompt (or
+      // an always-allow choice) that nothing will ever wait on.
       if (
-        serverName &&
+        isNative &&
+        isScopedThreadTool(toolCall.toolName) &&
+        !useChatSessions.getState().sessions[threadId]?.transport.hasAdvertisedNativeTool(toolCall.toolName)
+      ) {
+        return
+      }
+      const nativeGrant = isNative ? nativeGrantOf(threadId, toolCall.toolCallId) : undefined
+      if (isNative && toolCall.toolName === 'memory' && !['view', 'search'].includes((toolCall.input as { op?: string } | null)?.op ?? '')) return
+      if (isNative) {
+        try { authorizeThreadTool(toolCall.toolName, toolCall.input && typeof toolCall.input === 'object' ? toolCall.input as Record<string, unknown> : {}, nativeGrant) }
+        catch { return } // Dispatch returns the capability refusal without an approval.
+      }
+      if (
+        (serverName ||
+          (isNative &&
+            !isAutoAllowedTool(toolCall.toolName, threadId, toolCall.input, nativeGrant))) &&
         !isDisabledChatAgentTool(toolCall.toolName, serverName) &&
         webRoute(toolCall.toolName) !== 'disabled' &&
         !approvalsOf(threadId).has(toolCall.toolCallId)
@@ -976,7 +1046,8 @@ function ThreadDetail() {
               toolCall.toolName,
               threadId,
               serverName,
-              checkMcp
+              isNative ? undefined : checkMcp,
+              ...(isNative ? [{ native: { grantKey: grantKeyOf(nativeGrant) } }] as const : [])
             )
         )
       }
@@ -997,6 +1068,23 @@ function ThreadDetail() {
       try {
         const toolName = toolCall.toolName
         const { serverName, checkMcp } = bindMcpCall(toolCall)
+        if (!serverName && isScopedThreadTool(toolName) &&
+          !(toolName === 'shell' && chatShellRoute(toolName) === 'disabled') &&
+          !useChatSessions.getState().sessions[threadId]?.transport.hasAdvertisedNativeTool(toolName)) {
+          return { output: `Tool '${toolName}' was not advertised for this turn; start a new turn to refresh capabilities.`, isError: true }
+        }
+        // Captured at classification, before any approval wait.
+        const classifiedGrant =
+          !serverName && chatShellRoute(toolName) === 'builtin'
+            ? nativeGrantOf(threadId, toolCall.toolCallId)
+            : undefined
+
+        if (!serverName && toolName === 'memory' && !['view', 'search'].includes((toolCall.input as { op?: string } | null)?.op ?? '')) {
+          return { output: 'The memory tool is read-only in Chat; use view or search. This conversation has not granted durable memory writes through this advertised tool.', isError: true }
+        }
+        if (!serverName && isScopedThreadTool(toolName)) {
+          authorizeThreadTool(toolName, toolCall.input && typeof toolCall.input === 'object' ? toolCall.input as Record<string, unknown> : {}, classifiedGrant)
+        }
 
         if (webRoute(toolName) === 'disabled') {
           record({
@@ -1018,7 +1106,7 @@ function ThreadDetail() {
           return recorded
         }
 
-        if (serverName || !isAutoAllowedTool(toolName)) {
+        if (serverName || (!isScopedThreadTool(toolName) && !isAutoAllowedTool(toolName, threadId, toolCall.input, classifiedGrant))) {
           await untilAborted(checkMcp(stopSignal), stopSignal)
           if (signal.aborted || isChatClosing()) return { output: CHAT_CLOSED_TOOL_ERROR, isError: true }
         }
@@ -1026,13 +1114,18 @@ function ThreadDetail() {
           throw new Error(`Tool identity changed for ${toolName}; start a new turn`)
         }
 
-        let approved: ApprovalResult = !serverName && isAutoAllowedTool(toolName)
+        let approved: ApprovalResult =
+          !serverName && isAutoAllowedTool(toolName, threadId, toolCall.input, classifiedGrant)
         if (!approved) {
           const approvals = approvalsOf(threadId)
           let pending = approvals.get(toolCall.toolCallId)
           if (!pending) {
             pending = useToolApprovalRequests.getState().requestApproval(
-              toolCall.toolCallId, toolName, threadId, serverName, checkMcp
+              toolCall.toolCallId, toolName, threadId, serverName,
+              !serverName && isScopedThreadTool(toolName) ? undefined : checkMcp,
+              ...(!serverName && chatShellRoute(toolName) === 'builtin'
+                ? [{ native: { grantKey: grantKeyOf(classifiedGrant) } }] as const
+                : [])
             )
             // The SDK presentation reader may trail the runner. Publish the
             // fallback promise before yielding so its callback cannot prompt twice.
@@ -1090,13 +1183,19 @@ function ThreadDetail() {
                 maxOutputChars,
               })
             } else if (chatShellRoute(toolName, serverName) === 'builtin') {
-              // Chat's shell runs with the sandbox network closed: the
-              // default `allowNetwork = false` is the contract here, not an
-              // accident.
+              // Network is not a constant here: the native boundary opens it
+              // only when the classified grant (shellNetwork) allows it and
+              // the call was approved as elevated; otherwise it stays closed.
               const agentResult = await executeAgentTool(
                 toolName,
                 toolCall.input,
-                threadId
+                threadId,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                classifiedGrant
               )
               // The diff is display-only, so it goes to the runtime store
               // rather than into `result`: anything in `result` reaches the
@@ -2278,7 +2377,6 @@ function ThreadDetail() {
 
   useEffect(() => {
     if (status !== 'ready' || processingQueueRef.current) return
-    if (sessionData.tools.length > 0) return
 
     const next = useMessageQueue.getState().dequeue(threadId)
     if (!next) return
@@ -2294,7 +2392,7 @@ function ThreadDetail() {
       .finally(() => {
         processingQueueRef.current = false
       })
-  }, [status, threadId, sendQueuedMessage, sessionData.tools.length])
+  }, [status, threadId, sendQueuedMessage])
 
   // If streaming errors out, discard any queued messages so they don't sit there stuck
   useEffect(() => {

@@ -16,7 +16,19 @@ export type PendingApproval = {
   /** MCP server the tool belongs to, so the prompt can offer to trust it. */
   serverName?: string
   resolve: (approved: ApprovalResult) => void
+  /** Native (non-MCP) elevated call: approvals live in a native namespace
+   * bound to the grant the call was classified under. */
+  nativeKey?: string
 }
+
+/** Options for a native elevated request. Native approvals never inherit the
+ * MCP-wide setting or a bare tool-name grant (an MCP tool may share the name);
+ * allow-thread/allow-always persist only under `native:<tool>:<grantKey>`, so
+ * they stop applying once the thread's grant changes. */
+export type NativeApprovalOptions = { native: { grantKey: string } }
+
+export const nativeApprovalKey = (toolName: string, grantKey: string): string =>
+  `native:${toolName}:${grantKey}`
 
 /** Reject/throw to deny an unavailable identity. Called before prompting and granting. */
 export type ApprovalValidator = (signal: AbortSignal) => Promise<void>
@@ -44,7 +56,8 @@ type ToolApprovalRequestsState = {
     toolName: string,
     threadId: string,
     serverName?: string,
-    validate?: ApprovalValidator
+    validate?: ApprovalValidator,
+    options?: NativeApprovalOptions
   ) => Promise<ApprovalResult>
   resolveApproval: (toolCallId: string, decision: ApprovalDecision, threadId: string) => void
   cancelApproval: (toolCallId: string, threadId: string) => void
@@ -83,21 +96,29 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
     return {
       pending: {},
 
-      requestApproval: (toolCallId, toolName, threadId, serverName, validate) => {
+      requestApproval: (toolCallId, toolName, threadId, serverName, validate, options) => {
+        const nativeKey = !serverName && options?.native
+          ? nativeApprovalKey(toolName, options.native.grantKey)
+          : undefined
         const key = approvalKey(threadId, toolCallId)
         const previous = inFlight.get(key)
         if (previous) finish(previous, false)
         return new Promise<ApprovalResult>((resolve) => {
           const entry: InFlightApproval = {
-            toolCallId, toolName, threadId, serverName, resolve, validate,
+            toolCallId, toolName, threadId, serverName, resolve, validate, nativeKey,
             deciding: false, controller: new AbortController(),
           }
           inFlight.set(key, entry)
           const publish = () => {
             if (!isCurrent(entry)) return
             const settings = useToolApproval.getState()
-            if (settings.allowAllMCPPermissions ||
-                settings.isToolApproved(threadId, toolName, serverName)) {
+            // Native elevated calls ignore the MCP blanket and bare names: only
+            // an earlier native choice under this same grant approves them.
+            const preApproved = nativeKey
+              ? settings.isToolApproved(threadId, nativeKey)
+              : settings.allowAllMCPPermissions ||
+                settings.isToolApproved(threadId, toolName, serverName)
+            if (preApproved) {
               finish(entry, true)
               return
             }
@@ -136,11 +157,12 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
           // race another decision or resurrect this request.
           inFlight.delete(key)
           const approval = useToolApproval.getState()
+          const stored = entry.nativeKey ?? entry.toolName
           if (decision === 'allow-thread') {
-            approval.approveToolForThread(entry.threadId, entry.toolName, entry.serverName)
+            approval.approveToolForThread(entry.threadId, stored, entry.serverName)
           } else if (decision === 'allow-always') {
             if (entry.serverName) approval.approveServer(entry.serverName)
-            else approval.approveToolEverywhere(entry.toolName)
+            else approval.approveToolEverywhere(stored)
           }
           entry.resolve(true)
         }

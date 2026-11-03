@@ -13,7 +13,7 @@ import {
   lastAssistantMessageIsCompleteWithToolCalls,
 } from 'ai'
 import { withoutChatRunNotices } from './chatRunNotice'
-import { uniqueMcpTools, warnWithheldMcpTools } from './chatMcpIdentity'
+import { uniqueMcpTools, warnNativeShadowedMcpTool, warnWithheldMcpTools } from './chatMcpIdentity'
 import { repairToolArgs } from './toolCallRepair'
 import {
   encodeMcpToolImages,
@@ -46,7 +46,13 @@ import {
   sandboxEnforces,
 } from '@/lib/agentTools'
 import { resolveToolCapabilities } from './toolCapabilityPolicy'
+import {
+  memoryReadOnlyParameters,
+  MEMORY_READ_DESCRIPTION,
+  resolveScopedChatToolPolicy,
+} from './scopedChatToolPolicy'
 import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
+import { isScopedThreadTool } from '@/lib/scopedToolDispatch'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
@@ -870,6 +876,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private mcpIdentities = new Map<string, string>()
   private turnMcpIdentities?: Map<string, string>
 
+  hasAdvertisedNativeTool(name: string): boolean {
+    const tools = this.chatRunSnapshot?.tools ?? this.tools
+    return isScopedThreadTool(name) && Object.prototype.hasOwnProperty.call(tools, name) && !this.getMcpServerForTool(name)
+  }
+
   getMcpServerForTool(name: string): string | undefined {
     return (this.turnMcpIdentities ?? this.mcpIdentities).get(name)
   }
@@ -1287,18 +1298,42 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         } as Tool
       }
 
-      // The main chat offers exactly one built-in agent tool: the sandboxed
-      // shell, with no network. The full toolset lives in Cowork. Schemas come
-      // from Rust so they are never re-typed here, and `getAgentToolSchemas`
-      // already withholds shell when no sandbox backend can confine it. A user
-      // who switched it off (#9222) gets none of it.
+      // Scoped native namespace: advertised per turn from the model gate, the
+      // sandbox, and this thread's CURRENT effective grant (re-read on every
+      // refresh, so a revoke shows on the next turn; the run's frozen record
+      // below keeps it stable within one). Schemas come from Rust and are never
+      // re-typed here; names absent from getAgentToolSchemas are simply not
+      // advertised. Advertisement is not authority: dispatch re-checks per call.
+      // Screenshot/web/monitor/task are never in the scoped list. A user who
+      // switched the shell off (#9222) still gets no shell.
       try {
-        for (const schema of policy.loadNativeTools ? await getAgentToolSchemas() : []) {
-          if (!policy.allowsNativeTool(schema.function.name)) continue
-          mcpIdentities.delete(schema.function.name)
-          toolsRecord[schema.function.name] = {
-            description: schema.function.description,
-            inputSchema: jsonSchema(schema.function.parameters),
+        const schemas = await getAgentToolSchemas()
+        const scoped = resolveScopedChatToolPolicy(
+          { modelSupportsTools, sandboxAvailable: sandboxEnforces() },
+          this.turnGrantSnapshot()
+        )
+        const shellEnabled = useChatShell.getState().shellEnabled
+        for (const schema of schemas) {
+          const name = schema.function.name
+          if (!scoped.advertisesNativeTool(name)) continue
+          if (CHAT_AGENT_TOOL_NAMES.has(name) && !shellEnabled) continue
+          // User-configured MCP identities retain non-shell names. Shell keeps
+          // its existing explicit switch contract; other natives are withheld.
+          if (name !== 'shell' && mcpIdentities.has(name)) continue
+          let parameters: unknown = schema.function.parameters
+          let description: string = schema.function.description
+          if (name === 'memory') {
+            parameters = memoryReadOnlyParameters(parameters)
+            if (!parameters) continue
+            description = MEMORY_READ_DESCRIPTION
+          }
+          // Native ownership stays; the replaced MCP tool is reported, not silent.
+          const shadowed = mcpIdentities.get(name)
+          if (shadowed) warnNativeShadowedMcpTool(name, shadowed)
+          mcpIdentities.delete(name)
+          toolsRecord[name] = {
+            description,
+            inputSchema: jsonSchema(parameters as Record<string, unknown>),
           } as Tool
         }
       } catch (error) {
@@ -1312,6 +1347,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     this.mcpIdentities = mcpIdentities
     this.tools = toolsRecord
     if (owningSnapshot) owningSnapshot.tools = toolsRecord
+  }
+
+  /** This thread's effective grant for the turn being built. Any failure or a
+   * missing store method falls back to the denied default (fail closed). */
+  private turnGrantSnapshot(): unknown {
+    try {
+      const get = useThreads.getState().getConversationCapabilities
+      if (this.threadId && typeof get === 'function') return get(this.threadId)
+    } catch (error) {
+      console.warn('Failed to read conversation capabilities:', error)
+    }
+    return null
   }
 
   private async resolveRouterModel(settings: {
@@ -1829,9 +1876,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return routeRefusedToolCalls(
       continuedStream,
       (toolName) =>
-        CHAT_AGENT_TOOL_NAMES.has(toolName) &&
         !(toolName in this.tools) &&
-        !useChatShell.getState().shellEnabled
+        (CHAT_AGENT_TOOL_NAMES.has(toolName)
+          ? !useChatShell.getState().shellEnabled
+          : // Other native names (e.g. skill_write after a revoke) reach the
+            // route so the dispatch boundary can refuse them with a reason.
+            isScopedThreadTool(toolName))
     )
   }
 
@@ -1969,26 +2019,48 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Static instruction for the one built-in tool chat offers: the sandboxed
-   * shell. Empty when no sandbox backend enforces or when the user has turned
-   * the shell off, because shell is then withheld too — stating limits for a
-   * tool that is not offered would only confuse the model, and an empty string
-   * keeps the prompt prefix stable.
+   * Static instruction for the built-in tools this turn actually offers. Built
+   * from the advertised record, so it never names a tool the model was not
+   * given (a revoked skill_write, a switched-off shell, no sandbox) and an empty
+   * string keeps the prompt prefix stable when none are offered.
    */
   buildAgentToolsSystemInstruction(): string {
-    // Describing a tool the model was not given only invites it to ask for it.
-    if (!useChatShell.getState().shellEnabled || !sandboxEnforces()) return ''
-    // Stating the limits up front is cheaper than letting the model discover
-    // them by having a command refused.
-    return [
-      '# Shell',
-      'shell runs commands in an isolated scratch workspace under an OS',
-      'sandbox: it starts there, can only write there, and cannot read files',
-      "in the user's home directory. The workspace belongs to this",
-      'conversation alone and is deleted with it, so do not keep anything',
-      'there that should last. It has no network access, so commands that',
-      'download or upload will fail.',
-    ].join(' ')
+    const offered = (name: string) =>
+      name in this.tools && !this.mcpIdentities.has(name)
+    const files = ['read', 'ls', 'find', 'grep', 'write', 'edit'].filter(offered)
+    const lines: string[] = []
+    if (files.length > 0) {
+      lines.push(
+        '# Workspace files',
+        `${files.join(', ')} work inside an isolated scratch workspace that belongs`,
+        'to this conversation alone and is deleted with it, so do not keep anything',
+        'there that should last. Folders outside it are reachable only if the user',
+        'granted them to this conversation.'
+      )
+    }
+    if (useChatShell.getState().shellEnabled && sandboxEnforces() && offered('shell')) {
+      lines.push(
+        '# Shell',
+        "shell starts in this conversation's isolated scratch workspace under an OS sandbox.",
+        'Scratch files are deleted with the conversation. Access outside scratch and',
+        'network access require explicit conversation permissions. Each invocation is',
+        'limited by both the permissions present when the call was classified and',
+        'the current permissions; revocation can narrow a pending call.',
+        'Do not assume access to other folders or network destinations. Ask the',
+        'user to grant the needed folder or network access in conversation permissions.'
+      )
+    }
+    const skills = ['skill_list', 'skill_read', 'skill_write'].filter(offered)
+    if (skills.length > 0) {
+      lines.push('# Skills', `${skills.join(', ')} manage reusable skills.`)
+    }
+    if (offered('memory')) {
+      lines.push(
+        '# Memory',
+        'memory can only view and search your saved notes in the shared persistent memory store; it cannot change them.'
+      )
+    }
+    return lines.join(' ')
   }
 
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {

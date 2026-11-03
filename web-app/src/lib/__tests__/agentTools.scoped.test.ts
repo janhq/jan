@@ -157,4 +157,51 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
     await expect(executeAgentTool('edit', { path: 'scratch.txt' }, threadId)).resolves.toEqual({ content: 'edited', diff: '--- a\n+++ b\n', images })
     expect(mocks.executeTool).not.toHaveBeenCalled()
   })
+
+  describe('effectiveGrantCeiling (classification-time upper bound)', () => {
+    const call = (name: string, ceiling: unknown, args: Record<string, unknown> = {}) =>
+      executeAgentTool(name, args, threadId, undefined, 'thread', false, false, undefined, ceiling)
+
+    it('keeps a call classified under the default grant denied after the grant widens', async () => {
+      mocks.overlay = granted // widened after classification
+      await expect(call('memory', defaultConversationCapabilities(), { op: 'write' })).resolves.toEqual({ error: expect.stringContaining('durable memory') })
+      expect(mocks.executeThreadTool).not.toHaveBeenCalled()
+      await call('shell', defaultConversationCapabilities(), { command: 'echo scratch' })
+      expect(mocks.executeThreadTool).toHaveBeenCalledExactlyOnceWith(threadId, 'shell', { command: 'echo scratch' }, defaultConversationCapabilities())
+    })
+
+    it('does not auto-expand a scratch call when folder is granted after classification', async () => {
+      mocks.overlay = { ...granted, folderScope: { path: '/late/folder', access: 'write' } }
+      await call('read', defaultConversationCapabilities(), { path: 'a.txt' })
+      expect(mocks.executeThreadTool.mock.calls[0][3]).toEqual(defaultConversationCapabilities())
+    })
+
+    it('permits the granted call when current equals the ceiling', async () => {
+      mocks.overlay = granted
+      await expect(call('memory', granted, { op: 'write' })).resolves.toMatchObject({ content: 'scoped output' })
+      expect(mocks.executeThreadTool.mock.calls[0][3]).toEqual(granted)
+    })
+
+    it('still narrows on revoke after a granted classification', async () => {
+      mocks.overlay = defaultConversationCapabilities()
+      await expect(call('memory', granted, { op: 'write' })).resolves.toEqual({ error: expect.stringContaining('durable memory') })
+      expect(mocks.executeThreadTool).not.toHaveBeenCalled()
+    })
+
+    it('intersects folder path and access, network and memory', async () => {
+      mocks.overlay = { ...granted, folderScope: { path: '/explicit/folder', access: 'read' } }
+      await call('shell', granted, {})
+      expect(mocks.executeThreadTool.mock.calls[0][3]).toEqual({ ...granted, folderScope: { path: '/explicit/folder', access: 'read' } })
+      mocks.executeThreadTool.mockClear()
+      mocks.overlay = { ...granted, folderScope: { path: '/other', access: 'write' }, shellNetwork: false }
+      await call('shell', granted, {})
+      expect(mocks.executeThreadTool.mock.calls[0][3]).toEqual({ ...defaultConversationCapabilities(), memoryWrite: true })
+    })
+
+    it('treats a malformed ceiling as the default', async () => {
+      mocks.overlay = granted
+      await call('shell', { ...granted, extra: 1 }, {})
+      expect(mocks.executeThreadTool.mock.calls[0][3]).toEqual(defaultConversationCapabilities())
+    })
+  })
 })

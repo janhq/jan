@@ -2,7 +2,7 @@
   "messages": [
     {
       "role": "system",
-      "content": "You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.\n\nWhen handling user queries:\n\n1. Think step by step about the query:\n   - Break complex questions into smaller, searchable parts\n   - Identify key search terms and parameters\n   - Consider what information is needed to provide a complete answer\n\n2. Mandatory logical analysis:\n   - Before engaging any tools, articulate your complete thought process in natural language. You must act as a \"professional tool caller,\" demonstrating rigorous logic.\n   - Analyze the information gap: explicitly state what data is missing.\n   - Derive the strategy: explain why a specific tool is the logical next step.\n   - Justify parameters: explain why you chose those specific search keywords or that specific URL.\n\nYou have tools to search for and access real-time, up-to-date data. Use them. Search before stating that you can't or don't know.\n\nCurrent date: January 1, 2026\n\n# Shell shell runs commands in an isolated scratch workspace under an OS sandbox: it starts there, can only write there, and cannot read files in the user's home directory. The workspace belongs to this conversation alone and is deleted with it, so do not keep anything there that should last. It has no network access, so commands that download or upload will fail."
+      "content": "You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.\n\nWhen handling user queries:\n\n1. Think step by step about the query:\n   - Break complex questions into smaller, searchable parts\n   - Identify key search terms and parameters\n   - Consider what information is needed to provide a complete answer\n\n2. Mandatory logical analysis:\n   - Before engaging any tools, articulate your complete thought process in natural language. You must act as a \"professional tool caller,\" demonstrating rigorous logic.\n   - Analyze the information gap: explicitly state what data is missing.\n   - Derive the strategy: explain why a specific tool is the logical next step.\n   - Justify parameters: explain why you chose those specific search keywords or that specific URL.\n\nYou have tools to search for and access real-time, up-to-date data. Use them. Search before stating that you can't or don't know.\n\nCurrent date: January 1, 2026\n\n# Workspace files read, write, edit work inside an isolated scratch workspace that belongs to this conversation alone and is deleted with it, so do not keep anything there that should last. Folders outside it are reachable only if the user granted them to this conversation. # Shell shell starts in this conversation's isolated scratch workspace under an OS sandbox. Scratch files are deleted with the conversation. Access outside scratch and network access require explicit conversation permissions. Each invocation is limited by both the permissions present when the call was classified and the current permissions; revocation can narrow a pending call. Do not assume access to other folders or network destinations. Ask the user to grant the needed folder or network access in conversation permissions. # Skills skill_list, skill_read manage reusable skills. # Memory memory can only view and search your saved notes in the shared persistent memory store; it cannot change them."
     },
     {
       "role": "user",
@@ -10,6 +10,98 @@
     }
   ],
   "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read",
+        "description": "Read the contents of a UTF-8 text file. Output is truncated to 2000 lines or 64KB (whichever is hit first). Use offset/limit for large files. Image files (png/jpeg/gif/webp, detected by signature or extension) are returned as a vision image instead of text.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the project root (or absolute)."
+            },
+            "offset": {
+              "type": "integer",
+              "description": "Line number to start reading from (1-indexed)."
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum number of lines to read."
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "write",
+        "description": "Create or overwrite a file relative to the project root.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the project root."
+            },
+            "content": {
+              "type": "string",
+              "description": "Full file contents to write."
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "edit",
+        "description": "Edit a file using one or more exact text replacements applied in order. Each old_string must match exactly once in the current file state.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the project root."
+            },
+            "edits": {
+              "type": "array",
+              "description": "Targeted replacements applied in order.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "old_string": {
+                    "type": "string",
+                    "description": "Exact text to replace (must be unique at apply time)."
+                  },
+                  "new_string": {
+                    "type": "string",
+                    "description": "Replacement text."
+                  }
+                },
+                "required": [
+                  "old_string",
+                  "new_string"
+                ]
+              }
+            }
+          },
+          "required": [
+            "path",
+            "edits"
+          ]
+        }
+      }
+    },
     {
       "type": "function",
       "function": {
@@ -29,6 +121,68 @@
           },
           "required": [
             "command"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "memory",
+        "description": "Read your long-term memory: durable notes kept across sessions. Use `view` for the index, a folder, or one note, and `search` to find notes by keyword. Only the read-only `view` and `search` operations are available here.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "view",
+                "search"
+              ],
+              "description": "view: the index (no name), a folder's notes (`folder/`), or a note's content. search: keyword search over titles and bodies, archived notes included."
+            },
+            "name": {
+              "type": "string",
+              "description": "Note name without .md: `note` or `folder/note` (this project), `user:note` (every project), `project:<slug>` or `project:<slug>/note` (another project). Optional for view."
+            },
+            "query": {
+              "type": "string",
+              "description": "search: words that must all appear in the note."
+            }
+          },
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "skill_list",
+        "description": "List the available skills (reusable procedures) with a one-line description of each. No arguments.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "skill_read",
+        "description": "Load a skill's full instructions by name. The system prompt lists each skill's name and purpose; call this to read the complete procedure before applying a skill.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Skill name (without the .md extension)."
+            }
+          },
+          "required": [
+            "name"
           ]
         }
       }

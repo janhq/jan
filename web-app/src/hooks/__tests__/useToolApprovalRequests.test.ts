@@ -617,3 +617,57 @@ describe('validated approval lifecycle (real approval stores and identity valida
   })
 
 })
+
+describe('native elevated approvals (explicit native identity)', () => {
+  const native = (grantKey: string) => ({ native: { grantKey } })
+  beforeEach(() => {
+    useToolApprovalRequests.setState({ pending: {} })
+    useToolApproval.setState({
+      approvedTools: {}, approvedMCPTools: [], approvedServers: [],
+      approvedToolsGlobal: [], allowAllMCPPermissions: false,
+    })
+  })
+
+  it('still prompts a native elevated call when the MCP blanket is on', () => {
+    useToolApproval.setState({ allowAllMCPPermissions: true })
+    void useToolApprovalRequests.getState().requestApproval('n1', 'skill_write', 'thread-1', undefined, undefined, native('g1'))
+    expect(useToolApprovalRequests.getState().pending[approvalKey('thread-1', 'n1')]).toBeDefined()
+  })
+
+  it('does not treat a bare global or thread tool-name grant as a native approval', () => {
+    useToolApproval.setState({ approvedToolsGlobal: ['shell'], approvedTools: { 'thread-1': ['shell'] } })
+    void useToolApprovalRequests.getState().requestApproval('n2', 'shell', 'thread-1', undefined, undefined, native('g1'))
+    expect(useToolApprovalRequests.getState().pending[approvalKey('thread-1', 'n2')]).toBeDefined()
+  })
+
+  it('leaves the MCP path unchanged: blanket and bare names still approve', async () => {
+    useToolApproval.setState({ allowAllMCPPermissions: true })
+    await expect(useToolApprovalRequests.getState().requestApproval('m1', 'fetch', 'thread-1', 'srv')).resolves.toBe(true)
+    useToolApproval.setState({ allowAllMCPPermissions: false, approvedToolsGlobal: ['shell'] })
+    await expect(useToolApprovalRequests.getState().requestApproval('m2', 'shell', 'thread-1')).resolves.toBe(true)
+  })
+
+  it('allow-once stores nothing; allow-thread/always persist only for the same native grant', async () => {
+    const req = useToolApprovalRequests.getState()
+    const once = req.requestApproval('o1', 'shell', 'thread-1', undefined, undefined, native('g1'))
+    req.resolveApproval('o1', 'allow-once', 'thread-1')
+    await expect(once).resolves.toBe(true)
+    expect(useToolApproval.getState().approvedTools['thread-1']).toBeUndefined()
+
+    const thread = req.requestApproval('t1', 'shell', 'thread-1', undefined, undefined, native('g1'))
+    req.resolveApproval('t1', 'allow-thread', 'thread-1')
+    await expect(thread).resolves.toBe(true)
+    expect(useToolApproval.getState().approvedTools['thread-1']).toEqual(['native:shell:g1'])
+    // same grant: approved without a prompt; changed grant: prompts again
+    await expect(req.requestApproval('t2', 'shell', 'thread-1', undefined, undefined, native('g1'))).resolves.toBe(true)
+    void req.requestApproval('t3', 'shell', 'thread-1', undefined, undefined, native('g2'))
+    expect(useToolApprovalRequests.getState().pending[approvalKey('thread-1', 't3')]).toBeDefined()
+
+    const always = req.requestApproval('a1', 'skill_write', 'thread-2', undefined, undefined, native('g1'))
+    req.resolveApproval('a1', 'allow-always', 'thread-2')
+    await always
+    expect(useToolApproval.getState().approvedToolsGlobal).toEqual(['native:skill_write:g1'])
+    // a bare MCP tool of the same name is not approved by the native choice
+    expect(useToolApproval.getState().isToolApproved('thread-9', 'skill_write')).toBe(false)
+  })
+})
