@@ -11618,7 +11618,8 @@ fn read_span(args: &serde_json::Value) -> String {
     let start = n("offset").unwrap_or(1).max(1);
     match n("limit") {
         Some(0) => String::new(),
-        Some(limit) => format!(" [{start}-{}]", start + limit - 1),
+        // The arguments come from the model, so a huge limit must not overflow.
+        Some(limit) => format!(" [{start}-{}]", start.saturating_add(limit - 1)),
         None if start > 1 => format!(" [{start}+]"),
         None => String::new(),
     }
@@ -39093,6 +39094,10 @@ fn a() {}
         assert_eq!(span(json!({ "offset": 40, "limit": 1 })), " [40-40]");
         assert_eq!(span(json!({ "offset": 40 })), " [40+]");
         assert_eq!(span(json!({ "offset": 40, "limit": 0 })), "");
+        assert_eq!(
+            span(json!({ "offset": 2, "limit": u64::MAX })),
+            format!(" [2-{}]", u64::MAX)
+        );
     }
 
     /// Paging through one file names each page, so the row shows progress
