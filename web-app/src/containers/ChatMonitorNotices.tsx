@@ -1,4 +1,5 @@
 import { IconX } from '@tabler/icons-react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { selectThreadNotices, useMonitorNotices } from '@/stores/monitor-notice-store'
 
 /**
@@ -8,6 +9,7 @@ import { selectThreadNotices, useMonitorNotices } from '@/stores/monitor-notice-
  * next user turn still receives the marked notice once.
  */
 export function ChatMonitorNotices({ threadId }: { threadId: string }) {
+  const { t } = useTranslation()
   const notices = useMonitorNotices(selectThreadNotices(threadId))
   const dismiss = useMonitorNotices((s) => s.dismiss)
   if (!notices.length) return null
@@ -21,7 +23,9 @@ export function ChatMonitorNotices({ threadId }: { threadId: string }) {
         >
           <div className="min-w-0 flex-1">
             <div className="font-medium text-foreground">
-              Monitor finished{n.headline ? `: ${n.headline}` : ''}
+              {n.headline
+                ? t('common:monitorFinishedWithHeadline', { headline: n.headline })
+                : t('common:monitorFinished')}
             </div>
             {n.detail && (
               <div className="mt-0.5 whitespace-pre-wrap break-words text-muted-foreground line-clamp-4">
@@ -31,8 +35,9 @@ export function ChatMonitorNotices({ threadId }: { threadId: string }) {
           </div>
           <button
             type="button"
-            aria-label="Dismiss monitor notice"
-            className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+            aria-label={t('common:dismissMonitorNotice')}
+            title={t('common:dismissMonitorNotice')}
+            className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
             onClick={() => dismiss(threadId, n.id)}
           >
             <IconX aria-hidden="true" size={14} />
