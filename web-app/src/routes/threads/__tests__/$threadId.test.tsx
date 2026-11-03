@@ -555,6 +555,7 @@ import {
   resolveAutoInlineBudget,
 } from '@/lib/attachmentProcessing'
 import { usePrompt } from '@/hooks/usePrompt'
+import { useFailedDrafts } from '@/stores/failed-draft-store'
 import { computeActivePath } from '@/lib/message-branching'
 
 // The global setup mock is a shared object, so an overridden factory has to be
@@ -616,6 +617,7 @@ describe('ThreadDetail route', () => {
     h.messageQueueState.dequeue = vi.fn(() => null)
     h.messageQueueState.clearQueue = vi.fn()
     h.messageQueueState.queues = {}
+    useFailedDrafts.setState({ drafts: {} })
     h.agentModeState.agentThreads = {}
     h.modelProviderState.selectedProvider = 'openai'
     h.appStateState.busyThreads = {}
@@ -749,11 +751,11 @@ describe('ThreadDetail route', () => {
     await act(async () => { screen.getByTestId('chat-send').click() })
     await waitFor(() => expect(h.messagesState.deleteMessage).toHaveBeenCalled())
     expect(usePrompt.getState().prompt).toBe('typed newer')
-    // The displaced rejected text is kept explicitly, not dropped.
-    const persisted = h.messagesState.addMessage.mock.calls[0][0]
-    expect(h.messageQueueState.queues['thread-1']).toEqual([
-      { id: `failed-draft-${persisted.id}`, text: 'hello world', createdAt: expect.any(Number) },
+    // The displaced rejected draft is kept as a recoverable entry, never queued.
+    expect(useFailedDrafts.getState().drafts['thread-1']).toEqual([
+      expect.objectContaining({ text: 'hello world', attachments: [] }),
     ])
+    expect(h.messageQueueState.queues['thread-1']).toBeUndefined()
     log.mockRestore()
     delete h.threadsState.currentThreadId
     usePrompt.getState().resetPrompt()
@@ -1149,17 +1151,63 @@ describe('ThreadDetail route', () => {
       expect(h.mockSendMessage).not.toHaveBeenCalled()
     })
 
-    it('keeps what the user typed while the document was processing', async () => {
+    it('keeps what the user typed while the document was processing, and the failed draft whole', async () => {
       usePrompt.getState().setPrompt('typed meanwhile')
-      await sendAndFail()
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(new Error('unreadable'))
+      renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
 
       expect(usePrompt.getState().prompt).toBe('typed meanwhile')
+      // Text and files are ONE unit; neither is split into the composer/queue.
+      expect(useFailedDrafts.getState().drafts['thread-1'][0]).toMatchObject({
+        text: 'hello world',
+        attachments: [sheet],
+      })
+      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalledWith('thread-1', expect.any(Function))
+      expect(h.messageQueueState.queues['thread-1']).toBeUndefined()
     })
 
-    it('does not write the draft into another screen after the user left the thread', async () => {
-      await sendAndFail(null)
+    it('keeps the failed draft whole instead of writing another screen after the user left the thread', async () => {
+      h.threadsState.currentThreadId = undefined
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(new Error('unreadable'))
+      renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
 
       expect(usePrompt.getState().prompt).toBe('')
+      expect(useFailedDrafts.getState().drafts['thread-1'][0]).toMatchObject({
+        text: 'hello world',
+        attachments: [sheet],
+      })
+    })
+
+    it('never auto-sends a failed draft when the thread returns to ready', async () => {
+      usePrompt.getState().setPrompt('typed meanwhile')
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(new Error('unreadable'))
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
+      for (const status of ['submitted', 'streaming', 'error', 'ready']) {
+        h.chatState.status = status
+        rerender(<Component />)
+        await act(async () => {})
+      }
+      // The drain ran on ready (empty queue) and found nothing to send.
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      expect(h.messageQueueState.queues['thread-1']).toBeUndefined()
+      expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1)
+      h.chatState.status = 'ready'
+    })
+
+    it('restores immediately into an empty composer without creating an entry', async () => {
+      await sendAndFail()
+      expect(usePrompt.getState().prompt).toBe('hello world')
+      expect(useFailedDrafts.getState().drafts['thread-1']).toBeUndefined()
     })
   })
 
@@ -1218,7 +1266,7 @@ describe('ThreadDetail route', () => {
       usePrompt.getState().resetPrompt()
     })
 
-    it('cancelling keeps a draft typed while the dialog was open', async () => {
+    it('cancelling keeps a draft typed while the dialog was open, and recovers the cancelled draft whole', async () => {
       vi.mocked(promptIngestionChoices).mockImplementationOnce(async () => {
         usePrompt.getState().setPrompt('typed during dialog')
         return undefined
@@ -1227,19 +1275,21 @@ describe('ThreadDetail route', () => {
       await act(async () => {
         screen.getByTestId('chat-send').click()
       })
-      await waitFor(() => expect(usePrompt.getState().prompt).toBe('typed during dialog'))
-      // The typed text is never overwritten; the cancelled attachments still go
-      // back to the thread's bucket through the merge updater.
-      expect(h.attachmentsState.setAttachments).toHaveBeenCalledWith('thread-1', expect.any(Function))
-      const updater = vi.mocked(h.attachmentsState.setAttachments).mock.calls[0][1]
-      expect(updater([])).toEqual([sheet])
+      await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
+      // The typed text is never overwritten and the composer bucket untouched.
       expect(usePrompt.getState().prompt).toBe('typed during dialog')
+      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalledWith('thread-1', expect.any(Function))
+      expect(useFailedDrafts.getState().drafts['thread-1'][0]).toMatchObject({
+        text: 'hello world',
+        attachments: [sheet],
+      })
+      expect(h.messageQueueState.queues['thread-1']).toBeUndefined()
       expect(h.mockSendMessage).not.toHaveBeenCalled()
       h.attachmentsState.getAttachments = vi.fn(() => [])
       usePrompt.getState().resetPrompt()
     })
 
-    it('cancelling keeps a newer prompt together with newer attachments', async () => {
+    it('cancelling with a newer prompt and newer attachments leaves both alone', async () => {
       const newer = { name: 'newer.png', type: 'image', path: '/newer.png' }
       vi.mocked(promptIngestionChoices).mockImplementationOnce(async () => {
         usePrompt.getState().setPrompt('typed newer')
@@ -1250,20 +1300,19 @@ describe('ThreadDetail route', () => {
       await act(async () => {
         screen.getByTestId('chat-send').click()
       })
-      await waitFor(() => expect(promptIngestionChoices).toHaveBeenCalled())
-      await act(async () => {})
-      // The newer prompt is never overwritten. The cancelled attachments merge
-      // in front of the newer ones through the updater; nothing is replaced.
+      await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
       expect(usePrompt.getState().prompt).toBe('typed newer')
-      expect(h.attachmentsState.setAttachments).toHaveBeenCalledTimes(1)
-      const updater = vi.mocked(h.attachmentsState.setAttachments).mock.calls[0][1]
-      expect(updater([newer])).toEqual([sheet, newer])
+      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalled()
+      expect(useFailedDrafts.getState().drafts['thread-1'][0]).toMatchObject({
+        text: 'hello world',
+        attachments: [sheet],
+      })
       expect(h.mockSendMessage).not.toHaveBeenCalled()
       h.attachmentsState.getAttachments = vi.fn(() => [])
       usePrompt.getState().resetPrompt()
     })
 
-    it('never writes the global prompt when the thread switched during ingestion cancel', async () => {
+    it('thread switch during ingestion cancel never writes the prompt and recovers the draft under its own thread', async () => {
       vi.mocked(promptIngestionChoices).mockImplementationOnce(async () => {
         h.threadsState.currentThreadId = 'thread-2'
         return undefined
@@ -1272,14 +1321,13 @@ describe('ThreadDetail route', () => {
       await act(async () => {
         screen.getByTestId('chat-send').click()
       })
-      // Attachments are keyed by thread, so they return to thread-1's bucket.
-      await waitFor(() => {
-        expect(h.attachmentsState.setAttachments).toHaveBeenCalledWith(
-          'thread-1',
-          expect.any(Function)
-        )
-      })
+      await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
       expect(usePrompt.getState().prompt).toBe('')
+      expect(useFailedDrafts.getState().drafts['thread-2']).toBeUndefined()
+      expect(useFailedDrafts.getState().drafts['thread-1'][0]).toMatchObject({
+        text: 'hello world',
+        attachments: [sheet],
+      })
       expect(h.mockSendMessage).not.toHaveBeenCalled()
       h.attachmentsState.getAttachments = vi.fn(() => [])
       delete h.threadsState.currentThreadId

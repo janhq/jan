@@ -147,6 +147,10 @@ import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useMessageQueue, type QueuedMessage } from '@/stores/message-queue-store'
+import {
+  useFailedDrafts,
+  mergeRestoredAttachments,
+} from '@/stores/failed-draft-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
 import {
@@ -493,37 +497,19 @@ function ThreadRouteError({ error }: { error: Error }) {
 
 // as route.threadsDetail
 /**
- * Hands a submitted draft (text + attachments) back to the composer after a
- * send was cancelled or rejected, without clobbering anything newer.
+ * Hands a submitted draft (text + attachments) back after a send was
+ * cancelled, failed in processing, or was rejected, without clobbering
+ * anything newer.
  *
- * - Attachments always return to the original thread's bucket, through a
- *   functional updater: unique by identity, the submitted ones first, and any
- *   newer copy or newer file already in the bucket is kept as is.
- * - Thread open and the prompt empty: the text returns to the composer.
- * - Thread open but a newer draft was typed, or the thread is no longer open
- *   (the prompt store is shared with Home and other threads): the prompt is
- *   never written. `onTextDisplaced` receives the text so the caller can keep
- *   it somewhere explicit instead of dropping it.
+ * - Thread open and the prompt empty: the draft returns to the composer
+ *   immediately. Attachments go through a functional updater (unique by
+ *   identity, submitted ones first, newer files kept).
+ * - Otherwise (a newer draft was typed, or the thread is no longer open and the
+ *   prompt store is shared with Home and other threads): the prompt and the
+ *   composer are never touched. The COMPLETE draft, text and attachment
+ *   snapshot together, is kept as one recoverable entry in the failed-draft
+ *   store. It is never auto-sent; ChatInput offers Restore draft / Dismiss.
  */
-const attachmentIdentity = (a: Attachment) =>
-  a.id ?? a.path ?? `${a.type}:${a.name}`
-
-function mergeRestoredAttachments(
-  restored: Attachment[],
-  prev: Attachment[]
-): Attachment[] {
-  const current = new Set(prev.map(attachmentIdentity))
-  const seen = new Set<string>()
-  const merged: Attachment[] = []
-  for (const a of restored) {
-    const key = attachmentIdentity(a)
-    if (current.has(key) || seen.has(key)) continue
-    seen.add(key)
-    merged.push(a)
-  }
-  return [...merged, ...prev]
-}
-
 function restoreSubmittedDraft(args: {
   threadId: string
   attachmentsKey: string
@@ -533,32 +519,24 @@ function restoreSubmittedDraft(args: {
     key: string,
     updater: (prev: Attachment[]) => Attachment[]
   ) => void
-  onTextDisplaced?: (draft: string) => void
 }): boolean {
-  const {
-    threadId,
-    attachmentsKey,
-    draft,
-    attachments,
-    setAttachments,
-    onTextDisplaced,
-  } = args
+  const { threadId, attachmentsKey, draft, attachments, setAttachments } = args
   const composer = usePrompt.getState()
   const open = useThreads.getState().currentThreadId === threadId
-  if (attachments.length > 0) {
-    setAttachments(attachmentsKey, (prev) =>
-      mergeRestoredAttachments(attachments, prev)
-    )
-  }
   if (open && !composer.prompt) {
+    if (attachments.length > 0) {
+      setAttachments(attachmentsKey, (prev) =>
+        mergeRestoredAttachments(attachments, prev)
+      )
+    }
     composer.setPrompt(draft)
     return true
   }
-  if (draft.trim()) onTextDisplaced?.(draft)
+  useFailedDrafts.getState().add(threadId, { text: draft, attachments })
   return false
 }
 
-/** Puts a dequeued or displaced item back at the head of its thread's queue. */
+/** Puts a dequeued item back at the head of its thread's queue. */
 function restoreQueueHead(threadId: string, item: QueuedMessage) {
   useMessageQueue.setState((state) => {
     const queue = state.queues[threadId] ?? []
@@ -1936,10 +1914,10 @@ function ThreadDetail() {
           }
           // ChatInput cleared the input on submit and nothing was sent, so
           // hand the draft and attachments back; the user fixes the cause and
-          // sends again. Same policy as cancel and rejection: attachments go
-          // back to this thread's bucket without replacing newer ones, and the
-          // text only if this thread is open with an empty prompt. Text is not
-          // queued here: it would auto-send without the attachments that failed.
+          // sends again. Same policy as cancel and rejection: the draft returns
+          // immediately when this thread is open with an empty prompt, else it
+          // is kept whole as one recoverable failed draft. Text is never queued
+          // here: it would auto-send without the attachments that failed.
           restoreSubmittedDraft({
             threadId,
             attachmentsKey,
@@ -2004,21 +1982,14 @@ function ThreadDetail() {
         // user turn or consume the composer draft/attachments.
         deleteMessage(threadId, messageId)
         if (pendingAssistantParents.get(threadId) === messageId) pendingAssistantParents.delete(threadId)
-        // A draft typed since submit is newer than the one being restored.
-        // Its attachments merge into the bucket; the rejected text is kept as
-        // a visible, clearable queue item instead of being dropped.
+        // A draft typed since submit is newer than the one being restored: the
+        // complete rejected draft is kept as a recoverable entry instead.
         restoreSubmittedDraft({
           threadId,
           attachmentsKey,
           draft,
           attachments: allAttachments,
           setAttachments: setAttachmentsForThread,
-          onTextDisplaced: (text) =>
-            restoreQueueHead(threadId, {
-              id: `failed-draft-${messageId}`,
-              text,
-              createdAt: Date.now(),
-            }),
         })
         console.error('Chat send was not accepted:', error)
         return false

@@ -46,6 +46,12 @@ import { isCoworkThread } from '@/lib/threadMode'
 import { generateId } from 'ai'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { QueuedMessageChip } from '@/containers/QueuedMessageBubble'
+import { FailedDraftCard } from '@/containers/FailedDraftCard'
+import {
+  useFailedDrafts,
+  mergeRestoredAttachments,
+  type FailedDraft,
+} from '@/stores/failed-draft-store'
 import { SamplerPopover } from '@/containers/SamplerPopover'
 import ComposerModelPicker from '@/containers/ComposerModelPicker'
 import { AssistantsMenu } from '@/components/AssistantsMenu'
@@ -609,6 +615,36 @@ const ChatInput = memo(function ChatInput({
       useMessageQueue.getState().removeMessage(queueId, id)
     },
     [queueId]
+  )
+
+  // Failed drafts for this thread: recoverable only by explicit user action.
+  const failedDrafts = useFailedDrafts(
+    useShallow((s) => (queueId ? s.getDrafts(queueId) : []))
+  )
+
+  const dismissFailedDraft = useCallback(
+    (id: string) => {
+      useFailedDrafts.getState().remove(queueId, id)
+    },
+    [queueId]
+  )
+
+  // Restore hands the complete draft (text + files) back to the composer. A
+  // prompt typed since is kept: the restored text goes ahead of it.
+  const restoreFailedDraft = useCallback(
+    (failed: FailedDraft) => {
+      if (failed.text.trim()) {
+        setPrompt(prompt.trim() ? `${failed.text}\n\n${prompt}` : failed.text)
+      }
+      if (failed.attachments.length > 0) {
+        setAttachmentsForThread(attachmentsKey, (prev) =>
+          mergeRestoredAttachments(failed.attachments, prev)
+        )
+      }
+      useFailedDrafts.getState().remove(queueId, failed.id)
+      textareaRef.current?.focus()
+    },
+    [attachmentsKey, prompt, queueId, setAttachmentsForThread, setPrompt]
   )
 
   const lastTransferredThreadId = useRef<string | null>(null)
@@ -2341,6 +2377,18 @@ const ChatInput = memo(function ChatInput({
                       )
                     })}
                 </div>
+              </div>
+            )}
+            {failedDrafts.length > 0 && (
+              <div className="flex flex-col gap-1 px-3 pt-2 pb-0">
+                {failedDrafts.map((failed) => (
+                  <FailedDraftCard
+                    key={failed.id}
+                    draft={failed}
+                    onRestore={restoreFailedDraft}
+                    onDismiss={dismissFailedDraft}
+                  />
+                ))}
               </div>
             )}
             {queuedMessages.length > 0 && (

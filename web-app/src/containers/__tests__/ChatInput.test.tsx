@@ -11,6 +11,7 @@ import '@testing-library/jest-dom'
 import userEvent from '@testing-library/user-event'
 
 import { HomeModeToggle } from '../HomeModeToggle'
+import { useFailedDrafts } from '@/stores/failed-draft-store'
 
 // --- Module mocks (must be declared before component import) ---------------
 
@@ -421,6 +422,7 @@ const resetAll = () => {
   navigateHistoryMock.mockClear()
   enqueueMock.mockClear()
   clearQueueMock.mockClear()
+  useFailedDrafts.setState({ drafts: {} })
   for (const k of Object.keys(queueState)) delete queueState[k]
   getCurrentThreadMock.mockReturnValue(undefined)
   for (const key of Object.keys(threadsMockState)) delete threadsMockState[key]
@@ -1074,6 +1076,64 @@ describe('ChatInput', () => {
     // Accept either onStop called OR clearQueue called (both are valid stop-click paths).
     const clicked = onStop.mock.calls.length + clearQueueMock.mock.calls.length
     expect(clicked).toBeGreaterThanOrEqual(0) // smoke: no crash
+  })
+
+  describe('failed draft recovery', () => {
+    const sheet = { name: 'sheet.xlsx', type: 'document', path: '/sheet.xlsx' }
+    const seed = (threadId = 'thread-1') =>
+      useFailedDrafts
+        .getState()
+        .add(threadId, { text: 'failed text', attachments: [sheet as never] })!
+
+    it('shows the card and restores nothing until the user clicks', () => {
+      seed()
+      const onSubmit = vi.fn()
+      renderInput({ onSubmit })
+      expect(screen.getByTestId('failed-draft-card')).toBeInTheDocument()
+      expect(setPromptMock).not.toHaveBeenCalled()
+      expect(setAttachmentsMock).not.toHaveBeenCalled()
+      expect(onSubmit).not.toHaveBeenCalled()
+      expect(enqueueMock).not.toHaveBeenCalled()
+    })
+
+    it('Restore draft puts text and files back together, then removes the entry', () => {
+      seed()
+      const onSubmit = vi.fn()
+      renderInput({ onSubmit })
+      fireEvent.click(screen.getByRole('button', { name: 'Restore draft' }))
+      expect(setPromptMock).toHaveBeenCalledWith('failed text')
+      expect(setAttachmentsMock).toHaveBeenCalledWith('thread-1', expect.any(Function))
+      const updater = setAttachmentsMock.mock.calls[0][1]
+      const newer = { name: 'newer.png', type: 'image', path: '/newer.png' }
+      expect(updater([newer])).toEqual([sheet, newer])
+      expect(useFailedDrafts.getState().drafts['thread-1']).toBeUndefined()
+      // Restoring is not sending.
+      expect(onSubmit).not.toHaveBeenCalled()
+      expect(screen.queryByTestId('failed-draft-card')).not.toBeInTheDocument()
+    })
+
+    it('Restore draft keeps a prompt typed since, after the restored text', () => {
+      seed()
+      promptState = 'typed since'
+      renderInput({ onSubmit: vi.fn() })
+      fireEvent.click(screen.getByRole('button', { name: 'Restore draft' }))
+      expect(setPromptMock).toHaveBeenCalledWith('failed text\n\ntyped since')
+    })
+
+    it('Dismiss removes the entry without touching the composer', () => {
+      seed()
+      renderInput({ onSubmit: vi.fn() })
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+      expect(useFailedDrafts.getState().drafts['thread-1']).toBeUndefined()
+      expect(setPromptMock).not.toHaveBeenCalled()
+      expect(setAttachmentsMock).not.toHaveBeenCalled()
+    })
+
+    it("shows only the open thread's entries", () => {
+      seed('thread-2')
+      renderInput({ onSubmit: vi.fn() })
+      expect(screen.queryByTestId('failed-draft-card')).not.toBeInTheDocument()
+    })
   })
 
   it('queues the message when streaming with a currentThreadId', async () => {
