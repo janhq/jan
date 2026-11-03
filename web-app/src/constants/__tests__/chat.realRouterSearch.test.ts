@@ -27,9 +27,10 @@ async function searchStrFor(url: string): Promise<string> {
 }
 
 describe('isTemporaryChatSearch with real router searchStr', () => {
-  it('uses the default router search parser/stringifier', () => {
-    expect(defaultParseSearch).toBeTypeOf('function')
-    expect(defaultStringifySearch).toBeTypeOf('function')
+  it('normalizes duplicate flags through the default parser and stringifier', () => {
+    expect(defaultStringifySearch(defaultParseSearch('?temporary-chat=true&temporary-chat=false'))).toBe(
+      '?temporary-chat=%5Btrue%2Cfalse%5D'
+    )
   })
 
   const cases: Array<[string, string, boolean]> = [
