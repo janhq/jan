@@ -30,11 +30,16 @@ import {
   childEffectiveGrant,
   runChatMonitor,
   runChatTask,
+  settleChatRun,
+  takeTaskStatus,
+  TASK_STATUS_TEXT_LIMIT,
   type ChildBinding,
   type ChatOrchestrationContext,
 } from '../chatOrchestration'
 import { dropConversationClientThread } from '../conversationClientTools'
 import { defaultConversationCapabilities } from '../conversationCapabilities'
+import { createChatRunStream, taskStatusRows } from '../chatRunTransport'
+import { readUIMessageStream } from 'ai'
 import { resolveScopedChatToolPolicy } from '../scopedChatToolPolicy'
 
 const tool = {} as Tool
@@ -337,5 +342,167 @@ describe('advertisement', () => {
     expect(resolveScopedChatToolPolicy(on, grant({ folderScope: { path: '/p', access: 'read' } })).advertisedOrchestrationTools)
       .toEqual(['task', 'monitor'])
     expect(resolveScopedChatToolPolicy({ ...on, sandboxAvailable: false }, grant({})).advertisedOrchestrationTools).toEqual([])
+  })
+})
+
+const hang = () =>
+  hoisted.childStep.mockImplementation(
+    (o: { signal: AbortSignal }) =>
+      new Promise((_resolve, reject) => {
+        o.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+      })
+  )
+const lastStatus = (rows: Array<{ runId: string; status: string }>) =>
+  Object.fromEntries(rows.map((r) => [r.runId, r.status]))
+
+describe('task status lifecycle', () => {
+  it('run abort makes running rows terminal synchronously, before any async child cleanup', async () => {
+    const { ctx, controller } = ctxFor()
+    hang()
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle()
+    expect(Object.values(lastStatus(takeTaskStatus(ctx.threadId)))).toEqual(['running'])
+    controller.abort()
+    // No await: the abort listener alone must have settled the row.
+    const rows = takeTaskStatus(ctx.threadId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ status: 'error', error: '(the subagent was cancelled)' })
+    await settle(40)
+    expect(takeTaskStatus(ctx.threadId)).toEqual([])
+  })
+
+  it('Stop (cancelChatOrchestration) settles running rows before aborting children', async () => {
+    const { ctx } = ctxFor()
+    hang()
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle()
+    takeTaskStatus(ctx.threadId)
+    await cancelChatOrchestration(ctx.threadId)
+    const rows = takeTaskStatus(ctx.threadId)
+    expect(rows.map((r) => r.status)).toEqual(['error'])
+    await settle(40)
+    expect(takeTaskStatus(ctx.threadId)).toEqual([])
+  })
+
+  it('settleChatRun aborts held children and terminates rows without bumping epoch or stopping monitors', async () => {
+    const { ctx } = ctxFor()
+    hang()
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle()
+    takeTaskStatus(ctx.threadId)
+    const state = __testing.stateOf(ctx.threadId)
+    const epoch = state.epoch
+    settleChatRun(ctx.threadId)
+    expect(takeTaskStatus(ctx.threadId).map((r) => r.status)).toEqual(['error'])
+    expect(state.epoch).toBe(epoch)
+    expect(hoisted.stop).not.toHaveBeenCalled()
+    expect(hoisted.stopAll).not.toHaveBeenCalled()
+    await settle(40)
+    expect(state.children.size).toBe(0)
+    expect(state.active).toBe(0)
+  })
+
+  it('a completed child is never downgraded by a later settle', async () => {
+    const { ctx } = ctxFor()
+    hoisted.childStep.mockImplementation(async () => textStep('fine'))
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle()
+    const first = lastStatus(takeTaskStatus(ctx.threadId))
+    expect(Object.values(first)).toEqual(['done'])
+    settleChatRun(ctx.threadId)
+    expect(takeTaskStatus(ctx.threadId)).toEqual([])
+  })
+
+  it('per-run settle leaves another run\'s running rows alone', async () => {
+    const a = ctxFor()
+    const b = ctxFor({ threadId: a.ctx.threadId })
+    hang()
+    await runChatTask(oneChild(), 'a', a.ctx)
+    await runChatTask(oneChild({ name: 'b' }), 'b', b.ctx)
+    await settle()
+    takeTaskStatus(a.ctx.threadId)
+    a.controller.abort()
+    const rows = takeTaskStatus(a.ctx.threadId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].status).toBe('error')
+    expect(rows[0].runId).toContain('a')
+    b.controller.abort()
+  })
+
+  it('bounds persisted child output and error text', async () => {
+    const { ctx } = ctxFor()
+    hoisted.childStep.mockImplementation(async () => textStep('x'.repeat(TASK_STATUS_TEXT_LIMIT + 5000)))
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle()
+    const done = takeTaskStatus(ctx.threadId).find((r) => r.status === 'done')
+    expect(done?.finalOutput?.length).toBe(TASK_STATUS_TEXT_LIMIT)
+  })
+})
+
+describe('terminal flush ordering through the real run stream', () => {
+  const taskCall = () =>
+    streamOf([
+      { type: 'start-step' },
+      { type: 'tool-input-available', toolCallId: 'tk', toolName: 'task', input: {} },
+      { type: 'finish-step' },
+      { type: 'finish' },
+    ])
+  const user = { id: 'u', role: 'user' as const, parts: [{ type: 'text' as const, text: 'go' }] }
+  async function run(opts: {
+    sendSecond: () => Promise<ReadableStream<UIMessageChunk>>
+    maxSteps?: number
+    abortAfterDispatch?: boolean
+  }) {
+    const { ctx, controller } = ctxFor()
+    const outer = new AbortController()
+    hang()
+    let step = 0
+    const sendStep = vi.fn(async () => (++step === 1 ? taskCall() : opts.sendSecond()))
+    const order: string[] = []
+    const stream = createChatRunStream({
+      messages: [user],
+      messageId: 'a',
+      signal: outer.signal,
+      maxSteps: opts.maxSteps,
+      sendStep,
+      inbox: chatRunInbox(ctx.threadId),
+      dispatch: async (_call, signal) => {
+        const out = await runChatTask(oneChild(), 'tk', { ...ctx, signal })
+        await settle(5)
+        if (opts.abortAfterDispatch) outer.abort('fixture Stop')
+        return out
+      },
+      onFinally: () => {
+        order.push('finally')
+        settleChatRun(ctx.threadId)
+      },
+    })
+    let message
+    for await (const m of readUIMessageStream({ stream })) message = m
+    controller.abort()
+    return { message: message!, order, ctx }
+  }
+  const finalStatuses = (m: Parameters<typeof taskStatusRows>[0][number]) =>
+    taskStatusRows([m]).map((r) => r.status)
+
+  it('error terminal: the persisted row is error, never running', async () => {
+    const { message } = await run({ sendSecond: async () => { throw new Error('provider failed') } })
+    expect(finalStatuses(message)).toEqual(['error'])
+  })
+
+  it('budget cap terminal: stopped turn persists the child as error', async () => {
+    const { message } = await run({ maxSteps: 1, sendSecond: async () => streamOf([]) })
+    expect(message.metadata).toMatchObject({ stopped: true, runStopReason: 'steps' })
+    expect(finalStatuses(message)).toEqual(['error'])
+  })
+
+  it('abort terminal: Stop mid-child persists the child as error', async () => {
+    const { message } = await run({ abortAfterDispatch: true, sendSecond: async () => streamOf([]) })
+    expect(finalStatuses(message)).toEqual(['error'])
+  })
+
+  it('onFinally settle after finish finds nothing left to flush (no missed terminal row)', async () => {
+    const { ctx } = await run({ sendSecond: async () => { throw new Error('boom') } })
+    expect(takeTaskStatus(ctx.threadId)).toEqual([])
   })
 })

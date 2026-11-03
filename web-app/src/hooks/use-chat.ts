@@ -20,7 +20,7 @@ import {
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
-import { cancelChatOrchestration } from '@/lib/chatOrchestration'
+import { cancelChatOrchestration, settleChatRun } from '@/lib/chatOrchestration'
 
 type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
@@ -136,6 +136,9 @@ export function useChat(
                 inbox: runInbox?.(),
                 dispatch: dispatchTool ?? (async () => ({ output: 'Chat tool executor unavailable', isError: true })),
                 onFinally: () => {
+                  // Scoped to this run: only while this session still owns this
+                  // transport, and before the snapshot lets a newer turn begin.
+                  if (useChatSessions.getState().sessions[sessionId]?.transport === transport) settleChatRun(sessionId)
                   releaseSnapshot()
                   useToolApprovalRequests.getState().clearPendingForThread(sessionId)
                   unwatch()

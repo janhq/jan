@@ -145,6 +145,10 @@ export function createChatRunStream(options: {
           emit({ type: TASK_STATUS_PART, id: `task-status:${runId}`, data: { subagents: [row] } } as UIMessageChunk)
         }
       }
+      // Every terminal path (done, error, budget cap, stop, throw) ends the run's
+      // controller FIRST: children hang off this signal, and their listeners
+      // synchronously settle running rows as terminal before the final flush.
+      const endRun = (reason: string) => { if (!controller.signal.aborted) controller.abort(reason) }
       let canonical: UIMessage | undefined
       let completed: UIMessage | undefined
       // Pings runTurn drained from the inbox. runTurn folds them into its own
@@ -320,6 +324,8 @@ export function createChatRunStream(options: {
         },
       }).then(outcome => {
         notify(outcome)
+        endRun('Chat run ended')
+        flushTaskStatus()
         if (outcome.stoppedBy === 'steps' || outcome.stoppedBy === 'tokens') {
           emit({ type: 'message-metadata', messageMetadata: { stopped: true, runStopReason: outcome.stoppedBy } })
           // Use the existing stopped-turn Continue presentation rather than
@@ -336,8 +342,11 @@ export function createChatRunStream(options: {
       }).catch(error => {
         const errorText = error instanceof Error ? error.message : String(error)
         notify({ messages: completed ? [...options.messages, completed] : options.messages, steps: step, usage: null, sessionTokens: 0, stoppedBy: controller.signal.aborted ? 'aborted' : 'error', errorText })
+        endRun('Chat run failed')
+        flushTaskStatus()
         emit({ type: 'error', errorText })
       }).finally(() => {
+        endRun('Chat run ended')
         options.signal.removeEventListener('abort', abort)
         try { options.onFinally?.() } finally { if (!consumerCancelled) output.close() }
       })

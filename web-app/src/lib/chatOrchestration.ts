@@ -59,6 +59,8 @@ type ThreadState = {
   active: number
   waiters: Array<() => void>
   spawned: WeakMap<AbortSignal, number>
+  /** Status row ids started under each run's signal (scopes per-run settling). */
+  runRows: WeakMap<AbortSignal, Set<string>>
   /** Bumped by Stop/delete; monitor callbacks from an older epoch never ping. */
   epoch: number
 }
@@ -78,6 +80,7 @@ const stateOf = (threadId: string): ThreadState => {
       active: 0,
       waiters: [],
       spawned: new WeakMap(),
+      runRows: new WeakMap(),
       epoch: 0,
     }
     threads.set(threadId, state)
@@ -106,9 +109,43 @@ export function takeTaskStatus(threadId: string): TaskStatusRow[] {
   return state.statusQueue.splice(0).map((row) => ({ ...row }))
 }
 
+/** Persisted into the transcript, so child text is bounded. */
+export const TASK_STATUS_TEXT_LIMIT = 100_000
+const bound = (value: string | undefined): string | undefined =>
+  value !== undefined && value.length > TASK_STATUS_TEXT_LIMIT ? value.slice(0, TASK_STATUS_TEXT_LIMIT) : value
+
 function recordStatus(state: ThreadState, row: TaskStatusRow): void {
-  state.statusRows.set(row.runId, row)
-  state.statusQueue.push({ ...row })
+  const bounded: TaskStatusRow = { ...row }
+  if (bounded.finalOutput !== undefined) bounded.finalOutput = bound(bounded.finalOutput)
+  if (bounded.error !== undefined) bounded.error = bound(bounded.error)
+  state.statusRows.set(bounded.runId, bounded)
+  state.statusQueue.push({ ...bounded })
+}
+
+const CANCELLED_ROW_ERROR = '(the subagent was cancelled)'
+
+/** Synchronously turn still-`running` rows into terminal `error` rows, so the
+ * final status flush never persists a child as running after its run ended.
+ * `signal` scopes it to one run; omitted = every run of the thread (Stop). */
+function settleRunningRows(state: ThreadState, signal?: AbortSignal): void {
+  const owned = signal ? state.runRows.get(signal) : undefined
+  if (signal && !owned) return
+  const endedAt = Date.now()
+  for (const row of [...state.statusRows.values()]) {
+    if (row.status !== 'running' || (owned && !owned.has(row.runId))) continue
+    recordStatus(state, { ...row, status: 'error', endedAt, error: CANCELLED_ROW_ERROR })
+  }
+}
+
+/** Per-run final cleanup (error/budget/stop/done), called from the run's
+ * onFinally BEFORE its snapshot is released (so no newer turn can exist yet):
+ * abort any child still held and make every row terminal. Does not bump the
+ * epoch or stop monitors, so a monitor that outlives the turn keeps pinging. */
+export function settleChatRun(threadId: string): void {
+  const state = threads.get(threadId)
+  if (!state) return
+  for (const child of [...state.children]) child.abort('Chat run finished')
+  settleRunningRows(state)
 }
 
 /** What a child is bounded by, frozen when `task` was dispatched: the parent's
@@ -286,6 +323,12 @@ export async function runChatTask(input: unknown, callId: string, ctx: ChatOrche
   }
   const model = ctx.getModel()
   state.spawned.set(ctx.signal, spent + total)
+  if (!state.runRows.has(ctx.signal)) {
+    state.runRows.set(ctx.signal, new Set())
+    // Registered before any child's own abort listener: when the run ends on ANY
+    // path the rows are terminal synchronously, before the final status flush.
+    ctx.signal.addEventListener('abort', () => settleRunningRows(state, ctx.signal), { once: true })
+  }
   const multi = plan.phases.length > 1
   const { inbox } = state
   inbox.begin() // plan hold: pending() never reads false mid-plan
@@ -300,11 +343,14 @@ export async function runChatTask(input: unknown, callId: string, ctx: ChatOrche
         writeBlackboard: async () => null,
         onDispatch: (id, name) => {
           inbox.begin()
-          if (threads.get(ctx.threadId) === state) recordStatus(state, { runId: id, name, status: 'running', startedAt: Date.now() })
+          if (threads.get(ctx.threadId) === state && !ctx.signal.aborted) {
+            state.runRows.get(ctx.signal)?.add(id)
+            recordStatus(state, { runId: id, name, status: 'running', startedAt: Date.now() })
+          }
         },
         onComplete: (id, name, result) => {
           const began = state.statusRows.get(id)
-          if (began && threads.get(ctx.threadId) === state && !ctx.signal.aborted) {
+          if (began?.status === 'running' && threads.get(ctx.threadId) === state && !ctx.signal.aborted) {
             const endedAt = Date.now()
             recordStatus(
               state,
@@ -380,6 +426,7 @@ export async function cancelChatOrchestration(threadId: string, opts: { monitors
   const state = threads.get(threadId)
   if (!state) return
   state.epoch += 1
+  settleRunningRows(state)
   for (const child of [...state.children]) child.abort('Chat run stopped')
   if (!opts.monitors) return
   const ids = [...state.monitorIds]
