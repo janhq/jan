@@ -59,6 +59,7 @@ import {
  evaluateEmbeddingVector,
  evaluateGpuOffload,
  backendFromDeviceIds,
+ countAcceleratorDevices,
  type EmbeddingVectorProblem,
  type GpuOffloadCheck,
  type ReadinessStatus,
@@ -732,10 +733,11 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    logger.warn('Hardware GPU probe failed during setup verification:', e)
   }
 
+  const deviceIds = devices.map((d) => d.id)
   return {
-   backend: backendFromDeviceIds(devices.map((d) => d.id)),
+   backend: backendFromDeviceIds(deviceIds),
    ...evaluateGpuOffload({
-    engineDeviceCount: devices.length,
+    engineDeviceCount: countAcceleratorDevices(deviceIds),
     hardwareGpuCount,
    }),
   }
