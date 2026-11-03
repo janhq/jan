@@ -146,7 +146,7 @@ import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
-import { useMessageQueue } from '@/stores/message-queue-store'
+import { useMessageQueue, type QueuedMessage } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
 import {
@@ -496,16 +496,33 @@ function ThreadRouteError({ error }: { error: Error }) {
  * Hands a submitted draft (text + attachments) back to the composer after a
  * send was cancelled or rejected, without clobbering anything newer.
  *
- * - Thread still open and the prompt is empty: restore the text and put the
- *   old attachments in front of any added since (unique, nothing replaced).
- * - Thread still open but the user already typed a new draft: the new draft
- *   stays as a unit; neither its text nor its attachments are touched.
- * - Thread no longer open: the prompt store is shared with Home and other
- *   threads, so the text is not written. Attachments are keyed by thread, so
- *   they go back to this thread's own bucket.
+ * - Attachments always return to the original thread's bucket, through a
+ *   functional updater: unique by identity, the submitted ones first, and any
+ *   newer copy or newer file already in the bucket is kept as is.
+ * - Thread open and the prompt empty: the text returns to the composer.
+ * - Thread open but a newer draft was typed, or the thread is no longer open
+ *   (the prompt store is shared with Home and other threads): the prompt is
+ *   never written. `onTextDisplaced` receives the text so the caller can keep
+ *   it somewhere explicit instead of dropping it.
  */
 const attachmentIdentity = (a: Attachment) =>
   a.id ?? a.path ?? `${a.type}:${a.name}`
+
+function mergeRestoredAttachments(
+  restored: Attachment[],
+  prev: Attachment[]
+): Attachment[] {
+  const current = new Set(prev.map(attachmentIdentity))
+  const seen = new Set<string>()
+  const merged: Attachment[] = []
+  for (const a of restored) {
+    const key = attachmentIdentity(a)
+    if (current.has(key) || seen.has(key)) continue
+    seen.add(key)
+    merged.push(a)
+  }
+  return [...merged, ...prev]
+}
 
 function restoreSubmittedDraft(args: {
   threadId: string
@@ -516,22 +533,38 @@ function restoreSubmittedDraft(args: {
     key: string,
     updater: (prev: Attachment[]) => Attachment[]
   ) => void
+  onTextDisplaced?: (draft: string) => void
 }): boolean {
-  const { threadId, attachmentsKey, draft, attachments, setAttachments } = args
+  const {
+    threadId,
+    attachmentsKey,
+    draft,
+    attachments,
+    setAttachments,
+    onTextDisplaced,
+  } = args
   const composer = usePrompt.getState()
   const open = useThreads.getState().currentThreadId === threadId
-  if (open && composer.prompt) return false
   if (attachments.length > 0) {
-    setAttachments(attachmentsKey, (prev) => {
-      const restored = new Set(attachments.map(attachmentIdentity))
-      return [
-        ...attachments,
-        ...prev.filter((a) => !restored.has(attachmentIdentity(a))),
-      ]
-    })
+    setAttachments(attachmentsKey, (prev) =>
+      mergeRestoredAttachments(attachments, prev)
+    )
   }
-  if (open) composer.setPrompt(draft)
-  return open
+  if (open && !composer.prompt) {
+    composer.setPrompt(draft)
+    return true
+  }
+  if (draft.trim()) onTextDisplaced?.(draft)
+  return false
+}
+
+/** Puts a dequeued or displaced item back at the head of its thread's queue. */
+function restoreQueueHead(threadId: string, item: QueuedMessage) {
+  useMessageQueue.setState((state) => {
+    const queue = state.queues[threadId] ?? []
+    if (queue.some((m) => m.id === item.id)) return state
+    return { queues: { ...state.queues, [threadId]: [item, ...queue] } }
+  })
 }
 
 export const Route = createFileRoute('/threads/$threadId')({
@@ -1903,22 +1936,17 @@ function ThreadDetail() {
           }
           // ChatInput cleared the input on submit and nothing was sent, so
           // hand the draft and attachments back; the user fixes the cause and
-          // sends again. Attachments are keyed by thread and go back in front
-          // of anything added since. The prompt store is shared by every
-          // thread and Home, so the draft returns only while this thread is
-          // still the open one (the store clears it on leaving) and only if
-          // nothing has been typed there since.
-          setAttachmentsForThread(attachmentsKey, (prev) => [
-            ...allAttachments,
-            ...prev,
-          ])
-          const composer = usePrompt.getState()
-          if (
-            useThreads.getState().currentThreadId === threadId &&
-            !composer.prompt
-          ) {
-            composer.setPrompt(draft)
-          }
+          // sends again. Same policy as cancel and rejection: attachments go
+          // back to this thread's bucket without replacing newer ones, and the
+          // text only if this thread is open with an empty prompt. Text is not
+          // queued here: it would auto-send without the attachments that failed.
+          restoreSubmittedDraft({
+            threadId,
+            attachmentsKey,
+            draft,
+            attachments: allAttachments,
+            setAttachments: setAttachmentsForThread,
+          })
           return
         } finally {
           useAppState.getState().setThreadEmbedding(threadId, false)
@@ -1977,12 +2005,20 @@ function ThreadDetail() {
         deleteMessage(threadId, messageId)
         if (pendingAssistantParents.get(threadId) === messageId) pendingAssistantParents.delete(threadId)
         // A draft typed since submit is newer than the one being restored.
+        // Its attachments merge into the bucket; the rejected text is kept as
+        // a visible, clearable queue item instead of being dropped.
         restoreSubmittedDraft({
           threadId,
           attachmentsKey,
           draft,
           attachments: allAttachments,
           setAttachments: setAttachmentsForThread,
+          onTextDisplaced: (text) =>
+            restoreQueueHead(threadId, {
+              id: `failed-draft-${messageId}`,
+              text,
+              createdAt: Date.now(),
+            }),
         })
         console.error('Chat send was not accepted:', error)
         return false
@@ -2512,41 +2548,57 @@ function ThreadDetail() {
   // Message queue: auto-send the next queued message when the stream finishes.
   // No reactive subscription to the queue here — ChatInput owns the UI.
   // We only read the store imperatively when status transitions to 'ready'.
-  const processingQueueRef = useRef(false)
-  // Set when the head item was rejected. While set, nothing drains, so a
-  // changed `sendQueuedMessage` identity (model, thread or attachment store
-  // updates) cannot re-fire the same failing send. It clears when the thread
-  // leaves `ready` (any new turn, or an error) so the next ready retries once.
-  const queueRetryBlockedRef = useRef(false)
+  // Ownership of in-flight work is (thread, status epoch), never a bare flag.
+  // The epoch object is replaced whenever the thread or the status changes, so
+  // a rejection that lands later can tell it no longer owns the current state.
+  const statusEpochRef = useRef<{ threadId: string }>({ threadId })
+  useEffect(() => {
+    statusEpochRef.current = { threadId }
+  }, [status, threadId])
+  // The queue send in flight, with the thread it belongs to.
+  const processingQueueRef = useRef<{ threadId: string } | null>(null)
+  // Set when the thread became ready while that send was still in flight, so
+  // its settlement has to re-run the drain it skipped.
+  const readySkippedRef = useRef<string | null>(null)
+  const [drainTick, setDrainTick] = useState(0)
+  // The epoch in which the head item was rejected. While it is still the
+  // current epoch nothing drains, so a changed `sendQueuedMessage` identity
+  // (model, thread or attachment store updates) cannot re-fire the same
+  // failing send. A new status or thread replaces the epoch, which unblocks.
+  const queueRetryBlockedRef = useRef<object | null>(null)
 
   useEffect(() => {
-    if (status !== 'ready') queueRetryBlockedRef.current = false
-  }, [status])
-
-  useEffect(() => {
-    if (
-      status !== 'ready' ||
-      processingQueueRef.current ||
-      queueRetryBlockedRef.current
-    )
+    if (status !== 'ready') return
+    if (processingQueueRef.current?.threadId === threadId) {
+      readySkippedRef.current = threadId
       return
+    }
+    if (queueRetryBlockedRef.current === statusEpochRef.current) return
 
     const next = useMessageQueue.getState().dequeue(threadId)
     if (!next) return
 
-    processingQueueRef.current = true
+    const owner = statusEpochRef.current
+    const token = { threadId }
+    processingQueueRef.current = token
     sendQueuedMessage(next.text)
       .catch((err) => {
-        // Restore the exact dequeued item ahead of later drafts; no loss and
-        // no immediate retry loop while the owning turn is still busy.
-        queueRetryBlockedRef.current = true
-        useMessageQueue.setState(state => ({ queues: { ...state.queues, [threadId]: [next, ...(state.queues[threadId] ?? [])] } }))
+        // Restore the exact dequeued item ahead of later drafts. Latch only if
+        // this rejection still owns the thread and status it was sent in; a
+        // slow rejection after the status moved on or the thread changed must
+        // not block a newer epoch.
+        if (statusEpochRef.current === owner) queueRetryBlockedRef.current = owner
+        restoreQueueHead(threadId, next)
         console.error('Failed to send queued message:', err)
       })
       .finally(() => {
-        processingQueueRef.current = false
+        if (processingQueueRef.current === token) processingQueueRef.current = null
+        if (readySkippedRef.current === threadId) {
+          readySkippedRef.current = null
+          setDrainTick((tick) => tick + 1)
+        }
       })
-  }, [status, threadId, sendQueuedMessage])
+  }, [status, threadId, sendQueuedMessage, drainTick])
 
   // A streaming error keeps queued messages: they are user text that has not
   // been sent. They stay in the queue (visible and clearable from ChatInput)

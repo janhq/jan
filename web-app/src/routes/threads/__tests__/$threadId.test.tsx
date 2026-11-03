@@ -615,6 +615,7 @@ describe('ThreadDetail route', () => {
     h.chatSessionsState.getSessionData = vi.fn(() => ({ tools: [] }))
     h.messageQueueState.dequeue = vi.fn(() => null)
     h.messageQueueState.clearQueue = vi.fn()
+    h.messageQueueState.queues = {}
     h.agentModeState.agentThreads = {}
     h.modelProviderState.selectedProvider = 'openai'
     h.appStateState.busyThreads = {}
@@ -748,6 +749,11 @@ describe('ThreadDetail route', () => {
     await act(async () => { screen.getByTestId('chat-send').click() })
     await waitFor(() => expect(h.messagesState.deleteMessage).toHaveBeenCalled())
     expect(usePrompt.getState().prompt).toBe('typed newer')
+    // The displaced rejected text is kept explicitly, not dropped.
+    const persisted = h.messagesState.addMessage.mock.calls[0][0]
+    expect(h.messageQueueState.queues['thread-1']).toEqual([
+      { id: `failed-draft-${persisted.id}`, text: 'hello world', createdAt: expect.any(Number) },
+    ])
     log.mockRestore()
     delete h.threadsState.currentThreadId
     usePrompt.getState().resetPrompt()
@@ -843,6 +849,177 @@ describe('ThreadDetail route', () => {
     expect(h.messageQueueState.queues['thread-1']).toEqual([head])
     h.modelProviderState.selectedModel = originalModel
     log.mockRestore()
+  })
+
+  describe('queued send ownership across status epochs and threads', () => {
+    const deferred = () => {
+      let resolve!: () => void
+      let reject!: (e: Error) => void
+      const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej })
+      return { promise, resolve, reject }
+    }
+    const useQueues = (queues: Record<string, any[]>) => {
+      h.messageQueueState.queues = queues
+      h.messageQueueState.dequeue = vi.fn((id: string) => h.messageQueueState.queues[id]?.shift() ?? null)
+    }
+    afterEach(() => {
+      h.routeParams.threadId = 'thread-1'
+      delete h.threadsState.threads['thread-2']
+      h.chatState.status = 'ready'
+    })
+
+    it('retries exactly once when a delayed rejection lands after status cycled submitted -> ready', async () => {
+      const head = { id: 'q-head', text: 'queued head', createdAt: 1 }
+      useQueues({ 'thread-1': [head] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      // The turn cycles while the first send promise is still pending.
+      h.chatState.status = 'submitted'
+      rerender(<Component />)
+      await act(async () => {})
+      h.chatState.status = 'ready'
+      rerender(<Component />)
+      await act(async () => {})
+      // Ready is skipped while the send is in flight: nothing else is sent.
+      expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+
+      await act(async () => { first.reject(new Error('Chat turn already running')) })
+      // The rejection no longer owns the current epoch: the item is restored
+      // and the skipped ready is re-run exactly once.
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(2))
+      await act(async () => {})
+      expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(2)
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(2)
+      expect(h.messageQueueState.queues['thread-1']).toEqual([])
+      expect(log).toHaveBeenCalledWith('Failed to send queued message:', expect.any(Error))
+      log.mockRestore()
+    })
+
+    it('resumes the queue once the in-flight operation settles after status returned to ready', async () => {
+      const a = { id: 'q-a', text: 'queued A', createdAt: 1 }
+      const b = { id: 'q-b', text: 'queued B', createdAt: 2 }
+      useQueues({ 'thread-1': [a, b] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      h.chatState.status = 'submitted'
+      rerender(<Component />)
+      await act(async () => {})
+      h.chatState.status = 'ready'
+      rerender(<Component />)
+      await act(async () => {})
+      // Operation unsettled: B stays queued even though the status is ready.
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+      expect(h.messageQueueState.queues['thread-1']).toEqual([b])
+
+      await act(async () => { first.resolve() })
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(2))
+      await act(async () => {})
+      expect(h.messageQueueState.queues['thread-1']).toEqual([])
+      expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(2)
+    })
+
+    it('a stale rejection from the old thread restores only its own queue and never blocks the new thread', async () => {
+      const oldItem = { id: 'q-old', text: 'old thread item', createdAt: 1 }
+      const fresh = { id: 'q-new', text: 'new thread item', createdAt: 2 }
+      useQueues({ 'thread-1': [oldItem], 'thread-2': [] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      h.threadsState.threads['thread-2'] = {
+        id: 'thread-2', title: 'Other', metadata: {}, assistants: [],
+        model: { id: 'gpt-x', provider: 'openai' },
+      }
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+
+      h.routeParams.threadId = 'thread-2'
+      rerender(<Component />)
+      await act(async () => {})
+      // The old thread's pending send does not make the new thread skip or drain.
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+
+      await act(async () => { first.reject(new Error('Chat turn already running')) })
+      await act(async () => {})
+      expect(h.messageQueueState.queues['thread-1']).toEqual([oldItem])
+      expect(h.messageQueueState.queues['thread-2']).toEqual([])
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+
+      // New thread work arrives afterwards; a changed send callback re-runs the
+      // drain and nothing latched by the old rejection blocks it.
+      h.messageQueueState.queues['thread-2'].push(fresh)
+      h.modelProviderState.selectedModel = { ...h.modelProviderState.selectedModel }
+      h.messagesState.addMessage = vi.fn()
+      rerender(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(2))
+      expect(h.messageQueueState.dequeue).toHaveBeenLastCalledWith('thread-2')
+      expect(h.messageQueueState.queues['thread-2']).toEqual([])
+      expect(h.messageQueueState.queues['thread-1']).toEqual([oldItem])
+      log.mockRestore()
+    })
+  })
+
+  describe('restored attachment merge updater', () => {
+    const sheet = { name: 'sheet.xlsx', type: 'document', path: '/sheet.xlsx' }
+    const capturedUpdater = async () => {
+      h.threadsState.currentThreadId = 'thread-1'
+      usePrompt.getState().resetPrompt()
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(new Error('unreadable'))
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      await waitFor(() => expect(h.attachmentsState.setAttachments).toHaveBeenCalled())
+      log.mockRestore()
+      return vi.mocked(h.attachmentsState.setAttachments).mock.calls[0][1] as (prev: any[]) => any[]
+    }
+    afterEach(() => {
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+      delete h.threadsState.currentThreadId
+      usePrompt.getState().resetPrompt()
+    })
+
+    it('puts restored attachments first, unique by identity, and the current copy wins', async () => {
+      const update = await capturedUpdater()
+      const currentCopy = { ...sheet, parseMode: 'inline' }
+      const newer = { name: 'n.png', type: 'image', path: '/n.png' }
+      expect(update([])).toEqual([sheet])
+      expect(update([newer])).toEqual([sheet, newer])
+      // Same identity already present: the restored one is dropped, the
+      // current copy (with its newer parseMode) stays and is not duplicated.
+      const merged = update([newer, currentCopy])
+      expect(merged).toEqual([newer, currentCopy])
+      expect(merged[1]).toBe(currentCopy)
+      // Pure and repeatable: replaying onto its own output changes nothing.
+      expect(update(update([newer]))).toEqual([sheet, newer])
+    })
+
+    it('dedupes ids and falls back to path or type+name identity', async () => {
+      const a1 = { id: 'a', name: 'one', type: 'image' }
+      const a2 = { id: 'a', name: 'renamed', type: 'image' }
+      h.attachmentsState.getAttachments = vi.fn(() => [a1, a2, sheet, { name: 'x', type: 'image' }])
+      vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(new Error('unreadable'))
+      h.threadsState.currentThreadId = 'thread-1'
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      await waitFor(() => expect(h.attachmentsState.setAttachments).toHaveBeenCalled())
+      log.mockRestore()
+      const update = vi.mocked(h.attachmentsState.setAttachments).mock.calls[0][1] as (prev: any[]) => any[]
+      // Duplicate id within the restored set collapses to the first.
+      expect(update([])).toEqual([a1, sheet, { name: 'x', type: 'image' }])
+      // Present by id / path / type:name: restored copies are not re-added.
+      const current = [{ id: 'a', name: 'cur' }, { name: 'sheet2', type: 'document', path: '/sheet.xlsx' }, { name: 'x', type: 'image' }]
+      expect(update(current)).toEqual(current)
+    })
   })
 
   it('keeps the thread in its project when attachments are embedded', async () => {
@@ -1051,7 +1228,11 @@ describe('ThreadDetail route', () => {
         screen.getByTestId('chat-send').click()
       })
       await waitFor(() => expect(usePrompt.getState().prompt).toBe('typed during dialog'))
-      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalled()
+      // The typed text is never overwritten; the cancelled attachments still go
+      // back to the thread's bucket through the merge updater.
+      expect(h.attachmentsState.setAttachments).toHaveBeenCalledWith('thread-1', expect.any(Function))
+      const updater = vi.mocked(h.attachmentsState.setAttachments).mock.calls[0][1]
+      expect(updater([])).toEqual([sheet])
       expect(usePrompt.getState().prompt).toBe('typed during dialog')
       expect(h.mockSendMessage).not.toHaveBeenCalled()
       h.attachmentsState.getAttachments = vi.fn(() => [])
@@ -1071,10 +1252,12 @@ describe('ThreadDetail route', () => {
       })
       await waitFor(() => expect(promptIngestionChoices).toHaveBeenCalled())
       await act(async () => {})
-      // The newer draft stays a unit: nothing is merged into or over it.
+      // The newer prompt is never overwritten. The cancelled attachments merge
+      // in front of the newer ones through the updater; nothing is replaced.
       expect(usePrompt.getState().prompt).toBe('typed newer')
-      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalled()
-      expect(h.attachmentsState.getAttachments('thread-1')).toEqual([newer])
+      expect(h.attachmentsState.setAttachments).toHaveBeenCalledTimes(1)
+      const updater = vi.mocked(h.attachmentsState.setAttachments).mock.calls[0][1]
+      expect(updater([newer])).toEqual([sheet, newer])
       expect(h.mockSendMessage).not.toHaveBeenCalled()
       h.attachmentsState.getAttachments = vi.fn(() => [])
       usePrompt.getState().resetPrompt()
