@@ -551,3 +551,67 @@ it('does not send persisted Chat cap notices back through the production model c
   expect(wire).not.toContain('DISPLAY_ONLY_CAP_NOTICE')
   expect(wire).not.toContain('chatRunNotice')
 })
+
+// Real production path: a stored Chat assistant turn carrying `data-run-context`
+// (assistantRecordFields -> JSON -> converter) goes through the actual
+// CustomChatTransport.sendMessages. The captured provider request must carry the
+// ping answer exactly once, as a marked USER turn, never as assistant prefill.
+// Removing the production `expandChatRunContext` call in custom-chat-transport.ts
+// must fail this test.
+it('reloaded data-run-context reaches the provider request once, as a user turn', async () => {
+  // This standalone case must not inherit provider/context settings from earlier suites.
+  h.providerId = 'openai'
+  h.assistantParameters = { ctx_len: 32768, max_tokens: 1024 }
+  h.predefinedRemote = false
+  provider.provider = 'openai'
+  provider.settings = []
+  selectedModel.id = 'gpt'
+  selectedModel.capabilities = ['tools']
+  h.getModelProps.mockReset()
+
+  const { assistantRecordFields, convertThreadMessageToUIMessage } = await import('../messages')
+  const { RUN_CONTEXT_PART } = await import('../chatRunContext')
+  const ANSWER = 'UNIQUE-RUN-CONTEXT-ANSWER-5803'
+  const stored: UIMessage = {
+    id: 'a-ctx',
+    role: 'assistant',
+    parts: [
+      { type: 'step-start' },
+      { type: 'tool-task', toolCallId: 'tc1', state: 'output-available', input: { name: 'a' }, output: 'Dispatched 1 subagent(s)' },
+      { type: 'data-task-status', id: 'task-status:tk:a', data: { subagents: [{ runId: 'tk:a', name: 'a', status: 'done', startedAt: 1, endedAt: 2, finalOutput: 'STATUS-ONLY-ROW' }] } },
+      { type: 'data-tool-diff', id: 'diff-1', data: { toolCallId: 'tc1', diff: 'DISPLAY-ONLY-DIFF' } },
+      { type: 'text', text: 'dispatched, waiting', state: 'done' },
+      { type: RUN_CONTEXT_PART, data: { text: `Subagent 'a' (tk:a) finished. Its answer:\n\n${ANSWER}` } },
+      { type: 'text', text: 'the child said so', state: 'done' },
+    ],
+  } as UIMessage
+  const fields = assistantRecordFields(stored, {}, { stopped: false })
+  expect(fields.metadata).not.toHaveProperty('uiPartsSkipped')
+  const record = JSON.parse(JSON.stringify({
+    id: stored.id, thread_id: 'thread-1', role: 'assistant', status: 'ready', object: 'thread.message',
+    created_at: 1, completed_at: 1, ...fields,
+  }))
+  const reloaded = convertThreadMessageToUIMessage(record)
+  expect(reloaded.parts.filter((p) => p.type === RUN_CONTEXT_PART)).toHaveLength(1)
+
+  const transport = new CustomChatTransport('fixture system', 'thread-1')
+  streamTextCalls.length = 0
+  await drain(await send(transport, [user('u-ctx', 'delegate it'), reloaded, user('u-next', 'and now?')]))
+
+  expect(streamTextCalls).toHaveLength(1) // one request, no child re-execution
+  const messages = streamTextCalls[0].messages as Array<{ role: string; content: unknown }>
+  const holders = messages.filter((m) => JSON.stringify(m).includes(ANSWER))
+  expect(holders).toHaveLength(1)
+  expect(holders[0].role).toBe('user')
+  expect(JSON.stringify(holders[0])).toContain('<SYSTEM>')
+  expect(JSON.stringify(holders[0])).toContain('</SYSTEM>')
+  const wire = JSON.stringify(streamTextCalls[0].messages)
+  expect(wire.split(ANSWER)).toHaveLength(2)
+  // Not assistant prefill: the request ends on the user's next turn.
+  expect(messages[messages.length - 1].role).toBe('user')
+  expect(JSON.stringify(messages[messages.length - 1])).not.toContain(ANSWER)
+  for (const m of messages.filter((x) => x.role === 'assistant')) expect(JSON.stringify(m)).not.toContain(ANSWER)
+  // Display-only parts never reach the model.
+  for (const banned of ['task-status', 'STATUS-ONLY-ROW', 'DISPLAY-ONLY-DIFF', 'data-tool-diff', RUN_CONTEXT_PART])
+    expect(wire).not.toContain(banned)
+})
