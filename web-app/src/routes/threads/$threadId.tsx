@@ -1763,7 +1763,8 @@ function ThreadDetail() {
           // cancelling only cancels the send. `text` has @path references
           // expanded, so restore what the user actually typed.
           setAttachmentsForThread(attachmentsKey, allAttachments)
-          usePrompt.getState().setPrompt(draft)
+          // Keep a draft the user typed while the dialog was open.
+          if (!usePrompt.getState().prompt) usePrompt.getState().setPrompt(draft)
           return
         }
         combinedAttachments = applyIngestionChoices(
@@ -1927,7 +1928,13 @@ function ThreadDetail() {
         deleteMessage(threadId, messageId)
         if (pendingAssistantParents.get(threadId) === messageId) pendingAssistantParents.delete(threadId)
         setAttachmentsForThread(attachmentsKey, allAttachments)
-        if (useThreads.getState().currentThreadId === threadId) usePrompt.getState().setPrompt(draft)
+        // A draft typed since submit is newer than the one being restored.
+        if (
+          useThreads.getState().currentThreadId === threadId &&
+          !usePrompt.getState().prompt
+        ) {
+          usePrompt.getState().setPrompt(draft)
+        }
         console.error('Chat send was not accepted:', error)
         return false
       }

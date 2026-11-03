@@ -736,6 +736,23 @@ describe('ThreadDetail route', () => {
     usePrompt.getState().resetPrompt()
   })
 
+  it('keeps a newer draft typed while a rejected submit was in flight', async () => {
+    h.threadsState.currentThreadId = 'thread-1'
+    usePrompt.getState().resetPrompt()
+    h.mockSendMessage.mockImplementationOnce(async () => {
+      usePrompt.getState().setPrompt('typed newer')
+      throw new Error('Chat turn already running')
+    })
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    renderComponent()
+    await act(async () => { screen.getByTestId('chat-send').click() })
+    await waitFor(() => expect(h.messagesState.deleteMessage).toHaveBeenCalled())
+    expect(usePrompt.getState().prompt).toBe('typed newer')
+    log.mockRestore()
+    delete h.threadsState.currentThreadId
+    usePrompt.getState().resetPrompt()
+  })
+
   it('restores a rejected queued send without retaining a phantom user turn', async () => {
     const queued = { id: 'queued-fixture', text: 'preserve queued', createdAt: 1 }
     h.messageQueueState.queues = { 'thread-1': [] }
@@ -940,6 +957,27 @@ describe('ThreadDetail route', () => {
       expect(processAttachmentsForSend).not.toHaveBeenCalled()
       expect(h.mockSendMessage).not.toHaveBeenCalled()
       expect(h.messagesState.addMessage).not.toHaveBeenCalled()
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+      usePrompt.getState().resetPrompt()
+    })
+
+    it('cancelling keeps a draft typed while the dialog was open', async () => {
+      vi.mocked(promptIngestionChoices).mockImplementationOnce(async () => {
+        usePrompt.getState().setPrompt('typed during dialog')
+        return undefined
+      })
+      renderComponent()
+      await act(async () => {
+        screen.getByTestId('chat-send').click()
+      })
+      await waitFor(() => {
+        expect(h.attachmentsState.setAttachments).toHaveBeenCalledWith(
+          'thread-1',
+          [sheet]
+        )
+      })
+      expect(usePrompt.getState().prompt).toBe('typed during dialog')
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
       h.attachmentsState.getAttachments = vi.fn(() => [])
       usePrompt.getState().resetPrompt()
     })
