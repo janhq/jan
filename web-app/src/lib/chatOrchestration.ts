@@ -381,6 +381,10 @@ async function runChild(
       messages: [{ id: 'sub-user-0', role: 'user', parts: [{ type: 'text', text: description }] } as UIMessage],
       signal: controller.signal,
       maxSteps: CHAT_CHILD_MAX_STEPS,
+      // The runner refuses a step that repeats an id (here or in an earlier
+      // step) before dispatching any of it; the dispatch check below stays as
+      // the second line of defence.
+      seenCallIds: new Set<string>(),
       budgetPolicy: {
         // Pre-step gate (the only place a cap applies): own spend or the
         // run-wide child aggregate. Charged in `record` below, per step.

@@ -160,6 +160,17 @@ describe('child tool-call identity', () => {
     expect((dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolName: string }).toolName)).not.toContain('write')
   })
 
+  it('a step that repeats an id fails closed before ANY dispatch: the first call is not run', async () => {
+    const { ctx, dispatch } = ctxFor()
+    let step = 0
+    hoisted.childStep.mockImplementation(async () => (step++ === 0 ? twoCalls(['write', 'dup'], ['write', 'dup']) : textStep('ok')))
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle(60)
+    expect(dispatch).not.toHaveBeenCalled()
+    // The malformed step ended the child run; the model was not asked again.
+    expect(step).toBe(1)
+  })
+
   it('a child that reuses a toolCallId in a later step is refused, not re-dispatched under the same id', async () => {
     const { ctx, dispatch } = ctxFor()
     let step = 0

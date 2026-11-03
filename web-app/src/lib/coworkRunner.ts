@@ -349,6 +349,19 @@ export function turnsFor(
   return turns
 }
 
+/** First id that repeats within `calls` or was already in `seen`, if any. */
+function firstDuplicateCallId(
+  calls: PendingToolCall[],
+  seen?: ReadonlySet<string>
+): string | undefined {
+  const inStep = new Set<string>()
+  for (const { toolCallId } of calls) {
+    if (inStep.has(toolCallId) || seen?.has(toolCallId)) return toolCallId
+    inStep.add(toolCallId)
+  }
+  return undefined
+}
+
 export type RunDeps = {
   /** One model turn. Returns the raw UI message stream. */
   sendStep: (
@@ -414,6 +427,12 @@ export async function runTurn(opts: {
   maxSteps?: number
   /** Tokens already spent by this session, which the caps apply across. */
   sessionTokens?: number
+  /**
+   * Call ids already used by this run's routes. When given, an id repeated in a
+   * later step is refused like one repeated inside a step. Omitted by Cowork,
+   * whose ids may legitimately recur across steps.
+   */
+  seenCallIds?: Set<string>
   /** Surface-owned cap policy; Cowork retains its existing defaults. */
   budgetPolicy?: {
     exceeded: (state: { step: number; sessionTokens: number }, maxSteps: number) => BudgetStop
@@ -571,6 +590,30 @@ export async function runTurn(opts: {
         errorText: result.errorText,
       }
     }
+
+    // Validate the whole step before any side effect. Outcomes are keyed by
+    // call id, so a repeated id would let a later refusal overwrite the first
+    // call's real result (it may already have written). A malformed step fails
+    // closed: nothing is dispatched and its calls are not committed, so there is
+    // no phantom result for a call that never ran.
+    const duplicateId = firstDuplicateCallId(result.toolCalls, opts.seenCallIds)
+    if (duplicateId !== undefined) {
+      const errorText = `Duplicate tool call id: ${duplicateId}. The step was refused and none of its tool calls ran.`
+      const refused: StepResult = { ...result, toolCalls: [], errorText }
+      if (refused.text) {
+        messages.push((deps.assistantMessage ?? assistantMessageFor)(deps.nextMessageId(), refused, new Map()))
+      }
+      deps.onStep({ step, result: refused, turns: turnsFor(refused, new Map()), outcomes: new Map() })
+      return {
+        messages,
+        steps: step,
+        usage,
+        sessionTokens: spend.spent,
+        stoppedBy: 'error',
+        errorText,
+      }
+    }
+    for (const call of result.toolCalls) opts.seenCallIds?.add(call.toolCallId)
 
     // One at a time: tools share a workspace, and the progress attribution in
     // the UI assumes a single call in flight. A `task` fan-out is not an
