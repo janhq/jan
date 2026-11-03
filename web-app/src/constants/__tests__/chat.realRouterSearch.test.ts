@@ -66,6 +66,19 @@ describe('isTemporaryChatSearch with real router searchStr', () => {
     expect(await searchStrFor('/?temporary%2Dchat=%74rue')).toBe('?temporary-chat=true')
   })
 
+  it('normalizes duplicates to a JSON array value, which is why they classify false', async () => {
+    // Actual router duplicate normalization: the decoded value is the JSON
+    // array text, never the exact string `true`, regardless of duplicate order.
+    for (const url of [
+      '/?temporary-chat=true&temporary-chat=false',
+      '/?temporary-chat=false&temporary-chat=true',
+    ]) {
+      const value = new URLSearchParams(await searchStrFor(url)).get('temporary-chat')
+      expect(value).toMatch(/^\[.*\]$/)
+      expect(value).not.toBe('true')
+    }
+  })
+
   it('differs from raw first-duplicate semantics only on the raw URL, not on searchStr', async () => {
     const raw = '?temporary-chat=true&temporary-chat=false'
     expect(isTemporaryChatSearch(raw)).toBe(true)
