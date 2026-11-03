@@ -2706,7 +2706,7 @@ async fn run_agent_loop(
     // The one-shot CLI runs exactly one turn, so its session ends here: wipe
     // the persistent bash `/tmp` scratch this run used.
     if let Some(session) = args.session_id.as_deref() {
-        let _ = workspace::remove_scratch_dir(session).await;
+        let _ = workspace::trash_scratch_dir(session).await;
     }
     if aborted {
         return Ok(());

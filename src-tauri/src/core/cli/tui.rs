@@ -14226,7 +14226,7 @@ pub async fn run(
     let workspaces = app.subagent_set.workspaces.clone();
     let scratch = async {
         if let Some(session) = session_scratch.as_deref() {
-            let _ = workspace::remove_scratch_dir(session).await;
+            let _ = workspace::trash_scratch_dir(session).await;
         }
     };
     let ((), kept) = tokio::join!(
