@@ -20070,7 +20070,12 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                     } else {
                         format!("{} = {entered} written", prompt.key)
                     };
-                    app.note(&format!("{what}; takes effect on the next run"));
+                    let when = if vibe_setting::LIVE_KEYS.contains(&prompt.key) {
+                        "applies now"
+                    } else {
+                        "takes effect on the next run"
+                    };
+                    app.note(&format!("{what}; {when}"));
                     app.settings_prompt = None;
                 }
                 Err(e) => {
@@ -35907,6 +35912,32 @@ fn a() {}
                 None,
                 "cleared field unsets the key"
             );
+
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        });
+    }
+
+    /// `bell` is read on every status transition, so its note must not tell
+    /// the user to wait for a next run the way other rows do.
+    #[test]
+    fn settings_prompt_says_bell_applies_now() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            std::fs::create_dir_all(&app.agent_dir).unwrap();
+            let def = AGENT_SETTINGS.iter().find(|d| d.key == "bell").unwrap();
+            app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+            for ch in "always".chars() {
+                super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+
+            assert_eq!(
+                crate::core::agent::global_config::bell_setting().as_deref(),
+                Some("always")
+            );
+            let note = transcript_text(&app);
+            assert!(note.contains("bell = always written; applies now"), "{note}");
+            assert!(!note.contains("next run"), "{note}");
 
             let _ = std::fs::remove_dir_all(&app.agent_dir);
         });
