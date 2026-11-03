@@ -99,9 +99,16 @@ function Index() {
   // Truthful unsupported reason: the capability control disappears only with
   // an explanation. Ordinary direct chat is never refused — a model without
   // tool support still answers one-call questions through the same composer.
-  const scopeUnsupportedReason =
-    !isTemporaryChat && selectedModel && !modelSupportsTools
-      ? t('common:conversationScope.unsupported') + (scopeDraftElevated ? ` ${t('common:conversationScope.pendingKept')}` : '')
+  // Temporary chats are left by starting a regular chat, not by switching
+  // models, so the kept-draft note uses a mode-specific key.
+  const pendingKeptKey = isTemporaryChat
+    ? 'common:conversationScope.pendingKeptTemporary'
+    : 'common:conversationScope.pendingKept'
+  const pendingKeptNote = scopeDraftElevated ? ` ${t(pendingKeptKey)}` : ''
+  const scopeUnsupportedReason = isTemporaryChat
+    ? t('common:conversationScope.temporaryPermissions') + pendingKeptNote
+    : selectedModel && !modelSupportsTools
+      ? t('common:conversationScope.unsupported') + pendingKeptNote
       : null
   const pickScopeFolder = useCallback(async () => {
     const picked = await serviceHub.dialog().open({ directory: true })
