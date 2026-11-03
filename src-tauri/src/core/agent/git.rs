@@ -570,6 +570,178 @@ pub(crate) fn fetch_commit(
     fetched
 }
 
+/// How long each git in [`tidy_facts`] may take. All of it is local, so a
+/// git still running past this is stuck (a lock, a huge repo on a slow
+/// disk), and the tidy is better off without its facts than waiting.
+#[cfg(feature = "cli")]
+const TIDY_FACTS_GIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
+/// The most branches each of [`tidy_facts`]'s two branch lists shows.
+#[cfg(feature = "cli")]
+const TIDY_FACTS_BRANCHES: usize = 60;
+/// The most worktrees [`tidy_facts`] lists.
+#[cfg(feature = "cli")]
+const TIDY_FACTS_WORKTREES: usize = 20;
+/// How far back [`tidy_facts`] reads the default branch for PR numbers.
+#[cfg(feature = "cli")]
+const TIDY_FACTS_LOG_DEPTH: &str = "500";
+/// PR numbers per line of [`tidy_facts`]'s compact list.
+#[cfg(feature = "cli")]
+const TIDY_FACTS_PRS_PER_LINE: usize = 20;
+/// The hard ceiling on [`tidy_facts`]'s block, whatever the lists add up to:
+/// it rides in a small model's task, next to the notes it has to read.
+#[cfg(feature = "cli")]
+const TIDY_FACTS_MAX_LINES: usize = 200;
+
+/// What the memory tidy is told about `repo` so it can judge whether a note
+/// tracks finished work: the default branch and its head, which branches
+/// are merged into it, the registered worktrees (one gone from disk
+/// flagged), and the PR numbers squash merges left in its recent log.
+///
+/// Jan runs these itself, from a fixed list, so the tidy never needs a
+/// shell. Everything is local: no fetch, no `gh`, so a remote-tracking
+/// branch is only as fresh as the user's last fetch. `None` when `repo` is
+/// not in a git work tree, has no default branch, or git fails, so the tidy
+/// simply runs without it.
+#[cfg(feature = "cli")]
+pub(crate) fn tidy_facts(repo: &Path, today: &str) -> Option<String> {
+    let git = |args: &[&str]| run_limited(repo, args, TIDY_FACTS_GIT_LIMIT).ok();
+    git(&["rev-parse", "--show-toplevel"])?;
+    let default = default_branch(&git)?;
+    let head = git(&["log", "-1", "--date=short", "--format=%h %ad %s", &default])?;
+    let merged_arg = format!("--merged={default}");
+    let refs = |extra: &[&str]| -> Option<Vec<String>> {
+        let mut args = vec!["for-each-ref", "--sort=-committerdate"];
+        args.extend_from_slice(extra);
+        args.extend(["--format=%(refname)%09%(symref)", "refs/heads", "refs/remotes"]);
+        Some(branch_names(&git(&args)?, &default))
+    };
+    let all = refs(&[])?;
+    let merged = refs(&[merged_arg.as_str()])?;
+    let open: Vec<String> = all.into_iter().filter(|b| !merged.contains(b)).collect();
+    let worktrees = worktree_lines(&git(&["worktree", "list", "--porcelain"])?);
+    let subjects = git(&["log", "-n", TIDY_FACTS_LOG_DEPTH, "--format=%s", &default])?;
+    let prs = pr_numbers(&subjects);
+
+    let mut out = vec![
+        "Facts Jan gathered from the project's local git (no fetch, so remote branches are as of \
+         the last fetch):"
+            .to_string(),
+        format!("Today: {today}"),
+        format!("Default branch: {default}, head {head}"),
+        format!("Branches merged into {default} (their work landed), most recent first:"),
+    ];
+    push_capped(&mut out, &merged, TIDY_FACTS_BRANCHES);
+    out.push(format!("Branches NOT merged into {default}, most recent first:"));
+    push_capped(&mut out, &open, TIDY_FACTS_BRANCHES);
+    out.push("Worktrees registered with git:".to_string());
+    push_capped(&mut out, &worktrees, TIDY_FACTS_WORKTREES);
+    out.push(format!(
+        "PR numbers in the subjects of {default}'s last {TIDY_FACTS_LOG_DEPTH} commits, newest \
+         first (a squash merge reads `subject (#123)`):"
+    ));
+    if prs.is_empty() {
+        out.push("  (none)".to_string());
+    }
+    for chunk in prs.chunks(TIDY_FACTS_PRS_PER_LINE) {
+        let line: Vec<String> = chunk.iter().map(|n| format!("#{n}")).collect();
+        out.push(format!("  {}", line.join(" ")));
+    }
+    if out.len() > TIDY_FACTS_MAX_LINES {
+        out.truncate(TIDY_FACTS_MAX_LINES - 1);
+        out.push("... (truncated)".to_string());
+    }
+    // A branch or path is the user's bytes; the block goes into a prompt.
+    Some(out.join("\n").replace(|c: char| c.is_control() && c != '\n', "?"))
+}
+
+/// The branch [`tidy_facts`] treats as the default: the remote's own
+/// (`origin/HEAD`), else a local `main` or `master`, else their
+/// remote-tracking twins. Never just what is checked out: "merged into
+/// a feature branch" would read as landed when it is not.
+#[cfg(feature = "cli")]
+fn default_branch(git: &impl Fn(&[&str]) -> Option<String>) -> Option<String> {
+    let remote = git(&["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+    if let Some(remote) = remote.filter(|r| !r.is_empty()) {
+        return Some(remote);
+    }
+    let known = ["main", "master", "origin/main", "origin/master"].into_iter().find(|b| {
+        let full = match b.strip_prefix("origin/") {
+            Some(name) => format!("refs/remotes/origin/{name}"),
+            None => format!("refs/heads/{b}"),
+        };
+        git(&["rev-parse", "--verify", "--quiet", &full]).is_some()
+    });
+    known.map(str::to_string)
+}
+
+/// Branch names from `for-each-ref`'s `<refname>\t<symref>` lines, as
+/// `git branch -a` names them (`feat/x`, `origin/feat/x`), without symbolic
+/// refs (`origin/HEAD`) or the default branch itself.
+#[cfg(feature = "cli")]
+fn branch_names(listing: &str, default: &str) -> Vec<String> {
+    listing
+        .lines()
+        // The output is trimmed, so the last line's empty symref takes its
+        // tab with it.
+        .map(|l| l.split_once('\t').unwrap_or((l, "")))
+        .filter(|(_, symref)| symref.is_empty())
+        .filter_map(|(r, _)| r.strip_prefix("refs/heads/").or(r.strip_prefix("refs/remotes/")))
+        .filter(|b| *b != default)
+        .map(str::to_string)
+        .collect()
+}
+
+/// `<path> [<branch>]` per worktree in a `worktree list --porcelain`
+/// listing, flagged when the directory is gone: a note naming a worktree
+/// can then be judged against what is still on disk.
+#[cfg(feature = "cli")]
+fn worktree_lines(porcelain: &str) -> Vec<String> {
+    porcelain
+        .split("\n\n")
+        .filter_map(|block| {
+            let path = block.lines().find_map(|l| l.strip_prefix("worktree "))?;
+            let branch = block
+                .lines()
+                .find_map(|l| l.strip_prefix("branch "))
+                .map(|b| b.strip_prefix("refs/heads/").unwrap_or(b))
+                .unwrap_or("detached");
+            let gone = if Path::new(path).exists() { "" } else { " (missing on disk)" };
+            Some(format!("{path} [{branch}]{gone}"))
+        })
+        .collect()
+}
+
+/// The PR numbers squash merges leave in commit subjects (`subject (#9497)`),
+/// each once, in the order first seen.
+#[cfg(feature = "cli")]
+fn pr_numbers(subjects: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for mut rest in subjects.lines() {
+        while let Some(at) = rest.find("(#") {
+            rest = &rest[at + 2..];
+            let digits = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+            let number = &rest[..digits];
+            if digits > 0 && rest[digits..].starts_with(')') && !found.iter().any(|n| n == number) {
+                found.push(number.to_string());
+            }
+        }
+    }
+    found
+}
+
+/// Append `items` to `out` as a bulleted list of at most `cap`, saying how
+/// many were left out, or `(none)`.
+#[cfg(feature = "cli")]
+fn push_capped(out: &mut Vec<String>, items: &[String], cap: usize) {
+    if items.is_empty() {
+        out.push("  (none)".to_string());
+    }
+    out.extend(items.iter().take(cap).map(|i| format!("  - {i}")));
+    if items.len() > cap {
+        out.push(format!("  ... {} more not listed (truncated)", items.len() - cap));
+    }
+}
+
 /// Forget worktree registrations whose directory the user has deleted. Without
 /// this, `worktree add` refuses a path that a stale registration still claims.
 #[cfg(feature = "cli")]
@@ -1713,5 +1885,137 @@ mod tests {
         assert_ne!(first, second, "the branch must change after an external checkout");
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Commit an empty change with `subject` on whatever is checked out.
+    fn commit(root: &Path, subject: &str) {
+        run(root, None, &["commit", "-q", "--allow-empty", "--no-gpg-sign", "-m", subject])
+            .expect("commit");
+    }
+
+    /// The memory tidy's facts name the default branch and its head, sort the
+    /// branches by whether they landed, list the worktrees (a gone one
+    /// flagged) and the PR numbers squash merges left in the log.
+    #[test]
+    fn the_tidy_facts_say_what_landed_on_the_default_branch() {
+        let Some(root) = init_repo() else { return };
+        let r = root.to_string_lossy().to_string();
+        git(&["-C", &r, "branch", "-M", "main"]).expect("rename");
+        git(&["-C", &r, "checkout", "-q", "-b", "feat/landed"]).expect("checkout");
+        commit(&root, "landed work");
+        git(&["-C", &r, "checkout", "-q", "main"]).expect("checkout");
+        git(&["-C", &r, "merge", "-q", "--ff-only", "feat/landed"]).expect("merge");
+        commit(&root, "feat: squashed (#9497)");
+        commit(&root, "fix: another (#12)");
+        git(&["-C", &r, "checkout", "-q", "-b", "feat/open"]).expect("checkout");
+        commit(&root, "open work (#77)");
+        git(&["-C", &r, "checkout", "-q", "main"]).expect("checkout");
+        let wt = root.parent().unwrap().join(format!(
+            "{}-factswt",
+            root.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = std::fs::remove_dir_all(&wt);
+        let head = head_sha(&root).unwrap();
+        worktree_add(&root, &wt, "jan/agent/facts", &head).expect("worktree add");
+        std::fs::remove_dir_all(&wt).unwrap();
+
+        let facts = tidy_facts(&root, "2026-11-03").expect("a repo has facts");
+        assert!(facts.contains("Today: 2026-11-03"), "{facts}");
+        assert!(facts.contains("Default branch: main, head "), "{facts}");
+        assert!(facts.contains("fix: another (#12)"), "the head's subject: {facts}");
+        let (merged, rest) = facts.split_once("NOT merged").expect("both lists");
+        assert!(merged.contains("  - feat/landed\n"), "{facts}");
+        assert!(rest.contains("  - feat/open\n"), "{facts}");
+        assert!(!merged.contains("feat/open"), "{facts}");
+        assert!(!facts.contains("  - main\n"), "the default branch is not listed: {facts}");
+        let gone = format!("{} [jan/agent/facts] (missing on disk)", wt.display());
+        assert!(facts.contains(&gone), "{facts}");
+        assert!(facts.contains(&format!("{} [main]\n", root.display())), "{facts}");
+        assert!(facts.contains("  #12 #9497"), "newest first, branch-only #77 left out: {facts}");
+        assert!(!facts.contains("#77"), "{facts}");
+        assert!(facts.is_ascii() && !facts.contains("truncated"), "{facts}");
+        worktree_prune(&root);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The remote's default branch wins over a local `main`, which may be stale.
+    #[test]
+    fn the_tidy_facts_prefer_the_remotes_default_branch() {
+        let Some(root) = init_repo() else { return };
+        let r = root.to_string_lossy().to_string();
+        git(&["-C", &r, "branch", "-M", "main"]).expect("rename");
+        let head = head_sha(&root).unwrap();
+        run(&root, None, &["update-ref", "refs/remotes/origin/trunk", &head]).expect("ref");
+        run(
+            &root,
+            None,
+            &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"],
+        )
+        .expect("origin/HEAD");
+        let facts = tidy_facts(&root, "2026-11-03").expect("facts");
+        assert!(facts.contains("Default branch: origin/trunk, head "), "{facts}");
+        assert!(facts.contains("  - main\n"), "a local branch is listed: {facts}");
+        assert!(!facts.contains("origin/HEAD"), "{facts}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A long branch list is cut and says so, and the whole block stays
+    /// within its line budget.
+    #[test]
+    fn the_tidy_facts_truncate_and_say_so() {
+        let Some(root) = init_repo() else { return };
+        let r = root.to_string_lossy().to_string();
+        git(&["-C", &r, "branch", "-M", "main"]).expect("rename");
+        let head = head_sha(&root).unwrap();
+        let total = TIDY_FACTS_BRANCHES + 5;
+        // Loose ref files: one `git branch` per branch would spawn git a
+        // hundred times for no extra coverage.
+        let heads = root.join(".git/refs/heads");
+        for i in 0..total {
+            std::fs::write(heads.join(format!("b{i:03}")), format!("{head}\n")).unwrap();
+        }
+        let facts = tidy_facts(&root, "2026-11-03").expect("facts");
+        let listed = facts.lines().filter(|l| l.starts_with("  - b")).count();
+        assert_eq!(listed, TIDY_FACTS_BRANCHES, "{facts}");
+        assert!(facts.contains("... 5 more not listed (truncated)"), "{facts}");
+        assert!(facts.lines().count() <= TIDY_FACTS_MAX_LINES, "{facts}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// With no `origin/HEAD`, `main` or `master` there is no branch whose
+    /// merges mean "landed", so no block rather than one keyed to whatever
+    /// happens to be checked out.
+    #[test]
+    fn the_tidy_facts_are_omitted_without_a_default_branch() {
+        let Some(root) = init_repo() else { return };
+        let r = root.to_string_lossy().to_string();
+        git(&["-C", &r, "branch", "-M", "feat/only"]).expect("rename");
+        assert_eq!(tidy_facts(&root, "2026-11-03"), None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Outside a repository there is nothing to say, so no block at all.
+    #[test]
+    fn the_tidy_facts_are_omitted_outside_a_repository() {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("jan_facts_norepo_{}_{n}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(tidy_facts(&dir, "2026-11-03"), None);
+        assert_eq!(tidy_facts(&dir.join("missing"), "2026-11-03"), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The last branch counts too, though trimming took its tab.
+    #[test]
+    fn branch_names_keep_the_last_line_and_skip_symrefs() {
+        let listing = "refs/heads/main\t\nrefs/remotes/origin/HEAD\trefs/remotes/origin/main\n\
+                       refs/remotes/origin/feat/x\t\nrefs/heads/last";
+        assert_eq!(branch_names(listing, "main"), ["origin/feat/x", "last"]);
+    }
+
+    #[test]
+    fn pr_numbers_are_read_from_squash_merge_subjects() {
+        let found = pr_numbers("a (#1)\nb (#22) (#3)\nc #4\nd (#)\ne (#5x)\nf (#1)");
+        assert_eq!(found, ["1", "22", "3"]);
     }
 }
