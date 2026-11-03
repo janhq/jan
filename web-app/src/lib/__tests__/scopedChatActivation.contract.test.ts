@@ -5,7 +5,9 @@ import { describe, it } from 'vitest'
  *
  * Native dispatch intersects stored, effective and process-confirmed consent.
  * Revocation applies to the next admitted call, not cancellation of an already
- * running shell; Stop is separate. Chat must not switch to legacy Session IPC
+ * running shell; Stop is separate. Scope/consent UI must disclose this
+ * next-call-only revocation rather than imply immediate cancellation.
+ * Chat must not switch to legacy Session IPC
  * for elevation. Elevated legacy Session calls require host-verified Cowork
  * identity; renderer-supplied scope alone is not authority.
  *
