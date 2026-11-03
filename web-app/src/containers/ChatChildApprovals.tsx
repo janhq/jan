@@ -4,6 +4,7 @@ import {
   ToolApprovalActions,
   ToolContent,
   ToolHeader,
+  ToolInput,
 } from '@/components/ai-elements/tool'
 import { useChildApprovalCalls } from '@/hooks/useChildApprovalCalls'
 import { approvalKey, useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
@@ -21,6 +22,7 @@ const NONE: readonly string[] = []
  */
 export function ChatChildApprovals({ threadId }: { threadId: string }) {
   const owned = useChildApprovalCalls((s) => s.owned[threadId] ?? NONE)
+  const inputs = useChildApprovalCalls((s) => s.inputs[threadId])
   const pending = useToolApprovalRequests((s) => s.pending)
 
   const requests = useMemo(
@@ -50,6 +52,8 @@ export function ChatChildApprovals({ threadId }: { threadId: string }) {
             origin={request.serverName}
           />
           <ToolContent title={request.toolName}>
+            <p className="text-xs text-muted-foreground break-all">{request.toolCallId}</p>
+            <ToolInput input={inputs?.[request.toolCallId]} />
             <ToolApprovalActions />
           </ToolContent>
         </Tool>

@@ -40,12 +40,14 @@ describe('ChatChildApprovals', () => {
 
   it('shows a pending child call with tool name and server identity, and nothing before the prompt is pending', async () => {
     render(<ChatChildApprovals threadId="t1" />)
-    await act(async () => { useChildApprovalCalls.getState().register('t1', 'task1:c1') })
+    await act(async () => { useChildApprovalCalls.getState().register('t1', 'task1:c1', { url: 'https://example.test/approval-target' }) })
     expect(screen.queryByTestId('chat-child-approvals')).toBeNull()
     await act(async () => { void request('task1:c1') })
     const card = screen.getByTestId('chat-child-approvals')
     expect(card).toHaveTextContent('srv')
     expect(card).toHaveTextContent('fetch')
+    expect(card).toHaveTextContent('task1:c1')
+    expect(card).toHaveTextContent('https://example.test/approval-target')
     expect(screen.getByText('tools:toolApproval.deny')).toBeInTheDocument()
   })
 
@@ -56,7 +58,7 @@ describe('ChatChildApprovals', () => {
     render(<ChatChildApprovals threadId="t1" />)
     let result!: Promise<unknown>
     await act(async () => {
-      useChildApprovalCalls.getState().register('t1', 'task1:c1')
+      useChildApprovalCalls.getState().register('t1', 'task1:c1', { url: 'https://example.test/approval-target' })
       result = request('task1:c1')
       void request('task1:other', 't2')
     })
@@ -71,7 +73,7 @@ describe('ChatChildApprovals', () => {
     render(<ChatChildApprovals threadId="t1" />)
     let settled = false
     await act(async () => {
-      useChildApprovalCalls.getState().register('t1', 'task1:c1')
+      useChildApprovalCalls.getState().register('t1', 'task1:c1', { url: 'https://example.test/approval-target' })
       void request('task1:c1').then(() => { settled = true })
     })
     await act(async () => { await Promise.resolve() })

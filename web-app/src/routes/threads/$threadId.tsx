@@ -1094,7 +1094,7 @@ function ThreadDetail() {
       useToolCallRuntime.getState().enqueue([toolCall.toolCallId], threadId)
       // A child call owns its approval card from here (before any await) until
       // the finally below, so the composer-side card can never outlive it.
-      if (child) useChildApprovalCalls.getState().register(threadId, toolCall.toolCallId)
+      if (child) useChildApprovalCalls.getState().register(threadId, toolCall.toolCallId, toolCall.input)
       try {
         const toolName = toolCall.toolName
         // A child is bounded by what its parent had at dispatch: it may only use
