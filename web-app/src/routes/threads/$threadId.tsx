@@ -281,9 +281,12 @@ const grantKeyOf = (grant: unknown): string => {
 }
 const callMcpIdentities = new Map<string, Map<string, string | undefined>>()
 const callMcpValidators = new Map<string, Map<string, (signal?: AbortSignal) => Promise<void>>>()
-// The tool a call id was first bound to: a cached identity/validator/approval
-// never carries over to a different tool presented under the same id.
-const callMcpToolNames = new Map<string, Map<string, string>>()
+// Who a call id was first bound to (root model vs a child run, and which tool).
+// A root call id can textually equal a child's tuple id, so a cached
+// identity/validator/approval never carries across origins, tools, or (for a
+// child) different arguments presented under the same id.
+type McpCallBinding = { origin: 'root' | 'child'; toolName: string; input?: string }
+const callMcpBindings = new Map<string, Map<string, McpCallBinding>>()
 const approvalsOf = (threadId: string) => {
   let approvals = toolApprovalPromises.get(threadId)
   if (!approvals) {
@@ -297,7 +300,7 @@ const forgetApprovals = (threadId: string) => {
   callNativeGrants.delete(threadId)
   callMcpIdentities.delete(threadId)
   callMcpValidators.delete(threadId)
-  callMcpToolNames.delete(threadId)
+  callMcpBindings.delete(threadId)
   useChildApprovalCalls.getState().clearThread(threadId)
 }
 
@@ -575,17 +578,21 @@ function ThreadDetail() {
   )
 
   const { threadId } = useParams({ from: Route.id })
-  const bindMcpCall = (toolCall: { toolName: string; toolCallId: string }, child?: ChildBinding) => {
-    let toolNames = callMcpToolNames.get(threadId)
-    if (!toolNames) {
-      toolNames = new Map()
-      callMcpToolNames.set(threadId, toolNames)
+  const bindMcpCall = (toolCall: { toolName: string; toolCallId: string; input?: unknown }, child?: ChildBinding) => {
+    let bindings = callMcpBindings.get(threadId)
+    if (!bindings) {
+      bindings = new Map()
+      callMcpBindings.set(threadId, bindings)
     }
-    const boundTool = toolNames.get(toolCall.toolCallId)
-    if (boundTool !== undefined && boundTool !== toolCall.toolName) {
+    const origin = child ? 'child' : 'root'
+    // Only a child pins its input: the root SDK presents one id to onToolCall and
+    // then dispatch (input may be finalized between), a child never repeats an id.
+    const input = child ? JSON.stringify(toolCall.input ?? null) : undefined
+    const bound = bindings.get(toolCall.toolCallId)
+    if (bound && (bound.origin !== origin || bound.toolName !== toolCall.toolName || bound.input !== input)) {
       throw new Error(`Duplicate tool call id: ${toolCall.toolCallId}`)
     }
-    toolNames.set(toolCall.toolCallId, toolCall.toolName)
+    if (!bound) bindings.set(toolCall.toolCallId, { origin, toolName: toolCall.toolName, input })
     let identities = callMcpIdentities.get(threadId)
     if (!identities) {
       identities = new Map()

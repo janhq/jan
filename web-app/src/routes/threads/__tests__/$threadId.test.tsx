@@ -1824,6 +1824,57 @@ describe('ThreadDetail route', () => {
         })
       })
 
+      describe('root and child origins never share a call id binding', () => {
+        const tuple = JSON.stringify(['child', 'task1', 'worker', 'c1'])
+        it('root call id equal to a child tuple, then that child id with same name and different args: no approval transfer', async () => {
+          const requestApproval = vi.fn().mockResolvedValue(true)
+          h.toolApprovalState.requestApproval = requestApproval
+          const run = serveMcp()
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          // The root model picks the exact string the child will later produce.
+          await act(async () => { await arrive(call(tuple, 'fetch', { url: 'safe' })) })
+          const first = await dispatch(call(tuple, 'fetch', { url: 'safe' }))
+          expect(first).not.toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+          const approvals = requestApproval.mock.calls.length
+          const second = await childDispatch(call(tuple, 'fetch', { url: 'evil' }), binding())
+          expect(second).toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+          expect(requestApproval).toHaveBeenCalledTimes(approvals)
+        })
+        it('a child id later presented by the root fails closed', async () => {
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          const run = serveMcp()
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          const first = await childDispatch(call(tuple, 'fetch', { url: 'a' }), binding())
+          expect(first).not.toMatchObject({ isError: true })
+          const second = await dispatch(call(tuple, 'fetch', { url: 'a' }))
+          expect(second).toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+        })
+        it('the same child id, name and server with different args is refused by the route itself', async () => {
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          const run = serveMcp()
+          renderComponent()
+          await childDispatch(call(tuple, 'fetch', { url: 'a' }), binding())
+          const second = await childDispatch(call(tuple, 'fetch', { url: 'b' }), binding())
+          expect(second).toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+        })
+        it('a root call may still present one id to onToolCall and then dispatch', async () => {
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          const run = serveMcp()
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          await act(async () => { await arrive(call('root-ok', 'fetch', { url: 'x' })) })
+          const out = await dispatch(call('root-ok', 'fetch', { url: 'x', extra: 1 }))
+          expect(out).not.toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+        })
+      })
+
       it('a denied child call is recorded as denial and is released', async () => {
         h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
         const run = serveMcp()
