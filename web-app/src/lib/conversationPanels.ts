@@ -1,4 +1,5 @@
 import { isToolUIPart, getToolName, type UIMessage } from 'ai'
+import { TOOL_DIFF_MAX_CHARS } from './toolDiff'
 import type { SubagentRun, TodoList } from '@/types/coworkSession'
 import { conversationTodos } from './conversationTaskPresentation'
 import { artifactFor, artifactsFromParts, type CoworkArtifact } from './coworkArtifacts'
@@ -105,13 +106,18 @@ export function conversationDiffs(
   const files = new Map<string, CoworkFileDiff>()
   for (const message of messages) {
     if (message.role !== 'assistant') continue
+    const persistedDiffs = new Map<string, string>()
+    for (const part of message.parts) {
+      const data = (part as { data?: { toolCallId?: unknown; diff?: unknown } }).data
+      if (part.type === 'data-tool-diff' && typeof data?.toolCallId === 'string' && typeof data.diff === 'string' && data.diff.length <= TOOL_DIFF_MAX_CHARS) persistedDiffs.set(data.toolCallId, data.diff)
+    }
     for (const part of message.parts) {
       if (!isToolUIPart(part) || part.state !== 'output-available') continue
       const name = getToolName(part)
       if (name !== 'write' && name !== 'edit') continue
       const path = inputPath(part.input)
       if (!path) continue
-      const diff = runtimeDiffs[part.toolCallId] ?? diffFromOutput(part.output)
+      const diff = runtimeDiffs[part.toolCallId] ?? persistedDiffs.get(part.toolCallId) ?? diffFromOutput(part.output)
       if (!diff) continue
       const lines = diff.split('\n')
       const additions = lines.filter((line) => line.startsWith('+ ')).length

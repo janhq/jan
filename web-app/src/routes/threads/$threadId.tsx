@@ -1237,7 +1237,7 @@ function ThreadDetail() {
                   .getState()
                   .recordDiff(toolCall.toolCallId, diff)
               }
-              return rest
+              return { ...rest, diff }
             } else if (!serverName && ragToolNames.has(toolName)) {
               return await serviceHub.rag().callTool({
                 toolName,

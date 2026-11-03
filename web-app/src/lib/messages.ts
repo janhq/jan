@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { TOOL_DIFF_MAX_CHARS } from './toolDiff'
 import {
   ThreadMessage,
   ContentType,
@@ -654,8 +655,7 @@ const PART_FIELDS: Record<string, readonly string[]> = {
   'source-document': ['type', 'sourceId', 'mediaType', 'title', 'filename', 'providerMetadata'],
   // `rawInput` is set on dynamic tools by the SDK runtime though its type omits it.
   'dynamic-tool': ['toolName', ...TOOL_FIELDS],
-  // No `data-*` kind: Jan writes none. If it ever does, add it here, or every
-  // such turn reloads lossy (visibly, as `unsupported-part`).
+  'data-tool-diff': ['type', 'id', 'data'],
 }
 const APPROVAL_FIELDS = ['id', 'approved', 'reason']
 // Opaque provider/tool metadata objects: bounded, and plain JSON objects only.
@@ -684,6 +684,17 @@ function providerField(value: unknown): unknown {
 
 function sanitizeUIPart(part: any): Record<string, unknown> {
   const type = part?.type
+  if (type === 'data-tool-diff') {
+    const data = part.data
+    if (
+      !data || typeof data !== 'object' ||
+      Object.keys(data).some((k) => k !== 'toolCallId' && k !== 'diff') ||
+      typeof data.toolCallId !== 'string' ||
+      typeof data.diff !== 'string' ||
+      data.diff.length > TOOL_DIFF_MAX_CHARS
+    )
+      throw new SkipUIParts('unsupported-part')
+  }
   const fields =
     typeof type === 'string' && type.startsWith('tool-') ? TOOL_FIELDS : PART_FIELDS[type]
   if (!fields) throw new SkipUIParts('unsupported-part')
@@ -729,6 +740,16 @@ function sanitizeUIPart(part: any): Record<string, unknown> {
 // Throws SkipUIParts rather than dropping anything that does not fit.
 function sanitizeUIParts(parts: unknown[]): Record<string, unknown>[] {
   const sanitized = parts.map(sanitizeUIPart)
+  // A diff is only valid next to the settled tool call it belongs to, so the
+  // carrier cannot hold arbitrary data.
+  const settledCalls = new Set(
+    sanitized
+      .filter((p) => typeof p.type === 'string' && (p.type.startsWith('tool-') || p.type === 'dynamic-tool') && SETTLED_TOOL_STATES.has(p.state as string))
+      .map((p) => p.toolCallId)
+  )
+  for (const p of sanitized)
+    if (p.type === 'data-tool-diff' && !settledCalls.has((p.data as { toolCallId: string }).toolCallId))
+      throw new SkipUIParts('unsupported-part')
   try {
     return JSON.parse(JSON.stringify(sanitized))
   } catch {
