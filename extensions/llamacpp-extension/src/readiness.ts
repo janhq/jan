@@ -45,6 +45,25 @@ export interface EmbeddingVectorCheck {
  */
 const HOST_DEVICES: Record<string, true> = { cpu: true, blas: true }
 
+/** `Vulkan0` -> `vulkan`, Metal's `MTL0` -> `metal`; empty ids drop out. */
+function deviceNames(deviceIds: string[]): string[] {
+  return deviceIds
+    .map((id) => id.trim().replace(/\d+$/, '').toLowerCase())
+    .filter((name) => name !== '')
+    .map((name) => (name === 'mtl' ? 'metal' : name))
+}
+
+/**
+ * How many of the engine's devices are not the host. This is the count the GPU
+ * offload check compares with the hardware, so it excludes the same devices
+ * `backendFromDeviceIds` skips: an engine that lists only `BLAS` has not loaded
+ * a GPU.
+ */
+export function countAcceleratorDevices(deviceIds: string[]): number {
+  return deviceNames(deviceIds).filter((name) => HOST_DEVICES[name] !== true)
+    .length
+}
+
 /**
  * The backend a device id came from, e.g. `Vulkan0` -> `vulkan`.
  *
@@ -57,10 +76,7 @@ const HOST_DEVICES: Record<string, true> = { cpu: true, blas: true }
  * there is no accelerator. Metal's own id is `MTL`, which is named `metal`.
  */
 export function backendFromDeviceIds(deviceIds: string[]): string {
-  const names = deviceIds
-    .map((id) => id.trim().replace(/\d+$/, '').toLowerCase())
-    .filter((name) => name !== '')
-    .map((name) => (name === 'mtl' ? 'metal' : name))
+  const names = deviceNames(deviceIds)
   return names.find((name) => HOST_DEVICES[name] !== true) ?? names[0] ?? ''
 }
 

@@ -1137,6 +1137,30 @@ describe('verifyGpuOffload', () => {
     expect(result.reason).toBeUndefined()
   })
 
+  // A host device is not where layers run: an engine that lists only BLAS next
+  // to a present GPU has not loaded the GPU, so the offload check must warn
+  // instead of counting BLAS as a device.
+  it('warns when the engine lists only a host device next to a GPU', async () => {
+    await arm([{ id: 'BLAS', name: 'Accelerate', mem: 0, free: 0 }], [{}])
+    const result = await extension.verifyGpuOffload()
+    expect(result.status).toBe('warning')
+    expect(result.reason).toBe('runtimeUnreachable')
+    expect(result.engineDeviceCount).toBe(0)
+  })
+
+  it('counts only the accelerators when host devices are listed too', async () => {
+    await arm(
+      [
+        { id: 'BLAS', name: 'Accelerate', mem: 0, free: 0 },
+        { id: 'MTL0', name: 'M3 Pro', mem: 1, free: 1 },
+      ],
+      [{}]
+    )
+    const result = await extension.verifyGpuOffload()
+    expect(result.status).toBe('ok')
+    expect(result.engineDeviceCount).toBe(1)
+  })
+
   // The one actionable failure: the GPU is there but the engine cannot see it.
   it('warns when a present GPU is invisible to the engine', async () => {
     await arm([], [{}])

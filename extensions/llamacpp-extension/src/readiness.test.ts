@@ -16,7 +16,7 @@ describe('backendFromDeviceIds', () => {
     expect(backendFromDeviceIds(['ROCm1'])).toBe('rocm')
   })
 
-  it('uses the first device when several are present', () => {
+  it('uses the first accelerator when several are present', () => {
     expect(backendFromDeviceIds(['CUDA0', 'CUDA1'])).toBe('cuda')
   })
 
