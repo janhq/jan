@@ -1201,6 +1201,50 @@ describe('ThreadDetail route', () => {
       expect(h.attachmentsState.setAttachments).not.toHaveBeenCalledWith('thread-1', expect.any(Function))
     })
 
+    // Unlike the test above, the thread is open and the composer empty, so the
+    // only thing keeping the deleted thread's text out of the composer is the
+    // early lifetime-token guard in restoreSubmittedDraft (the instant-restore
+    // branch); add()'s own stale-token refusal is never reached.
+    it('does not refill an open, empty composer from a send held across a thread drop', async () => {
+      h.threadsState.currentThreadId = 'thread-1'
+      usePrompt.getState().resetPrompt()
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      let fail: (e: Error) => void = () => {}
+      vi.mocked(processAttachmentsForSend).mockReturnValueOnce(
+        new Promise((_, reject) => { fail = reject }) as never
+      )
+      renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      expect(usePrompt.getState().prompt).toBe('')
+      act(() => { dropConversationClientThread('thread-1') })
+      await act(async () => { fail(new Error('unreadable')) })
+
+      expect(usePrompt.getState().prompt).toBe('')
+      expect(useFailedDrafts.getState().drafts['thread-1']).toBeUndefined()
+      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalledWith('thread-1', expect.any(Function))
+    })
+
+    it('does not refill an open, empty composer from a send held across leaving a temporary chat', async () => {
+      h.routeParams.threadId = 'temporary-chat'
+      h.threadsState.currentThreadId = 'temporary-chat'
+      usePrompt.getState().resetPrompt()
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      let fail: (e: Error) => void = () => {}
+      vi.mocked(processAttachmentsForSend).mockReturnValueOnce(
+        new Promise((_, reject) => { fail = reject }) as never
+      )
+      const view = renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      expect(usePrompt.getState().prompt).toBe('')
+      view.unmount()
+      await act(async () => { fail(new Error('unreadable')) })
+      h.routeParams.threadId = 'thread-1'
+
+      expect(usePrompt.getState().prompt).toBe('')
+      expect(useFailedDrafts.getState().drafts['temporary-chat']).toBeUndefined()
+      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalledWith('temporary-chat', expect.any(Function))
+    })
+
     it('leaving a temporary chat leaves no failed media for the next one', () => {
       h.routeParams.threadId = 'temporary-chat'
       const view = renderComponent()
