@@ -101,6 +101,7 @@ import {
   createImageAttachment,
   createAudioAttachment,
   createVideoAttachment,
+  type Attachment,
 } from '@/types/attachment'
 import {
   useChatAttachments,
@@ -491,6 +492,48 @@ function ThreadRouteError({ error }: { error: Error }) {
 }
 
 // as route.threadsDetail
+/**
+ * Hands a submitted draft (text + attachments) back to the composer after a
+ * send was cancelled or rejected, without clobbering anything newer.
+ *
+ * - Thread still open and the prompt is empty: restore the text and put the
+ *   old attachments in front of any added since (unique, nothing replaced).
+ * - Thread still open but the user already typed a new draft: the new draft
+ *   stays as a unit; neither its text nor its attachments are touched.
+ * - Thread no longer open: the prompt store is shared with Home and other
+ *   threads, so the text is not written. Attachments are keyed by thread, so
+ *   they go back to this thread's own bucket.
+ */
+const attachmentIdentity = (a: Attachment) =>
+  a.id ?? a.path ?? `${a.type}:${a.name}`
+
+function restoreSubmittedDraft(args: {
+  threadId: string
+  attachmentsKey: string
+  draft: string
+  attachments: Attachment[]
+  setAttachments: (
+    key: string,
+    updater: (prev: Attachment[]) => Attachment[]
+  ) => void
+}): boolean {
+  const { threadId, attachmentsKey, draft, attachments, setAttachments } = args
+  const composer = usePrompt.getState()
+  const open = useThreads.getState().currentThreadId === threadId
+  if (open && composer.prompt) return false
+  if (attachments.length > 0) {
+    setAttachments(attachmentsKey, (prev) => {
+      const restored = new Set(attachments.map(attachmentIdentity))
+      return [
+        ...attachments,
+        ...prev.filter((a) => !restored.has(attachmentIdentity(a))),
+      ]
+    })
+  }
+  if (open) composer.setPrompt(draft)
+  return open
+}
+
 export const Route = createFileRoute('/threads/$threadId')({
   // A Cowork conversation has no chat transcript: its messages live in a
   // sidecar the Cowork view reads. Decide before the chat view mounts (it would
@@ -1762,9 +1805,15 @@ function ThreadDetail() {
           // ChatInput cleared the input on submit; hand the draft back so
           // cancelling only cancels the send. `text` has @path references
           // expanded, so restore what the user actually typed.
-          setAttachmentsForThread(attachmentsKey, allAttachments)
-          // Keep a draft the user typed while the dialog was open.
-          if (!usePrompt.getState().prompt) usePrompt.getState().setPrompt(draft)
+          // Text and attachments return together or not at all: a draft typed
+          // while the dialog was open, or another thread, is left alone.
+          restoreSubmittedDraft({
+            threadId,
+            attachmentsKey,
+            draft,
+            attachments: allAttachments,
+            setAttachments: setAttachmentsForThread,
+          })
           return
         }
         combinedAttachments = applyIngestionChoices(
@@ -1927,14 +1976,14 @@ function ThreadDetail() {
         // user turn or consume the composer draft/attachments.
         deleteMessage(threadId, messageId)
         if (pendingAssistantParents.get(threadId) === messageId) pendingAssistantParents.delete(threadId)
-        setAttachmentsForThread(attachmentsKey, allAttachments)
         // A draft typed since submit is newer than the one being restored.
-        if (
-          useThreads.getState().currentThreadId === threadId &&
-          !usePrompt.getState().prompt
-        ) {
-          usePrompt.getState().setPrompt(draft)
-        }
+        restoreSubmittedDraft({
+          threadId,
+          attachmentsKey,
+          draft,
+          attachments: allAttachments,
+          setAttachments: setAttachmentsForThread,
+        })
         console.error('Chat send was not accepted:', error)
         return false
       }
@@ -2464,9 +2513,23 @@ function ThreadDetail() {
   // No reactive subscription to the queue here — ChatInput owns the UI.
   // We only read the store imperatively when status transitions to 'ready'.
   const processingQueueRef = useRef(false)
+  // Set when the head item was rejected. While set, nothing drains, so a
+  // changed `sendQueuedMessage` identity (model, thread or attachment store
+  // updates) cannot re-fire the same failing send. It clears when the thread
+  // leaves `ready` (any new turn, or an error) so the next ready retries once.
+  const queueRetryBlockedRef = useRef(false)
 
   useEffect(() => {
-    if (status !== 'ready' || processingQueueRef.current) return
+    if (status !== 'ready') queueRetryBlockedRef.current = false
+  }, [status])
+
+  useEffect(() => {
+    if (
+      status !== 'ready' ||
+      processingQueueRef.current ||
+      queueRetryBlockedRef.current
+    )
+      return
 
     const next = useMessageQueue.getState().dequeue(threadId)
     if (!next) return
@@ -2476,6 +2539,7 @@ function ThreadDetail() {
       .catch((err) => {
         // Restore the exact dequeued item ahead of later drafts; no loss and
         // no immediate retry loop while the owning turn is still busy.
+        queueRetryBlockedRef.current = true
         useMessageQueue.setState(state => ({ queues: { ...state.queues, [threadId]: [next, ...(state.queues[threadId] ?? [])] } }))
         console.error('Failed to send queued message:', err)
       })

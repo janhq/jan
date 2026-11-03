@@ -796,6 +796,55 @@ describe('ThreadDetail route', () => {
     expect(h.messageQueueState.queues['thread-1']).toEqual([b])
   })
 
+  it('does not retry a rejected queue head after a model or callback rerender until status leaves ready', async () => {
+    const head = { id: 'q-head', text: 'queued head', createdAt: 1 }
+    h.messageQueueState.queues = { 'thread-1': [head] }
+    h.messageQueueState.dequeue = vi.fn(
+      () => h.messageQueueState.queues['thread-1'].shift() ?? null
+    )
+    h.mockSendMessage
+      .mockRejectedValueOnce(new Error('Chat turn already running'))
+      .mockRejectedValueOnce(new Error('Chat turn already running'))
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const Component = Route.component as React.ComponentType
+    const { rerender } = render(<Component />)
+    await waitFor(() =>
+      expect(log).toHaveBeenCalledWith('Failed to send queued message:', expect.any(Error))
+    )
+    await act(async () => {})
+    expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
+    expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+    expect(h.messageQueueState.queues['thread-1']).toEqual([head])
+
+    // A fresh selectedModel plus fresh store callbacks change the identity of
+    // the route's send callback (its deps include addMessage/deleteMessage).
+    const originalModel = h.modelProviderState.selectedModel
+    for (let i = 0; i < 2; i++) {
+      h.modelProviderState.selectedModel = { ...originalModel }
+      h.messagesState.addMessage = vi.fn()
+      h.messagesState.deleteMessage = vi.fn()
+      rerender(<Component />)
+      await act(async () => {})
+    }
+    expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
+    expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+    expect(h.messageQueueState.queues['thread-1']).toEqual([head])
+
+    // Leaving ready and returning allows exactly one more attempt.
+    h.chatState.status = 'submitted'
+    rerender(<Component />)
+    await act(async () => {})
+    expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
+    h.chatState.status = 'ready'
+    rerender(<Component />)
+    await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(2))
+    await act(async () => {})
+    expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(2)
+    expect(h.messageQueueState.queues['thread-1']).toEqual([head])
+    h.modelProviderState.selectedModel = originalModel
+    log.mockRestore()
+  })
+
   it('keeps the thread in its project when attachments are embedded', async () => {
     const project = { id: 'p1', name: 'Proj', updated_at: 1 }
     h.threadsState.threads['thread-1'].metadata = { project }
@@ -946,6 +995,8 @@ describe('ThreadDetail route', () => {
     }
 
     beforeEach(() => {
+      h.threadsState.currentThreadId = 'thread-1'
+      usePrompt.getState().resetPrompt()
       // Cloud model, unloaded auto-fit model, or a conversation that has
       // outgrown the window all resolve to no budget.
       vi.mocked(resolveAutoInlineBudget).mockResolvedValueOnce(undefined)
@@ -979,7 +1030,7 @@ describe('ThreadDetail route', () => {
       await waitFor(() => {
         expect(h.attachmentsState.setAttachments).toHaveBeenCalledWith(
           'thread-1',
-          [sheet]
+          expect.any(Function)
         )
       })
       expect(usePrompt.getState().prompt).toBe('hello world')
@@ -999,16 +1050,56 @@ describe('ThreadDetail route', () => {
       await act(async () => {
         screen.getByTestId('chat-send').click()
       })
-      await waitFor(() => {
-        expect(h.attachmentsState.setAttachments).toHaveBeenCalledWith(
-          'thread-1',
-          [sheet]
-        )
-      })
+      await waitFor(() => expect(usePrompt.getState().prompt).toBe('typed during dialog'))
+      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalled()
       expect(usePrompt.getState().prompt).toBe('typed during dialog')
       expect(h.mockSendMessage).not.toHaveBeenCalled()
       h.attachmentsState.getAttachments = vi.fn(() => [])
       usePrompt.getState().resetPrompt()
+    })
+
+    it('cancelling keeps a newer prompt together with newer attachments', async () => {
+      const newer = { name: 'newer.png', type: 'image', path: '/newer.png' }
+      vi.mocked(promptIngestionChoices).mockImplementationOnce(async () => {
+        usePrompt.getState().setPrompt('typed newer')
+        h.attachmentsState.getAttachments = vi.fn(() => [newer])
+        return undefined
+      })
+      renderComponent()
+      await act(async () => {
+        screen.getByTestId('chat-send').click()
+      })
+      await waitFor(() => expect(promptIngestionChoices).toHaveBeenCalled())
+      await act(async () => {})
+      // The newer draft stays a unit: nothing is merged into or over it.
+      expect(usePrompt.getState().prompt).toBe('typed newer')
+      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalled()
+      expect(h.attachmentsState.getAttachments('thread-1')).toEqual([newer])
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+      usePrompt.getState().resetPrompt()
+    })
+
+    it('never writes the global prompt when the thread switched during ingestion cancel', async () => {
+      vi.mocked(promptIngestionChoices).mockImplementationOnce(async () => {
+        h.threadsState.currentThreadId = 'thread-2'
+        return undefined
+      })
+      renderComponent()
+      await act(async () => {
+        screen.getByTestId('chat-send').click()
+      })
+      // Attachments are keyed by thread, so they return to thread-1's bucket.
+      await waitFor(() => {
+        expect(h.attachmentsState.setAttachments).toHaveBeenCalledWith(
+          'thread-1',
+          expect.any(Function)
+        )
+      })
+      expect(usePrompt.getState().prompt).toBe('')
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+      delete h.threadsState.currentThreadId
     })
 
     it('cancelling restores the typed draft, not the expanded @references', async () => {
