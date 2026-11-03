@@ -550,6 +550,51 @@ describe('task-status rows are an optional carrier budget (never cost the turn i
     expect(JSON.stringify(b.metadata.uiParts).length).toBeLessThanOrEqual(256 * 1024)
   })
 
+  it('shedding many statuses serializes each part a bounded number of times (not once per deletion)', () => {
+    const N = 1800
+    const bare = Array.from({ length: N }, (_, i) => statusPart({ runId: `run-${i}`, name: `child-${i}`, status: 'running', startedAt: 1000 + i }))
+    const message: UIMessage = { id: 'perf1', role: 'assistant', parts: [{ type: RUN_CONTEXT_PART, data: { text: 'ctx' } }, ...bare] as UIMessage['parts'] }
+    const spy = vi.spyOn(JSON, 'stringify')
+    let fields: ReturnType<typeof assistantRecordFields>
+    let calls: number
+    try {
+      fields = assistantRecordFields(message, {}, { stopped: false })
+      calls = spy.mock.calls.length
+    } finally {
+      spy.mockRestore()
+    }
+    expect(fields.metadata).not.toHaveProperty('uiPartsSkipped')
+    const dropped = (fields.metadata.uiTaskStatusShed as { dropped: number }).dropped
+    expect(dropped).toBeGreaterThan(50)
+    // Linear in the part count with a small constant; a rebuild per deletion would be ~dropped * N.
+    expect(calls).toBeLessThan(10 * N)
+    expect(JSON.stringify(fields.metadata.uiParts).length).toBeLessThanOrEqual(256 * 1024)
+  })
+
+  it('a huge non-sheddable part fails early with size, without shedding or serializing the statuses repeatedly', () => {
+    const many = Array.from({ length: 300 }, (_, i) => statusPart(row(i, { finalOutput: 'x'.repeat(5000) })))
+    const parts = [
+      { type: 'reasoning', text: 'r'.repeat(300 * 1024), state: 'done' },
+      ...many,
+      { type: 'text', text: 'answer', state: 'done' },
+    ] as UIMessage['parts']
+    const spy = vi.spyOn(JSON, 'stringify')
+    let fields: ReturnType<typeof assistantRecordFields>
+    let calls: number
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      fields = assistantRecordFields({ id: 'perf2', role: 'assistant', parts }, {}, { stopped: false })
+      calls = spy.mock.calls.length
+    } finally {
+      spy.mockRestore()
+      warn.mockRestore()
+    }
+    expect(fields.metadata.uiPartsSkipped).toBe('size')
+    expect(fields.metadata).not.toHaveProperty('uiParts')
+    expect(fields.metadata).not.toHaveProperty('uiTaskStatusShed')
+    expect(calls).toBeLessThan(10 * parts.length)
+  })
+
   describe('shapeTaskStatusPart bounds (enum, row count, id and text limits)', () => {
     const good = (over: Record<string, unknown> = {}) => ({ runId: 'r', name: 'n', status: 'done', startedAt: 1, ...over })
     const part = (rows: unknown[]) => ({ type: TASK_STATUS_PART, id: 'task-status:r', data: { subagents: rows } })
