@@ -3,7 +3,13 @@ import React, { useState } from 'react'
 import { act, render, screen, fireEvent, renderHook, waitFor } from '@testing-library/react'
 import type { UIMessageChunk } from 'ai'
 
-const h = vi.hoisted(() => ({ send: vi.fn(), begin: vi.fn(), release: vi.fn() }))
+const h = vi.hoisted(() => ({
+  send: vi.fn(), begin: vi.fn(), release: vi.fn(),
+  // When true the transport uses the production cancelChatRun; operations
+  // handed to trackChatOperation settle only after `gate`.
+  realCancel: false,
+  gate: undefined as Promise<void> | undefined,
+}))
 vi.mock('@/lib/custom-chat-transport', async () => {
   const actual = await vi.importActual<typeof import('@/lib/custom-chat-transport')>('@/lib/custom-chat-transport')
   return {
@@ -11,13 +17,25 @@ vi.mock('@/lib/custom-chat-transport', async () => {
     abort?: () => void
     done: Promise<void> = Promise.resolve()
     beginChatRun(abort: () => void) {
+      if (h.realCancel) {
+        // Production barrier: real abort + done tracking, counters only wrapped.
+        const release = super.beginChatRun(abort)
+        h.begin()
+        return () => { h.release(); release() }
+      }
       this.abort = abort
       h.begin()
       let finish!: () => void
       this.done = new Promise(resolve => { finish = resolve })
       return () => { h.release(); this.abort = undefined; finish() }
     }
-    async cancelChatRun() { this.abort?.(); await this.done; await super.cancelChatRun() }
+    trackChatOperation(operation: Promise<void>) {
+      super.trackChatOperation(h.realCancel ? operation.then(() => h.gate, () => h.gate) as Promise<void> : operation)
+    }
+    async cancelChatRun() {
+      if (h.realCancel) return super.cancelChatRun()
+      this.abort?.(); await this.done; await super.cancelChatRun()
+    }
     getTurnModelSelection() { return { selectedModel: { settings: { ctx_len: { controller_props: { value: 1000000 } } } } } }
     sendMessages = h.send
     reconnectToStream = async () => null
@@ -39,7 +57,7 @@ const answer = () => new ReadableStream<UIMessageChunk>({ start(c) {
   c.enqueue({ type: 'text-start', id: 'text' }); c.enqueue({ type: 'text-delta', id: 'text', delta: 'done' }); c.enqueue({ type: 'text-end', id: 'text' }); c.enqueue({ type: 'finish' }); c.close()
 } })
 describe('production useChat wrapper with real SDK Chat and runTurn', () => {
-  beforeEach(() => { useChatSessions.getState().clearSessions(); vi.clearAllMocks(); h.send.mockReset() })
+  beforeEach(() => { useChatSessions.getState().clearSessions(); vi.clearAllMocks(); h.send.mockReset(); h.realCancel = false; h.gate = undefined })
   it('keeps SDK streaming busy through dispatch then sends exactly one follow-up (no auto-submit)', async () => {
     h.send.mockResolvedValueOnce(wave()).mockResolvedValueOnce(answer())
     let finish!: (v: { output: unknown }) => void
@@ -126,6 +144,35 @@ describe('production useChat wrapper with real SDK Chat and runTurn', () => {
     expect(h.send).toHaveBeenCalledTimes(2)
     expect(result.current.status).toBe('ready')
     expect(result.current.messages.at(-1)?.parts).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'text', text: 'done' })]))
+  })
+  it('production cancelChatRun tracks the SDK operation, not just the run release', async () => {
+    h.realCancel = true
+    let openGate!: () => void
+    h.gate = new Promise<void>(resolve => { openGate = resolve })
+    h.send.mockResolvedValueOnce(wave()).mockResolvedValueOnce(answer())
+    const dispatch = vi.fn().mockImplementation(() => new Promise(() => {}))
+    const { result } = renderHook(() => useChat({ sessionId: 'fixture', dispatchTool: dispatch }))
+    let sent!: Promise<void>
+    act(() => { sent = result.current.sendMessage({ text: 'original' }) })
+    await waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1))
+    const transport = useChatSessions.getState().sessions.fixture.transport
+    let operationSettled = false
+    void sent.then(() => { operationSettled = true }, () => { operationSettled = true })
+    let cancelled = false
+    const cancel = transport.cancelChatRun().then(() => { cancelled = true })
+    // The abort ends the run and the SDK operation itself, but the tracked
+    // chain is held: cancel must still be waiting on it.
+    await waitFor(() => expect(h.release).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(operationSettled).toBe(true))
+    await act(async () => { await Promise.resolve() })
+    expect(cancelled).toBe(false)
+    openGate()
+    await act(async () => { await cancel })
+    expect(cancelled).toBe(true)
+    // Settled operation: the session is free for an immediate new send.
+    await waitFor(() => expect(result.current.status).toBe('ready'))
+    await act(async () => { await result.current.sendMessage({ text: 'next' }) })
+    expect(h.send).toHaveBeenCalledTimes(2)
   })
   it('acknowledges enqueue before a held tool finishes so later composer text survives', async () => {
     h.send.mockResolvedValueOnce(wave()).mockResolvedValueOnce(answer())
