@@ -1942,11 +1942,10 @@ struct ToolGroup {
     idx: usize,
     /// Past-tense label shown when the group finalizes as a single call.
     first_done: String,
-    /// Per-call noun for the finalized breakdown, paired with whether it is a
-    /// read-style op ("memory note"/true, "command"/false, ...). The flag splits
-    /// the summary into a "Read ..." clause and a "ran ..." clause so the verb
-    /// always agrees with its noun.
-    nouns: Vec<(&'static str, bool)>,
+    /// Per-call noun for the finalized breakdown, paired with the `ToolOp` it
+    /// is ("memory note"/Update, "command"/Run, ...), which picks the clause
+    /// of the summary it counts in.
+    nouns: Vec<(&'static str, ToolOp)>,
     /// Per-call detail retained so the collapsed row can expand back to its
     /// individual calls/results (never discarded at fold time).
     calls: Vec<GroupedCall>,
@@ -3841,7 +3840,7 @@ impl Transcript {
         label: String,
         done: String,
     ) {
-        let (noun, is_read) = tool_kind(name);
+        let (noun, op) = tool_kind(name, args);
         self.grouped_ids.insert(id.to_string());
         let call = GroupedCall {
             id: id.to_string(),
@@ -3862,7 +3861,7 @@ impl Transcript {
             .is_some_and(|g| g.idx < self.rows.len());
         if extend {
             let g = self.tool_group.as_mut().expect("group checked above");
-            g.nouns.push((noun, is_read));
+            g.nouns.push((noun, op));
             g.calls.push(call);
             self.refresh_group_row();
             return;
@@ -3871,7 +3870,7 @@ impl Transcript {
         let group = ToolGroup {
             idx: self.rows.len(),
             first_done: done,
-            nouns: vec![(noun, is_read)],
+            nouns: vec![(noun, op)],
             calls: vec![call],
             started: Instant::now(),
             last_result_error: None,
@@ -3968,7 +3967,7 @@ impl Transcript {
 
     /// The breakdown nouns of every tool group in `run` (groups close in row
     /// order), so its folded header can summarize what the hidden calls did.
-    fn trace_nouns(&self, run: &TraceRun) -> Vec<(&'static str, bool)> {
+    fn trace_nouns(&self, run: &TraceRun) -> Vec<(&'static str, ToolOp)> {
         self.groups
             .iter()
             .filter(|g| (run.start..=run.end).contains(&g.idx))
@@ -12281,18 +12280,30 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
     tree_lines(&children, Fit::Wrap, width, !tree)
 }
 
-/// Classify a collapsible tool into a breakdown noun and whether it is a
-/// read-style op (drives the "Read" vs "Ran" verb in a group summary).
-fn tool_kind(name: &str) -> (&'static str, bool) {
+/// Which clause of a group summary a call counts in, so its verb agrees with
+/// what the call did (`Read 2 files; updated 1 memory note; ran 1 command`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ToolOp {
+    Read,
+    Update,
+    Run,
+}
+
+/// Classify a collapsible tool into a breakdown noun and the `ToolOp` it is.
+/// One `memory` tool reads and writes, so its `op` decides which.
+fn tool_kind(name: &str, args: &serde_json::Value) -> (&'static str, ToolOp) {
+    let op = args.get("op").and_then(|v| v.as_str());
     match name {
-        n if n.starts_with("memory") => ("memory note", true),
-        n if n.starts_with("skill") => ("skill", true),
-        "read" => ("file", true),
-        "list" | "ls" => ("directory", true),
-        "grep" | "search" => ("search", false),
-        "find" | "glob" => ("file search", false),
-        "bash" | "shell" | "exec" => ("command", false),
-        _ => ("tool call", false),
+        "memory" if matches!(op, Some("view" | "search")) => ("memory note", ToolOp::Read),
+        "memory" => ("memory note", ToolOp::Update),
+        "skill_write" => ("skill", ToolOp::Update),
+        n if n.starts_with("skill") => ("skill", ToolOp::Read),
+        "read" => ("file", ToolOp::Read),
+        "list" | "ls" => ("directory", ToolOp::Read),
+        "grep" | "search" => ("search", ToolOp::Run),
+        "find" | "glob" => ("file search", ToolOp::Run),
+        "bash" | "shell" | "exec" => ("command", ToolOp::Run),
+        _ => ("tool call", ToolOp::Run),
     }
 }
 
@@ -12488,11 +12499,31 @@ fn explored_lines(
 }
 
 /// Short sentence summarizing a finished tool group, e.g. "Read 3 memory notes,
-/// 1 skill" or "Read 20 files; ran 12 commands". Read-style nouns get a "Read"
-/// clause and executed nouns a "ran" clause, so the verb always agrees with its
-/// noun (never "Ran 1 directory"). Each clause preserves first-seen order.
-fn group_summary(nouns: &[(&str, bool)]) -> String {
-    group_clauses(nouns, "Read", "ran")
+/// 1 skill" or "Read 20 files; updated 1 memory note; ran 12 commands": one
+/// clause per `ToolOp`, so the verb always agrees with its noun (never "Ran 1
+/// directory", never "Read" for a note that was written). Each clause counts
+/// and pluralizes its nouns in first-seen order.
+fn group_summary(nouns: &[(&str, ToolOp)]) -> String {
+    let clauses = [(ToolOp::Read, "read"), (ToolOp::Update, "updated"), (ToolOp::Run, "ran")]
+        .into_iter()
+        .filter_map(|(op, verb)| {
+            let mut counts: Vec<(&str, usize)> = Vec::new();
+            for &(noun, _) in nouns.iter().filter(|(_, o)| *o == op) {
+                match counts.iter_mut().find(|(n, _)| *n == noun) {
+                    Some((_, c)) => *c += 1,
+                    None => counts.push((noun, 1)),
+                }
+            }
+            let items: Vec<String> = counts.iter().map(|(n, c)| pluralize(n, *c)).collect();
+            (!items.is_empty()).then(|| format!("{verb} {}", items.join(", ")))
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let mut chars = clauses.chars();
+    chars
+        .next()
+        .map(|f| f.to_uppercase().collect::<String>() + chars.as_str())
+        .unwrap_or_default()
 }
 
 /// A folded mixed group: `bullet`, a bold `Worked · N tool calls`, then the
@@ -12527,7 +12558,7 @@ fn worked_lines(
 /// groups' `nouns`), cut to one row; a reasoning-only run has nothing to add.
 fn trace_header_lines(
     run: &TraceRun,
-    nouns: &[(&str, bool)],
+    nouns: &[(&str, ToolOp)],
     width: u16,
 ) -> Vec<Line<'static>> {
     let verb = if run.tool_ran { "Worked" } else { "Thought" };
@@ -12990,44 +13021,6 @@ fn shell_group_lines(
 /// first command byte, so a shell call never sits on a "Preparing bash" row.
 fn typing_shell_lines(command: &str, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
     shell_header_rows(running_bullet(spinner_frame), "Running", command, None, width)
-}
-
-/// Bucket `nouns` into read-style and run-style clauses (first-seen order,
-/// counted and pluralized) and join them with the given verbs, so the verb
-/// always agrees with its noun (never "Ran 1 directory").
-fn group_clauses(nouns: &[(&str, bool)], read_verb: &str, run_verb: &str) -> String {
-    let mut read: Vec<(&str, usize)> = Vec::new();
-    let mut run: Vec<(&str, usize)> = Vec::new();
-    for &(n, is_read) in nouns {
-        let bucket = if is_read { &mut read } else { &mut run };
-        match bucket.iter_mut().find(|(name, _)| *name == n) {
-            Some((_, c)) => *c += 1,
-            None => bucket.push((n, 1)),
-        }
-    }
-    let clause = |items: &[(&str, usize)]| {
-        items
-            .iter()
-            .map(|(n, c)| pluralize(n, *c))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    let mut out = String::new();
-    if !read.is_empty() {
-        out = format!("{read_verb} {}", clause(&read));
-    }
-    if !run.is_empty() {
-        let verb = if out.is_empty() {
-            let mut c = run_verb.chars();
-            c.next()
-                .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
-                .unwrap_or_default()
-        } else {
-            format!("; {run_verb}")
-        };
-        out.push_str(&format!("{verb} {}", clause(&run)));
-    }
-    out
 }
 
 /// "3 memory notes", "1 skill", "2 searches", "1 directory".
@@ -27010,6 +27003,7 @@ mod tests {
         finish_memory_tidy, memory_command, start_memory_tidy, TidyKind, with_cap_note,
         finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
         agent_stats, finish_update_install, fork_at, format_tokens, group_detail_lines, group_summary,
+        tool_kind, ToolOp,
         handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, handle_plugin_setup_key,
         header_spans, image_mime,
         image_mime_of, input_content_lines, is_user_turn, load_first_file_image, load_image_file,
@@ -30836,18 +30830,18 @@ fn a() {}
     fn group_summary_counts_and_pluralizes() {
         assert_eq!(
             group_summary(&[
-                ("memory note", true),
-                ("skill", true),
-                ("memory note", true)
+                ("memory note", ToolOp::Read),
+                ("skill", ToolOp::Read),
+                ("memory note", ToolOp::Read)
             ]),
             "Read 2 memory notes, 1 skill"
         );
         assert_eq!(
-            group_summary(&[("command", false), ("search", false), ("search", false)]),
+            group_summary(&[("command", ToolOp::Run), ("search", ToolOp::Run), ("search", ToolOp::Run)]),
             "Ran 1 command, 2 searches"
         );
         assert_eq!(
-            group_summary(&[("directory", true), ("directory", true)]),
+            group_summary(&[("directory", ToolOp::Read), ("directory", ToolOp::Read)]),
             "Read 2 directories"
         );
     }
@@ -30863,7 +30857,7 @@ fn a() {}
             tool_ran: true,
             steps: 5,
         };
-        let nouns = [("file", true), ("command", false), ("file", true), ("command", false)];
+        let nouns = [("file", ToolOp::Read), ("command", ToolOp::Run), ("file", ToolOp::Read), ("command", ToolOp::Run)];
         let text: Vec<String> = super::trace_header_lines(&run, &nouns, 70)
             .iter()
             .map(line_text)
@@ -30887,12 +30881,36 @@ fn a() {}
         // Mixed ops keep the verb agreeing with its noun: never "Ran 1 directory".
         assert_eq!(
             group_summary(&[
-                ("directory", true),
-                ("search", false),
-                ("file", true),
-                ("command", false),
+                ("directory", ToolOp::Read),
+                ("search", ToolOp::Run),
+                ("file", ToolOp::Read),
+                ("command", ToolOp::Run),
             ]),
             "Read 1 directory, 1 file; ran 1 search, 1 command"
+        );
+    }
+
+    /// A memory or skill write is counted as updated, not read: the summary
+    /// must not say a note was read when the agent wrote it.
+    #[test]
+    fn group_summary_counts_memory_writes_as_updates() {
+        let kind = |name: &str, args: serde_json::Value| tool_kind(name, &args);
+        let nouns = [
+            kind("memory", json!({ "op": "view", "name": "a" })),
+            kind("memory", json!({ "op": "write", "name": "b" })),
+            kind("memory", json!({ "op": "search", "query": "c" })),
+            kind("memory", json!({ "op": "delete", "name": "d" })),
+            kind("skill_write", json!({ "name": "deploy" })),
+            kind("skill_read", json!({ "name": "deploy" })),
+            kind("bash", json!({ "command": "ls" })),
+        ];
+        assert_eq!(
+            group_summary(&nouns),
+            "Read 2 memory notes, 1 skill; updated 2 memory notes, 1 skill; ran 1 command"
+        );
+        assert_eq!(
+            group_summary(&[kind("memory", json!({ "op": "edit", "name": "b" }))]),
+            "Updated 1 memory note"
         );
     }
 
