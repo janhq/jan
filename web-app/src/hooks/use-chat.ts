@@ -24,6 +24,14 @@ type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
     onTokenUsage?: (usage: LanguageModelUsage, messageId: string) => void;
   }
 
+// The app state rebuilds these Sets on every mcp-update, so compare contents.
+function sameNames(a: Set<string>, b: Set<string>): boolean {
+  if (a === b) return true
+  if (a.size !== b.size) return false
+  for (const name of a) if (!b.has(name)) return false
+  return true
+}
+
 // This is a wrapper around the AI SDK's useChat hook
 // It implements model switching and uses the custom chat transport,
 // making a nice reusable hook for chat functionality.
@@ -110,11 +118,16 @@ export function useChat(
     }
   }, [sessionId, chatResult.status, updateStatus])
 
-  // Refresh tools when MCP or RAG tool names change (e.g., when MCP servers start/stop)
+  // When the MCP or RAG tool names actually change (not on mount), drop the frozen routed tools and re-route.
+  const prevToolNamesRef = useRef({ mcp: mcpToolNames, rag: ragToolNames })
   useEffect(() => {
+    const prev = prevToolNamesRef.current
+    prevToolNamesRef.current = { mcp: mcpToolNames, rag: ragToolNames }
+    if (sameNames(prev.mcp, mcpToolNames) && sameNames(prev.rag, ragToolNames)) {
+      return
+    }
     if (transportRef.current) {
-      // Use forceRefreshTools to update the transport's tool cache
-      // This ensures the transport has the latest tools when MCP server status changes
+      transportRef.current.invalidateFrozenTools()
       transportRef.current.refreshTools()
     }
   }, [mcpToolNames, ragToolNames])

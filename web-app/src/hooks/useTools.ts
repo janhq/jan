@@ -6,6 +6,20 @@ import { useToolAvailable } from './useToolAvailable'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator/mcp-orchestrator'
+import { useChatSessions } from '@/stores/chat-session-store'
+
+// Each open thread's transport freezes its routed tool list; drop that freeze
+// and re-route so tools from servers that just (dis)connected show up.
+function invalidateSessionTools(): void {
+  for (const session of Object.values(useChatSessions.getState().sessions)) {
+    try {
+      session.transport.invalidateFrozenTools()
+      void session.transport.refreshTools()
+    } catch (error) {
+      console.error('[tools] failed to refresh session tools:', error)
+    }
+  }
+}
 
 export const useTools = () => {
   const updateTools = useAppState((state) => state.updateTools)
@@ -14,7 +28,7 @@ export const useTools = () => {
   const { isDefaultsInitialized, setDisabledTools, markDefaultsAsInitialized } = useToolAvailable()
 
   useEffect(() => {
-    async function setTools() {
+    async function setTools({ invalidateSessions }: { invalidateSessions: boolean }) {
       try {
         // A server connect/disconnect/tools-refresh fired this (mcp-update);
         // the orchestrator's per-request tool cache would otherwise only
@@ -48,6 +62,9 @@ export const useTools = () => {
         updateMcpToolNames(mcpNames)
         updateRagToolNames(ragOnly)
 
+        // Only an mcp-update re-routes open threads; mount keeps their freeze.
+        if (invalidateSessions) invalidateSessionTools()
+
         // Initialize default disabled tools for new users (only once)
         if (!isDefaultsInitialized() && mcpTools.length > 0 && mcpExtension?.getDefaultDisabledTools) {
           const defaultDisabled = await mcpExtension.getDefaultDisabledTools()
@@ -60,16 +77,17 @@ export const useTools = () => {
         console.error('Failed to fetch MCP tools:', error)
       }
     }
-    setTools()
+    setTools({ invalidateSessions: false })
 
-    let unsubscribe = () => {}
-    getServiceHub().events().listen(SystemEvent.MCP_UPDATE, setTools).then((unsub) => {
-      // Unsubscribe from the event when the component unmounts
-      unsubscribe = unsub
+    let unsub: (() => void) | undefined
+    const onMcpUpdate = () => setTools({ invalidateSessions: true })
+    getServiceHub().events().listen(SystemEvent.MCP_UPDATE, onMcpUpdate).then((u) => {
+      unsub = u
     }).catch((error) => {
       console.error('Failed to set up MCP update listener:', error)
     })
-    return unsubscribe
+    // Read unsub at cleanup time; it is assigned after listen() resolves.
+    return () => unsub?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 }
