@@ -42,5 +42,10 @@
     "files_other": "{{count}} files",
     "restore": "Restore draft",
     "dismiss": "Dismiss"
+  },
+  "queueRecovery": {
+    "paused": "Queue paused after an error. New messages are added behind it.",
+    "resume": "Resume queued messages",
+    "clear": "Clear queue"
   }
 }

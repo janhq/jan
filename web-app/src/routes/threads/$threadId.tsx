@@ -779,6 +779,7 @@ function ThreadDetail() {
     regenerate,
     setMessages: setChatMessages,
     stop,
+    clearError,
     updateRagToolsAvailability,
     setContinueFromContent,
   } = useChat({
@@ -2553,6 +2554,8 @@ function ThreadDetail() {
 
   useEffect(() => {
     if (status !== 'ready') return
+    // A queue held after an error only drains on an explicit Resume.
+    if (useMessageQueue.getState().isPaused(threadId)) return
     if (processingQueueRef.current?.threadId === threadId) {
       readySkippedRef.current = threadId
       return
@@ -2585,8 +2588,25 @@ function ThreadDetail() {
   }, [status, threadId, sendQueuedMessage, drainTick])
 
   // A streaming error keeps queued messages: they are user text that has not
-  // been sent. They stay in the queue (visible and clearable from ChatInput)
-  // and drain only once the thread is ready again.
+  // been sent. The queue is held (visible, resumable and clearable from
+  // ChatInput); nothing drains and new submissions queue behind it until the
+  // user resumes.
+  useEffect(() => {
+    if (status === 'error') useMessageQueue.getState().pause(threadId)
+  }, [status, threadId])
+
+  // Explicit user action: release the hold and drain in order. An SDK error
+  // status is cleared without sending anything; the resulting ready transition
+  // (or, when already ready, a tick) runs the ordered drain exactly once.
+  const handleResumeQueue = useCallback(() => {
+    useMessageQueue.getState().resume(threadId)
+    queueRetryBlockedRef.current = null
+    if (status === 'error') {
+      clearError()
+    } else {
+      setDrainTick((tick) => tick + 1)
+    }
+  }, [threadId, status, clearError])
 
   // Attach the error to the assistant turn it belongs to so the banner renders
   // alongside any tool-call parts the model already produced. Falls back to the
@@ -2889,6 +2909,7 @@ function ThreadDetail() {
             model={threadModel}
             onSubmit={handleSubmit}
             onStop={handleStop}
+            onResumeQueue={handleResumeQueue}
             chatStatus={effectiveStatus}
             toolsRunning={toolsRunning}
           />

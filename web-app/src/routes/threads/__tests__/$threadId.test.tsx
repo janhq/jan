@@ -16,6 +16,7 @@ const h = vi.hoisted(() => {
   const mockSendMessage = vi.fn()
   const mockRegenerate = vi.fn()
   const mockStop = vi.fn()
+  const mockClearError = vi.fn()
   const mockAddToolOutput = vi.fn()
   const mockSetChatMessages = vi.fn()
   const mockUpdateRag = vi.fn()
@@ -154,7 +155,20 @@ const h = vi.hoisted(() => {
   const messageQueueState: any = {
     dequeue: vi.fn(() => null),
     clearQueue: vi.fn(),
+    paused: {} as Record<string, boolean>,
+    pause: vi.fn(),
+    resume: vi.fn(),
+    isPaused: vi.fn(() => false),
   }
+  const bindPauseMock = () => {
+    messageQueueState.paused = {}
+    messageQueueState.pause = vi.fn((id: string) => {
+      if (messageQueueState.queues?.[id]?.length) messageQueueState.paused[id] = true
+    })
+    messageQueueState.resume = vi.fn((id: string) => { delete messageQueueState.paused[id] })
+    messageQueueState.isPaused = vi.fn((id: string) => !!messageQueueState.paused[id])
+  }
+  bindPauseMock()
   const useMessageQueueMock: any = (_selector: any) => undefined
   useMessageQueueMock.getState = () => messageQueueState
   useMessageQueueMock.setState = (update: any) => Object.assign(messageQueueState, typeof update === 'function' ? update(messageQueueState) : update)
@@ -166,6 +180,7 @@ const h = vi.hoisted(() => {
     mockSendMessage,
     mockRegenerate,
     mockStop,
+    mockClearError,
     mockAddToolOutput,
     mockSetChatMessages,
     mockUpdateRag,
@@ -194,6 +209,7 @@ const h = vi.hoisted(() => {
     agentModeState,
     useAgentModeMock,
     messageQueueState,
+    bindPauseMock,
     useMessageQueueMock,
   }
 })
@@ -220,7 +236,7 @@ vi.mock('@/containers/DropdownModelProvider', () => ({
 }))
 
 vi.mock('@/containers/ChatInput', () => ({
-  default: ({ onSubmit, onStop, chatStatus }: any) => (
+  default: ({ onSubmit, onStop, onResumeQueue, chatStatus }: any) => (
     <div data-testid="chat-input">
       <span data-testid="chat-status">{chatStatus}</span>
       <button
@@ -241,6 +257,9 @@ vi.mock('@/containers/ChatInput', () => ({
         }
       >
         send with reference
+      </button>
+      <button data-testid="chat-resume-queue" onClick={() => onResumeQueue()}>
+        resume queue
       </button>
       <button data-testid="chat-stop" onClick={() => onStop()}>
         stop
@@ -453,6 +472,7 @@ vi.mock('@/hooks/use-chat', () => ({
         h.integrationChat!.messages = typeof update === 'function' ? update(h.integrationChat!.messages) : update
       } : h.mockSetChatMessages,
       stop: h.integrationChat ? () => h.integrationChat!.stop() : h.mockStop,
+      clearError: h.mockClearError,
       addToolOutput: h.mockAddToolOutput,
       updateRagToolsAvailability: h.mockUpdateRag,
       setContinueFromContent: h.mockSetContinueFromContent,
@@ -618,6 +638,12 @@ describe('ThreadDetail route', () => {
     h.messageQueueState.dequeue = vi.fn(() => null)
     h.messageQueueState.clearQueue = vi.fn()
     h.messageQueueState.queues = {}
+    h.bindPauseMock()
+    h.mockClearError.mockReset()
+    h.mockClearError.mockImplementation(() => {
+      h.chatState.status = 'ready'
+      h.chatState.error = null
+    })
     useFailedDrafts.setState({ drafts: {} })
     h.agentModeState.agentThreads = {}
     h.modelProviderState.selectedProvider = 'openai'
@@ -776,33 +802,95 @@ describe('ThreadDetail route', () => {
     log.mockRestore()
   })
 
-  it('keeps queued messages through an SDK error and drains once on ready', async () => {
+  describe('queue held after an SDK error', () => {
     const a = { id: 'q-a', text: 'queued A', createdAt: 1 }
     const b = { id: 'q-b', text: 'queued B', createdAt: 2 }
-    h.messageQueueState.queues = { 'thread-1': [] }
-    const enqueue = (m: any) => { h.messageQueueState.queues['thread-1'].push(m) }
-    h.messageQueueState.dequeue = vi.fn(() => h.messageQueueState.queues['thread-1'].shift() ?? null)
-    enqueue(a)
-    enqueue(b)
-    h.chatState.status = 'error'
-    h.chatState.error = new Error('SDK stream failed')
-    const Component = Route.component as React.ComponentType
-    const { rerender } = render(<Component />)
-    await act(async () => {})
-    // The error neither auto-sends nor discards the queue.
-    expect(h.mockSendMessage).not.toHaveBeenCalled()
-    expect(h.messageQueueState.dequeue).not.toHaveBeenCalled()
-    expect(h.messageQueueState.clearQueue).not.toHaveBeenCalled()
-    expect(h.messageQueueState.queues['thread-1']).toEqual([a, b])
-    // Explicit retry: the thread becomes ready and exactly one item drains.
-    h.chatState.status = 'ready'
-    h.chatState.error = null
-    rerender(<Component />)
-    await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
-    await act(async () => {})
-    expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
-    expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
-    expect(h.messageQueueState.queues['thread-1']).toEqual([b])
+    const seed = (threadId = 'thread-1', items: any[] = [a, b]) => {
+      h.messageQueueState.queues[threadId] = [...items]
+      h.messageQueueState.dequeue = vi.fn(
+        (id: string) => h.messageQueueState.queues[id]?.shift() ?? null
+      )
+    }
+    const renderErrored = async () => {
+      h.chatState.status = 'error'
+      h.chatState.error = new Error('SDK stream failed')
+      const Component = Route.component as React.ComponentType
+      const view = render(<Component />)
+      await act(async () => {})
+      return { ...view, Component }
+    }
+
+    it('holds A/B through the error and does not drain on ready until Resume', async () => {
+      seed()
+      const { rerender, Component } = await renderErrored()
+      expect(h.messageQueueState.pause).toHaveBeenCalledWith('thread-1')
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      expect(h.messageQueueState.dequeue).not.toHaveBeenCalled()
+      expect(h.messageQueueState.clearQueue).not.toHaveBeenCalled()
+      expect(h.messageQueueState.queues['thread-1']).toEqual([a, b])
+
+      // Status recovering by other means (e.g. a regenerate) is not consent.
+      h.chatState.status = 'ready'
+      h.chatState.error = null
+      rerender(<Component />)
+      await act(async () => {})
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      expect(h.messageQueueState.dequeue).not.toHaveBeenCalled()
+      expect(h.messageQueueState.queues['thread-1']).toEqual([a, b])
+    })
+
+    it('Resume while the SDK is in error clears the error without sending, then drains once in order', async () => {
+      seed()
+      const { rerender, Component } = await renderErrored()
+      await act(async () => {
+        screen.getByTestId('chat-resume-queue').click()
+      })
+      expect(h.mockClearError).toHaveBeenCalledTimes(1)
+      expect(h.messageQueueState.resume).toHaveBeenCalledWith('thread-1')
+      // clearError itself sends nothing; the queued text is the only send.
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      rerender(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      await act(async () => {})
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+      expect(h.mockSendMessage.mock.calls[0][0].parts[0].text).toBe('queued A')
+      expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
+      expect(h.messageQueueState.queues['thread-1']).toEqual([b])
+    })
+
+    it('Resume on an already-ready held thread drains exactly once without clearError', async () => {
+      seed()
+      const { rerender, Component } = await renderErrored()
+      h.chatState.status = 'ready'
+      h.chatState.error = null
+      rerender(<Component />)
+      await act(async () => {})
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      await act(async () => {
+        screen.getByTestId('chat-resume-queue').click()
+      })
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      await act(async () => {})
+      expect(h.mockClearError).not.toHaveBeenCalled()
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+      expect(h.messageQueueState.queues['thread-1']).toEqual([b])
+    })
+
+    it('does not hold or resume another thread\'s queue', async () => {
+      seed('thread-1', [])
+      h.messageQueueState.queues['thread-2'] = [{ id: 'o', text: 'other', createdAt: 1 }]
+      h.messageQueueState.paused['thread-2'] = true
+      await renderErrored()
+      // thread-1 had nothing to hold; thread-2's hold is untouched.
+      expect(h.messageQueueState.paused['thread-1']).toBeUndefined()
+      expect(h.messageQueueState.paused['thread-2']).toBe(true)
+      await act(async () => {
+        screen.getByTestId('chat-resume-queue').click()
+      })
+      expect(h.messageQueueState.resume).toHaveBeenCalledWith('thread-1')
+      expect(h.messageQueueState.paused['thread-2']).toBe(true)
+      expect(h.messageQueueState.queues['thread-2']).toHaveLength(1)
+    })
   })
 
   it('does not retry a rejected queue head after a model or callback rerender until status leaves ready', async () => {

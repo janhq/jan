@@ -229,10 +229,13 @@ const enqueueMock = vi.fn((tid: string, msg: any) => {
 const removeMessageMock = vi.fn()
 const clearQueueMock = vi.fn()
 const getQueueMock = vi.fn((tid: string) => queueState[tid] || [])
+const pausedState: Record<string, boolean> = {}
+const isPausedMock = vi.fn((tid: string) => !!pausedState[tid])
 
 function useMessageQueueImpl(selector?: any) {
   const state = {
     getQueue: getQueueMock,
+    isPaused: isPausedMock,
     enqueue: enqueueMock,
     removeMessage: removeMessageMock,
     clearQueue: clearQueueMock,
@@ -242,6 +245,7 @@ function useMessageQueueImpl(selector?: any) {
 }
 ;(useMessageQueueImpl as any).getState = () => ({
   getQueue: getQueueMock,
+  isPaused: isPausedMock,
   enqueue: enqueueMock,
   removeMessage: removeMessageMock,
   clearQueue: clearQueueMock,
@@ -427,6 +431,7 @@ const resetAll = () => {
   clearQueueMock.mockClear()
   useFailedDrafts.setState({ drafts: {} })
   for (const k of Object.keys(queueState)) delete queueState[k]
+  for (const k of Object.keys(pausedState)) delete pausedState[k]
   getCurrentThreadMock.mockReturnValue(undefined)
   for (const key of Object.keys(threadsMockState)) delete threadsMockState[key]
   useImageAttachmentConfig.setState({ maxImageSizeMB: 10 })
@@ -1425,6 +1430,54 @@ describe('ChatInput', () => {
     const chips = screen.getAllByTestId('queued-chip')
     expect(chips).toHaveLength(2)
     expect(chips[0]).toHaveTextContent('queued one')
+  })
+
+  it('shows Resume/Clear controls for a held queue and wires them', () => {
+    queueState['thread-1'] = [{ id: 'q1', text: 'queued one', createdAt: 1 }]
+    pausedState['thread-1'] = true
+    const onResumeQueue = vi.fn()
+    renderInput({ onResumeQueue })
+    fireEvent.click(screen.getByTestId('resume-queue-button'))
+    expect(onResumeQueue).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByTestId('clear-queue-button'))
+    expect(clearQueueMock).toHaveBeenCalledWith('thread-1')
+  })
+
+  it('shows no Resume/Clear controls for an unheld queue', () => {
+    queueState['thread-1'] = [{ id: 'q1', text: 'queued one', createdAt: 1 }]
+    renderInput({ onResumeQueue: vi.fn() })
+    expect(screen.queryByTestId('resume-queue-button')).not.toBeInTheDocument()
+  })
+
+  it('appends a new submission behind a held queue instead of sending it', async () => {
+    queueState['thread-1'] = [
+      { id: 'a', text: 'queued A', createdAt: 1 },
+      { id: 'b', text: 'queued B', createdAt: 2 },
+    ]
+    pausedState['thread-1'] = true
+    promptState = 'new C'
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready' })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(enqueueMock).toHaveBeenCalledWith(
+        'thread-1',
+        expect.objectContaining({ text: 'new C' })
+      )
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(queueState['thread-1'].map((m) => m.text)).toEqual(['queued A', 'queued B', 'new C'])
+  })
+
+  it('does not hold another thread\'s submission behind a different thread\'s held queue', async () => {
+    queueState['thread-2'] = [{ id: 'x', text: 'other', createdAt: 1 }]
+    pausedState['thread-2'] = true
+    promptState = 'mine'
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready' })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(enqueueMock).not.toHaveBeenCalled()
   })
 
   it('renders the inline error message with dismiss button', () => {

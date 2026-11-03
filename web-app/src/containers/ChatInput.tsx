@@ -154,6 +154,8 @@ type ChatInputProps = {
    * after a persistent thread exists. Returning false keeps the draft unsent. */
   prepareThreadCreation?: () => (threadId: string) => Promise<boolean>
   onStop?: () => void
+  /** Releases a queue held after an error and drains it in order. */
+  onResumeQueue?: () => void
   chatStatus?: ChatStatus
   /**
    * The turn's tools are still running or awaiting approval after the stream
@@ -224,6 +226,7 @@ const ChatInput = memo(function ChatInput({
   onSubmit,
   prepareThreadCreation,
   onStop,
+  onResumeQueue,
   chatStatus,
   toolsRunning,
   scopeKey,
@@ -609,6 +612,7 @@ const ChatInput = memo(function ChatInput({
   const queueId = scopeKey ?? currentThreadId ?? ''
   const queuedMessages = useMessageQueue(useShallow((s) => s.getQueue(queueId)))
   const queueLength = queuedMessages.length
+  const queuePaused = useMessageQueue((s) => s.isPaused(queueId))
 
   const removeQueuedMessage = useCallback(
     (id: string) => {
@@ -775,7 +779,13 @@ const ChatInput = memo(function ChatInput({
       // While the model is still streaming, or the turn's tools are still
       // running, queue the message for later. The queue waits for the tools, so
       // a second turn never starts under a tool loop that Stop still has to end.
-      if ((isStreaming || toolsRunning) && queueId) {
+      // A queue held after an error also keeps newer text behind it: sending
+      // it directly would run it before the older queued messages.
+      const behindHeldQueue =
+        !!queueId &&
+        useMessageQueue.getState().isPaused(queueId) &&
+        useMessageQueue.getState().getQueue(queueId).length > 0
+      if ((isStreaming || toolsRunning || behindHeldQueue) && queueId) {
         useMessageQueue.getState().enqueue(queueId, {
           id: generateId(),
           text: effectivePrompt,
@@ -2393,6 +2403,38 @@ const ChatInput = memo(function ChatInput({
             )}
             {queuedMessages.length > 0 && (
               <div className="flex flex-col gap-1 px-3 pt-2 pb-0">
+                {queuePaused && (
+                  <div
+                    data-testid="queue-paused-banner"
+                    className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+                  >
+                    <span>
+                      {t('chat:queueRecovery.paused')}
+                    </span>
+                    {onResumeQueue && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="default"
+                        data-testid="resume-queue-button"
+                        onClick={onResumeQueue}
+                      >
+                        {t('chat:queueRecovery.resume')}
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      data-testid="clear-queue-button"
+                      onClick={() =>
+                        useMessageQueue.getState().clearQueue(queueId)
+                      }
+                    >
+                      {t('chat:queueRecovery.clear')}
+                    </Button>
+                  </div>
+                )}
                 {queuedMessages.map((msg) => (
                   <QueuedMessageChip
                     key={msg.id}
