@@ -153,14 +153,12 @@ describe('scoped native schema advertisement', () => {
     expect(tool.inputSchema.jsonSchema.properties.title).toBeUndefined()
   })
 
-  it('warns, with the collision wording, when a native tool replaces a same-named MCP tool', async () => {
+  it('preserves a user MCP read identity instead of replacing it with native read', async () => {
     h.mcpTools = [{ name: 'read', server: 'user-srv', description: 'mcp read', inputSchema: {} }]
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await transport.refreshTools()
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Withheld MCP tool "read": name collision'))
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('user-srv'))
-    expect(transport.getMcpServerForTool('read')).toBeUndefined()
-    warn.mockRestore()
+    expect(transport.getMcpServerForTool('read')).toBe('user-srv')
+    expect(transport.getTools().read.description).toBe('mcp read')
+    expect(transport.hasAdvertisedNativeTool('read')).toBe(false)
   })
 
   it('permits native dispatch only for a frozen advertised native record', async () => {

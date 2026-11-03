@@ -1317,6 +1317,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           const name = schema.function.name
           if (!scoped.advertisesNativeTool(name)) continue
           if (CHAT_AGENT_TOOL_NAMES.has(name) && !shellEnabled) continue
+          // User-configured MCP identities retain non-shell names. Shell keeps
+          // its existing explicit switch contract; other natives are withheld.
+          if (name !== 'shell' && mcpIdentities.has(name)) continue
           let parameters: unknown = schema.function.parameters
           let description: string = schema.function.description
           if (name === 'memory') {
