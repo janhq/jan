@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import mlx_extension from './index'
 import { fs, getJanDataFolderPath, events } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
-import { unloadMlxModel } from '@janhq/tauri-plugin-mlx-api'
+import { loadMlxModel, unloadMlxModel } from '@janhq/tauri-plugin-mlx-api'
 import { readGgufMetadata } from '@janhq/tauri-plugin-llamacpp-api'
 
 const mockInvoke = vi.mocked(invoke)
@@ -11,6 +11,7 @@ const mockRm = vi.mocked(fs.rm)
 const mockFileStat = vi.mocked(fs.fileStat)
 const mockJanData = vi.mocked(getJanDataFolderPath)
 const mockUnload = vi.mocked(unloadMlxModel)
+const mockLoad = vi.mocked(loadMlxModel)
 const mockReadGguf = vi.mocked(readGgufMetadata)
 
 function newExt(): any {
@@ -68,6 +69,47 @@ describe('getModelProps', () => {
     const ext = newExt()
     const props = await ext.getModelProps('org/model')
     expect(props.nCtx).toBe(4096)
+  })
+})
+
+// A model's context window is chosen per model at load time (the web app maps
+// its `ctx_len` setting to the `ctx_size` load override). The token counter
+// must report that window, not the engine-wide default.
+describe('getModelProps after a load', () => {
+  async function loadWith(ext: any, id: string, settings?: object) {
+    ext.getLoadedModels = vi.fn().mockResolvedValue([])
+    ext.getRandomPort = vi.fn().mockResolvedValue(5000)
+    ext.generateApiKey = vi.fn().mockResolvedValue('key')
+    mockInvoke.mockImplementation(async (cmd: string) =>
+      cmd === 'read_yaml' ? { model_path: 'models/m' } : undefined
+    )
+    mockLoad.mockResolvedValue({ pid: 1, model_id: id } as any)
+    await ext.load(id, settings)
+  }
+
+  it('reports the context the model was loaded with, not the engine default', async () => {
+    const ext = newExt()
+    ext.onSettingUpdate('ctx_size', 8192)
+    await loadWith(ext, 'big', { ctx_size: 125000 })
+    expect((await ext.getModelProps('big')).nCtx).toBe(125000)
+  })
+
+  it('keeps each loaded model on its own context', async () => {
+    const ext = newExt()
+    await loadWith(ext, 'a', { ctx_size: 32768 })
+    await loadWith(ext, 'b', { ctx_size: 16384 })
+    expect((await ext.getModelProps('a')).nCtx).toBe(32768)
+    expect((await ext.getModelProps('b')).nCtx).toBe(16384)
+  })
+
+  it('falls back to the engine default once the model is unloaded', async () => {
+    const ext = newExt()
+    ext.onSettingUpdate('ctx_size', 8192)
+    await loadWith(ext, 'big', { ctx_size: 125000 })
+    mockInvoke.mockResolvedValue({ pid: 1, model_id: 'big' })
+    mockUnload.mockResolvedValue({ success: true })
+    await ext.unload('big')
+    expect((await ext.getModelProps('big')).nCtx).toBe(8192)
   })
 })
 

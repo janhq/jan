@@ -64,6 +64,10 @@ export default class mlx_extension extends AIEngine {
   private providerPath!: string
   private apiSecret: string = 'JanMLX'
   private loadingModels = new Map<string, Promise<SessionInfo>>()
+  // Context window each loaded model's server was launched with. The window
+  // is chosen per model at load time, so the engine-wide `config.ctx_size`
+  // only describes models loaded without an override.
+  private loadedCtxSize = new Map<string, number>()
 
   override async onLoad(): Promise<void> {
     super.onLoad()
@@ -342,6 +346,7 @@ export default class mlx_extension extends AIEngine {
         isEmbedding,
         Number(this.timeout)
       )
+      this.loadedCtxSize.set(modelId, mlxConfig.ctx_size)
       return sInfo
     } catch (error) {
       logger.error(`Error loading MLX model: ${JSON.stringify(error)}`)
@@ -358,6 +363,7 @@ export default class mlx_extension extends AIEngine {
     try {
       const result = await unloadMlxModel(sInfo.pid)
       if (result.success) {
+        this.loadedCtxSize.delete(modelId)
         logger.info(`Successfully unloaded MLX model with PID ${sInfo.pid}`)
       } else {
         logger.warn(`Failed to unload MLX model: ${result.error}`)
@@ -856,12 +862,16 @@ export default class mlx_extension extends AIEngine {
     }
   }
 
-  // The MLX server is launched with a fixed context window (cfg.ctx_size),
-  // so the token counter can show a real percentage instead of a bare count.
+  // The MLX server is launched with a fixed context window, so the token
+  // counter can show a real percentage instead of a bare count. Report the
+  // window this model was loaded with; fall back to the engine default.
   async getModelProps(
     modelId: string
   ): Promise<{ nCtx: number; modelAlias?: string }> {
-    return { nCtx: this.config.ctx_size ?? 4096, modelAlias: modelId }
+    return {
+      nCtx: this.loadedCtxSize.get(modelId) ?? this.config.ctx_size ?? 4096,
+      modelAlias: modelId,
+    }
   }
 
   async isVisionSupported(modelPath: string): Promise<boolean> {
