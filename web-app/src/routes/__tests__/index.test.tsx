@@ -367,6 +367,16 @@ describe('Index route', () => {
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     })
 
+    it('temporary mode without an elevated draft shows exactly the temporary note with no pending-kept suffix', () => {
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      window.history.replaceState({}, '', '/?temporary-chat=true')
+      renderComponent()
+      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.getByTestId('home-scope-unsupported').textContent).toBe(
+        'common:conversationScope.temporary'
+      )
+    })
+
     it('no selected model shows no unsupported notice, keeps the control hidden and prepare off, then resurfaces the pending draft', async () => {
       const Component = Route.component as React.ComponentType
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
@@ -404,9 +414,9 @@ describe('Index route', () => {
       expect(screen.getByTestId('home-scope-unsupported')).toHaveTextContent(
         'common:conversationScope.pendingKept'
       )
-    expect(screen.getByTestId('home-scope-unsupported')).not.toHaveTextContent(
-      'pendingKeptTemporary'
-    )
+      expect(screen.getByTestId('home-scope-unsupported')).not.toHaveTextContent(
+        'pendingKeptTemporary'
+      )
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     })
 

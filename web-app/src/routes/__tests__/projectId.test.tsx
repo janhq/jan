@@ -240,14 +240,24 @@ describe('Project route single Chat flow', () => {
     // A tool-capable model in temporary mode is not "unsupported", but the
     // hidden control is explained and the elevated draft is stated as kept.
     expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
-        'common:conversationScope.temporary common:conversationScope.pendingKeptTemporary'
-      )
+      'common:conversationScope.temporary common:conversationScope.pendingKeptTemporary'
+    )
     window.history.replaceState({}, '', '/')
     view.rerender(<Component />)
     expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
       'Conversation permissions (pending)'
     )
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+  })
+
+  it('temporary mode without an elevated draft shows exactly the temporary note with no pending-kept suffix', () => {
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    window.history.replaceState({}, '', '/?temporary-chat=true')
+    renderComponent()
+    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
+      'common:conversationScope.temporary'
+    )
   })
 
   it('no selected model shows no unsupported notice, keeps the control hidden and prepare off, then resurfaces the pending draft', async () => {
@@ -289,8 +299,8 @@ describe('Project route single Chat flow', () => {
     // unsupported-model one) is shown, with the draft kept, and no prepare path.
     expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
     expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
-        'common:conversationScope.temporary common:conversationScope.pendingKeptTemporary'
-      )
+      'common:conversationScope.temporary common:conversationScope.pendingKeptTemporary'
+    )
     expect(screen.getByTestId('project-scope-unsupported')).not.toHaveTextContent(
       'common:conversationScope.unsupported'
     )
