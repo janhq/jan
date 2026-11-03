@@ -33,6 +33,11 @@ import {
   settleChatRun,
   takeTaskStatus,
   TASK_STATUS_TEXT_LIMIT,
+  TASK_STATUS_TRUNCATION_MARKER,
+  truncateUtf16,
+  CHAT_CHILD_AGGREGATE_SPEND_TOKENS,
+  CHAT_CHILD_MAX_SPEND_TOKENS,
+  CHAT_CHILD_MAX_COMPLETION_TOKENS,
   type ChildBinding,
   type ChatOrchestrationContext,
 } from '../chatOrchestration'
@@ -436,6 +441,111 @@ describe('task status lifecycle', () => {
     await settle()
     const done = takeTaskStatus(ctx.threadId).find((r) => r.status === 'done')
     expect(done?.finalOutput?.length).toBe(TASK_STATUS_TEXT_LIMIT)
+    expect(done?.finalOutput?.endsWith(TASK_STATUS_TRUNCATION_MARKER)).toBe(true)
+  })
+
+  it('truncation never splits a surrogate pair at the boundary and stays within the limit', () => {
+    const keep = TASK_STATUS_TEXT_LIMIT - TASK_STATUS_TRUNCATION_MARKER.length
+    // The emoji (2 units) straddles the cut: its high half is the last kept unit.
+    const straddle = 'a'.repeat(keep - 1) + '😀' + 'b'.repeat(50)
+    const cut = truncateUtf16(straddle, TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER)
+    expect(cut.length).toBeLessThanOrEqual(TASK_STATUS_TEXT_LIMIT)
+    expect(cut).toBe('a'.repeat(keep - 1) + TASK_STATUS_TRUNCATION_MARKER)
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(cut)).toBe(false)
+    // Emoji wholly inside the kept prefix survives intact.
+    const inside = 'a'.repeat(keep - 2) + '😀' + 'b'.repeat(50)
+    expect(truncateUtf16(inside, TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER)).toBe(
+      'a'.repeat(keep - 2) + '😀' + TASK_STATUS_TRUNCATION_MARKER
+    )
+    // At or under the limit: untouched, no marker.
+    const exact = '😀'.repeat(TASK_STATUS_TEXT_LIMIT / 2)
+    expect(truncateUtf16(exact, TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER)).toBe(exact)
+  })
+})
+
+describe('aggregate child spend ceiling', () => {
+  // One step: optional tool call, plus finish usage in the units recordSpend charges.
+  const spendStep = (tokens: number, call?: string) =>
+    streamOf([
+      ...(call
+        ? [
+            { type: 'tool-input-start', toolCallId: `k${Math.random()}`, toolName: call },
+            { type: 'tool-input-available', toolCallId: `k${Math.random()}`, toolName: call, input: {} },
+          ]
+        : [{ type: 'text-delta', id: 't', delta: 'ok' }]),
+      { type: 'finish', messageMetadata: { usage: { inputTokens: 0, outputTokens: tokens, totalTokens: tokens } } },
+    ])
+  const outputs = (threadId: string) =>
+    takeTaskStatus(threadId).filter((r) => r.status === 'error' || r.status === 'done')
+
+  it('keeps the old constant as an alias of the renamed spend cap, and the aggregate is finite and larger', () => {
+    expect(CHAT_CHILD_MAX_COMPLETION_TOKENS).toBe(CHAT_CHILD_MAX_SPEND_TOKENS)
+    expect(CHAT_CHILD_AGGREGATE_SPEND_TOKENS).toBeGreaterThan(CHAT_CHILD_MAX_SPEND_TOKENS)
+    expect(CHAT_CHILD_AGGREGATE_SPEND_TOKENS).toBeLessThan(6 * CHAT_CHILD_MAX_SPEND_TOKENS)
+  })
+
+  it('two children share one ceiling: the sibling is stopped by the aggregate, not its own cap', async () => {
+    const { ctx } = ctxFor()
+    let calls = 0
+    hoisted.childStep.mockImplementation(async (o: { messages: Array<{ parts: Array<{ text?: string }> }> }) => {
+      calls++
+      const task = o.messages[0].parts[0].text
+      // 'big' overshoots its own cap in one step (no hard per-request cap exists).
+      if (task === 'big') return spendStep(CHAT_CHILD_AGGREGATE_SPEND_TOKENS - 5_000)
+      return spendStep(4_000, 'read')
+    })
+    await runChatTask({ subagents: [{ name: 'big', task: 'big' }, { name: 'small', task: 'small' }] }, 'call', ctx)
+    await settle(120)
+    const rows = outputs(ctx.threadId)
+    const small = rows.find((r) => r.name === 'small')
+    expect(small?.status).toBe('error')
+    expect(small?.error).toContain("shared token budget")
+    // Bounded: far fewer steps than the 12-step child limit would allow for `small`.
+    expect(calls).toBeLessThanOrEqual(1 + 4)
+  })
+
+  it('no new task spend after the cap: a later task call in the same run is refused and starts nothing', async () => {
+    const { ctx } = ctxFor()
+    hoisted.childStep.mockImplementation(async () => spendStep(CHAT_CHILD_AGGREGATE_SPEND_TOKENS + 1))
+    await runChatTask({ subagents: [{ name: 'a', task: 'x' }, { name: 'b', task: 'y' }] }, 'c1', ctx)
+    await settle(120)
+    const before = hoisted.childStep.mock.calls.length
+    const again = await runChatTask(oneChild(), 'c2', ctx)
+    expect(again.isError).toBe(true)
+    expect(again.output).toContain('shared token budget')
+    await settle(40)
+    expect(hoisted.childStep.mock.calls.length).toBe(before)
+  })
+
+  it('a queued child that gets its slot after the aggregate is spent never starts', async () => {
+    const { ctx } = ctxFor()
+    hoisted.childStep.mockImplementation(async () => spendStep(CHAT_CHILD_AGGREGATE_SPEND_TOKENS))
+    const subagents = Array.from({ length: CHAT_MAX_CONCURRENT_CHILDREN + 1 }, (_, i) => ({ name: `c${i}`, task: 'x' }))
+    await runChatTask({ subagents }, 'c1', ctx)
+    await settle(120)
+    // Only the children that held a slot at once ever sent a step.
+    expect(hoisted.childStep.mock.calls.length).toBe(CHAT_MAX_CONCURRENT_CHILDREN)
+  })
+
+  it('Stop is bounded and leaves another thread\'s run untouched', async () => {
+    const a = ctxFor()
+    const b = ctxFor()
+    hang()
+    await runChatTask(oneChild(), 'a', a.ctx)
+    await settle()
+    a.controller.abort()
+    await settle(40)
+    const aRows = takeTaskStatus(a.ctx.threadId)
+    const latest = new Map(aRows.map((row) => [row.runId, row]))
+    expect(latest.size).toBeGreaterThan(0)
+    expect([...latest.values()].every((row) => row.status === 'error')).toBe(true)
+    // Another thread's run still has its own full, unspent ledger.
+    hoisted.childStep.mockReset()
+    hoisted.childStep.mockImplementation(async () => spendStep(1_000))
+    const out = await runChatTask(oneChild(), 'b', b.ctx)
+    expect(out.isError).toBeUndefined()
+    await settle(60)
+    expect(outputs(b.ctx.threadId).map((r) => r.status)).toEqual(['done'])
   })
 })
 

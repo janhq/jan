@@ -29,7 +29,21 @@ import type { ChatRunInbox, ChatToolOutcome } from './chatRunTransport'
 
 /** Hard bounds for a Chat child. Parent grant stays the ceiling; these only cut. */
 export const CHAT_CHILD_MAX_STEPS = 12
-export const CHAT_CHILD_MAX_COMPLETION_TOKENS = 50_000
+/** Soft per-child spend ceiling, in `recordSpend` units: new completion tokens
+ * plus positive prompt GROWTH (not replayed history). It is checked only
+ * BETWEEN steps (runTurn's pre-step gate), never mid-request: no per-request
+ * token cap is sent to the provider, so one step can overshoot it. */
+export const CHAT_CHILD_MAX_SPEND_TOKENS = 50_000
+/** @deprecated misnomer (spend includes prompt growth); kept as an alias. */
+export const CHAT_CHILD_MAX_COMPLETION_TOKENS = CHAT_CHILD_MAX_SPEND_TOKENS
+/** Soft ceiling on ALL children started under one parent run signal, in the
+ * same units. The per-child cap alone allowed 6 x 50k outside any accounting;
+ * this is an explicit finite sum. It is separate from the parent's own
+ * MAX_SESSION_TOKENS: child spend is never added to the parent's counter, and
+ * the parent's counter never relaxes this one. Like the per-child cap it is a
+ * between-steps gate, so each in-flight step (at most
+ * CHAT_MAX_CONCURRENT_CHILDREN) may overshoot it once. */
+export const CHAT_CHILD_AGGREGATE_SPEND_TOKENS = 150_000
 export const CHAT_MAX_CONCURRENT_CHILDREN = 2
 export const CHAT_MAX_CHILDREN_PER_CALL = 3
 export const CHAT_MAX_CHILDREN_PER_THREAD_RUN = 6
@@ -59,6 +73,8 @@ type ThreadState = {
   active: number
   waiters: Array<() => void>
   spawned: WeakMap<AbortSignal, number>
+  /** Aggregate child spend per parent run signal (all of its children). */
+  childSpend: WeakMap<AbortSignal, { spent: number }>
   /** Status row ids started under each run's signal (scopes per-run settling). */
   runRows: WeakMap<AbortSignal, Set<string>>
   /** Bumped by Stop/delete; monitor callbacks from an older epoch never ping. */
@@ -80,6 +96,7 @@ const stateOf = (threadId: string): ThreadState => {
       active: 0,
       waiters: [],
       spawned: new WeakMap(),
+      childSpend: new WeakMap(),
       runRows: new WeakMap(),
       epoch: 0,
     }
@@ -109,10 +126,24 @@ export function takeTaskStatus(threadId: string): TaskStatusRow[] {
   return state.statusQueue.splice(0).map((row) => ({ ...row }))
 }
 
-/** Persisted into the transcript, so child text is bounded. */
+/** Persisted into the transcript, so child text is bounded (UTF-16 code units,
+ * marker included: the result is never longer than the limit). */
 export const TASK_STATUS_TEXT_LIMIT = 100_000
+export const TASK_STATUS_TRUNCATION_MARKER = '\n\n[truncated: output exceeded 100000 characters]'
+
+/** Cut to at most `limit` UTF-16 units ending in `marker`, never leaving half
+ * of a surrogate pair at the cut. Text within the limit is returned as is. */
+export function truncateUtf16(value: string, limit: number, marker: string): string {
+  if (value.length <= limit) return value
+  let keep = Math.max(0, limit - marker.length)
+  const last = value.charCodeAt(keep - 1)
+  // A trailing high surrogate here is the first half of a pair (or lone): drop it.
+  if (keep > 0 && last >= 0xd800 && last <= 0xdbff) keep -= 1
+  return value.slice(0, keep) + marker.slice(0, limit)
+}
+
 const bound = (value: string | undefined): string | undefined =>
-  value !== undefined && value.length > TASK_STATUS_TEXT_LIMIT ? value.slice(0, TASK_STATUS_TEXT_LIMIT) : value
+  value === undefined ? value : truncateUtf16(value, TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER)
 
 function recordStatus(state: ThreadState, row: TaskStatusRow): void {
   const bounded: TaskStatusRow = { ...row }
@@ -123,6 +154,7 @@ function recordStatus(state: ThreadState, row: TaskStatusRow): void {
 }
 
 const CANCELLED_ROW_ERROR = '(the subagent was cancelled)'
+const AGGREGATE_EXHAUSTED = 'This turn\'s subagents already used their shared token budget; no new subagent was started'
 
 /** Synchronously turn still-`running` rows into terminal `error` rows, so the
  * final status flush never persists a child as running after its run ended.
@@ -225,7 +257,8 @@ async function runChild(
   childTools: Record<string, Tool>,
   system: string,
   model: LanguageModel | null,
-  binding: ChildBinding
+  binding: ChildBinding,
+  ledger: { spent: number }
 ): Promise<{ output: string; usage: null; isError?: boolean; sessionTokens: number }> {
   const controller = new AbortController()
   state.children.add(controller)
@@ -238,6 +271,11 @@ async function runChild(
     if (!release || controller.signal.aborted || !model) {
       return { output: model ? '(cancelled)' : 'No model is available for the subagent', usage: null, isError: true, sessionTokens: 0 }
     }
+    // Nothing new starts once the aggregate is spent (e.g. a queued child that
+    // only got its slot after its siblings used the budget).
+    if (ledger.spent >= CHAT_CHILD_AGGREGATE_SPEND_TOKENS) {
+      return { output: AGGREGATE_EXHAUSTED, usage: null, isError: true, sessionTokens: 0 }
+    }
     let finalText = ''
     let n = 0
     const outcome = await runTurn({
@@ -245,9 +283,19 @@ async function runChild(
       signal: controller.signal,
       maxSteps: CHAT_CHILD_MAX_STEPS,
       budgetPolicy: {
+        // Pre-step gate (the only place a cap applies): own spend or the
+        // run-wide child aggregate. Charged in `record` below, per step.
         exceeded: ({ step, sessionTokens }, maxSteps) =>
-          step >= maxSteps ? 'steps' : sessionTokens >= CHAT_CHILD_MAX_COMPLETION_TOKENS ? 'tokens' : null,
-        record: recordSpend,
+          step >= maxSteps
+            ? 'steps'
+            : sessionTokens >= CHAT_CHILD_MAX_SPEND_TOKENS || ledger.spent >= CHAT_CHILD_AGGREGATE_SPEND_TOKENS
+              ? 'tokens'
+              : null,
+        record: (state, usage) => {
+          const next = recordSpend(state, usage)
+          ledger.spent += Math.max(0, next.spent - state.spent)
+          return next
+        },
       },
       deps: {
         sendStep: (messages, signal) =>
@@ -271,7 +319,12 @@ async function runChild(
     if (outcome.stoppedBy === 'error') return { output: outcome.errorText ?? 'the subagent failed', usage: null, isError: true, sessionTokens: outcome.sessionTokens }
     if (outcome.stoppedBy === 'aborted') return { output: '(the subagent was cancelled)', usage: null, isError: true, sessionTokens: outcome.sessionTokens }
     if (outcome.stoppedBy === 'steps' || outcome.stoppedBy === 'tokens') {
-      const cap = outcome.stoppedBy === 'steps' ? `its ${CHAT_CHILD_MAX_STEPS}-step budget` : 'its token budget'
+      const cap =
+        outcome.stoppedBy === 'steps'
+          ? `its ${CHAT_CHILD_MAX_STEPS}-step budget`
+          : ledger.spent >= CHAT_CHILD_AGGREGATE_SPEND_TOKENS && outcome.sessionTokens < CHAT_CHILD_MAX_SPEND_TOKENS
+            ? 'the subagents\' shared token budget'
+            : 'its token budget'
       return {
         output: `The subagent '${req.name}' stopped at ${cap} without finishing.` + (finalText ? `\n\nIts last output was:\n${finalText}` : ''),
         usage: null,
@@ -298,6 +351,10 @@ export async function runChatTask(input: unknown, callId: string, ctx: ChatOrche
   if (total > CHAT_MAX_CHILDREN_PER_CALL) {
     return { output: `\`task\` accepts at most ${CHAT_MAX_CHILDREN_PER_CALL} subagents per call`, isError: true }
   }
+  const ledger = state.childSpend.get(ctx.signal) ?? { spent: 0 }
+  state.childSpend.set(ctx.signal, ledger)
+  // No new task spend after the aggregate cap: refuse before resolving or starting anything.
+  if (ledger.spent >= CHAT_CHILD_AGGREGATE_SPEND_TOKENS) return { output: AGGREGATE_EXHAUSTED, isError: true }
   const spent = state.spawned.get(ctx.signal) ?? 0
   if (spent + total > CHAT_MAX_CHILDREN_PER_THREAD_RUN) {
     return { output: `This turn already started its limit of ${CHAT_MAX_CHILDREN_PER_THREAD_RUN} subagents`, isError: true }
@@ -338,7 +395,7 @@ export async function runChatTask(input: unknown, callId: string, ctx: ChatOrche
         signal: ctx.signal,
         runOne: (req, description, id) => {
           const r = resolved.get(req.name)!
-          return runChild(ctx, state, req, description, id, r.tools, r.system, model, binding)
+          return runChild(ctx, state, req, description, id, r.tools, r.system, model, binding, ledger)
         },
         writeBlackboard: async () => null,
         onDispatch: (id, name) => {
