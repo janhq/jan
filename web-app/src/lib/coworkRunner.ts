@@ -428,9 +428,11 @@ export async function runTurn(opts: {
   /** Tokens already spent by this session, which the caps apply across. */
   sessionTokens?: number
   /**
-   * Call ids already used by this run's routes. When given, an id repeated in a
-   * later step is refused like one repeated inside a step. Omitted by Cowork,
-   * whose ids may legitimately recur across steps.
+   * Call ids already used by this run's routes. This only controls the
+   * cross-step policy: when given, an id repeated in a LATER step is refused;
+   * omitted (Cowork), ids may legitimately recur across steps. An id repeated
+   * inside ONE step is always refused on every surface, Cowork included,
+   * whether or not this is set (it would overwrite the first call's outcome).
    */
   seenCallIds?: Set<string>
   /** Surface-owned cap policy; Cowork retains its existing defaults. */

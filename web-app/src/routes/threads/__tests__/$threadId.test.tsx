@@ -2538,7 +2538,12 @@ describe('ThreadDetail route', () => {
       })
 
       describe('root and child origins never share a call id binding', () => {
-        const tuple = JSON.stringify(['child', 'task1', 'worker', 'c1'])
+        // Mirrors the real child id shape built in chatOrchestration:
+        // [child, parent, name, synthetic-execution-nonce, toolId]. An adversarial
+        // root may guess the other fields, but the host-generated nonce is
+        // unpredictable; this fixture uses a fixed one to model the worst case
+        // (defence in depth: the route still keeps origins apart).
+        const tuple = JSON.stringify(['child', 'task1', 'worker', 'exec-nonce', 'c1'])
         it('root call id equal to a child tuple, then that child id with same name and different args: no approval transfer', async () => {
           const requestApproval = vi.fn().mockResolvedValue(true)
           h.toolApprovalState.requestApproval = requestApproval

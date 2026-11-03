@@ -435,11 +435,11 @@ describe('runTurn', () => {
     ]
     const signal = () => new AbortController().signal
 
-    it('dispatches nothing from a step that repeats an id, and says so', async () => {
+    it('dispatches nothing from a step that repeats an id, and says so (default Cowork: no seenCallIds)', async () => {
       const dispatch = vi.fn(async (): Promise<ToolOutcome> => ({ output: 'wrote' }))
       const d = deps([dupWave(), textStep('done')], dispatch)
       const out = await runTurn({ messages: [user('hi')], deps: d, signal: signal() })
-      expect(dispatch).not.toHaveBeenCalled()
+      expect(dispatch).toHaveBeenCalledTimes(0)
       expect(out.stoppedBy).toBe('error')
       expect(out.errorText).toContain('Duplicate tool call id: dup')
       expect(d.sendStep).toHaveBeenCalledTimes(1)
