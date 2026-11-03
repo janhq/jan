@@ -53,6 +53,12 @@ import {
 } from './scopedChatToolPolicy'
 import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
 import { isScopedThreadTool } from '@/lib/scopedToolDispatch'
+import {
+  ASK_TOOL_NAME,
+  TODO_TOOL_NAME,
+  askTool,
+  todoTool,
+} from '@/lib/coworkTools'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
@@ -881,6 +887,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return isScopedThreadTool(name) && Object.prototype.hasOwnProperty.call(tools, name) && !this.getMcpServerForTool(name)
   }
 
+  /** Conversation-owned todo/ask: advertised in this run's frozen record. */
+  hasAdvertisedClientTool(name: string): boolean {
+    const tools = this.chatRunSnapshot?.tools ?? this.tools
+    return (
+      (name === TODO_TOOL_NAME || name === ASK_TOOL_NAME) &&
+      Object.prototype.hasOwnProperty.call(tools, name) &&
+      !this.getMcpServerForTool(name)
+    )
+  }
+
   getMcpServerForTool(name: string): string | undefined {
     return (this.turnMcpIdentities ?? this.mcpIdentities).get(name)
   }
@@ -1339,6 +1355,21 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       } catch (error) {
         console.warn('Failed to load agent tools:', error)
       }
+
+      // Conversation-owned todo/ask reuse Cowork's existing schemas (no copy,
+      // no new RPC). Dispatch is a client-side route, not an MCP server tool.
+      // An MCP tool of the same name is shadowed: say so (names only).
+      for (const name of [TODO_TOOL_NAME, ASK_TOOL_NAME]) {
+        const server = mcpIdentities.get(name)
+        if (server !== undefined) {
+          console.warn(
+            `[tools] MCP tool ${JSON.stringify(name)} from server ${JSON.stringify(server)} is shadowed by the conversation ${name} tool`
+          )
+        }
+        mcpIdentities.delete(name)
+      }
+      toolsRecord[TODO_TOOL_NAME] = todoTool
+      toolsRecord[ASK_TOOL_NAME] = askTool
     }
 
     // Never let discovery started outside this run, or a slower competing
@@ -1877,7 +1908,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       continuedStream,
       (toolName) =>
         !(toolName in this.tools) &&
-        (CHAT_AGENT_TOOL_NAMES.has(toolName)
+        (toolName === TODO_TOOL_NAME || toolName === ASK_TOOL_NAME
+          ? // Unadvertised conversation todo/ask: dispatch refuses explicitly.
+            true
+          : CHAT_AGENT_TOOL_NAMES.has(toolName)
           ? !useChatShell.getState().shellEnabled
           : // Other native names (e.g. skill_write after a revoke) reach the
             // route so the dispatch boundary can refuse them with a reason.

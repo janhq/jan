@@ -90,7 +90,7 @@ export const CLIENT_TOOL_NAMES = new Set([
   MONITOR_TOOL_NAME,
 ])
 
-const todoTool: Tool = {
+export const todoTool: Tool = {
   description:
     'Manage the canonical session todo list: init/start/done/drop/rm/append/view. One call applies one operation. Tasks advance automatically in phase and task order after done or drop; start only confirms the current task. init takes `list` or `items`, never `phase`/`task` directly.',
   inputSchema: jsonSchema({
@@ -125,7 +125,7 @@ const todoTool: Tool = {
   }),
 } as Tool
 
-const askTool: Tool = {
+export const askTool: Tool = {
   description:
     'Ask the user one or more structured questions. Use only when the answer materially changes the work. To suggest an option, list it first and set `recommended` to its index rather than writing "(Recommended)" into the label.',
   inputSchema: jsonSchema({

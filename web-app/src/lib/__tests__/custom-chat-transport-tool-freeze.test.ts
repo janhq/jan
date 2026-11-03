@@ -223,7 +223,7 @@ describe('CustomChatTransport smart-tool-routing freeze', () => {
 
       expect(h.getRelevantTools).toHaveBeenCalledTimes(1)
       expect(mcpService.getTools).toHaveBeenCalled()
-      expect(Object.keys(transport.getTools())).toEqual(['write'])
+      expect(Object.keys(transport.getTools())).toEqual(['write', 'todo', 'ask'])
       expect(transport.getMcpServerForTool('read')).toBeUndefined()
       expect(transport.getMcpServerForTool('write')).toBe('srv')
     }

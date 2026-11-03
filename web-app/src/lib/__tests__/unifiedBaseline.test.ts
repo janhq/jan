@@ -238,12 +238,12 @@ describe('unified request-shape fixtures (synthetic bytes only)', () => {
 
   it('runs the production gates, not a copy of them', async () => {
     const shell = await chatRequest({ assistant: true, shellEnabled: true, sandbox: true })
-    expect(Object.keys(shell.tools)).toEqual(['read', 'write', 'edit', 'shell', 'memory', 'skill_list', 'skill_read'])
+    expect(Object.keys(shell.tools)).toEqual(['read', 'write', 'edit', 'shell', 'memory', 'skill_list', 'skill_read', 'todo', 'ask'])
     expect(shell.system).toContain('# Shell')
     expect(shell.system).toContain('January 1, 2026')
 
     const noSandbox = await chatRequest({ assistant: true, shellEnabled: true, sandbox: false })
-    expect(noSandbox.tools).toEqual({})
+    expect(Object.keys(noSandbox.tools)).toEqual(['todo', 'ask'])
     expect(noSandbox.system).not.toContain('# Shell')
 
     const plan = await coworkRequest({ planMode: true, sandbox: true })

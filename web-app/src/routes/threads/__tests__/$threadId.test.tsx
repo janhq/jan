@@ -1,3 +1,4 @@
+import { conversationAskCard, respondConversationAsk } from '@/lib/conversationClientTools'
 import { CHAT_RUN_NOTICE_METADATA } from '@/lib/chatRunNotice'
 import { Chat, useChat as useSDKChat } from '@ai-sdk/react'
 import { trackChat, quiesceChats, __resetChatCloseForTests } from '@/lib/chatClose'
@@ -1964,6 +1965,18 @@ describe('ThreadDetail route', () => {
       expect(shell.execute).not.toHaveBeenCalled()
     })
 
+    it.each(['todo', 'ask'])('refuses unadvertised %s before a prompt or runtime side effect', async (name) => {
+      h.appStateState.mcpToolNames = new Set()
+      h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedClientTool = () => false
+      renderComponent()
+      const toolCall = call('missing-client', name, name === 'todo' ? { op: 'init', items: ['must not run'] } : { questions: [{ id: 'q', question: 'No card', options: [{ label: 'A' }, { label: 'B' }] }] })
+      await arrive(toolCall)
+      expect(await dispatch(toolCall)).toMatchObject({ isError: true, output: expect.stringContaining('not advertised') })
+      expect(conversationAskCard('thread-1')).toBeNull()
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).not.toHaveBeenCalled()
+    })
+
     it('freezes one grant per toolCallId across arrival and dispatch (no orphan prompt after revoke)', async () => {
       h.appStateState.mcpToolNames = new Set()
       h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedNativeTool = () => true
@@ -2012,6 +2025,40 @@ describe('ThreadDetail route', () => {
       })
       expect(useToolCallRuntime.getState().origins[toolOriginKey('thread-1', 'failed-input')]).toBeUndefined()
       expect(useToolCallRuntime.getState().origins[toolOriginKey('other-thread', 'failed-input')]).toBe('sibling')
+    })
+
+    it('discards the same-signal todo bridge on an error terminal so the canonical transcript stays authoritative', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      const transport = h.chatSessionsState.sessions['thread-1'].transport
+      transport.hasAdvertisedClientTool = () => true
+      renderComponent()
+      const signal = new AbortController().signal
+      const view = async (id: string) => {
+        const outcome = await dispatch(call(id, 'todo', { op: 'view' }), signal)
+        expect(outcome.isError).toBeFalsy()
+        return JSON.parse(outcome.output as string)
+      }
+      const init = await dispatch(call('bridge-init', 'todo', { op: 'init', items: ['Bridge only'] }), signal)
+      expect(init.isError).toBeFalsy()
+      // Before the terminal the uncommitted bridge is what the run sees.
+      expect(JSON.stringify(await view('view-before'))).toContain('Bridge only')
+      await act(async () => {
+        await (h as any).capturedOnFinish({
+          message: { id: 'provider-failed', role: 'assistant', parts: [{ type: 'text', text: '' }] },
+          isAbort: false, isError: true,
+        })
+      })
+      // The transcript has no todo snapshot: the bridge must not survive.
+      const after = await view('view-after')
+      expect(JSON.stringify(after)).not.toContain('Bridge only')
+      expect(after.phases ?? []).toEqual([])
+      // Canonical snapshot in the transcript is what the same run now reads.
+      h.chatSessionsState.sessions['thread-1'].chat.messages = [{
+        id: 'canon', role: 'assistant',
+        parts: [{ type: 'tool-todo', toolCallId: 'c', state: 'output-available', input: {},
+          output: JSON.stringify({ phases: [{ name: 'Canon', tasks: [{ id: 't1', content: 'Canonical item', status: 'pending' }] }] }) }],
+      }] as never
+      expect(JSON.stringify(await view('view-canon'))).toContain('Canonical item')
     })
 
     it('runs the advertised native shell without a prompt even with a same-name MCP tool', async () => {
@@ -2452,6 +2499,29 @@ describe('ThreadDetail route', () => {
       integrationMaxSteps = undefined
     })
     afterEach(() => { h.integrationChat = null; h.chatSessionsState.sessions = {} })
+
+    it('consumes canonical todo and a suspended ask through the mounted SDK route', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      const { chat, steps } = setup([])
+      const transport = h.chatSessionsState.sessions['thread-1'].transport
+      vi.mocked(transport.getMcpServerForTool).mockReturnValue(undefined)
+      vi.spyOn(transport, 'hasAdvertisedClientTool').mockReturnValue(true)
+      steps.mockImplementation(async () => chunks(steps.mock.calls.length === 1 ? [
+        { type: 'start', messageId: 'client-provider' },
+        { type: 'tool-input-available', toolCallId: 'todo-sdk', toolName: 'todo', input: { op: 'init', items: ['Synthetic task'] } },
+        { type: 'tool-input-available', toolCallId: 'ask-sdk', toolName: 'ask', input: { questions: [{ id: 'q', question: 'Choose scope', options: [{ label: 'A' }, { label: 'B' }] }] } },
+        { type: 'finish', finishReason: 'tool-calls' },
+      ] : textStep))
+      const pending = chat.sendMessage({ text: 'organize the task and ask' })
+      await waitFor(() => expect(conversationAskCard('thread-1')).toMatchObject({ id: 'ask-sdk' }))
+      expect(steps).toHaveBeenCalledTimes(1)
+      await act(async () => { respondConversationAsk('thread-1', 'ask-sdk', [{ id: 'q', selected: ['A'] }]); await pending })
+      expect(steps).toHaveBeenCalledTimes(2)
+      expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ toolCallId: 'todo-sdk', state: 'output-available', output: expect.stringContaining('Synthetic task') }))
+      expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ toolCallId: 'ask-sdk', state: 'output-available', output: expect.stringContaining('A') }))
+      expect(conversationAskCard('thread-1')).toBeNull()
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+    })
 
     it('uses exactly two SDK inference steps for a native read and its final answer', async () => {
       h.appStateState.mcpToolNames = new Set()
