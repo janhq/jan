@@ -45,6 +45,18 @@ describe('isTemporaryChatSearch', () => {
     expect(isTemporaryChatSearch(search)).toBe(false)
   })
 
+  // Intentional, documented over-match: a single array literal `[true]` is
+  // not "exactly true", but the router round-trips it as an array and the
+  // detector fails privacy-closed. It can only hide/restrict access, never
+  // grant any. The same applies to a quoted "true" inside an array.
+  it.each([
+    '?temporary-chat=[true]',
+    '?temporary-chat=%5Btrue%5D',
+    '?temporary-chat=%5B%22true%22%5D',
+  ])('intentionally treats single-element array %s as temporary (privacy-closed)', (search) => {
+    expect(isTemporaryChatSearch(search)).toBe(true)
+  })
+
   it('treats missing search as not temporary', () => {
     expect(isTemporaryChatSearch(undefined)).toBe(false)
     expect(isTemporaryChatSearch(null)).toBe(false)

@@ -216,6 +216,7 @@ describe('Project route single Chat flow', () => {
     expect(screen.getByTestId('project-scope-status')).toBe(region)
     expect(region).toHaveTextContent('common:conversationScope.unsupported')
     expect(region).toHaveTextContent('common:conversationScope.pendingKept')
+    expect(region).not.toHaveTextContent('pendingKeptTemporary')
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     view.rerender(<Component />)
     expect(screen.getByTestId('project-scope-status')).toBe(region)
@@ -238,9 +239,9 @@ describe('Project route single Chat flow', () => {
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     // A tool-capable model in temporary mode is not "unsupported", but the
     // hidden control is explained and the elevated draft is stated as kept.
-    expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
-      'common:conversationScope.temporary common:conversationScope.pendingKept'
-    )
+    expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
+        'common:conversationScope.temporary common:conversationScope.pendingKeptTemporary'
+      )
     window.history.replaceState({}, '', '/')
     view.rerender(<Component />)
     expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
@@ -287,9 +288,9 @@ describe('Project route single Chat flow', () => {
     // Temporary chat never persists consent: the temporary reason (not the
     // unsupported-model one) is shown, with the draft kept, and no prepare path.
     expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
-    expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
-      'common:conversationScope.temporary common:conversationScope.pendingKept'
-    )
+    expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
+        'common:conversationScope.temporary common:conversationScope.pendingKeptTemporary'
+      )
     expect(screen.getByTestId('project-scope-unsupported')).not.toHaveTextContent(
       'common:conversationScope.unsupported'
     )
@@ -299,6 +300,9 @@ describe('Project route single Chat flow', () => {
     view.rerender(<Component />)
     expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
       'common:conversationScope.pendingKept'
+    )
+    expect(screen.getByTestId('project-scope-unsupported')).not.toHaveTextContent(
+      'pendingKeptTemporary'
     )
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     // And the draft survives to resurface on a tool-capable model.
@@ -381,6 +385,9 @@ describe('Project route single Chat flow', () => {
     // The hidden pending draft is announced, not silently dropped.
     expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
       'common:conversationScope.pendingKept'
+    )
+    expect(screen.getByTestId('project-scope-unsupported')).not.toHaveTextContent(
+      'pendingKeptTemporary'
     )
     // Back on a tool-capable model the draft resurfaces explicitly pending.
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }

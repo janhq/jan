@@ -306,6 +306,7 @@ describe('Index route', () => {
       expect(screen.getByTestId('home-scope-status')).toBe(region)
       expect(region).toHaveTextContent('common:conversationScope.unsupported')
       expect(region).toHaveTextContent('common:conversationScope.pendingKept')
+    expect(region).not.toHaveTextContent('pendingKeptTemporary')
       // Supported again: same node, text removed, region still mounted.
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
       view.rerender(<Component />)
@@ -354,8 +355,8 @@ describe('Index route', () => {
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
       // The control disappears with a persistent explanation; the elevated draft
       // is stated as kept, and temporary tools are never enabled.
-      expect(screen.getByTestId('home-scope-unsupported')).toHaveTextContent(
-        'common:conversationScope.temporary common:conversationScope.pendingKept'
+      expect(screen.getByTestId('home-scope-unsupported').textContent).toBe(
+        'common:conversationScope.temporary common:conversationScope.pendingKeptTemporary'
       )
       // Leaving temporary mode resurfaces the preserved draft, explicitly pending.
       window.history.replaceState({}, '', '/')
@@ -403,6 +404,9 @@ describe('Index route', () => {
       expect(screen.getByTestId('home-scope-unsupported')).toHaveTextContent(
         'common:conversationScope.pendingKept'
       )
+    expect(screen.getByTestId('home-scope-unsupported')).not.toHaveTextContent(
+      'pendingKeptTemporary'
+    )
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     })
 

@@ -106,9 +106,12 @@ function ProjectPageContent() {
   const isTemporaryChat = isTemporaryChatSearch(searchStr)
   const chatScopeAvailable = modelSupportsTools && !isTemporaryChat
   // Truthful unsupported reason; ordinary direct chat is never refused.
-  const pendingKeptNote = scopeDraftElevated
-    ? ` ${t('common:conversationScope.pendingKept')}`
-    : ''
+  // Temporary chats are left by starting a regular chat, not by switching
+  // models, so the kept-draft note uses a mode-specific key.
+  const pendingKeptKey = isTemporaryChat
+    ? 'common:conversationScope.pendingKeptTemporary'
+    : 'common:conversationScope.pendingKept'
+  const pendingKeptNote = scopeDraftElevated ? ` ${t(pendingKeptKey)}` : ''
   const scopeUnsupportedReason = isTemporaryChat
     ? t('common:conversationScope.temporary') + pendingKeptNote
     : selectedModel && !modelSupportsTools

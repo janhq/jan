@@ -99,9 +99,12 @@ function Index() {
   // Truthful unsupported reason: the capability control disappears only with
   // an explanation. Ordinary direct chat is never refused — a model without
   // tool support still answers one-call questions through the same composer.
-  const pendingKeptNote = scopeDraftElevated
-    ? ` ${t('common:conversationScope.pendingKept')}`
-    : ''
+  // Temporary chats are left by starting a regular chat, not by switching
+  // models, so the kept-draft note uses a mode-specific key.
+  const pendingKeptKey = isTemporaryChat
+    ? 'common:conversationScope.pendingKeptTemporary'
+    : 'common:conversationScope.pendingKept'
+  const pendingKeptNote = scopeDraftElevated ? ` ${t(pendingKeptKey)}` : ''
   const scopeUnsupportedReason = isTemporaryChat
     ? t('common:conversationScope.temporary') + pendingKeptNote
     : selectedModel && !modelSupportsTools
