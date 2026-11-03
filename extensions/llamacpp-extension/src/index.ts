@@ -197,6 +197,9 @@ const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
 /// again. A user who deliberately chose exactly 100 loses that choice, which is
 /// the right trade: 100 was never a considered value, it was the default.
 const LEGACY_NGL_DEFAULT = 100
+/// Separate from the backfill key: the sweep now reaches nested Hub folders,
+/// and every existing install already has the backfill key set.
+const LEGACY_NGL_SWEPT_KEY = 'llamacpp_legacy_ngl_swept_v1'
 
 /// The context size the web-app seeded into every llamacpp model while fit was
 /// off by default; see migrateSeededCtxSize.
@@ -518,6 +521,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
   // This sets the base directory where model files for this provider are stored.
   await this.getProviderPath()
+
+  await this.migrateLegacyNgl()
 
   await this.migratePersistedModelSettingsToYaml()
 
@@ -1213,10 +1218,6 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   const persistedModels = await readPersistedLlamacppModels()
   const providerPath = await this.getProviderPath()
 
-  // v1's n_gpu_layers stamp lives in model.yml, not in the persisted
-  // settings, so it has to be swept even when nothing is persisted.
-  await this.stripModelYamlValue(providerPath, 'n_gpu_layers', LEGACY_NGL_DEFAULT)
-
   if (persistedModels.length === 0) {
    await setBackendSetting(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
    return
@@ -1277,6 +1278,21 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   }
 
   await setBackendSetting(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
+ }
+
+ /**
+  * One-shot: removes v1's `n_gpu_layers: 100` stamp from every model.yml. It
+  * lives in the yaml, not in the persisted settings, so it is swept even when
+  * nothing is persisted.
+  */
+ private async migrateLegacyNgl(): Promise<void> {
+  if (await getBackendSetting(LEGACY_NGL_SWEPT_KEY)) return
+  await this.stripModelYamlValue(
+   await this.getProviderPath(),
+   'n_gpu_layers',
+   LEGACY_NGL_DEFAULT
+  )
+  await setBackendSetting(LEGACY_NGL_SWEPT_KEY, '1')
  }
 
  /**

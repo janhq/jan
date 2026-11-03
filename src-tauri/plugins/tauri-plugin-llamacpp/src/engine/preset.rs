@@ -68,12 +68,16 @@ pub fn shared_value(ini: &str, key: &str) -> Option<String> {
 }
 
 /// Whether auto-fit is free to size `section`'s context: fit is on (llama.cpp's
-/// default when the preset says nothing) and no `ctx-size` pins it.
+/// default when the preset says nothing), no `ctx-size` pins it, and the split
+/// mode is not `tensor`.
 ///
 /// Only then has fit already shrunk the context as far as `fit-ctx` allows by
 /// the time a load runs out of memory, so "use a smaller context" would be
 /// wrong advice. Any `ctx-size`, 0 included, stops fit from touching it
-/// (`common/arg.cpp`: 0 asks for the full trained context). A model's own line
+/// (`common/arg.cpp`: 0 asks for the full trained context). Tensor split mode
+/// makes fit.cpp abort before it reduces the context. An explicit n-gpu-layers,
+/// tensor-split or row split mode does not: fit shrinks the context first and
+/// only then declines to place layers. A model's own line
 /// wins over `[*]`, the order the C++ loader applies them in. Only the spellings
 /// Jan's preset generator writes are read.
 pub fn fit_owns_context(ini: &str, section: &str) -> bool {
@@ -91,7 +95,9 @@ pub fn fit_owns_context(ini: &str, section: &str) -> bool {
         value("fit").as_deref(),
         Some("off" | "disabled" | "false" | "0")
     );
-    fit_on && value("ctx-size").is_none()
+    fit_on
+        && value("ctx-size").is_none()
+        && value("split-mode").as_deref() != Some("tensor")
 }
 
 /// Load specs for every model in a preset.
@@ -227,6 +233,13 @@ embeddings = true
 
         // A model's own line overrides [*].
         assert!(fit_owns_context("[*]\nfit = off\n[m]\nfit = on\n", "m"));
+
+        // Tensor split aborts fit before it touches the context; row split
+        // and pinned layers only stop it after it has shrunk the context.
+        assert!(!fit_owns_context("[*]\nsplit-mode = tensor\n[m]\n", "m"));
+        assert!(fit_owns_context("[*]\nsplit-mode = row\n[m]\n", "m"));
+        assert!(fit_owns_context("[*]\ntensor-split = 3,1\n[m]\n", "m"));
+        assert!(fit_owns_context("[*]\n[m]\nn-gpu-layers = 20\n", "m"));
     }
 
     // Comments and blank lines are not settings; a reload triggered by one

@@ -817,9 +817,9 @@ export const useModelProvider = create<ModelProviderState>()(
 
         if (version <= 20 && state?.providers) {
           // Auto-fit is on by default again (jan-internal#487), and fit leaves
-          // a set context alone, so the 8192 v17 seeded would keep it from
-          // shrinking the context and would shadow the launched n_ctx in every
-          // readout that prefers ctx_len. The seed carries no provenance, so
+          // a set context alone, so the 8192 the v16 migration seeded would
+          // keep it from shrinking the context and would shadow the launched
+          // n_ctx in every readout that prefers ctx_len. The seed carries no provenance, so
           // 8192 is taken to be it, as v12 did; a user who typed exactly 8192
           // loses it here and in model.yml (the extension's
           // migrateSeededCtxSize), which with fit off changes nothing.

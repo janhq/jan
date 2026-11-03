@@ -569,6 +569,22 @@ describe('llamacpp_extension', () => {
 
       expect(yamls['/jan/llamacpp/models/seeded/model.yml'].ctx_size).toBe(8192)
     })
+
+    // Installs that already ran the settings backfill still need the nested
+    // folders swept, so the ngl sweep has its own key.
+    it('sweeps the legacy n_gpu_layers stamp under its own key', async () => {
+      yamls['/jan/llamacpp/models/author/hub/model.yml'] = { name: 'h', n_gpu_layers: 100 }
+      yamls['/jan/llamacpp/models/custom/model.yml'] = { name: 'c', n_gpu_layers: 20 }
+      vi.mocked(getBackendSetting).mockImplementation(async (key: string) =>
+        key === 'llamacpp_model_yaml_backfill_v2' ? '1' : null
+      )
+
+      await (extension as any).migrateLegacyNgl()
+
+      expect(yamls['/jan/llamacpp/models/author/hub/model.yml']).toEqual({ name: 'h' })
+      expect(yamls['/jan/llamacpp/models/custom/model.yml'].n_gpu_layers).toBe(20)
+      expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_legacy_ngl_swept_v1', '1')
+    })
   })
 
   describe('migrateParallelToDefault', () => {
