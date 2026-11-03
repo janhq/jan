@@ -24,15 +24,39 @@ use super::{mcp::helpers::run_mcp_commands, state::AppState};
 /// migration silently.
 pub const CURRENT_MCP_SCHEMA_VERSION: i64 = 5;
 
+/// The schema version a profile's MCP migration starts from.
+///
+/// Every step in `migrate_mcp_servers` upgrades an entry of an existing
+/// `mcp_config.json`. With no file - a first start, or a deleted config - none
+/// of them has anything to act on and each would only log an error for the
+/// missing file, burying a real first-run failure. `setup_mcp` writes the
+/// current default config right after, so such a profile starts at the current
+/// schema instead.
+///
+/// `pub` for the upgrade-compat fixture test.
+pub fn mcp_migration_start(stored: i64, config_exists: bool) -> i64 {
+    if config_exists {
+        stored
+    } else {
+        CURRENT_MCP_SCHEMA_VERSION
+    }
+}
+
 // Migrate MCP servers configuration
 pub fn migrate_mcp_servers(
     app_handle: tauri::AppHandle,
     store: Arc<Store<Wry>>,
 ) -> Result<(), String> {
-    let mcp_version = store
-        .get("mcp_version")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let config_exists = get_jan_data_folder_path(app_handle.clone())
+        .join("mcp_config.json")
+        .exists();
+    let mcp_version = mcp_migration_start(
+        store
+            .get("mcp_version")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0),
+        config_exists,
+    );
     if mcp_version < 1 {
         log::info!("Migrating MCP schema version 1");
         let result = add_server_config(
