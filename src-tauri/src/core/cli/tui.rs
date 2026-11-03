@@ -1867,10 +1867,12 @@ impl GroupedCall {
 /// names. See `explore_of` for which tools qualify.
 #[derive(Clone, Debug, PartialEq)]
 enum Explore {
-    /// A file (`noun` is `None`) or a memory note/skill read by name.
+    /// A file (`noun` is `None`) or a memory note/skill read by name. `span`
+    /// is the file's `read_span`, empty for a named read.
     Read {
         noun: Option<&'static str>,
         target: String,
+        span: String,
     },
     Search {
         query: String,
@@ -11607,6 +11609,21 @@ fn dispatched_subagents_label(verb: &str, args: &serde_json::Value) -> String {
     }
 }
 
+/// The line range a `read` call asked for, as a ` [start-end]` suffix for its
+/// path (` [start+]` when only `offset` is set), or empty for a whole-file read.
+/// Without it, paging through a large file shows the same label over and over.
+fn read_span(args: &serde_json::Value) -> String {
+    let n = |k: &str| args.get(k).and_then(|v| v.as_u64());
+    // The tool treats offset 0 as line 1, and a limit of 0 reads nothing.
+    let start = n("offset").unwrap_or(1).max(1);
+    match n("limit") {
+        Some(0) => String::new(),
+        Some(limit) => format!(" [{start}-{}]", start + limit - 1),
+        None if start > 1 => format!(" [{start}+]"),
+        None => String::new(),
+    }
+}
+
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let base = |p: &str| {
@@ -11628,7 +11645,7 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         }
         "grep" | "search" => "Searching".to_string(),
         "find" | "glob" => "Finding files".to_string(),
-        "read" => format!("Reading {}", base(s("path"))),
+        "read" => format!("Reading {}{}", base(s("path")), read_span(args)),
         "list" | "ls" => "Listing files".to_string(),
         "write" => format!("Writing {}", base(s("path"))),
         "edit" => format!("Editing {}", base(s("path"))),
@@ -11762,7 +11779,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         }
         "grep" | "search" => "Searched".to_string(),
         "find" | "glob" => "Found files".to_string(),
-        "read" => format!("Read {}", base(s("path"))),
+        "read" => format!("Read {}{}", base(s("path")), read_span(args)),
         "list" | "ls" => "Listed files".to_string(),
         "write" => format!("Wrote {}", base(s("path"))),
         "edit" => format!("Edited {}", base(s("path"))),
@@ -12294,11 +12311,13 @@ fn explore_of(name: &str, args: &serde_json::Value) -> Option<Explore> {
     let named = |noun| Explore::Read {
         noun: Some(noun),
         target: s("name").trim_end_matches(".md").to_string(),
+        span: String::new(),
     };
     match name {
         "read" => Some(Explore::Read {
             noun: None,
             target: s("path"),
+            span: read_span(args),
         }),
         "list" | "ls" => Some(Explore::List {
             target: scope().unwrap_or_else(|| ".".to_string()),
@@ -12350,7 +12369,9 @@ fn explore_actions(calls: &[GroupedCall]) -> Vec<ExploreAction> {
     let paths: Vec<&str> = calls
         .iter()
         .filter_map(|c| match &c.explore {
-            Some(Explore::Read { noun: None, target }) => Some(target.as_str()),
+            Some(Explore::Read {
+                noun: None, target, ..
+            }) => Some(target.as_str()),
             _ => None,
         })
         .collect();
@@ -12378,9 +12399,9 @@ fn explore_actions(calls: &[GroupedCall]) -> Vec<ExploreAction> {
             _ => ExploreOutcome::Ok,
         };
         let (verb, noun, item, scope) = match explore {
-            Explore::Read { noun, target } => {
+            Explore::Read { noun, target, span } => {
                 let item = if noun.is_none() {
-                    shown(target)
+                    format!("{}{span}", shown(target))
                 } else {
                     target.clone()
                 };
@@ -26993,7 +27014,7 @@ mod tests {
         image_mime_of, input_content_lines, is_user_turn, load_first_file_image, load_image_file,
         message_text, note_update, open_config_screen, open_fork_picker, open_rewind_picker,
         open_tree_picker, pairs_to_str, parse_command, partial_json_field,
-        provider_label_for_model, rebuild_recall, replay_display_log, restore_goal,
+        provider_label_for_model, read_span, rebuild_recall, replay_display_log, restore_goal,
         restore_host_system_prompt, restore_run_mode, restore_todos, resume_hint, rewind_to,
         route_paste_event, row_width, run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
         split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
@@ -31733,6 +31754,10 @@ fn a() {}
             "Reading main.rs"
         );
         assert_eq!(
+            tool_activity("read", &json!({ "path": "src/main.rs", "offset": 10, "limit": 20 })),
+            "Reading main.rs [10-29]"
+        );
+        assert_eq!(
             tool_activity("memory", &json!({ "op": "write", "name": "decisions" })),
             "Updating memory: decisions"
         );
@@ -31834,6 +31859,10 @@ fn a() {}
         assert_eq!(
             tool_finished("read", &json!({ "path": "src/main.rs" })),
             "Read main.rs"
+        );
+        assert_eq!(
+            tool_finished("read", &json!({ "path": "src/main.rs", "offset": 200 })),
+            "Read main.rs [200+]"
         );
         assert_eq!(tool_finished("list", &json!({})), "Listed files");
         assert_eq!(
@@ -39050,6 +39079,37 @@ fn a() {}
         assert_eq!(span(1, "Read"), Style::new().fg(super::theme::accent()));
         assert_eq!(span(1, ","), dim);
         assert_eq!(span(2, " in "), dim);
+    }
+
+    /// The line span the tool was asked for, as the `read` tool counts lines:
+    /// offset 0 is line 1, a lone limit starts at line 1, a whole file has none.
+    #[test]
+    fn read_span_names_the_requested_lines() {
+        let span = |args: serde_json::Value| read_span(&args);
+        assert_eq!(span(json!({ "path": "a" })), "");
+        assert_eq!(span(json!({ "offset": 1 })), "");
+        assert_eq!(span(json!({ "offset": 0, "limit": 5 })), " [1-5]");
+        assert_eq!(span(json!({ "limit": 50 })), " [1-50]");
+        assert_eq!(span(json!({ "offset": 40, "limit": 1 })), " [40-40]");
+        assert_eq!(span(json!({ "offset": 40 })), " [40+]");
+        assert_eq!(span(json!({ "offset": 40, "limit": 0 })), "");
+    }
+
+    /// Paging through one file names each page, so the row shows progress
+    /// rather than one file read once.
+    #[test]
+    fn explored_row_names_the_lines_of_each_paged_read() {
+        let mut app = test_app();
+        explore_batch(
+            &mut app,
+            &[
+                ("c1", "read", json!({ "path": "src/a.rs", "offset": 1, "limit": 100 }), "a", false),
+                ("c2", "read", json!({ "path": "src/a.rs", "offset": 101, "limit": 100 }), "a", false),
+                ("c3", "read", json!({ "path": "src/b.rs" }), "b", false),
+            ],
+        );
+        let (text, _) = explored_row(&app);
+        assert_eq!(text, "• Explored\n  └ Read a.rs [1-100], a.rs [101-200], b.rs");
     }
 
     #[test]
