@@ -34,6 +34,7 @@ import {
 } from '../coworkSubagent'
 import type { StreamEvent } from '@/hooks/useCoworkRun'
 import { MAX_SUBAGENT_STEPS } from '../coworkBudget'
+import { RUN_CONTEXT_MAX_CHARS } from '../chatRunContext'
 
 const tools = (...names: string[]): Record<string, Tool> =>
   Object.fromEntries(names.map((n) => [n, {} as Tool]))
@@ -111,8 +112,11 @@ describe('the task result and its completion ping', () => {
       savedPath: null,
       output,
     })
-    expect(out.text).toContain('y'.repeat(SUBAGENT_INLINE_MAX))
-    expect(out.text.length).toBeLessThan(output.length + 200)
+    // The marker counts inside the bound: the inline answer is at most 8192.
+    const body = out.text.slice(out.text.indexOf('Its answer:\n\n') + 'Its answer:\n\n'.length)
+    expect(body).toHaveLength(SUBAGENT_INLINE_MAX)
+    expect(body).toContain('[truncated: subagent output exceeded')
+    expect(body.startsWith('y'.repeat(100))).toBe(true)
     // Still just the fact: the answer is for the model, not the transcript.
     expect(out.headline).toBe("Subagent 'researcher' (c1) finished")
   })
@@ -1131,5 +1135,67 @@ describe('planCompletionNotice', () => {
     expect(out.text).toContain('see /tmp/blackboard/saved.md')
     expect(out.text).toContain('inline answer')
     expect(out.text).toContain('failed: boom')
+  })
+
+  it('keeps three exact-8192 inline children intact with their distinctive tails, under the run-context bound', () => {
+    const tails = ['TAIL_ONE_END', 'TAIL_TWO_END', 'TAIL_THREE_END']
+    const outputs = tails.map(t => 'z'.repeat(SUBAGENT_INLINE_MAX - t.length) + t)
+    outputs.forEach(o => expect(o).toHaveLength(SUBAGENT_INLINE_MAX))
+    const out = planCompletionNotice({
+      phaseCount: 2,
+      totalSubagents: 4,
+      finalPhase: outputs.map((o, i) => ({ name: `c${i}`, result: res(o), savedPath: null })),
+    })
+    outputs.forEach(o => expect(out.text).toContain(o))
+    expect(out.text).not.toContain('[truncated')
+    expect(out.text.length).toBeLessThanOrEqual(RUN_CONTEXT_MAX_CHARS)
+  })
+
+  it('bounds a huge failed child and a huge unsaved success, surrogate-pair safe, with a marker', () => {
+    const huge = 'e'.repeat(SUBAGENT_INLINE_MAX * 20)
+    // Put a surrogate pair straddling the cut so a naive slice would split it.
+    const pair = 'a'.repeat(SUBAGENT_INLINE_MAX - 1) + '😀' + 'b'.repeat(100)
+    const out = planCompletionNotice({
+      phaseCount: 2,
+      totalSubagents: 3,
+      finalPhase: [
+        { name: 'bad', result: res(huge, true), savedPath: null },
+        { name: 'pair', result: res(pair), savedPath: null },
+        { name: 'saved', result: res(huge, true), savedPath: '/tmp/blackboard/saved.md' },
+      ],
+    })
+    expect(out.text.length).toBeLessThan(3 * (SUBAGENT_INLINE_MAX + 200) + 300)
+    expect(out.text.match(/\[truncated: subagent output exceeded/g)).toHaveLength(3)
+    // No lone surrogate anywhere.
+    expect(out.text).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/)
+  })
+})
+
+describe('subagentCompletionNotice bounds', () => {
+  const tail = 'SINGLE_TAIL_END'
+  const exact = 'q'.repeat(SUBAGENT_INLINE_MAX - tail.length) + tail
+
+  it('leaves an exact-8192 single output unchanged, tail included', () => {
+    const out = subagentCompletionNotice({ name: 'n', callId: 'c', savedPath: null, output: exact })
+    expect(out.text).toContain(exact)
+    expect(out.text).not.toContain('[truncated')
+  })
+
+  it('bounds a huge failed single output with a marker and no split surrogate', () => {
+    const output = 'f'.repeat(SUBAGENT_INLINE_MAX - 1) + '😀' + 'g'.repeat(50_000)
+    const out = subagentCompletionNotice({ name: 'n', callId: 'c', savedPath: null, output, isError: true })
+    expect(out.text).toBe(out.headline)
+    expect(out.text).toContain('[truncated: subagent output exceeded')
+    expect(out.text.length).toBeLessThan(SUBAGENT_INLINE_MAX + 200)
+    expect(out.text).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/)
+  })
+
+  it('marks an over-limit unsaved success but still points at the file when saved', () => {
+    const output = 'h'.repeat(SUBAGENT_INLINE_MAX + 1)
+    const inline = subagentCompletionNotice({ name: 'n', callId: 'c', savedPath: null, output })
+    expect(inline.text).toContain('[truncated: subagent output exceeded')
+    const saved = subagentCompletionNotice({ name: 'n', callId: 'c', savedPath: '/tmp/x.md', output })
+    expect(saved.text).toContain('/tmp/x.md')
+    expect(saved.text).not.toContain('[truncated')
   })
 })

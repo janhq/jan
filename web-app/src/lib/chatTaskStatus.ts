@@ -6,8 +6,10 @@
  * budget of their own in the persisted carrier: shaped and validated per row,
  * and shed before anything model-visible (run-context pings, canonical parts)
  * is ever given up.
- * No imports: shared by chatOrchestration (live bound) and messages (carrier).
+ * Shared by chatOrchestration (live bound) and messages (carrier); only the
+ * shared truncateUtf16 helper is imported.
  */
+import { truncateUtf16 } from './truncateUtf16'
 
 /** Live bound per `finalOutput` / `error` (UTF-16 code units, marker included). */
 export const TASK_STATUS_TEXT_LIMIT = 100_000
@@ -20,17 +22,6 @@ export const TASK_STATUS_CARRIER_MARKER = '\n\n[truncated for storage: carrier s
 /** Upper bounds that keep one status part's identity fields small. */
 export const TASK_STATUS_MAX_ROWS_PER_PART = 16
 export const TASK_STATUS_MAX_ID_CHARS = 256
-
-/** Cut to at most `limit` UTF-16 units ending in `marker`, never leaving half
- * of a surrogate pair at the cut. Text within the limit is returned as is. */
-export function truncateUtf16(value: string, limit: number, marker: string): string {
-  if (value.length <= limit) return value
-  let keep = Math.max(0, limit - marker.length)
-  const last = value.charCodeAt(keep - 1)
-  // A trailing high surrogate here is the first half of a pair (or lone): drop it.
-  if (keep > 0 && last >= 0xd800 && last <= 0xdbff) keep -= 1
-  return value.slice(0, keep) + marker.slice(0, limit)
-}
 
 const ROW_KEYS = new Set(['runId', 'name', 'status', 'startedAt', 'endedAt', 'finalOutput', 'error'])
 const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
