@@ -88,7 +88,13 @@ expect 'JS ADK package' 'packages/adk/src/index.mjs' ts=false rust=false jan_cli
 
 expect 'Python ADK' 'adk/python/jan/client.py' ts=false adk=true
 
-expect 'lockfile is TS and ADK, not Rust' 'yarn.lock' ts=true mlx=true rust=false adk=true
+# test-rust's asset step runs yarn install and the Tauri CLI, so the lockfile
+# reaches it; the app clippy configs follow rust as well.
+expect 'lockfile reaches TS, ADK and test-rust' 'yarn.lock' ts=true mlx=true rust=true adk=true
+
+expect 'download-bin feeds test-rust' 'scripts/download-bin.mjs' ts=false rust=true
+
+expect 'windows icon build feeds test-rust' 'scripts/build-windows-icon.mjs' ts=false rust=true
 
 expect 'stub script feeds the Rust build' 'scripts/stub-tauri-resources.mjs' ts=false rust=true
 

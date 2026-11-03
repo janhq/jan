@@ -78,8 +78,10 @@ else
         .github/actions/changed-areas/* | .github/scripts/changed-areas*)
         everything
         ;;
+      # test-rust consumes these too: its `make test-ci-rust` runs yarn install,
+      # download:bin and build:icon (the Tauri CLI) before the Rust suites.
       package.json | yarn.lock | .yarnrc.yml)
-        ts=true mlx=true adk=true
+        ts=true mlx=true rust=true adk=true
         ;;
       vitest.config.ts | core/* | extensions/mlx-extension/* | \
         src-tauri/plugins/package.json | src-tauri/plugins/yarn.lock | src-tauri/plugins/.yarnrc.yml)
@@ -131,7 +133,10 @@ else
       adk/* | packages/adk/*)
         adk=true
         ;;
-      scripts/stub-tauri-resources.mjs | scripts/rust-coverage.sh)
+      # Everything `make test-ci-rust` runs besides cargo: the resource stubs,
+      # the bundled-binary download and the icon build, plus coverage.
+      scripts/stub-tauri-resources.mjs | scripts/rust-coverage.sh | \
+        scripts/download-bin.mjs | scripts/build-windows-icon.mjs)
         rust=true
         ;;
     esac

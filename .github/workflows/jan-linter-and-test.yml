@@ -12,6 +12,8 @@ on:
       - 'rust-toolchain.toml'
       - 'scripts/stub-tauri-resources.mjs'
       - 'scripts/rust-coverage.sh'
+      - 'scripts/download-bin.mjs'
+      - 'scripts/build-windows-icon.mjs'
       - 'package.json'
       - 'yarn.lock'
       - 'core/**'
