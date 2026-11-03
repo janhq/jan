@@ -1,0 +1,21 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: doc
+---
+-- expanded
+
+• Dispatched explore, general
+  └ explore · Error - stopped by the parent agent
+    explore: Find the parser and report its entry point.
+    general: Write the docs.
+-- collapsed
+
+• Dispatched explore, general
+  └ explore · Error - stopped by the parent agent
+-- narrow (28)
+
+• Dispatched explore,
+  general
+  └ explore · Error -
+    stopped by the parent
+    agent

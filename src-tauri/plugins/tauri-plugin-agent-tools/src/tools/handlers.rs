@@ -223,7 +223,7 @@ async fn execute_text(
         "write" if ctx.workspace_readonly
             && in_read_only_root(project_root, scratch, arg_str(args, "path").unwrap_or("")) =>
         {
-            read_only_refusal(args, project_root)
+            read_only_refusal(args, scratch)
         }
         "write" => {
             write(
@@ -238,7 +238,7 @@ async fn execute_text(
         "edit" if ctx.workspace_readonly
             && in_read_only_root(project_root, scratch, arg_str(args, "path").unwrap_or("")) =>
         {
-            read_only_refusal(args, project_root)
+            read_only_refusal(args, scratch)
         }
         "edit" => {
             edit(
@@ -458,6 +458,9 @@ fn skill_list(ctx: &ToolContext<'_>) -> String {
             .map(|m| (m.name, m.description))
             .collect(),
     };
+    if entries.is_empty() {
+        return "No skills.".to_string();
+    }
     entries
         .into_iter()
         .map(|(name, description)| {
@@ -691,7 +694,7 @@ async fn read(
 
     let bytes = match tokio::fs::read(&target).await {
         Ok(b) => b,
-        Err(e) => return (format!("ERROR: {e}"), None),
+        Err(e) => return (format!("ERROR: cannot read {path}: {e}"), None),
     };
 
     // An image file is returned as an OpenAI `image_url` content part rather
@@ -699,7 +702,7 @@ async fn read(
     // plain read (no offset/limit) does this, since slicing an image makes no
     // sense and offset/limit still refers to text lines.
     if offset.is_none() && limit.is_none() && bytes.len() <= MAX_IMAGE_BYTES {
-        if let Some(mime) = crate::tools::image::detect(&target) {
+        if let Some(mime) = crate::tools::image::mime_from_signature(&bytes) {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
             let name = target
@@ -718,12 +721,18 @@ async fn read(
 
     let content = match String::from_utf8(bytes) {
         Ok(c) => c,
-        Err(_) => return ("ERROR: not a UTF-8 text file".to_string(), None),
+        Err(_) => return (format!("ERROR: {path} is not a UTF-8 text file"), None),
     };
 
+    let mut first_line = 1;
     let selected = if offset.is_some() || limit.is_some() {
-        let lines: Vec<&str> = content.split('\n').collect();
+        let mut lines: Vec<&str> = content.split('\n').collect();
+        // A trailing newline ends the last line; it does not start another.
+        if lines.len() > 1 && lines.last() == Some(&"") {
+            lines.pop();
+        }
         let start = offset.map(|o| o.saturating_sub(1)).unwrap_or(0);
+        first_line = start + 1;
         if start >= lines.len() {
             return (
                 format!(
@@ -743,15 +752,45 @@ async fn read(
         content
     };
 
-    (
-        cap_output(
-            &selected,
-            MAX_LINES,
-            MAX_BYTES,
-            "\n[truncated: use offset/limit to read more]",
-        ),
-        None,
-    )
+    (cap_read(&selected, first_line, MAX_LINES, MAX_BYTES), None)
+}
+
+/// [`cap_output`] for `read`, whose note names the `offset` to continue from.
+/// `first_line` is the file's line number of the first line of `s`. A single
+/// line over `max_bytes` (a minified file) is cut at a char boundary rather
+/// than dropped whole, since `offset`/`limit` cannot reach inside a line.
+fn cap_read(s: &str, first_line: usize, max_lines: usize, max_bytes: usize) -> String {
+    let mut out = String::new();
+    for (i, line) in s.split_inclusive('\n').enumerate() {
+        let number = first_line + i;
+        if i >= max_lines || (i > 0 && out.len() + line.len() > max_bytes) {
+            out.push_str(&format!("\n[truncated: use offset={number} to read more]"));
+            return out;
+        }
+        // The newline is not part of what a cut would keep, so a line whose
+        // text is exactly the cap fits.
+        let body = line.strip_suffix('\n').unwrap_or(line);
+        if body.len() > max_bytes {
+            let mut cut = max_bytes;
+            while !body.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            out.push_str(&body[..cut]);
+            let next = if s.len() > line.len() {
+                format!("; use offset={} to read the lines after it", number + 1)
+            } else {
+                String::new()
+            };
+            out.push_str(&format!(
+                "\n[truncated: line {number} cut at {cut} of {} bytes, the rest of that line \
+                 cannot be read with offset/limit{next}]",
+                body.len(),
+            ));
+            return out;
+        }
+        out.push_str(line);
+    }
+    out
 }
 
 async fn ls(
@@ -998,13 +1037,17 @@ async fn edit(
 
 /// The refusal a `write`/`edit` gets for a path in a read-only root. Refused
 /// here rather than left to the prompt, which auto-approval would answer.
-fn read_only_refusal(args: &serde_json::Value, root: &Path) -> String {
+/// Names the scratch only where there is one, by the spelling the tools use.
+fn read_only_refusal(args: &serde_json::Value, scratch: Option<&Path>) -> String {
     let path = arg_str(args, "path").unwrap_or_default();
-    format!(
-        "ERROR: {path} is in a read-only checkout ({}): this agent cannot change the project. \
-         Write temporary files to the scratch directory instead.",
-        root.display()
-    )
+    let head = format!("ERROR: {path} is in a read-only checkout; this run cannot change it.");
+    match scratch {
+        Some(s) => format!(
+            "{head} Write temporary files under {} instead.",
+            scratch_display_path(Some(s), s)
+        ),
+        None => head,
+    }
 }
 
 /// The shell a confined command launches with: the (possibly jail-wrapped)
@@ -1126,7 +1169,8 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         let mut out = collect_and_format(child, spill_scratch, sink, tail).await;
         // Appended inside the task so a backgrounded job carries the hint too.
         if sandboxed {
-            out.push_str(&sandbox_denial_note(&out, &policy, escalation));
+            let note = sandbox_denial_note(&out, &policy, escalation);
+            insert_before_exit_marker(&mut out, &note);
         }
         if let Some(pid) = pid {
             proc::unregister(thread_owned.as_deref(), pid);
@@ -1392,15 +1436,13 @@ impl BashCapture {
         // yet), so dumping it captures the full prefix before we start
         // dropping from the front.
         if self.spill.is_none() && self.tail.len() + chunk.len() > BASH_MAX_BYTES {
-            if let Some(path) = new_temp_path(self.scratch.as_deref()) {
-                if let Ok(file) = open_spill_file(&path) {
-                    let mut w = std::io::BufWriter::new(file);
-                    let (a, b) = self.tail.as_slices();
-                    let _ = w.write_all(a);
-                    let _ = w.write_all(b);
-                    self.spill = Some(w);
-                    self.spill_path = Some(path);
-                }
+            if let Some((path, file)) = create_spill_file(self.scratch.as_deref()) {
+                let mut w = std::io::BufWriter::new(file);
+                let (a, b) = self.tail.as_slices();
+                let _ = w.write_all(a);
+                let _ = w.write_all(b);
+                self.spill = Some(w);
+                self.spill_path = Some(path);
             }
         }
         if let Some(w) = self.spill.as_mut() {
@@ -1419,54 +1461,63 @@ impl BashCapture {
         if let Some(w) = self.spill.as_mut() {
             let _ = w.flush();
         }
-        let retained = String::from_utf8_lossy(self.tail.make_contiguous()).into_owned();
+        let raw = self.tail.make_contiguous();
+        // Bytes dropped from the front cut into the first retained line. That
+        // loses visible text unless the line is a CR redraw whose last frame
+        // starts inside the retained part (only that frame is ever shown).
+        let front_cut = self.total_bytes > raw.len() && {
+            let first = raw.split(|&b| b == b'\n').next().unwrap_or_default();
+            let first = first.strip_suffix(b"\r").unwrap_or(first);
+            !first.contains(&b'\r')
+        };
+        let retained = String::from_utf8_lossy(raw).into_owned();
         let collapsed = sanitize_output(&retained);
         let capped = tail_cap(&collapsed, BASH_MAX_LINES, BASH_MAX_BYTES);
         let shown_lines = capped.matches('\n').count();
-        // Truncated when the model-facing output lost real lines (front dropped)
+        // Truncated when the model-facing output lost real lines (front dropped),
+        // raw bytes (front dropped from a line with no newline in the lost part)
         // or bytes (tail cap). CR-only progress redraws collapse to a single
         // line, so they read as complete rather than truncated.
-        let truncated = self.total_newlines > shown_lines || capped.len() < collapsed.len();
+        let truncated = self.total_newlines > shown_lines
+            || front_cut
+            || capped.len() < collapsed.len();
 
-        // Always emit an explicit exit marker on its own line. A bare exit code
-        // (including 0) is the only reliable success signal: commands like
-        // `git push` write their normal status to stderr on success, so stderr
-        // text must not be read as failure.
         let mut body = capped;
         if !body.is_empty() && !body.ends_with('\n') {
             body.push('\n');
         }
+        if truncated {
+            let shown = body.len();
+            let path = match self.spill_path.take() {
+                Some(p) => Some(p),
+                None => write_temp_output(&collapsed, self.scratch.as_deref()),
+            }
+            .map(|p| crate::tools::sandbox::scratch_display_path(self.scratch.as_deref(), &p));
+            match path {
+                Some(p) => body.push_str(&format!(
+                    "[output truncated at {shown} of {} bytes; full output written \
+                     to {p}. Use the read tool (with offset/limit) on that path to see \
+                     the rest]\n",
+                    self.total_bytes,
+                )),
+                None => body.push_str(&format!(
+                    "[output truncated at {shown} of {} bytes]\n",
+                    self.total_bytes,
+                )),
+            }
+        } else if let Some(p) = self.spill_path.take() {
+            remove_spill_file(&p);
+        }
+
+        // Always end with an explicit exit marker on its own, final line. A bare
+        // exit code (including 0) is the only reliable success signal: commands
+        // like `git push` write their normal status to stderr on success, so
+        // stderr text must not be read as failure.
         match code {
             Some(code) => body.push_str(&format!("[exit {code}]")),
             None => body.push_str("[terminated by signal]"),
         }
-
-        if !truncated {
-            if let Some(p) = self.spill_path.take() {
-                remove_spill_file(&p);
-            }
-            return body;
-        }
-
-        let path = match self.spill_path.take() {
-            Some(p) => Some(p),
-            None => write_temp_output(&collapsed, self.scratch.as_deref()),
-        }
-        .map(|p| crate::tools::sandbox::scratch_display_path(self.scratch.as_deref(), &p));
-        match path {
-            Some(p) => format!(
-                "{body}\n[output truncated at {} of {} bytes; full output written \
-                 to {p}. Use the read tool (with offset/limit) on that path to see \
-                 the rest]",
-                body.len(),
-                self.total_bytes,
-            ),
-            None => format!(
-                "{body}\n[output truncated at {} of {} bytes]",
-                body.len(),
-                self.total_bytes,
-            ),
-        }
+        body
     }
 }
 
@@ -1499,13 +1550,27 @@ fn sandbox_denial_note(out: &str, policy: &jail::Policy, escalation: bool) -> St
     note
 }
 
+/// Splice `note` (which starts with `\n`) in above a shell result's exit
+/// marker, so the marker stays the final line as the tool description
+/// promises. Output without a marker on its last line gets `note` appended.
+pub fn insert_before_exit_marker(out: &mut String, note: &str) {
+    let at = out.rfind('\n').map_or(0, |i| i + 1);
+    if note.is_empty() || exit_marker(&out[at..]).is_none() {
+        out.push_str(note);
+        return;
+    }
+    let line = note.strip_prefix('\n').unwrap_or(note);
+    out.insert_str(at, &format!("{line}\n"));
+}
+
 /// The escalation half of [`sandbox_denial_note`].
 const ESCALATION_HINT: &str = "\n[If this command is needed for the task, rerun it with `escalate: true` and a `justification` to ask the user to run it outside the sandbox.]";
 
 /// True when a shell tool result reports failure via its exit marker: a
 /// non-zero `[exit N]` or a signal termination. The marker is emitted by
-/// [`BashCapture::finish`] on its own line and a truncation note may follow it,
-/// so scan every line rather than only the tail. Model-facing content is
+/// [`BashCapture::finish`] as the final line, but results saved before that
+/// order carry a truncation note after it, so scan every line rather than
+/// only the tail. Model-facing content is
 /// deliberately left unprefixed (a non-zero exit is not an "ERROR" string, since
 /// commands like `grep`/`diff`/`test` exit non-zero without failing); this feeds
 /// the display-only `is_error` flag so the TUI marks the call failed.
@@ -1629,9 +1694,21 @@ fn spill_dir(scratch: Option<&Path>) -> Option<PathBuf> {
     crate::tools::spill::validated_subdir(&base, "jan-bash")
 }
 
+/// A spill name no file holds yet. A pid is reused across runs, so an earlier
+/// process can have left its spills under the very names this one would
+/// count up to; a backgrounded command's file would then read as finished
+/// (stale) before the command ends. Creation still goes through
+/// [`open_spill_file`], which refuses a name taken in between.
 fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
-    let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-    Some(spill_dir(scratch)?.join(format!("jan-bash-{}-{}.txt", std::process::id(), n)))
+    let dir = spill_dir(scratch)?;
+    loop {
+        let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let path = dir.join(format!("jan-bash-{}-{}.txt", std::process::id(), n));
+        let taken = |p: &Path| std::fs::symlink_metadata(p).is_ok();
+        if !taken(&path) && !taken(&path.with_extension("part")) {
+            return Some(path);
+        }
+    }
 }
 
 /// Open a spill file atomically; see [`crate::tools::spill::open_excl`].
@@ -1641,12 +1718,26 @@ fn open_spill_file(path: &Path) -> std::io::Result<std::fs::File> {
     crate::tools::spill::open_excl(path)
 }
 
+/// Create a fresh spill file through [`open_spill_file`]. A name taken after
+/// [`new_temp_path`] checked it is skipped for the next one rather than
+/// losing the spill; any other error, or a run of taken names, gives up.
+fn create_spill_file(scratch: Option<&Path>) -> Option<(PathBuf, std::fs::File)> {
+    for _ in 0..64 {
+        let path = new_temp_path(scratch)?;
+        match open_spill_file(&path) {
+            Ok(file) => return Some((path, file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
 /// Write `content` to a uniquely named temp file, returning its path on
 /// success. Uses [`open_spill_file`] so the write never follows a symlink.
 fn write_temp_output(content: &str, scratch: Option<&Path>) -> Option<PathBuf> {
     use std::io::Write;
-    let path = new_temp_path(scratch)?;
-    let mut file = open_spill_file(&path).ok()?;
+    let (path, mut file) = create_spill_file(scratch)?;
     file.write_all(content.as_bytes()).ok()?;
     Some(path)
 }
@@ -1952,6 +2043,9 @@ async fn find(
             require_literal_leading_dot: false,
         };
         let mut matches: Vec<String> = Vec::new();
+        // Set on the first match past the limit, so the notice only appears
+        // when something was actually left out.
+        let mut limited = false;
         for entry in WalkBuilder::new(&base)
             .hidden(false)
             .require_git(false)
@@ -1964,17 +2058,24 @@ async fn find(
             }
             let rel = rel_to(&base, entry.path());
             if pat.matches_with(&rel, opts) {
-                matches.push(rel);
                 if matches.len() >= limit {
+                    limited = true;
                     break;
                 }
+                matches.push(rel);
             }
         }
-        if matches.is_empty() {
-            "No matches.".to_string()
-        } else {
-            matches.join("\n")
+        if matches.is_empty() && !limited {
+            return "No matches.".to_string();
         }
+        let mut out = matches.join("\n");
+        if limited {
+            out.push_str(&format!(
+                "\n[truncated: {limit} path limit reached; raise limit or narrow the pattern]"
+            ));
+        }
+        // `limit: 0` leaves only the notice, which then has no line above it.
+        out.strip_prefix('\n').map(str::to_string).unwrap_or(out)
     })
     .await;
     res.unwrap_or_else(|e| format!("ERROR: {e}"))
@@ -2033,6 +2134,9 @@ async fn grep(
         let is_file = base.is_file();
         let mut matches: Vec<String> = Vec::new();
         let mut count = 0usize;
+        // Set on the first match past the limit, so the notice only appears
+        // when something was actually left out.
+        let mut limited = false;
 
         let mut search_file = |file: &Path, rel_base: &Path| -> bool {
             if let Some(gp) = &glob_pat {
@@ -2056,6 +2160,10 @@ async fn grep(
             let lines: Vec<&str> = content.lines().collect();
             for (i, line) in lines.iter().enumerate() {
                 if re.is_match(line) {
+                    if count >= limit {
+                        limited = true;
+                        return false;
+                    }
                     if context > 0 {
                         let start = i.saturating_sub(context);
                         let end = (i + context + 1).min(lines.len());
@@ -2071,9 +2179,6 @@ async fn grep(
                         matches.push(format!("{rel}:{}:{}", i + 1, truncate_line(line)));
                     }
                     count += 1;
-                    if count >= limit {
-                        return false;
-                    }
                 }
             }
             true
@@ -2116,16 +2221,22 @@ async fn grep(
             }
         }
 
-        if matches.is_empty() {
-            "No matches.".to_string()
-        } else {
-            cap_output(
-                &matches.join("\n"),
-                usize::MAX,
-                MAX_BYTES,
-                "\n[truncated: 64KB limit]",
-            )
+        if matches.is_empty() && !limited {
+            return "No matches.".to_string();
         }
+        let mut out = cap_output(
+            &matches.join("\n"),
+            usize::MAX,
+            MAX_BYTES,
+            "\n[truncated: 64KB limit]",
+        );
+        if limited {
+            out.push_str(&format!(
+                "\n[truncated: {limit} match limit reached; raise limit or narrow the search]"
+            ));
+        }
+        // `limit: 0` leaves only the notice, which then has no line above it.
+        out.strip_prefix('\n').map(str::to_string).unwrap_or(out)
     })
     .await;
     res.unwrap_or_else(|e| format!("ERROR: {e}"))
@@ -2195,6 +2306,56 @@ mod tests {
         dir
     }
 
+    /// `find` says when it stopped at its limit, and only then.
+    #[tokio::test]
+    async fn find_says_when_it_hits_its_limit() {
+        let root = unique_root();
+        for name in ["a.rs", "b.rs", "c.rs"] {
+            std::fs::write(root.join(name), b"x").unwrap();
+        }
+        let find = |limit: u64| {
+            let root = root.clone();
+            async move {
+                execute_builtin(
+                    lookup("find").unwrap(),
+                    &json!({"pattern": "*.rs", "limit": limit}),
+                    &root,
+                )
+                .await
+            }
+        };
+        let cut = find(2).await;
+        assert_eq!(cut.lines().count(), 3, "{cut}");
+        assert!(cut.ends_with("[truncated: 2 path limit reached; raise limit or narrow the pattern]"), "{cut}");
+        let exact = find(3).await;
+        assert!(!exact.contains("[truncated"), "{exact}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `grep` says when it stopped at its match limit, and only then.
+    #[tokio::test]
+    async fn grep_says_when_it_hits_its_limit() {
+        let root = unique_root();
+        std::fs::write(root.join("a.txt"), b"hit\nhit\nhit\n").unwrap();
+        let grep = |limit: u64| {
+            let root = root.clone();
+            async move {
+                execute_builtin(
+                    lookup("grep").unwrap(),
+                    &json!({"pattern": "hit", "limit": limit}),
+                    &root,
+                )
+                .await
+            }
+        };
+        let cut = grep(2).await;
+        assert_eq!(cut.matches("a.txt:").count(), 2, "{cut}");
+        assert!(cut.ends_with("[truncated: 2 match limit reached; raise limit or narrow the search]"), "{cut}");
+        let exact = grep(3).await;
+        assert!(!exact.contains("[truncated"), "{exact}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[tokio::test]
     async fn read_returns_contents() {
         let root = unique_root();
@@ -2252,10 +2413,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_extension_fallback_catches_a_misnamed_image() {
+    async fn a_text_file_named_like_an_image_is_read_as_text() {
         let root = unique_root();
-        // No valid signature header, but the extension says PNG: the extension
-        // fallback still returns an image payload.
+        // No image signature: the extension alone must not turn it into a
+        // broken data URL.
         std::fs::write(root.join("scanned.png"), b"not a real png").unwrap();
         let (content, images) = super::execute_builtin(
             lookup("read").unwrap(),
@@ -2263,11 +2424,126 @@ mod tests {
             &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
         )
         .await;
-        assert!(!content.starts_with("ERROR"), "got: {content}");
-        assert!(
-            images.is_some(),
-            "extension-matching png must yield an image"
-        );
+        assert_eq!(content, "not a real png");
+        assert!(images.is_none(), "no signature, no image");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn a_corrupt_image_is_an_error_naming_the_path() {
+        let root = unique_root();
+        std::fs::write(root.join("broken.png"), [0xff, 0xfe, 0x00, 0x01]).unwrap();
+        let (content, images) = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "broken.png"}),
+            &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
+        )
+        .await;
+        assert!(images.is_none());
+        assert!(content.starts_with("ERROR"), "got: {content}");
+        assert!(content.contains("broken.png"), "got: {content}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_errors_name_the_path() {
+        let root = unique_root();
+        let out =
+            execute_builtin(lookup("read").unwrap(), &json!({"path": "missing.txt"}), &root).await;
+        assert!(out.starts_with("ERROR") && out.contains("missing.txt"), "got: {out}");
+        std::fs::write(root.join("bin"), [0xff, 0xfe, 0x00]).unwrap();
+        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "bin"}), &root).await;
+        assert!(out.starts_with("ERROR") && out.contains("bin"), "got: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The empty piece after a trailing newline is not a line.
+    #[tokio::test]
+    async fn read_line_count_ignores_a_trailing_newline() {
+        let root = unique_root();
+        std::fs::write(root.join("two.txt"), b"a\nb\n").unwrap();
+        let out = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "two.txt", "offset": 3}),
+            &root,
+        )
+        .await;
+        assert!(out.starts_with("ERROR"), "got: {out}");
+        assert!(out.contains("(2 lines total)"), "got: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A single line over the byte cap (a minified file) is cut at a char
+    /// boundary and the note says where, instead of returning only the note.
+    #[tokio::test]
+    async fn read_cuts_an_oversized_line_and_says_where() {
+        let root = unique_root();
+        // Two-byte chars, with an odd byte first, so the cap lands mid-char.
+        let long = format!("x{}", "\u{e9}".repeat(40_000));
+        std::fs::write(root.join("min.js"), format!("{long}\nnext\n")).unwrap();
+        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "min.js"}), &root).await;
+        let (body, note) = out.rsplit_once('\n').unwrap();
+        assert!(body.len() <= MAX_BYTES && body.len() > MAX_BYTES - 4, "len {}", body.len());
+        assert!(long.starts_with(body));
+        assert!(note.contains("line 1"), "{note}");
+        assert!(note.contains(&format!("{} of {} bytes", body.len(), long.len())), "{note}");
+        assert!(note.contains("offset=2"), "{note}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A line whose text is exactly the byte cap fits: it is returned whole
+    /// with no note that part of it cannot be read.
+    #[tokio::test]
+    async fn read_returns_a_line_of_exactly_the_cap_whole() {
+        let root = unique_root();
+        let line = "x".repeat(MAX_BYTES);
+        std::fs::write(root.join("at.js"), format!("{line}\n")).unwrap();
+        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "at.js"}), &root).await;
+        assert!(out.starts_with(&line), "len {}", out.len());
+        assert!(!out.contains("cut at"), "{}", &out[MAX_BYTES..]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_line_cap_boundary() {
+        let root = unique_root();
+        let lines = |n: usize| (1..=n).map(|i| format!("{i}\n")).collect::<String>();
+        std::fs::write(root.join("at.txt"), lines(MAX_LINES)).unwrap();
+        std::fs::write(root.join("over.txt"), lines(MAX_LINES + 1)).unwrap();
+        let at = execute_builtin(lookup("read").unwrap(), &json!({"path": "at.txt"}), &root).await;
+        assert!(!at.contains("[truncated"), "{}", &at[at.len() - 40..]);
+        let over =
+            execute_builtin(lookup("read").unwrap(), &json!({"path": "over.txt"}), &root).await;
+        assert!(!over.contains("\n2001\n"));
+        assert!(over.ends_with("use offset=2001 to read more]"), "{}", &over[over.len() - 80..]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_byte_cap_boundary() {
+        let root = unique_root();
+        // 64 lines of exactly 1KB each fill the cap to the byte.
+        let line = format!("{}\n", "a".repeat(1023));
+        let full = line.repeat(64);
+        assert_eq!(full.len(), MAX_BYTES);
+        std::fs::write(root.join("at.txt"), &full).unwrap();
+        std::fs::write(root.join("over.txt"), format!("{full}b")).unwrap();
+        let at = execute_builtin(lookup("read").unwrap(), &json!({"path": "at.txt"}), &root).await;
+        assert_eq!(at, full);
+        let over =
+            execute_builtin(lookup("read").unwrap(), &json!({"path": "over.txt"}), &root).await;
+        assert!(over.starts_with(&full));
+        assert!(over.ends_with("use offset=65 to read more]"), "{}", &over[over.len() - 80..]);
+        // The note's line number is relative to the file, not to the slice.
+        std::fs::write(root.join("later.txt"), format!("first\n{full}b")).unwrap();
+        let sliced = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "later.txt", "offset": 2}),
+            &root,
+        )
+        .await;
+        assert!(sliced.starts_with(&full));
+        assert!(sliced.ends_with("use offset=66 to read more]"), "{}", &sliced[sliced.len() - 80..]);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2330,7 +2606,20 @@ mod tests {
         ] {
             let (out, _) = super::execute_builtin(lookup(tool).unwrap(), &args, &ctx).await;
             assert!(out.starts_with("ERROR") && out.contains("read-only"), "{tool}: {out}");
+            // The host checkout path is not the model's business.
+            assert!(!out.contains(&*root.to_string_lossy()), "{tool}: {out}");
+            let shown = crate::tools::sandbox::scratch_display_path(Some(&scratch), &scratch);
+            assert!(out.ends_with(&format!("Write temporary files under {shown} instead.")), "{out}");
         }
+        // No scratch, no pointer at one.
+        let bare = ToolContext::new(&root, &store, &[]).with_workspace_readonly(true);
+        let (out, _) = super::execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "a.txt", "content": "x"}),
+            &bare,
+        )
+        .await;
+        assert_eq!(out, "ERROR: a.txt is in a read-only checkout; this run cannot change it.");
         assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "one");
         assert!(!root.join("new").exists());
         let (read, _) =
@@ -3164,6 +3453,28 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&scratch);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A stale spill from an earlier process with the same (reused) pid must
+    /// not cost this one its spill file: the next free name is taken instead.
+    #[test]
+    fn a_stale_spill_name_is_skipped_not_fatal() {
+        let scratch = unique_root();
+        let dir = spill_dir(Some(&scratch)).unwrap();
+        let next = TEMP_COUNTER.load(Ordering::SeqCst);
+        for n in next..next + 4 {
+            let stale = dir.join(format!("jan-bash-{}-{n}.txt", std::process::id()));
+            std::fs::write(stale, b"stale").unwrap();
+        }
+        let path = write_temp_output("fresh", Some(&scratch)).expect("a spill file");
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "fresh");
+        // A backgrounded command's file is named but not created up front: the
+        // name must be free too, or a stale file reads as its finished output.
+        let next = TEMP_COUNTER.load(Ordering::SeqCst);
+        let stale = dir.join(format!("jan-bash-{}-{next}.txt", std::process::id()));
+        std::fs::write(&stale, b"stale").unwrap();
+        assert_ne!(new_temp_path(Some(&scratch)), Some(stale));
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     /// A spill *file* that is a planted symlink must never be opened (truncated
@@ -4069,6 +4380,64 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A first line longer than the window loses bytes from the front without
+    /// losing a newline, and that must still be reported as truncation.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn bash_long_first_line_without_newline_is_flagged_truncated() {
+        let root = unique_root();
+        let out = execute_builtin(
+            lookup("shell").unwrap(),
+            &json!({"command": "printf 'START%070000dEND\\nlast\\n' 0"}),
+            &root,
+        )
+        .await;
+        assert!(!out.contains("START"), "front was not dropped: {}", &out[..80]);
+        assert!(out.contains("output truncated at"), "silent truncation: end of {}", &out[out.len() - 200..]);
+        assert!(out.ends_with("[exit 0]"), "exit marker not last: {}", &out[out.len() - 300..]);
+        if let Some(spill) = out
+            .rsplit("full output written to ")
+            .next()
+            .and_then(|s| s.split(". Use the read tool").next())
+        {
+            let _ = std::fs::remove_file(spill);
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The tool description promises a final `[exit N]` line: the truncation
+    /// notice goes above it, never after it.
+    #[test]
+    fn bash_capture_puts_the_exit_marker_last_when_truncated() {
+        let scratch = unique_root();
+        let mut cap = BashCapture::new(Some(scratch.clone()));
+        for i in 0..5000 {
+            cap.push(format!("line {i:060}\n").as_bytes());
+        }
+        let out = cap.finish(Some(2));
+        let (head, last) = out.rsplit_once('\n').unwrap();
+        assert_eq!(last, "[exit 2]");
+        assert!(head.rsplit_once('\n').unwrap().1.starts_with("[output truncated at"), "{head}");
+        assert!(bash_result_failed(&out));
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The sandbox hint is spliced in above the exit marker, so the marker
+    /// stays the final line.
+    #[test]
+    fn notes_are_inserted_above_the_exit_marker() {
+        let mut out = "touch: x: Read-only file system\n[exit 1]".to_string();
+        insert_before_exit_marker(&mut out, "\n[sandbox: limits]");
+        assert_eq!(out, "touch: x: Read-only file system\n[sandbox: limits]\n[exit 1]");
+        let mut bare = "[terminated by signal]".to_string();
+        insert_before_exit_marker(&mut bare, "\n[sandbox: limits]");
+        assert_eq!(bare, "[sandbox: limits]\n[terminated by signal]");
+        let mut none = "no marker".to_string();
+        insert_before_exit_marker(&mut none, "\n[note]");
+        assert_eq!(none, "no marker\n[note]");
+    }
+
     // POSIX command text: Windows runs PowerShell.
     #[cfg(unix)]
     #[tokio::test]
@@ -4747,6 +5116,30 @@ mod tests {
         .await
         .0;
         assert!(out.starts_with("ERROR: scope 'user'"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An empty catalog says so, rather than returning an empty string the
+    /// model cannot tell from a failed call.
+    #[tokio::test]
+    async fn an_empty_skill_list_says_no_skills() {
+        struct Empty;
+        impl crate::tools::SkillProvider for Empty {
+            fn catalog(&self) -> Vec<(String, String)> {
+                Vec::new()
+            }
+            fn read(&self, name: &str) -> Result<String, String> {
+                Err(format!("ERROR: skill '{name}' not found"))
+            }
+        }
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx =
+            ToolContext::new(&root, &store, &[]).with_skill_source(std::sync::Arc::new(Empty));
+        let list = super::execute_builtin(lookup("skill_list").unwrap(), &json!({}), &ctx)
+            .await
+            .0;
+        assert_eq!(list, "No skills.");
         let _ = std::fs::remove_dir_all(&root);
     }
 

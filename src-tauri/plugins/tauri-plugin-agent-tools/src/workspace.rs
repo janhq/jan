@@ -1001,6 +1001,61 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A session scratch as subagents leave it: session files under
+    /// `subagents/` and results on `blackboard/`.
+    fn seed_subagent_files(scratch: &Path) -> [PathBuf; 2] {
+        let session = scratch.join("subagents").join("explore-session.jsonl");
+        let result = scratch.join("blackboard").join("explore.md");
+        for file in [&session, &result] {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, b"x").unwrap();
+        }
+        [session, result]
+    }
+
+    /// Session exit: a subagent's session file and its blackboard entry go
+    /// with the scratch.
+    #[tokio::test]
+    async fn subagent_files_go_with_the_scratch_on_session_exit() {
+        let session = format!("sub-exit-{}", std::process::id());
+        let scratch = ensure_scratch_dir(&session).await.unwrap();
+        let files = seed_subagent_files(&scratch);
+        remove_scratch_dir(&session).await.unwrap();
+        assert!(files.iter().all(|f| !f.exists()) && !scratch.exists());
+    }
+
+    /// Thread delete: removing the thread's sandbox wipes the scratch keyed
+    /// to the same id, subagent files included.
+    #[tokio::test]
+    async fn subagent_files_go_with_the_scratch_on_thread_delete() {
+        let data = unique_data_folder();
+        let thread = format!("sub-delete-{}", std::process::id());
+        ensure_thread_workspace(&data, &thread).await.unwrap();
+        let scratch = ensure_scratch_dir(&thread).await.unwrap();
+        let files = seed_subagent_files(&scratch);
+        remove_thread_workspace(&data, &thread).await.unwrap();
+        assert!(files.iter().all(|f| !f.exists()) && !scratch.exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// Crash: a scratch nobody removed is collected by the stale sweep with its
+    /// subagent files, and a live one keeps them.
+    #[tokio::test]
+    async fn subagent_files_in_an_abandoned_scratch_are_swept() {
+        let root = tmp_root("subagent_sweep");
+        let orphan = root.join("jan-agent-crashed");
+        ensure_scratch_dir_path(&orphan).await.unwrap();
+        let files = seed_subagent_files(&orphan);
+        assert_eq!(sweep_scratch_older_than(&root, SCRATCH_STALE_AFTER).await, 0);
+        assert!(files.iter().all(|f| f.exists()), "a live scratch keeps its files");
+        assert_eq!(
+            sweep_scratch_older_than(&root, std::time::Duration::ZERO).await,
+            1
+        );
+        assert!(files.iter().all(|f| !f.exists()) && !orphan.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The scratch root must never be a pre-planted symlink to another
     /// directory: the sandbox binds it as `/tmp`, so trusting a redirect would
     /// sanction an attacker-selected directory as the session's scratch.

@@ -16,6 +16,10 @@
 /// in `docs/src/pages/docs/agent/cli.mdx` under `jan cli agent run`.
 pub const PROTOCOL_VERSION: u32 = 1;
 
+/// How [`StreamEvent::AgentMessage`] names the main agent: the one agent that
+/// has no worker name.
+pub const MAIN_AGENT: &str = "main";
+
 /// `Deserialize` as well as `Serialize`: a consumer validates what it received
 /// against these shapes, and `JsonSchema` is what `jan cli agent schema`
 /// publishes them as -- a consumer generates its own types from
@@ -43,6 +47,26 @@ pub enum CompactionReason {
     ContextOverflow,
     /// The run used up its session token budget.
     SessionBudget,
+}
+
+/// What a finished compaction did, carried on [`StreamEvent::Compaction`] so
+/// a consumer can show the summarizer as an agent of its own: what it read,
+/// which model wrote the summary, what it cost and what it wrote.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct CompactionReport {
+    /// The model that wrote the summary: the `smol` model when it answered,
+    /// else the run's own. `None` when no model answered and the history was
+    /// folded into Jan's fallback note instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Estimated tokens of the span that was folded, before it was clamped
+    /// for the summarizer: how much conversation the summary stands in for.
+    pub input_tokens: u64,
+    /// The summarizer's own reported usage, every request it took included.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+    /// The summary that now stands in for the folded span.
+    pub summary: String,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
@@ -120,6 +144,11 @@ pub enum StreamEvent {
         /// checkout it was given, marked when read-only.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         workspace: Option<String>,
+        /// An agent Jan runs for itself (memory tidy) rather than one the
+        /// model dispatched. A consumer lists it with the other subagents,
+        /// marked as Jan's own, and keeps its run out of the conversation.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        internal: bool,
     },
     /// A backgrounded subagent dispatch found the parent run's concurrency cap
     /// (`max_parallel_subagents`) exhausted and queued the child in FIFO order.
@@ -178,18 +207,31 @@ pub enum StreamEvent {
     /// transcript reads in the order the model saw things. Display-only and
     /// transient, like notes: it is never journaled.
     Notice { text: String },
+    /// A message between the main agent and one of its subagents, emitted when
+    /// it is delivered at the reader's turn boundary rather than when it was
+    /// queued, so the transcript reads in the order the reader saw things.
+    /// `from` and `to` name the agents: a subagent by its worker name, the
+    /// main agent as [`MAIN_AGENT`]. A message to a subagent (the
+    /// `message_subagent` tool, or the user steering it from `/agents`) is
+    /// emitted on the child's own stream, so it reaches the parent wrapped in
+    /// `Subagent`; a subagent's `message_main_agent` is emitted on the main
+    /// run's. Display-only: the message itself is already in the reader's
+    /// history.
+    AgentMessage { from: String, to: String, text: String },
     /// The loop is summarizing part of the conversation to make room. Sent as
     /// `Started` before the summarizer call and `Finished` or `Failed` after
     /// it, so a consumer can show progress for what is otherwise a silent
     /// round trip. `reason` says which path asked. `messages` is how many were
-    /// folded into the summary, `None` except on `Finished`. Display-only and
-    /// never journaled; the compacted history itself arrives as
-    /// `MessagesUpdated`.
+    /// folded into the summary and `report` what the summarizer did, both
+    /// `None` except on `Finished`. Display-only and never journaled; the
+    /// compacted history itself arrives as `MessagesUpdated`.
     Compaction {
         phase: CompactionPhase,
         reason: CompactionReason,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         messages: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        report: Option<CompactionReport>,
     },
     /// The upstream request failed before anything streamed and is about to be
     /// sent again after `delay_ms`. `attempt` is the 1-based attempt that
@@ -437,12 +479,23 @@ fn classify_agent_path(path: &str) -> Option<(&'static str, String)> {
 /// decisions") instead of the raw tool name + path. Everything else falls back
 /// to `name` + compact args.
 pub fn describe_tool_call(name: &str, args: &serde_json::Value) -> String {
+    tool_label(name, args, false)
+}
+
+/// `describe_tool_call` once the call has finished: the same label with its
+/// verb in the past tense ("Updated memory: decisions"), so a resolved row
+/// stops reading as work still in flight.
+pub fn describe_finished_tool_call(name: &str, args: &serde_json::Value) -> String {
+    tool_label(name, args, true)
+}
+
+fn tool_label(name: &str, args: &serde_json::Value, past: bool) -> String {
     // Dedicated skill/memory tools are self-describing via their name + `name` arg.
     let dedicated = match name {
         "memory" => Some(memory_label(args)),
-        "skill_list" => Some(("Reading", "skill", String::new())),
-        "skill_read" => Some(("Reading", "skill", arg_name(args))),
-        "skill_write" => Some(("Updating", "skill", arg_name(args))),
+        "skill_list" => Some((Verb::Read, "skill", String::new())),
+        "skill_read" => Some((Verb::Read, "skill", arg_name(args))),
+        "skill_write" => Some((Verb::Update, "skill", arg_name(args))),
         _ => None,
     };
     // Fallback: generic read/write/edit hitting the workspace by path.
@@ -452,14 +505,15 @@ pub fn describe_tool_call(name: &str, args: &serde_json::Value) -> String {
             .and_then(classify_agent_path)
             .map(|(kind, item)| {
                 let verb = if matches!(name, "write" | "edit") {
-                    "Updating"
+                    Verb::Update
                 } else {
-                    "Reading"
+                    Verb::Read
                 };
                 (verb, kind, item)
             })
     });
     if let Some((verb, kind, item)) = labelled {
+        let verb = verb.word(past);
         return if item.is_empty() {
             let plural = if kind == "memory" { "memory notes" } else { "skills" };
             format!("{verb} {plural}")
@@ -470,14 +524,42 @@ pub fn describe_tool_call(name: &str, args: &serde_json::Value) -> String {
     format!("{name} {args}")
 }
 
+/// What a skill or memory call does to its store, worded by `word`.
+#[derive(Clone, Copy)]
+enum Verb {
+    Read,
+    Search,
+    Update,
+    Delete,
+    Move,
+}
+
+impl Verb {
+    /// The verb while the call runs, or once it has finished when `past`.
+    fn word(self, past: bool) -> &'static str {
+        match (self, past) {
+            (Verb::Read, false) => "Reading",
+            (Verb::Read, true) => "Read",
+            (Verb::Search, false) => "Searching",
+            (Verb::Search, true) => "Searched",
+            (Verb::Update, false) => "Updating",
+            (Verb::Update, true) => "Updated",
+            (Verb::Delete, false) => "Deleting",
+            (Verb::Delete, true) => "Deleted",
+            (Verb::Move, false) => "Moving",
+            (Verb::Move, true) => "Moved",
+        }
+    }
+}
+
 /// The verb and target of one `memory` op: reads list or open, the rest change.
-fn memory_label(args: &serde_json::Value) -> (&'static str, &'static str, String) {
+fn memory_label(args: &serde_json::Value) -> (Verb, &'static str, String) {
     let verb = match args.get("op").and_then(|v| v.as_str()) {
-        Some("write") | Some("edit") => "Updating",
-        Some("delete") => "Deleting",
-        Some("move") => "Moving",
-        Some("search") => "Searching",
-        _ => "Reading",
+        Some("write") | Some("edit") => Verb::Update,
+        Some("delete") => Verb::Delete,
+        Some("move") => Verb::Move,
+        Some("search") => Verb::Search,
+        _ => Verb::Read,
     };
     let item = match args.get("op").and_then(|v| v.as_str()) {
         Some("search") => args.get("query").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
@@ -620,6 +702,7 @@ pub(crate) mod tests {
                     name: "scout".into(),
                     task: Some("look".into()),
                     workspace: None,
+                    internal: true,
                 },
             ),
             (
@@ -668,6 +751,16 @@ pub(crate) mod tests {
                     phase: CompactionPhase::Finished,
                     reason: CompactionReason::SessionBudget,
                     messages: Some(12),
+                    report: Some(CompactionReport {
+                        model: Some("smol".into()),
+                        input_tokens: 40_000,
+                        usage: Some(Usage {
+                            prompt_tokens: Some(9_000),
+                            completion_tokens: Some(400),
+                            ..Default::default()
+                        }),
+                        summary: "The user is building a parser.".into(),
+                    }),
                 },
             ),
             (
@@ -720,6 +813,14 @@ pub(crate) mod tests {
                 "AskResolved",
                 StreamEvent::AskResolved {
                     request_id: "ask-1".into(),
+                },
+            ),
+            (
+                "AgentMessage",
+                StreamEvent::AgentMessage {
+                    from: "explore".into(),
+                    to: MAIN_AGENT.into(),
+                    text: "found the parser".into(),
                 },
             ),
             (
@@ -842,6 +943,7 @@ pub(crate) mod tests {
             | StreamEvent::SubagentPlan { .. }
             | StreamEvent::Subagent { .. }
             | StreamEvent::Notice { .. }
+            | StreamEvent::AgentMessage { .. }
             | StreamEvent::Compaction { .. }
             | StreamEvent::Retry { .. }
             | StreamEvent::Monitors { .. }
@@ -1125,6 +1227,7 @@ pub(crate) mod tests {
             name: "rust-reviewer".into(),
             task: None,
             workspace: None,
+            internal: false,
         })
         .unwrap();
         assert_eq!(

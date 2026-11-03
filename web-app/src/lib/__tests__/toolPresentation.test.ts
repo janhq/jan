@@ -248,6 +248,18 @@ describe('parseBashOutput', () => {
     expect(r.text).toBe('tail lines')
   })
 
+  // The current order: notices above the exit marker, which is the final line.
+  it('strips notices that come before a final exit marker', () => {
+    const r = parseBashOutput(
+      'tail lines\n[output truncated at 100 of 900 bytes]\n' +
+        '[sandbox: writes are limited to X.]\n[exit 2]'
+    )
+    expect(r.exit).toBe(2)
+    expect(r.truncated).toBe(true)
+    expect(r.sandboxNote).toBe('writes are limited to X.')
+    expect(r.text).toBe('tail lines')
+  })
+
   it('surfaces the sandbox hint separately from the body', () => {
     const r = parseBashOutput(
       "touch: cannot touch '/etc/x': Read-only file system\n[exit 1]\n" +

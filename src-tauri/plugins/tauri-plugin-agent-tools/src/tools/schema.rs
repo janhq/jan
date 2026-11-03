@@ -64,7 +64,7 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "read",
-                "description": "Read the contents of a UTF-8 text file. Output is truncated to 2000 lines or 64KB (whichever is hit first). Use offset/limit for large files. Image files (png/jpeg/gif/webp, detected by signature or extension) are returned as a vision image instead of text.",
+                "description": "Read the contents of a UTF-8 text file. Output is truncated to 2000 lines or 64KB (whichever is hit first), with a notice naming the offset to continue from; a single line over 64KB is cut and the notice says where. Use offset/limit for large files. Image files (png/jpeg/gif/webp, detected by their file signature, not the extension) are returned as a vision image instead of text.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -281,7 +281,7 @@ pub fn search_tool_schemas() -> Vec<Value> {
                     "properties": {
                         "pattern": { "type": "string", "description": "Glob pattern to match against each path, e.g. **/*.rs." },
                         "path": { "type": "string", "description": "Directory to search under, relative to the project root. Defaults to the root." },
-                        "limit": { "type": "integer", "description": "Maximum number of paths to return (default 1000)." }
+                        "limit": { "type": "integer", "description": "Maximum number of paths to return (default 1000). A notice says when more matched." }
                     },
                     "required": ["pattern"]
                 }
@@ -301,7 +301,7 @@ pub fn search_tool_schemas() -> Vec<Value> {
                         "ignore_case": { "type": "boolean", "description": "Match case-insensitively (default false)." },
                         "literal": { "type": "boolean", "description": "Treat pattern as a literal string rather than a regex (default false)." },
                         "context": { "type": "integer", "description": "Lines of context to include around each match (default 0)." },
-                        "limit": { "type": "integer", "description": "Maximum number of matches to return (default 100)." }
+                        "limit": { "type": "integer", "description": "Maximum number of matches to return (default 100). A notice says when more matched." }
                     },
                     "required": ["pattern"]
                 }

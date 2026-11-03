@@ -322,10 +322,13 @@ fn mark_parts_as_error(mut parts: Vec<serde_json::Value>) -> Vec<serde_json::Val
 /// reminder; `headline`, when set, is shown to the user at delivery as
 /// [`StreamEvent::Notice`]. Subagent completions carry no headline -- their
 /// `SubagentEnd` row already reported the fact -- while a monitor match has no
-/// other on-screen account.
+/// other on-screen account. `message` is set for a subagent's
+/// `message_main_agent` as `(from, text)`, announced at delivery as
+/// [`StreamEvent::AgentMessage`].
 pub(crate) struct BackgroundNotice {
     pub headline: Option<String>,
     pub text: String,
+    pub message: Option<(String, String)>,
 }
 
 #[async_trait]
@@ -1364,6 +1367,7 @@ impl CompositeToolInvoker {
                     queued.push(BackgroundNotice {
                         headline: None,
                         text: context,
+                        message: None,
                     });
                 }
                 for notice in report.notices {
@@ -1372,6 +1376,7 @@ impl CompositeToolInvoker {
                     queued.push(BackgroundNotice {
                         headline: Some(message.clone()),
                         text: message,
+                        message: None,
                     });
                 }
                 queue.lock().unwrap().extend(queued);
@@ -1491,6 +1496,7 @@ impl CompositeToolInvoker {
                 // an event the user needs announced, unlike a monitor match.
                 headline: None,
                 text: context,
+                message: None,
             });
         }
         for notice in outcome.notices {
@@ -1499,6 +1505,7 @@ impl CompositeToolInvoker {
             queued.push(BackgroundNotice {
                 headline: Some(message.clone()),
                 text: message,
+                message: None,
             });
         }
         if !queued.is_empty() {
@@ -2130,30 +2137,15 @@ pub(crate) const HIDDEN_PATH_REFUSED: &str = "refused: the Jan home";
 pub(crate) const PLAN_MODE_UNAVAILABLE: &str = "unavailable in plan_mode_read_only";
 pub(crate) const HOOK_DENIED: &str = "denied: ";
 
-/// Message for a tool blocked by the project's own deny list, naming the
-/// exact config file so the block is actionable, not mysterious.
-fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
-    format!(
-        "ERROR: tool '{name}' {DENIED_BY_POLICY} (see [tools] deny in {})",
-        crate::core::agent::project::agent_toml_path(project_root).display()
-    )
-}
-
-/// Refusal for a path or command reaching the Jan home. Structural, not a
-/// policy the user edits, so it points at the dedicated tools instead.
-fn hidden_path_msg(name: &str) -> String {
-    format!(
-        "ERROR: tool '{name}' {HIDDEN_PATH_REFUSED} (~/.jan) holds the agent's own \
-         configuration and state and is hidden from every tool -- do not try to reach it \
-         another way. Skills and memory are available through the skill_*/memory_* tools."
-    )
-}
-
-fn hard_deny_msg(name: &str, reason: DenyReason, project_root: &std::path::Path) -> String {
-    match reason {
-        DenyReason::Policy => denied_by_policy_msg(name, project_root),
-        DenyReason::Hidden => hidden_path_msg(name),
+/// Message for a tool blocked by a deny list. Names the setting rather than
+/// the file: the file sits in the hidden Jan home, which no tool can open.
+/// A tool the harness took from this run (a subagent's memory) is reported as
+/// missing instead, since no deny list the user can read mentions it.
+fn denied_by_policy_msg(name: &str, withheld: bool) -> String {
+    if withheld {
+        return format!("ERROR: tool '{name}' is not available to this run");
     }
+    format!("ERROR: tool '{name}' {DENIED_BY_POLICY} ([tools] deny in agent.toml)")
 }
 
 /// Rejection message for a mutation-capable tool call attempted in
@@ -2212,6 +2204,35 @@ fn plan_mode_read_only_msg(name: &str) -> String {
     format!("ERROR: tool '{name}' {PLAN_MODE_UNAVAILABLE} (plan mode is read-only)")
 }
 
+impl CompositeToolInvoker {
+    /// Whether this run can call `name`: not denied, and inside its allowlist.
+    fn offers(&self, name: &str) -> bool {
+        !self.permissions.is_denied(name)
+            && self.allowed_names.as_ref().is_none_or(|allowed| allowed.contains(name))
+    }
+
+    fn policy_deny_msg(&self, name: &str) -> String {
+        denied_by_policy_msg(name, self.permissions.withholds(name))
+    }
+
+    fn hard_deny_msg(&self, name: &str, reason: DenyReason) -> String {
+        match reason {
+            DenyReason::Policy => self.policy_deny_msg(name),
+            DenyReason::Hidden => {
+                let offered: Vec<&str> = tauri_plugin_agent_tools::tools::JAN_HOME_TOOLS
+                    .into_iter()
+                    .filter(|t| self.offers(t))
+                    .collect();
+                tauri_plugin_agent_tools::tools::hidden_home_refusal(
+                    name,
+                    HIDDEN_PATH_REFUSED,
+                    &offered,
+                )
+            }
+        }
+    }
+}
+
 #[async_trait]
 impl ToolInvoker for CompositeToolInvoker {
     fn background_notices(&self) -> Vec<BackgroundNotice> {
@@ -2221,9 +2242,10 @@ impl ToolInvoker for CompositeToolInvoker {
             .map(|ctx| ctx.bg.take_notices())
             .unwrap_or_default()
             .into_iter()
-            .map(|text| BackgroundNotice {
+            .map(|notice| BackgroundNotice {
                 headline: None,
-                text,
+                text: notice.text,
+                message: notice.message,
             })
             .collect();
         out.extend(
@@ -2233,6 +2255,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 .map(|u| BackgroundNotice {
                     headline: Some(u.headline),
                     text: u.text,
+                    message: None,
                 }),
         );
         // Hook output rides the same channel: a `context` answer has to reach
@@ -2251,6 +2274,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 .map(|n| BackgroundNotice {
                     headline: Some(n.headline),
                     text: n.text,
+                    message: None,
                 }),
         );
         out
@@ -2509,7 +2533,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        denied_by_policy_msg(name, &self.project_root),
+                        self.policy_deny_msg(name),
                     ));
                     continue;
                 }
@@ -2580,7 +2604,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        denied_by_policy_msg(name, &self.project_root),
+                        self.policy_deny_msg(name),
                     ));
                     continue;
                 }
@@ -2664,7 +2688,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        denied_by_policy_msg(name, &self.project_root),
+                        self.policy_deny_msg(name),
                     ));
                     continue;
                 }
@@ -2831,7 +2855,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     execute_builtin_with_diff(tool, &args, &self.streaming_tool_context(&id)).await
                 }
                 Decision::HardDeny(reason) => {
-                    (hard_deny_msg(name, reason, &self.project_root), None, None)
+                    (self.hard_deny_msg(name, reason), None, None)
                 }
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
@@ -4209,6 +4233,7 @@ async fn orchestrate_inner(
                     BackgroundNotice {
                         headline: Some(message.clone()),
                         text: message.clone(),
+                        message: None,
                     }
                 })
                 .collect();
@@ -4498,14 +4523,21 @@ impl Drop for SessionEndGuard {
 /// Manually compact `messages` for the given model, resolving the upstream from
 /// `args` and reusing the same summarization path as the reactive loop. Used by
 /// the TUI `/compact` command, which holds `OrchestrationArgs` + a model id but
-/// no `ModelInvoker`.
+/// no `ModelInvoker`. The summarizer's report rides along, `None` when there
+/// was nothing to compact.
 #[cfg(feature = "cli")]
 pub(crate) async fn compact_history(
     args: &OrchestrationArgs,
     model_id: &str,
     messages: &[serde_json::Value],
     keep_recent: usize,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<
+    (
+        Vec<serde_json::Value>,
+        Option<crate::core::agent::events::CompactionReport>,
+    ),
+    String,
+> {
     // `/compact` discards conversation exactly as the in-loop overflow retry
     // does, so it owes PreCompact the same warning. This path has no invoker to
     // hang the hooks off (it holds args and a model id, nothing more), so they
@@ -4755,6 +4787,10 @@ fn client_history(transcript: &Transcript, send_reasoning: bool) -> Vec<serde_js
     project(transcript, None, send_reasoning)
 }
 
+/// How the system note recorded when a run hits its money ceiling starts, so
+/// a resume can tell that history apart from a prompt.
+pub(crate) const COST_CEILING_MARKER: &str = "[cost ceiling reached]";
+
 /// How many messages the request this run is about carries: the `message_count`
 /// a hook payload reports. The projection is the only thing that knows now that
 /// there is no live list to measure, so the count is projected rather than kept
@@ -4808,8 +4844,8 @@ fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Valu
 /// the money ceiling agree with each other while both undercounted.
 ///
 /// Every in-run compaction goes through here, so this is where it is reported:
-/// `Compaction { Started }` before the summarizer call and `Finished` or
-/// `Failed` after it. A plan with nothing to drop sends nothing, since no
+/// `Compaction { Started }` before the summarizer call and `Finished` (with
+/// the summarizer's report) or `Failed` after it. A plan with nothing to drop sends nothing, since no
 /// summarizer call was made.
 async fn compact(
     transcript: &mut Transcript,
@@ -4824,27 +4860,28 @@ async fn compact(
         return Ok(None);
     };
     let summarized = plan.summarize.len();
-    let report = |phase, messages| {
+    let announce = |phase, messages, report| {
         let _ = events.send(StreamEvent::Compaction {
             phase,
             reason,
             messages,
+            report,
         });
     };
-    report(CompactionPhase::Started, None);
-    let (summary, usage) =
+    announce(CompactionPhase::Started, None, None);
+    let (summary, report) =
         match crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model)
             .await
         {
             Ok(done) => done,
             Err(error) => {
-                report(CompactionPhase::Failed, None);
+                announce(CompactionPhase::Failed, None, None);
                 return Err(error);
             }
         };
-    budget.record_side_request(&usage);
+    budget.record_side_request(&report.usage);
     transcript.record_compaction(summary, plan.covers);
-    report(CompactionPhase::Finished, Some(summarized));
+    announce(CompactionPhase::Finished, Some(summarized), Some(report));
     Ok(Some(summarized))
 }
 
@@ -4923,7 +4960,7 @@ async fn run_turn_cycle(
                 transcript.record_message(serde_json::json!({
                     "role": "system",
                     "content": format!(
-                        "[cost ceiling reached] This run stopped after spending about \
+                        "{COST_CEILING_MARKER} This run stopped after spending about \
                          ${spent:.4} against its ${max:.4} ceiling. The task may be \
                          unfinished; raising --max-budget-usd and resuming continues it."
                     ),
@@ -4969,6 +5006,13 @@ async fn run_turn_cycle(
                 if let Some(headline) = &notice.headline {
                     let _ = events.send(StreamEvent::Notice {
                         text: headline.clone(),
+                    });
+                }
+                if let Some((from, text)) = &notice.message {
+                    let _ = events.send(StreamEvent::AgentMessage {
+                        from: from.clone(),
+                        to: crate::core::agent::events::MAIN_AGENT.to_string(),
+                        text: text.clone(),
                     });
                 }
             }
@@ -6731,14 +6775,17 @@ mod tests {
 
         drop(tx);
         let mut phases = Vec::new();
+        let mut reports = Vec::new();
         while let Some(ev) = rx.recv().await {
             if let StreamEvent::Compaction {
                 phase,
                 reason: CompactionReason::Preflight,
+                report,
                 ..
             } = ev
             {
                 phases.push(phase);
+                reports.push(report);
             }
         }
         assert_eq!(
@@ -6746,6 +6793,12 @@ mod tests {
             [CompactionPhase::Started, CompactionPhase::Finished],
             "a prefix break the user did not ask for has to be announced"
         );
+        // The finish says what the summarizer did, so `/agents` can list it.
+        assert!(reports[0].is_none(), "nothing is known before the call");
+        let report = reports[1].as_ref().expect("the finish carries its report");
+        assert_eq!(report.summary, "CONDENSED");
+        assert_eq!(report.model.as_deref(), Some("m"));
+        assert!(report.input_tokens > 500, "the folded span: {}", report.input_tokens);
     }
 
     /// The other half of the contract: under the trigger nothing is compacted
@@ -7633,6 +7686,7 @@ mod tests {
                 .map(|text| BackgroundNotice {
                     headline: None,
                     text,
+                    message: None,
                 })
                 .collect()
         }
@@ -7786,6 +7840,7 @@ mod tests {
             vec![BackgroundNotice {
                 headline: Some("Monitor mon-1: condition 'ok' matched".to_string()),
                 text: "Monitor 'mon-1' condition 'ok' matched on build.log:\nBUILD OK".to_string(),
+                message: None,
             }]
         }
         fn background_pending(&self) -> bool {
@@ -8461,6 +8516,7 @@ mod tests {
                     phase: CompactionPhase::Finished,
                     reason: CompactionReason::ContextOverflow,
                     messages: Some(_),
+                    ..
                 }
             )),
             "the overflow compaction is announced"
@@ -11386,6 +11442,7 @@ mod tests {
         invoker.hook_notices_queue.lock().unwrap().push(BackgroundNotice {
             headline: None,
             text: "hook said so".to_string(),
+            message: None,
         });
         assert!(invoker.background_pending(), "the hook answer is owed");
         let waited = tokio::time::timeout(
@@ -12181,7 +12238,39 @@ mod tests {
         });
         let out = invoker.invoke(&[call]).await.unwrap();
         let _ = std::fs::remove_dir_all(&root);
-        assert!(out[0].content.starts_with("ERROR:"), "{}", out[0].content);
+        // Withheld by the harness, not by a deny list the child could go read.
+        assert_eq!(out[0].content, "ERROR: tool 'memory' is not available to this run");
+    }
+
+    /// A refusal for the Jan home names only the memory/skill tools this run
+    /// can call: the main agent gets `memory`, a subagent does not, and a run
+    /// narrowed to `read` is pointed at nothing.
+    #[tokio::test]
+    async fn the_jan_home_refusal_names_only_tools_the_run_has() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut invoker =
+            build_prompting_invoker(root.clone(), tx, Arc::new(Mutex::new(HashMap::new())));
+        let jan = root.join("jan-home");
+        std::fs::create_dir_all(&jan).unwrap();
+        invoker.hidden_root = Some(jan.clone());
+        let call = json!({
+            "id": "h1",
+            "type": "function",
+            "function": { "name": "read", "arguments": json!({"path": "jan-home/x"}).to_string() }
+        });
+        let main = invoker.invoke(std::slice::from_ref(&call)).await.unwrap()[0].content.clone();
+        assert!(main.contains(HIDDEN_PATH_REFUSED), "{main}");
+        assert!(main.ends_with("use: memory, skill_list, skill_read, skill_write."), "{main}");
+        invoker.permissions = ToolPermissions::allow_all()
+            .with_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL);
+        let child = invoker.invoke(std::slice::from_ref(&call)).await.unwrap()[0].content.clone();
+        assert!(child.ends_with("use: skill_list, skill_read, skill_write."), "{child}");
+        invoker.allowed_names = Some(["read".to_string()].into_iter().collect());
+        let narrow = invoker.invoke(&[call]).await.unwrap()[0].content.clone();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(!narrow.contains("memory") && !narrow.contains("skill"), "{narrow}");
+        assert!(narrow.ends_with("do not try to reach it another way."), "{narrow}");
     }
 
     /// A subagent's prompt carries no memory section: no index, no memory
@@ -12600,7 +12689,7 @@ mod tests {
             )
             .await;
         assert!(steered.contains("Queued"), "{steered}");
-        assert_eq!(inbox.drain().len(), 1);
+        assert_eq!(inbox.drain().0.len(), 1);
 
         let stopped = invoker
             .handle_subagent_tool("stop_subagent", &json!({ "name": "w" }))
@@ -12738,7 +12827,7 @@ mod tests {
         let postman_inbox = inbox.clone();
         let postman = tokio::spawn(async move {
             while let Some(request) = requests.recv().await {
-                let _ = request.reply.send(postman_inbox.drain());
+                let _ = request.reply.send(postman_inbox.drain().0);
             }
         });
 
@@ -12777,7 +12866,7 @@ mod tests {
             assert_eq!(steered, "actually, check loop.rs", "a plain user turn");
         }
         assert!(
-            inbox.drain().is_empty(),
+            inbox.drain().0.is_empty(),
             "the boundary drain consumed the message exactly once"
         );
         drop(steering);

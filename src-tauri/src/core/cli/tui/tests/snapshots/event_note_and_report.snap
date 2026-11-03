@@ -1,0 +1,19 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: doc
+---
+-- expanded
+
+• worktree:
+  └ path    /tmp/wt-a
+    branch  jan/agent/a
+-- collapsed
+
+• worktree:
+  └ path    /tmp/wt-a
+    branch  jan/agent/a
+-- narrow (28)
+
+• worktree:
+  └ path    /tmp/wt-a
+    branch  jan/agent/a

@@ -38,6 +38,7 @@ export type EventTag =
   | "subagent_plan"
   | "subagent"
   | "notice"
+  | "agent_message"
   | "compaction"
   | "retry"
   | "monitors"
@@ -75,6 +76,18 @@ export type CompactionPhase = "started" | "finished" | "failed"
 
 /** Which path asked for a [`StreamEvent::Compaction`]. */
 export type CompactionReason = "preflight" | "context_overflow" | "session_budget"
+
+/** What a finished compaction did, carried on [`StreamEvent::Compaction`] so a consumer can show the summarizer as an agent of its own: what it read, which model wrote the summary, what it cost and what it wrote. */
+export interface CompactionReport {
+  /** The model that wrote the summary: the `smol` model when it answered, else the run's own. `None` when no model answered and the history was folded into Jan's fallback note instead. */
+  "model"?: string | null
+  /** Estimated tokens of the span that was folded, before it was clamped for the summarizer: how much conversation the summary stands in for. */
+  "input_tokens": number
+  /** The summarizer's own reported usage, every request it took included. */
+  "usage"?: Usage | null
+  /** The summary that now stands in for the folded span. */
+  "summary": string
+}
 
 /** What a host says a tool does, which decides how the loop treats it. Absent means opaque: prompted unless `auto_approve`, sequential, withheld in Plan mode -- the plugin/MCP default. */
 export type HostCapability = "read" | "actuator"
@@ -314,6 +327,8 @@ export interface SubagentStartEvent {
   "task"?: string | null
   /** Where the child works: its own worktree and branch, or the checkout it was given, marked when read-only. */
   "workspace"?: string | null
+  /** An agent Jan runs for itself (memory tidy) rather than one the model dispatched. A consumer lists it with the other subagents, marked as Jan's own, and keeps its run out of the conversation. */
+  "internal"?: boolean
   "type": "subagent_start"
 }
 
@@ -355,11 +370,20 @@ export interface NoticeEvent {
   "type": "notice"
 }
 
-/** The loop is summarizing part of the conversation to make room. Sent as `Started` before the summarizer call and `Finished` or `Failed` after it, so a consumer can show progress for what is otherwise a silent round trip. `reason` says which path asked. `messages` is how many were folded into the summary, `None` except on `Finished`. Display-only and never journaled; the compacted history itself arrives as `MessagesUpdated`. */
+/** A message between the main agent and one of its subagents, emitted when it is delivered at the reader's turn boundary rather than when it was queued, so the transcript reads in the order the reader saw things. `from` and `to` name the agents: a subagent by its worker name, the main agent as [`MAIN_AGENT`]. A message to a subagent (the `message_subagent` tool, or the user steering it from `/agents`) is emitted on the child's own stream, so it reaches the parent wrapped in `Subagent`; a subagent's `message_main_agent` is emitted on the main run's. Display-only: the message itself is already in the reader's history. */
+export interface AgentMessageEvent {
+  "from": string
+  "to": string
+  "text": string
+  "type": "agent_message"
+}
+
+/** The loop is summarizing part of the conversation to make room. Sent as `Started` before the summarizer call and `Finished` or `Failed` after it, so a consumer can show progress for what is otherwise a silent round trip. `reason` says which path asked. `messages` is how many were folded into the summary and `report` what the summarizer did, both `None` except on `Finished`. Display-only and never journaled; the compacted history itself arrives as `MessagesUpdated`. */
 export interface CompactionEvent {
   "phase": CompactionPhase
   "reason": CompactionReason
   "messages"?: number | null
+  "report"?: CompactionReport | null
   "type": "compaction"
 }
 
@@ -512,6 +536,7 @@ export type StreamEvent =
   | SubagentPlanEvent
   | SubagentEvent
   | NoticeEvent
+  | AgentMessageEvent
   | CompactionEvent
   | RetryEvent
   | MonitorsEvent
@@ -545,6 +570,7 @@ export interface EventByTag {
   "subagent_plan": SubagentPlanEvent
   "subagent": SubagentEvent
   "notice": NoticeEvent
+  "agent_message": AgentMessageEvent
   "compaction": CompactionEvent
   "retry": RetryEvent
   "monitors": MonitorsEvent

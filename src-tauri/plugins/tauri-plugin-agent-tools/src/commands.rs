@@ -81,14 +81,18 @@ pub struct ToolResult {
 /// `content` plus a line per hook matcher that still names `tool` by an old
 /// name (`bash`, `memory_write`, ...). The CLI reports hook load notices once
 /// at run start; this surface has no run around a call, so they ride on the
-/// call of the tool the stale matcher meant.
+/// call of the tool the stale matcher meant. A shell result keeps its exit
+/// marker as the final line, so the notices go above it.
 fn with_renamed_tool_notices(
     tool: &str,
     mut content: String,
     hooks: &crate::tools::hooks::HookSet,
 ) -> String {
     for notice in hooks.renamed_notices(tool) {
-        content.push_str(&format!("\n[hook config: {notice}]"));
+        crate::tools::handlers::insert_before_exit_marker(
+            &mut content,
+            &format!("\n[hook config: {notice}]"),
+        );
     }
     content
 }
@@ -1540,7 +1544,9 @@ mod tests {
             Path::new("config.toml"),
         );
         let out = with_renamed_tool_notices("shell", "ok\n[exit 0]".into(), &hooks);
-        assert!(out.starts_with("ok\n[exit 0]\n[hook config: "), "{out}");
+        // Above the exit marker, which stays the final line.
+        assert!(out.starts_with("ok\n[hook config: "), "{out}");
+        assert!(out.ends_with("\n[exit 0]"), "{out}");
         assert!(out.contains("now `shell`"), "{out}");
         assert_eq!(with_renamed_tool_notices("read", "x".into(), &hooks), "x");
         assert_eq!(with_renamed_tool_notices("memory", "x".into(), &hooks), "x");

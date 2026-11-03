@@ -43,6 +43,7 @@ EVENT_TAGS: tuple[str, ...] = (
     "subagent_plan",
     "subagent",
     "notice",
+    "agent_message",
     "compaction",
     "retry",
     "monitors",
@@ -94,6 +95,7 @@ EventTag = Literal[
     "subagent_plan",
     "subagent",
     "notice",
+    "agent_message",
     "compaction",
     "retry",
     "monitors",
@@ -128,6 +130,17 @@ CompactionPhase = Union[Literal["started", "finished"], Literal["failed"]]
 
 # Which path asked for a [`StreamEvent::Compaction`].
 CompactionReason = Union[Literal["preflight"], Literal["context_overflow"], Literal["session_budget"]]
+
+# What a finished compaction did, carried on [`StreamEvent::Compaction`] so a consumer can show the summarizer as an agent of its own: what it read, which model wrote the summary, what it cost and what it wrote.
+class CompactionReport(TypedDict):
+    # The model that wrote the summary: the `smol` model when it answered, else the run's own. `None` when no model answered and the history was folded into Jan's fallback note instead.
+    model: NotRequired[Union[str, None]]
+    # Estimated tokens of the span that was folded, before it was clamped for the summarizer: how much conversation the summary stands in for.
+    input_tokens: int
+    # The summarizer's own reported usage, every request it took included.
+    usage: NotRequired[Union[Usage, None]]
+    # The summary that now stands in for the folded span.
+    summary: str
 
 # What a host says a tool does, which decides how the loop treats it. Absent means opaque: prompted unless `auto_approve`, sequential, withheld in Plan mode -- the plugin/MCP default.
 HostCapability = Union[Literal["read"], Literal["actuator"]]
@@ -346,6 +359,8 @@ class SubagentStartEvent(TypedDict):
     task: NotRequired[Union[str, None]]
     # Where the child works: its own worktree and branch, or the checkout it was given, marked when read-only.
     workspace: NotRequired[Union[str, None]]
+    # An agent Jan runs for itself (memory tidy) rather than one the model dispatched. A consumer lists it with the other subagents, marked as Jan's own, and keeps its run out of the conversation.
+    internal: NotRequired[bool]
     type: Literal["subagent_start"]
 
 class SubagentQueuedEvent(TypedDict):
@@ -386,12 +401,21 @@ class NoticeEvent(TypedDict):
     text: str
     type: Literal["notice"]
 
+# `item/agent_message`
+AgentMessageEvent = TypedDict("AgentMessageEvent", {
+    "from": str,
+    "to": str,
+    "text": str,
+    "type": Literal["agent_message"],
+})
+
 class CompactionEvent(TypedDict):
     """`item/compaction`"""
 
     phase: CompactionPhase
     reason: CompactionReason
     messages: NotRequired[Union[int, None]]
+    report: NotRequired[Union[CompactionReport, None]]
     type: Literal["compaction"]
 
 class RetryEvent(TypedDict):
@@ -543,6 +567,7 @@ StreamEvent = Union[
     SubagentPlanEvent,
     SubagentEvent,
     NoticeEvent,
+    AgentMessageEvent,
     CompactionEvent,
     RetryEvent,
     MonitorsEvent,

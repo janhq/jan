@@ -1,0 +1,29 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: doc
+---
+-- expanded
+
+• Worked · 2 tool calls
+  └ Ran 2 tool calls
+    • Planned 0 phases
+      └ ok
+    • Asked a question
+      └ answered
+
+• ◈ PLAN · read only -- investigate, then propose a plan for review
+-- collapsed
+
+• Worked · 2 tool calls
+  └ Ran 2 tool calls
+
+• ◈ PLAN · read only -- investigate, then propose a plan for review
+-- narrow (28)
+
+• Worked · 2 tool calls
+  └ Ran 2 tool calls
+
+• ◈ PLAN · read only --
+  investigate, then
+  propose a plan for
+  review
