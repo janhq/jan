@@ -45,7 +45,9 @@ import {
 } from '../chatOrchestration'
 import { dropConversationClientThread } from '../conversationClientTools'
 import { defaultConversationCapabilities } from '../conversationCapabilities'
-import { createChatRunStream, taskStatusRows } from '../chatRunTransport'
+import { canContinueStoppedTurn, createChatRunStream, taskStatusRows } from '../chatRunTransport'
+import { expandChatRunContext, RUN_CONTEXT_PART } from '../chatRunContext'
+import { PING_OPEN } from '../coworkPing'
 import { readUIMessageStream } from 'ai'
 import { resolveScopedChatToolPolicy } from '../scopedChatToolPolicy'
 
@@ -858,6 +860,16 @@ describe('terminal flush ordering through the real run stream', () => {
     expect(finalStatuses(message)).toEqual(['error'])
   })
 
+  it('budget cap with an owed child persists a cancellation context that a later Continue reloads', async () => {
+    const { message } = await run({ maxSteps: 1, sendSecond: async () => streamOf([]) })
+    expect(canContinueStoppedTurn(message.metadata, message.parts)).toBe(true)
+    const stored = message.parts.filter((p) => p.type === RUN_CONTEXT_PART) as Array<{ data: { text: string } }>
+    expect(stored).toHaveLength(1)
+    expect(stored[0].data.text).toMatch(/cancelled before it finished because this run ended/)
+    const reloaded = expandChatRunContext([JSON.parse(JSON.stringify(message))])
+    expect(reloaded.some((m) => m.role === 'user' && JSON.stringify(m.parts).includes(PING_OPEN) && JSON.stringify(m.parts).includes('do not wait for it'))).toBe(true)
+  })
+
   it('abort terminal: Stop mid-child persists the child as error', async () => {
     const { message } = await run({ abortAfterDispatch: true, sendSecond: async () => streamOf([]) })
     expect(finalStatuses(message)).toEqual(['error'])
@@ -870,6 +882,41 @@ describe('terminal flush ordering through the real run stream', () => {
     expect(state.statusRows.size).toBe(0)
     expect(state.statusQueue).toHaveLength(0)
     expect(order).toEqual(['finally'])
+  })
+})
+
+describe('run-owned child notices', () => {
+  it('ending one run never delivers its child notice to another run of the same thread', async () => {
+    const a = ctxFor()
+    const bController = new AbortController()
+    const b = { ...a.ctx, signal: bController.signal }
+    const gates: Array<() => void> = []
+    let n = 0
+    hoisted.childStep.mockImplementation((o: { signal: AbortSignal }) => {
+      if (++n === 1) {
+        return new Promise((_r, reject) => o.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }))
+      }
+      return new Promise((resolve) => gates.push(() => resolve(textStep('beta answer'))))
+    })
+    await runChatTask({ subagents: [{ name: 'alpha', task: 'x' }] }, 'ka', a.ctx)
+    await runChatTask({ subagents: [{ name: 'beta', task: 'x' }] }, 'kb', b)
+    await settle()
+    const inboxA = chatRunInbox(a.ctx.threadId, a.ctx.signal)
+    const inboxB = chatRunInbox(a.ctx.threadId, b.signal)
+    const owedA = inboxA.closeRun!()
+    expect(owedA).toHaveLength(1)
+    expect(owedA[0]).toContain('alpha')
+    finalizeChatRun(a.ctx.threadId, a.ctx.signal)
+    await settle(40)
+    expect(inboxB.take()).toEqual([])
+    gates.forEach((g) => g())
+    await settle()
+    const taken = inboxB.take()
+    expect(taken).toHaveLength(1)
+    expect(taken[0]).toContain('beta answer')
+    expect(taken.join('\n')).not.toContain('alpha')
+    expect(inboxA.take()).toEqual([])
+    expect(chatRunInbox(a.ctx.threadId, a.ctx.signal).closeRun!()).toEqual([])
   })
 })
 

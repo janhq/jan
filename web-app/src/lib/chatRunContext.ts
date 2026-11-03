@@ -1,5 +1,6 @@
 import type { UIMessage } from 'ai'
 import { PING_OPEN, PING_CLOSE } from './coworkPing'
+import { truncateUtf16 } from './truncateUtf16'
 
 /**
  * `data-run-context` UI part: the pings (finished subagents, monitor events)
@@ -14,9 +15,19 @@ export const RUN_CONTEXT_PART = 'data-run-context'
 /** Upper bound (chars) of the text one part carries. */
 export const RUN_CONTEXT_MAX_CHARS = 8192
 
-/** Bound ping text to what one `data-run-context` part may carry. */
+/** Appended when a single ping exceeds the bound (counted inside the bound). */
+export const RUN_CONTEXT_TRUNCATION_MARKER = `\n\n[truncated: notice exceeded ${RUN_CONTEXT_MAX_CHARS} characters]`
+
+/** The canonical bounded text of ONE ping: at most RUN_CONTEXT_MAX_CHARS UTF-16
+ * units, marker included, never cut inside a surrogate pair. The live replay and
+ * the persisted `data-run-context` part both use exactly this text. */
 export function boundRunContextText(text: string): string {
-  return text.length > RUN_CONTEXT_MAX_CHARS ? text.slice(0, RUN_CONTEXT_MAX_CHARS) : text
+  return truncateUtf16(text, RUN_CONTEXT_MAX_CHARS, RUN_CONTEXT_TRUNCATION_MARKER)
+}
+
+/** The marked user turn a ping is replayed to the model as (live and reload). */
+export function runContextPingMessage(id: string, text: string): UIMessage {
+  return { id, role: 'user', parts: [{ type: 'text', text: `${PING_OPEN}\n${text}\n${PING_CLOSE}` }] } as UIMessage
 }
 
 /** Whether `data` is exactly `{ text: <non-empty string within the bound> }`. */
@@ -63,11 +74,7 @@ export function expandChatRunContext(messages: UIMessage[]): UIMessage[] {
       const data = (part as { data?: unknown }).data
       if (!isRunContextData(data)) continue
       flush()
-      out.push({
-        id: `${message.id}_ctx${pings++}`,
-        role: 'user',
-        parts: [{ type: 'text', text: `${PING_OPEN}\n${data.text}\n${PING_CLOSE}` }],
-      } as UIMessage)
+      out.push(runContextPingMessage(`${message.id}_ctx${pings++}`, data.text))
     }
     flush()
   }

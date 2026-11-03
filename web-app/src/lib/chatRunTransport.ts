@@ -4,8 +4,7 @@ import { runTurn, type PendingToolCall, type ToolOutcome, type RunOutcome } from
 import { STOPPED_TOOL_ERROR, untilAborted } from './stopped-tool-calls'
 import { CHAT_RUN_NOTICE_METADATA, isChatRunNotice } from './chatRunNotice'
 import { encodeToolImageSentinel } from './tool-image-sentinel'
-import { PING_OPEN, PING_CLOSE } from './coworkPing'
-import { RUN_CONTEXT_PART, boundRunContextText } from './chatRunContext'
+import { RUN_CONTEXT_PART, boundRunContextText, runContextPingMessage } from './chatRunContext'
 
 /** The existing runTurn inbox lane (SubagentInbox/MonitorLane pings), as text. */
 export type ChatRunInbox = {
@@ -17,6 +16,11 @@ export type ChatRunInbox = {
    * `data-task-status` UI parts (id per run, so a later row replaces the
    * earlier one); never replayed to the model. */
   takeStatus?: () => unknown[]
+  /** Terminal hand-off, called once BEFORE the run's controller aborts and the
+   * final flush: the run's still-owned model-visible notices (undrained child
+   * results, and cancellation notices for children that never delivered). The
+   * stream persists them as run context. Must be idempotent (later calls: []). */
+  closeRun?: () => string[]
   /** Per-run cleanup of everything the run owns (status rows/queue). Called
    * once after the final status flush, also when the consumer cancels, and
    * before `onFinally`. Must be idempotent. */
@@ -182,6 +186,23 @@ export function createChatRunStream(options: {
         return out.filter(m => m.role !== 'assistant' || m.parts.length > 0)
       }
       let step = 0
+      // One canonical bounded notice per ping: the SAME text is replayed live and
+      // persisted as its own `data-run-context` part, so reload never diverges.
+      const recordPings = (taken: string[]): string[] => {
+        const bounded = taken.map(boundRunContextText).filter(text => text.length > 0)
+        for (const text of bounded) {
+          emit({ type: RUN_CONTEXT_PART, data: { text } } as UIMessageChunk)
+          pingMarks.push({ at: completed?.parts.length ?? 0, message: runContextPingMessage(`${id}:ping:${pingMarks.length}`, text) })
+        }
+        return bounded
+      }
+      // Terminal: a run that ends (cap, error, stop) with children still owed must
+      // tell the model, not only the status display. Runs before the abort.
+      const closeRunContext = () => {
+        let owed: string[] = []
+        try { owed = inbox?.closeRun?.() ?? [] } catch { /* best effort */ }
+        recordPings(owed)
+      }
       const seenCalls = new Set<string>()
       const id = options.messageId
       emit({ type: 'start', messageId: id })
@@ -201,12 +222,10 @@ export function createChatRunStream(options: {
               flushTaskStatus()
               const taken = inbox.take()
               flushTaskStatus()
-              // Persisted copy for reload only (`expandChatRunContext`). Emitted to the
-              // UI stream, never through the canonical `history` branch, so the live
-              // run replays these pings once, from `pingMarks`.
-              if (taken.length) emit({ type: RUN_CONTEXT_PART, data: { text: boundRunContextText(taken.join('\n')) } } as UIMessageChunk)
-              if (taken.length) pingMarks.push({ at: completed?.parts.length ?? 0, message: { id: `${id}:ping:${pingMarks.length}`, role: 'user', parts: [{ type: 'text', text: `${PING_OPEN}\n${taken.join('\n')}\n${PING_CLOSE}` }] } as UIMessage })
-              return taken
+              // Persisted copy for reload (`expandChatRunContext`). Emitted to the UI
+              // stream, never through the canonical `history` branch, so the live run
+              // replays each ping once, from `pingMarks`, with the identical text.
+              return recordPings(taken)
             },
             pending: () => inbox.pending(),
             wait: () => inbox.wait(controller.signal),
@@ -342,6 +361,7 @@ export function createChatRunStream(options: {
         },
       }).then(outcome => {
         notify(outcome)
+        closeRunContext()
         endRun('Chat run ended')
         flushTaskStatus()
         if (outcome.stoppedBy === 'steps' || outcome.stoppedBy === 'tokens') {
@@ -360,10 +380,12 @@ export function createChatRunStream(options: {
       }).catch(error => {
         const errorText = error instanceof Error ? error.message : String(error)
         notify({ messages: completed ? [...options.messages, completed] : options.messages, steps: step, usage: null, sessionTokens: 0, stoppedBy: controller.signal.aborted ? 'aborted' : 'error', errorText })
+        closeRunContext()
         endRun('Chat run failed')
         flushTaskStatus()
         emit({ type: 'error', errorText })
       }).finally(() => {
+        closeRunContext()
         endRun('Chat run ended')
         options.signal.removeEventListener('abort', abort)
         try {
