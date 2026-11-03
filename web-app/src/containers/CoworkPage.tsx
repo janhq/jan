@@ -2,7 +2,6 @@ import { updateThreadProject } from '@/lib/threadProject'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useNavigate } from '@tanstack/react-router'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
-import { useHomeMode } from '@/hooks/useHomeMode'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import ChatInput from '@/containers/ChatInput'
 import { ConversationColumn } from '@/components/ai-elements/conversation-column'
@@ -30,6 +29,7 @@ import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
 import { getModelDisplayName, getProviderTitle } from '@/lib/utils'
 import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
+import { ensureCoworkRecorded } from '@/lib/coworkSync'
 import { INIT_PROMPT, runSlashCommand, SLASH_COMMANDS } from '@/lib/coworkCommands'
 import {
   compactMessages,
@@ -599,6 +599,11 @@ export function CoworkPage() {
           ? [userTurn(text, attachments?.media, attachments?.files)]
           : []
         syncLive()
+
+        // The host reads the session record before the first tool, so the
+        // accepted run's (possibly still empty) session must be durable first.
+        await ensureCoworkRecorded(sid)
+        controller.signal.throwIfAborted()
 
         let files = attachments?.files
         const baseMessages = current?.messages ?? []
@@ -1777,10 +1782,9 @@ export function CoworkPage() {
                     <CoworkBudgetNotice
                       kind="tokens"
                       onCompact={() => void handleCompact()}
-                      onNewSession={() => {
-                        useHomeMode.getState().setMode('cowork')
-                        navigate({ to: route.home })
-                      }}
+                      // Home is the unified chat surface. Legacy sessions stay
+                      // in the store; this only leaves the full one behind.
+                      onNewConversation={() => navigate({ to: route.home })}
                     />
                   )}
                 </ConversationContent>

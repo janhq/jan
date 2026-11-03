@@ -115,6 +115,14 @@ pub async fn create_thread<R: Runtime>(
     Ok(thread)
 }
 
+/// Stable prefix of errors meaning the thread no longer exists on disk. The web
+/// layer matches it to tell a permanent missing thread from a transient failure.
+pub const THREAD_MISSING_ERROR_CODE: &str = "thread_missing";
+
+fn thread_missing_error(detail: impl std::fmt::Display) -> String {
+    format!("{THREAD_MISSING_ERROR_CODE}: {detail}")
+}
+
 /// Sidecar files a thread directory may hold besides thread.json/messages.jsonl.
 /// Allowlisted so the command can never address an arbitrary file name.
 const THREAD_EXTRA_NAMES: &[&str] = &["cowork"];
@@ -167,9 +175,9 @@ pub async fn write_thread_extra<R: Runtime>(
     if create.unwrap_or(false) {
         ensure_thread_dir_exists(&data_folder, &thread_id)?;
     } else if !get_thread_metadata_path(&data_folder, &thread_id)?.exists() {
-        return Err(format!(
+        return Err(thread_missing_error(format!(
             "Thread '{thread_id}' has no thread.json; refusing to create it from a sidecar write"
-        ));
+        )));
     }
     let data = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
     write_file_atomic(&path, &data)
@@ -197,11 +205,11 @@ pub async fn modify_thread<R: Runtime>(
     let _guard = lock.lock().await;
     let thread_dir = get_thread_dir(&data_folder, thread_id)?;
     if !thread_dir.exists() {
-        return Err("Thread directory does not exist".to_string());
+        return Err(thread_missing_error("Thread directory does not exist"));
     }
     let path = get_thread_metadata_path(&data_folder, thread_id)?;
     if !path.is_file() {
-        return Err("Thread does not exist".into());
+        return Err(thread_missing_error("Thread does not exist"));
     }
     // Ordinary whole-record updates are not consent authority. A stale UI
     // snapshot must not restore a revoked grant (or erase a newer grant).

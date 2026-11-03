@@ -111,6 +111,28 @@ export async function flushCowork(): Promise<void> {
   await persistence?.flush()
 }
 
+/**
+ * Durably record an ACCEPTED run's session (even while still empty) so the host
+ * can read its record before the first tool call. Empty sessions are otherwise
+ * never written; only a run that was accepted calls this.
+ */
+export async function ensureCoworkRecorded(id: string): Promise<void> {
+  // Fail closed outside Tauri: there is no host to read the record, so a run
+  // must not proceed (and browser tools are deliberately not enabled instead).
+  if (!isPlatformTauri()) throw new Error('Cowork persistence requires the desktop app')
+  await startCoworkSync()
+  const session = useCoworkSessions.getState().sessions.find((s) => s.id === id)
+  if (!session) throw new Error(`Cowork session ${id} is not available to record`)
+  if (session.unavailable) throw new Error(`Cowork session ${id} is unavailable and cannot be recorded`)
+  if (!persistence) throw new Error('Cowork persistence is unavailable')
+  // Only a not-yet-durable session needs a write. An already durable one is
+  // not re-queued, but still settles its own pending rollback / in-flight
+  // delete via flushSession (a no-op with no storage calls when clean).
+  if (!persistence.isPersisted(id)) persistence.schedule(session, { allowEmpty: true })
+  await persistence.flushSession(id)
+  if (!persistence.isPersisted(id)) throw new Error(`Cowork session ${id} was not recorded`)
+}
+
 export function startCoworkSync(): Promise<void> {
   if (!isPlatformTauri()) return Promise.resolve()
   startPromise ??= doStart().catch((e) => {
@@ -166,8 +188,25 @@ async function doStart() {
 
   const p = createCoworkPersistence(invoke, {
     onThreadWritten: upsertThread,
-    onThreadRemoved: removeThread,
+    onThreadRemoved: (id) => {
+      removeThread(id)
+      // The conversation is gone: its persistent "could not be saved" warning
+      // would otherwise linger forever.
+      toast.dismiss(`cowork-missing-thread-${id}`)
+    },
     onError: (id, e) => console.warn(`[cowork] write failed for ${id}:`, e),
+    onThreadMissing: (id) => {
+      // Keep the readable in-memory session (delete/export still work); it is
+      // flagged so it is never written back or recreated from a stale snapshot.
+      useCoworkSessions.setState((s) => ({
+        sessions: s.sessions.map((x) => (x.id === id ? { ...x, unavailable: 'missing-thread' as const } : x)),
+      }))
+      toast.warning('A Cowork conversation could not be saved', {
+        id: `cowork-missing-thread-${id}`,
+        description: 'Its stored thread is missing, so changes are no longer saved. You can still read, export or delete it.',
+        duration: Infinity,
+      })
+    },
   })
   p.adopt(loaded.threads)
   persistence = p

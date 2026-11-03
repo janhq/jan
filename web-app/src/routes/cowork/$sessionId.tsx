@@ -1,6 +1,5 @@
 import { createFileRoute, redirect, useParams } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { useHomeMode } from '@/hooks/useHomeMode'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { peekCoworkHandoff } from '@/lib/coworkHandoff'
 import { route } from '@/constants/routes'
@@ -20,7 +19,6 @@ export const Route = createFileRoute('/cowork/$sessionId')({
     // composer unless its first prompt is being handed off or a run is active.
     if (!session.unavailable && !session.turns.length && !session.messages.length &&
         !useCoworkRun.getState().runId[sessionId] && !peekCoworkHandoff(sessionId)) {
-      useHomeMode.getState().setMode('cowork')
       throw redirect({ to: route.home, replace: true })
     }
   },

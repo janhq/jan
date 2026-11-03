@@ -15,7 +15,6 @@ const h = vi.hoisted(() => ({
     updated_at: 1,
     assistantId: undefined as string | undefined,
   } as any,
-  startCoworkConversation: vi.fn(() => 'session-1'),
   toastError: vi.fn(),
   lastSubmitResult: undefined as unknown,
   setCaps: vi.fn(async () => undefined),
@@ -31,9 +30,6 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.coworkEnabled }))
-vi.mock('@/lib/startCoworkConversation', () => ({
-  startCoworkConversation: (opts: any) => h.startCoworkConversation(opts),
-}))
 vi.mock('sonner', () => ({ toast: { error: (...args: any[]) => h.toastError(...args) } }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -155,7 +151,6 @@ describe('Project route single Chat flow', () => {
     h.coworkEnabled = false
     h.selectedModel = undefined
     h.selectedProvider = ''
-    h.startCoworkConversation.mockReturnValue('session-1')
     h.lastSubmitResult = undefined
     h.projectId = 'project-1'
   })
@@ -172,7 +167,6 @@ describe('Project route single Chat flow', () => {
       expect(input).not.toHaveAttribute('data-scope-key')
       // No onSubmit override: a submit never starts a legacy Cowork session.
       fireEvent.click(screen.getByTestId('submit'))
-      expect(h.startCoworkConversation).not.toHaveBeenCalled()
       expect(h.navigate).not.toHaveBeenCalled()
     }
   )
@@ -204,7 +198,7 @@ describe('Project route single Chat flow', () => {
     const input = screen.getByTestId('chat-input')
     expect(input).not.toHaveAttribute('data-has-prepare')
     fireEvent.click(screen.getByTestId('submit'))
-    expect(h.startCoworkConversation).not.toHaveBeenCalled()
+    expect(h.navigate).not.toHaveBeenCalled()
   })
 
   it('keeps the live region mounted and updates only its inner text', async () => {
@@ -245,6 +239,62 @@ describe('Project route single Chat flow', () => {
     // A tool-capable model in temporary mode is not "unsupported".
     expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
     window.history.replaceState({}, '', '/')
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
+      'Conversation permissions (pending)'
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+  })
+
+  it('no selected model shows no unsupported notice, keeps the control hidden and prepare off, then resurfaces the pending draft', async () => {
+    const Component = Route.component as React.ComponentType
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    const view = renderComponent()
+    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
+    fireEvent.click(
+      await screen.findByLabelText('Allow shell commands to access the network')
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+    // No model selected yet: not a "model without tools", so no false notice.
+    h.selectedModel = undefined
+    view.rerender(<Component />)
+    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
+      'Conversation permissions (pending)'
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+  })
+
+  it('temporary mode with a non-tools model shows no unsupported/pending notice, then a regular chat preserves the pending draft', async () => {
+    const Component = Route.component as React.ComponentType
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    const view = renderComponent()
+    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
+    fireEvent.click(
+      await screen.findByLabelText('Allow shell commands to access the network')
+    )
+    h.selectedModel = { id: 'model-b', capabilities: [] }
+    window.history.replaceState({}, '', '/?temporary-chat=true')
+    view.rerender(<Component />)
+    // Temporary chat never persists consent: no misleading notice, no prepare path.
+    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
+    expect(screen.getByTestId('project-scope-status')).toBeEmptyDOMElement()
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    // Switching back to a regular chat still tells the truth about the kept draft.
+    window.history.replaceState({}, '', '/')
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
+      'common:conversationScope.pendingKept'
+    )
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    // And the draft survives to resurface on a tool-capable model.
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     view.rerender(<Component />)
     expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
       'Conversation permissions (pending)'

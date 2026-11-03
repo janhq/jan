@@ -916,6 +916,7 @@ async fn test_write_thread_extra_refuses_threads_without_thread_json() {
     .await
     .unwrap_err();
     assert!(err.contains("thread.json"), "{err}");
+    assert!(err.starts_with("thread_missing:"), "{err}");
     let data_folder = get_jan_data_folder_path(app.handle().clone());
     assert!(!get_thread_dir(&data_folder, "ghost-thread").unwrap().exists());
 
@@ -1946,4 +1947,13 @@ fn thread_monitor_commands_pass_the_real_acl_and_dispatch() {
     let denied = acl_invoke(&outsider, "plugin:agent-tools|list_thread_monitors", json!({"threadId": id}))
         .expect_err("a window outside the capability must be refused");
     assert!(denied.to_string().contains("not allowed"), "{denied}");
+}
+
+#[tokio::test]
+async fn test_modify_thread_missing_thread_uses_stable_error_code() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let err = modify_thread(app.handle().clone(), json!({"id": "ghost-modify"}))
+        .await
+        .unwrap_err();
+    assert!(err.starts_with("thread_missing:"), "{err}");
 }

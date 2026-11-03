@@ -393,6 +393,16 @@ pub fn run() {
                         Ok((data_folder, value))
                     })
                 }));
+                let handle = app.handle().clone();
+                tauri_plugin_agent_tools::thread_capabilities::set_kind_resolver(Arc::new(
+                    move |id| {
+                        let data_folder = get_jan_data_folder_path(handle.clone());
+                        Box::pin(async move {
+                            core::threads::capabilities::resolve_thread_kind(&data_folder, &id)
+                                .await
+                        })
+                    },
+                ));
             }
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
