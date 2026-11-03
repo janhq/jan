@@ -6,6 +6,7 @@ import type { Chat, UIMessage } from "@ai-sdk/react";
 import type { ChatStatus } from "ai";
 import { CustomChatTransport } from "@/lib/custom-chat-transport";
 import { useMessageQueue } from "@/stores/message-queue-store";
+import { useFailedDrafts } from "@/stores/failed-draft-store";
 
 export type SessionData = {
   tools: any[];
@@ -214,6 +215,9 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
   },
   clearSessions: () => {
     dropAllConversationClientThreads();
+    // Failed drafts may belong to threads with no live session (failed-only);
+    // a reset drops them all and invalidates every in-flight send token.
+    useFailedDrafts.getState().clearAll();
     const sessions = get().sessions;
 
     // Clear all queued messages

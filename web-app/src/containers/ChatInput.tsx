@@ -46,6 +46,13 @@ import { isCoworkThread } from '@/lib/threadMode'
 import { generateId } from 'ai'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { QueuedMessageChip } from '@/containers/QueuedMessageBubble'
+import { FailedDraftCard } from '@/containers/FailedDraftCard'
+import {
+  useFailedDrafts,
+  mergeRestoredAttachments,
+  type FailedDraft,
+  attachmentIdentity,
+} from '@/stores/failed-draft-store'
 import { SamplerPopover } from '@/containers/SamplerPopover'
 import ComposerModelPicker from '@/containers/ComposerModelPicker'
 import { AssistantsMenu } from '@/components/AssistantsMenu'
@@ -148,6 +155,8 @@ type ChatInputProps = {
    * after a persistent thread exists. Returning false keeps the draft unsent. */
   prepareThreadCreation?: () => (threadId: string) => Promise<boolean>
   onStop?: () => void
+  /** Releases a queue held after an error and drains it in order. */
+  onResumeQueue?: () => void
   chatStatus?: ChatStatus
   /**
    * The turn's tools are still running or awaiting approval after the stream
@@ -218,6 +227,7 @@ const ChatInput = memo(function ChatInput({
   onSubmit,
   prepareThreadCreation,
   onStop,
+  onResumeQueue,
   chatStatus,
   toolsRunning,
   scopeKey,
@@ -603,12 +613,43 @@ const ChatInput = memo(function ChatInput({
   const queueId = scopeKey ?? currentThreadId ?? ''
   const queuedMessages = useMessageQueue(useShallow((s) => s.getQueue(queueId)))
   const queueLength = queuedMessages.length
+  const queuePaused = useMessageQueue((s) => s.isPaused(queueId))
 
   const removeQueuedMessage = useCallback(
     (id: string) => {
       useMessageQueue.getState().removeMessage(queueId, id)
     },
     [queueId]
+  )
+
+  // Failed drafts for this thread: recoverable only by explicit user action.
+  const failedDrafts = useFailedDrafts(
+    useShallow((s) => (queueId ? s.getDrafts(queueId) : []))
+  )
+
+  const dismissFailedDraft = useCallback(
+    (id: string) => {
+      useFailedDrafts.getState().remove(queueId, id)
+    },
+    [queueId]
+  )
+
+  // Restore hands the complete draft (text + files) back to the composer. A
+  // prompt typed since is kept: the restored text goes ahead of it.
+  const restoreFailedDraft = useCallback(
+    (failed: FailedDraft) => {
+      if (failed.text.trim()) {
+        setPrompt(prompt.trim() ? `${failed.text}\n\n${prompt}` : failed.text)
+      }
+      if (failed.attachments.length > 0) {
+        setAttachmentsForThread(attachmentsKey, (prev) =>
+          mergeRestoredAttachments(failed.attachments, prev)
+        )
+      }
+      useFailedDrafts.getState().remove(queueId, failed.id)
+      textareaRef.current?.focus()
+    },
+    [attachmentsKey, prompt, queueId, setAttachmentsForThread, setPrompt]
   )
 
   const lastTransferredThreadId = useRef<string | null>(null)
@@ -731,6 +772,22 @@ const ChatInput = memo(function ChatInput({
       return false
     }
 
+    // While the model streams, tools run, or a held queue is non-empty, the
+    // submission is enqueued. The queue stores text only, so refuse a submission
+    // with attachments before any draft/history change instead of dropping files.
+    // A queue held after an error also keeps newer text behind it: sending it
+    // directly would run it before the older queued messages.
+    const behindHeldQueue =
+      !!queueId &&
+      useMessageQueue.getState().isPaused(queueId) &&
+      useMessageQueue.getState().getQueue(queueId).length > 0
+    const willEnqueue =
+      !!onSubmit && !!queueId && (isStreaming || toolsRunning || behindHeldQueue)
+    if (willEnqueue && attachments.length > 0) {
+      toast.info(t('chat:queueRecovery.attachmentsHeld'))
+      return false
+    }
+
     setMessage('')
     addToHistory(effectivePrompt)
 
@@ -739,7 +796,8 @@ const ChatInput = memo(function ChatInput({
       // While the model is still streaming, or the turn's tools are still
       // running, queue the message for later. The queue waits for the tools, so
       // a second turn never starts under a tool loop that Stop still has to end.
-      if ((isStreaming || toolsRunning) && queueId) {
+      // Attachment submissions were refused above (the queue is text-only).
+      if (willEnqueue && queueId) {
         useMessageQueue.getState().enqueue(queueId, {
           id: generateId(),
           text: effectivePrompt,
@@ -782,8 +840,21 @@ const ChatInput = memo(function ChatInput({
         prompt
       )
       if (accepted === false) return
-      setPrompt('')
-      clearAttachmentsForThread(attachmentsKey)
+      // onSubmit may have been held (attachment processing). Clear only what
+      // was submitted: text or files added since then are newer and stay.
+      if (usePrompt.getState().prompt === prompt) setPrompt('')
+      const submitted = new Set(attachments.map(attachmentIdentity))
+      const hasNewer = useChatAttachments
+        .getState()
+        .getAttachments(attachmentsKey)
+        .some((a) => !submitted.has(attachmentIdentity(a)))
+      if (hasNewer) {
+        setAttachmentsForThread(attachmentsKey, (prev) =>
+          prev.filter((a) => !submitted.has(attachmentIdentity(a)))
+        )
+      } else {
+        clearAttachmentsForThread(attachmentsKey)
+      }
     } else {
       // No onSubmit provided - create a new thread and navigate to it.
       // Media attachments (image/audio/video) are NOT serialized into
@@ -2343,8 +2414,52 @@ const ChatInput = memo(function ChatInput({
                 </div>
               </div>
             )}
+            {failedDrafts.length > 0 && (
+              <div className="flex flex-col gap-1 px-3 pt-2 pb-0">
+                {failedDrafts.map((failed) => (
+                  <FailedDraftCard
+                    key={failed.id}
+                    draft={failed}
+                    onRestore={restoreFailedDraft}
+                    onDismiss={dismissFailedDraft}
+                  />
+                ))}
+              </div>
+            )}
             {queuedMessages.length > 0 && (
               <div className="flex flex-col gap-1 px-3 pt-2 pb-0">
+                {queuePaused && (
+                  <div
+                    data-testid="queue-paused-banner"
+                    className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+                  >
+                    <span>
+                      {t('chat:queueRecovery.paused')}
+                    </span>
+                    {onResumeQueue && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="default"
+                        data-testid="resume-queue-button"
+                        onClick={onResumeQueue}
+                      >
+                        {t('chat:queueRecovery.resume')}
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      data-testid="clear-queue-button"
+                      onClick={() =>
+                        useMessageQueue.getState().clearQueue(queueId)
+                      }
+                    >
+                      {t('chat:queueRecovery.clear')}
+                    </Button>
+                  </div>
+                )}
                 {queuedMessages.map((msg) => (
                   <QueuedMessageChip
                     key={msg.id}

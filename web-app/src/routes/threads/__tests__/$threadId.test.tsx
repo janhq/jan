@@ -1,4 +1,4 @@
-import { conversationAskCard, respondConversationAsk } from '@/lib/conversationClientTools'
+import { conversationAskCard, respondConversationAsk, dropConversationClientThread } from '@/lib/conversationClientTools'
 import { CHAT_RUN_NOTICE_METADATA } from '@/lib/chatRunNotice'
 import { Chat, useChat as useSDKChat } from '@ai-sdk/react'
 import { trackChat, quiesceChats, __resetChatCloseForTests } from '@/lib/chatClose'
@@ -16,6 +16,7 @@ const h = vi.hoisted(() => {
   const mockSendMessage = vi.fn()
   const mockRegenerate = vi.fn()
   const mockStop = vi.fn()
+  const mockClearError = vi.fn()
   const mockAddToolOutput = vi.fn()
   const mockSetChatMessages = vi.fn()
   const mockUpdateRag = vi.fn()
@@ -154,7 +155,22 @@ const h = vi.hoisted(() => {
   const messageQueueState: any = {
     dequeue: vi.fn(() => null),
     clearQueue: vi.fn(),
+    paused: {} as Record<string, boolean>,
+    pause: vi.fn(),
+    resume: vi.fn(),
+    isPaused: vi.fn(() => false),
+    generations: {} as Record<string, number>,
+    getToken: vi.fn((id: string) => messageQueueState.generations[id] ?? 0),
   }
+  const bindPauseMock = () => {
+    messageQueueState.paused = {}
+    messageQueueState.pause = vi.fn((id: string) => {
+      if (messageQueueState.queues?.[id]?.length) messageQueueState.paused[id] = true
+    })
+    messageQueueState.resume = vi.fn((id: string) => { delete messageQueueState.paused[id] })
+    messageQueueState.isPaused = vi.fn((id: string) => !!messageQueueState.paused[id])
+  }
+  bindPauseMock()
   const useMessageQueueMock: any = (_selector: any) => undefined
   useMessageQueueMock.getState = () => messageQueueState
   useMessageQueueMock.setState = (update: any) => Object.assign(messageQueueState, typeof update === 'function' ? update(messageQueueState) : update)
@@ -166,6 +182,7 @@ const h = vi.hoisted(() => {
     mockSendMessage,
     mockRegenerate,
     mockStop,
+    mockClearError,
     mockAddToolOutput,
     mockSetChatMessages,
     mockUpdateRag,
@@ -194,6 +211,7 @@ const h = vi.hoisted(() => {
     agentModeState,
     useAgentModeMock,
     messageQueueState,
+    bindPauseMock,
     useMessageQueueMock,
   }
 })
@@ -220,27 +238,32 @@ vi.mock('@/containers/DropdownModelProvider', () => ({
 }))
 
 vi.mock('@/containers/ChatInput', () => ({
-  default: ({ onSubmit, onStop, chatStatus }: any) => (
+  default: ({ onSubmit, onStop, onResumeQueue, chatStatus }: any) => (
     <div data-testid="chat-input">
       <span data-testid="chat-status">{chatStatus}</span>
       <button
         data-testid="chat-send"
-        onClick={() => onSubmit('hello world', undefined)}
+        onClick={async () => {
+          ;(globalThis as any).__submitResult = await onSubmit('hello world', undefined)
+        }}
       >
         send
       </button>
       <button
         data-testid="chat-send-ref"
-        onClick={() =>
-          onSubmit(
+        onClick={async () => {
+          ;(globalThis as any).__submitResult = await onSubmit(
             'summarise\n\n---\nReferenced file contents:\n\nbody',
             undefined,
             undefined,
             'summarise @notes.md'
           )
-        }
+        }}
       >
         send with reference
+      </button>
+      <button data-testid="chat-resume-queue" onClick={() => onResumeQueue()}>
+        resume queue
       </button>
       <button data-testid="chat-stop" onClick={() => onStop()}>
         stop
@@ -453,6 +476,7 @@ vi.mock('@/hooks/use-chat', () => ({
         h.integrationChat!.messages = typeof update === 'function' ? update(h.integrationChat!.messages) : update
       } : h.mockSetChatMessages,
       stop: h.integrationChat ? () => h.integrationChat!.stop() : h.mockStop,
+      clearError: h.mockClearError,
       addToolOutput: h.mockAddToolOutput,
       updateRagToolsAvailability: h.mockUpdateRag,
       setContinueFromContent: h.mockSetContinueFromContent,
@@ -512,6 +536,7 @@ vi.mock('@janhq/core', () => ({
 
 vi.mock('@/constants/chat', () => ({
   SESSION_STORAGE_PREFIX: { INITIAL_MESSAGE: 'initial-message-' },
+  TEMPORARY_CHAT_ID: 'temporary-chat',
 }))
 
 vi.mock('@/utils/error', async (importOriginal) => ({
@@ -555,6 +580,7 @@ import {
   resolveAutoInlineBudget,
 } from '@/lib/attachmentProcessing'
 import { usePrompt } from '@/hooks/usePrompt'
+import { useFailedDrafts } from '@/stores/failed-draft-store'
 import { computeActivePath } from '@/lib/message-branching'
 
 // The global setup mock is a shared object, so an overridden factory has to be
@@ -615,6 +641,15 @@ describe('ThreadDetail route', () => {
     h.chatSessionsState.getSessionData = vi.fn(() => ({ tools: [] }))
     h.messageQueueState.dequeue = vi.fn(() => null)
     h.messageQueueState.clearQueue = vi.fn()
+    h.messageQueueState.queues = {}
+    h.messageQueueState.generations = {}
+    h.bindPauseMock()
+    h.mockClearError.mockReset()
+    h.mockClearError.mockImplementation(() => {
+      h.chatState.status = 'ready'
+      h.chatState.error = null
+    })
+    useFailedDrafts.setState({ drafts: {} })
     h.agentModeState.agentThreads = {}
     h.modelProviderState.selectedProvider = 'openai'
     h.appStateState.busyThreads = {}
@@ -736,6 +771,28 @@ describe('ThreadDetail route', () => {
     usePrompt.getState().resetPrompt()
   })
 
+  it('keeps a newer draft typed while a rejected submit was in flight', async () => {
+    h.threadsState.currentThreadId = 'thread-1'
+    usePrompt.getState().resetPrompt()
+    h.mockSendMessage.mockImplementationOnce(async () => {
+      usePrompt.getState().setPrompt('typed newer')
+      throw new Error('Chat turn already running')
+    })
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    renderComponent()
+    await act(async () => { screen.getByTestId('chat-send').click() })
+    await waitFor(() => expect(h.messagesState.deleteMessage).toHaveBeenCalled())
+    expect(usePrompt.getState().prompt).toBe('typed newer')
+    // The displaced rejected draft is kept as a recoverable entry, never queued.
+    expect(useFailedDrafts.getState().drafts['thread-1']).toEqual([
+      expect.objectContaining({ text: 'hello world', attachments: [] }),
+    ])
+    expect(h.messageQueueState.queues['thread-1']).toBeUndefined()
+    log.mockRestore()
+    delete h.threadsState.currentThreadId
+    usePrompt.getState().resetPrompt()
+  })
+
   it('restores a rejected queued send without retaining a phantom user turn', async () => {
     const queued = { id: 'queued-fixture', text: 'preserve queued', createdAt: 1 }
     h.messageQueueState.queues = { 'thread-1': [] }
@@ -748,6 +805,464 @@ describe('ThreadDetail route', () => {
     const persisted = h.messagesState.addMessage.mock.calls[0][0]
     expect(h.messagesState.deleteMessage).toHaveBeenCalledWith('thread-1', persisted.id)
     log.mockRestore()
+  })
+
+  describe('queue held after an SDK error', () => {
+    const a = { id: 'q-a', text: 'queued A', createdAt: 1 }
+    const b = { id: 'q-b', text: 'queued B', createdAt: 2 }
+    const seed = (threadId = 'thread-1', items: any[] = [a, b]) => {
+      h.messageQueueState.queues[threadId] = [...items]
+      h.messageQueueState.dequeue = vi.fn(
+        (id: string) => h.messageQueueState.queues[id]?.shift() ?? null
+      )
+    }
+    const renderErrored = async () => {
+      h.chatState.status = 'error'
+      h.chatState.error = new Error('SDK stream failed')
+      const Component = Route.component as React.ComponentType
+      const view = render(<Component />)
+      await act(async () => {})
+      return { ...view, Component }
+    }
+
+    it('holds A/B through the error and does not drain on ready until Resume', async () => {
+      seed()
+      const { rerender, Component } = await renderErrored()
+      expect(h.messageQueueState.pause).toHaveBeenCalledWith('thread-1')
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      expect(h.messageQueueState.dequeue).not.toHaveBeenCalled()
+      expect(h.messageQueueState.clearQueue).not.toHaveBeenCalled()
+      expect(h.messageQueueState.queues['thread-1']).toEqual([a, b])
+
+      // Status recovering by other means (e.g. a regenerate) is not consent.
+      h.chatState.status = 'ready'
+      h.chatState.error = null
+      rerender(<Component />)
+      await act(async () => {})
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      expect(h.messageQueueState.dequeue).not.toHaveBeenCalled()
+      expect(h.messageQueueState.queues['thread-1']).toEqual([a, b])
+    })
+
+    it('Resume while the SDK is in error clears the error without sending, then drains once in order', async () => {
+      seed()
+      const { rerender, Component } = await renderErrored()
+      await act(async () => {
+        screen.getByTestId('chat-resume-queue').click()
+      })
+      expect(h.mockClearError).toHaveBeenCalledTimes(1)
+      expect(h.messageQueueState.resume).toHaveBeenCalledWith('thread-1')
+      // clearError itself sends nothing; the queued text is the only send.
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      rerender(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      await act(async () => {})
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+      expect(h.mockSendMessage.mock.calls[0][0].parts[0].text).toBe('queued A')
+      expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
+      expect(h.messageQueueState.queues['thread-1']).toEqual([b])
+    })
+
+    it('Resume on an already-ready held thread drains exactly once without clearError', async () => {
+      seed()
+      const { rerender, Component } = await renderErrored()
+      h.chatState.status = 'ready'
+      h.chatState.error = null
+      rerender(<Component />)
+      await act(async () => {})
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      await act(async () => {
+        screen.getByTestId('chat-resume-queue').click()
+      })
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      await act(async () => {})
+      expect(h.mockClearError).not.toHaveBeenCalled()
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+      expect(h.messageQueueState.queues['thread-1']).toEqual([b])
+    })
+
+    it('does not hold or resume another thread\'s queue', async () => {
+      seed('thread-1', [])
+      h.messageQueueState.queues['thread-2'] = [{ id: 'o', text: 'other', createdAt: 1 }]
+      h.messageQueueState.paused['thread-2'] = true
+      await renderErrored()
+      // thread-1 had nothing to hold; thread-2's hold is untouched.
+      expect(h.messageQueueState.paused['thread-1']).toBeUndefined()
+      expect(h.messageQueueState.paused['thread-2']).toBe(true)
+      await act(async () => {
+        screen.getByTestId('chat-resume-queue').click()
+      })
+      expect(h.messageQueueState.resume).toHaveBeenCalledWith('thread-1')
+      expect(h.messageQueueState.paused['thread-2']).toBe(true)
+      expect(h.messageQueueState.queues['thread-2']).toHaveLength(1)
+    })
+  })
+
+  describe('late queue rejection after the queue lifetime moved on', () => {
+    const a = { id: 'q-a', text: 'queued A', createdAt: 1 }
+    const c = { id: 'q-c', text: 'queued C', createdAt: 3 }
+    const deferred = () => {
+      let reject!: (e: Error) => void
+      const promise = new Promise<void>((_res, rej) => { reject = rej })
+      return { promise, reject }
+    }
+    // Mirrors the real store: clearing bumps the generation even when empty.
+    const realClear = () => {
+      h.messageQueueState.clearQueue = vi.fn((id: string) => {
+        h.messageQueueState.generations[id] = (h.messageQueueState.generations[id] ?? 0) + 1
+        delete h.messageQueueState.queues[id]
+        delete h.messageQueueState.paused[id]
+      })
+    }
+    const seed = (queues: Record<string, any[]>) => {
+      h.messageQueueState.queues = queues
+      h.messageQueueState.dequeue = vi.fn((id: string) => h.messageQueueState.queues[id]?.shift() ?? null)
+      realClear()
+    }
+    afterEach(() => {
+      h.routeParams.threadId = 'thread-1'
+      delete h.threadsState.threads['thread-2']
+      h.chatState.status = 'ready'
+      h.chatState.error = null
+    })
+
+    it('holds a single A restored after the SDK errored, so a new C cannot bypass it', async () => {
+      seed({ 'thread-1': [a] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      // Queue is empty while A is in flight, so the error's pause is a no-op.
+      h.chatState.status = 'error'
+      h.chatState.error = new Error('SDK stream failed')
+      rerender(<Component />)
+      await act(async () => {})
+      expect(h.messageQueueState.paused['thread-1']).toBeUndefined()
+
+      await act(async () => { first.reject(new Error('Chat turn already running')) })
+      await act(async () => {})
+      expect(h.messageQueueState.queues['thread-1']).toEqual([a])
+      expect(h.messageQueueState.paused['thread-1']).toBe(true)
+
+      // New C lands behind the held A; ready alone does not drain.
+      h.messageQueueState.queues['thread-1'].push(c)
+      h.chatState.status = 'ready'
+      h.chatState.error = null
+      rerender(<Component />)
+      await act(async () => {})
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+      expect(h.messageQueueState.queues['thread-1']).toEqual([a, c])
+      log.mockRestore()
+    })
+
+    it('does not pause a restored head when the error belongs to another thread', async () => {
+      seed({ 'thread-1': [a], 'thread-2': [] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      h.threadsState.threads['thread-2'] = {
+        id: 'thread-2', title: 'Other', metadata: {}, assistants: [],
+        model: { id: 'gpt-x', provider: 'openai' },
+      }
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      // The view moves to thread-2, which is the one in error. The thread
+      // drop does not clear thread-1 here (mocked generation stays), so the
+      // restore lands, but it must not be held by thread-2's error.
+      h.messageQueueState.clearQueue = vi.fn()
+      h.routeParams.threadId = 'thread-2'
+      h.chatState.status = 'error'
+      h.chatState.error = new Error('SDK stream failed')
+      rerender(<Component />)
+      await act(async () => {})
+      await act(async () => { first.reject(new Error('Chat turn already running')) })
+      await act(async () => {})
+      expect(h.messageQueueState.queues['thread-1']).toEqual([a])
+      expect(h.messageQueueState.paused['thread-1']).toBeUndefined()
+      expect(h.messageQueueState.paused['thread-2']).toBeUndefined()
+      log.mockRestore()
+    })
+
+    it('explicit Clear while A is in flight: the late rejection re-adds nothing', async () => {
+      seed({ 'thread-1': [a] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      // The queue is empty (A dequeued); the user's Clear still invalidates A.
+      act(() => { h.messageQueueState.clearQueue('thread-1') })
+      h.chatState.status = 'error'
+      h.chatState.error = new Error('SDK stream failed')
+      rerender(<Component />)
+      await act(async () => {})
+
+      await act(async () => { first.reject(new Error('Chat turn already running')) })
+      await act(async () => {})
+      expect(h.messageQueueState.queues['thread-1']).toBeUndefined()
+      expect(h.messageQueueState.paused['thread-1']).toBeUndefined()
+      expect(log).toHaveBeenCalledWith('Failed to send queued message:', expect.any(Error))
+      log.mockRestore()
+    })
+
+    it('thread navigation clears the old queue and a late rejection does not resurrect it', async () => {
+      seed({ 'thread-1': [a], 'thread-2': [] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      h.threadsState.threads['thread-2'] = {
+        id: 'thread-2', title: 'Other', metadata: {}, assistants: [],
+        model: { id: 'gpt-x', provider: 'openai' },
+      }
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const Component = Route.component as React.ComponentType
+      const { rerender, unmount } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      h.routeParams.threadId = 'thread-2'
+      rerender(<Component />)
+      await act(async () => {})
+      expect(h.messageQueueState.clearQueue).toHaveBeenCalledWith('thread-1')
+
+      await act(async () => { first.reject(new Error('Chat turn already running')) })
+      await act(async () => {})
+      expect(h.messageQueueState.queues['thread-1']).toBeUndefined()
+      expect(h.messageQueueState.paused['thread-1']).toBeUndefined()
+
+      // Unmounting the route likewise leaves nothing behind for thread-2.
+      unmount()
+      expect(h.messageQueueState.clearQueue).toHaveBeenCalledWith('thread-2')
+      log.mockRestore()
+    })
+  })
+
+  it('holds a rejected queue head after a model or callback rerender and retries once only on explicit Resume', async () => {
+    const head = { id: 'q-head', text: 'queued head', createdAt: 1 }
+    h.messageQueueState.queues = { 'thread-1': [head] }
+    h.messageQueueState.dequeue = vi.fn(
+      () => h.messageQueueState.queues['thread-1'].shift() ?? null
+    )
+    h.mockSendMessage
+      .mockRejectedValueOnce(new Error('Chat turn already running'))
+      .mockRejectedValueOnce(new Error('Chat turn already running'))
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const Component = Route.component as React.ComponentType
+    const { rerender } = render(<Component />)
+    await waitFor(() =>
+      expect(log).toHaveBeenCalledWith('Failed to send queued message:', expect.any(Error))
+    )
+    await act(async () => {})
+    expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
+    expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+    expect(h.messageQueueState.queues['thread-1']).toEqual([head])
+
+    // A fresh selectedModel plus fresh store callbacks change the identity of
+    // the route's send callback (its deps include addMessage/deleteMessage).
+    const originalModel = h.modelProviderState.selectedModel
+    for (let i = 0; i < 2; i++) {
+      h.modelProviderState.selectedModel = { ...originalModel }
+      h.messagesState.addMessage = vi.fn()
+      h.messagesState.deleteMessage = vi.fn()
+      rerender(<Component />)
+      await act(async () => {})
+    }
+    expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
+    expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+    expect(h.messageQueueState.queues['thread-1']).toEqual([head])
+
+    // The rejection latched while the SDK stayed ready, so the head is HELD
+    // (visible Resume), not merely latched: a status cycle does not retry it.
+    expect(h.messageQueueState.paused['thread-1']).toBe(true)
+    h.chatState.status = 'submitted'
+    rerender(<Component />)
+    await act(async () => {})
+    h.chatState.status = 'ready'
+    rerender(<Component />)
+    await act(async () => {})
+    expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
+    expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+
+    // Explicit Resume allows exactly one more attempt.
+    await act(async () => { screen.getByTestId('chat-resume-queue').click() })
+    await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(2))
+    await act(async () => {})
+    expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(2)
+    expect(h.messageQueueState.queues['thread-1']).toEqual([head])
+    h.modelProviderState.selectedModel = originalModel
+    log.mockRestore()
+  })
+
+  describe('queued send ownership across status epochs and threads', () => {
+    const deferred = () => {
+      let resolve!: () => void
+      let reject!: (e: Error) => void
+      const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej })
+      return { promise, resolve, reject }
+    }
+    const useQueues = (queues: Record<string, any[]>) => {
+      h.messageQueueState.queues = queues
+      h.messageQueueState.dequeue = vi.fn((id: string) => h.messageQueueState.queues[id]?.shift() ?? null)
+    }
+    afterEach(() => {
+      h.routeParams.threadId = 'thread-1'
+      delete h.threadsState.threads['thread-2']
+      h.chatState.status = 'ready'
+    })
+
+    it('retries exactly once when a delayed rejection lands after status cycled submitted -> ready', async () => {
+      const head = { id: 'q-head', text: 'queued head', createdAt: 1 }
+      useQueues({ 'thread-1': [head] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      // The turn cycles while the first send promise is still pending.
+      h.chatState.status = 'submitted'
+      rerender(<Component />)
+      await act(async () => {})
+      h.chatState.status = 'ready'
+      rerender(<Component />)
+      await act(async () => {})
+      // Ready is skipped while the send is in flight: nothing else is sent.
+      expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(1)
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+
+      await act(async () => { first.reject(new Error('Chat turn already running')) })
+      // The rejection no longer owns the current epoch: the item is restored
+      // and the skipped ready is re-run exactly once.
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(2))
+      await act(async () => {})
+      expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(2)
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(2)
+      expect(h.messageQueueState.queues['thread-1']).toEqual([])
+      expect(log).toHaveBeenCalledWith('Failed to send queued message:', expect.any(Error))
+      log.mockRestore()
+    })
+
+    it('resumes the queue once the in-flight operation settles after status returned to ready', async () => {
+      const a = { id: 'q-a', text: 'queued A', createdAt: 1 }
+      const b = { id: 'q-b', text: 'queued B', createdAt: 2 }
+      useQueues({ 'thread-1': [a, b] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+      h.chatState.status = 'submitted'
+      rerender(<Component />)
+      await act(async () => {})
+      h.chatState.status = 'ready'
+      rerender(<Component />)
+      await act(async () => {})
+      // Operation unsettled: B stays queued even though the status is ready.
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+      expect(h.messageQueueState.queues['thread-1']).toEqual([b])
+
+      await act(async () => { first.resolve() })
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(2))
+      await act(async () => {})
+      expect(h.messageQueueState.queues['thread-1']).toEqual([])
+      expect(h.messageQueueState.dequeue).toHaveBeenCalledTimes(2)
+    })
+
+    it('a stale rejection from the old thread restores only its own queue and never blocks the new thread', async () => {
+      const oldItem = { id: 'q-old', text: 'old thread item', createdAt: 1 }
+      const fresh = { id: 'q-new', text: 'new thread item', createdAt: 2 }
+      useQueues({ 'thread-1': [oldItem], 'thread-2': [] })
+      const first = deferred()
+      h.mockSendMessage.mockReturnValueOnce(first.promise).mockResolvedValue(undefined)
+      h.threadsState.threads['thread-2'] = {
+        id: 'thread-2', title: 'Other', metadata: {}, assistants: [],
+        model: { id: 'gpt-x', provider: 'openai' },
+      }
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(1))
+
+      h.routeParams.threadId = 'thread-2'
+      rerender(<Component />)
+      await act(async () => {})
+      // The old thread's pending send does not make the new thread skip or drain.
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+
+      await act(async () => { first.reject(new Error('Chat turn already running')) })
+      await act(async () => {})
+      expect(h.messageQueueState.queues['thread-1']).toEqual([oldItem])
+      expect(h.messageQueueState.queues['thread-2']).toEqual([])
+      expect(h.mockSendMessage).toHaveBeenCalledTimes(1)
+
+      // New thread work arrives afterwards; a changed send callback re-runs the
+      // drain and nothing latched by the old rejection blocks it.
+      h.messageQueueState.queues['thread-2'].push(fresh)
+      h.modelProviderState.selectedModel = { ...h.modelProviderState.selectedModel }
+      h.messagesState.addMessage = vi.fn()
+      rerender(<Component />)
+      await waitFor(() => expect(h.mockSendMessage).toHaveBeenCalledTimes(2))
+      expect(h.messageQueueState.dequeue).toHaveBeenLastCalledWith('thread-2')
+      expect(h.messageQueueState.queues['thread-2']).toEqual([])
+      expect(h.messageQueueState.queues['thread-1']).toEqual([oldItem])
+      log.mockRestore()
+    })
+  })
+
+  describe('restored attachment merge updater', () => {
+    const sheet = { name: 'sheet.xlsx', type: 'document', path: '/sheet.xlsx' }
+    const capturedUpdater = async () => {
+      h.threadsState.currentThreadId = 'thread-1'
+      usePrompt.getState().resetPrompt()
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(new Error('unreadable'))
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      await waitFor(() => expect(h.attachmentsState.setAttachments).toHaveBeenCalled())
+      log.mockRestore()
+      return vi.mocked(h.attachmentsState.setAttachments).mock.calls[0][1] as (prev: any[]) => any[]
+    }
+    afterEach(() => {
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+      delete h.threadsState.currentThreadId
+      usePrompt.getState().resetPrompt()
+    })
+
+    it('puts restored attachments first, unique by identity, and the current copy wins', async () => {
+      const update = await capturedUpdater()
+      const currentCopy = { ...sheet, parseMode: 'inline' }
+      const newer = { name: 'n.png', type: 'image', path: '/n.png' }
+      expect(update([])).toEqual([sheet])
+      expect(update([newer])).toEqual([sheet, newer])
+      // Same identity already present: the restored one is dropped, the
+      // current copy (with its newer parseMode) stays and is not duplicated.
+      const merged = update([newer, currentCopy])
+      expect(merged).toEqual([newer, currentCopy])
+      expect(merged[1]).toBe(currentCopy)
+      // Pure and repeatable: replaying onto its own output changes nothing.
+      expect(update(update([newer]))).toEqual([sheet, newer])
+    })
+
+    it('dedupes ids and falls back to path or type+name identity', async () => {
+      const a1 = { id: 'a', name: 'one', type: 'image' }
+      const a2 = { id: 'a', name: 'renamed', type: 'image' }
+      h.attachmentsState.getAttachments = vi.fn(() => [a1, a2, sheet, { name: 'x', type: 'image' }])
+      vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(new Error('unreadable'))
+      h.threadsState.currentThreadId = 'thread-1'
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      await waitFor(() => expect(h.attachmentsState.setAttachments).toHaveBeenCalled())
+      log.mockRestore()
+      const update = vi.mocked(h.attachmentsState.setAttachments).mock.calls[0][1] as (prev: any[]) => any[]
+      // Duplicate id within the restored set collapses to the first.
+      expect(update([])).toEqual([a1, sheet, { name: 'x', type: 'image' }])
+      // Present by id / path / type:name: restored copies are not re-added.
+      const current = [{ id: 'a', name: 'cur' }, { name: 'sheet2', type: 'document', path: '/sheet.xlsx' }, { name: 'x', type: 'image' }]
+      expect(update(current)).toEqual(current)
+    })
   })
 
   it('keeps the thread in its project when attachments are embedded', async () => {
@@ -877,17 +1392,132 @@ describe('ThreadDetail route', () => {
       expect(h.mockSendMessage).not.toHaveBeenCalled()
     })
 
-    it('keeps what the user typed while the document was processing', async () => {
+    it('keeps what the user typed while the document was processing, and the failed draft whole', async () => {
       usePrompt.getState().setPrompt('typed meanwhile')
-      await sendAndFail()
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(new Error('unreadable'))
+      renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
 
       expect(usePrompt.getState().prompt).toBe('typed meanwhile')
+      // Text and files are ONE unit; neither is split into the composer/queue.
+      expect(useFailedDrafts.getState().drafts['thread-1'][0]).toMatchObject({
+        text: 'hello world',
+        attachments: [sheet],
+      })
+      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalledWith('thread-1', expect.any(Function))
+      expect(h.messageQueueState.queues['thread-1']).toBeUndefined()
     })
 
-    it('does not write the draft into another screen after the user left the thread', async () => {
-      await sendAndFail(null)
+    it('keeps the failed draft whole instead of writing another screen after the user left the thread', async () => {
+      h.threadsState.currentThreadId = undefined
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(new Error('unreadable'))
+      renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
 
       expect(usePrompt.getState().prompt).toBe('')
+      expect(useFailedDrafts.getState().drafts['thread-1'][0]).toMatchObject({
+        text: 'hello world',
+        attachments: [sheet],
+      })
+    })
+
+    it('does not bring a held failure back after the thread was dropped', async () => {
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      let fail: (e: Error) => void = () => {}
+      vi.mocked(processAttachmentsForSend).mockReturnValueOnce(
+        new Promise((_, reject) => { fail = reject }) as never
+      )
+      renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      act(() => { dropConversationClientThread('thread-1') })
+      await act(async () => { fail(new Error('unreadable')) })
+
+      expect(useFailedDrafts.getState().drafts['thread-1']).toBeUndefined()
+      expect(usePrompt.getState().prompt).toBe('')
+      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalledWith('thread-1', expect.any(Function))
+    })
+
+    // Unlike the test above, the thread is open and the composer empty, so the
+    // only thing keeping the deleted thread's text out of the composer is the
+    // early lifetime-token guard in restoreSubmittedDraft (the instant-restore
+    // branch); add()'s own stale-token refusal is never reached.
+    it('does not refill an open, empty composer from a send held across a thread drop', async () => {
+      h.threadsState.currentThreadId = 'thread-1'
+      usePrompt.getState().resetPrompt()
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      let fail: (e: Error) => void = () => {}
+      vi.mocked(processAttachmentsForSend).mockReturnValueOnce(
+        new Promise((_, reject) => { fail = reject }) as never
+      )
+      renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      expect(usePrompt.getState().prompt).toBe('')
+      act(() => { dropConversationClientThread('thread-1') })
+      await act(async () => { fail(new Error('unreadable')) })
+
+      expect(usePrompt.getState().prompt).toBe('')
+      expect(useFailedDrafts.getState().drafts['thread-1']).toBeUndefined()
+      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalledWith('thread-1', expect.any(Function))
+    })
+
+    it('does not refill an open, empty composer from a send held across leaving a temporary chat', async () => {
+      h.routeParams.threadId = 'temporary-chat'
+      h.threadsState.currentThreadId = 'temporary-chat'
+      usePrompt.getState().resetPrompt()
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      let fail: (e: Error) => void = () => {}
+      vi.mocked(processAttachmentsForSend).mockReturnValueOnce(
+        new Promise((_, reject) => { fail = reject }) as never
+      )
+      const view = renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      expect(usePrompt.getState().prompt).toBe('')
+      view.unmount()
+      await act(async () => { fail(new Error('unreadable')) })
+      h.routeParams.threadId = 'thread-1'
+
+      expect(usePrompt.getState().prompt).toBe('')
+      expect(useFailedDrafts.getState().drafts['temporary-chat']).toBeUndefined()
+      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalledWith('temporary-chat', expect.any(Function))
+    })
+
+    it('leaving a temporary chat leaves no failed media for the next one', () => {
+      h.routeParams.threadId = 'temporary-chat'
+      const view = renderComponent()
+      useFailedDrafts.getState().add('temporary-chat', { text: 'x', attachments: [sheet] })
+      view.unmount()
+      h.routeParams.threadId = 'thread-1'
+      expect(useFailedDrafts.getState().drafts['temporary-chat']).toBeUndefined()
+    })
+
+    it('never auto-sends a failed draft when the thread returns to ready', async () => {
+      usePrompt.getState().setPrompt('typed meanwhile')
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(new Error('unreadable'))
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
+      for (const status of ['submitted', 'streaming', 'error', 'ready']) {
+        h.chatState.status = status
+        rerender(<Component />)
+        await act(async () => {})
+      }
+      // The drain ran on ready (empty queue) and found nothing to send.
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      expect(h.messageQueueState.queues['thread-1']).toBeUndefined()
+      expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1)
+      h.chatState.status = 'ready'
+    })
+
+    it('restores immediately into an empty composer without creating an entry', async () => {
+      await sendAndFail()
+      expect(usePrompt.getState().prompt).toBe('hello world')
+      expect(useFailedDrafts.getState().drafts['thread-1']).toBeUndefined()
     })
   })
 
@@ -900,6 +1530,8 @@ describe('ThreadDetail route', () => {
     }
 
     beforeEach(() => {
+      h.threadsState.currentThreadId = 'thread-1'
+      usePrompt.getState().resetPrompt()
       // Cloud model, unloaded auto-fit model, or a conversation that has
       // outgrown the window all resolve to no budget.
       vi.mocked(resolveAutoInlineBudget).mockResolvedValueOnce(undefined)
@@ -933,15 +1565,96 @@ describe('ThreadDetail route', () => {
       await waitFor(() => {
         expect(h.attachmentsState.setAttachments).toHaveBeenCalledWith(
           'thread-1',
-          [sheet]
+          expect.any(Function)
         )
       })
       expect(usePrompt.getState().prompt).toBe('hello world')
+      // onSubmit returns false so the real ChatInput keeps prompt and files.
+      await waitFor(() => expect((globalThis as any).__submitResult).toBe(false))
       expect(processAttachmentsForSend).not.toHaveBeenCalled()
       expect(h.mockSendMessage).not.toHaveBeenCalled()
       expect(h.messagesState.addMessage).not.toHaveBeenCalled()
       h.attachmentsState.getAttachments = vi.fn(() => [])
       usePrompt.getState().resetPrompt()
+    })
+
+    it('cancelling keeps a draft typed while the dialog was open, and recovers the cancelled draft whole', async () => {
+      vi.mocked(promptIngestionChoices).mockImplementationOnce(async () => {
+        usePrompt.getState().setPrompt('typed during dialog')
+        return undefined
+      })
+      renderComponent()
+      await act(async () => {
+        screen.getByTestId('chat-send').click()
+      })
+      await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
+      // The typed text is never overwritten. The cancel happens before the
+      // bucket is cleared, so the route passes bucketHoldsAttachments: the
+      // failed entry's files are removed from the bucket (no ride-along with
+      // the newer prompt) and nothing else is touched.
+      expect(usePrompt.getState().prompt).toBe('typed during dialog')
+      await waitFor(() => expect((globalThis as any).__submitResult).toBe(false))
+      expect(h.attachmentsState.setAttachments).toHaveBeenCalledTimes(1)
+      const [key, updater] = h.attachmentsState.setAttachments.mock.calls[0]
+      expect(key).toBe('thread-1')
+      const newerFile = { name: 'newer.png', type: 'image', path: '/newer.png' }
+      expect(updater([sheet, newerFile])).toEqual([newerFile])
+      expect(useFailedDrafts.getState().drafts['thread-1'][0]).toMatchObject({
+        text: 'hello world',
+        attachments: [sheet],
+      })
+      expect(h.messageQueueState.queues['thread-1']).toBeUndefined()
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+      usePrompt.getState().resetPrompt()
+    })
+
+    it('cancelling with a newer prompt and newer attachments leaves both alone', async () => {
+      const newer = { name: 'newer.png', type: 'image', path: '/newer.png' }
+      vi.mocked(promptIngestionChoices).mockImplementationOnce(async () => {
+        usePrompt.getState().setPrompt('typed newer')
+        h.attachmentsState.getAttachments = vi.fn(() => [newer])
+        return undefined
+      })
+      renderComponent()
+      await act(async () => {
+        screen.getByTestId('chat-send').click()
+      })
+      await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
+      expect(usePrompt.getState().prompt).toBe('typed newer')
+      await waitFor(() => expect((globalThis as any).__submitResult).toBe(false))
+      // Only the whole failed entry's files leave the bucket; the newer file stays.
+      expect(h.attachmentsState.setAttachments).toHaveBeenCalledTimes(1)
+      const updater = h.attachmentsState.setAttachments.mock.calls[0][1]
+      expect(updater([sheet, newer])).toEqual([newer])
+      expect(useFailedDrafts.getState().drafts['thread-1'][0]).toMatchObject({
+        text: 'hello world',
+        attachments: [sheet],
+      })
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+      usePrompt.getState().resetPrompt()
+    })
+
+    it('thread switch during ingestion cancel never writes the prompt and recovers the draft under its own thread', async () => {
+      vi.mocked(promptIngestionChoices).mockImplementationOnce(async () => {
+        h.threadsState.currentThreadId = 'thread-2'
+        return undefined
+      })
+      renderComponent()
+      await act(async () => {
+        screen.getByTestId('chat-send').click()
+      })
+      await waitFor(() => expect(useFailedDrafts.getState().drafts['thread-1']).toHaveLength(1))
+      expect(usePrompt.getState().prompt).toBe('')
+      expect(useFailedDrafts.getState().drafts['thread-2']).toBeUndefined()
+      expect(useFailedDrafts.getState().drafts['thread-1'][0]).toMatchObject({
+        text: 'hello world',
+        attachments: [sheet],
+      })
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+      delete h.threadsState.currentThreadId
     })
 
     it('cancelling restores the typed draft, not the expanded @references', async () => {

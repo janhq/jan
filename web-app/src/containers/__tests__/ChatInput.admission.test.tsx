@@ -186,6 +186,7 @@ vi.mock('@/hooks/useAttachmentIngestionPrompt', () => ({
 
 const queueStore = {
   getQueue: () => [],
+  isPaused: () => false,
   enqueue: vi.fn(),
   removeMessage: vi.fn(),
   clearQueue: vi.fn(),

@@ -10,6 +10,7 @@ import {
 import '@testing-library/jest-dom'
 import userEvent from '@testing-library/user-event'
 
+import { useFailedDrafts } from '@/stores/failed-draft-store'
 
 // --- Module mocks (must be declared before component import) ---------------
 
@@ -21,15 +22,19 @@ const setPromptMock = vi.fn((val: string) => {
 const addToHistoryMock = vi.fn()
 const navigateHistoryMock = vi.fn()
 
-vi.mock('@/hooks/usePrompt', () => ({
-  usePrompt: (selector: any) =>
-    selector({
-      prompt: promptState,
-      setPrompt: setPromptMock,
-      addToHistory: addToHistoryMock,
-      navigateHistory: navigateHistoryMock,
+vi.mock('@/hooks/usePrompt', () => {
+  const snapshot = () => ({
+    prompt: promptState,
+    setPrompt: setPromptMock,
+    addToHistory: addToHistoryMock,
+    navigateHistory: navigateHistoryMock,
+  })
+  return {
+    usePrompt: Object.assign((selector: any) => selector(snapshot()), {
+      getState: snapshot,
     }),
-}))
+  }
+})
 
 const updateCurrentThreadAssistantMock = vi.fn()
 const updateCurrentThreadModelMock = vi.fn()
@@ -227,10 +232,13 @@ const enqueueMock = vi.fn((tid: string, msg: any) => {
 const removeMessageMock = vi.fn()
 const clearQueueMock = vi.fn()
 const getQueueMock = vi.fn((tid: string) => queueState[tid] || [])
+const pausedState: Record<string, boolean> = {}
+const isPausedMock = vi.fn((tid: string) => !!pausedState[tid])
 
 function useMessageQueueImpl(selector?: any) {
   const state = {
     getQueue: getQueueMock,
+    isPaused: isPausedMock,
     enqueue: enqueueMock,
     removeMessage: removeMessageMock,
     clearQueue: clearQueueMock,
@@ -240,6 +248,7 @@ function useMessageQueueImpl(selector?: any) {
 }
 ;(useMessageQueueImpl as any).getState = () => ({
   getQueue: getQueueMock,
+  isPaused: isPausedMock,
   enqueue: enqueueMock,
   removeMessage: removeMessageMock,
   clearQueue: clearQueueMock,
@@ -301,7 +310,10 @@ vi.mock('sonner', () => ({
   toast: { info: vi.fn(), error: vi.fn(), success: vi.fn() },
 }))
 
-vi.mock('ai', () => ({ generateId: () => 'gen-id-1' }))
+vi.mock('ai', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('ai')>()),
+  generateId: () => 'gen-id-1',
+}))
 
 // Stub heavy children
 vi.mock('@/containers/QueuedMessageBubble', () => ({
@@ -420,7 +432,9 @@ const resetAll = () => {
   navigateHistoryMock.mockClear()
   enqueueMock.mockClear()
   clearQueueMock.mockClear()
+  useFailedDrafts.setState({ drafts: {} })
   for (const k of Object.keys(queueState)) delete queueState[k]
+  for (const k of Object.keys(pausedState)) delete pausedState[k]
   getCurrentThreadMock.mockReturnValue(undefined)
   for (const key of Object.keys(threadsMockState)) delete threadsMockState[key]
   useImageAttachmentConfig.setState({ maxImageSizeMB: 10 })
@@ -1075,6 +1089,64 @@ describe('ChatInput', () => {
     expect(clicked).toBeGreaterThanOrEqual(0) // smoke: no crash
   })
 
+  describe('failed draft recovery', () => {
+    const sheet = { name: 'sheet.xlsx', type: 'document', path: '/sheet.xlsx' }
+    const seed = (threadId = 'thread-1') =>
+      useFailedDrafts
+        .getState()
+        .add(threadId, { text: 'failed text', attachments: [sheet as never] })!
+
+    it('shows the card and restores nothing until the user clicks', () => {
+      seed()
+      const onSubmit = vi.fn()
+      renderInput({ onSubmit })
+      expect(screen.getByTestId('failed-draft-card')).toBeInTheDocument()
+      expect(setPromptMock).not.toHaveBeenCalled()
+      expect(setAttachmentsMock).not.toHaveBeenCalled()
+      expect(onSubmit).not.toHaveBeenCalled()
+      expect(enqueueMock).not.toHaveBeenCalled()
+    })
+
+    it('Restore draft puts text and files back together, then removes the entry', () => {
+      seed()
+      const onSubmit = vi.fn()
+      renderInput({ onSubmit })
+      fireEvent.click(screen.getByRole('button', { name: 'chat:failedDraft.restore' }))
+      expect(setPromptMock).toHaveBeenCalledWith('failed text')
+      expect(setAttachmentsMock).toHaveBeenCalledWith('thread-1', expect.any(Function))
+      const updater = setAttachmentsMock.mock.calls[0][1]
+      const newer = { name: 'newer.png', type: 'image', path: '/newer.png' }
+      expect(updater([newer])).toEqual([sheet, newer])
+      expect(useFailedDrafts.getState().drafts['thread-1']).toBeUndefined()
+      // Restoring is not sending.
+      expect(onSubmit).not.toHaveBeenCalled()
+      expect(screen.queryByTestId('failed-draft-card')).not.toBeInTheDocument()
+    })
+
+    it('Restore draft keeps a prompt typed since, after the restored text', () => {
+      seed()
+      promptState = 'typed since'
+      renderInput({ onSubmit: vi.fn() })
+      fireEvent.click(screen.getByRole('button', { name: 'chat:failedDraft.restore' }))
+      expect(setPromptMock).toHaveBeenCalledWith('failed text\n\ntyped since')
+    })
+
+    it('Dismiss removes the entry without touching the composer', () => {
+      seed()
+      renderInput({ onSubmit: vi.fn() })
+      fireEvent.click(screen.getByRole('button', { name: 'chat:failedDraft.dismiss' }))
+      expect(useFailedDrafts.getState().drafts['thread-1']).toBeUndefined()
+      expect(setPromptMock).not.toHaveBeenCalled()
+      expect(setAttachmentsMock).not.toHaveBeenCalled()
+    })
+
+    it("shows only the open thread's entries", () => {
+      seed('thread-2')
+      renderInput({ onSubmit: vi.fn() })
+      expect(screen.queryByTestId('failed-draft-card')).not.toBeInTheDocument()
+    })
+  })
+
   it('queues the message when streaming with a currentThreadId', async () => {
     promptState = 'queued msg'
     const onSubmit = vi.fn()
@@ -1361,6 +1433,149 @@ describe('ChatInput', () => {
     const chips = screen.getAllByTestId('queued-chip')
     expect(chips).toHaveLength(2)
     expect(chips[0]).toHaveTextContent('queued one')
+  })
+
+  it('shows Resume/Clear controls for a held queue and wires them', () => {
+    queueState['thread-1'] = [{ id: 'q1', text: 'queued one', createdAt: 1 }]
+    pausedState['thread-1'] = true
+    const onResumeQueue = vi.fn()
+    renderInput({ onResumeQueue })
+    fireEvent.click(screen.getByTestId('resume-queue-button'))
+    expect(onResumeQueue).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByTestId('clear-queue-button'))
+    expect(clearQueueMock).toHaveBeenCalledWith('thread-1')
+  })
+
+  it('shows no Resume/Clear controls for an unheld queue', () => {
+    queueState['thread-1'] = [{ id: 'q1', text: 'queued one', createdAt: 1 }]
+    renderInput({ onResumeQueue: vi.fn() })
+    expect(screen.queryByTestId('resume-queue-button')).not.toBeInTheDocument()
+  })
+
+  it('appends a new submission behind a held queue instead of sending it', async () => {
+    queueState['thread-1'] = [
+      { id: 'a', text: 'queued A', createdAt: 1 },
+      { id: 'b', text: 'queued B', createdAt: 2 },
+    ]
+    pausedState['thread-1'] = true
+    promptState = 'new C'
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready' })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(enqueueMock).toHaveBeenCalledWith(
+        'thread-1',
+        expect.objectContaining({ text: 'new C' })
+      )
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(queueState['thread-1'].map((m) => m.text)).toEqual(['queued A', 'queued B', 'new C'])
+  })
+
+  it.each([
+    ['document', { type: 'document', name: 'spec.pdf', path: '/docs/spec.pdf', fileType: 'pdf' }],
+    ['media', { type: 'image', name: 'fixture.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,xxx' }],
+  ])('refuses a %s submission behind a held queue and keeps draft and files', async (_kind, attachment) => {
+    queueState['thread-1'] = [{ id: 'a', text: 'queued A', createdAt: 1 }]
+    pausedState['thread-1'] = true
+    promptState = 'new C'
+    selectedModelOverride = { id: 'vision', provider: 'llamacpp', capabilities: ['vision'] }
+    attachmentsList = [attachment]
+    const originalAttachments = attachmentsList
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready' })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith('chat:queueRecovery.attachmentsHeld')
+    )
+    expect(enqueueMock).not.toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(addToHistoryMock).not.toHaveBeenCalled()
+    expect(setPromptMock).not.toHaveBeenCalled()
+    expect(clearAttachmentsMock).not.toHaveBeenCalled()
+    expect(promptState).toBe('new C')
+    expect(attachmentsList).toBe(originalAttachments)
+    expect(queueState['thread-1'].map((m) => m.text)).toEqual(['queued A'])
+  })
+
+  it.each([
+    ['streaming', { chatStatus: 'streaming' as const }],
+    ['tools busy', { chatStatus: 'ready' as const, toolsRunning: true }],
+  ])('refuses attachments while %s and keeps draft and files', async (_label, busy) => {
+    promptState = 'new C'
+    selectedModelOverride = { id: 'vision', provider: 'llamacpp', capabilities: ['vision'] }
+    attachmentsList = [
+      { type: 'document', name: 'spec.pdf', path: '/docs/spec.pdf', fileType: 'pdf' },
+      { type: 'image', name: 'fixture.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,xxx' },
+    ]
+    const originalAttachments = attachmentsList
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, ...busy })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith('chat:queueRecovery.attachmentsHeld')
+    )
+    expect(enqueueMock).not.toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(addToHistoryMock).not.toHaveBeenCalled()
+    expect(setPromptMock).not.toHaveBeenCalled()
+    expect(clearAttachmentsMock).not.toHaveBeenCalled()
+    expect(promptState).toBe('new C')
+    expect(attachmentsList).toBe(originalAttachments)
+  })
+
+  it('does not empty the queue when refusing media while streaming', async () => {
+    queueState['thread-1'] = [{ id: 'a', text: 'queued A', createdAt: 1 }]
+    promptState = 'new C'
+    selectedModelOverride = { id: 'vision', provider: 'llamacpp', capabilities: ['vision'] }
+    attachmentsList = [
+      { type: 'image', name: 'fixture.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,xxx' },
+    ]
+    renderInput({ onSubmit: vi.fn(), chatStatus: 'streaming' })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith('chat:queueRecovery.attachmentsHeld')
+    )
+    expect(clearQueueMock).not.toHaveBeenCalled()
+    expect(queueState['thread-1'].map((m) => m.text)).toEqual(['queued A'])
+  })
+
+  it('still enqueues a text-only submission while streaming or tools run', async () => {
+    promptState = 'text only'
+    attachmentsList = []
+    renderInput({ onSubmit: vi.fn(), chatStatus: 'ready', toolsRunning: true })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(enqueueMock).toHaveBeenCalledWith(
+        'thread-1',
+        expect.objectContaining({ text: 'text only' })
+      )
+    )
+    expect(toast.info).not.toHaveBeenCalledWith('chat:queueRecovery.attachmentsHeld')
+  })
+
+  it('does not block attachments for another thread\'s held queue', async () => {
+    queueState['thread-2'] = [{ id: 'x', text: 'other', createdAt: 1 }]
+    pausedState['thread-2'] = true
+    promptState = 'mine'
+    attachmentsList = [{ type: 'document', name: 'spec.pdf', path: '/docs/spec.pdf', fileType: 'pdf' }]
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready' })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(enqueueMock).not.toHaveBeenCalled()
+    expect(toast.info).not.toHaveBeenCalledWith('chat:queueRecovery.attachmentsHeld')
+  })
+
+  it('does not hold another thread\'s submission behind a different thread\'s held queue', async () => {
+    queueState['thread-2'] = [{ id: 'x', text: 'other', createdAt: 1 }]
+    pausedState['thread-2'] = true
+    promptState = 'mine'
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready' })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(enqueueMock).not.toHaveBeenCalled()
   })
 
   it('renders the inline error message with dismiss button', () => {
