@@ -168,6 +168,18 @@ async function doStart() {
     onThreadWritten: upsertThread,
     onThreadRemoved: removeThread,
     onError: (id, e) => console.warn(`[cowork] write failed for ${id}:`, e),
+    onThreadMissing: (id) => {
+      // Keep the readable in-memory session (delete/export still work); it is
+      // flagged so it is never written back or recreated from a stale snapshot.
+      useCoworkSessions.setState((s) => ({
+        sessions: s.sessions.map((x) => (x.id === id ? { ...x, unavailable: 'missing-thread' as const } : x)),
+      }))
+      toast.warning('A Cowork conversation could not be saved', {
+        id: `cowork-missing-thread-${id}`,
+        description: 'Its stored thread is missing, so changes are no longer saved. You can still read, export or delete it.',
+        duration: Infinity,
+      })
+    },
   })
   p.adopt(loaded.threads)
   persistence = p

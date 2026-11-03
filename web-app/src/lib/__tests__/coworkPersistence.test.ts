@@ -40,7 +40,7 @@ function makeBackend(opts: { failNext?: { cmd: string; times: number } } = {}) {
         return [...threads.values()].map((t) => JSON.parse(JSON.stringify(t)))
       case 'write_thread_extra':
         if (!args.create && !threads.has(args.threadId)) {
-          throw new Error('no thread.json')
+          throw new Error("thread_missing: Thread has no thread.json")
         }
         extras.set(args.threadId, JSON.parse(JSON.stringify(args.value)))
         return
@@ -513,6 +513,56 @@ describe('coworkPersistence write protocol', () => {
     expect(b.threads.get('collision')!.title).toBe('Original chat')
     expect(onRemoved).not.toHaveBeenCalled()
     expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toContain('collision')
+  })
+
+  it('settles without endless retry when the thread directory is permanently missing', async () => {
+    const onThreadMissing = vi.fn()
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50, onThreadMissing })
+    p.schedule(session('a'))
+    await p.flush()
+    expect(b.threads.has('a')).toBe(true)
+    // Out-of-band deletion of the thread directory.
+    b.threads.delete('a')
+    b.extras.delete('a')
+    p.schedule(session('a', { title: 'edited' }))
+    await expect(p.flush()).resolves.toBeUndefined()
+    expect(onThreadMissing).toHaveBeenCalledTimes(1)
+    expect(onThreadMissing.mock.calls[0][0]).toBe('a')
+    expect(onThreadMissing.mock.calls[0][1].title).toBe('edited')
+    const writes = () => b.log.filter((l) => l === 'write_thread_extra:a').length
+    const before = writes()
+    await vi.advanceTimersByTimeAsync(1000)
+    await p.flush()
+    expect(writes()).toBe(before)
+    // Never resurrected by the failed write or later retries.
+    expect(b.threads.has('a')).toBe(false)
+    expect(b.extras.has('a')).toBe(false)
+  })
+
+  it('does not treat a transient disk failure as a missing thread', async () => {
+    const onThreadMissing = vi.fn()
+    b = makeBackend({ failNext: { cmd: 'write_thread_extra', times: 3 } })
+    const q = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50, onThreadMissing })
+    q.schedule(session('t'))
+    await expect(q.flush()).rejects.toThrow(/pending writes: t/)
+    expect(onThreadMissing).not.toHaveBeenCalled()
+    await q.flush()
+    expect(b.threads.has('t')).toBe(true)
+    expect(b.extras.has('t')).toBe(true)
+  })
+
+  it('a missing-thread error while a deletion is pending keeps tombstone semantics (no unavailable, no recreate)', async () => {
+    const onThreadMissing = vi.fn()
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50, onThreadMissing })
+    p.schedule(session('a'))
+    await p.flush()
+    p.schedule(session('a', { title: 'late' }))
+    b.threads.delete('a')
+    await p.remove('a')
+    await p.flush()
+    expect(onThreadMissing).not.toHaveBeenCalled()
+    expect(b.threads.has('a')).toBe(false)
+    expect(b.extras.has('a')).toBe(false)
   })
 
   it('never writes sessions flagged unavailable (files are preserved)', async () => {
