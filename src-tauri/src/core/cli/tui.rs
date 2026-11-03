@@ -9575,6 +9575,16 @@ impl App {
     /// pending permission summary (what Jan is blocked on) or the active
     /// subagent task, matching Orca's card fields.
     fn publish_agent_status(&mut self) {
+        self.publish_agent_status_with(true);
+    }
+
+    /// [`Self::publish_agent_status`] for a transition the user just caused:
+    /// the state is reported but the bell stays quiet, as they are looking.
+    fn publish_agent_status_quietly(&mut self) {
+        self.publish_agent_status_with(false);
+    }
+
+    fn publish_agent_status_with(&mut self, may_ring: bool) {
         use super::agent_status::AgentStatusState as S;
         let state = match self.status {
             // A live prompt outranks the turn status: a session-owned child
@@ -9594,7 +9604,11 @@ impl App {
                 .map(|q| q.question.clone()),
             _ => None,
         };
-        self.agent_status.set_state(state, prompt.as_deref());
+        if may_ring {
+            self.agent_status.set_state(state, prompt.as_deref());
+        } else {
+            self.agent_status.set_state_quietly(state, prompt.as_deref());
+        }
     }
 
     /// Arm the per-turn state shared by a user submit and a reminder
@@ -10054,7 +10068,9 @@ impl App {
         // cancel must not quietly become "keep working in the background".
         self.stop_subagents();
         self.close_live_background();
-        self.publish_agent_status();
+        // The user pressed Esc or Ctrl-C: `bell = "always"` must not ring for
+        // a turn end they caused while looking at it.
+        self.publish_agent_status_quietly();
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.system(Level::Warn, "cancelled");
@@ -18824,6 +18840,16 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         scope: SettingScope::Global,
     },
     AgentSettingDef {
+        key: "bell",
+        label: "bell",
+        desc: "terminal bell: attention rings for permission prompts and asks, always also when a turn ends",
+        kind: AgentSettingKind::Enum {
+            options: super::agent_status::BellMode::OPTIONS,
+            default: "attention",
+        },
+        scope: SettingScope::Global,
+    },
+    AgentSettingDef {
         key: SMOL_MODEL_KEY,
         label: "smol_model",
         desc: "cheap model for subagents with model = \"smol\", /goal checks and compaction",
@@ -20060,7 +20086,12 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                     } else {
                         format!("{} = {entered} written", prompt.key)
                     };
-                    app.note(&format!("{what}; takes effect on the next run"));
+                    let when = if vibe_setting::LIVE_KEYS.contains(&prompt.key) {
+                        "applies now"
+                    } else {
+                        "takes effect on the next run"
+                    };
+                    app.note(&format!("{what}; {when}"));
                     app.settings_prompt = None;
                 }
                 Err(e) => {
@@ -35897,6 +35928,32 @@ fn a() {}
                 None,
                 "cleared field unsets the key"
             );
+
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        });
+    }
+
+    /// `bell` is read on every status transition, so its note must not tell
+    /// the user to wait for a next run the way other rows do.
+    #[test]
+    fn settings_prompt_says_bell_applies_now() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            std::fs::create_dir_all(&app.agent_dir).unwrap();
+            let def = AGENT_SETTINGS.iter().find(|d| d.key == "bell").unwrap();
+            app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+            for ch in "always".chars() {
+                super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+
+            assert_eq!(
+                crate::core::agent::global_config::bell_setting().as_deref(),
+                Some("always")
+            );
+            let note = transcript_text(&app);
+            assert!(note.contains("bell = always written; applies now"), "{note}");
+            assert!(!note.contains("next run"), "{note}");
 
             let _ = std::fs::remove_dir_all(&app.agent_dir);
         });

@@ -246,6 +246,30 @@ ask instead:
 You see a diff for a file change, or the exact command for a shell call. Full detail in
 [Tool permissions](/docs/agent/permissions).
 
+## Getting your attention
+
+When a permission prompt or a question is waiting on you, the console rings the terminal bell and
+sets the window title to `Jan - action required`. While a turn runs the title shows a spinner, and
+it reads `Jan ready` once the session is idle. The bell rings once each time the console starts
+waiting on you, even when the terminal is in a background tab. Another prompt that queues behind one
+already on screen does not ring again; a question asked after the previous one is answered does.
+
+Set `bell` in `~/.jan/config.toml`, or edit the same row in `/settings`:
+
+```toml
+bell = "always"
+```
+
+| Value | Rings when |
+| --- | --- |
+| `attention` | A permission prompt or a question needs you. The default |
+| `always` | Also when a turn finishes, unless you cancelled it with <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> |
+| `off` | Never |
+
+An unknown value reads as `attention`. A change applies at once, with no restart. How the
+bell sounds (audible, a visual flash, a dock bounce or a tab marker) is up to your terminal. Inside
+tmux, a bell from any window reaches the terminal while `bell-action` is `any`, the default.
+
 ## Getting help
 
 `/help` inside the console prints every command and keybinding. `/` alone filters the command list
