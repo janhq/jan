@@ -775,17 +775,13 @@
     "removeProject": "Remove project selection"
   },
   "homeMode": {
-    "label": "Conversation type",
-    "chat": "Chat",
-    "cowork": "Cowork",
     "addFolder": "Add project or folder",
     "removeFolder": "Remove selection",
     "addProject": "Add project",
     "addToProject": "Add to a project",
     "newProject": "New project",
     "noProjects": "No projects yet",
-    "addFolderAction": "Add folder",
-    "ideas": "Ideas for you"
+    "addFolderAction": "Add folder"
   },
   "coworkEmpty": {
     "title": "What are we working on?",
