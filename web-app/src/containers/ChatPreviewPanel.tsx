@@ -16,8 +16,12 @@ import {
   type PreviewState,
 } from '@/lib/coworkPreview'
 
-/** What native `read` appends when it capped the output. */
-const TRUNCATED = '\n[truncated:'
+/**
+ * Raster formats native `read` cannot encode as an image (bmp, ico). Reading
+ * them would return raw bytes that fail as a UTF-8 error, so they are
+ * unsupported up front: no host read, no misleading failure.
+ */
+const UNSUPPORTED_RASTER = /\.(?:bmp|ico)$/i
 
 /**
  * The only image URL Chat renders: an inline raster the host itself encoded
@@ -51,7 +55,12 @@ export function ChatPreviewPanel({ threadId, path, onClose }: Props) {
 
   useEffect(() => {
     let alive = true
-    if (kind === 'file' || kind === 'video' || kind === 'audio') {
+    if (
+      kind === 'file' ||
+      kind === 'video' ||
+      kind === 'audio' ||
+      (kind === 'image' && UNSUPPORTED_RASTER.test(path))
+    ) {
       setState({ status: 'unsupported', path })
       return
     }
@@ -87,15 +96,11 @@ export function ChatPreviewPanel({ threadId, path, onClose }: Props) {
         return
       }
       const content = typeof res.content === 'string' ? res.content : ''
-      // A cut-off page or vector would render wrongly; cut-off text is fine.
-      if ((kind === 'html' || kind === 'svg') && content.includes(TRUNCATED)) {
-        setState({ status: 'failed', path, reason: 'common:preview.tooLarge' })
-        return
-      }
-      // HTML and SVG are shown as source text. Chat runs no artifact script and
-      // follows no meta refresh, and nothing here proves the frame's network and
-      // navigation confinement, so a rendered preview would claim more than it
-      // can promise. Cowork keeps its own sandboxed renderer.
+      // HTML and SVG are shown as source text, never rendered, so a truncated
+      // source is still safe and honest to show as text. Chat runs no artifact
+      // script and follows no meta refresh, and nothing here proves the frame's
+      // network and navigation confinement. Cowork keeps its own sandboxed
+      // renderer.
       setState({
         status: 'ready',
         path,

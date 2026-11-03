@@ -134,6 +134,29 @@ describe('ChatPreviewPanel', () => {
     }
   )
 
+  it.each(['/w/p.bmp', '/w/icon.ico', '/w/P.BMP'])(
+    'treats %s as unsupported without a host read, convertFileSrc, or fetch',
+    async (path) => {
+      render(<ChatPreviewPanel threadId="t1" path={path} onClose={vi.fn()} />)
+      await waitFor(() => expect(body()).toHaveAttribute('data-status', 'unsupported'))
+      expect(executeAgentTool).not.toHaveBeenCalled()
+      expect(convertFileSrc).not.toHaveBeenCalled()
+      expect(fetchSpy).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    ['/w/big.html', '<h1>big</h1>\n[truncated: 9000 more bytes]'],
+    ['/w/big.svg', '<svg xmlns="http://www.w3.org/2000/svg">\n[truncated: 12 more bytes]'],
+  ])('shows truncated %s source as visible text, not a failure', async (path, content) => {
+    executeAgentTool.mockResolvedValue({ content })
+    render(<ChatPreviewPanel threadId="t1" path={path} onClose={vi.fn()} />)
+    await waitFor(() => expect(body()).toHaveAttribute('data-status', 'ready'))
+    expect(body()).toHaveAttribute('data-kind', 'text')
+    expect(body()).toHaveTextContent('[truncated:')
+    expect(body()).not.toHaveTextContent('common:preview.tooLarge')
+  })
+
   it('renders an image only from the host-returned data URL, never an asset URL', async () => {
     executeAgentTool.mockResolvedValue({
       images: [{ dataUrl: 'data:image/png;base64,AAAA' }],
