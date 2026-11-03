@@ -8,6 +8,7 @@ import { TOOL_DIFF_MAX_CHARS } from '../toolDiff'
 import { canContinueStoppedTurn, createChatRunStream, taskStatusRows, TASK_STATUS_PART } from '../chatRunTransport'
 import { expandChatRunContext, RUN_CONTEXT_PART, RUN_CONTEXT_MAX_CHARS, RUN_CONTEXT_TRUNCATION_MARKER } from '../chatRunContext'
 import { PING_OPEN, PING_CLOSE } from '../coworkPing'
+import { planCompletionNotice, SUBAGENT_INLINE_MAX } from '../coworkSubagent'
 
 const stream = (chunks: UIMessageChunk[]) => new ReadableStream<UIMessageChunk>({ start(c) { chunks.forEach(v => c.enqueue(v)); c.close() } })
 const user: UIMessage = { id: 'u', role: 'user', parts: [{ type: 'text', text: 'fixture' }] }
@@ -281,6 +282,37 @@ describe('Chat runTurn stream adapter (real SDK reader and runner)', () => {
       expect(body.endsWith(RUN_CONTEXT_TRUNCATION_MARKER)).toBe(true)
       expect(body.startsWith(longs[i][0])).toBe(true)
     })
+  })
+  it('replays a three-child exact-8192 plan notice unbounded-by-marker with identical text live and after reload', async () => {
+    const taskCall: UIMessageChunk[] = [{ type: 'start-step' }, { type: 'tool-input-available', toolCallId: 'tk', toolName: 'task', input: {} }, { type: 'finish-step' }, { type: 'finish' }]
+    const send = vi.fn().mockResolvedValueOnce(stream(taskCall)).mockResolvedValueOnce(stream(answer))
+    const tails = ['PLAN_TAIL_ONE', 'PLAN_TAIL_TWO', 'PLAN_TAIL_THREE']
+    const outputs = tails.map(t => 'k'.repeat(SUBAGENT_INLINE_MAX - t.length) + t)
+    const notice = planCompletionNotice({
+      phaseCount: 2,
+      totalSubagents: 4,
+      finalPhase: outputs.map((output, i) => ({ name: `c${i}`, result: { output, usage: null, isError: false, sessionTokens: 0 }, savedPath: null })),
+    }).text
+    expect(notice.length).toBeLessThanOrEqual(RUN_CONTEXT_MAX_CHARS)
+    let pending = false
+    let queued: string[] = []
+    const inbox = {
+      take: () => { const t = queued; queued = []; pending = false; return t },
+      pending: () => pending || queued.length > 0,
+      wait: async () => { queued = [notice] },
+    }
+    const dispatch = vi.fn(async () => { pending = true; queued = [notice]; return { output: 'Dispatched 1 subagent(s)' } })
+    const message = await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, sendStep: send, dispatch, inbox }))
+    const pingTexts = (messages: UIMessage[]) => messages.flatMap(m => m.parts.flatMap(p => p.type === 'text' && p.text.startsWith(PING_OPEN) ? [p.text] : []))
+    const live = pingTexts(send.mock.calls.at(-1)![0] as UIMessage[])
+    expect(live).toHaveLength(1)
+    tails.forEach(t => expect(live[0]).toContain(t))
+    expect(live[0]).not.toContain(RUN_CONTEXT_TRUNCATION_MARKER)
+    const stored = JSON.parse(JSON.stringify({
+      id: message.id, thread_id: 'fixture', role: 'assistant', status: 'ready', object: 'thread.message', created_at: 1, completed_at: 1,
+      ...assistantRecordFields(message, {}, { stopped: false }),
+    })) as ThreadMessage
+    expect(pingTexts(expandChatRunContext([convertThreadMessageToUIMessage(stored)]))).toEqual(live)
   })
   it('round-trips data-task-status and data-tool-diff together canonically and omits both from the model', async () => {
     const diff = '-    1 | secretdiffbody\n+    1 | other'

@@ -12,8 +12,12 @@ import { truncateUtf16 } from './truncateUtf16'
  */
 export const RUN_CONTEXT_PART = 'data-run-context'
 
-/** Upper bound (chars) of the text one part carries. */
-export const RUN_CONTEXT_MAX_CHARS = 8192
+/**
+ * Upper bound (chars) of the text one part carries. Sized so a plan notice with
+ * three final-phase children, each inlining up to SUBAGENT_INLINE_MAX (8K) of
+ * output, plus its headline and per-child headers, fits without being cut.
+ */
+export const RUN_CONTEXT_MAX_CHARS = 32 * 1024
 
 /** Appended when a single ping exceeds the bound (counted inside the bound). */
 export const RUN_CONTEXT_TRUNCATION_MARKER = `\n\n[truncated: notice exceeded ${RUN_CONTEXT_MAX_CHARS} characters]`
