@@ -684,7 +684,7 @@ export type SubagentResult = {
 }
 
 /** One model turn for a child, as a UI message stream the runner can consume. */
-function childStep(opts: {
+export function childStep(opts: {
   model: LanguageModel
   system: string
   tools: Record<string, Tool>

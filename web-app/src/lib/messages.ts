@@ -657,6 +657,11 @@ const PART_FIELDS: Record<string, readonly string[]> = {
   // `rawInput` is set on dynamic tools by the SDK runtime though its type omits it.
   'dynamic-tool': ['toolName', ...TOOL_FIELDS],
   'data-tool-diff': ['type', 'id', 'data'],
+  // Chat `task` dispatch/completion status (chatRunTransport TASK_STATUS_PART).
+  // The only `data-*` kind Jan writes; any other still reloads lossy (visibly,
+  // as `unsupported-part`). convertToModelMessages drops data parts, so the
+  // model never sees it.
+  'data-task-status': ['type', 'id', 'data'],
 }
 const APPROVAL_FIELDS = ['id', 'approved', 'reason']
 // Opaque provider/tool metadata objects: bounded, and plain JSON objects only.

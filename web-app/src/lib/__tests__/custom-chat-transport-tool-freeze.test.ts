@@ -77,7 +77,7 @@ vi.mock('../model-factory', () => ({
   ModelFactory: { createModel: vi.fn() },
 }))
 
-vi.mock('@/lib/agentTools', () => ({ refreshMemoryDigest: vi.fn(async () => ''), memoryDigestNow: () => '', getAgentToolSchemas: vi.fn(async () => []) }))
+vi.mock('@/lib/agentTools', () => ({ refreshMemoryDigest: vi.fn(async () => ''), memoryDigestNow: () => '', getAgentToolSchemas: vi.fn(async () => []), sandboxEnforces: () => false }))
 
 import { CustomChatTransport } from '../custom-chat-transport'
 

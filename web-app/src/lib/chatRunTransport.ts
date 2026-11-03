@@ -4,6 +4,46 @@ import { runTurn, type PendingToolCall, type ToolOutcome, type RunOutcome } from
 import { STOPPED_TOOL_ERROR, untilAborted } from './stopped-tool-calls'
 import { CHAT_RUN_NOTICE_METADATA, isChatRunNotice } from './chatRunNotice'
 import { encodeToolImageSentinel } from './tool-image-sentinel'
+import { PING_OPEN, PING_CLOSE } from './coworkPing'
+
+/** The existing runTurn inbox lane (SubagentInbox/MonitorLane pings), as text. */
+export type ChatRunInbox = {
+  take: () => string[]
+  pending: () => boolean
+  wait: (signal: AbortSignal) => Promise<void>
+  onParked?: (parked: boolean) => void
+  /** Structured task dispatch/completion rows since the last call. Surfaced as
+   * `data-task-status` UI parts (id per run, so a later row replaces the
+   * earlier one); never replayed to the model. */
+  takeStatus?: () => unknown[]
+}
+
+export const TASK_STATUS_PART = 'data-task-status'
+
+/** Latest status row per run from persisted `data-task-status` parts, in the
+ * shape lib/conversationPanels.ts (contextual-panels workspace, read-only
+ * reference) accepts for `done` rows: { runId, name, status, startedAt,
+ * endedAt, finalOutput? }. `running`/`error` rows are kept for dispatch
+ * visibility; the panels parser currently reads only settled `task` TOOL
+ * output, so it must adopt this carrier before a panel shows them. */
+export function taskStatusRows(messages: readonly UIMessage[]): Array<Record<string, unknown>> {
+  const runs = new Map<string, Record<string, unknown>>()
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue
+    for (const part of message.parts) {
+      if (part.type !== TASK_STATUS_PART) continue
+      const rows = ((part as { data?: { subagents?: unknown } }).data?.subagents ?? []) as unknown[]
+      for (const row of Array.isArray(rows) ? rows : []) {
+        const r = row as Record<string, unknown> | null
+        if (!r || typeof r.runId !== 'string' || !r.runId || typeof r.name !== 'string' || !r.name) continue
+        if (r.status !== 'running' && r.status !== 'done' && r.status !== 'error') continue
+        if (typeof r.startedAt !== 'number' || !Number.isFinite(r.startedAt)) continue
+        runs.set(r.runId, r)
+      }
+    }
+  }
+  return [...runs.values()]
+}
 
 export type ChatToolOutcome = Omit<ToolOutcome, 'output'> & { output: unknown }
 
@@ -70,6 +110,8 @@ export function createChatRunStream(options: {
   /** Selected model context; prompt replay is not generated-token spend. */
   modelContextTokens?: number
   getModelContextTokens?: () => number | undefined
+  /** Child completions and monitor pings; consumed ONLY by runTurn's inbox. */
+  inbox?: ChatRunInbox
 }): ReadableStream<UIMessageChunk> {
   const controller = new AbortController()
   const abort = () => controller.abort(options.signal.reason)
@@ -96,8 +138,31 @@ export function createChatRunStream(options: {
         outcomeNotified = true
         options.onOutcome?.(outcome)
       }
+      const flushTaskStatus = () => {
+        for (const row of options.inbox?.takeStatus?.() ?? []) {
+          const runId = (row as { runId?: unknown }).runId
+          if (typeof runId !== 'string') continue
+          emit({ type: TASK_STATUS_PART, id: `task-status:${runId}`, data: { subagents: [row] } } as UIMessageChunk)
+        }
+      }
       let canonical: UIMessage | undefined
       let completed: UIMessage | undefined
+      // Pings runTurn drained from the inbox. runTurn folds them into its own
+      // (ignored) projection, so they are replayed here as marked user turns
+      // after the canonical history; they are never persisted as transcript.
+      const pingMarks: { at: number; message: UIMessage }[] = []
+      const withPings = (): UIMessage[] => {
+        if (!completed) return [...options.messages, ...pingMarks.map(m => m.message)]
+        const out = [...options.messages]
+        let from = 0
+        for (const mark of pingMarks) {
+          if (mark.at > from) out.push({ ...completed, parts: completed.parts.slice(from, mark.at) })
+          out.push(mark.message)
+          from = Math.max(from, mark.at)
+        }
+        out.push(from === 0 ? completed : { ...completed, parts: completed.parts.slice(from) })
+        return out.filter(m => m.role !== 'assistant' || m.parts.length > 0)
+      }
       let step = 0
       const seenCalls = new Set<string>()
       const id = options.messageId
@@ -113,11 +178,23 @@ export function createChatRunStream(options: {
           record: (spend, usage) => ({ ...spend, spent: spend.spent + Math.max(0, usage?.completion_tokens ?? 0) }),
         },
         deps: {
+          inbox: options.inbox && {
+            take: () => {
+              flushTaskStatus()
+              const taken = options.inbox!.take()
+              flushTaskStatus()
+              if (taken.length) pingMarks.push({ at: completed?.parts.length ?? 0, message: { id: `${id}:ping:${pingMarks.length}`, role: 'user', parts: [{ type: 'text', text: `${PING_OPEN}\n${taken.join('\n')}\n${PING_CLOSE}` }] } as UIMessage })
+              return taken
+            },
+            pending: () => options.inbox!.pending(),
+            wait: () => options.inbox!.wait(controller.signal),
+            onParked: options.inbox.onParked,
+          },
           sendStep: async (_messages, signal) => {
             canonical = undefined
             // SDK Chat displays/persists one assistant across all tool waves.
             // Send that same history, not runTurn's per-step Cowork projection.
-            const messages = completed ? [...options.messages, completed] : options.messages
+            const messages = pingMarks.length ? withPings() : completed ? [...options.messages, completed] : options.messages
             const prefix = `${step++}:`
             const source = (await options.sendStep(messages, signal)).getReader()
             if (step === 1) {
@@ -229,6 +306,7 @@ export function createChatRunStream(options: {
             return current
           },
           onStep: ({ outcomes }) => {
+            flushTaskStatus()
             for (const [toolCallId, outcome] of outcomes) {
               const chatOutcome = chatOutcomes.get(toolCallId) ?? outcome
               if (!outcome.isError && typeof chatOutcome.diff === 'string' && chatOutcome.diff.length <= TOOL_DIFF_MAX_CHARS) {

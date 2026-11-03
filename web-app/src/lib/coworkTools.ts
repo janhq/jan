@@ -174,7 +174,7 @@ export const askTool: Tool = {
  * name runs as a focused general-purpose agent, so there is no `system_prompt`
  * and no unknown-name failure. Wording tracks the Rust description.
  */
-function taskTool(subagentNames: string[]): Tool {
+export function taskTool(subagentNames: string[]): Tool {
   const phasesDesc =
     ' List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase\'s results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes).'
   const bg =

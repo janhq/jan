@@ -58,7 +58,10 @@ import {
   TODO_TOOL_NAME,
   askTool,
   todoTool,
+  TASK_TOOL_NAME,
+  taskTool,
 } from '@/lib/coworkTools'
+import { MONITOR_TOOL_NAME, monitorTool } from '@/lib/coworkMonitor'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
@@ -888,10 +891,21 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /** Conversation-owned todo/ask: advertised in this run's frozen record. */
+  /** The run's frozen advertised record (a copy). Children narrow from this,
+   * never from a live refresh. */
+  getAdvertisedTools(): Record<string, Tool> {
+    return { ...(this.chatRunSnapshot?.tools ?? this.tools) }
+  }
+
+  /** The model instance this turn runs on, for bounded child steps. */
+  getChildModel(): LanguageModel | null {
+    return this.model
+  }
+
   hasAdvertisedClientTool(name: string): boolean {
     const tools = this.chatRunSnapshot?.tools ?? this.tools
     return (
-      (name === TODO_TOOL_NAME || name === ASK_TOOL_NAME) &&
+      (name === TODO_TOOL_NAME || name === ASK_TOOL_NAME || name === TASK_TOOL_NAME || name === MONITOR_TOOL_NAME) &&
       Object.prototype.hasOwnProperty.call(tools, name) &&
       !this.getMcpServerForTool(name)
     )
@@ -1370,6 +1384,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
       toolsRecord[TODO_TOOL_NAME] = todoTool
       toolsRecord[ASK_TOOL_NAME] = askTool
+      // Bounded task + consent-gated monitor: same model/sandbox gate and the
+      // thread's CURRENT grant snapshot as the scoped native namespace.
+      const orchestration = resolveScopedChatToolPolicy(
+        { modelSupportsTools, sandboxAvailable: sandboxEnforces() },
+        this.turnGrantSnapshot()
+      ).advertisedOrchestrationTools
+      for (const name of orchestration) {
+        mcpIdentities.delete(name)
+        toolsRecord[name] = name === TASK_TOOL_NAME ? taskTool([]) : monitorTool()
+      }
     }
 
     // Never let discovery started outside this run, or a slower competing
@@ -1908,7 +1932,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       continuedStream,
       (toolName) =>
         !(toolName in this.tools) &&
-        (toolName === TODO_TOOL_NAME || toolName === ASK_TOOL_NAME
+        (toolName === TODO_TOOL_NAME || toolName === ASK_TOOL_NAME || toolName === TASK_TOOL_NAME || toolName === MONITOR_TOOL_NAME
           ? // Unadvertised conversation todo/ask: dispatch refuses explicitly.
             true
           : CHAT_AGENT_TOOL_NAMES.has(toolName)

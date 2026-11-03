@@ -1,4 +1,4 @@
-import { createChatRunStream, type ChatToolOutcome } from '@/lib/chatRunTransport'
+import { createChatRunStream, type ChatRunInbox, type ChatToolOutcome } from '@/lib/chatRunTransport'
 import type { PendingToolCall } from '@/lib/coworkRunner'
 import { generateId } from 'ai'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
@@ -20,10 +20,13 @@ import {
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
+import { cancelChatOrchestration } from '@/lib/chatOrchestration'
 
 type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
     dispatchTool?: (call: PendingToolCall, signal: AbortSignal) => Promise<ChatToolOutcome>
+    /** Per-run inbox lane for child completions / monitor pings. */
+    runInbox?: () => ChatRunInbox | undefined
     sessionId?: string
     sessionTitle?: string
     systemMessage?: string
@@ -46,6 +49,7 @@ export function useChat(
   const {
     sessionId,
     dispatchTool,
+    runInbox,
     sessionTitle,
     systemMessage,
     onTokenUsage,
@@ -106,6 +110,8 @@ export function useChat(
               admissions.delete(instance)
               const stop = () => {
                 abort.abort(request.abortSignal?.reason)
+                // User Stop: children abort with the run; stop only monitors this lane started.
+                void cancelChatOrchestration(sessionId)
                 useToolApprovalRequests.getState().clearPendingForThread(sessionId)
               }
               request.abortSignal?.addEventListener('abort', stop, { once: true })
@@ -127,6 +133,7 @@ export function useChat(
                   return typeof value === 'number' ? value : undefined
                 },
                 sendStep: (messages, signal) => transport.sendMessages({ ...request, messages, abortSignal: signal }),
+                inbox: runInbox?.(),
                 dispatch: dispatchTool ?? (async () => ({ output: 'Chat tool executor unavailable', isError: true })),
                 onFinally: () => {
                   releaseSnapshot()

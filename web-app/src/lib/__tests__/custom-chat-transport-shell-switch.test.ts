@@ -110,7 +110,7 @@ describe('chat shell switch (#9222)', () => {
     // schema source is consulted; the shell itself stays withheld.
     h.shellEnabled = false
     await transport.refreshTools()
-    expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask'])
+    expect(Object.keys(transport.getTools())).toEqual(['todo', 'ask', 'task'])
   })
 
   it('takes effect on the very next send without a new transport', async () => {

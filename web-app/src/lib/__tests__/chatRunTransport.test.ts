@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { convertToModelMessages, readUIMessageStream, type UIMessageChunk, type UIMessage } from 'ai'
 import { conversationDiffs } from '../conversationPanels'
 import { TOOL_DIFF_MAX_CHARS } from '../toolDiff'
-import { canContinueStoppedTurn, createChatRunStream } from '../chatRunTransport'
+import { canContinueStoppedTurn, createChatRunStream, taskStatusRows, TASK_STATUS_PART } from '../chatRunTransport'
 
 const stream = (chunks: UIMessageChunk[]) => new ReadableStream<UIMessageChunk>({ start(c) { chunks.forEach(v => c.enqueue(v)); c.close() } })
 const user: UIMessage = { id: 'u', role: 'user', parts: [{ type: 'text', text: 'fixture' }] }
@@ -202,6 +202,59 @@ describe('Chat runTurn stream adapter (real SDK reader and runner)', () => {
     await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, sendStep: send, dispatch }))
     expect(send).toHaveBeenCalledTimes(1)
     expect(dispatch).not.toHaveBeenCalled()
+  })
+  it('emits task dispatch + completion as canonical data parts through the one runTurn inbox, persisted and never shown to the model', async () => {
+    const taskCall: UIMessageChunk[] = [{ type: 'start-step' }, { type: 'tool-input-available', toolCallId: 'tk', toolName: 'task', input: {} }, { type: 'finish-step' }, { type: 'finish' }]
+    const send = vi.fn().mockResolvedValueOnce(stream(taskCall)).mockResolvedValueOnce(stream(answer)).mockResolvedValueOnce(stream(answer))
+    const rows: unknown[][] = []
+    const notices: string[] = []
+    let owed = false
+    let wake: () => void = () => {}
+    const dispatch = vi.fn(async () => {
+      // Dispatch receipt only; the child runs in the background.
+      owed = true
+      rows.push([{ runId: 'tk:a', name: 'a', status: 'running', startedAt: 10 }])
+      setTimeout(() => {
+        rows.push([{ runId: 'tk:a', name: 'a', status: 'done', startedAt: 10, endedAt: 20, finalOutput: 'the answer' }])
+        notices.push("Subagent 'a' (tk:a) finished. Its answer:\n\nthe answer")
+        wake()
+      }, 5)
+      return { output: 'Dispatched 1 subagent(s)' }
+    })
+    const inbox = {
+      take: () => { const t = notices.splice(0); if (t.length) owed = false; return t },
+      pending: () => owed || notices.length > 0,
+      wait: () => new Promise<void>((resolve) => { wake = resolve; if (notices.length) resolve() }),
+      takeStatus: () => rows.splice(0).flat(),
+    }
+    const message = await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, sendStep: send, dispatch, inbox }))
+    // Task dispatch step + the answer step + exactly one step to read the ping: the existing runTurn loop, no extra model loop.
+    expect(send).toHaveBeenCalledTimes(3)
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    const parts = message.parts.filter(p => p.type === TASK_STATUS_PART)
+    // Same stable part id: the completion row REPLACES the dispatch row in place.
+    expect(parts).toHaveLength(1)
+    expect(parts[0]).toMatchObject({ id: 'task-status:tk:a', data: { subagents: [{ runId: 'tk:a', status: 'done', endedAt: 20, finalOutput: 'the answer' }] } })
+    expect(taskStatusRows([message])).toEqual([{ runId: 'tk:a', name: 'a', status: 'done', startedAt: 10, endedAt: 20, finalOutput: 'the answer' }])
+    // The tool result stays the dispatch receipt, never the child's answer.
+    expect(message.parts.find(p => 'toolCallId' in p)).toMatchObject({ output: 'Dispatched 1 subagent(s)' })
+    // Data parts never reach the model.
+    for (const call of send.mock.calls) {
+      const model = await convertToModelMessages(call[0] as UIMessage[])
+      expect(JSON.stringify(model)).not.toContain('task-status')
+    }
+    // Persisted and reloaded losslessly (no unsupported-part fallback).
+    const stored = JSON.parse(JSON.stringify({
+      id: message.id, thread_id: 'fixture', role: 'assistant', status: 'ready', object: 'thread.message', created_at: 1, completed_at: 1,
+      ...assistantRecordFields(message, {}, { stopped: false }),
+    })) as ThreadMessage
+    expect(stored.metadata).not.toHaveProperty('uiPartsSkipped')
+    expect(taskStatusRows([convertThreadMessageToUIMessage(stored)])).toEqual(taskStatusRows([message]))
+  })
+  it('keeps working without a status source: a plain inbox emits no data parts', async () => {
+    const send = vi.fn().mockResolvedValue(stream(answer))
+    const message = await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, sendStep: send, dispatch: vi.fn(), inbox: { take: () => [], pending: () => false, wait: async () => {} } }))
+    expect(message.parts.some(p => p.type === TASK_STATUS_PART)).toBe(false)
   })
   it('normalizes a dispatch exception without a second dispatch', async () => {
     const send = vi.fn().mockResolvedValueOnce(stream([{ type: 'tool-input-available', toolCallId: 'c', toolName: 'fixture', input: {} }, { type: 'finish' }])).mockResolvedValueOnce(stream(answer))

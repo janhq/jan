@@ -55,6 +55,11 @@ export const SCOPED_CHAT_EXCLUDED_NATIVE_TOOLS = Object.freeze([
  * allowlist; their Chat route integration is a later, separate change. */
 export const SCOPED_CHAT_CLIENT_TOOLS = Object.freeze(['todo', 'ask'] as const)
 
+/** Client-dispatched orchestration tools. `task` needs the model+sandbox gate;
+ * `monitor` additionally needs the thread's explicit folder consent (the host
+ * refuses to start or poll without it). Never part of the native allowlist. */
+export const SCOPED_CHAT_ORCHESTRATION_TOOLS = Object.freeze(['task', 'monitor'] as const)
+
 export type ScopedChatPolicyInput = {
   /** Builder-level Chat gate: the selected model advertises tool support. */
   modelSupportsTools: boolean
@@ -73,6 +78,8 @@ export type ScopedChatToolPolicy = {
    * API until the integration consumes it, so callers name the intent rather
    * than a tool string. */
   memoryMutationAdvertised: boolean
+  /** Frozen per-turn orchestration advertisement (task; monitor only when consented). */
+  advertisedOrchestrationTools: readonly string[]
 }
 
 /** No settings reads or new defaults: the caller supplies its existing model
@@ -93,7 +100,11 @@ export function resolveScopedChatToolPolicy(
       ])
     : Object.freeze([])
   const names = new Set(advertised)
+  const orchestration: readonly string[] = active
+    ? Object.freeze(['task', ...(grant.folderScope ? ['monitor'] : [])])
+    : Object.freeze([])
   return {
+    advertisedOrchestrationTools: orchestration,
     active,
     advertisedNativeTools: advertised,
     advertisesNativeTool: (name: string) => names.has(name),
