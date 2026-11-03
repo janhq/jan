@@ -1980,13 +1980,14 @@ describe('ThreadDetail route', () => {
     it('freezes one grant per toolCallId across arrival and dispatch (no orphan prompt after revoke)', async () => {
       h.appStateState.mcpToolNames = new Set()
       h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedNativeTool = () => true
+      renderComponent()
+      // Count authority reads for the call, not the panel's render-time folder projection.
       let reads = 0
       h.threadsState.getConversationCapabilities.mockImplementation(() => (
         ++reads === 1
           ? { version: 1, folderScope: null, shellNetwork: false, memoryWrite: true }
           : { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
       ))
-      renderComponent()
       const toolCall = call('frozen-skill-write', 'skill_write', { name: 'x', content: 'y' })
       await arrive(toolCall)
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
