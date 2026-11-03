@@ -401,13 +401,13 @@ class NoticeEvent(TypedDict):
     text: str
     type: Literal["notice"]
 
-class AgentMessageEvent(TypedDict):
-    """`item/agent_message`"""
-
-    from: str
-    to: str
-    text: str
-    type: Literal["agent_message"]
+# `item/agent_message`
+AgentMessageEvent = TypedDict("AgentMessageEvent", {
+    "from": str,
+    "to": str,
+    "text": str,
+    "type": Literal["agent_message"],
+})
 
 class CompactionEvent(TypedDict):
     """`item/compaction`"""

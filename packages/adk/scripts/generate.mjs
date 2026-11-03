@@ -184,13 +184,20 @@ const pyUnion = (members) => {
 /// is the same value; only the annotation is loose.
 ///
 /// TypedDict's class syntax takes bare identifiers as keys, so a key that is
-/// not one - a dotted or dashed name a host may declare - falls back to the
-/// functional form, which takes string literals and keeps the same shape.
+/// not one - a dotted or dashed name a host may declare, or a Python keyword
+/// such as `from` that is a fine JSON key - falls back to the functional form,
+/// which takes string literals and keeps the same shape.
+const PY_KEYWORDS = new Set([
+  'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break',
+  'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally', 'for',
+  'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not',
+  'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield',
+])
 const pyTypedDict = (name, node, docstring) => {
   const props = Object.entries(node.properties ?? {})
   const required = new Set(node.required ?? [])
   const identifier = /^[A-Za-z_][A-Za-z0-9_]*$/
-  const bare = props.every(([prop]) => identifier.test(prop))
+  const bare = props.every(([prop]) => identifier.test(prop) && !PY_KEYWORDS.has(prop))
   if (!props.length && !docstring) return [`${name} = ${pyType(node)}`]
   const entry = ([prop, value], indent) => [
     ...comments(value.description, indent, '#'),
@@ -198,9 +205,11 @@ const pyTypedDict = (name, node, docstring) => {
   ]
   if (!bare) {
     const fields = props.flatMap((prop) => entry(prop, '    '))
+    // The functional form has no body for a docstring, so it rides as a comment.
     return [
+      ...(docstring ? [`# ${docstring}`] : []),
       `${name} = TypedDict(${JSON.stringify(name)}, {`,
-      ...fields.map((line) => (line.trimStart().startsWith('#') ? line : `    ${line.trimStart()}`)),
+      ...fields.map((line) => (line.trimStart().startsWith('#') ? line : `    ${line.trimStart()},`)),
       '})',
     ]
   }
