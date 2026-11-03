@@ -14,6 +14,7 @@ import {
   type SubagentRequest,
 } from './coworkSubagent'
 import { chatChildTools } from './chatChildTools'
+import { TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER } from './chatTaskStatus'
 import { unadvertisedToolRefusal } from './coworkTools'
 import { MonitorLane, monitorSpecFromArgs, parseMonitorId } from './coworkMonitor'
 import { useMonitorNotices } from '@/stores/monitor-notice-store'
@@ -208,10 +209,7 @@ export function takeTaskStatus(threadId: string, signal?: AbortSignal): TaskStat
 
 /** Persisted into the transcript, so child text is bounded (UTF-16 code units,
  * marker included: the result is never longer than the limit). */
-export const TASK_STATUS_TEXT_LIMIT = 100_000
-export const TASK_STATUS_TRUNCATION_MARKER = '\n\n[truncated: output exceeded 100000 characters]'
-
-export { truncateUtf16 }
+export { TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER, truncateUtf16 }
 
 const bound = (value: string | undefined): string | undefined =>
   value === undefined ? value : truncateUtf16(value, TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER)

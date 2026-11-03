@@ -9,6 +9,13 @@ import {
 import type { UIMessage } from '@ai-sdk/react'
 import { isChatRunNotice } from './chatRunNotice'
 import { isRunContextData } from './chatRunContext'
+import {
+  TASK_STATUS_CARRIER_TEXT_LIMIT,
+  shapeTaskStatusPart,
+  stripTaskStatusPart,
+  taskStatusHasBulk,
+  truncateTaskStatusPart,
+} from './chatTaskStatus'
 // Attachments are now handled upstream in newUserThreadContent
 
 type ThreadContent = NonNullable<ThreadMessage['content']>[number]
@@ -263,9 +270,24 @@ export function convertThreadMessageToUIMessage(
     unknown
   >
   // `uiPartsSkipped` stays visible: that turn reloads (and is re-sent) lossy.
-  const parts: any[] =
-    rehydrateUIParts(uiParts, threadMessage.content || [], metadata.toolErrors) ??
-    contentToUIParts(threadMessage)
+  const rehydrated = rehydrateUIParts(
+    uiParts,
+    threadMessage.content || [],
+    metadata.toolErrors
+  )
+  const parts: any[] = rehydrated?.parts ?? contentToUIParts(threadMessage)
+  // Display-only status parts dropped on this read are counted, on top of any
+  // omission the writer already recorded. Never written back (the writer
+  // clears it on rebuild), so no authority changes.
+  if (rehydrated?.dropped) {
+    const prior = (metadata.uiTaskStatusShed ?? {}) as Record<string, unknown>
+    metadata.uiTaskStatusShed = {
+      ...prior,
+      dropped:
+        (typeof prior.dropped === 'number' ? prior.dropped : 0) +
+        rehydrated.dropped,
+    }
+  }
 
   return {
     id: threadMessage.id,
@@ -612,6 +634,13 @@ type UIPartsSkipped = 'provider-metadata' | 'size' | 'unsupported-part' | 'misma
 
 const UI_PARTS_MAX_CHARS = 256 * 1024
 const DIFF_PART_TYPE = 'data-tool-diff'
+const TASK_STATUS_TYPE = 'data-task-status'
+
+// Display-only status parts shed to fit the carrier; see `uiPartsFor`.
+// Stored as `metadata.uiTaskStatusShed`, which is diagnostics only: it counts
+// what was cut, and nothing reads it to decide how a turn is shown, rebuilt or
+// sent to the model.
+type TaskStatusShed = { truncated?: number; stripped?: number; dropped?: number }
 const PROVIDER_METADATA_MAX_CHARS = 8 * 1024
 const SETTLED_TOOL_STATES = new Set([
   'output-available',
@@ -694,6 +723,11 @@ function providerField(value: unknown): unknown {
 
 function sanitizeUIPart(part: any): Record<string, unknown> {
   const type = part?.type
+  if (type === TASK_STATUS_TYPE) {
+    // Shaped (allowlisted row keys, bounded ids/text); idempotent on a stored part.
+    part = shapeTaskStatusPart(part)
+    if (!part) throw new SkipUIParts('unsupported-part')
+  }
   if (type === 'data-tool-diff') {
     const data = part.data
     if (
@@ -813,6 +847,22 @@ function resolveContentPointers(part: unknown, content: any[]): unknown {
   return rest
 }
 
+// Task-status parts are display-only and optional. Only a malformed one is
+// filtered out (and counted); every other part, canonical or run-context, is
+// left for the strict sanitize, which still fails closed on its own malformed
+// parts. Used by the writer (uiPartsFor) and the reader (rehydrateUIParts).
+function filterTaskStatusParts<T>(parts: T[]): { parts: T[]; dropped: number } {
+  let dropped = 0
+  const kept = parts.flatMap((part) => {
+    if ((part as { type?: unknown } | null)?.type !== TASK_STATUS_TYPE) return [part]
+    const shaped = shapeTaskStatusPart(part)
+    if (shaped) return [shaped as unknown as T]
+    dropped += 1
+    return []
+  })
+  return { parts: kept, dropped }
+}
+
 // The stored parts, when the carrier is intact and re-deriving the record's
 // `content` and `metadata.toolErrors` from them gives back exactly what is
 // stored: any writer that changed either since (an older build's Stop rewrite,
@@ -821,24 +871,51 @@ function rehydrateUIParts(
   carrier: unknown,
   content: ThreadContent[],
   toolErrors: unknown
-): Record<string, unknown>[] | undefined {
+): { parts: Record<string, unknown>[]; dropped: number } | undefined {
   const { v, parts } = (carrier ?? {}) as { v?: unknown; parts?: unknown }
   if (v !== 1 || !Array.isArray(parts) || parts.length === 0) return undefined
   try {
-    const rehydrated = sanitizeUIParts(
+    const filtered = filterTaskStatusParts(
       parts.map((part) => resolveContentPointers(part, content))
     )
+    const rehydrated = sanitizeUIParts(filtered.parts)
     const derived = extractContentPartsFromUIMessage({
       parts: rehydrated,
     } as unknown as UIMessage)
     const derivedErrors = toolErrorsOf({ parts: rehydrated } as unknown as UIMessage)
     return canonicalJson(derived) === canonicalJson(content) &&
       canonicalJson(derivedErrors ?? {}) === canonicalJson(toolErrors ?? {})
-      ? rehydrated
+      ? { parts: rehydrated, dropped: filtered.dropped }
       : undefined
   } catch {
     return undefined
   }
+}
+
+// The form a part is stored in: the two large payloads `content` already
+// holds are kept once (a media data URL and a tool output), and the part
+// points at them instead. Any other part is stored as is.
+function storedPart(
+  part: Record<string, unknown>,
+  content: ThreadContent[]
+): Record<string, unknown> {
+  if (part.type === 'file' && typeof part.url === 'string' && part.url.startsWith('data:')) {
+    const ref = content.findIndex(
+      (_, i) => contentMediaUrl(content, i, part.mediaType) === part.url
+    )
+    if (ref < 0) return part
+    const stored: Record<string, unknown> = { ...part, contentRef: ref }
+    delete stored.url
+    return stored
+  }
+  if (part.state === 'output-available' && part.output !== undefined) {
+    const entry = contentToolCall(content, part.toolCallId)
+    if (!entry || canonicalJson(entry.output) !== canonicalJson(part.output)) return part
+    const stored: Record<string, unknown> = { ...part, outputInContent: true }
+    delete stored.output
+    return stored
+  }
+  return part
 }
 
 function uiPartsFor(
@@ -849,74 +926,126 @@ function uiPartsFor(
   uiParts?: { v: 1; parts: unknown[] }
   uiPartsSkipped?: UIPartsSkipped
   uiDiffsOmitted?: number
+  uiTaskStatusShed?: TaskStatusShed
 } {
   if (!message.parts?.length) return {}
+  const shed: TaskStatusShed = {}
   try {
-    const sanitized = sanitizeUIParts(message.parts)
+    // Task-status rows are display-only and optional: a malformed part is
+    // dropped (and counted) instead of costing the turn its whole carrier.
+    const { parts: prepared, dropped } = filterTaskStatusParts(message.parts)
+    if (dropped) shed.dropped = dropped
+    const sanitized = sanitizeUIParts(prepared)
     const legacy = sanitizeUIParts(
       contentToUIParts({ ...message, content, metadata } as unknown as ThreadMessage)
     )
-    const build = (
-      parts: Record<string, unknown>[]
-    ): { v: 1; parts: unknown[] } | undefined => {
-      if (canonicalJson(legacy) === canonicalJson(parts)) return undefined
-      const uiParts = {
-        v: 1 as const,
-        // The two large payloads `content` already holds are kept once: a
-        // media data URL and a tool output. The part points at them instead.
-        parts: parts.map((part) => {
-          if (part.type === 'file' && typeof part.url === 'string' && part.url.startsWith('data:')) {
-            const ref = content.findIndex(
-              (_, i) => contentMediaUrl(content, i, part.mediaType) === part.url
-            )
-            if (ref < 0) return part
-            const stored: Record<string, unknown> = { ...part, contentRef: ref }
-            delete stored.url
-            return stored
-          }
-          if (part.state === 'output-available' && part.output !== undefined) {
-            const entry = contentToolCall(content, part.toolCallId)
-            if (!entry || canonicalJson(entry.output) !== canonicalJson(part.output))
-              return part
-            const stored: Record<string, unknown> = { ...part, outputInContent: true }
-            delete stored.output
-            return stored
-          }
-          return part
-        }),
+    const legacyJson = canonicalJson(legacy)
+    // Display-only diffs and task-status rows are optional: when they push the
+    // carrier over its budget they are shed one step at a time, so they can
+    // never turn a turn that would otherwise store its canonical and
+    // model-visible parts (run-context pings, reasoning, tool parts) into a
+    // lossy one. Order: cut the largest status text, drop the largest diff, strip
+    // status text entirely, and only then drop a status part (identity and
+    // timestamps are kept as long as possible).
+    //
+    // Each part's stored form and its exact JSON length are computed once, and
+    // the carrier's total length is kept as a running sum (wrapper + parts +
+    // commas), so shedding never re-serializes or re-scans the whole carrier.
+    type Entry = {
+      original: Record<string, unknown>
+      stored: Record<string, unknown>
+      size: number
+      active: boolean
+    }
+    const entries: Entry[] = sanitized.map((original) => {
+      const stored = storedPart(original, content)
+      return { original, stored, size: JSON.stringify(stored).length, active: true }
+    })
+    const isShed = (e: Entry) => e.original.type === TASK_STATUS_TYPE || e.original.type === DIFF_PART_TYPE
+    const wrapper = JSON.stringify({ v: 1, parts: [] }).length
+    const totalOf = (list: Entry[]) =>
+      wrapper + list.reduce((sum, e) => sum + e.size, 0) + Math.max(0, list.length - 1)
+    let total = totalOf(entries)
+    let activeCount = entries.length
+    const fits = () => total <= UI_PARTS_MAX_CHARS
+
+    // Parts that are never shed must fit on their own: fail early instead of
+    // shedding everything first. (If they are exactly the canonical parts, no
+    // carrier is needed at all, so that case is left to the final comparison.)
+    const fixed = entries.filter((e) => !isShed(e))
+    if (totalOf(fixed) > UI_PARTS_MAX_CHARS &&
+      canonicalJson(fixed.map((e) => e.original)) !== legacyJson)
+      throw new SkipUIParts('size')
+
+    const shrink = (entry: Entry, to: Record<string, unknown> | undefined) => {
+      if (to) {
+        const stored = storedPart(to, content)
+        const size = JSON.stringify(stored).length
+        total += size - entry.size
+        Object.assign(entry, { original: to, stored, size })
+      } else {
+        total -= entry.size + (activeCount > 1 ? 1 : 0)
+        activeCount--
+        entry.active = false
       }
-      if (JSON.stringify(uiParts).length > UI_PARTS_MAX_CHARS)
-        throw new SkipUIParts('size')
+    }
+    // One pass per tier over candidates sorted once, largest first (ties keep
+    // part order), stopping as soon as the carrier fits.
+    const runTier = (candidates: Entry[], apply: (entry: Entry) => void) => {
+      for (const entry of [...candidates].sort((a, b) => b.size - a.size)) {
+        if (fits()) return
+        apply(entry)
+      }
+    }
+    const isStatus = (e: Entry) => e.original.type === TASK_STATUS_TYPE
+    const hasLongText = (e: Entry) =>
+      isStatus(e) &&
+      (e.original.data as { subagents: Record<string, unknown>[] }).subagents.some((row) =>
+        [row.finalOutput, row.error].some(
+          (v) => typeof v === 'string' && v.length > TASK_STATUS_CARRIER_TEXT_LIMIT
+        )
+      )
+    let omitted = 0
+    if (!fits()) {
+      runTier(entries.filter(hasLongText), (e) => {
+        shrink(e, truncateTaskStatusPart(e.original))
+        shed.truncated = (shed.truncated ?? 0) + 1
+      })
+    }
+    if (!fits()) {
+      runTier(entries.filter((e) => e.original.type === DIFF_PART_TYPE), (e) => {
+        shrink(e, undefined)
+        omitted++
+      })
+    }
+    if (!fits()) {
+      runTier(entries.filter((e) => e.active && isStatus(e) && taskStatusHasBulk(e.original)), (e) => {
+        shrink(e, stripTaskStatusPart(e.original))
+        shed.stripped = (shed.stripped ?? 0) + 1
+      })
+    }
+    if (!fits()) {
+      runTier(entries.filter((e) => e.active && isStatus(e)), (e) => {
+        shrink(e, undefined)
+        shed.dropped = (shed.dropped ?? 0) + 1
+      })
+    }
+
+    // The carrier is built once, from what is left.
+    const active = entries.filter((e) => e.active)
+    let uiParts: { v: 1; parts: unknown[] } | undefined
+    if (canonicalJson(active.map((e) => e.original)) !== legacyJson) {
+      uiParts = { v: 1 as const, parts: active.map((e) => e.stored) }
+      if (JSON.stringify(uiParts).length > UI_PARTS_MAX_CHARS) throw new SkipUIParts('size')
       // Never store a carrier the reader would reject (e.g. a call still in
       // flight that already has an output, which `content` keeps).
       if (!rehydrateUIParts(uiParts, content, metadata.toolErrors))
         throw new SkipUIParts('mismatch')
-      return uiParts
-    }
-    // Display-only diffs are optional: when they push the carrier over its
-    // budget the largest are dropped one at a time, so they can never turn a
-    // turn that would otherwise store its canonical parts into a lossy one.
-    let kept = sanitized
-    let omitted = 0
-    let uiParts: { v: 1; parts: unknown[] } | undefined
-    for (;;) {
-      try {
-        uiParts = build(kept)
-        break
-      } catch (error) {
-        if (!(error instanceof SkipUIParts) || error.reason !== 'size') throw error
-        const diffs = kept.filter((p) => p.type === DIFF_PART_TYPE)
-        if (!diffs.length) throw error
-        const largest = diffs.reduce((a, b) =>
-          JSON.stringify(b).length > JSON.stringify(a).length ? b : a
-        )
-        kept = kept.filter((p) => p !== largest)
-        omitted++
-      }
     }
     return {
       ...(uiParts ? { uiParts } : {}),
       ...(omitted ? { uiDiffsOmitted: omitted } : {}),
+      ...(Object.keys(shed).length ? { uiTaskStatusShed: shed } : {}),
     }
   } catch (error) {
     // The carrier is optional: whatever goes wrong building it, the turn is
@@ -958,6 +1087,10 @@ function uiPartsFor(
  * Display-only `data-tool-diff` parts are the exception to "whole or nothing":
  * when they alone exceed the budget the largest are dropped and
  * `metadata.uiDiffsOmitted` counts them; canonical parts are kept.
+ * `data-task-status` rows are display-only too: they are shape-validated, and
+ * over budget their text is cut, then stripped, then (last) the part dropped,
+ * with `metadata.uiTaskStatusShed = { truncated?, stripped?, dropped? }` counting
+ * parts. Run-context pings and reasoning/tool parts are never shed for them.
  *
  * `baseMetadata` is spread first, minus any `uiParts` / `uiPartsSkipped` it
  * carries from an earlier version of the turn.
@@ -977,6 +1110,7 @@ export function assistantRecordFields(
   delete metadata.uiParts
   delete metadata.uiPartsSkipped
   delete metadata.uiDiffsOmitted
+  delete metadata.uiTaskStatusShed
   return {
     content,
     metadata: { ...metadata, ...uiPartsFor(message, content, metadata) },

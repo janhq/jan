@@ -891,7 +891,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return isScopedThreadTool(name) && Object.prototype.hasOwnProperty.call(tools, name) && !this.getMcpServerForTool(name)
   }
 
-  /** Conversation-owned todo/ask: advertised in this run's frozen record. */
   /** The run's frozen advertised record (a copy). Children narrow from this,
    * never from a live refresh. */
   getAdvertisedTools(): Record<string, Tool> {
@@ -903,6 +902,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return this.model
   }
 
+  /** Conversation-owned todo/ask: advertised in this run's frozen record. */
   hasAdvertisedClientTool(name: string): boolean {
     const tools = this.chatRunSnapshot?.tools ?? this.tools
     return (
