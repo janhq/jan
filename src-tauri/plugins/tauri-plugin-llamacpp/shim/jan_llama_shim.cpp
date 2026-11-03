@@ -462,6 +462,16 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
         global.apply_to_params(engine->params);
         it->second.apply_to_params(engine->params);
 
+        // The router starts every child with `--alias <section name>`
+        // (server-models.cpp, update_args), and server_context answers with the
+        // first alias as the model name. Nothing here is a router, so without
+        // this it falls back to the model *file path* -- which is what API
+        // clients read back as `model` (`\\?\C:\...\model.gguf` on Windows).
+        // Replaced rather than added to: the router does the same, and the
+        // first member of a set of aliases is the one that gets used.
+        engine->params.model_alias.clear();
+        engine->params.model_alias.insert(preset_name);
+
         // common_params_parse does this at arg.cpp:886-890; apply_to_params does
         // not. Without it n_threads stays 0 and ggml_threadpool_new_impl
         // memsets a zero-length array -> SIGSEGV. The router never hits this
