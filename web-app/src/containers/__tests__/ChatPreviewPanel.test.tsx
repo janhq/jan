@@ -145,6 +145,50 @@ describe('ChatPreviewPanel', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  it.each([
+    'asset://localhost/%2Fw%2Fp.png',
+    'asset:/w/p.png',
+    'https://evil.example/p.png',
+    'http://evil.example/p.png',
+    'file:///etc/passwd',
+    'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+    'data:text/html;base64,PGgxPmhpPC9oMT4=',
+    'data:image/png;base64,AAAA"onerror="alert(1)',
+    'data:image/png,AAAA',
+  ])('rejects image URL %s as unsupported, with no fetch or convertFileSrc', async (dataUrl) => {
+    executeAgentTool.mockResolvedValue({ images: [{ dataUrl }] })
+    render(<ChatPreviewPanel threadId="t1" path="/w/p.png" onClose={vi.fn()} />)
+    await waitFor(() => expect(body()).toHaveAttribute('data-status', 'unsupported'))
+    expect(body()).not.toHaveTextContent(dataUrl)
+    expect(convertFileSrc).not.toHaveBeenCalled()
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it.each(['jpeg', 'gif', 'webp'])('accepts a host-encoded %s data URL', async (fmt) => {
+    const dataUrl = `data:image/${fmt};base64,/9j/4AAQSkZJRg==`
+    executeAgentTool.mockResolvedValue({ images: [{ dataUrl }] })
+    render(<ChatPreviewPanel threadId="t1" path="/w/p.png" onClose={vi.fn()} />)
+    await waitFor(() => expect(body()).toHaveAttribute('data-status', 'ready'))
+    expect(body()).toHaveTextContent(dataUrl)
+  })
+
+  it.each([
+    ['/w/page.html', '<h1>hi</h1><script>alert(1)</script>'],
+    ['/w/page.htm', '<meta http-equiv="refresh" content="0;url=https://x.example">'],
+    ['/w/pic.svg', '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'],
+  ])('renders %s as kind text source, not a live frame', async (path, content) => {
+    executeAgentTool.mockResolvedValue({ content })
+    const { container } = render(
+      <ChatPreviewPanel threadId="t1" path={path} onClose={vi.fn()} />
+    )
+    await waitFor(() => expect(body()).toHaveAttribute('data-status', 'ready'))
+    expect(body()).toHaveAttribute('data-kind', 'text')
+    expect(body()).toHaveTextContent(content)
+    expect(container.querySelector('iframe, object, embed')).toBeNull()
+    expect(convertFileSrc).not.toHaveBeenCalled()
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
   it('treats an image read with no data URL as unsupported', async () => {
     executeAgentTool.mockResolvedValue({ content: 'binary', images: [] })
     render(<ChatPreviewPanel threadId="t1" path="/w/p.png" onClose={vi.fn()} />)

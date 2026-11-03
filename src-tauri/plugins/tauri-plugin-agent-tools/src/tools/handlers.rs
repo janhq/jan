@@ -681,15 +681,22 @@ async fn read(
     let limit = arg_u64(args, "limit").map(|v| v as usize);
     let target = resolve_path(root, scratch, path);
     // Fail closed: a component swapped to a symlink after the gate validated
-    // the path must not redirect the open out of the workspace.
-    if symlink_escapes_any_root(root, scratch, read_roots, &target) {
-        return (
-            format!("ERROR: refused to read through a symlink out of the workspace: {path}"),
-            None,
-        );
-    }
+    // the path must not redirect the open out of the workspace. Resolve once and
+    // open exactly what was classified: re-resolving `target` for the read would
+    // let a link swapped in between escape a check it was never run against.
+    let resolved = match landing(root, scratch, read_roots, &target) {
+        Landing::Inside(p) => p,
+        // Not under any root: the gate already put it to the user.
+        Landing::Outside(p) => p.unwrap_or_else(|| target.clone()),
+        Landing::Escapes => {
+            return (
+                format!("ERROR: refused to read through a symlink out of the workspace: {path}"),
+                None,
+            );
+        }
+    };
 
-    let bytes = match tokio::fs::read(&target).await {
+    let bytes = match tokio::fs::read(&resolved).await {
         Ok(b) => b,
         Err(e) => return (format!("ERROR: {e}"), None),
     };
@@ -699,7 +706,9 @@ async fn read(
     // plain read (no offset/limit) does this, since slicing an image makes no
     // sense and offset/limit still refers to text lines.
     if offset.is_none() && limit.is_none() && bytes.len() <= MAX_IMAGE_BYTES {
-        if let Some(mime) = crate::tools::image::detect(&target) {
+        // Decided from the bytes already read from `resolved`, never by
+        // reopening a path a link could since have been swapped under.
+        if let Some(mime) = crate::tools::image::detect_bytes(&bytes, &resolved) {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
             let name = target

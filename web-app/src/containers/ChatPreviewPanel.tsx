@@ -12,14 +12,19 @@ import { executeAgentTool } from '@/lib/agentTools'
 import { useThreads } from '@/hooks/useThreads'
 import {
   basenameOf,
-  externalRefs,
   previewKindFor,
-  unresolvedRefs,
   type PreviewState,
 } from '@/lib/coworkPreview'
 
 /** What native `read` appends when it capped the output. */
 const TRUNCATED = '\n[truncated:'
+
+/**
+ * The only image URL Chat renders: an inline raster the host itself encoded
+ * (native `read` emits png, jpeg, gif and webp). Never SVG, never a network or
+ * asset URL, so a malicious `https:` or `asset:` string in a result is refused.
+ */
+const HOST_IMAGE_URL = /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/
 
 type Props = {
   threadId: string
@@ -36,6 +41,7 @@ type Props = {
  * path, symlinks included. Roots the UI believes in carry no authority.
  *
  * Media that needs the asset protocol (video, audio) is not previewed here.
+ * HTML and SVG appear as source text, never as a live document.
  */
 export function ChatPreviewPanel({ threadId, path, onClose }: Props) {
   const { t } = useTranslation()
@@ -74,7 +80,7 @@ export function ChatPreviewPanel({ threadId, path, onClose }: Props) {
       if (kind === 'image') {
         const url = res.images?.[0]?.dataUrl
         setState(
-          url
+          typeof url === 'string' && HOST_IMAGE_URL.test(url)
             ? { status: 'ready', path, kind, assetUrl: url }
             : { status: 'unsupported', path }
         )
@@ -86,13 +92,15 @@ export function ChatPreviewPanel({ threadId, path, onClose }: Props) {
         setState({ status: 'failed', path, reason: 'common:preview.tooLarge' })
         return
       }
+      // HTML and SVG are shown as source text. Chat runs no artifact script and
+      // follows no meta refresh, and nothing here proves the frame's network and
+      // navigation confinement, so a rendered preview would claim more than it
+      // can promise. Cowork keeps its own sandboxed renderer.
       setState({
         status: 'ready',
         path,
-        kind,
+        kind: kind === 'html' || kind === 'svg' ? 'text' : kind,
         content,
-        unresolvedRefs: kind === 'html' ? unresolvedRefs(content) : undefined,
-        externalRefs: kind === 'html' ? externalRefs(content) : undefined,
       })
     })().catch((e: unknown) => {
       // A rejected read (revoke race, host failure) must be a visible failure,
