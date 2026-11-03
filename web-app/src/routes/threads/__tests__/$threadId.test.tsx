@@ -1938,11 +1938,12 @@ describe('ThreadDetail route', () => {
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
     })
 
-    it('refuses a memory mutation without its grant before arrival approval', async () => {
+    it.each([false, true])('refuses memory mutation before approval even with memoryWrite=%s', async (memoryWrite) => {
       h.appStateState.mcpToolNames = new Set()
       h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedNativeTool = () => true
       h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }))
       renderComponent()
+      h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite }))
       const toolCall = call('denied-memory-write', 'memory', { op: 'write', name: 'note', content: 'value' })
       await arrive(toolCall)
       expect(await dispatch(toolCall)).toMatchObject({ isError: true, output: expect.stringContaining('durable memory writes') })
