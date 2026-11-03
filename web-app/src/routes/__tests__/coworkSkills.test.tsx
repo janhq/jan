@@ -103,6 +103,8 @@ vi.mock('@/lib/coworkTransport', async () => {
     },
   }
 })
+// This mounted skills suite isolates storage; durability is covered by CoworkPage/coworkSync integration tests.
+vi.mock('@/lib/coworkSync', () => ({ ensureCoworkRecorded: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/coworkEnv', () => ({ getCoworkEnvironment: async () => ({}) }))
 vi.mock('@/lib/coworkRunner', async (original) => ({
   ...(await original<typeof CoworkRunner>()),
