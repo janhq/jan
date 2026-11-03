@@ -252,6 +252,38 @@ describe('Project route single Chat flow', () => {
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
   })
 
+  it('temporary mode with a non-tools model shows no unsupported/pending notice, then a regular chat preserves the pending draft', async () => {
+    const Component = Route.component as React.ComponentType
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    const view = renderComponent()
+    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
+    fireEvent.click(
+      await screen.findByLabelText('Allow shell commands to access the network')
+    )
+    h.selectedModel = { id: 'model-b', capabilities: [] }
+    window.history.replaceState({}, '', '/?temporary-chat=true')
+    view.rerender(<Component />)
+    // Temporary chat never persists consent: no misleading notice, no prepare path.
+    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
+    expect(screen.getByTestId('project-scope-status')).toBeEmptyDOMElement()
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    // Switching back to a regular chat still tells the truth about the kept draft.
+    window.history.replaceState({}, '', '/')
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
+      'common:conversationScope.pendingKept'
+    )
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    // And the draft survives to resurface on a tool-capable model.
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
+      'Conversation permissions (pending)'
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+  })
+
   it.each([
     '/?x-temporary-chat=true',
     '/?temporary-chat=truex',
