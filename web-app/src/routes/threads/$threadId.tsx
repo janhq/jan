@@ -281,6 +281,9 @@ const grantKeyOf = (grant: unknown): string => {
 }
 const callMcpIdentities = new Map<string, Map<string, string | undefined>>()
 const callMcpValidators = new Map<string, Map<string, (signal?: AbortSignal) => Promise<void>>>()
+// The tool a call id was first bound to: a cached identity/validator/approval
+// never carries over to a different tool presented under the same id.
+const callMcpToolNames = new Map<string, Map<string, string>>()
 const approvalsOf = (threadId: string) => {
   let approvals = toolApprovalPromises.get(threadId)
   if (!approvals) {
@@ -294,6 +297,7 @@ const forgetApprovals = (threadId: string) => {
   callNativeGrants.delete(threadId)
   callMcpIdentities.delete(threadId)
   callMcpValidators.delete(threadId)
+  callMcpToolNames.delete(threadId)
   useChildApprovalCalls.getState().clearThread(threadId)
 }
 
@@ -572,6 +576,16 @@ function ThreadDetail() {
 
   const { threadId } = useParams({ from: Route.id })
   const bindMcpCall = (toolCall: { toolName: string; toolCallId: string }, child?: ChildBinding) => {
+    let toolNames = callMcpToolNames.get(threadId)
+    if (!toolNames) {
+      toolNames = new Map()
+      callMcpToolNames.set(threadId, toolNames)
+    }
+    const boundTool = toolNames.get(toolCall.toolCallId)
+    if (boundTool !== undefined && boundTool !== toolCall.toolName) {
+      throw new Error(`Duplicate tool call id: ${toolCall.toolCallId}`)
+    }
+    toolNames.set(toolCall.toolCallId, toolCall.toolName)
     let identities = callMcpIdentities.get(threadId)
     if (!identities) {
       identities = new Map()

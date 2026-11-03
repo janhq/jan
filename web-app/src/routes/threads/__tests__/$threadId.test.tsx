@@ -1802,6 +1802,28 @@ describe('ThreadDetail route', () => {
         expect(run).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ serverName: 'frozen-server' }))
       })
 
+      describe('a reused child call id cannot carry identity or approval to another tool', () => {
+        const twoTools = () => ({
+          ceiling: h.threadsState.getConversationCapabilities(),
+          mcpServers: new Map([['fetch', 'frozen-server'], ['wipe', 'frozen-server']]),
+        })
+        it('same child toolCallId, changed toolName, same server: second tool is not validated/approved by the first', async () => {
+          // Only `fetch` exists on the server; `wipe` would fail validation if it were ever checked.
+          h.appStateState.tools = [{ name: 'fetch', server: 'frozen-server' }]
+          getMcpTools.mockResolvedValue([{ name: 'fetch', server: 'frozen-server' }])
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          const run = serveMcp()
+          renderComponent()
+          const first = await childDispatch(call('task1:dup', 'fetch'), twoTools())
+          expect(first).not.toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+          const second = await childDispatch(call('task1:dup', 'wipe', { target: 'everything' }), twoTools())
+          // Fail closed: the second tool must neither run nor ride the first approval.
+          expect(second).toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+        })
+      })
+
       it('a denied child call is recorded as denial and is released', async () => {
         h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
         const run = serveMcp()

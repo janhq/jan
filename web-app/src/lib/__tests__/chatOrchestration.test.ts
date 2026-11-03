@@ -142,6 +142,48 @@ describe('bounded child tools', () => {
   })
 })
 
+describe('child tool-call identity', () => {
+  const twoCalls = (a: [string, string], b: [string, string]) =>
+    streamOf([a, b].flatMap(([name, id]) => [
+      { type: 'tool-input-start', toolCallId: id, toolName: name },
+      { type: 'tool-input-available', toolCallId: id, toolName: name, input: {} },
+    ]))
+
+  it('a child that reuses one toolCallId for a different tool in the same step never reaches dispatch twice with that id', async () => {
+    const { ctx, dispatch } = ctxFor()
+    let step = 0
+    hoisted.childStep.mockImplementation(async () => (step++ === 0 ? twoCalls(['read', 'dup'], ['write', 'dup']) : textStep('ok')))
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle(60)
+    const ids = (dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolCallId: string }).toolCallId)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect((dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolName: string }).toolName)).not.toContain('write')
+  })
+
+  it('a child that reuses a toolCallId in a later step is refused, not re-dispatched under the same id', async () => {
+    const { ctx, dispatch } = ctxFor()
+    let step = 0
+    hoisted.childStep.mockImplementation(async () => (step++ === 0 ? callStep('read', 'dup') : step === 2 ? callStep('write', 'dup') : textStep('ok')))
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle(60)
+    const ids = (dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolCallId: string }).toolCallId)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect((dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolName: string }).toolName)).toEqual(['read'])
+  })
+
+  it('crafted task call ids and names whose `${callId}-${name}` joins collide still get distinct child tool ids', async () => {
+    const { ctx, dispatch } = ctxFor()
+    hoisted.childStep.mockImplementation(async (o: { messages: unknown[] }) => (o.messages.length === 1 ? callStep('read', 'k') : textStep('ok')))
+    // ('a','n-m') and ('a-n','m') both join to 'a-n-m'.
+    await runChatTask({ subagents: [{ name: 'n-m', task: 'go' }] }, 'a', ctx)
+    await runChatTask({ subagents: [{ name: 'm', task: 'go' }] }, 'a-n', ctx)
+    await settle(80)
+    const ids = (dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolCallId: string }).toolCallId)
+    expect(ids).toHaveLength(2)
+    expect(new Set(ids).size).toBe(2)
+  })
+})
+
 describe('parent grant frozen at dispatch', () => {
   it('passes the grant frozen at task time (and frozen MCP identity) to every child dispatch', async () => {
     let live: unknown = grant({ folderScope: { path: '/p', access: 'read' } })

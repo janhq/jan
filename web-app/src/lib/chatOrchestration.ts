@@ -343,7 +343,7 @@ async function runChild(
   state: ThreadState,
   req: SubagentRequest,
   description: string,
-  id: string,
+  callId: string,
   childTools: Record<string, Tool>,
   system: string,
   model: LanguageModel | null,
@@ -369,6 +369,9 @@ async function runChild(
     }
     let finalText = ''
     let n = 0
+    // Route caches (MCP identity, validator, approval promise) are keyed by call
+    // id, so one child run may never present the same id twice.
+    const seenCalls = new Set<string>()
     const outcome = await runTurn({
       messages: [{ id: 'sub-user-0', role: 'user', parts: [{ type: 'text', text: description }] } as UIMessage],
       signal: controller.signal,
@@ -397,7 +400,14 @@ async function runChild(
         dispatch: async (call, signal) => {
           const refusal = unadvertisedToolRefusal(call.toolName, childTools)
           if (refusal) return refusal
-          const outcome = await ctx.dispatch({ ...call, toolCallId: `${id}:${call.toolCallId}` }, signal, binding)
+          if (seenCalls.has(call.toolCallId)) {
+            return { output: `Duplicate tool call id: ${call.toolCallId}`, isError: true }
+          }
+          seenCalls.add(call.toolCallId)
+          // An unambiguous tuple: `${callId}-${name}` / `${id}:${toolCallId}` joins
+          // collide across crafted ids ('a','n-m' vs 'a-n','m').
+          const toolCallId = JSON.stringify(['child', callId, req.name, call.toolCallId])
+          const outcome = await ctx.dispatch({ ...call, toolCallId }, signal, binding)
           return { ...outcome, output: text(outcome.output) }
         },
         sink: { onText() {}, onReasoning() {}, onToolStart() {}, onToolArgsDelta() {}, onToolCall() {} } as StreamSink,
@@ -486,9 +496,9 @@ export async function runChatTask(input: unknown, callId: string, ctx: ChatOrche
     try {
       const finalPhase = await runDispatchPlan(plan, callId, {
         signal: ctx.signal,
-        runOne: (req, description, id) => {
+        runOne: (req, description) => {
           const r = resolved.get(req.name)!
-          return runChild(ctx, state, req, description, id, r.tools, r.system, model, binding, ledger)
+          return runChild(ctx, state, req, description, callId, r.tools, r.system, model, binding, ledger)
         },
         writeBlackboard: async () => null,
         onDispatch: (id, name) => {
