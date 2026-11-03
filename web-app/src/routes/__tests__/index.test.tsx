@@ -306,7 +306,7 @@ describe('Index route', () => {
       expect(screen.getByTestId('home-scope-status')).toBe(region)
       expect(region).toHaveTextContent('common:conversationScope.unsupported')
       expect(region).toHaveTextContent('common:conversationScope.pendingKept')
-    expect(region).not.toHaveTextContent('pendingKeptTemporary')
+      expect(region).not.toHaveTextContent('pendingKeptTemporary')
       // Supported again: same node, text removed, region still mounted.
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
       view.rerender(<Component />)
