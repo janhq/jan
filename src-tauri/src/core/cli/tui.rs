@@ -14089,11 +14089,7 @@ pub async fn run(
     if let Some(reports) = app.cleanup_reports.as_ref().map(mpsc::UnboundedSender::downgrade) {
         crate::core::agent::child_workspace::spawn_startup_sweep(
             app.project_root.clone(),
-            move |kept| {
-                if let Some(reports) = reports.upgrade() {
-                    let _ = reports.send(kept);
-                }
-            },
+            move |kept| reports.upgrade().is_some_and(|reports| reports.send(kept).is_ok()),
         );
     }
     app.args = Some(args.clone());

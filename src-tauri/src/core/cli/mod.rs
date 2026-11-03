@@ -2557,9 +2557,9 @@ async fn run_agent_loop(
     if let Some(root) = args.project_root.clone() {
         let sweep_tx = tx.downgrade();
         crate::core::agent::child_workspace::spawn_startup_sweep(root, move |text| {
-            if let Some(tx) = sweep_tx.upgrade() {
-                let _ = tx.send(StreamEvent::Notice { text });
-            }
+            sweep_tx
+                .upgrade()
+                .is_some_and(|tx| tx.send(StreamEvent::Notice { text }).is_ok())
         });
     }
     let reader = input.as_ref().map(|input| {

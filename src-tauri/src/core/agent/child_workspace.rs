@@ -908,6 +908,7 @@ fn create(
 /// A worktree a cleanup decides on, with the lock that keeps every other jan
 /// process's sweep off it until the decision is made.
 #[cfg(feature = "cli")]
+#[derive(Debug)]
 struct Owned {
     wt: ChildWorktree,
     hold: Option<std::fs::File>,
@@ -947,6 +948,10 @@ impl Batch {
         for outcome in outcomes {
             match outcome {
                 Outcome::Kept(line) => settled.kept.push(line),
+                Outcome::KeptUnmarked(line, one) => {
+                    settled.kept.push(line);
+                    settled.unmarked.push(one);
+                }
                 Outcome::Trashed(bin) => {
                     settled.trashed += 1;
                     settled.trash = Some(bin);
@@ -968,6 +973,10 @@ pub(crate) struct Settled {
     /// emptiness check can miss work, and the user must know where to look.
     trashed: usize,
     trash: Option<PathBuf>,
+    /// Kept orphans not yet marked reported, each still locked: a sweep marks
+    /// them only once its notice is taken, so a run that ends before it can
+    /// show it leaves them for the next start to report.
+    unmarked: Vec<Owned>,
 }
 
 #[cfg(feature = "cli")]
@@ -975,16 +984,31 @@ impl Settled {
     /// The notices naming what was kept and where the empty ones went, each
     /// shown on its own: the trash line is not one of the kept worktrees.
     pub(crate) fn notices(&self) -> Vec<String> {
-        let kept = (!self.kept.is_empty()).then(|| kept_notice(&self.kept));
-        let trashed = self.trash.as_ref().map(|bin| {
+        self.kept_notice().into_iter().chain(self.trash_notice()).collect()
+    }
+
+    fn kept_notice(&self) -> Option<String> {
+        (!self.kept.is_empty()).then(|| kept_notice(&self.kept))
+    }
+
+    fn trash_notice(&self) -> Option<String> {
+        self.trash.as_ref().map(|bin| {
             let days = tauri_plugin_agent_tools::workspace::TRASH_KEPT_FOR.as_secs() / 86_400;
             format!(
                 "{} empty worktree(s) moved to {}; deleted after {days} days",
                 self.trashed,
                 display(bin)
             )
-        });
-        kept.into_iter().chain(trashed).collect()
+        })
+    }
+
+    /// The user has been told about the kept orphans: no later sweep repeats
+    /// them. Their locks drop once each is marked.
+    fn mark_reported(&mut self) {
+        for Owned { wt, hold } in self.unmarked.drain(..) {
+            let _ = write_meta(&wt, true);
+            drop(hold);
+        }
     }
 }
 
@@ -993,6 +1017,9 @@ impl Settled {
 enum Outcome {
     /// It holds work (or a writer is still in it): its kept line.
     Kept(String),
+    /// An orphan that holds work: its kept line, and the worktree with its
+    /// lock, to be marked reported once the user has been told.
+    KeptUnmarked(String, Owned),
     /// It held nothing and went into the trash at this path.
     Trashed(PathBuf),
     /// It held nothing and is gone, or it stays the ledger's unreported.
@@ -1035,7 +1062,13 @@ fn settle_one(ledger: Option<&Arc<Ledger>>, one: Owned, report_busy: bool) -> Ou
         // has the branch to merge.
         let brought = bring_back(&wt).err();
         let line = kept_line(&wt, brought.as_deref());
-        // The user owns it now: no later sweep reports it again.
+        if ledger.is_none() {
+            // An orphan, reported by a startup sweep through a sender the
+            // run may have dropped: marked only once its notice is taken.
+            return Outcome::KeptUnmarked(line, Owned { wt, hold });
+        }
+        // This process names it at its own end, so the user owns it now: no
+        // later sweep reports it again.
         let _ = write_meta(&wt, true);
         Outcome::Kept(line)
     };
@@ -1167,7 +1200,8 @@ pub(crate) fn sweep_orphans(root: &Path) -> Settled {
 
 /// What a session start sweeps, without holding the start up: the stale and
 /// trashed session scratches, `root`'s project's worktree trash, and the
-/// worktrees crashed sessions left there. `report` gets each notice.
+/// worktrees crashed sessions left there. `report` gets each notice and says
+/// whether it was taken (a run that already ended cannot show it).
 ///
 /// A plain thread, not the runtime's: dropping a tokio runtime (which `main`
 /// returning does) waits for its blocking tasks, so a sweep there would hold
@@ -1175,16 +1209,31 @@ pub(crate) fn sweep_orphans(root: &Path) -> Settled {
 /// its locks drop with it, records and renames are atomic, and the next start
 /// redoes what is left.
 #[cfg(feature = "cli")]
-pub(crate) fn spawn_startup_sweep(root: PathBuf, mut report: impl FnMut(String) + Send + 'static) {
+pub(crate) fn spawn_startup_sweep(
+    root: PathBuf,
+    mut report: impl FnMut(String) -> bool + Send + 'static,
+) {
     std::thread::spawn(move || {
         if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
             rt.block_on(tauri_plugin_agent_tools::workspace::sweep_stale_scratch_dirs());
         }
         empty_trash(&root);
-        for notice in sweep_orphans(&root).notices() {
-            report(notice);
-        }
+        sweep_and_report(&root, &mut report);
     });
+}
+
+/// Settle `root`'s orphaned worktrees and report them, marking the kept ones
+/// reported only when `report` takes their notice: an untold one must come up
+/// again at the next start, or the user never learns it holds work.
+#[cfg(feature = "cli")]
+fn sweep_and_report(root: &Path, report: &mut impl FnMut(String) -> bool) {
+    let mut settled = sweep_orphans(root);
+    if settled.kept_notice().is_some_and(&mut *report) {
+        settled.mark_reported();
+    }
+    if let Some(notice) = settled.trash_notice() {
+        report(notice);
+    }
 }
 
 /// Whether `file` is still the file at `path`, not one unlinked since it was
@@ -2502,7 +2551,9 @@ mod git_tests {
         std::fs::write(dirty.root.join("a.txt"), "edited\n").unwrap();
         drop(ledger);
 
-        let kept = sweep_orphans(&root).kept;
+        let mut first = sweep_orphans(&root);
+        let kept = std::mem::take(&mut first.kept);
+        first.mark_reported();
         let again = sweep_orphans(&root).kept;
         let branch = &committed.worktree.as_ref().unwrap().branch;
         let fetched = crate::core::agent::git::resolve_commit(&root, branch);
@@ -2515,6 +2566,35 @@ mod git_tests {
         assert!(idle_gone && survived);
         assert_eq!(fetched.as_deref(), Some(tip.as_str()));
         assert!(again.is_empty(), "reported once: {again:?}");
+    }
+
+    /// A run that ends before the sweep's notice can be shown (its sender is
+    /// gone) has not told the user: the next start reports it again, and once
+    /// it is told, never again.
+    #[test]
+    fn an_orphan_is_marked_reported_only_once_its_notice_is_taken() {
+        let Some(root) = repo("crash-unsent") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        commit(&ws.root, "b.txt");
+        drop(ledger);
+        let sweep = |accept: bool| {
+            let mut seen = Vec::new();
+            sweep_and_report(&root, &mut |text| {
+                seen.push(text);
+                accept
+            });
+            seen
+        };
+        let dropped = sweep(false);
+        let taken = sweep(true);
+        let after = sweep(true);
+        let _ = std::fs::remove_dir_all(&ws.root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(dropped.len(), 1, "{dropped:?}");
+        assert_eq!(taken.len(), 1, "reported again: {taken:?}");
+        assert!(after.is_empty(), "reported once taken: {after:?}");
     }
 
     /// Exit drops the runtime, which waits for every blocking task: a startup
@@ -2532,7 +2612,7 @@ mod git_tests {
             return;
         }
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async { spawn_startup_sweep(root.clone(), |_| {}) });
+        rt.block_on(async { spawn_startup_sweep(root.clone(), |_| true) });
         // Long enough for the sweep to be blocked in that status.
         std::thread::sleep(Duration::from_millis(500));
         let started = Instant::now();
