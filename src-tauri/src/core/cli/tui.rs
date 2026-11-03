@@ -9575,6 +9575,16 @@ impl App {
     /// pending permission summary (what Jan is blocked on) or the active
     /// subagent task, matching Orca's card fields.
     fn publish_agent_status(&mut self) {
+        self.publish_agent_status_with(true);
+    }
+
+    /// [`Self::publish_agent_status`] for a transition the user just caused:
+    /// the state is reported but the bell stays quiet, as they are looking.
+    fn publish_agent_status_quietly(&mut self) {
+        self.publish_agent_status_with(false);
+    }
+
+    fn publish_agent_status_with(&mut self, may_ring: bool) {
         use super::agent_status::AgentStatusState as S;
         let state = match self.status {
             // A live prompt outranks the turn status: a session-owned child
@@ -9594,7 +9604,11 @@ impl App {
                 .map(|q| q.question.clone()),
             _ => None,
         };
-        self.agent_status.set_state(state, prompt.as_deref());
+        if may_ring {
+            self.agent_status.set_state(state, prompt.as_deref());
+        } else {
+            self.agent_status.set_state_quietly(state, prompt.as_deref());
+        }
     }
 
     /// Arm the per-turn state shared by a user submit and a reminder
@@ -10054,7 +10068,9 @@ impl App {
         // cancel must not quietly become "keep working in the background".
         self.stop_subagents();
         self.close_live_background();
-        self.publish_agent_status();
+        // The user pressed Esc or Ctrl-C: `bell = "always"` must not ring for
+        // a turn end they caused while looking at it.
+        self.publish_agent_status_quietly();
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.system(Level::Warn, "cancelled");

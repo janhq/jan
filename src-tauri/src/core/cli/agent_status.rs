@@ -189,17 +189,19 @@ impl AgentStatusReporter {
     ///
     /// Returns `None` when the state is unchanged and the prompt preview is
     /// identical (transitions are deduped), otherwise the `(status, title)`
-    /// sequences to write, with a trailing BEL on the title when `bell` rings.
+    /// sequences to write, with a trailing BEL on the title when the mode
+    /// `bell` returns rings. `bell` runs only for an emitted transition, so a
+    /// deduped call never reads the config.
     fn transition(
         &mut self,
         state: AgentStatusState,
         prompt: Option<&str>,
-        bell: BellMode,
+        bell: impl FnOnce() -> BellMode,
     ) -> Option<(String, String)> {
         if self.last_state == Some(state) && self.last_prompt.as_deref() == prompt {
             return None;
         }
-        let ring = bell.rings(self.last_state, state);
+        let ring = bell().rings(self.last_state, state);
         self.last_state = Some(state);
         self.last_prompt = prompt.map(str::to_string);
         self.spinner_frame = 0;
@@ -213,11 +215,24 @@ impl AgentStatusReporter {
     /// Report a state transition, writing OSC 9999, the title and any bell to
     /// stdout.
     pub fn set_state(&mut self, state: AgentStatusState, prompt: Option<&str>) {
+        self.emit(state, prompt, true);
+    }
+
+    /// [`Self::set_state`] without the bell, for a transition the user just
+    /// caused (Esc or Ctrl-C cancelling a turn): they are already looking.
+    pub fn set_state_quietly(&mut self, state: AgentStatusState, prompt: Option<&str>) {
+        self.emit(state, prompt, false);
+    }
+
+    fn emit(&mut self, state: AgentStatusState, prompt: Option<&str>, may_ring: bool) {
         // Disabled reporters never write, so skip the config read for them.
-        let bell = if self.enabled {
-            BellMode::configured()
-        } else {
-            BellMode::Off
+        let enabled = self.enabled;
+        let bell = || {
+            if enabled && may_ring {
+                BellMode::configured()
+            } else {
+                BellMode::Off
+            }
         };
         let Some((status, title)) = self.transition(state, prompt, bell) else {
             return;
@@ -379,7 +394,7 @@ mod tests {
 
     #[test]
     fn transitions_dedupe_and_reset_spinner() {
-        let off = BellMode::Off;
+        let off = || BellMode::Off;
         let mut reporter = AgentStatusReporter::new();
         assert!(reporter.transition(AgentStatusState::Done, None, off).is_some());
         // Same state again: nothing to emit.
@@ -413,7 +428,7 @@ mod tests {
         let mut reporter = AgentStatusReporter::new();
         states
             .iter()
-            .filter_map(|(state, prompt)| reporter.transition(*state, *prompt, bell))
+            .filter_map(|(state, prompt)| reporter.transition(*state, *prompt, || bell))
             .map(|(_, title)| title.ends_with("\x07\x07"))
             .collect()
     }
@@ -442,5 +457,18 @@ mod tests {
             rings(BellMode::Always, &[(S::Blocked, None), (S::Done, None)]),
             [true, false]
         );
+    }
+
+    #[test]
+    fn a_deduped_transition_never_reads_the_bell_mode() {
+        let mut reporter = AgentStatusReporter::new();
+        let mut reads = 0;
+        for _ in 0..3 {
+            reporter.transition(AgentStatusState::Working, None, || {
+                reads += 1;
+                BellMode::Always
+            });
+        }
+        assert_eq!(reads, 1, "only the emitted transition asks for the mode");
     }
 }
