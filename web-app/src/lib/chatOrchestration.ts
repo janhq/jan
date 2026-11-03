@@ -14,6 +14,7 @@ import {
   type SubagentRequest,
 } from './coworkSubagent'
 import { chatChildTools } from './chatChildTools'
+import { TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER, truncateUtf16 } from './chatTaskStatus'
 import { unadvertisedToolRefusal } from './coworkTools'
 import { MonitorLane, monitorSpecFromArgs, parseMonitorId } from './coworkMonitor'
 import { useMonitorNotices } from '@/stores/monitor-notice-store'
@@ -157,19 +158,7 @@ export function takeTaskStatus(threadId: string, signal?: AbortSignal): TaskStat
 
 /** Persisted into the transcript, so child text is bounded (UTF-16 code units,
  * marker included: the result is never longer than the limit). */
-export const TASK_STATUS_TEXT_LIMIT = 100_000
-export const TASK_STATUS_TRUNCATION_MARKER = '\n\n[truncated: output exceeded 100000 characters]'
-
-/** Cut to at most `limit` UTF-16 units ending in `marker`, never leaving half
- * of a surrogate pair at the cut. Text within the limit is returned as is. */
-export function truncateUtf16(value: string, limit: number, marker: string): string {
-  if (value.length <= limit) return value
-  let keep = Math.max(0, limit - marker.length)
-  const last = value.charCodeAt(keep - 1)
-  // A trailing high surrogate here is the first half of a pair (or lone): drop it.
-  if (keep > 0 && last >= 0xd800 && last <= 0xdbff) keep -= 1
-  return value.slice(0, keep) + marker.slice(0, limit)
-}
+export { TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER, truncateUtf16 }
 
 const bound = (value: string | undefined): string | undefined =>
   value === undefined ? value : truncateUtf16(value, TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER)

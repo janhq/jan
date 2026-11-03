@@ -9,6 +9,13 @@ import {
 import type { UIMessage } from '@ai-sdk/react'
 import { isChatRunNotice } from './chatRunNotice'
 import { isRunContextData } from './chatRunContext'
+import {
+  TASK_STATUS_CARRIER_TEXT_LIMIT,
+  shapeTaskStatusPart,
+  stripTaskStatusPart,
+  taskStatusHasBulk,
+  truncateTaskStatusPart,
+} from './chatTaskStatus'
 // Attachments are now handled upstream in newUserThreadContent
 
 type ThreadContent = NonNullable<ThreadMessage['content']>[number]
@@ -612,6 +619,10 @@ type UIPartsSkipped = 'provider-metadata' | 'size' | 'unsupported-part' | 'misma
 
 const UI_PARTS_MAX_CHARS = 256 * 1024
 const DIFF_PART_TYPE = 'data-tool-diff'
+const TASK_STATUS_TYPE = 'data-task-status'
+
+// Display-only status parts shed to fit the carrier; see `uiPartsFor`.
+type TaskStatusShed = { truncated?: number; stripped?: number; dropped?: number }
 const PROVIDER_METADATA_MAX_CHARS = 8 * 1024
 const SETTLED_TOOL_STATES = new Set([
   'output-available',
@@ -694,6 +705,11 @@ function providerField(value: unknown): unknown {
 
 function sanitizeUIPart(part: any): Record<string, unknown> {
   const type = part?.type
+  if (type === TASK_STATUS_TYPE) {
+    // Shaped (allowlisted row keys, bounded ids/text); idempotent on a stored part.
+    part = shapeTaskStatusPart(part)
+    if (!part) throw new SkipUIParts('unsupported-part')
+  }
   if (type === 'data-tool-diff') {
     const data = part.data
     if (
@@ -849,10 +865,21 @@ function uiPartsFor(
   uiParts?: { v: 1; parts: unknown[] }
   uiPartsSkipped?: UIPartsSkipped
   uiDiffsOmitted?: number
+  uiTaskStatusShed?: TaskStatusShed
 } {
   if (!message.parts?.length) return {}
+  const shed: TaskStatusShed = {}
   try {
-    const sanitized = sanitizeUIParts(message.parts)
+    // Task-status rows are display-only and optional: a malformed part is
+    // dropped (and counted) instead of costing the turn its whole carrier.
+    const prepared = message.parts.flatMap((part) => {
+      if ((part as { type?: unknown }).type !== TASK_STATUS_TYPE) return [part]
+      const shaped = shapeTaskStatusPart(part)
+      if (shaped) return [shaped as unknown as typeof part]
+      shed.dropped = (shed.dropped ?? 0) + 1
+      return []
+    })
+    const sanitized = sanitizeUIParts(prepared)
     const legacy = sanitizeUIParts(
       contentToUIParts({ ...message, content, metadata } as unknown as ThreadMessage)
     )
@@ -893,9 +920,20 @@ function uiPartsFor(
         throw new SkipUIParts('mismatch')
       return uiParts
     }
-    // Display-only diffs are optional: when they push the carrier over its
-    // budget the largest are dropped one at a time, so they can never turn a
-    // turn that would otherwise store its canonical parts into a lossy one.
+    // Display-only diffs and task-status rows are optional: when they push the
+    // carrier over its budget they are shed one step at a time, so they can
+    // never turn a turn that would otherwise store its canonical and
+    // model-visible parts (run-context pings, reasoning, tool parts) into a
+    // lossy one. Order: cut the largest status text, drop the largest diff, strip
+    // status text entirely, and only then drop a status part (identity and
+    // timestamps are kept as long as possible).
+    const size = (p: unknown) => JSON.stringify(p).length
+    const largestOf = (list: Record<string, unknown>[]) =>
+      list.reduce((a, b) => (size(b) > size(a) ? b : a))
+    const statusParts = () => kept.filter((p) => p.type === TASK_STATUS_TYPE)
+    const replace = (from: Record<string, unknown>, to: Record<string, unknown> | undefined) => {
+      kept = kept.flatMap((p) => (p !== from ? [p] : to ? [to] : []))
+    }
     let kept = sanitized
     let omitted = 0
     let uiParts: { v: 1; parts: unknown[] } | undefined
@@ -905,18 +943,37 @@ function uiPartsFor(
         break
       } catch (error) {
         if (!(error instanceof SkipUIParts) || error.reason !== 'size') throw error
-        const diffs = kept.filter((p) => p.type === DIFF_PART_TYPE)
-        if (!diffs.length) throw error
-        const largest = diffs.reduce((a, b) =>
-          JSON.stringify(b).length > JSON.stringify(a).length ? b : a
+        const status = statusParts()
+        const longText = status.filter((p) =>
+          (p.data as { subagents: Record<string, unknown>[] }).subagents.some((row) =>
+            [row.finalOutput, row.error].some(
+              (v) => typeof v === 'string' && v.length > TASK_STATUS_CARRIER_TEXT_LIMIT
+            )
+          )
         )
-        kept = kept.filter((p) => p !== largest)
-        omitted++
+        const diffs = kept.filter((p) => p.type === DIFF_PART_TYPE)
+        const bulky = status.filter(taskStatusHasBulk)
+        if (longText.length) {
+          const target = largestOf(longText)
+          replace(target, truncateTaskStatusPart(target))
+          shed.truncated = (shed.truncated ?? 0) + 1
+        } else if (diffs.length) {
+          replace(largestOf(diffs), undefined)
+          omitted++
+        } else if (bulky.length) {
+          const target = largestOf(bulky)
+          replace(target, stripTaskStatusPart(target))
+          shed.stripped = (shed.stripped ?? 0) + 1
+        } else if (status.length) {
+          replace(largestOf(status), undefined)
+          shed.dropped = (shed.dropped ?? 0) + 1
+        } else throw error
       }
     }
     return {
       ...(uiParts ? { uiParts } : {}),
       ...(omitted ? { uiDiffsOmitted: omitted } : {}),
+      ...(Object.keys(shed).length ? { uiTaskStatusShed: shed } : {}),
     }
   } catch (error) {
     // The carrier is optional: whatever goes wrong building it, the turn is
@@ -958,6 +1015,10 @@ function uiPartsFor(
  * Display-only `data-tool-diff` parts are the exception to "whole or nothing":
  * when they alone exceed the budget the largest are dropped and
  * `metadata.uiDiffsOmitted` counts them; canonical parts are kept.
+ * `data-task-status` rows are display-only too: they are shape-validated, and
+ * over budget their text is cut, then stripped, then (last) the part dropped,
+ * with `metadata.uiTaskStatusShed = { truncated?, stripped?, dropped? }` counting
+ * parts. Run-context pings and reasoning/tool parts are never shed for them.
  *
  * `baseMetadata` is spread first, minus any `uiParts` / `uiPartsSkipped` it
  * carries from an earlier version of the turn.
@@ -977,6 +1038,7 @@ export function assistantRecordFields(
   delete metadata.uiParts
   delete metadata.uiPartsSkipped
   delete metadata.uiDiffsOmitted
+  delete metadata.uiTaskStatusShed
   return {
     content,
     metadata: { ...metadata, ...uiPartsFor(message, content, metadata) },

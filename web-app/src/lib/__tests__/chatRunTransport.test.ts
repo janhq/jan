@@ -8,6 +8,8 @@ import { TOOL_DIFF_MAX_CHARS } from '../toolDiff'
 import { canContinueStoppedTurn, createChatRunStream, taskStatusRows, TASK_STATUS_PART } from '../chatRunTransport'
 import { expandChatRunContext, RUN_CONTEXT_PART, RUN_CONTEXT_MAX_CHARS } from '../chatRunContext'
 import { PING_OPEN, PING_CLOSE } from '../coworkPing'
+import { TASK_STATUS_TEXT_LIMIT, TASK_STATUS_CARRIER_TEXT_LIMIT } from '../chatTaskStatus'
+import { makeSibling } from '../message-branching'
 
 const stream = (chunks: UIMessageChunk[]) => new ReadableStream<UIMessageChunk>({ start(c) { chunks.forEach(v => c.enqueue(v)); c.close() } })
 const user: UIMessage = { id: 'u', role: 'user', parts: [{ type: 'text', text: 'fixture' }] }
@@ -443,5 +445,104 @@ describe('optional display diff carrier budget', () => {
     const reloaded = convertThreadMessageToUIMessage(stored)
     expect(reloaded.parts.filter(p => p.type !== 'data-tool-diff')).toEqual(parts.filter(p => p.type !== 'data-tool-diff'))
     expect(JSON.stringify(await convertToModelMessages([reloaded]))).not.toContain('xxxxxxxxxx')
+  })
+})
+
+describe('task-status rows are an optional carrier budget (never cost the turn its model-visible parts)', () => {
+  const row = (i: number, extra: Record<string, unknown> = {}) => ({
+    runId: `run-${i}`, name: `child-${i}`, status: 'done', startedAt: 1000 + i, endedAt: 2000 + i,
+    finalOutput: `${i}`.repeat(TASK_STATUS_TEXT_LIMIT), ...extra,
+  })
+  const statusPart = (r: Record<string, unknown>) => ({ type: TASK_STATUS_PART, id: `task-status:${r.runId}`, data: { subagents: [r] } }) as never
+  const store = (message: UIMessage, fields: ReturnType<typeof assistantRecordFields>) =>
+    JSON.parse(JSON.stringify({ id: message.id, role: 'assistant', thread_id: 'fixture', ...fields })) as ThreadMessage
+
+  it('3 x 100k rows + run-context + reasoning metadata: context survives, no uiPartsSkipped, model pinged once', async () => {
+    const parts = [
+      { type: 'reasoning', text: 'thinking', state: 'done', providerMetadata: { anthropic: { signature: 'sig-1' } } },
+      { type: RUN_CONTEXT_PART, data: { text: 'child-0 finished: ctx-marker-0' } },
+      statusPart(row(0)), statusPart(row(1)), statusPart(row(2)),
+      { type: RUN_CONTEXT_PART, data: { text: 'child-1 finished: ctx-marker-1' } },
+      { type: 'text', text: 'final answer', state: 'done' },
+    ] as UIMessage['parts']
+    const message: UIMessage = { id: 'budget', role: 'assistant', parts }
+    expect(JSON.stringify(parts).length).toBeGreaterThan(256 * 1024)
+    const fields = assistantRecordFields(message, {}, { stopped: false })
+    expect(fields.metadata).not.toHaveProperty('uiPartsSkipped')
+    expect(fields.metadata.uiParts).toBeDefined()
+    expect(fields.metadata.uiTaskStatusShed).toMatchObject({ truncated: expect.any(Number) })
+    expect(JSON.stringify(fields.metadata.uiParts).length).toBeLessThanOrEqual(256 * 1024)
+
+    const reloaded = convertThreadMessageToUIMessage(store(message, fields))
+    // Reasoning provider metadata and both run-context parts are intact and in order.
+    expect(reloaded.parts.find(p => p.type === 'reasoning')).toMatchObject({ providerMetadata: { anthropic: { signature: 'sig-1' } } })
+    expect(reloaded.parts.filter(p => p.type === RUN_CONTEXT_PART)).toEqual(parts.filter(p => p.type === RUN_CONTEXT_PART))
+    // Status identity + timestamps survive; only the bulky text was cut.
+    const rows = taskStatusRows([reloaded])
+    expect(rows.map(r => [r.runId, r.name, r.status, r.startedAt, r.endedAt])).toEqual([0, 1, 2].map(i => [`run-${i}`, `child-${i}`, 'done', 1000 + i, 2000 + i]))
+    // Shed one row at a time, only as far as needed: the count reported matches
+    // the rows actually cut, the rest keep their full (live-bounded) text.
+    const cut = rows.filter(r => String(r.finalOutput).includes('truncated for storage'))
+    expect(cut.length).toBeGreaterThan(0)
+    expect(fields.metadata.uiTaskStatusShed).toEqual({ truncated: cut.length })
+    for (const r of cut) expect(String(r.finalOutput).length).toBeLessThanOrEqual(TASK_STATUS_CARRIER_TEXT_LIMIT)
+    for (const r of rows.filter(r => !cut.includes(r))) expect(r.finalOutput).toBe(row(Number(String(r.runId).slice(4))).finalOutput)
+    // The model is pinged once per ping, and never sees task-status.
+    const model = JSON.stringify(await convertToModelMessages(expandChatRunContext([user, reloaded])))
+    expect(model).not.toContain('task-status')
+    expect(model.split('ctx-marker-0').length - 1).toBe(1)
+    expect(model.split('ctx-marker-1').length - 1).toBe(1)
+    expect(model.split(PING_OPEN).length - 1).toBe(2)
+  })
+
+  it('strips status text, then drops status parts, only when truncation is not enough; run-context is never shed', () => {
+    const many = Array.from({ length: 120 }, (_, i) => statusPart(row(i, { finalOutput: 'x'.repeat(5000), error: 'e'.repeat(5000) })))
+    const parts = [
+      { type: RUN_CONTEXT_PART, data: { text: 'keep-me' } },
+      ...many,
+      { type: 'text', text: 'answer', state: 'done' },
+    ] as UIMessage['parts']
+    const fields = assistantRecordFields({ id: 'm2', role: 'assistant', parts }, {}, { stopped: false })
+    expect(fields.metadata).not.toHaveProperty('uiPartsSkipped')
+    expect(fields.metadata.uiTaskStatusShed).toBeDefined()
+    const reloaded = convertThreadMessageToUIMessage(store({ id: 'm2', role: 'assistant', parts }, fields))
+    expect(reloaded.parts.filter(p => p.type === RUN_CONTEXT_PART)).toHaveLength(1)
+    expect(JSON.stringify(fields.metadata.uiParts).length).toBeLessThanOrEqual(256 * 1024)
+  })
+
+  it('a malformed status row is dropped and counted, not the carrier', () => {
+    const parts = [
+      { type: 'reasoning', text: 't', state: 'done', providerMetadata: { anthropic: { signature: 's' } } },
+      statusPart(row(0, { finalOutput: 'ok', startedAt: 'nope' })),
+      statusPart(row(1, { finalOutput: 'ok', extra: 'x' })),
+      statusPart(row(2, { finalOutput: 'ok' })),
+      { type: RUN_CONTEXT_PART, data: { text: 'ctx' } },
+    ] as UIMessage['parts']
+    const message: UIMessage = { id: 'm3', role: 'assistant', parts }
+    const fields = assistantRecordFields(message, {}, { stopped: false })
+    expect(fields.metadata).not.toHaveProperty('uiPartsSkipped')
+    expect(fields.metadata.uiTaskStatusShed).toEqual({ dropped: 2 })
+    const reloaded = convertThreadMessageToUIMessage(store(message, fields))
+    expect(taskStatusRows([reloaded]).map(r => r.runId)).toEqual(['run-2'])
+    expect(reloaded.parts.some(p => p.type === RUN_CONTEXT_PART)).toBe(true)
+  })
+
+  it('a rebuild clears stale shed metadata, and so does an edited branch', () => {
+    const parts = [
+      { type: 'reasoning', text: 't', state: 'done', providerMetadata: { anthropic: { signature: 's' } } },
+      statusPart(row(0)), statusPart(row(1)), statusPart(row(2)),
+    ] as UIMessage['parts']
+    const first = assistantRecordFields({ id: 'm4', role: 'assistant', parts }, {}, { stopped: false })
+    expect(first.metadata.uiTaskStatusShed).toBeDefined()
+    const small = assistantRecordFields({ id: 'm4', role: 'assistant', parts: [{ type: 'text', text: 'hi', state: 'done' }] }, first.metadata, { stopped: false })
+    // A small turn may rebuild a valid carrier: assert it is fresh (no stale shed
+    // metadata, text from the new parts, nothing from the old status parts).
+    for (const key of ['uiPartsSkipped', 'uiDiffsOmitted', 'uiTaskStatusShed']) expect(small.metadata).not.toHaveProperty(key)
+    expect(small.metadata.uiParts).toEqual({ v: 1, parts: [{ type: 'text', text: 'hi', state: 'done' }] })
+    expect(JSON.stringify(small.metadata)).not.toContain('task-status')
+    const source = { ...store({ id: 'm4', role: 'assistant', parts }, first), created_at: 1 } as ThreadMessage
+    const edited = makeSibling(source, { id: 'b', createdAt: 2, text: 'edited' })
+    expect(edited.metadata).not.toHaveProperty('uiTaskStatusShed')
+    expect(edited.metadata).not.toHaveProperty('uiParts')
   })
 })
