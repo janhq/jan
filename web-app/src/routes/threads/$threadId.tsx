@@ -296,7 +296,22 @@ const approvalsOf = (threadId: string) => {
   }
   return approvals
 }
+// Call ids already dispatched this turn. An id is consumed once per actual
+// dispatch, so a model that reuses one (even for the same tool with other
+// arguments) can never inherit the first call's approval promise.
+const dispatchedCalls = new Map<string, Set<string>>()
+const claimDispatch = (threadId: string, callId: string): boolean => {
+  let ids = dispatchedCalls.get(threadId)
+  if (!ids) {
+    ids = new Set()
+    dispatchedCalls.set(threadId, ids)
+  }
+  if (ids.has(callId)) return false
+  ids.add(callId)
+  return true
+}
 const forgetApprovals = (threadId: string) => {
+  dispatchedCalls.delete(threadId)
   toolApprovalPromises.delete(threadId)
   callNativeGrants.delete(threadId)
   callMcpIdentities.delete(threadId)
@@ -1118,6 +1133,12 @@ function ThreadDetail() {
       }
       if (signal.aborted || isChatClosing() || !useChatSessions.getState().sessions[threadId]) {
         return { output: CHAT_CLOSED_TOOL_ERROR, isError: true }
+      }
+      // One dispatch per call id, claimed synchronously before any await or store
+      // write. A duplicate returns here, outside the try/finally, so it has no side
+      // effects and never cancels the original call's still-pending approval card.
+      if (!claimDispatch(threadId, toolCall.toolCallId)) {
+        return { output: `Duplicate tool call id: ${toolCall.toolCallId}. This call was not run.`, isError: true }
       }
       useToolCallRuntime.getState().enqueue([toolCall.toolCallId], threadId)
       // A child call owns its approval card from here (before any await) until

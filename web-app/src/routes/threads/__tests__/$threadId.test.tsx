@@ -2606,6 +2606,44 @@ describe('ThreadDetail route', () => {
           expect(requestApproval).toHaveBeenLastCalledWith('call_0', 'search', 'thread-1', 'frozen-server', expect.any(Function))
           expect(run).toHaveBeenCalledTimes(2)
         })
+        it('a root id reused for the SAME tool with different args after approval is refused: not run, no second approval', async () => {
+          const requestApproval = vi.fn().mockResolvedValue(true)
+          h.toolApprovalState.requestApproval = requestApproval
+          const run = serveMcp()
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          await act(async () => { await arrive(call('reuse', 'fetch', { url: 'safe' })) })
+          expect(await dispatch(call('reuse', 'fetch', { url: 'safe' }))).not.toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+          // Later step in the same turn reuses the id with new arguments.
+          await act(async () => { await arrive(call('reuse', 'fetch', { url: 'evil' })) })
+          const out = await dispatch(call('reuse', 'fetch', { url: 'evil' }))
+          expect(out).toMatchObject({ isError: true })
+          expect(String(out.output)).toContain('Duplicate tool call id')
+          expect(run).toHaveBeenCalledTimes(1)
+          expect(requestApproval).toHaveBeenCalledTimes(1)
+        })
+        it('a duplicate dispatch while the first is pending does not cancel the first approval card or run', async () => {
+          let decide!: (v: boolean) => void
+          const requestApproval = vi.fn(() => new Promise<boolean>((r) => { decide = r }))
+          h.toolApprovalState.requestApproval = requestApproval
+          const cancelApproval = vi.fn()
+          h.toolApprovalState.cancelApproval = cancelApproval
+          const run = serveMcp()
+          h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = vi.fn(() => 'frozen-server')
+          renderComponent()
+          await act(async () => { await arrive(call('pend', 'fetch', { url: 'a' })) })
+          const first = dispatch(call('pend', 'fetch', { url: 'a' }))
+          await act(async () => { await Promise.resolve() })
+          const dup = await dispatch(call('pend', 'fetch', { url: 'b' }))
+          expect(dup).toMatchObject({ isError: true })
+          expect(cancelApproval).not.toHaveBeenCalled()
+          expect(requestApproval).toHaveBeenCalledTimes(1)
+          expect(run).not.toHaveBeenCalled()
+          decide(true)
+          expect(await first).not.toMatchObject({ isError: true })
+          expect(run).toHaveBeenCalledTimes(1)
+        })
         it('a reused root id with another tool inside one turn is refused for that call only, never thrown from onToolCall', async () => {
           h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
           const run = serveMcp()
@@ -3356,7 +3394,12 @@ describe('ThreadDetail route', () => {
         expect(await dispatch(call('tcB'))).toEqual({ output: ['result'] })
         expect(run).toHaveBeenCalledTimes(2)
         expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(2)
-      } finally { h.routeParams.threadId = 'thread-1' }
+      } finally {
+        h.routeParams.threadId = 'thread-1'
+        // Thread-1's turn ends too, so its consumed-id set does not leak into later tests.
+        rerender(<Component />)
+        await finish()
+      }
     })
 
     it('unmounting does not cancel a retained running dispatch', async () => {
