@@ -515,12 +515,18 @@ function restoreSubmittedDraft(args: {
   attachmentsKey: string
   draft: string
   attachments: Attachment[]
+  /** Lifetime token captured when the send started (see failed-draft-store). */
+  token: string
   setAttachments: (
     key: string,
     updater: (prev: Attachment[]) => Attachment[]
   ) => void
 }): boolean {
-  const { threadId, attachmentsKey, draft, attachments, setAttachments } = args
+  const { threadId, attachmentsKey, draft, attachments, token, setAttachments } =
+    args
+  // The thread was deleted, reset, or (temporary chat) left while this send was
+  // in flight: its text and media must not come back anywhere, composer included.
+  if (useFailedDrafts.getState().getToken(threadId) !== token) return false
   const composer = usePrompt.getState()
   const open = useThreads.getState().currentThreadId === threadId
   if (open && !composer.prompt) {
@@ -532,7 +538,7 @@ function restoreSubmittedDraft(args: {
     composer.setPrompt(draft)
     return true
   }
-  useFailedDrafts.getState().add(threadId, { text: draft, attachments })
+  useFailedDrafts.getState().add(threadId, { text: draft, attachments }, token)
   return false
 }
 
@@ -1734,6 +1740,10 @@ function ThreadDetail() {
       // Cancel any in-flight title summarization so it doesn't compete with this request
       abortTitle(threadId)
 
+      // Captured before any await: a failure after the thread is deleted or a
+      // temporary chat is left must not re-add the draft.
+      const draftToken = useFailedDrafts.getState().getToken(threadId)
+
       // Get all attachments from the store (media transferred from the
       // new-thread key, plus documents).
       const allAttachments = getAttachments(attachmentsKey)
@@ -1823,6 +1833,7 @@ function ThreadDetail() {
             attachmentsKey,
             draft,
             attachments: allAttachments,
+            token: draftToken,
             setAttachments: setAttachmentsForThread,
           })
           return
@@ -1923,6 +1934,7 @@ function ThreadDetail() {
             attachmentsKey,
             draft,
             attachments: allAttachments,
+            token: draftToken,
             setAttachments: setAttachmentsForThread,
           })
           return
@@ -1989,6 +2001,7 @@ function ThreadDetail() {
           attachmentsKey,
           draft,
           attachments: allAttachments,
+          token: draftToken,
           setAttachments: setAttachmentsForThread,
         })
         console.error('Chat send was not accepted:', error)
@@ -2648,6 +2661,12 @@ function ThreadDetail() {
   useEffect(() => {
     return () => {
       useMessageQueue.getState().clearQueue(threadId)
+      // A temporary chat is never persisted and its id is reused by the next
+      // one: leaving it ends the session, so unsent text/media must not show
+      // up in the next temporary chat.
+      if (threadId === TEMPORARY_CHAT_ID) {
+        useFailedDrafts.getState().clearThread(threadId)
+      }
     }
   }, [threadId])
 

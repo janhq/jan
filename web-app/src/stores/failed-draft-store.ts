@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Attachment } from '@/types/attachment'
+import { onConversationThreadDropped } from '@/lib/conversationClientTools'
 
 /**
  * Recoverable failed drafts, per thread.
@@ -15,7 +16,13 @@ import type { Attachment } from '@/types/attachment'
  *
  * Memory only. Attachments may carry large media payloads (data URLs), so the
  * store is never persisted; a reload drops the entries, which is the accepted
- * trade-off.
+ * trade-off (the card says so, and promises no durability).
+ *
+ * Lifetime: an entry never outlives its thread. Thread deletion (through the
+ * conversation thread-drop hook), a session reset, and the end of a temporary
+ * chat all clear it. A send already in flight at that moment carries the token
+ * it captured at submit, and `add` refuses a stale token, so a late failure
+ * cannot bring back the text or media of a deleted or left thread.
  */
 export type FailedDraft = {
   id: string
@@ -28,21 +35,37 @@ const EMPTY_DRAFTS: FailedDraft[] = []
 
 let sequence = 0
 
+// Lifetime tokens, deliberately not state: nothing renders from them.
+let resetEpoch = 0
+const threadGenerations = new Map<string, number>()
+
+const tokenFor = (threadId: string) =>
+  `${resetEpoch}:${threadGenerations.get(threadId) ?? 0}`
+
 interface FailedDraftState {
   drafts: Record<string, FailedDraft[]>
   /** Stores a complete draft; returns it. Empty drafts (no text, no files) are ignored. */
   add: (
     threadId: string,
-    draft: { text: string; attachments: Attachment[] }
+    draft: { text: string; attachments: Attachment[] },
+    /** Token from `getToken` at submit time; a stale one is refused. */
+    token?: string
   ) => FailedDraft | undefined
   remove: (threadId: string, id: string) => void
   getDrafts: (threadId: string) => FailedDraft[]
+  /** Opaque lifetime token for a thread; changes when it is cleared. */
+  getToken: (threadId: string) => string
+  /** Drops one thread's entries and invalidates its in-flight tokens. */
+  clearThread: (threadId: string) => void
+  /** Drops everything and invalidates every in-flight token. */
+  clearAll: () => void
 }
 
 export const useFailedDrafts = create<FailedDraftState>((set, get) => ({
   drafts: {},
 
-  add: (threadId, { text, attachments }) => {
+  add: (threadId, { text, attachments }, token) => {
+    if (token !== undefined && token !== tokenFor(threadId)) return undefined
     if (!text.trim() && attachments.length === 0) return undefined
     const entry: FailedDraft = {
       id: `failed-draft-${Date.now()}-${++sequence}`,
@@ -74,7 +97,31 @@ export const useFailedDrafts = create<FailedDraftState>((set, get) => ({
   },
 
   getDrafts: (threadId) => get().drafts[threadId] ?? EMPTY_DRAFTS,
+
+  getToken: (threadId) => tokenFor(threadId),
+
+  clearThread: (threadId) => {
+    threadGenerations.set(threadId, (threadGenerations.get(threadId) ?? 0) + 1)
+    set((state) => {
+      if (!(threadId in state.drafts)) return state
+      const drafts = { ...state.drafts }
+      delete drafts[threadId]
+      return { drafts }
+    })
+  },
+
+  clearAll: () => {
+    resetEpoch++
+    threadGenerations.clear()
+    set((state) => (Object.keys(state.drafts).length ? { drafts: {} } : state))
+  },
 }))
+
+// Thread deletion already fans out through this hook; failed drafts ride the
+// same lifecycle instead of adding another call site per delete path.
+onConversationThreadDropped((threadId) =>
+  useFailedDrafts.getState().clearThread(threadId)
+)
 
 export const attachmentIdentity = (a: Attachment) =>
   a.id ?? a.path ?? `${a.type}:${a.name}`

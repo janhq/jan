@@ -303,7 +303,10 @@ vi.mock('sonner', () => ({
   toast: { info: vi.fn(), error: vi.fn(), success: vi.fn() },
 }))
 
-vi.mock('ai', () => ({ generateId: () => 'gen-id-1' }))
+vi.mock('ai', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('ai')>()),
+  generateId: () => 'gen-id-1',
+}))
 
 // Stub heavy children
 vi.mock('@/containers/QueuedMessageBubble', () => ({
@@ -1100,7 +1103,7 @@ describe('ChatInput', () => {
       seed()
       const onSubmit = vi.fn()
       renderInput({ onSubmit })
-      fireEvent.click(screen.getByRole('button', { name: 'Restore draft' }))
+      fireEvent.click(screen.getByRole('button', { name: 'chat:failedDraft.restore' }))
       expect(setPromptMock).toHaveBeenCalledWith('failed text')
       expect(setAttachmentsMock).toHaveBeenCalledWith('thread-1', expect.any(Function))
       const updater = setAttachmentsMock.mock.calls[0][1]
@@ -1116,14 +1119,14 @@ describe('ChatInput', () => {
       seed()
       promptState = 'typed since'
       renderInput({ onSubmit: vi.fn() })
-      fireEvent.click(screen.getByRole('button', { name: 'Restore draft' }))
+      fireEvent.click(screen.getByRole('button', { name: 'chat:failedDraft.restore' }))
       expect(setPromptMock).toHaveBeenCalledWith('failed text\n\ntyped since')
     })
 
     it('Dismiss removes the entry without touching the composer', () => {
       seed()
       renderInput({ onSubmit: vi.fn() })
-      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+      fireEvent.click(screen.getByRole('button', { name: 'chat:failedDraft.dismiss' }))
       expect(useFailedDrafts.getState().drafts['thread-1']).toBeUndefined()
       expect(setPromptMock).not.toHaveBeenCalled()
       expect(setAttachmentsMock).not.toHaveBeenCalled()

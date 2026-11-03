@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import { IconAlertTriangle, IconX } from '@tabler/icons-react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { FailedDraft } from '@/stores/failed-draft-store'
 
 type FailedDraftCardProps = {
@@ -16,11 +17,12 @@ export const FailedDraftCard = memo(function FailedDraftCard({
   onRestore,
   onDismiss,
 }: FailedDraftCardProps) {
+  const { t } = useTranslation()
   const files = draft.attachments.length
   return (
     <div
       role="group"
-      aria-label="Unsent draft"
+      aria-label={t('chat:failedDraft.groupLabel')}
       data-testid="failed-draft-card"
       className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-secondary/80 border border-input text-sm max-w-full"
     >
@@ -31,8 +33,10 @@ export const FailedDraftCard = memo(function FailedDraftCard({
       />
       <div className="min-w-0 flex-1">
         <div className="text-xs text-muted-foreground">
-          Message not sent
-          {files > 0 ? ` · ${files} file${files === 1 ? '' : 's'}` : ''}
+          {t('chat:failedDraft.messageNotSent')}
+          {files > 0
+            ? ` · ${t('chat:failedDraft.files', { count: files })}`
+            : ''}
         </div>
         {draft.text.trim() && (
           <div className="truncate text-foreground/70" title={draft.text}>
@@ -45,11 +49,11 @@ export const FailedDraftCard = memo(function FailedDraftCard({
         className="shrink-0 rounded-md px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
         onClick={() => onRestore(draft)}
       >
-        Restore draft
+        {t('chat:failedDraft.restore')}
       </button>
       <button
         type="button"
-        aria-label="Dismiss"
+        aria-label={t('chat:failedDraft.dismiss')}
         className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
         onClick={() => onDismiss(draft.id)}
       >

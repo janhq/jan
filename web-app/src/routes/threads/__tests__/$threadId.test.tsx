@@ -1,4 +1,4 @@
-import { conversationAskCard, respondConversationAsk } from '@/lib/conversationClientTools'
+import { conversationAskCard, respondConversationAsk, dropConversationClientThread } from '@/lib/conversationClientTools'
 import { CHAT_RUN_NOTICE_METADATA } from '@/lib/chatRunNotice'
 import { Chat, useChat as useSDKChat } from '@ai-sdk/react'
 import { trackChat, quiesceChats, __resetChatCloseForTests } from '@/lib/chatClose'
@@ -512,6 +512,7 @@ vi.mock('@janhq/core', () => ({
 
 vi.mock('@/constants/chat', () => ({
   SESSION_STORAGE_PREFIX: { INITIAL_MESSAGE: 'initial-message-' },
+  TEMPORARY_CHAT_ID: 'temporary-chat',
 }))
 
 vi.mock('@/utils/error', async (importOriginal) => ({
@@ -1182,6 +1183,31 @@ describe('ThreadDetail route', () => {
         text: 'hello world',
         attachments: [sheet],
       })
+    })
+
+    it('does not bring a held failure back after the thread was dropped', async () => {
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      let fail: (e: Error) => void = () => {}
+      vi.mocked(processAttachmentsForSend).mockReturnValueOnce(
+        new Promise((_, reject) => { fail = reject }) as never
+      )
+      renderComponent()
+      await act(async () => { screen.getByTestId('chat-send').click() })
+      act(() => { dropConversationClientThread('thread-1') })
+      await act(async () => { fail(new Error('unreadable')) })
+
+      expect(useFailedDrafts.getState().drafts['thread-1']).toBeUndefined()
+      expect(usePrompt.getState().prompt).toBe('')
+      expect(h.attachmentsState.setAttachments).not.toHaveBeenCalledWith('thread-1', expect.any(Function))
+    })
+
+    it('leaving a temporary chat leaves no failed media for the next one', () => {
+      h.routeParams.threadId = 'temporary-chat'
+      const view = renderComponent()
+      useFailedDrafts.getState().add('temporary-chat', { text: 'x', attachments: [sheet] })
+      view.unmount()
+      h.routeParams.threadId = 'thread-1'
+      expect(useFailedDrafts.getState().drafts['temporary-chat']).toBeUndefined()
     })
 
     it('never auto-sends a failed draft when the thread returns to ready', async () => {
