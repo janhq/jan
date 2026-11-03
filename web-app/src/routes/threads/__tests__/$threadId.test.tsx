@@ -547,6 +547,7 @@ import type { UIMessageChunk } from 'ai'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { toolOriginKey, useToolCallRuntime } from '@/hooks/useToolCallRuntime'
+import { useChildApprovalCalls } from '@/hooks/useChildApprovalCalls'
 import { useMessageErrors } from '@/stores/message-errors'
 import {
   processAttachmentsForSend,
@@ -1721,6 +1722,87 @@ describe('ThreadDetail route', () => {
       })
       const record = h.messagesState.updateMessage.mock.calls.map(([item]: any[]) => item).find((item: any) => item.id === 'multi-step')
       expect(JSON.parse(JSON.stringify(record)).metadata.toolOrigins).toEqual({ old: 'alpha', internal: null, new: 'beta' })
+    })
+
+    describe('child approval ownership and frozen MCP binding', () => {
+      type ChildDispatch = (call: Call, signal: AbortSignal, child: unknown) => Promise<Outcome>
+      const childDispatch = (toolCall: Call, child: unknown, signal = new AbortController().signal) =>
+        ((h as any).capturedDispatchTool as ChildDispatch)(toolCall, signal, child)
+      const binding = (server: string | undefined = 'frozen-server') => ({
+        ceiling: h.threadsState.getConversationCapabilities(),
+        mcpServers: new Map([['fetch', server]]),
+      })
+      beforeEach(() => {
+        h.appStateState.tools = [{ name: 'fetch', server: 'frozen-server' }]
+        h.chatSessionsState.sessions['thread-1'] = {
+          transport: { getTurnModelSelection: () => null, getMcpServerForTool: vi.fn(() => 'rival-server') },
+          chat: { messages: [], stop: vi.fn() },
+        }
+        getMcpTools.mockResolvedValue([{ name: 'fetch', server: 'frozen-server' }])
+        useChildApprovalCalls.setState({ owned: {} })
+      })
+
+      it('registers the child call before any await and releases it when the call settles', async () => {
+        let decide!: (allowed: boolean) => void
+        h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>((r) => { decide = r }))
+        const run = serveMcp()
+        renderComponent()
+        let outcome!: Promise<Outcome>
+        act(() => { outcome = childDispatch(call('task1:c1'), binding()) })
+        // Synchronously after invocation, still before the first await resolves.
+        expect(useChildApprovalCalls.getState().owned['thread-1']).toEqual(['task1:c1'])
+        await waitFor(() => expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1))
+        await act(async () => { decide(true); await outcome })
+        expect(run).toHaveBeenCalledTimes(1)
+        expect(useChildApprovalCalls.getState().owned['thread-1']).toBeUndefined()
+      })
+
+      it('does not register a parent call', async () => {
+        h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>(() => {}))
+        renderComponent()
+        const ctl = new AbortController()
+        act(() => { void dispatch(call('parent-1'), ctl.signal) })
+        expect(useChildApprovalCalls.getState().owned['thread-1']).toBeUndefined()
+        await act(async () => { ctl.abort() })
+      })
+
+      it('requests approval for the FROZEN server and executes only it, never the refreshed rival', async () => {
+        let decide!: (allowed: boolean) => void
+        h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>((r) => { decide = r }))
+        const run = serveMcp()
+        renderComponent()
+        let outcome!: Promise<Outcome>
+        act(() => { outcome = childDispatch(call('task1:c2'), binding('frozen-server')) })
+        await waitFor(() => expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1))
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+          'task1:c2', 'fetch', 'thread-1', 'frozen-server', expect.any(Function)
+        )
+        await act(async () => { decide(true); await outcome })
+        expect(run).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ serverName: 'frozen-server' }))
+      })
+
+      it('a denied child call is recorded as denial and is released', async () => {
+        h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
+        const run = serveMcp()
+        renderComponent()
+        const result = await childDispatch(call('task1:c3'), binding())
+        expect(result).toMatchObject({ isError: true, output: 'Tool execution denied by user' })
+        expect(run).not.toHaveBeenCalled()
+        expect(useChildApprovalCalls.getState().owned['thread-1']).toBeUndefined()
+      })
+
+      it('Stop cancels the pending child approval and releases ownership', async () => {
+        h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>(() => {}))
+        serveMcp()
+        renderComponent()
+        const ctl = new AbortController()
+        let outcome!: Promise<Outcome>
+        act(() => { outcome = childDispatch(call('task1:c4'), binding(), ctl.signal) })
+        await waitFor(() => expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1))
+        await act(async () => { ctl.abort(); await outcome })
+        expect(h.toolApprovalState.cancelApproval).toHaveBeenCalledWith('task1:c4', 'thread-1')
+        expect(useChildApprovalCalls.getState().owned['thread-1']).toBeUndefined()
+      })
     })
 
     describe('advertised MCP identity stays paired with approval and execution', () => {
