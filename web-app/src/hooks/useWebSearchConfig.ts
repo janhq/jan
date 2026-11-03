@@ -43,6 +43,13 @@ export const WEB_SEARCH_PROVIDERS: WebSearchProviderMeta[] = [
     secretKey: 'you-api-key',
     homepage: 'you.com',
   },
+  {
+    id: 'sofya',
+    label: 'Sofya',
+    keyless: false,
+    secretKey: 'sofya-api-key',
+    homepage: 'sofya.co',
+  },
 ]
 
 export const DEFAULT_SEARCH_PROVIDER = 'exa'

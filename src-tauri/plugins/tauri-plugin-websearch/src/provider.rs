@@ -50,6 +50,9 @@ const YOU_COM_CLIENT_INFO: &str = concat!(
 const YOU_COM_SEARCH_URL: &str = "https://ydc-index.io/v1/search";
 const YOU_COM_CONTENTS_URL: &str = "https://ydc-index.io/v1/contents";
 
+const SOFYA_SEARCH_URL: &str = "https://sofya.co/v1/search";
+const SOFYA_FETCH_URL: &str = "https://sofya.co/v1/fetch";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearchResult {
     pub title: String,
@@ -122,6 +125,13 @@ pub const PROVIDERS: &[ProviderMeta] = &[
         secret_key: Some("you-api-key"),
         requires_endpoint: false,
     },
+    ProviderMeta {
+        id: "sofya",
+        label: "Sofya",
+        keyless: false,
+        secret_key: Some("sofya-api-key"),
+        requires_endpoint: false,
+    },
 ];
 
 /// Look up a backend by id (case-insensitive; empty/absent is the default).
@@ -177,6 +187,7 @@ pub fn create_provider(
         Some("tavily") => Ok(Box::new(TavilyProvider::new(api_key)?)),
         Some("searxng") => Ok(Box::new(SearxngProvider::new(endpoint)?)),
         Some("you") => Ok(Box::new(YouComProvider::new(api_key)?)),
+        Some("sofya") => Ok(Box::new(SofyaProvider::new(api_key)?)),
         Some(other) => Err(format!("Unknown web search provider '{other}'")),
     }
 }
@@ -878,6 +889,148 @@ fn normalize_youcom_contents(body: &Value, requested_url: &str) -> Result<Fetche
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .ok_or_else(|| format!("You.com returned no content for {requested_url}"))?;
+    let (content, truncated) = bound_text(raw);
+    Ok(FetchedPage {
+        url,
+        title,
+        content,
+        truncated,
+    })
+}
+
+/// Sofya backend (key-only). Uses the `/v1/search` and `/v1/fetch` REST
+/// endpoints, authenticated with a bearer token.
+///
+/// Search runs at the `snippets` depth: `web_search` returns a short snippet
+/// per result, so the page text the default depth adds would be clipped away
+/// anyway. `web_fetch` reads the page through `/v1/fetch`, which returns it
+/// as markdown and also parses documents such as PDF and DOCX.
+pub struct SofyaProvider {
+    api_key: String,
+    client: reqwest::Client,
+}
+
+impl SofyaProvider {
+    pub fn new(api_key: Option<String>) -> Result<Self, String> {
+        Ok(Self {
+            api_key: require_key("Sofya", api_key)?,
+            client: build_http_client("Sofya")?,
+        })
+    }
+
+    async fn post(&self, url: &str, body: Value) -> Result<Value, String> {
+        let resp = self
+            .client
+            .post(url)
+            .bearer_auth(&self.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Sofya request failed: {e}"))?;
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("Sofya: failed to read response body: {e}"))?;
+        if !status.is_success() {
+            return Err(format!(
+                "Sofya failed with HTTP {}: {}",
+                status.as_u16(),
+                text.chars().take(400).collect::<String>()
+            ));
+        }
+        serde_json::from_str(&text).map_err(|e| format!("Sofya: invalid JSON response: {e}"))
+    }
+}
+
+#[async_trait]
+impl SearchProvider for SofyaProvider {
+    async fn search(&self, query: &str, count: u32) -> Result<Vec<SearchResult>, String> {
+        let parsed = self
+            .post(
+                SOFYA_SEARCH_URL,
+                json!({
+                    "query": query,
+                    "max_results": count,
+                    "search_depth": "snippets"
+                }),
+            )
+            .await?;
+        Ok(normalize_sofya_search(&parsed))
+    }
+
+    async fn fetch(&self, url: &str) -> Result<FetchedPage, String> {
+        let parsed = self.post(SOFYA_FETCH_URL, json!({ "urls": [url] })).await?;
+        normalize_sofya_fetch(&parsed, url)
+    }
+}
+
+fn normalize_sofya_search(body: &Value) -> Vec<SearchResult> {
+    let Some(results) = body.get("results").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    results
+        .iter()
+        .map(|r| {
+            let title = r.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            let url = r.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            // `description` is the result's snippet; `content` carries page
+            // text when it was fetched, so it is only the fallback.
+            let snippet = r
+                .get("description")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .or_else(|| r.get("content").and_then(|v| v.as_str()))
+                .map(|s| clip_chars(s, 500))
+                .unwrap_or_default();
+            let published_at = r
+                .get("published_date")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            SearchResult {
+                title: title.to_string(),
+                url: url.to_string(),
+                snippet,
+                published_at,
+            }
+        })
+        .collect()
+}
+
+/// `/v1/fetch` answers HTTP 200 with one entry per requested URL, each with
+/// its own `success` flag: a page that could not be read comes back as
+/// `success: false` with an `error` message and empty `content`. Those, and a
+/// successful entry with no text, are errors rather than an empty page.
+fn normalize_sofya_fetch(body: &Value, requested_url: &str) -> Result<FetchedPage, String> {
+    let first = body
+        .get("results")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .ok_or_else(|| format!("Sofya returned no content for {requested_url}"))?;
+    if first.get("success").and_then(|v| v.as_bool()) == Some(false) {
+        let reason = first
+            .get("error")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("unknown error");
+        return Err(format!("Sofya could not fetch {requested_url}: {reason}"));
+    }
+    let url = first
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or(requested_url)
+        .to_string();
+    let title = first
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let raw = first
+        .get("content")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| format!("Sofya returned no content for {requested_url}"))?;
     let (content, truncated) = bound_text(raw);
     Ok(FetchedPage {
         url,
@@ -1795,5 +1948,131 @@ mod tests {
         assert!(normalize_youcom_contents(&no_markdown, "u").is_err());
         let empty_markdown = json!([{ "url": "https://example.com", "markdown": "" }]);
         assert!(normalize_youcom_contents(&empty_markdown, "u").is_err());
+    }
+
+    #[test]
+    fn create_provider_sofya_requires_key() {
+        match create_provider(Some("sofya"), None, None) {
+            Ok(_) => panic!("expected Sofya to require a key"),
+            Err(e) => assert!(e.contains("Sofya")),
+        }
+        assert!(create_provider(Some("sofya"), Some("  ".into()), None).is_err());
+        assert!(create_provider(Some("Sofya"), Some("sofya_live_abc".into()), None).is_ok());
+        assert_eq!(provider_meta(Some("sofya")).map(|m| m.label), Some("Sofya"));
+    }
+
+    #[test]
+    fn normalize_sofya_search_maps_contract() {
+        let body = json!({
+            "query": "rust",
+            "answer": null,
+            "results": [
+                {
+                    "title": "Rust",
+                    "url": "https://www.rust-lang.org/",
+                    "content": "A language empowering everyone.",
+                    "description": "Rust is a fast, reliable language.",
+                    "fetched": false,
+                    "published_date": "2026-03-08",
+                    "sublinks": [],
+                    "table": {}
+                },
+                {
+                    "title": "Book",
+                    "url": "https://doc.rust-lang.org/book/",
+                    "content": "",
+                    "description": "The Rust book.",
+                    "fetched": false,
+                    "published_date": null
+                }
+            ],
+            "search_depth": "snippets",
+            "topic": "general",
+            "credits_used": 1,
+            "credits_remaining": 999
+        });
+        let results = normalize_sofya_search(&body);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].title, "Rust");
+        assert_eq!(results[0].url, "https://www.rust-lang.org/");
+        assert_eq!(results[0].snippet, "Rust is a fast, reliable language.");
+        assert_eq!(results[0].published_at.as_deref(), Some("2026-03-08"));
+        assert_eq!(results[1].snippet, "The Rust book.");
+        assert_eq!(results[1].published_at, None);
+    }
+
+    #[test]
+    fn normalize_sofya_search_falls_back_to_content_and_clips() {
+        let body = json!({
+            "results": [
+                { "title": "T", "url": "https://example.com", "content": "x".repeat(900), "description": "" },
+                { "title": "U", "url": "https://example.org", "content": "page text" }
+            ]
+        });
+        let results = normalize_sofya_search(&body);
+        assert_eq!(results[0].snippet.chars().count(), 500);
+        assert_eq!(results[1].snippet, "page text");
+    }
+
+    #[test]
+    fn normalize_sofya_search_empty_is_empty() {
+        assert!(normalize_sofya_search(&json!({})).is_empty());
+        assert!(normalize_sofya_search(&json!({"results": []})).is_empty());
+    }
+
+    #[test]
+    fn normalize_sofya_fetch_reads_markdown() {
+        let body = json!({
+            "results": [{
+                "title": "Example Domain",
+                "url": "https://example.com/",
+                "content": "# Example Domain\n\nThis domain is for use in examples.",
+                "raw_html": null,
+                "published_time": null,
+                "success": true,
+                "error": null,
+                "low_content": true,
+                "notice": "Only 52 characters of text came back."
+            }],
+            "credits_used": 1,
+            "credits_remaining": 998
+        });
+        let page = normalize_sofya_fetch(&body, "https://example.com").unwrap();
+        assert_eq!(page.title, "Example Domain");
+        assert_eq!(page.url, "https://example.com/");
+        assert!(page.content.starts_with("# Example Domain"));
+        assert!(!page.truncated);
+    }
+
+    #[test]
+    fn normalize_sofya_fetch_truncates_and_marks_truncated() {
+        let big = "a".repeat(FETCH_MAX_CHARS + 100);
+        let body = json!({ "results": [{ "url": "https://example.com", "content": big, "success": true }] });
+        let page = normalize_sofya_fetch(&body, "https://example.com").unwrap();
+        assert!(page.truncated);
+        assert_eq!(page.content.chars().count(), FETCH_MAX_CHARS);
+    }
+
+    #[test]
+    fn normalize_sofya_fetch_failure_or_empty_errors() {
+        assert!(normalize_sofya_fetch(&json!({}), "u").is_err());
+        assert!(normalize_sofya_fetch(&json!({"results": []}), "u").is_err());
+        // A URL that could not be read is reported per entry, inside an HTTP 200.
+        let failed = json!({
+            "results": [{
+                "title": "",
+                "url": "https://example.com/missing",
+                "content": "",
+                "success": false,
+                "error": "Page not found (HTTP 404)"
+            }]
+        });
+        let err = normalize_sofya_fetch(&failed, "https://example.com/missing").unwrap_err();
+        assert!(err.contains("HTTP 404"), "{err}");
+        // A successful entry with no text must not read as an empty page.
+        let blank = json!({ "results": [{ "url": "https://example.com", "content": "  \n", "success": true }] });
+        assert!(normalize_sofya_fetch(&blank, "u").is_err());
+        let missing = json!({ "results": [{ "url": "https://example.com", "success": true }] });
+        assert!(normalize_sofya_fetch(&missing, "u").is_err());
     }
 }
