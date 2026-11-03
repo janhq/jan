@@ -10,7 +10,6 @@ import {
 import '@testing-library/jest-dom'
 import userEvent from '@testing-library/user-event'
 
-import { HomeModeToggle } from '../HomeModeToggle'
 
 // --- Module mocks (must be declared before component import) ---------------
 
@@ -1582,7 +1581,7 @@ describe('ChatInput', () => {
     // jsdom cannot lay out container queries: assert the sizing contract, not
     // window.innerWidth, because these composers also live in resizable panels.
     it('uses a named container, a single row and a shrinkable model without shrinking Send', () => {
-      renderInput({ leadingControls: <HomeModeToggle mode="chat" onChange={vi.fn()} /> })
+      renderInput({ leadingControls: <button type="button">Leading control</button> })
       const add = screen.getByRole('button', { name: 'Add attachments and controls' })
       const picker = screen.getByRole('button', { name: 'Select model' })
       const send = screen.getByTestId('send-message-button')
@@ -1594,8 +1593,7 @@ describe('ChatInput', () => {
       expect(picker).toHaveClass('min-w-0', '@max-[520px]/composer:max-w-full')
       expect(add).toHaveClass('shrink-0')
       expect(send).toHaveClass('shrink-0')
-      expect(screen.getByRole('radiogroup')).toHaveClass('@max-[360px]/composer:w-28')
-      expect(screen.getAllByRole('radio')).toHaveLength(2)
+      expect(screen.getByRole('button', { name: 'Leading control' })).toBeInTheDocument()
     })
 
     it('hides only inline shortcuts and leaves surface menu actions reachable while streaming', () => {

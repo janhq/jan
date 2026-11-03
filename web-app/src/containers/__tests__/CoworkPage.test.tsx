@@ -10,8 +10,8 @@ import { CoworkPage } from '../CoworkPage'
 import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
 import type { CoworkTurn, TodoList } from '@/types/coworkSession'
 
-const mocks = vi.hoisted(() => ({ run: vi.fn(), sandbox: vi.fn(), refresh: vi.fn(), cancelShells: vi.fn(), dispatch: vi.fn(), handoff: vi.fn(), ensure: vi.fn() }))
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
+const mocks = vi.hoisted(() => ({ run: vi.fn(), sandbox: vi.fn(), refresh: vi.fn(), cancelShells: vi.fn(), dispatch: vi.fn(), handoff: vi.fn(), ensure: vi.fn(), navigate: vi.fn() }))
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mocks.navigate }))
 vi.mock('@/i18n/react-i18next-compat', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('@/hooks/useThreadManagement', () => ({ useThreadManagement: () => ({ folders: [] }) }))
 vi.mock('@/hooks/useServiceHub', () => ({ useServiceHub: () => ({ app: () => ({ getJanDataFolder: async () => null }) }) }))
@@ -55,7 +55,7 @@ vi.mock('@/containers/CoworkTodoPanel', () => ({ CoworkTodoPanel: ({ children }:
 vi.mock('@/containers/CoworkTasksPanel', () => ({ CoworkTasksPanel: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/containers/CoworkFilesPanel', () => ({ CoworkFilesPanel: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/containers/ModelSetting', () => ({ ModelSettingSheet: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
-vi.mock('@/containers/CoworkBudgetNotice', () => ({ CoworkBudgetNotice: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
+vi.mock('@/containers/CoworkBudgetNotice', () => ({ CoworkBudgetNotice: ({ children, onNewConversation }: { children?: React.ReactNode; onNewConversation?: () => void }) => <div>{children}{onNewConversation && <button onClick={onNewConversation}>New conversation</button>}</div> }))
 vi.mock('@/containers/CoworkRunNotice', () => ({ CoworkRunNotice: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/containers/CoworkAskCard', () => ({ CoworkAskCard: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/containers/CoworkParkedNotice', () => ({ CoworkParkedNotice: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
@@ -79,6 +79,18 @@ beforeEach(() => {
   mocks.run.mockImplementation(() => new Promise((resolve) => { finish = () => resolve({ stoppedBy: 'done', messages: [], usage: null }) }))
 })
 afterEach(() => { vi.useRealTimers() })
+describe('CoworkPage legacy new conversation action', () => {
+  it('routes to unified home, keeping the legacy session', async () => {
+    const legacy = { id: 'test', title: 'Legacy', folder: null, turns: [{ role: 'user' as const, content: 'Old question' }], messages: [], updated: 1 }
+    useCoworkSessions.setState({ sessions: [legacy], currentId: 'test' })
+    useCoworkRun.setState({ outcomes: { test: { stoppedBy: 'tokens' } } })
+    render(<CoworkPage />)
+    await act(async () => {})
+    fireEvent.click(screen.getByText('New conversation'))
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/' })
+    expect(useCoworkSessions.getState().sessions).toEqual([legacy])
+  })
+})
 describe('CoworkPage request acceptance', () => {
   it('keeps prompt and attached documents when the model cannot call tools', async () => {
     useModelProvider.setState({ providers: [{ provider: 'remote', active: true, models: [{ id: 'model', capabilities: [] }] }] } as never)

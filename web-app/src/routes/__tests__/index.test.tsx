@@ -361,6 +361,30 @@ describe('Index route', () => {
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     })
 
+    it('no selected model shows no unsupported notice, keeps the control hidden and prepare off, then resurfaces the pending draft', async () => {
+      const Component = Route.component as React.ComponentType
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      const view = renderComponent()
+      expect(screen.queryByTestId('home-scope-unsupported')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
+      fireEvent.click(
+        await screen.findByLabelText('Allow shell commands to access the network')
+      )
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+      // No model selected yet: not a "model without tools", so no false notice.
+      h.selectedModel = undefined
+      view.rerender(<Component />)
+      expect(screen.queryByTestId('home-scope-unsupported')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      view.rerender(<Component />)
+      expect(screen.getByTestId('home-scope-consent-trigger')).toHaveTextContent(
+        'Conversation permissions (pending)'
+      )
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+    })
+
     it('announces a hidden pending draft when the model loses tool support', async () => {
       const Component = Route.component as React.ComponentType
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
@@ -524,6 +548,32 @@ describe('Index route', () => {
       )
       expect(h.pickFolder).not.toHaveBeenCalled()
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    })
+
+    it('asks for a model instead of the unsupported-model toast when none is selected, without picker or grant', async () => {
+      h.selectedModel = undefined as any
+      renderComponent()
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      await waitFor(() =>
+        expect(h.toastInfo).toHaveBeenCalledWith('common:conversationScope.folderSelectModel')
+      )
+      expect(h.toastInfo).not.toHaveBeenCalledWith('common:conversationScope.folderUnsupported')
+      expect(h.pickFolder).not.toHaveBeenCalled()
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+      fireEvent.click(screen.getByTestId('invoke-prepare'))
+      expect(h.setCaps).not.toHaveBeenCalled()
+    })
+
+    it('keeps the temporary notice when temporary mode has no selected model', async () => {
+      h.selectedModel = undefined as any
+      window.history.replaceState({}, '', '/?temporary-chat=true')
+      renderComponent()
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      await waitFor(() =>
+        expect(h.toastInfo).toHaveBeenCalledWith('common:conversationScope.temporary')
+      )
+      expect(h.toastInfo).not.toHaveBeenCalledWith('common:conversationScope.folderSelectModel')
+      expect(h.pickFolder).not.toHaveBeenCalled()
     })
 
     it('associates the Chat draft with its visibly selected project without a folder action', () => {

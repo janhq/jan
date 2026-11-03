@@ -100,7 +100,7 @@ function Index() {
   // an explanation. Ordinary direct chat is never refused — a model without
   // tool support still answers one-call questions through the same composer.
   const scopeUnsupportedReason =
-    !isTemporaryChat && !modelSupportsTools
+    !isTemporaryChat && selectedModel && !modelSupportsTools
       ? t('common:conversationScope.unsupported') + (scopeDraftElevated ? ` ${t('common:conversationScope.pendingKept')}` : '')
       : null
   const pickScopeFolder = useCallback(async () => {
@@ -113,6 +113,10 @@ function Index() {
   const attachScopeFolder = useCallback(async () => {
     if (isTemporaryChat) {
       toast.info(t('common:conversationScope.temporary'))
+      return
+    }
+    if (!selectedModel) {
+      toast.info(t('common:conversationScope.folderSelectModel'))
       return
     }
     if (!modelSupportsTools) {
@@ -135,7 +139,7 @@ function Index() {
       folderScope: { path: picked, access: 'read' },
     }))
     toast.info(t('common:conversationScope.folderSelected', { path: picked }))
-  }, [isTemporaryChat, modelSupportsTools, pickScopeFolder, t])
+  }, [isTemporaryChat, selectedModel, modelSupportsTools, pickScopeFolder, t])
   const prepareThreadCreation = useCallback(() => {
     const snapshot = scopeDraft
     return async (threadId: string) => {

@@ -2,7 +2,6 @@ import { updateThreadProject } from '@/lib/threadProject'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useNavigate } from '@tanstack/react-router'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
-import { useHomeMode } from '@/hooks/useHomeMode'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import ChatInput from '@/containers/ChatInput'
 import { ConversationColumn } from '@/components/ai-elements/conversation-column'
@@ -1783,10 +1782,9 @@ export function CoworkPage() {
                     <CoworkBudgetNotice
                       kind="tokens"
                       onCompact={() => void handleCompact()}
-                      onNewSession={() => {
-                        useHomeMode.getState().setMode('cowork')
-                        navigate({ to: route.home })
-                      }}
+                      // Home is the unified chat surface. Legacy sessions stay
+                      // in the store; this only leaves the full one behind.
+                      onNewConversation={() => navigate({ to: route.home })}
                     />
                   )}
                 </ConversationContent>

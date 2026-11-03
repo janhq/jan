@@ -590,6 +590,19 @@ pub async fn start_monitor(
     if !matches!(scope, Some(WorkspaceScope::Session)) {
         return Err("monitor is unavailable for Chat threads".to_string().into());
     }
+    // Same host-kind guard as `execute_tool`: an elevated Session monitor
+    // (network, attached folder, or writable project) needs a host-verified
+    // Cowork identity, and the check runs before any setup side effect.
+    guard_caller_session(
+        scope,
+        &thread_id,
+        crate::tools::monitor::MONITOR_TOOL_NAME,
+        &args,
+        allow_network,
+        read_only_project.as_deref(),
+        project_writable,
+    )
+    .await?;
     let data_folder = workspace::host_data_folder(&data_folder);
     use crate::tools::monitor;
     if !jail::backend().enforces() {
@@ -1824,6 +1837,38 @@ mod tests {
             .await
             .unwrap_err();
             assert_eq!(err.message, "monitor is unavailable for Chat threads");
+            assert!(!data.exists(), "refusal must not create a workspace");
+            assert!(!workspace::scratch_dir(&id).exists(), "refusal must not create scratch");
+            assert!(!session_monitors().lock().unwrap().contains_key(&id));
+        }
+    }
+
+    #[tokio::test]
+    async fn elevated_session_monitor_requires_host_verified_cowork_before_setup() {
+        let data = unique_data_folder();
+        let id = format!("monitor-elev-{}", data.file_name().unwrap().to_string_lossy());
+        let folder = data.join("attached");
+        for (network, folder, writable) in [
+            (Some(true), None, None),
+            (None, Some(folder.to_string_lossy().into_owned()), None),
+            (None, None, Some(true)),
+        ] {
+            let channel = tauri::ipc::Channel::new(|_| {
+                panic!("a refused monitor must not emit updates")
+            });
+            let err = start_monitor(
+                data.to_string_lossy().into_owned(),
+                id.clone(),
+                json!({}), // Must be refused before argument parsing.
+                network,
+                folder,
+                writable,
+                Some(WorkspaceScope::Session),
+                channel,
+            )
+            .await
+            .unwrap_err();
+            assert!(err.message.contains("host-verified Cowork"), "{}", err.message);
             assert!(!data.exists(), "refusal must not create a workspace");
             assert!(!workspace::scratch_dir(&id).exists(), "refusal must not create scratch");
             assert!(!session_monitors().lock().unwrap().contains_key(&id));

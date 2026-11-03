@@ -76,6 +76,16 @@ describe('/cowork/$sessionId', () => {
     expect(run(Route, { sessionId: 'a' })).toBeNull()
   })
 
+  it('sends an untouched session to unified home', async () => {
+    const { Route } = (await import('../cowork/$sessionId')) as unknown as { Route: Opts }
+    useCoworkSessions.setState({
+      sessions: [{ id: 'blank', title: 'blank', folder: null, turns: [], messages: [], updated: 1 }],
+      currentId: null,
+    })
+    expect(run(Route, { sessionId: 'blank' })).toMatchObject({ to: '/' })
+    expect(useCoworkSessions.getState().sessions).toHaveLength(1)
+  })
+
   it('redirects an unknown id home', async () => {
     const { Route } = (await import('../cowork/$sessionId')) as unknown as { Route: Opts }
     seed(['a'], null)
