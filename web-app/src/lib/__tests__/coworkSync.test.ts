@@ -25,7 +25,7 @@ const backend = vi.hoisted(() => {
       case 'list_threads':
         return [...threads.values()].map((t) => JSON.parse(JSON.stringify(t)))
       case 'write_thread_extra':
-        if (!args.create && !threads.has(args.threadId)) throw new Error('no thread.json')
+        if (!args.create && !threads.has(args.threadId)) throw new Error('thread_missing: Thread has no thread.json')
         extras.set(args.threadId, JSON.parse(JSON.stringify(args.value)))
         return
       case 'read_thread_extra':
@@ -480,6 +480,83 @@ describe('coworkSync startup', () => {
     expect(keep).toContain('committed')
     expect(keep).toContain(early)
   })
+  it('wires onThreadMissing: flags the session and raises a persistent toast, then deletion dismisses it without resurrection', async () => {
+    await startCoworkSync()
+    const id = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().commitTurns(id, [{ role: 'user', content: 'x' }], [], [])
+    await flushCowork()
+    expect(backend.threads.has(id)).toBe(true)
+
+    // The backend thread disappears out of band.
+    backend.threads.delete(id)
+    backend.extras.delete(id)
+    backend.log.length = 0
+
+    useCoworkSessions.getState().setTitle(id, 'edited after loss')
+    await flushCowork()
+
+    const flagged = useCoworkSessions.getState().sessions.find((s) => s.id === id)
+    expect(flagged?.unavailable).toBe('missing-thread')
+    expect(flagged?.title).toBe('edited after loss')
+    expect(sonner.warning).toHaveBeenCalledTimes(1)
+    expect(sonner.warning).toHaveBeenCalledWith(
+      'A Cowork conversation could not be saved',
+      expect.objectContaining({ id: `cowork-missing-thread-${id}`, duration: Infinity })
+    )
+    expect(sonner.dismiss).not.toHaveBeenCalled()
+    // Never recreated from the stale snapshot.
+    expect(backend.threads.has(id)).toBe(false)
+    expect(backend.log).not.toContain('create_thread')
+
+    // A further edit and flush stays quiet: no retry, no recreate, no new toast.
+    useCoworkSessions.getState().setTitle(id, 'edited again')
+    await flushCowork()
+    expect(backend.threads.has(id)).toBe(false)
+    expect(backend.log).not.toContain('create_thread')
+    expect(sonner.warning).toHaveBeenCalledTimes(1)
+
+    useCoworkSessions.getState().deleteSession(id)
+    await flushCoworkDeletes()
+    expect(sonner.dismiss).toHaveBeenCalledWith(`cowork-missing-thread-${id}`)
+    expect(useCoworkSessions.getState().sessions.some((s) => s.id === id)).toBe(false)
+    expect(useThreads.getState().threads[id]).toBeUndefined()
+
+    await flushCowork()
+    expect(backend.threads.has(id)).toBe(false)
+    expect(backend.extras.has(id)).toBe(false)
+    expect(backend.log).not.toContain('create_thread')
+    expect(useCoworkSessions.getState().sessions.some((s) => s.id === id)).toBe(false)
+  })
+
+  it('wiring keeps transient sidecar failures on the retry path: no flag, no toast, and the write recovers', async () => {
+    // Sync binds `invoke` at start, so install the failing wrapper first.
+    const invoke = backend.invoke
+    let failing = false
+    backend.invoke = async (command, args) => {
+      if (failing && command === 'write_thread_extra') throw new Error('disk full')
+      return invoke(command, args)
+    }
+    try {
+    await startCoworkSync()
+    const id = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().commitTurns(id, [{ role: 'user', content: 'x' }], [], [])
+    await flushCowork()
+
+    failing = true
+    useCoworkSessions.getState().setTitle(id, 'retry me')
+    await expect(flushCowork()).rejects.toThrow(/pending writes/)
+    expect(useCoworkSessions.getState().sessions.find((s) => s.id === id)?.unavailable).toBeUndefined()
+    expect(sonner.warning).not.toHaveBeenCalled()
+
+    failing = false
+    await flushCowork()
+    expect(backend.threads.get(id)?.title).toBe('retry me')
+    expect(sonner.warning).not.toHaveBeenCalled()
+    } finally {
+      backend.invoke = invoke
+    }
+  })
+
   it('a sandbox cleanup failure does not restore a durably deleted session', async () => {
     await startCoworkSync()
     const id = useCoworkSessions.getState().createSession()
