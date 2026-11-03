@@ -1,3 +1,7 @@
+/// The fixed context MLX models are seeded with. MLX has no auto-fit, so the
+/// empty llamacpp default below would leave the window to the mlx server.
+export const MLX_DEFAULT_CTX_LEN = 8192
+
 export const modelSettings = {
   ctx_len: {
     key: 'ctx_len',
@@ -9,6 +13,7 @@ export const modelSettings = {
       // Empty, not 8192: an explicit value pins n_ctx and upstream's fit then
       // leaves the context alone. With fit off, preset.ts's [*] ctx-size =
       // 8192 still applies, so the effective default is unchanged there.
+      // MLX overrides this with MLX_DEFAULT_CTX_LEN.
       value: '',
       placeholder: 'auto',
       type: 'number',
