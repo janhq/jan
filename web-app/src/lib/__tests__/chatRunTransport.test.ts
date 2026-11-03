@@ -595,6 +595,102 @@ describe('task-status rows are an optional carrier budget (never cost the turn i
     expect(calls).toBeLessThan(10 * parts.length)
   })
 
+  it('early size overflow serializes each status part exactly once (guard off would truncate + strip => extra per status)', () => {
+    const N = 300
+    const many = Array.from({ length: N }, (_, i) => statusPart(row(i, { finalOutput: 'x'.repeat(5000) })))
+    const parts = [
+      { type: 'reasoning', text: 'r'.repeat(300 * 1024), state: 'done' },
+      ...many,
+      { type: 'text', text: 'answer', state: 'done' },
+    ] as UIMessage['parts']
+    const spy = vi.spyOn(JSON, 'stringify')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let fields: ReturnType<typeof assistantRecordFields>
+    let statusCalls: number
+    try {
+      fields = assistantRecordFields({ id: 'perf3', role: 'assistant', parts }, {}, { stopped: false })
+      statusCalls = spy.mock.calls.filter(([v]) => (v as { type?: unknown } | null)?.type === TASK_STATUS_PART).length
+    } finally {
+      spy.mockRestore()
+      warn.mockRestore()
+    }
+    expect(fields.metadata.uiPartsSkipped).toBe('size')
+    expect(fields.metadata).not.toHaveProperty('uiParts')
+    expect(fields.metadata).not.toHaveProperty('uiTaskStatusShed')
+    // Cached stored form: one stringify per status part, no re-serialization while bailing.
+    expect(statusCalls).toBe(N)
+  })
+
+  describe('carrier boundary with escaped text and pointer parts', () => {
+    const LIMIT = 256 * 1024
+    const tricky = 'He said "hi"\\ back\nline2\r\n\t\u2028\u2029 \u00e9\u4e2d\ud83d\ude00 \u0000'
+    const dataUrl = 'data:image/png;base64,iVBORw0KGgo='
+    const canonical = (m: UIMessage) => m.parts.filter(p => p.type !== TASK_STATUS_PART)
+    // A single status text is capped at TASK_STATUS_TEXT_LIMIT, so canonical filler brings the carrier near the limit.
+    const FILLER = 'f'.repeat(200 * 1024)
+    const build = (pad: number, id: string): UIMessage => ({
+      id, role: 'assistant', parts: [
+        { type: 'reasoning', text: tricky, state: 'done', providerMetadata: { anthropic: { signature: 'sig-b' } } },
+        { type: RUN_CONTEXT_PART, data: { text: `ctx ${tricky}` } },
+        { type: 'tool-edit', toolCallId: 'tb', state: 'output-available', input: { path: 'a "q".txt' }, output: tricky },
+        { type: 'file', mediaType: 'image/png', url: dataUrl },
+        statusPart({ runId: 'run-b', name: 'child-b', status: 'done', startedAt: 1, endedAt: 2, finalOutput: 'x'.repeat(pad) }),
+        { type: 'text', text: `answer ${tricky} ${FILLER}`, state: 'done' },
+      ] as UIMessage['parts'],
+    })
+    const carrierLen = (f: ReturnType<typeof assistantRecordFields>) => JSON.stringify(f.metadata.uiParts).length
+
+    it('exactly at the limit nothing is shed; one char over sheds only the optional status text', () => {
+      const probe = assistantRecordFields(build(10000, 'bp'), {}, { stopped: false })
+      expect(probe.metadata).not.toHaveProperty('uiPartsSkipped')
+      expect(probe.metadata).not.toHaveProperty('uiTaskStatusShed')
+      const stored = (probe.metadata.uiParts as { parts: Record<string, unknown>[] }).parts
+      // Pointer forms: the tool output and media payload live in content, not the carrier.
+      expect(stored.find(p => p.type === 'tool-edit')).toMatchObject({ outputInContent: true })
+      expect(stored.find(p => p.type === 'tool-edit')).not.toHaveProperty('output')
+      expect(stored.find(p => p.type === 'file')).toHaveProperty('contentRef')
+      expect(stored.find(p => p.type === 'file')).not.toHaveProperty('url')
+      const exactPad = 10000 + (LIMIT - carrierLen(probe))
+      expect(exactPad).toBeLessThanOrEqual(TASK_STATUS_TEXT_LIMIT)
+
+      const atMsg = build(exactPad, 'b-at')
+      const at = assistantRecordFields(atMsg, {}, { stopped: false })
+      expect(carrierLen(at)).toBe(LIMIT)
+      expect(at.metadata).not.toHaveProperty('uiPartsSkipped')
+      expect(at.metadata).not.toHaveProperty('uiTaskStatusShed')
+
+      const over = build(exactPad + 1, 'b-over')
+      const shedFields = assistantRecordFields(over, {}, { stopped: false })
+      expect(shedFields.metadata).not.toHaveProperty('uiPartsSkipped')
+      expect(shedFields.metadata.uiTaskStatusShed).toEqual({ truncated: 1 })
+      expect(carrierLen(shedFields)).toBeLessThanOrEqual(LIMIT)
+
+      for (const [message, fields] of [[atMsg, at], [over, shedFields]] as const) {
+        const reloaded = convertThreadMessageToUIMessage(store(message, fields))
+        expect(canonical(reloaded)).toEqual(canonical(message))
+        const rows = taskStatusRows([reloaded])
+        expect(rows.map(r => [r.runId, r.name, r.status, r.startedAt, r.endedAt])).toEqual([['run-b', 'child-b', 'done', 1, 2]])
+      }
+    })
+
+    it('over budget with several optional statuses: canonical/context parts survive and nothing is skipped', async () => {
+      const base = build(10, 'bs').parts.filter(p => p.type !== TASK_STATUS_PART)
+      const message: UIMessage = {
+        id: 'bs', role: 'assistant',
+        parts: [...base.slice(0, 4), ...[0, 1, 2].map(i => statusPart(row(i))), ...base.slice(4)],
+      }
+      const fields = assistantRecordFields(message, {}, { stopped: false })
+      expect(fields.metadata).not.toHaveProperty('uiPartsSkipped')
+      expect(fields.metadata.uiTaskStatusShed).toMatchObject({ truncated: expect.any(Number) })
+      expect(carrierLen(fields)).toBeLessThanOrEqual(LIMIT)
+      const reloaded = convertThreadMessageToUIMessage(store(message, fields))
+      expect(canonical(reloaded)).toEqual(canonical(message))
+      expect(taskStatusRows([reloaded]).map(r => r.runId)).toEqual(['run-0', 'run-1', 'run-2'])
+      const model = JSON.stringify(await convertToModelMessages(expandChatRunContext([user, reloaded])))
+      expect(model).not.toContain('task-status')
+    })
+  })
+
   describe('shapeTaskStatusPart bounds (enum, row count, id and text limits)', () => {
     const good = (over: Record<string, unknown> = {}) => ({ runId: 'r', name: 'n', status: 'done', startedAt: 1, ...over })
     const part = (rows: unknown[]) => ({ type: TASK_STATUS_PART, id: 'task-status:r', data: { subagents: rows } })
