@@ -218,7 +218,10 @@ vi.mock('@/lib/path-references', () => ({
 }))
 
 vi.mock('@tanstack/react-router', () => ({
-  useRouter: () => ({ navigate: vi.fn() }),
+  useRouter: () => ({
+    navigate: vi.fn(),
+    state: { location: { searchStr: window.location.search } },
+  }),
   Link: ({ children, ...props }: { children?: React.ReactNode }) => <a {...props}>{children}</a>,
 }))
 

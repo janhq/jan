@@ -764,7 +764,14 @@
     "label": "Conversation scope",
     "writable": "Task tools can read and write files in the selected folder. Your existing task permissions still apply.",
     "optional": "Optional folder for read/write task access. Without a folder, tasks use their managed workspace.",
-    "permissions": "Folder selection does not change network or persistent memory settings."
+    "permissions": "Folder selection does not change network or persistent memory settings.",
+    "unsupported": "The selected model does not support tools, so this conversation cannot be granted folder, shell network, or memory access. Ordinary chat still works.",
+    "pendingKept": "Your pending permission draft is kept and will be available when you select a tool-capable model.",
+    "temporary": "A temporary chat keeps no folder access.",
+    "folderUnsupported": "The selected model does not support tools, so folder access cannot be granted. Ordinary chat still works.",
+    "invalidFolder": "This folder path is not supported. Choose another folder.",
+    "folderSelected": "Read-only folder access to {{path}} is pending for your next chat.",
+    "removeProject": "Remove project selection"
   },
   "homeMode": {
     "label": "Conversation type",
