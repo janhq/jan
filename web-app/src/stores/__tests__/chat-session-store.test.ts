@@ -263,6 +263,30 @@ describe('removeSession', () => {
     await expect(pending).resolves.toBeDefined()
   })
 
+  it('clearSessions settles a runtime ask whose thread has no Chat session as cancelled', async () => {
+    const { dispatchConversationClientTool, conversationAskCard } =
+      await import('@/lib/conversationClientTools')
+    expect(useChatSessions.getState().sessions['no-chat']).toBeUndefined()
+    const pending = dispatchConversationClientTool(
+      {
+        toolName: 'ask',
+        toolCallId: 'orphan-ask',
+        input: {
+          questions: [{ id: 'q', question: '?', options: [{ label: 'A' }, { label: 'B' }] }],
+        },
+      },
+      { threadId: 'no-chat', signal: new AbortController().signal, getMessages: () => [] }
+    )
+    await new Promise((r) => setTimeout(r, 0))
+    expect(conversationAskCard('no-chat')).toMatchObject({ id: 'orphan-ask' })
+    useChatSessions.getState().clearSessions()
+    expect(conversationAskCard('no-chat')).toBeNull()
+    // Cancelled (null answers) settles as the unanswered outcome, not an answer.
+    await expect(pending).resolves.toEqual({
+      output: expect.stringContaining('The user did not answer'),
+    })
+  })
+
   it('survives unsubscribe errors', () => {
     const chat = makeChat('ready')
     chat['~registerStatusCallback'] = vi.fn(() => () => {

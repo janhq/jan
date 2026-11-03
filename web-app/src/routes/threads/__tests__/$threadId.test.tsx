@@ -2027,6 +2027,40 @@ describe('ThreadDetail route', () => {
       expect(useToolCallRuntime.getState().origins[toolOriginKey('other-thread', 'failed-input')]).toBe('sibling')
     })
 
+    it('discards the same-signal todo bridge on an error terminal so the canonical transcript stays authoritative', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      const transport = h.chatSessionsState.sessions['thread-1'].transport
+      transport.hasAdvertisedClientTool = () => true
+      renderComponent()
+      const signal = new AbortController().signal
+      const view = async (id: string) => {
+        const outcome = await dispatch(call(id, 'todo', { op: 'view' }), signal)
+        expect(outcome.isError).toBeFalsy()
+        return JSON.parse(outcome.output as string)
+      }
+      const init = await dispatch(call('bridge-init', 'todo', { op: 'init', items: ['Bridge only'] }), signal)
+      expect(init.isError).toBeFalsy()
+      // Before the terminal the uncommitted bridge is what the run sees.
+      expect(JSON.stringify(await view('view-before'))).toContain('Bridge only')
+      await act(async () => {
+        await (h as any).capturedOnFinish({
+          message: { id: 'provider-failed', role: 'assistant', parts: [{ type: 'text', text: '' }] },
+          isAbort: false, isError: true,
+        })
+      })
+      // The transcript has no todo snapshot: the bridge must not survive.
+      const after = await view('view-after')
+      expect(JSON.stringify(after)).not.toContain('Bridge only')
+      expect(after.phases ?? []).toEqual([])
+      // Canonical snapshot in the transcript is what the same run now reads.
+      h.chatSessionsState.sessions['thread-1'].chat.messages = [{
+        id: 'canon', role: 'assistant',
+        parts: [{ type: 'tool-todo', toolCallId: 'c', state: 'output-available', input: {},
+          output: JSON.stringify({ phases: [{ name: 'Canon', tasks: [{ id: 't1', content: 'Canonical item', status: 'pending' }] }] }) }],
+      }] as never
+      expect(JSON.stringify(await view('view-canon'))).toContain('Canonical item')
+    })
+
     it('runs the advertised native shell without a prompt even with a same-name MCP tool', async () => {
       h.appStateState.mcpToolNames = new Set(['shell'])
       h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = () => undefined
