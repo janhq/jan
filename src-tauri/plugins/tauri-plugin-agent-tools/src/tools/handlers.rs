@@ -682,8 +682,11 @@ async fn read(
     let target = resolve_path(root, scratch, path);
     // Fail closed: a component swapped to a symlink after the gate validated
     // the path must not redirect the open out of the workspace. Resolve once and
-    // open exactly what was classified: re-resolving `target` for the read would
-    // let a link swapped in between escape a check it was never run against.
+    // open exactly what was classified, walking it with `nofollow::read` so a
+    // link planted in a parent directory after the resolution is refused rather
+    // than followed. This narrows the swap window the way the writers do; it is
+    // not a proof of atomicity on every platform (Windows pins ancestors with
+    // share modes instead of `openat`).
     let resolved = match landing(root, scratch, read_roots, &target) {
         Landing::Inside(p) => p,
         // Not under any root: the gate already put it to the user.
@@ -696,8 +699,16 @@ async fn read(
         }
     };
 
-    let bytes = match tokio::fs::read(&resolved).await {
-        Ok(b) => b,
+    let read_path = resolved.clone();
+    let bytes = match tokio::task::spawn_blocking(move || nofollow::read(&read_path)).await {
+        Ok(Ok(b)) => b,
+        Ok(Err(e)) if nofollow::is_link_refused(&e) => {
+            return (
+                format!("ERROR: refused to read through a symlink out of the workspace: {path}"),
+                None,
+            );
+        }
+        Ok(Err(e)) => return (format!("ERROR: {e}"), None),
         Err(e) => return (format!("ERROR: {e}"), None),
     };
 
@@ -3110,6 +3121,46 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A parent directory that is a link out of the workspace is refused by
+    /// `read` and the far side's content never comes back. Deterministic: the
+    /// link is in place before the call, so this pins the refusal, not the race
+    /// window; the by-component walk itself is pinned in `nofollow`'s tests.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_refuses_a_parent_component_symlink_out_of_the_root() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::write(outside.join("secret.txt"), b"classified").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("sub")).unwrap();
+        for path in ["sub/secret.txt", "sub/../sub/secret.txt"] {
+            let out =
+                execute_builtin(lookup("read").unwrap(), &json!({ "path": path }), &root).await;
+            assert!(out.starts_with("ERROR: refused to read"), "{path}: {out}");
+            assert!(!out.contains("classified"), "{path}: leaked: {out}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A directory link that stays inside the workspace remains a valid read
+    /// parent, with offset/limit still applied to the bytes read.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_still_follows_an_in_root_parent_symlink() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
+        std::fs::write(root.join("pkg/a.txt"), b"one\ntwo\nthree").unwrap();
+        std::os::unix::fs::symlink(root.join("pkg"), root.join("linked")).unwrap();
+        let out = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "linked/a.txt", "offset": 2, "limit": 1}),
+            &root,
+        )
+        .await;
+        assert_eq!(out, "two");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The escaping-symlink refusals must not become a blanket "no symlinks":

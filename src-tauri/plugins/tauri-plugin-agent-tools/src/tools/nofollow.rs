@@ -358,6 +358,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
+    /// A link several levels up a resolved path, with a real file behind it:
+    /// `read` must refuse the whole walk rather than return the far-side bytes.
+    #[test]
+    fn nofollow_read_refuses_a_link_in_a_distant_parent() {
+        let root = dir();
+        let outside = dir();
+        std::fs::create_dir_all(outside.join("x").join("y")).unwrap();
+        std::fs::write(outside.join("x").join("y").join("f.txt"), b"secret").unwrap();
+        link_dir(&outside, &root.join("sub"));
+        let err = read(&root.join("sub").join("x").join("y").join("f.txt")).unwrap_err();
+        assert!(is_link_refused(&err), "{err}");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
     /// The leaf itself swapped for a link, dangling or not: neither is followed.
     #[test]
     fn a_link_at_the_leaf_is_refused() {
