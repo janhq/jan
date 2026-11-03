@@ -1,5 +1,6 @@
 import { isChatRunNotice } from '@/lib/chatRunNotice'
 import type { ChatToolOutcome } from '@/lib/chatRunTransport'
+import { TOOL_DIFF_MAX_CHARS } from '@/lib/toolDiff'
 import {
   CAPPED_CONTINUE_INSTRUCTION,
   resumesFromKeptHistory,
@@ -1070,10 +1071,13 @@ function ThreadDetail() {
       const stopSignal = signal
       const ragToolNames = useAppState.getState().ragToolNames
       let recorded: ChatToolOutcome = { output: '(interrupted)', isError: true }
-      const record = (result: { output?: unknown; errorText?: string; state?: string; tool: string; toolCallId: string }) => {
+      const record = (result: { output?: unknown; errorText?: string; state?: string; tool: string; toolCallId: string; diff?: string }) => {
         recorded = result.state === 'output-error'
           ? { output: result.errorText ?? 'Tool failed', isError: true }
-          : { output: result.output }
+          : {
+              output: result.output,
+              ...(typeof result.diff === 'string' && result.diff.length <= TOOL_DIFF_MAX_CHARS ? { diff: result.diff } : {}),
+            }
       }
       if (signal.aborted || isChatClosing() || !useChatSessions.getState().sessions[threadId]) {
         return { output: CHAT_CLOSED_TOOL_ERROR, isError: true }
@@ -1289,6 +1293,7 @@ function ThreadDetail() {
             tool: toolCall.toolName,
             toolCallId: toolCall.toolCallId,
             output: result.content,
+            diff: result.diff,
           })
         }
       } catch (error) {

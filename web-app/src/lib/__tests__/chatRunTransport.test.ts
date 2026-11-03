@@ -242,3 +242,22 @@ describe('Chat runTurn stream adapter (real SDK reader and runner)', () => {
     expect(JSON.stringify(fields.metadata)).not.toContain('nope')
   })
 })
+
+
+describe('optional display diff carrier budget', () => {
+  it('omits oversized aggregate display diffs without dropping canonical tool parts', async () => {
+    const parts: UIMessage['parts'] = [{ type: 'text', text: 'Kept answer', state: 'done' }]
+    for (let i = 0; i < 3; i++) {
+      parts.push({ type: 'tool-edit', toolCallId: `d${i}`, state: 'output-available', input: { path: `a${i}.txt` }, output: 'Edited' } as never)
+      parts.push({ type: 'data-tool-diff', id: `tool-diff:d${i}`, data: { toolCallId: `d${i}`, diff: '+ '.padEnd(TOOL_DIFF_MAX_CHARS, 'x') } } as never)
+    }
+    const message: UIMessage = { id: 'aggregate', role: 'assistant', parts }
+    const fields = assistantRecordFields(message, {}, { stopped: false })
+    expect(fields.metadata.uiPartsSkipped).toBeUndefined()
+    expect(fields.metadata.uiDiffsOmitted).toBeGreaterThan(0)
+    const stored = JSON.parse(JSON.stringify({ id: message.id, role: 'assistant', thread_id: 'fixture', ...fields })) as ThreadMessage
+    const reloaded = convertThreadMessageToUIMessage(stored)
+    expect(reloaded.parts.filter(p => p.type !== 'data-tool-diff')).toEqual(parts.filter(p => p.type !== 'data-tool-diff'))
+    expect(JSON.stringify(await convertToModelMessages([reloaded]))).not.toContain('xxxxxxxxxx')
+  })
+})

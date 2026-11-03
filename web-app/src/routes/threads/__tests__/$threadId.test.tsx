@@ -2011,6 +2011,20 @@ describe('ThreadDetail route', () => {
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
     })
 
+    it('carries the diff from the native executor through the real dispatchTool outcome, not into the model output', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = () => undefined
+      const diff = '-    1 | foo\n+    1 | bar'
+      shell.execute.mockImplementationOnce((async () => ({ content: 'Edited a.txt', diff })) as never)
+      renderComponent()
+      const toolCall = call('route-diff', 'edit', { path: 'a.txt' })
+      await arrive(toolCall)
+      const outcome = await dispatch(toolCall)
+      expect(outcome).toEqual({ output: 'Edited a.txt', diff })
+      expect(JSON.stringify(outcome.output)).not.toContain('foo')
+      expect(shell.execute).toHaveBeenCalledTimes(1)
+    })
+
     it('releases an undispatched streamed origin on an error terminal without touching a sibling', async () => {
       h.appStateState.mcpToolNames = new Set(['fetch'])
       renderComponent()

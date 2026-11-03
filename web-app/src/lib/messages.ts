@@ -610,6 +610,7 @@ export function extractContentPartsFromUIMessage(message: UIMessage): ThreadCont
 type UIPartsSkipped = 'provider-metadata' | 'size' | 'unsupported-part' | 'mismatch'
 
 const UI_PARTS_MAX_CHARS = 256 * 1024
+const DIFF_PART_TYPE = 'data-tool-diff'
 const PROVIDER_METADATA_MAX_CHARS = 8 * 1024
 const SETTLED_TOOL_STATES = new Set([
   'output-available',
@@ -833,46 +834,79 @@ function uiPartsFor(
   message: UIMessage,
   content: ThreadContent[],
   metadata: Record<string, unknown>
-): { uiParts?: { v: 1; parts: unknown[] }; uiPartsSkipped?: UIPartsSkipped } {
+): {
+  uiParts?: { v: 1; parts: unknown[] }
+  uiPartsSkipped?: UIPartsSkipped
+  uiDiffsOmitted?: number
+} {
   if (!message.parts?.length) return {}
   try {
     const sanitized = sanitizeUIParts(message.parts)
     const legacy = sanitizeUIParts(
       contentToUIParts({ ...message, content, metadata } as unknown as ThreadMessage)
     )
-    if (canonicalJson(legacy) === canonicalJson(sanitized)) return {}
-    const uiParts = {
-      v: 1 as const,
-      // The two large payloads `content` already holds are kept once: a
-      // media data URL and a tool output. The part points at them instead.
-      parts: sanitized.map((part) => {
-        if (part.type === 'file' && typeof part.url === 'string' && part.url.startsWith('data:')) {
-          const ref = content.findIndex(
-            (_, i) => contentMediaUrl(content, i, part.mediaType) === part.url
-          )
-          if (ref < 0) return part
-          const stored: Record<string, unknown> = { ...part, contentRef: ref }
-          delete stored.url
-          return stored
-        }
-        if (part.state === 'output-available' && part.output !== undefined) {
-          const entry = contentToolCall(content, part.toolCallId)
-          if (!entry || canonicalJson(entry.output) !== canonicalJson(part.output))
-            return part
-          const stored: Record<string, unknown> = { ...part, outputInContent: true }
-          delete stored.output
-          return stored
-        }
-        return part
-      }),
+    const build = (
+      parts: Record<string, unknown>[]
+    ): { v: 1; parts: unknown[] } | undefined => {
+      if (canonicalJson(legacy) === canonicalJson(parts)) return undefined
+      const uiParts = {
+        v: 1 as const,
+        // The two large payloads `content` already holds are kept once: a
+        // media data URL and a tool output. The part points at them instead.
+        parts: parts.map((part) => {
+          if (part.type === 'file' && typeof part.url === 'string' && part.url.startsWith('data:')) {
+            const ref = content.findIndex(
+              (_, i) => contentMediaUrl(content, i, part.mediaType) === part.url
+            )
+            if (ref < 0) return part
+            const stored: Record<string, unknown> = { ...part, contentRef: ref }
+            delete stored.url
+            return stored
+          }
+          if (part.state === 'output-available' && part.output !== undefined) {
+            const entry = contentToolCall(content, part.toolCallId)
+            if (!entry || canonicalJson(entry.output) !== canonicalJson(part.output))
+              return part
+            const stored: Record<string, unknown> = { ...part, outputInContent: true }
+            delete stored.output
+            return stored
+          }
+          return part
+        }),
+      }
+      if (JSON.stringify(uiParts).length > UI_PARTS_MAX_CHARS)
+        throw new SkipUIParts('size')
+      // Never store a carrier the reader would reject (e.g. a call still in
+      // flight that already has an output, which `content` keeps).
+      if (!rehydrateUIParts(uiParts, content, metadata.toolErrors))
+        throw new SkipUIParts('mismatch')
+      return uiParts
     }
-    if (JSON.stringify(uiParts).length > UI_PARTS_MAX_CHARS)
-      throw new SkipUIParts('size')
-    // Never store a carrier the reader would reject (e.g. a call still in
-    // flight that already has an output, which `content` keeps).
-    if (!rehydrateUIParts(uiParts, content, metadata.toolErrors))
-      throw new SkipUIParts('mismatch')
-    return { uiParts }
+    // Display-only diffs are optional: when they push the carrier over its
+    // budget the largest are dropped one at a time, so they can never turn a
+    // turn that would otherwise store its canonical parts into a lossy one.
+    let kept = sanitized
+    let omitted = 0
+    let uiParts: { v: 1; parts: unknown[] } | undefined
+    for (;;) {
+      try {
+        uiParts = build(kept)
+        break
+      } catch (error) {
+        if (!(error instanceof SkipUIParts) || error.reason !== 'size') throw error
+        const diffs = kept.filter((p) => p.type === DIFF_PART_TYPE)
+        if (!diffs.length) throw error
+        const largest = diffs.reduce((a, b) =>
+          JSON.stringify(b).length > JSON.stringify(a).length ? b : a
+        )
+        kept = kept.filter((p) => p !== largest)
+        omitted++
+      }
+    }
+    return {
+      ...(uiParts ? { uiParts } : {}),
+      ...(omitted ? { uiDiffsOmitted: omitted } : {}),
+    }
   } catch (error) {
     // The carrier is optional: whatever goes wrong building it, the turn is
     // still saved (legacy content), never lost.
@@ -910,6 +944,10 @@ function uiPartsFor(
  * re-sent to the model, including provider metadata (as provider options) and
  * `providerExecuted`. It grants nothing `content` could not already say.
  *
+ * Display-only `data-tool-diff` parts are the exception to "whole or nothing":
+ * when they alone exceed the budget the largest are dropped and
+ * `metadata.uiDiffsOmitted` counts them; canonical parts are kept.
+ *
  * `baseMetadata` is spread first, minus any `uiParts` / `uiPartsSkipped` it
  * carries from an earlier version of the turn.
  */
@@ -927,6 +965,7 @@ export function assistantRecordFields(
   }
   delete metadata.uiParts
   delete metadata.uiPartsSkipped
+  delete metadata.uiDiffsOmitted
   return {
     content,
     metadata: { ...metadata, ...uiPartsFor(message, content, metadata) },

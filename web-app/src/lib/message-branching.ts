@@ -266,6 +266,7 @@ export const makeSibling = (
   if (opts.text !== undefined) {
     delete sourceMeta.uiParts
     delete sourceMeta.uiPartsSkipped
+    delete sourceMeta.uiDiffsOmitted
   }
   return {
     ...source,
