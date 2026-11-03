@@ -20,8 +20,7 @@ import { cleanupThreadWorkspace, sweepSessionWorkspaces } from '@/lib/agentTools
 import { discardStaleCoworkHandoffs } from '@/lib/coworkHandoff'
 
 /**
- * Connects the Cowork session store to thread storage (see
- * plans/merge-chat-cowork-data-model.md, phase 2).
+ * Connects the Cowork session store to thread storage.
  *
  * Startup, in order: migrate legacy `code-sessions` -> threads, load Cowork
  * threads, MERGE them into the store (sessions created in the meantime are

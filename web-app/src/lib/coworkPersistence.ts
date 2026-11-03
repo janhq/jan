@@ -13,8 +13,7 @@ import {
 /**
  * Persistence for Cowork sessions stored as threads (`metadata.mode =
  * "cowork"`): `thread.json` for the list fields, `cowork.json` for the
- * transcript. See plans/merge-chat-cowork-data-model.md, phase 2 (A1-A14,
- * F1-F12).
+ * transcript.
  *
  * Protocol:
  * - One serialized write queue per session; a newer snapshot never races an

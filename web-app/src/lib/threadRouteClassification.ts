@@ -1,8 +1,8 @@
 /**
  * Route-local thread classification for `/threads/$threadId` deep links that
- * arrive before the threads store has hydrated (R3).
+ * arrive before the threads store has hydrated.
  *
- * Why this exists (bot follow-up on #9549):
+ * Startup and classification guarantees:
  *
  * - On a NORMAL startup the Conversational extension registers after the
  *   first route render, so a single `fetchThreads()` throws "Conversational

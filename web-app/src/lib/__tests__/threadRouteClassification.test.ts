@@ -1,6 +1,6 @@
 /**
  * Unit tests for the bounded startup retry used by /threads/$threadId
- * beforeLoad (bot follow-up on #9549): a fetchThreads that throws while the
+ * beforeLoad: a fetchThreads that throws while the
  * Conversational extension is still registering must not strand the deep
  * link, and an exhausted window must surface as the typed recoverable error
  * (never an implicit "ordinary chat" classification). An EMPTY fetched list

@@ -1,8 +1,19 @@
 /**
- * Offline preparation for jan-internal#506. NOT a benchmark: byte counts and
+ * Offline request-shape regression fixtures. NOT a benchmark: byte counts and
  * scripted model-step counts are not tokens, TTFT, latency or memory. Real
  * numbers come from replaying the request fixtures written here against a
- * local model; see qa/unified-baseline-protocol.md.
+ * local model with scripts/unified-baseline-replay.mjs (see its header for
+ * run settings, cold vs warm cache and RSS caveats). The fixtures are a
+ * projection of the request: sampling options, slot parameters and the
+ * provider wrapper are omitted, and the scripted model-step counts are not
+ * model behaviour.
+ *
+ * Production quirks recorded deliberately; a fixture diff here is the intended
+ * signal if either is fixed, so do not "fix" them in the fixtures alone:
+ * - Chat shell section: the '# Shell' heading is joined to its paragraph on one
+ *   line ('# Shell shell starts ...'), as the transport builds it today.
+ * - cowork-execute-no-sandbox still advertises `monitor` although no shell is
+ *   available; start is refused natively when no OS sandbox is enforced.
  *
  * Only the native IPC boundary (tool schemas, sandbox probe, memory store) and
  * app-state stores are replaced. Production schema filtering, the chat

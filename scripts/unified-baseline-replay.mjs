@@ -3,8 +3,22 @@
 // requests against a LOCAL OpenAI-compatible server (e.g. the llama-server Jan
 // started) and records what bytes cannot: prompt tokens as the server counted
 // them, time to first streamed delta, total latency and the server process's
-// peak RSS. Protocol, caveats and what this does NOT measure:
-// qa/unified-baseline-protocol.md.
+// peak RSS (plus completion tokens, finish reason, tool calls and llama.cpp
+// server timings when exposed). It does NOT measure output quality.
+//
+// Measurement notes:
+// - Fixed inputs for comparable runs: temperature 0, max_tokens 256, 1 warm-up
+//   + 3 measured runs, reported as medians. The CLI defaults for --max-tokens,
+//   --warmup and --runs match; the actual values used are in the output.
+// - Cold vs warm: without --cache-prompt each request asks llama.cpp not to
+//   reuse the KV prefix (cold prefill); with it, repeat runs may hit the cache
+//   (warm). Check cache-hit validity: if serverPromptTokens is much smaller than
+//   promptTokens on runs after the first, the prefix cache was hit and the
+//   "cold" numbers are not cold.
+// - Peak RSS is resident memory of the single --pid process only: not VRAM, and
+//   unified-memory GPU buffers may be under-counted. It is polled with `ps`
+//   about every 100 ms (short peaks can be missed) and is unsupported on
+//   Windows (reported as not measured).
 //
 //   node scripts/unified-baseline-replay.mjs --base-url http://127.0.0.1:PORT/v1 \
 //     --model MODEL_ID [--api-key KEY] [--pid SERVER_PID] [--runs 3] [--warmup 1]
