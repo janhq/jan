@@ -1,5 +1,6 @@
 import { isChatRunNotice } from '@/lib/chatRunNotice'
 import type { ChatToolOutcome } from '@/lib/chatRunTransport'
+import { TOOL_DIFF_MAX_CHARS } from '@/lib/toolDiff'
 import {
   CAPPED_CONTINUE_INSTRUCTION,
   resumesFromKeptHistory,
@@ -25,6 +26,7 @@ import GlobalError from '@/containers/GlobalError'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
+import { useConversationPanels } from '@/containers/ConversationPanels'
 import ChatInput from '@/containers/ChatInput'
 import { ConversationColumn } from '@/components/ai-elements/conversation-column'
 import { useShallow } from 'zustand/react/shallow'
@@ -1069,10 +1071,13 @@ function ThreadDetail() {
       const stopSignal = signal
       const ragToolNames = useAppState.getState().ragToolNames
       let recorded: ChatToolOutcome = { output: '(interrupted)', isError: true }
-      const record = (result: { output?: unknown; errorText?: string; state?: string; tool: string; toolCallId: string }) => {
+      const record = (result: { output?: unknown; errorText?: string; state?: string; tool: string; toolCallId: string; diff?: string }) => {
         recorded = result.state === 'output-error'
           ? { output: result.errorText ?? 'Tool failed', isError: true }
-          : { output: result.output }
+          : {
+              output: result.output,
+              ...(typeof result.diff === 'string' && result.diff.length <= TOOL_DIFF_MAX_CHARS ? { diff: result.diff } : {}),
+            }
       }
       if (signal.aborted || isChatClosing() || !useChatSessions.getState().sessions[threadId]) {
         return { output: CHAT_CLOSED_TOOL_ERROR, isError: true }
@@ -1226,17 +1231,18 @@ function ThreadDetail() {
                 undefined,
                 classifiedGrant
               )
-              // The diff is display-only, so it goes to the runtime store
-              // rather than into `result`: anything in `result` reaches the
-              // model, and a full diff there would duplicate the file it
-              // just wrote.
+              // The diff is display-only. It is returned as a separate
+              // outcome field (see `record`), never as part of `output`, so
+              // the canonical carrier persists it for panels while the model
+              // never sees it: a full diff there would duplicate the file it
+              // just wrote. The runtime store only serves the live view.
               const { diff, ...rest } = agentResult
               if (diff) {
                 useToolCallRuntime
                   .getState()
                   .recordDiff(toolCall.toolCallId, diff)
               }
-              return rest
+              return { ...rest, diff }
             } else if (!serverName && ragToolNames.has(toolName)) {
               return await serviceHub.rag().callTool({
                 toolName,
@@ -1288,6 +1294,7 @@ function ThreadDetail() {
             tool: toolCall.toolName,
             toolCallId: toolCall.toolCallId,
             output: result.content,
+            diff: result.diff,
           })
         }
       } catch (error) {
@@ -2515,6 +2522,13 @@ function ThreadDetail() {
     }
   }, [threadId])
 
+  // Contextual rail: derived from canonical messages. The hook subscribes to the
+  // thread's effective folder scope itself; no mode bit, no stored authority.
+  const contextualPanels = useConversationPanels({
+    threadId,
+    messages: chatMessages,
+  })
+
   const threadModel = useMemo(
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
@@ -2538,7 +2552,8 @@ function ThreadDetail() {
           <ConversationHeaderTitle title={thread?.title} project={thread?.metadata?.project} />
         </div>
       </HeaderPage>
-      <div className="flex flex-1 flex-col h-full overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col h-full overflow-hidden">
         {/* Messages Area */}
         <div
           className="message-zoom flex-1 relative"
@@ -2717,6 +2732,9 @@ function ThreadDetail() {
               />
             </div>
           )}
+          {contextualPanels.controls && (
+            <div className="pb-2">{contextualPanels.controls}</div>
+          )}
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}
@@ -2725,6 +2743,8 @@ function ThreadDetail() {
             toolsRunning={toolsRunning}
           />
         </ConversationColumn>
+      </div>
+      {contextualPanels.rail}
       </div>
     </div>
   )

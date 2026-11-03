@@ -324,6 +324,10 @@ vi.mock('@/lib/utils', () => ({
   cn: (...classes: any[]) => classes.filter(Boolean).join(' '),
 }))
 
+vi.mock('@/containers/CoworkPreviewPanel', () => ({
+  CoworkPreviewPanel: () => null,
+}))
+
 vi.mock('@/lib/instructionTemplate', () => ({
   renderInstructions: (i: string) => `rendered:${i}`,
 }))
@@ -401,10 +405,6 @@ vi.mock('ai', async (importOriginal) => ({
   ...(await importOriginal<typeof import('ai')>()),
   generateId: () => 'gen-id',
   lastAssistantMessageIsCompleteWithToolCalls: () => true,
-}))
-
-vi.mock('zustand/react/shallow', () => ({
-  useShallow: (fn: any) => fn,
 }))
 
 vi.mock('@/hooks/use-chat', () => ({
@@ -1980,13 +1980,14 @@ describe('ThreadDetail route', () => {
     it('freezes one grant per toolCallId across arrival and dispatch (no orphan prompt after revoke)', async () => {
       h.appStateState.mcpToolNames = new Set()
       h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedNativeTool = () => true
+      renderComponent()
+      // Count authority reads for the call, not the panel's render-time folder projection.
       let reads = 0
       h.threadsState.getConversationCapabilities.mockImplementation(() => (
         ++reads === 1
           ? { version: 1, folderScope: null, shellNetwork: false, memoryWrite: true }
           : { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
       ))
-      renderComponent()
       const toolCall = call('frozen-skill-write', 'skill_write', { name: 'x', content: 'y' })
       await arrive(toolCall)
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
@@ -2009,6 +2010,20 @@ describe('ThreadDetail route', () => {
       await dispatch(toolCall)
       expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }))
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+    })
+
+    it('carries the diff from the native executor through the real dispatchTool outcome, not into the model output', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = () => undefined
+      const diff = '-    1 | foo\n+    1 | bar'
+      shell.execute.mockImplementationOnce((async () => ({ content: 'Edited a.txt', diff })) as never)
+      renderComponent()
+      const toolCall = call('route-diff', 'edit', { path: 'a.txt' })
+      await arrive(toolCall)
+      const outcome = await dispatch(toolCall)
+      expect(outcome).toEqual({ output: 'Edited a.txt', diff })
+      expect(JSON.stringify(outcome.output)).not.toContain('foo')
+      expect(shell.execute).toHaveBeenCalledTimes(1)
     })
 
     it('releases an undispatched streamed origin on an error terminal without touching a sibling', async () => {

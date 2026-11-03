@@ -1,4 +1,5 @@
 import { readUIMessageStream, type UIMessage, type UIMessageChunk } from 'ai'
+import { TOOL_DIFF_MAX_CHARS } from './toolDiff'
 import { runTurn, type PendingToolCall, type ToolOutcome, type RunOutcome } from './coworkRunner'
 import { STOPPED_TOOL_ERROR, untilAborted } from './stopped-tool-calls'
 import { CHAT_RUN_NOTICE_METADATA, isChatRunNotice } from './chatRunNotice'
@@ -230,6 +231,9 @@ export function createChatRunStream(options: {
           onStep: ({ outcomes }) => {
             for (const [toolCallId, outcome] of outcomes) {
               const chatOutcome = chatOutcomes.get(toolCallId) ?? outcome
+              if (!outcome.isError && typeof chatOutcome.diff === 'string' && chatOutcome.diff.length <= TOOL_DIFF_MAX_CHARS) {
+                emit({ type: 'data-tool-diff', id: `tool-diff:${toolCallId}`, data: { toolCallId, diff: chatOutcome.diff } })
+              }
               emit(outcome.isError
                 ? { type: 'tool-output-error', toolCallId, errorText: String(chatOutcome.output) }
                 : { type: 'tool-output-available', toolCallId, output: outputOf(chatOutcome) })

@@ -3,6 +3,8 @@ import type { ThreadMessage } from '@janhq/core'
 import { assistantRecordFields, convertThreadMessageToUIMessage } from '../messages'
 import { describe, it, expect, vi } from 'vitest'
 import { convertToModelMessages, readUIMessageStream, type UIMessageChunk, type UIMessage } from 'ai'
+import { conversationDiffs } from '../conversationPanels'
+import { TOOL_DIFF_MAX_CHARS } from '../toolDiff'
 import { canContinueStoppedTurn, createChatRunStream } from '../chatRunTransport'
 
 const stream = (chunks: UIMessageChunk[]) => new ReadableStream<UIMessageChunk>({ start(c) { chunks.forEach(v => c.enqueue(v)); c.close() } })
@@ -207,5 +209,55 @@ describe('Chat runTurn stream adapter (real SDK reader and runner)', () => {
     const message = await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, sendStep: send, dispatch }))
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(message.parts.find(p => 'toolCallId' in p)).toMatchObject({ state: 'output-error', errorText: 'fixture denied' })
+  })
+  it('emits the display-only diff as a separate data part that persists and never reaches the model', async () => {
+    // The actual edit-diff format (no `@@` header), as the Rust handler renders it.
+    const diff = '-    1 | foo\n+    1 | bar'
+    const call: UIMessageChunk[] = [{ type: 'start-step' }, { type: 'tool-input-available', toolCallId: 'e1', toolName: 'edit', input: { path: 'a.txt' } }, { type: 'finish-step' }, { type: 'finish' }]
+    const send = vi.fn().mockResolvedValueOnce(stream(call)).mockResolvedValueOnce(stream(answer))
+    const message = await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, sendStep: send, dispatch: async () => ({ output: 'Edited a.txt', diff }) }))
+    const dataPart = message.parts.find(p => p.type === 'data-tool-diff')
+    expect(dataPart).toMatchObject({ data: { toolCallId: 'e1', diff } })
+    expect(message.parts.find(p => 'toolCallId' in p && p.type === 'tool-edit')).toMatchObject({ output: 'Edited a.txt' })
+    expect(JSON.stringify(send.mock.calls[1][0])).not.toContain('foo')
+    const fields = assistantRecordFields(message, {}, { stopped: false })
+    expect(JSON.stringify(fields.content)).not.toContain('foo')
+    const stored = JSON.parse(JSON.stringify({ id: 'a', thread_id: 't', role: 'assistant', status: 'ready', object: 'thread.message', created_at: 1, completed_at: 1, ...fields })) as ThreadMessage
+    const reloaded = convertThreadMessageToUIMessage(stored)
+    expect(reloaded.parts).toEqual(message.parts)
+    expect(await convertToModelMessages([user, reloaded])).toEqual(await convertToModelMessages([user, { ...message, parts: message.parts.filter(p => p.type !== 'data-tool-diff') }]))
+    expect(JSON.stringify(await convertToModelMessages([user, reloaded]))).not.toContain('foo')
+    // The panel shows the persisted diff after reload.
+    expect(conversationDiffs([reloaded]).map(f => [f.path, f.operations[0].diff])).toEqual([['a.txt', diff]])
+  })
+  it('does not emit an oversized diff, and a data part with no settled call is not stored', async () => {
+    const big = '+ ' + 'x'.repeat(TOOL_DIFF_MAX_CHARS)
+    const call: UIMessageChunk[] = [{ type: 'start-step' }, { type: 'tool-input-available', toolCallId: 'e1', toolName: 'edit', input: { path: 'a.txt' } }, { type: 'finish-step' }, { type: 'finish' }]
+    const send = vi.fn().mockResolvedValueOnce(stream(call)).mockResolvedValueOnce(stream(answer))
+    const message = await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, sendStep: send, dispatch: async () => ({ output: 'ok', diff: big }) }))
+    expect(message.parts.some(p => p.type === 'data-tool-diff')).toBe(false)
+    const orphan: UIMessage = { id: 'o', role: 'assistant', parts: [{ type: 'data-tool-diff', id: 'x', data: { toolCallId: 'nope', diff: '+ a' } } as never, { type: 'text', text: 'hi' }] }
+    const fields = assistantRecordFields(orphan, {}, { stopped: false })
+    expect(fields.metadata).toMatchObject({ uiPartsSkipped: expect.anything() })
+    expect(JSON.stringify(fields.metadata)).not.toContain('nope')
+  })
+})
+
+
+describe('optional display diff carrier budget', () => {
+  it('omits oversized aggregate display diffs without dropping canonical tool parts', async () => {
+    const parts: UIMessage['parts'] = [{ type: 'text', text: 'Kept answer', state: 'done' }]
+    for (let i = 0; i < 3; i++) {
+      parts.push({ type: 'tool-edit', toolCallId: `d${i}`, state: 'output-available', input: { path: `a${i}.txt` }, output: 'Edited' } as never)
+      parts.push({ type: 'data-tool-diff', id: `tool-diff:d${i}`, data: { toolCallId: `d${i}`, diff: '+ '.padEnd(TOOL_DIFF_MAX_CHARS, 'x') } } as never)
+    }
+    const message: UIMessage = { id: 'aggregate', role: 'assistant', parts }
+    const fields = assistantRecordFields(message, {}, { stopped: false })
+    expect(fields.metadata.uiPartsSkipped).toBeUndefined()
+    expect(fields.metadata.uiDiffsOmitted).toBeGreaterThan(0)
+    const stored = JSON.parse(JSON.stringify({ id: message.id, role: 'assistant', thread_id: 'fixture', ...fields })) as ThreadMessage
+    const reloaded = convertThreadMessageToUIMessage(stored)
+    expect(reloaded.parts.filter(p => p.type !== 'data-tool-diff')).toEqual(parts.filter(p => p.type !== 'data-tool-diff'))
+    expect(JSON.stringify(await convertToModelMessages([reloaded]))).not.toContain('xxxxxxxxxx')
   })
 })
