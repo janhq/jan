@@ -14,8 +14,10 @@ import type { Attachment } from '@/types/attachment'
  * StrictMode runs in development.
  */
 
+/** @deprecated Compatibility-only for legacy Cowork handoffs already stored or read by existing Cowork sessions; do not add new callers. */
 export const COWORK_HANDOFF_PREFIX = 'cowork-initial-message:'
 
+/** @deprecated Compatibility-only for legacy Cowork handoffs already stored or read by existing Cowork sessions; do not add new callers. */
 export type CoworkHandoff = {
   text: string
   draft?: string
@@ -33,6 +35,7 @@ const claimed = new Set<string>()
 
 const keyFor = (sessionId: string) => `${COWORK_HANDOFF_PREFIX}${sessionId}`
 
+/** @deprecated Compatibility-only for legacy Cowork handoffs already stored or read by existing Cowork sessions; do not add new callers. */
 export function writeCoworkHandoff(sessionId: string, handoff: CoworkHandoff) {
   const stored: Stored = { text: handoff.text, draft: handoff.draft }
   sessionStorage.setItem(keyFor(sessionId), JSON.stringify(stored))
@@ -44,6 +47,7 @@ export function writeCoworkHandoff(sessionId: string, handoff: CoworkHandoff) {
   }
 }
 
+/** @deprecated Compatibility-only for legacy Cowork handoffs already stored or read by existing Cowork sessions; do not add new callers. */
 export function peekCoworkHandoff(sessionId: string): CoworkHandoff | null {
   const raw = sessionStorage.getItem(keyFor(sessionId))
   if (!raw) return null
@@ -57,18 +61,25 @@ export function peekCoworkHandoff(sessionId: string): CoworkHandoff | null {
   }
 }
 
-/** True exactly once per session id until `clearCoworkHandoff` or a release. */
+/**
+ * True exactly once per session id until `clearCoworkHandoff` or a release.
+ * @deprecated Compatibility-only for legacy Cowork handoffs; do not add new callers.
+ */
 export function claimCoworkHandoff(sessionId: string): boolean {
   if (claimed.has(sessionId)) return false
   claimed.add(sessionId)
   return true
 }
 
-/** Let a refused submit be tried again (e.g. after the user picks a model). */
+/**
+ * Let a refused submit be tried again (e.g. after the user picks a model).
+ * @deprecated Compatibility-only for legacy Cowork handoffs; do not add new callers.
+ */
 export function releaseCoworkHandoff(sessionId: string) {
   claimed.delete(sessionId)
 }
 
+/** @deprecated Compatibility-only for legacy Cowork handoffs already stored or read by existing Cowork sessions; do not add new callers. */
 export function clearCoworkHandoff(sessionId: string) {
   sessionStorage.removeItem(keyFor(sessionId))
   attachments.delete(sessionId)
@@ -78,6 +89,7 @@ export function clearCoworkHandoff(sessionId: string) {
 /**
  * A handoff for a session that no longer exists (reload before the first
  * commit, session pruned) must not linger: drop it.
+ * @deprecated Compatibility-only for legacy Cowork handoffs; do not add new callers.
  */
 export function discardStaleCoworkHandoffs(liveSessionIds: Set<string>) {
   for (let i = sessionStorage.length - 1; i >= 0; i--) {

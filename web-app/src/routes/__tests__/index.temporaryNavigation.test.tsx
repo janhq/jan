@@ -70,7 +70,6 @@ vi.mock('@/containers/ChatInput', () => ({
 vi.mock('@/containers/CoworkComposerMenu', () => ({ CoworkComposerMenu: () => null }))
 vi.mock('@/containers/HeaderPage', () => ({ default: () => null }))
 vi.mock('@/containers/SetupScreen', () => ({ default: () => null }))
-vi.mock('@/containers/UnifiedHomeScope', () => ({ UnifiedHomeScope: () => null }))
 vi.mock('@/containers/dialogs/AddProjectDialog', () => ({ default: () => null }))
 vi.mock('@/lib/utils', () => ({ cn: (...c: any[]) => c.filter(Boolean).join(' ') }))
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   createCoworkPersistence,
+  isMissingThreadError,
   loadCoworkSessions,
   sessionFromThread,
   sessionToThreadRecord,
@@ -40,7 +41,7 @@ function makeBackend(opts: { failNext?: { cmd: string; times: number } } = {}) {
         return [...threads.values()].map((t) => JSON.parse(JSON.stringify(t)))
       case 'write_thread_extra':
         if (!args.create && !threads.has(args.threadId)) {
-          throw new Error('no thread.json')
+          throw new Error("thread_missing: Thread has no thread.json")
         }
         extras.set(args.threadId, JSON.parse(JSON.stringify(args.value)))
         return
@@ -513,6 +514,164 @@ describe('coworkPersistence write protocol', () => {
     expect(b.threads.get('collision')!.title).toBe('Original chat')
     expect(onRemoved).not.toHaveBeenCalled()
     expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toContain('collision')
+  })
+
+  it('settles without endless retry when the thread directory is permanently missing', async () => {
+    const onThreadMissing = vi.fn()
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50, onThreadMissing })
+    p.schedule(session('a'))
+    await p.flush()
+    expect(b.threads.has('a')).toBe(true)
+    // Out-of-band deletion of the thread directory.
+    b.threads.delete('a')
+    b.extras.delete('a')
+    p.schedule(session('a', { title: 'edited' }))
+    await expect(p.flush()).resolves.toBeUndefined()
+    expect(onThreadMissing).toHaveBeenCalledTimes(1)
+    expect(onThreadMissing.mock.calls[0][0]).toBe('a')
+    expect(onThreadMissing.mock.calls[0][1].title).toBe('edited')
+    const writes = () => b.log.filter((l) => l === 'write_thread_extra:a').length
+    const before = writes()
+    await vi.advanceTimersByTimeAsync(1000)
+    await p.flush()
+    expect(writes()).toBe(before)
+    // Never resurrected by the failed write or later retries.
+    expect(b.threads.has('a')).toBe(false)
+    expect(b.extras.has('a')).toBe(false)
+  })
+
+  it('does not treat a transient disk failure as a missing thread', async () => {
+    const onThreadMissing = vi.fn()
+    b = makeBackend({ failNext: { cmd: 'write_thread_extra', times: 3 } })
+    const q = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50, onThreadMissing })
+    q.schedule(session('t'))
+    await expect(q.flush()).rejects.toThrow(/pending writes: t/)
+    expect(onThreadMissing).not.toHaveBeenCalled()
+    await q.flush()
+    expect(b.threads.has('t')).toBe(true)
+    expect(b.extras.has('t')).toBe(true)
+  })
+
+  it('a missing-thread error from an in-flight write while a deletion is pending keeps tombstone semantics (no unavailable, no recreate)', async () => {
+    const onThreadMissing = vi.fn()
+    let entered!: () => void
+    const enteredP = new Promise<void>((r) => (entered = r))
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    let gatingArmed = false
+    let gatedOnce = false
+    // Real Tauri rejection shape: a plain string, not an Error.
+    const gated = (async (cmd: string, args: Record<string, any> = {}) => {
+      if (cmd === 'write_thread_extra' && args.threadId === 'a' && gatingArmed && !gatedOnce) {
+        gatedOnce = true
+        entered()
+        await gate
+        b.threads.delete('a')
+        b.extras.delete('a')
+        throw 'thread_missing: Thread has no thread.json'
+      }
+      return b.invoke(cmd, args)
+    }) as any
+    const onThreadRemoved = vi.fn()
+    const p = createCoworkPersistence(gated, { debounceMs: 5, retryMs: 50, onThreadMissing, onThreadRemoved })
+    p.schedule(session('a'))
+    await p.flush()
+    gatingArmed = true // arm only after the initial persist
+    p.schedule(session('a', { title: 'late' }))
+    await vi.advanceTimersByTimeAsync(10)
+    await enteredP // the write is now genuinely in flight
+    const removal = p.remove('a')
+    release()
+    await removal
+    await p.flush()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(onThreadMissing).not.toHaveBeenCalled()
+    expect(onThreadRemoved).toHaveBeenCalledWith('a')
+    expect(b.log).toContain('delete_thread')
+    expect(b.threads.has('a')).toBe(false)
+    expect(b.extras.has('a')).toBe(false)
+    // No write after the in-flight one failed (no retry, no recreate).
+    expect(b.log.filter((l) => l === 'write_thread_extra:a')).toHaveLength(1)
+    // And the tombstone still blocks a stale snapshot.
+    p.schedule(session('a', { title: 'stale' }))
+    await p.flush()
+    expect(b.threads.has('a')).toBe(false)
+  })
+
+  it('isMissingThreadError accepts only the host code, as a string, Error or {message}', () => {
+    expect(isMissingThreadError('thread_missing: x')).toBe(true)
+    expect(isMissingThreadError(new Error('thread_missing: x'))).toBe(true)
+    expect(isMissingThreadError({ message: 'thread_missing: x' })).toBe(true)
+    // Not the typed code: stays on the retry path.
+    expect(isMissingThreadError('Error: thread_missing: x')).toBe(false)
+    expect(isMissingThreadError('thread_missing')).toBe(false)
+    expect(isMissingThreadError('write failed: thread_missing: x')).toBe(false)
+    expect(isMissingThreadError('disk full')).toBe(false)
+    expect(isMissingThreadError({ message: 42 })).toBe(false)
+    expect(isMissingThreadError({ code: 'thread_missing' })).toBe(false)
+    expect(isMissingThreadError(null)).toBe(false)
+    expect(isMissingThreadError(undefined)).toBe(false)
+    expect(isMissingThreadError(42)).toBe(false)
+  })
+
+  it.each([
+    ['a plain string (real Tauri rejection)', () => 'thread_missing: gone'],
+    ['an {message} object', () => ({ message: 'thread_missing: gone' })],
+    ['an Error', () => new Error('thread_missing: gone')],
+  ])('settles as missing when the host rejects with %s', async (_label, make) => {
+    const onThreadMissing = vi.fn()
+    let failing = false
+    const inv = (async (cmd: string, args: Record<string, any> = {}) => {
+      if (failing && cmd === 'write_thread_extra') throw make()
+      return b.invoke(cmd, args)
+    }) as any
+    const p = createCoworkPersistence(inv, { debounceMs: 5, retryMs: 50, onThreadMissing })
+    p.schedule(session('a'))
+    await p.flush()
+    failing = true
+    p.schedule(session('a', { title: 'edited' }))
+    await expect(p.flush()).resolves.toBeUndefined()
+    expect(onThreadMissing).toHaveBeenCalledTimes(1)
+    const before = b.log.filter((l) => l === 'write_thread_extra:a').length
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(b.log.filter((l) => l === 'write_thread_extra:a').length).toBe(before)
+  })
+
+  it('a non-prefixed string rejection stays on the retry path', async () => {
+    const onThreadMissing = vi.fn()
+    let failing = true
+    const inv = (async (cmd: string, args: Record<string, any> = {}) => {
+      if (failing && cmd === 'write_thread_extra') throw 'disk full'
+      return b.invoke(cmd, args)
+    }) as any
+    const p = createCoworkPersistence(inv, { debounceMs: 5, retryMs: 50, onThreadMissing })
+    p.schedule(session('t'))
+    await expect(p.flush()).rejects.toThrow(/pending writes: t/)
+    expect(onThreadMissing).not.toHaveBeenCalled()
+    failing = false
+    await p.flush()
+    expect(b.threads.has('t')).toBe(true)
+  })
+
+  it('a session flagged missing can still be deleted: remove resolves and notifies', async () => {
+    const onThreadMissing = vi.fn()
+    const onThreadRemoved = vi.fn()
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50, onThreadMissing, onThreadRemoved })
+    p.schedule(session('a'))
+    await p.flush()
+    b.threads.delete('a')
+    b.extras.delete('a')
+    p.schedule(session('a', { title: 'edited' }))
+    await p.flush()
+    expect(onThreadMissing).toHaveBeenCalledTimes(1)
+    await expect(p.remove('a')).resolves.toBeUndefined()
+    expect(onThreadRemoved).toHaveBeenCalledWith('a')
+    expect(b.log).toContain('delete_thread')
+    expect(p.isPersisted('a')).toBe(false)
+    // No resurrection after the removal.
+    p.schedule(session('a', { title: 'stale' }))
+    await p.flush()
+    expect(b.threads.has('a')).toBe(false)
   })
 
   it('never writes sessions flagged unavailable (files are preserved)', async () => {

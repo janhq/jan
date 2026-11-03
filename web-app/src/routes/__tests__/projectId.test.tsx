@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
@@ -15,7 +15,6 @@ const h = vi.hoisted(() => ({
     updated_at: 1,
     assistantId: undefined as string | undefined,
   } as any,
-  startCoworkConversation: vi.fn(() => 'session-1'),
   toastError: vi.fn(),
   lastSubmitResult: undefined as unknown,
   setCaps: vi.fn(async () => undefined),
@@ -26,13 +25,11 @@ const h = vi.hoisted(() => ({
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: any) => ({ ...config, id: '/project/$projectId' }),
   useNavigate: () => h.navigate,
+  useLocation: (opts: any) => opts.select({ searchStr: window.location.search }),
   useParams: () => ({ projectId: h.projectId }),
 }))
 
 vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.coworkEnabled }))
-vi.mock('@/lib/startCoworkConversation', () => ({
-  startCoworkConversation: (opts: any) => h.startCoworkConversation(opts),
-}))
 vi.mock('sonner', () => ({ toast: { error: (...args: any[]) => h.toastError(...args) } }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -138,110 +135,196 @@ vi.mock('@/lib/utils', () => ({
 }))
 
 import { Route } from '../project/$projectId'
-import { useHomeMode } from '@/hooks/useHomeMode'
 
 const renderComponent = () => {
   const Component = Route.component as React.ComponentType
   return render(<Component />)
 }
 
-describe('Project route Chat/Cowork selector', () => {
+describe('Project route single Chat flow', () => {
+  // A failed assertion must not leak ?temporary-chat=true into later tests.
+  afterEach(() => {
+    window.history.replaceState({}, '', '/')
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     h.coworkEnabled = false
     h.selectedModel = undefined
     h.selectedProvider = ''
-    h.startCoworkConversation.mockReturnValue('session-1')
     h.lastSubmitResult = undefined
     h.projectId = 'project-1'
-    useHomeMode.setState({ mode: 'chat' })
   })
 
-  it('hides the selector and keeps the Chat contract where Cowork is unavailable', () => {
-    renderComponent()
-    expect(screen.queryByTestId('home-mode-toggle')).not.toBeInTheDocument()
-    const input = screen.getByTestId('chat-input')
-    expect(input).toHaveAttribute('data-supports-assistants', 'true')
-    expect(input).toHaveAttribute('data-owns-toolset', 'undefined')
-    expect(input).not.toHaveAttribute('data-scope-key')
-  })
+  it.each([false, true])(
+    'shows no mode selector and keeps the ordinary Chat contract (coworkEnabled=%s)',
+    (coworkEnabled) => {
+      h.coworkEnabled = coworkEnabled
+      renderComponent()
+      expect(screen.queryByTestId('home-mode-toggle')).not.toBeInTheDocument()
+      const input = screen.getByTestId('chat-input')
+      expect(input).toHaveAttribute('data-supports-assistants', 'true')
+      expect(input).toHaveAttribute('data-owns-toolset', 'undefined')
+      expect(input).not.toHaveAttribute('data-scope-key')
+      // No onSubmit override: a submit never starts a legacy Cowork session.
+      fireEvent.click(screen.getByTestId('submit'))
+      expect(h.navigate).not.toHaveBeenCalled()
+    }
+  )
 
-  it('forces Chat mode when Cowork is unavailable even with a stored cowork mode', () => {
-    useHomeMode.setState({ mode: 'cowork' })
-    renderComponent()
-    const input = screen.getByTestId('chat-input')
-    expect(input).toHaveAttribute('data-supports-assistants', 'true')
-    expect(input).not.toHaveAttribute('data-scope-key')
-    fireEvent.click(screen.getByTestId('submit'))
-    expect(h.startCoworkConversation).not.toHaveBeenCalled()
-    expect(h.navigate).not.toHaveBeenCalled()
-  })
-
-  it('shows the selector defaulting to Chat where Cowork is available', () => {
-    h.coworkEnabled = true
-    renderComponent()
-    expect(screen.getByTestId('home-mode-toggle')).toBeInTheDocument()
-    expect(screen.getByTestId('home-mode-chat')).toHaveAttribute(
-      'aria-checked',
-      'true'
-    )
-    const input = screen.getByTestId('chat-input')
-    expect(input).toHaveAttribute('data-supports-assistants', 'true')
-    expect(input).not.toHaveAttribute('data-scope-key')
-  })
-
-  it('switches ChatInput to the Cowork contract with a project-scoped draft key', () => {
-    h.coworkEnabled = true
-    useHomeMode.setState({ mode: 'cowork' })
-    renderComponent()
-    const input = screen.getByTestId('chat-input')
-    expect(input).toHaveAttribute('data-supports-assistants', 'false')
-    expect(input).toHaveAttribute('data-owns-toolset', 'false')
-    expect(input).toHaveAttribute('data-scope-key', 'project-cowork:project-1')
-  })
-
-  it('Cowork submit starts a project session with no folder and opens its URL', () => {
-    h.coworkEnabled = true
-    h.selectedModel = { id: 'model-a' }
-    h.selectedProvider = 'llamacpp'
-    useHomeMode.setState({ mode: 'cowork' })
-    renderComponent()
-    fireEvent.click(screen.getByTestId('submit'))
-    expect(h.startCoworkConversation).toHaveBeenCalledWith({
-      model: { id: 'model-a', provider: 'llamacpp' },
-      folder: null,
-      project: h.project,
-      handoff: {
-        text: 'project task',
-        files: undefined,
-        documents: undefined,
-        draft: 'project task',
-      },
-    })
-    expect(h.navigate).toHaveBeenCalledWith({
-      to: '/cowork/$sessionId',
-      params: { sessionId: 'session-1' },
-    })
-    // An accepted submission must not signal refusal: ChatInput clears the
-    // draft unless onSubmit returns false.
-    expect(h.lastSubmitResult).not.toBe(false)
-  })
-
-  it('offers draft conversation permissions only for a tool-capable model in chat mode', () => {
+  it('offers draft conversation permissions only for a tool-capable model', () => {
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     const view = renderComponent()
     expect(screen.getByTestId('project-scope-consent-trigger')).toBeInTheDocument()
+    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
     view.unmount()
-    h.coworkEnabled = true
-    useHomeMode.setState({ mode: 'cowork' })
-    const coworkView = renderComponent()
-    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
-    coworkView.unmount()
-    useHomeMode.setState({ mode: 'chat' })
     h.selectedModel = { id: 'model-b', capabilities: [] }
     renderComponent()
     expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
   })
+
+  it('states a truthful unsupported reason without refusing ordinary direct chat', () => {
+    h.selectedModel = { id: 'model-b', capabilities: [] }
+    renderComponent()
+    const notice = screen.getByTestId('project-scope-unsupported')
+    expect(notice).toHaveTextContent('common:conversationScope.unsupported')
+    expect(notice).not.toHaveTextContent('common:conversationScope.pendingKept')
+    // Live attributes live on the persistent wrapper only, never doubled.
+    const region = screen.getByTestId('project-scope-status')
+    expect(region).toHaveAttribute('role', 'status')
+    expect(region).toHaveAttribute('aria-live', 'polite')
+    expect(region).toContainElement(notice)
+    expect(notice).not.toHaveAttribute('role')
+    expect(notice).not.toHaveAttribute('aria-live')
+    const input = screen.getByTestId('chat-input')
+    expect(input).not.toHaveAttribute('data-has-prepare')
+    fireEvent.click(screen.getByTestId('submit'))
+    expect(h.navigate).not.toHaveBeenCalled()
+  })
+
+  it('keeps the live region mounted and updates only its inner text', async () => {
+    const Component = Route.component as React.ComponentType
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    const view = renderComponent()
+    const region = screen.getByTestId('project-scope-status')
+    expect(region).toBeEmptyDOMElement()
+    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
+    fireEvent.click(
+      await screen.findByLabelText('Allow shell commands to access the network')
+    )
+    h.selectedModel = { id: 'model-b', capabilities: [] }
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-status')).toBe(region)
+    expect(region).toHaveTextContent('common:conversationScope.unsupported')
+    expect(region).toHaveTextContent('common:conversationScope.pendingKept')
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-status')).toBe(region)
+    expect(region).toBeEmptyDOMElement()
+    expect(region.querySelectorAll('[aria-live],[role="status"]')).toHaveLength(0)
+  })
+
+  it('temporary mode hides draft consent and the prepare path, then resurfaces the pending draft', async () => {
+    const Component = Route.component as React.ComponentType
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    const view = renderComponent()
+    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
+    fireEvent.click(
+      await screen.findByLabelText('Allow shell commands to access the network')
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+    window.history.replaceState({}, '', '/?temporary-chat=true')
+    view.rerender(<Component />)
+    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    // A tool-capable model in temporary mode is not "unsupported".
+    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
+    window.history.replaceState({}, '', '/')
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
+      'Conversation permissions (pending)'
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+  })
+
+  it('no selected model shows no unsupported notice, keeps the control hidden and prepare off, then resurfaces the pending draft', async () => {
+    const Component = Route.component as React.ComponentType
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    const view = renderComponent()
+    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
+    fireEvent.click(
+      await screen.findByLabelText('Allow shell commands to access the network')
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+    // No model selected yet: not a "model without tools", so no false notice.
+    h.selectedModel = undefined
+    view.rerender(<Component />)
+    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
+      'Conversation permissions (pending)'
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+  })
+
+  it('temporary mode with a non-tools model shows no unsupported/pending notice, then a regular chat preserves the pending draft', async () => {
+    const Component = Route.component as React.ComponentType
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    const view = renderComponent()
+    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
+    fireEvent.click(
+      await screen.findByLabelText('Allow shell commands to access the network')
+    )
+    h.selectedModel = { id: 'model-b', capabilities: [] }
+    window.history.replaceState({}, '', '/?temporary-chat=true')
+    view.rerender(<Component />)
+    // Temporary chat never persists consent: no misleading notice, no prepare path.
+    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
+    expect(screen.getByTestId('project-scope-status')).toBeEmptyDOMElement()
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    // Switching back to a regular chat still tells the truth about the kept draft.
+    window.history.replaceState({}, '', '/')
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
+      'common:conversationScope.pendingKept'
+    )
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    // And the draft survives to resurface on a tool-capable model.
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
+      'Conversation permissions (pending)'
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+  })
+
+  it.each([
+    '/?x-temporary-chat=true',
+    '/?temporary-chat=truex',
+    '/?temporary-chat=false',
+    '/?temporary-chat=false&temporary-chat=true',
+    '/?other=temporary-chat%3Dtrue',
+  ])('does not treat %s as temporary mode', (url) => {
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    window.history.replaceState({}, '', url)
+    renderComponent()
+    expect(screen.getByTestId('project-scope-consent-trigger')).toBeInTheDocument()
+  })
+
+  it.each(['/?temporary-chat=true', '/?a=1&temporary-chat=true', '/?temporary%2Dchat=true', '/?temporary-chat=%74rue'])(
+    'treats %s as temporary mode exactly',
+    (url) => {
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+      window.history.replaceState({}, '', url)
+      renderComponent()
+      expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    }
+  )
 
   it('passes prepareThreadCreation only for an elevated draft, applying it through the strict setter', async () => {
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
@@ -279,6 +362,10 @@ describe('Project route Chat/Cowork selector', () => {
     view.rerender(<Component />)
     expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    // The hidden pending draft is announced, not silently dropped.
+    expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
+      'common:conversationScope.pendingKept'
+    )
     // Back on a tool-capable model the draft resurfaces explicitly pending.
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     view.rerender(<Component />)
@@ -309,18 +396,4 @@ describe('Project route Chat/Cowork selector', () => {
     expect(h.setCaps).not.toHaveBeenCalled()
   })
 
-  it('keeps the draft path when the Cowork handoff cannot be stored', () => {
-    h.coworkEnabled = true
-    useHomeMode.setState({ mode: 'cowork' })
-    h.startCoworkConversation.mockImplementation(() => {
-      throw new Error('storage unavailable')
-    })
-    renderComponent()
-    fireEvent.click(screen.getByTestId('submit'))
-    expect(h.toastError).toHaveBeenCalled()
-    expect(h.navigate).not.toHaveBeenCalled()
-    // The route must tell ChatInput the submission was refused, or the real
-    // composer would clear the draft and attachments despite the failure.
-    expect(h.lastSubmitResult).toBe(false)
-  })
 })

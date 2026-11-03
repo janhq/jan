@@ -10,7 +10,6 @@ import {
 import '@testing-library/jest-dom'
 import userEvent from '@testing-library/user-event'
 
-import { HomeModeToggle } from '../HomeModeToggle'
 
 // --- Module mocks (must be declared before component import) ---------------
 
@@ -276,6 +275,10 @@ vi.mock('@/containers/ComposerModelPicker', () => ({
 }))
 
 const navigateMock = vi.fn()
+// Router location search the component reads. null falls back to the jsdom URL
+// so URL-driven tests exercise the same string the router would report; set a
+// string to make router and window deliberately disagree.
+let routerSearchOverride: string | null = null
 const expandPromptReferencesMock = vi.fn(async (text: string) => ({ text, resolvedContents: '' }))
 vi.mock('@/lib/path-references', () => ({
   expandPromptReferences: (text: string) => expandPromptReferencesMock(text),
@@ -283,7 +286,10 @@ vi.mock('@/lib/path-references', () => ({
 }))
 
 vi.mock('@tanstack/react-router', () => ({
-  useRouter: () => ({ navigate: navigateMock }),
+  useRouter: () => ({
+    navigate: navigateMock,
+    state: { location: { searchStr: routerSearchOverride ?? window.location.search } },
+  }),
   Link: ({ children, ...props }: any) => <a {...props}>{children}</a>,
 }))
 
@@ -535,6 +541,7 @@ describe('ChatInput', () => {
       attachmentsList = [{ type: 'document', name: 'notes.txt', path: '/notes.txt' }]
       sessionStorage.clear()
       window.history.replaceState({}, '', '/')
+      routerSearchOverride = null
       createThreadMock.mockClear()
       rollbackCreatedThreadMock.mockReset().mockResolvedValue(undefined)
       navigateMock.mockClear()
@@ -772,6 +779,62 @@ describe('ChatInput', () => {
       expect(prepare).not.toHaveBeenCalled()
       expect(createThreadMock).not.toHaveBeenCalled()
       expect(setPromptMock).toHaveBeenCalledWith('')
+    })
+
+    it.each([
+      `?${TEMPORARY_CHAT_QUERY_ID}=true`,
+      `?temporary%2Dchat=true`,
+      `?temporary-chat=%74rue`,
+      `?a=1&temporary-chat=true`,
+    ])('treats %s as temporary: no persistent create, no preparation', (search) => {
+      window.history.replaceState({}, '', `/${search}`)
+      const prepare = vi.fn(() => async () => true)
+      renderInput({ prepareThreadCreation: prepare })
+      send()
+      expect(toast.info).toHaveBeenCalledWith(expect.stringContaining('regular chat'))
+      expect(prepare).not.toHaveBeenCalled()
+      expect(createThreadMock).not.toHaveBeenCalled()
+      expect(navigateMock).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      '?temporary-chat=truex',
+      '?x-temporary-chat=true',
+      '?temporary-chat=false&temporary-chat=true',
+      '?temporary-chat=True',
+      '?other=temporary-chat%3Dtrue',
+    ])('treats %s as a normal chat', async (search) => {
+      window.history.replaceState({}, '', `/${search}`)
+      const prepare = vi.fn(() => async () => true)
+      renderInput({ prepareThreadCreation: prepare })
+      send()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      expect(prepare).toHaveBeenCalledTimes(1)
+      expect(toast.info).not.toHaveBeenCalledWith(expect.stringContaining('regular chat'))
+    })
+
+    it('encoded key creates no persistent thread without preparation either', async () => {
+      window.history.replaceState({}, '', '/?temporary%2Dchat=true')
+      renderInput()
+      send()
+      await waitFor(() => expect(navigateMock).toHaveBeenCalled())
+      expect(createThreadMock).not.toHaveBeenCalled()
+    })
+
+    it('reads the router location, not window.location', async () => {
+      window.history.replaceState({}, '', '/?temporary-chat=true')
+      routerSearchOverride = ''
+      renderInput()
+      send()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      cleanup()
+      createThreadMock.mockClear()
+      window.history.replaceState({}, '', '/')
+      routerSearchOverride = '?temporary-chat=true'
+      renderInput()
+      send()
+      await waitFor(() => expect(navigateMock).toHaveBeenCalled())
+      expect(createThreadMock).not.toHaveBeenCalled()
     })
 
     it.each([false, true])('keeps default creation unchanged without preparation (temporary=%s)', async (temporary) => {
@@ -1518,7 +1581,7 @@ describe('ChatInput', () => {
     // jsdom cannot lay out container queries: assert the sizing contract, not
     // window.innerWidth, because these composers also live in resizable panels.
     it('uses a named container, a single row and a shrinkable model without shrinking Send', () => {
-      renderInput({ leadingControls: <HomeModeToggle mode="chat" onChange={vi.fn()} /> })
+      renderInput({ leadingControls: <button type="button">Leading control</button> })
       const add = screen.getByRole('button', { name: 'Add attachments and controls' })
       const picker = screen.getByRole('button', { name: 'Select model' })
       const send = screen.getByTestId('send-message-button')
@@ -1530,8 +1593,7 @@ describe('ChatInput', () => {
       expect(picker).toHaveClass('min-w-0', '@max-[520px]/composer:max-w-full')
       expect(add).toHaveClass('shrink-0')
       expect(send).toHaveClass('shrink-0')
-      expect(screen.getByRole('radiogroup')).toHaveClass('@max-[360px]/composer:w-28')
-      expect(screen.getAllByRole('radio')).toHaveLength(2)
+      expect(screen.getByRole('button', { name: 'Leading control' })).toBeInTheDocument()
     })
 
     it('hides only inline shortcuts and leaves surface menu actions reachable while streaming', () => {
