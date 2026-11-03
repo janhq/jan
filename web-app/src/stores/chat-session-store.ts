@@ -219,7 +219,6 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     // Clear all queued messages
     Object.keys(sessions).forEach((sessionId) => {
       useMessageQueue.getState().clearQueue(sessionId);
-      dropConversationClientThread(sessionId);
     });
 
     Object.values(sessions).forEach((session) => {

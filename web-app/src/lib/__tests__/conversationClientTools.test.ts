@@ -6,6 +6,7 @@ import {
   dropAllConversationClientThreads,
   dropConversationClientThread,
   finishConversationClientRun,
+  hasConversationClientEntry,
   respondConversationAsk,
   subscribeConversationAsk,
 } from '../conversationClientTools'
@@ -109,10 +110,17 @@ describe('conversationClientTools: todo', () => {
     expect(JSON.parse(view!.output)).toEqual({ phases: [] })
   })
 
-  it('abort drops the pending bridge', async () => {
+  it('abort releases the aborted run\'s own pending bridge', async () => {
     const { call, controller } = run()
     await call('todo', 'a', { op: 'init', items: ['x'] })
+    // A pending bridge keeps the entry non-idle: prune retains it.
+    subscribeConversationAsk('t1', () => {})()
+    expect(hasConversationClientEntry('t1')).toBe(true)
     controller.abort()
+    // No finish/drop ran: only the abort listener can have cleared the bridge,
+    // which makes the entry idle so the next prune removes it.
+    subscribeConversationAsk('t1', () => {})()
+    expect(hasConversationClientEntry('t1')).toBe(false)
     const next = run()
     const view = await next.call('todo', 'v', { op: 'view' })
     expect(JSON.parse(view!.output)).toEqual({ phases: [] })

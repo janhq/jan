@@ -50,6 +50,10 @@ const setCard = (entry: Entry, card: ConversationAskCard | null) => {
 export const conversationAskCard = (threadId: string) =>
   entries.get(threadId)?.card ?? null
 
+/** Read-only: whether a runtime entry is still retained for the thread. */
+export const hasConversationClientEntry = (threadId: string) =>
+  entries.has(threadId)
+
 const isIdle = (entry: Entry) =>
   !entry.card &&
   entry.pendingAsks.size === 0 &&
