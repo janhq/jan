@@ -27,7 +27,7 @@
 //! file's (or the lock's) name.
 
 use std::borrow::Cow;
-use std::io::Write;
+use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -424,8 +424,15 @@ impl SessionWriter {
             ),
             fs4::TryLockError::Error(e) => e.to_string(),
         })?;
+        // Write access, not append: Windows grants an append-only handle no
+        // `set_len`, and cutting the dead tail is what this open is for. Each
+        // batch seeks to `len` itself instead.
         let mut file = open_no_follow(
-            std::fs::OpenOptions::new().read(true).append(true).create(true),
+            std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false),
             path,
         )
         .map_err(|e| e.to_string())?;
@@ -552,7 +559,8 @@ impl SessionWriter {
     fn commit(&mut self, body: &str) -> std::io::Result<()> {
         let written = self
             .file
-            .write_all(body.as_bytes())
+            .seek(std::io::SeekFrom::Start(self.len))
+            .and_then(|_| self.file.write_all(body.as_bytes()))
             .and_then(|()| self.file.sync_data());
         if let Err(e) = written {
             // Cut the partial batch off; if even that fails, the next load
