@@ -2043,8 +2043,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         'network access require explicit conversation permissions. Each invocation is',
         'limited by both the permissions present when the call was classified and',
         'the current permissions; revocation can narrow a pending call.',
-        'Do not assume access to other folders or network destinations: request',
-        'the necessary permission when a command needs it.'
+        'Do not assume access to other folders or network destinations. Ask the',
+        'user to grant the needed folder or network access in conversation permissions.'
       )
     }
     const skills = ['skill_list', 'skill_read', 'skill_write'].filter(offered)

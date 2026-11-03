@@ -16,9 +16,9 @@
   {
     "scenario": "chat-default-assistant-shell",
     "tools": "read,write,edit,shell,memory,skill_list,skill_read",
-    "systemUtf8Bytes": 2039,
+    "systemUtf8Bytes": 2068,
     "toolsJsonUtf8Bytes": 4209,
-    "requestJsonUtf8Bytes": 6366
+    "requestJsonUtf8Bytes": 6395
   },
   {
     "scenario": "cowork-execute",
