@@ -86,6 +86,8 @@ type ThreadState = {
   childSpend: WeakMap<AbortSignal, { spent: number }>
   /** Status row ids started under each run's signal (scopes per-run settling). */
   runRows: WeakMap<AbortSignal, Set<string>>
+  /** Runs already finalized: nothing may record or requeue rows for them. */
+  finalized: WeakSet<AbortSignal>
   /** Bumped by Stop/delete; monitor callbacks from an older epoch never ping. */
   epoch: number
 }
@@ -109,6 +111,7 @@ const stateOf = (threadId: string): ThreadState => {
       spawned: new WeakMap(),
       childSpend: new WeakMap(),
       runRows: new WeakMap(),
+      finalized: new WeakSet(),
       epoch: 0,
     }
     threads.set(threadId, state)
@@ -126,6 +129,7 @@ export function chatRunInbox(threadId: string, signal: AbortSignal): ChatRunInbo
   return {
     take: () => [...inbox.take(), ...lane.take()].map((n) => n.text),
     takeStatus: () => takeTaskStatus(threadId, signal),
+    finalize: () => finalizeChatRun(threadId, signal),
     // A running monitor never parks a run; only owed child work / queued pings.
     pending: () => inbox.pending() || lane.hasQueued(),
     wait: (signal) =>
@@ -194,15 +198,27 @@ function settleRunningRows(state: ThreadState, signal?: AbortSignal): void {
   }
 }
 
-/** Per-run final cleanup (error/budget/stop/done), called from the run's
- * onFinally BEFORE its snapshot is released (so no newer turn can exist yet):
- * abort any child still held and make every row terminal. Does not bump the
- * epoch or stop monitors, so a monitor that outlives the turn keeps pinging. */
-export function settleChatRun(threadId: string): void {
+/** Explicit per-run finalizer, called by createChatRunStream after its final
+ * status flush (and on consumer cancel), BEFORE the run's snapshot is released.
+ * Aborts this run's remaining children, makes its rows terminal, then purges
+ * every row this run owns from statusRows/statusQueue/runRows so nothing
+ * accumulates across runs. Idempotent. Other runs' rows, the epoch and the
+ * thread's monitors are untouched; a late child completion cannot requeue
+ * because the run is marked finalized first (the stream has also aborted its
+ * signal by then). */
+export function finalizeChatRun(threadId: string, signal: AbortSignal): void {
   const state = threads.get(threadId)
   if (!state) return
-  for (const child of [...state.children]) child.abort('Chat run finished')
-  settleRunningRows(state)
+  state.finalized.add(signal)
+  for (const child of [...state.children]) {
+    if (state.childOwner.get(child) === signal) child.abort('Chat run finished')
+  }
+  const owned = state.runRows.get(signal)
+  if (!owned) return
+  settleRunningRows(state, signal)
+  for (const id of owned) state.statusRows.delete(id)
+  state.statusQueue = state.statusQueue.filter((row) => !owned.has(row.runId))
+  state.runRows.delete(signal)
 }
 
 /** What a child is bounded by, frozen when `task` was dispatched: the parent's
@@ -406,7 +422,7 @@ export async function runChatTask(input: unknown, callId: string, ctx: ChatOrche
   }
   const model = ctx.getModel()
   state.spawned.set(ctx.signal, spent + total)
-  if (!state.runRows.has(ctx.signal)) {
+  if (!ctx.signal.aborted && !state.finalized.has(ctx.signal) && !state.runRows.has(ctx.signal)) {
     state.runRows.set(ctx.signal, new Set())
     // Registered before any child's own abort listener: when the run ends on ANY
     // path the rows are terminal synchronously, before the final status flush.
@@ -426,14 +442,14 @@ export async function runChatTask(input: unknown, callId: string, ctx: ChatOrche
         writeBlackboard: async () => null,
         onDispatch: (id, name) => {
           inbox.begin()
-          if (threads.get(ctx.threadId) === state && !ctx.signal.aborted) {
+          if (threads.get(ctx.threadId) === state && !ctx.signal.aborted && !state.finalized.has(ctx.signal)) {
             state.runRows.get(ctx.signal)?.add(id)
             recordStatus(state, { runId: id, name, status: 'running', startedAt: Date.now() })
           }
         },
         onComplete: (id, name, result) => {
           const began = state.statusRows.get(id)
-          if (began?.status === 'running' && threads.get(ctx.threadId) === state && !ctx.signal.aborted) {
+          if (began?.status === 'running' && threads.get(ctx.threadId) === state && !ctx.signal.aborted && !state.finalized.has(ctx.signal)) {
             const endedAt = Date.now()
             recordStatus(
               state,

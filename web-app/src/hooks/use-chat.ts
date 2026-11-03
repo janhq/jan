@@ -143,9 +143,9 @@ export function useChat(
                 },
                 dispatch: dispatchTool ?? (async () => ({ output: 'Chat tool executor unavailable', isError: true })),
                 onFinally: () => {
-                  // createChatRunStream aborts its own controller and settles
-                  // only its run-owned child rows before its final flush.
-                  // Never cancel thread-wide work here: a replacement may own it.
+                  // createChatRunStream already ran the run's inbox finalizer
+                  // (owned rows purged) before this release. Never cancel
+                  // thread-wide work here: a replacement may own it.
                   releaseSnapshot()
                   useToolApprovalRequests.getState().clearPendingForThread(sessionId)
                   unwatch()

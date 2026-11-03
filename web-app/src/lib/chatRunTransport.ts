@@ -16,6 +16,10 @@ export type ChatRunInbox = {
    * `data-task-status` UI parts (id per run, so a later row replaces the
    * earlier one); never replayed to the model. */
   takeStatus?: () => unknown[]
+  /** Per-run cleanup of everything the run owns (status rows/queue). Called
+   * once after the final status flush, also when the consumer cancels, and
+   * before `onFinally`. Must be idempotent. */
+  finalize?: () => void
 }
 
 export const TASK_STATUS_PART = 'data-task-status'
@@ -121,6 +125,12 @@ export function createChatRunStream(options: {
   if (options.signal.aborted) abort()
   else options.signal.addEventListener('abort', abort, { once: true })
   let consumerCancelled = false
+  let finalized = false
+  const finalizeRun = () => {
+    if (finalized) return
+    finalized = true
+    inbox?.finalize?.()
+  }
   return new ReadableStream<UIMessageChunk>({
     start(output) {
       const emit = (chunk: UIMessageChunk) => {
@@ -351,10 +361,21 @@ export function createChatRunStream(options: {
       }).finally(() => {
         endRun('Chat run ended')
         options.signal.removeEventListener('abort', abort)
-        try { options.onFinally?.() } finally { if (!consumerCancelled) output.close() }
+        try {
+          flushTaskStatus()
+        } finally {
+          try { finalizeRun() } finally {
+            try { options.onFinally?.() } finally { if (!consumerCancelled) output.close() }
+          }
+        }
       })
     },
-    cancel(reason) { consumerCancelled = true; controller.abort(reason) },
+    cancel(reason) {
+      consumerCancelled = true
+      controller.abort(reason)
+      // Nobody is left to flush to: still purge this run's owned rows now.
+      finalizeRun()
+    },
   })
 }
 

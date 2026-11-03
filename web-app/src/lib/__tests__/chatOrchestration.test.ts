@@ -32,7 +32,7 @@ import {
   childEffectiveGrant,
   runChatMonitor,
   runChatTask,
-  settleChatRun,
+  finalizeChatRun,
   takeTaskStatus,
   TASK_STATUS_TEXT_LIMIT,
   TASK_STATUS_TRUNCATION_MARKER,
@@ -458,33 +458,26 @@ describe('task status lifecycle', () => {
     expect(takeTaskStatus(ctx.threadId)).toEqual([])
   })
 
-  it('settleChatRun aborts held children and terminates rows without bumping epoch or stopping monitors', async () => {
+  it('finalizeChatRun aborts this run\'s held children and purges its rows without bumping epoch or stopping monitors', async () => {
     const { ctx } = ctxFor()
     hang()
     await runChatTask(oneChild(), 'call', ctx)
     await settle()
-    takeTaskStatus(ctx.threadId)
     const state = __testing.stateOf(ctx.threadId)
     const epoch = state.epoch
-    settleChatRun(ctx.threadId)
-    expect(takeTaskStatus(ctx.threadId).map((r) => r.status)).toEqual(['error'])
+    finalizeChatRun(ctx.threadId, ctx.signal)
+    expect(state.statusRows.size).toBe(0)
+    expect(state.statusQueue).toHaveLength(0)
+    expect(state.runRows.has(ctx.signal)).toBe(false)
     expect(state.epoch).toBe(epoch)
     expect(hoisted.stop).not.toHaveBeenCalled()
     expect(hoisted.stopAll).not.toHaveBeenCalled()
     await settle(40)
     expect(state.children.size).toBe(0)
     expect(state.active).toBe(0)
-  })
-
-  it('a completed child is never downgraded by a later settle', async () => {
-    const { ctx } = ctxFor()
-    hoisted.childStep.mockImplementation(async () => textStep('fine'))
-    await runChatTask(oneChild(), 'call', ctx)
-    await settle()
-    const first = lastStatus(takeTaskStatus(ctx.threadId))
-    expect(Object.values(first)).toEqual(['done'])
-    settleChatRun(ctx.threadId)
-    expect(takeTaskStatus(ctx.threadId)).toEqual([])
+    // A late child completion after finalize never requeues a row.
+    expect(state.statusQueue).toHaveLength(0)
+    expect(state.statusRows.size).toBe(0)
   })
 
   it('per-run settle leaves another run\'s running rows alone', async () => {
@@ -844,7 +837,6 @@ describe('terminal flush ordering through the real run stream', () => {
       },
       onFinally: () => {
         order.push('finally')
-        settleChatRun(ctx.threadId)
       },
     })
     let message
@@ -871,8 +863,70 @@ describe('terminal flush ordering through the real run stream', () => {
     expect(finalStatuses(message)).toEqual(['error'])
   })
 
-  it('onFinally settle after finish finds nothing left to flush (no missed terminal row)', async () => {
-    const { ctx } = await run({ sendSecond: async () => { throw new Error('boom') } })
-    expect(takeTaskStatus(ctx.threadId)).toEqual([])
+  it('the run finalizer purges owned rows before onFinally, after the terminal flush', async () => {
+    const { ctx, order, message } = await run({ sendSecond: async () => { throw new Error('boom') } })
+    expect(finalStatuses(message)).toEqual(['error'])
+    const state = __testing.stateOf(ctx.threadId)
+    expect(state.statusRows.size).toBe(0)
+    expect(state.statusQueue).toHaveLength(0)
+    expect(order).toEqual(['finally'])
+  })
+})
+
+describe('run finalizer retention', () => {
+  const callOnce = () =>
+    streamOf([
+      { type: 'start-step' },
+      { type: 'tool-input-available', toolCallId: 'tk', toolName: 'task', input: {} },
+      { type: 'finish-step' },
+      { type: 'finish' },
+    ])
+  const user = { id: 'u', role: 'user' as const, parts: [{ type: 'text' as const, text: 'go' }] }
+  const startRun = (threadId: string, ctx: ChatOrchestrationContext, onFinally?: () => void) => {
+    let step = 0
+    return createChatRunStream({
+      messages: [user],
+      messageId: 'a',
+      signal: new AbortController().signal,
+      sendStep: async () => (++step === 1 ? callOnce() : textStep('ok')),
+      inbox: (runSignal) => chatRunInbox(threadId, runSignal),
+      dispatch: async (_c, signal) => runChatTask(oneChild(), 'tk', { ...ctx, signal }),
+      onFinally,
+    })
+  }
+
+  it('many sequential runs retain zero rows', async () => {
+    const { ctx } = ctxFor()
+    hoisted.childStep.mockImplementation(async () => textStep('fine'))
+    for (let i = 0; i < 25; i++) {
+      for await (const _ of readUIMessageStream({ stream: startRun(ctx.threadId, ctx) })) void _
+      await settle(5)
+    }
+    await settle(20)
+    const state = __testing.stateOf(ctx.threadId)
+    expect(state.statusRows.size).toBe(0)
+    expect(state.statusQueue).toHaveLength(0)
+  })
+
+  it('consumer cancel purges its own queued rows only; another live run is unaffected', async () => {
+    const other = ctxFor()
+    const mine = ctxFor({ threadId: other.ctx.threadId })
+    const t = other.ctx.threadId
+    hang()
+    await runChatTask(oneChild({ name: 'other' }), 'o', other.ctx)
+    const stream = startRun(t, mine.ctx)
+    const reader = stream.getReader()
+    // Read until the child's dispatch row has been produced, then walk away.
+    for (let i = 0; i < 50 && __testing.stateOf(t).children.size < 2; i++) {
+      await Promise.race([reader.read(), settle(2)])
+    }
+    await reader.cancel('consumer closed')
+    await settle(40)
+    const state = __testing.stateOf(t)
+    expect(state.children.size).toBe(1)
+    expect(state.statusRows.get('o-other')?.status).toBe('running')
+    expect([...state.statusRows.keys()]).toEqual(['o-other'])
+    expect(state.statusQueue.map((r) => r.runId)).toEqual(['o-other'])
+    other.controller.abort()
   })
 })
