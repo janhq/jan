@@ -18380,7 +18380,7 @@ async fn start_memory_tidy(
     facts: Option<String>,
     events: &mpsc::UnboundedSender<StreamEvent>,
 ) -> Option<tokio::task::JoinHandle<Result<String, String>>> {
-    let kind = app.tidy_running?;
+    app.tidy_running?;
     let Some(args) = app.args.clone() else {
         app.tidy_running = None;
         return None;
@@ -18419,10 +18419,11 @@ async fn start_memory_tidy(
             }))
         }
         Err(e) => {
+            // Either kind has announced itself by now (see
+            // `begin_memory_tidy`), so a silent failure would leave that note
+            // promising a tidy that never reports back.
             app.tidy_running = None;
-            if kind == TidyKind::Manual {
-                app.note(&format!("memory tidy failed to start: {e}"));
-            }
+            app.note(&format!("memory tidy failed to start: {e}"));
             None
         }
     }
@@ -46988,6 +46989,28 @@ fn a() {}
         assert!(text.contains("tidying memory in the background"), "{text}");
         assert!(text.contains("already running"), "{text}");
         facts.abort();
+    }
+
+    /// An automatic tidy has already announced itself when its facts are sent
+    /// off, so a dispatch that fails afterwards must say so, or the transcript
+    /// promises a tidy that never reports back.
+    #[tokio::test]
+    async fn an_auto_tidy_that_fails_to_start_says_so() {
+        let mut app = test_app();
+        own_project(&mut app);
+        app.args = Some(test_args(&app, std::collections::HashMap::new()));
+        let facts = begin_memory_tidy(&mut app, TidyKind::Auto).expect("facts gathering");
+        facts.abort();
+        // The project goes away before dispatch, so the spawn itself fails.
+        let mut args = (**app.args.as_ref().unwrap()).clone();
+        args.project_root = None;
+        app.args = Some(Arc::new(args));
+        let (tx, _rx) = mpsc::unbounded_channel();
+        assert!(start_memory_tidy(&mut app, None, &tx).await.is_none());
+        assert_eq!(app.tidy_running, None);
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("over its budget: tidying in the background"), "{text}");
+        assert!(text.contains("memory tidy failed to start"), "{text}");
     }
 
     /// Plan mode entered while a tidy's facts are being gathered stops it
