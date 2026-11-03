@@ -43,6 +43,13 @@ export const WEB_SEARCH_PROVIDERS: WebSearchProviderMeta[] = [
     secretKey: 'you-api-key',
     homepage: 'you.com',
   },
+  {
+    id: 'keenable',
+    label: 'Keenable',
+    keyless: true,
+    secretKey: 'keenable-api-key',
+    homepage: 'keenable.ai',
+  },
 ]
 
 export const DEFAULT_SEARCH_PROVIDER = 'exa'
