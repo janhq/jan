@@ -4463,8 +4463,9 @@ impl Transcript {
     }
 
     /// A message between agents, journaled so a resume shows it. The main
-    /// transcript records one when it is sent (a child's `message_main_agent`,
-    /// steering from `/agents`); a child's records one when it takes it. `me`
+    /// transcript records one the main agent sends when it is sent (steering
+    /// from `/agents`) and one a child sends when it is delivered; a child's
+    /// records one when it takes it. `me`
     /// names the agent this transcript belongs to.
     fn agent_message(&mut self, me: &str, from: &str, to: &str, text: &str) {
         self.flush_assistant();
@@ -9079,10 +9080,14 @@ impl App {
                 self.transcript.flush_assistant();
                 self.notice(&text, None);
             }
-            // A subagent's message reaching the main agent: already shown when
-            // the child sent it (its `message_main_agent` call), so the
-            // delivery adds nothing.
-            StreamEvent::AgentMessage { .. } => {}
+            // A subagent's message reaching the main agent: its one entry,
+            // made here rather than at the child's `message_main_agent` call,
+            // which the loop may still refuse and which can land mid-reply.
+            // Delivery comes between the main agent's turns.
+            StreamEvent::AgentMessage { from, to, text } => {
+                self.scrollback = 0;
+                self.transcript.agent_message(MAIN_AGENT, &from, &to, &text);
+            }
             StreamEvent::Monitors { monitors } => self.monitors = monitors,
             // The live countdown carries every attempt; the transcript notes
             // only the first, so a flaky link leaves one line, not ten.
@@ -9232,13 +9237,6 @@ impl App {
                 name: tool,
                 args,
             } => {
-                // A message to the main agent is the main transcript's one
-                // entry for it, made when the child sends it.
-                if tool == crate::core::agent::subagent::MESSAGE_MAIN_AGENT_TOOL {
-                    let text = args.get("message").and_then(|v| v.as_str()).unwrap_or("");
-                    self.scrollback = 0;
-                    self.transcript.agent_message(MAIN_AGENT, name, MAIN_AGENT, text);
-                }
                 if let Some(panel) = panel {
                     // The completed call supersedes its in-progress view.
                     if panel.active.as_ref().is_some_and(|c| c.id == id) {
@@ -10033,7 +10031,7 @@ impl App {
     /// display journal). Calls still in flight at the cancel are paired with a
     /// placeholder result so the exchange stays protocol-valid. A turn starts
     /// at a typed prompt or a skill/command invocation, as in
-    /// `journal::truncate_at_user`, so the search never reaches back into an
+    /// `session_log::truncate_at_user`, so the search never reaches back into an
     /// earlier turn whose calls a compaction already removed.
     fn append_cancelled_turn_tools(&mut self) {
         let start = self
@@ -27819,13 +27817,14 @@ mod tests {
         assert_eq!(parent.matches("BANANA").count(), 1, "{parent}");
     }
 
-    /// A message is one entry, at the moment its sender acts: the main
-    /// agent's `message_subagent` call reads as `Message to <name>` with the
-    /// text under it, and the child taking it later (after the turn ended)
-    /// appends nothing. A child's `message_main_agent` is likewise one
-    /// `Message from <name>` at its call. A resume shows the same.
+    /// A message is one entry: the main agent's `message_subagent` call reads
+    /// as `Message to <name>` with the text under it, and the child taking it
+    /// later (after the turn ended) appends nothing. A child's
+    /// `message_main_agent` is one `Message from <name>`, made when the main
+    /// agent receives it: the call alone can still be refused. A resume shows
+    /// the same.
     #[test]
-    fn a_message_between_agents_is_one_entry_at_the_call() {
+    fn a_message_between_agents_is_one_entry() {
         use super::MAIN_AGENT;
         let mut app = test_app();
         app.apply(StreamEvent::SubagentStart {
@@ -27863,12 +27862,13 @@ mod tests {
             text: "Narrow it to the parser.\nSkip the lexer.".into(),
         });
         assert_eq!(transcript_text(&app), at_call, "nothing is appended on delivery");
-        // The child writes back: one entry at its call, none at delivery.
+        // The child writes back: nothing at its call, one entry at delivery.
         subagent_event(&mut app, "sub-debug-1", "debug", StreamEvent::ToolCall {
             id: "c1".into(),
             name: "message_main_agent".into(),
             args: json!({ "message": "Found it in parse_command." }),
         });
+        assert!(!transcript_text(&app).contains("Found it"), "{}", transcript_text(&app));
         app.apply(StreamEvent::AgentMessage {
             from: "debug".into(),
             to: MAIN_AGENT.into(),
@@ -27888,6 +27888,76 @@ mod tests {
         assert_eq!(replayed.matches("Narrow it").count(), 1, "{replayed}");
         assert!(replayed.contains(sent) && replayed.contains(got), "{replayed}");
         assert!(!replayed.contains("Messaged"), "{replayed}");
+    }
+
+    /// A child's `message_main_agent` the loop refuses (a policy deny, an
+    /// empty message, the message cap) never reaches the main agent, so the
+    /// main transcript does not show it.
+    #[test]
+    fn a_refused_message_to_the_main_agent_is_not_shown() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-debug-1".into(),
+            name: "debug".into(),
+            task: Some("look".into()),
+            workspace: None,
+            internal: false,
+        });
+        subagent_event(&mut app, "sub-debug-1", "debug", StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "message_main_agent".into(),
+            args: json!({ "message": "over the cap" }),
+        });
+        subagent_event(&mut app, "sub-debug-1", "debug", StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ERROR: this subagent has already sent 20 messages".into(),
+            is_error: true,
+            diff: None,
+        });
+        let main = transcript_text(&app);
+        assert!(!main.contains("over the cap") && !main.contains("Message from"), "{main}");
+        assert!(
+            !app.transcript.display_log.iter().any(|e| matches!(e, DisplayEntry::AgentMessage { .. })),
+            "nor does its record"
+        );
+    }
+
+    /// A child may call `message_main_agent` while the main agent is still
+    /// streaming its reply: that reply stays one piece, on screen and in the
+    /// record.
+    #[test]
+    fn a_child_message_call_does_not_split_the_main_reply() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-debug-1".into(),
+            name: "debug".into(),
+            task: Some("look".into()),
+            workspace: None,
+            internal: false,
+        });
+        app.apply(StreamEvent::Token { text: "```rust
+fn a() {}
+".into() });
+        subagent_event(&mut app, "sub-debug-1", "debug", StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "message_main_agent".into(),
+            args: json!({ "message": "found it" }),
+        });
+        app.apply(StreamEvent::Token { text: "fn b() {}
+```
+".into() });
+        app.transcript.settle(false);
+        let replies: Vec<String> = app
+            .transcript
+            .display_log
+            .iter()
+            .filter_map(|e| match e {
+                DisplayEntry::Assistant { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(replies.len(), 1, "one reply, not split: {replies:?}");
+        assert!(replies[0].contains("fn a() {}\nfn b() {}"), "{replies:?}");
     }
 
     /// Every action that is both a tool call and an event of its own shows

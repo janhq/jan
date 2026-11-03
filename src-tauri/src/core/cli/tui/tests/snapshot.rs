@@ -1390,6 +1390,11 @@ fn event_messages_between_agents() {
             name: "message_main_agent".into(),
             args: json!({ "message": "Found the bug in parse_command.\nIt drops the last token." }),
         });
+        app.apply(StreamEvent::AgentMessage {
+            from: "general-4".into(),
+            to: crate::core::agent::events::MAIN_AGENT.into(),
+            text: "Found the bug in parse_command.\nIt drops the last token.".into(),
+        });
     });
 }
 
