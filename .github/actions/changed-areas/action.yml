@@ -36,13 +36,24 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
         PR: ${{ github.event.pull_request.number }}
+        CHANGED: ${{ github.event.pull_request.changed_files }}
         SCRIPT: ${{ github.action_path }}/../../scripts/changed-areas.sh
       # The files endpoint rather than `gh pr diff`: the diff endpoint refuses
-      # large pull requests outright, and the list pages up to 3000 files. A
-      # rename counts on both sides, so moving a file out of an area still runs it.
+      # large pull requests outright. The list stops at 3000 files without an
+      # error, so a list shorter than the PR's changed_files count is treated as
+      # unreadable. A rename counts on both sides, so moving a file out of an
+      # area still runs it.
       run: |
-        if [ -n "$PR" ] && files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
-          --jq '.[] | .filename, (.previous_filename // empty)'); then
+        files=""
+        if [ -n "$PR" ] && list=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
+          --jq '.[] | "F\t\(.filename)", (.previous_filename // empty | "P\t\(.)")'); then
+          if [ "$(grep -c $'^F\t' <<< "$list")" -ge "${CHANGED:-0}" ]; then
+            files=$(cut -f2- <<< "$list")
+          else
+            echo "file list truncated; running every area"
+          fi
+        fi
+        if [ -n "$files" ]; then
           areas=$(bash "$SCRIPT" <<< "$files")
         else
           areas=$(bash "$SCRIPT" --all)
