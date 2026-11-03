@@ -58,7 +58,8 @@ vi.mock('@/hooks/useServiceHub', () => ({
     projects: () => ({ getProjects: async () => [], deleteProject: async () => {} }),
   }),
 }))
-vi.mock('@/lib/platform/utils', () => ({ isPlatformTauri: () => true }))
+const platform = vi.hoisted(() => ({ tauri: true }))
+vi.mock('@/lib/platform/utils', () => ({ isPlatformTauri: () => platform.tauri }))
 const agentTools = vi.hoisted(() => ({
   cleanupThreadWorkspace: vi.fn().mockResolvedValue(undefined),
   sweepSessionWorkspaces: vi.fn().mockResolvedValue(0),
@@ -84,6 +85,7 @@ import { useThreadManagement } from '@/hooks/useThreadManagement'
 import {
   startCoworkSync,
   flushCowork,
+  ensureCoworkRecorded,
   flushCoworkDeletes,
   flushCoworkStartupWarnings,
   isCoworkMigrationDone,
@@ -114,6 +116,7 @@ describe('coworkSync startup', () => {
     agentTools.sweepSessionWorkspaces.mockClear()
     sonner.warning.mockClear()
     sonner.error.mockClear()
+    platform.tauri = true
     __resetCoworkSyncForTests()
     useCoworkSessions.setState({ sessions: [], currentId: null })
     useThreads.setState({ threads: {} })
@@ -502,6 +505,56 @@ describe('coworkSync startup', () => {
     fail = false
     await expect(startCoworkSync()).resolves.toBeUndefined()
     backend.invoke = invoke
+  })
+
+  describe('ensureCoworkRecorded (real persistence)', () => {
+    const empty = (id: string, extra: Json = {}) => ({ id, title: 'New session', folder: null, turns: [], messages: [], updated: 0, ...extra })
+
+    it('durably records an accepted empty session before resolving', async () => {
+      await startCoworkSync()
+      useCoworkSessions.setState({ sessions: [empty('fresh') as never], currentId: 'fresh' })
+      await flushCowork()
+      expect(backend.threads.has('fresh')).toBe(false) // empty sessions are not written on their own
+      await expect(ensureCoworkRecorded('fresh')).resolves.toBeUndefined()
+      expect(backend.threads.get('fresh')?.metadata?.mode).toBe('cowork')
+      expect(backend.extras.has('fresh')).toBe(true)
+    })
+
+    it('refuses a missing session and writes nothing', async () => {
+      await expect(ensureCoworkRecorded('ghost')).rejects.toThrow('not available to record')
+      expect(backend.threads.size).toBe(0)
+    })
+
+    it.each(['missing-sidecar', 'unreadable-sidecar', 'id-collision'] as const)('refuses an unavailable (%s) session and writes nothing', async (unavailable) => {
+      await startCoworkSync()
+      useCoworkSessions.setState({ sessions: [empty('locked', { unavailable }) as never], currentId: 'locked' })
+      await expect(ensureCoworkRecorded('locked')).rejects.toThrow('unavailable and cannot be recorded')
+      expect(backend.threads.has('locked')).toBe(false)
+    })
+
+    it('surfaces a startup failure instead of recording, then succeeds on retry', async () => {
+      const invoke = backend.invoke
+      let fail = true
+      backend.invoke = async (command, args) => {
+        if (command === 'list_threads' && fail) throw new Error('storage unavailable')
+        return invoke(command, args)
+      }
+      useCoworkSessions.setState({ sessions: [empty('later') as never], currentId: 'later' })
+      await expect(ensureCoworkRecorded('later')).rejects.toThrow('storage unavailable')
+      expect(backend.threads.has('later')).toBe(false)
+      fail = false
+      await expect(ensureCoworkRecorded('later')).resolves.toBeUndefined()
+      expect(backend.threads.has('later')).toBe(true)
+      backend.invoke = invoke
+    })
+
+    it('fails closed outside Tauri without touching storage', async () => {
+      platform.tauri = false
+      useCoworkSessions.setState({ sessions: [empty('web') as never], currentId: 'web' })
+      await expect(ensureCoworkRecorded('web')).rejects.toThrow('requires the desktop app')
+      expect(backend.log).toEqual([])
+      expect(backend.threads.size).toBe(0)
+    })
   })
 
 })

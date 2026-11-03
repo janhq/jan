@@ -328,8 +328,6 @@ mod tests {
         assert!(!confirm_if_current(id, elevated(), token));
     }
 
-    /// Revoke landing between persist and confirm: the later narrow wins and
-    /// the in-flight confirm is dropped rather than resurrecting the grant.
     #[test]
     fn only_host_verified_cowork_kinds_allow_elevated_session() {
         assert!(ThreadKind::Cowork.allows_elevated_session());
@@ -344,6 +342,8 @@ mod tests {
         assert_eq!(thread_kind("anything").await, ThreadKind::Unknown);
     }
 
+    /// Revoke landing between persist and confirm: the later narrow wins and
+    /// the in-flight confirm is dropped rather than resurrecting the grant.
     #[test]
     fn a_newer_narrow_blocks_an_in_flight_confirm() {
         let id = "mirror-race";

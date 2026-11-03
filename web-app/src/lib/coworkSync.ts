@@ -117,6 +117,9 @@ export async function flushCowork(): Promise<void> {
  * never written; only a run that was accepted calls this.
  */
 export async function ensureCoworkRecorded(id: string): Promise<void> {
+  // Fail closed outside Tauri: there is no host to read the record, so a run
+  // must not proceed (and browser tools are deliberately not enabled instead).
+  if (!isPlatformTauri()) throw new Error('Cowork persistence requires the desktop app')
   await startCoworkSync()
   const session = useCoworkSessions.getState().sessions.find((s) => s.id === id)
   if (!session) throw new Error(`Cowork session ${id} is not available to record`)

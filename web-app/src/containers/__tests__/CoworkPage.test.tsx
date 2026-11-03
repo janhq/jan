@@ -132,6 +132,22 @@ describe('CoworkPage request acceptance', () => {
     expect(mocks.run).not.toHaveBeenCalled()
     expect(useCoworkRun.getState().outcomes.test?.errorText ?? '').toContain('record failed')
   })
+  it('abort while the session record is being written starts no model call and releases the run', async () => {
+    let resolveEnsure!: () => void
+    mocks.ensure.mockImplementationOnce(() => new Promise<void>((r) => { resolveEnsure = r }))
+    render(<CoworkPage />)
+    fireEvent.click(screen.getByText('Submit'))
+    await waitFor(() => expect(mocks.ensure).toHaveBeenCalledWith('test'))
+    expect(useCoworkRun.getState().runId.test).toBeTruthy()
+    const closing = quiesceCoworkRuns()
+    await act(async () => resolveEnsure())
+    await act(async () => { await closing })
+    expect(mocks.run).not.toHaveBeenCalled()
+    expect(mocks.refresh).not.toHaveBeenCalled()
+    expect(mocks.dispatch).not.toHaveBeenCalled()
+    expect(useCoworkRun.getState().runId.test).toBeUndefined()
+    await expect(quiesceCoworkRuns()).resolves.toBeUndefined()
+  })
   it('blocks close-time submission and resolves close only after the run commits', async () => {
     render(<CoworkPage />)
     fireEvent.click(screen.getByText('Submit'))

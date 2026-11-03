@@ -1336,6 +1336,10 @@ fn legacy_elevation_decision(
     }
 }
 
+/// Test-only model of the pre-host-kind guard (`scope=Session` always passes,
+/// every other scope is judged with an `Unknown` kind). Production dispatch
+/// goes through [`guard_caller_session`].
+#[cfg(test)]
 fn reject_legacy_thread_elevation(
     scope: Option<WorkspaceScope>,
     name: &str,
