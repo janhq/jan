@@ -272,6 +272,23 @@ export async function loadCoworkSessions(
   }
 }
 
+/**
+ * True only for the host's stable `thread_missing:` error (see
+ * THREAD_MISSING_ERROR_CODE in src-tauri threads/commands.rs). Transient I/O
+ * failures never carry it, so they keep the bounded dirty/retry path.
+ */
+export function isMissingThreadError(error: unknown): boolean {
+  const message =
+    typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : typeof (error as { message?: unknown } | null)?.message === 'string'
+          ? (error as { message: string }).message
+          : ''
+  return message.startsWith('thread_missing:')
+}
+
 export type CoworkPersistence = {
   /** Record a new snapshot of a session; written after the debounce. */
   schedule(session: CoworkSession, opts?: { legacy?: boolean }): void
@@ -293,6 +310,11 @@ export function createCoworkPersistence(
     onThreadWritten?: (thread: Json) => void
     onThreadRemoved?: (id: string) => void
     onError?: (id: string, error: unknown) => void
+    /**
+     * The host confirmed the session's thread no longer exists. Retries stop and
+     * the in-memory snapshot is kept; the caller should mark it unavailable.
+     */
+    onThreadMissing?: (id: string, session: CoworkSession) => void
   } = {}
 ): CoworkPersistence {
   const debounceMs = opts.debounceMs ?? 400
@@ -345,6 +367,9 @@ export function createCoworkPersistence(
       }
     }
   }
+
+  // Sessions whose thread the host confirmed missing: never written again.
+  const missing = new Set<string>()
 
   let currentIdDirty = false
   let currentIdValue: string | null = null
@@ -402,6 +427,18 @@ export function createCoworkPersistence(
         }
       }
     } catch (e) {
+      // The host confirmed the thread is gone (not a transient failure). Never
+      // recreate it (a deleted chat must not resurrect) and never retry: drop the
+      // dirty flag so flush/close settle, keep the snapshot readable in memory.
+      // A pending deletion keeps its normal tombstone/rollback handling instead.
+      if (isMissingThreadError(e) && !tombstones.has(id)) {
+        missing.add(id)
+        dirty.delete(id)
+        clearTimer(id)
+        opts.onError?.(id, e)
+        opts.onThreadMissing?.(id, session)
+        return
+      }
       dirty.add(id)
       opts.onError?.(id, e)
       if (!timers.has(id) && !tombstones.has(id)) {
@@ -448,7 +485,7 @@ export function createCoworkPersistence(
   return {
     schedule(session, o) {
       const id = session.id
-      if ((tombstones.has(id) && !pendingRollbacks.has(id)) || session.unavailable) return
+      if ((tombstones.has(id) && !pendingRollbacks.has(id)) || session.unavailable || missing.has(id)) return
       if (!persisted.has(id) && isEmpty(session)) return
       const prev = latest.get(id)
       latest.set(id, { session, legacy: o?.legacy ?? prev?.legacy ?? false })
@@ -468,6 +505,7 @@ export function createCoworkPersistence(
 
     async remove(id, o) {
       if (pendingRollbacks.has(id)) await rollbackDeletion(id)
+      missing.delete(id)
       tombstones.add(id)
       clearTimer(id)
       dirty.delete(id)
