@@ -3,8 +3,7 @@
 // requests against a LOCAL OpenAI-compatible server (e.g. the llama-server Jan
 // started) and records what bytes cannot: prompt tokens as the server counted
 // them, time to first streamed delta, total latency and the server process's
-// peak RSS. Protocol, caveats and what this does NOT measure:
-// qa/unified-baseline-protocol.md.
+// peak RSS. It does NOT measure quality or anything beyond these four numbers.
 //
 //   node scripts/unified-baseline-replay.mjs --base-url http://127.0.0.1:PORT/v1 \
 //     --model MODEL_ID [--api-key KEY] [--pid SERVER_PID] [--runs 3] [--warmup 1]

@@ -5,7 +5,7 @@ import type { CoworkSession } from '@/hooks/useCoworkSessions'
  * One-time copy of Cowork sessions (`code-sessions` in settings.json) into
  * threads with `metadata.mode = "cowork"`.
  *
- * Rules (see plans/merge-chat-cowork-data-model.md, D4):
+ * Rules:
  * - Copy, never move: `code-sessions` is left untouched as the rollback source.
  * - Idempotent and resumable. `thread.json` is the commit marker and is written
  *   LAST; a directory holding only the sidecar is not committed and is redone.

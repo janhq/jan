@@ -1,8 +1,8 @@
 /**
- * Offline preparation for jan-internal#506. NOT a benchmark: byte counts and
+ * Offline request-shape regression fixtures. NOT a benchmark: byte counts and
  * scripted model-step counts are not tokens, TTFT, latency or memory. Real
  * numbers come from replaying the request fixtures written here against a
- * local model; see qa/unified-baseline-protocol.md.
+ * local model with scripts/unified-baseline-replay.mjs.
  *
  * Only the native IPC boundary (tool schemas, sandbox probe, memory store) and
  * app-state stores are replaced. Production schema filtering, the chat

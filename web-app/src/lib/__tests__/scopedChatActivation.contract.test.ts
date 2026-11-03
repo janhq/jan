@@ -8,8 +8,7 @@ import { describe, it } from 'vitest'
  * orchestration (#9542) dependencies merge. They are intentionally `it.todo`
  * until the implementing slice flips each one into a real test: the modules
  * under test are not merged yet, and this branch must not import unmerged
- * source. Security dispositions: qa/issue-503-scoped-dispatch.md (after
- * #9544 merges).
+ * source.
  */
 
 describe('grant-aware approval (decided: normal approval path, no new persisted allow mechanism)', () => {
