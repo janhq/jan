@@ -10,6 +10,9 @@
 //! 2. **Terminal titles (OSC 2)** - a spinner glyph + `Jan` while working,
 //!    `Jan - action required` while blocked/waiting, and `Jan ready` when idle.
 //!
+//! 3. **Terminal bell (BEL)** - rung when the session starts needing the
+//!    user, per the `bell` preference ([`BellMode`]).
+//!
 //! Orca 1.4.191 accepts Jan's OSC 9999 status, but its `tui-idle` wait does not
 //! consume that protocol or recognize Jan's settled titles. Jan icons and
 //! title-based idle recognition require Orca-side support.
@@ -44,6 +47,53 @@ impl AgentStatusState {
             AgentStatusState::Blocked => "blocked",
             AgentStatusState::Waiting => "waiting",
             AgentStatusState::Done => "done",
+        }
+    }
+}
+
+/// The `bell` preference in `~/.jan/config.toml`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BellMode {
+    /// Never ring.
+    Off,
+    /// Ring when a permission prompt or an `ask` question needs the user.
+    #[default]
+    Attention,
+    /// Also ring when a turn finishes.
+    Always,
+}
+
+impl BellMode {
+    /// Accepted values, in `/settings` order.
+    pub const OPTIONS: &'static [&'static str] = &["off", "attention", "always"];
+
+    /// Parse the config value. Unset or unknown reads as the default, so a typo
+    /// never silences a prompt the user meant to hear.
+    pub fn parse(value: Option<&str>) -> Self {
+        match value.map(str::trim) {
+            Some("off") => BellMode::Off,
+            Some("always") => BellMode::Always,
+            _ => BellMode::Attention,
+        }
+    }
+
+    /// The mode currently configured, read fresh so `/settings` applies at once.
+    fn configured() -> Self {
+        Self::parse(crate::core::agent::global_config::bell_setting().as_deref())
+    }
+
+    /// Whether an emitted transition from `prev` to `next` rings. A new `ask`
+    /// question while one is already showing is a new transition (its prompt
+    /// changed) and rings again. `done` rings only straight out of `working`:
+    /// the startup `done` and the `done` after the user answers a prompt both
+    /// mean the user is already looking.
+    fn rings(self, prev: Option<AgentStatusState>, next: AgentStatusState) -> bool {
+        use AgentStatusState as S;
+        match (self, next) {
+            (BellMode::Off, _) => false,
+            (_, S::Blocked | S::Waiting) => true,
+            (BellMode::Always, S::Done) => prev == Some(S::Working),
+            _ => false,
         }
     }
 }
@@ -139,27 +189,37 @@ impl AgentStatusReporter {
     ///
     /// Returns `None` when the state is unchanged and the prompt preview is
     /// identical (transitions are deduped), otherwise the `(status, title)`
-    /// sequences to write.
+    /// sequences to write, with a trailing BEL on the title when `bell` rings.
     fn transition(
         &mut self,
         state: AgentStatusState,
         prompt: Option<&str>,
+        bell: BellMode,
     ) -> Option<(String, String)> {
         if self.last_state == Some(state) && self.last_prompt.as_deref() == prompt {
             return None;
         }
+        let ring = bell.rings(self.last_state, state);
         self.last_state = Some(state);
         self.last_prompt = prompt.map(str::to_string);
         self.spinner_frame = 0;
-        Some((
-            agent_status_sequence(state, prompt),
-            title_sequence(state, self.spinner_frame),
-        ))
+        let mut title = title_sequence(state, self.spinner_frame);
+        if ring {
+            title.push('\x07');
+        }
+        Some((agent_status_sequence(state, prompt), title))
     }
 
-    /// Report a state transition, writing OSC 9999 and the title to stdout.
+    /// Report a state transition, writing OSC 9999, the title and any bell to
+    /// stdout.
     pub fn set_state(&mut self, state: AgentStatusState, prompt: Option<&str>) {
-        let Some((status, title)) = self.transition(state, prompt) else {
+        // Disabled reporters never write, so skip the config read for them.
+        let bell = if self.enabled {
+            BellMode::configured()
+        } else {
+            BellMode::Off
+        };
+        let Some((status, title)) = self.transition(state, prompt, bell) else {
             return;
         };
         if self.enabled {
@@ -319,12 +379,13 @@ mod tests {
 
     #[test]
     fn transitions_dedupe_and_reset_spinner() {
+        let off = BellMode::Off;
         let mut reporter = AgentStatusReporter::new();
-        assert!(reporter.transition(AgentStatusState::Done, None).is_some());
+        assert!(reporter.transition(AgentStatusState::Done, None, off).is_some());
         // Same state again: nothing to emit.
-        assert!(reporter.transition(AgentStatusState::Done, None).is_none());
+        assert!(reporter.transition(AgentStatusState::Done, None, off).is_none());
         assert!(reporter
-            .transition(AgentStatusState::Working, None)
+            .transition(AgentStatusState::Working, None, off)
             .is_some());
         // Spinner frame survives across animate() calls and resets on
         // transitions.
@@ -333,7 +394,53 @@ mod tests {
             title_sequence(AgentStatusState::Working, reporter.spinner_frame),
             "\x1b]2;⠙ Jan\x07"
         );
-        assert!(reporter.transition(AgentStatusState::Done, None).is_some());
+        assert!(reporter.transition(AgentStatusState::Done, None, off).is_some());
         assert_eq!(reporter.spinner_frame, 0);
+    }
+
+    #[test]
+    fn bell_mode_parses_and_defaults_to_attention() {
+        assert_eq!(BellMode::parse(None), BellMode::Attention);
+        assert_eq!(BellMode::parse(Some("off")), BellMode::Off);
+        assert_eq!(BellMode::parse(Some("always")), BellMode::Always);
+        assert_eq!(BellMode::parse(Some("attention")), BellMode::Attention);
+        assert_eq!(BellMode::parse(Some("loud")), BellMode::Attention, "typo");
+    }
+
+    /// Drive one reporter through `states` under `bell`, returning which
+    /// emitted transitions ended in a BEL after the title.
+    fn rings(bell: BellMode, states: &[(AgentStatusState, Option<&str>)]) -> Vec<bool> {
+        let mut reporter = AgentStatusReporter::new();
+        states
+            .iter()
+            .filter_map(|(state, prompt)| reporter.transition(*state, *prompt, bell))
+            .map(|(_, title)| title.ends_with("\x07\x07"))
+            .collect()
+    }
+
+    #[test]
+    fn bell_rings_only_on_the_transitions_its_mode_names() {
+        use AgentStatusState as S;
+        let session = [
+            (S::Done, None),            // startup
+            (S::Working, None),         // turn starts
+            (S::Blocked, None),         // permission prompt
+            (S::Working, None),         // approved
+            (S::Waiting, Some("a?")),   // ask
+            (S::Waiting, Some("b?")),   // a second question
+            (S::Working, None),         // answered
+            (S::Done, None),            // turn ends
+        ];
+        let attention = [false, false, true, false, true, true, false, false];
+        let always = [false, false, true, false, true, true, false, true];
+        assert_eq!(rings(BellMode::Attention, &session), attention);
+        assert_eq!(rings(BellMode::Always, &session), always);
+        assert_eq!(rings(BellMode::Off, &session), [false; 8]);
+        // An answered prompt that ends the turn leaves the user already
+        // looking: `done` out of `blocked` stays quiet even under always.
+        assert_eq!(
+            rings(BellMode::Always, &[(S::Blocked, None), (S::Done, None)]),
+            [true, false]
+        );
     }
 }

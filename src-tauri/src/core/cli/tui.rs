@@ -18824,6 +18824,16 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         scope: SettingScope::Global,
     },
     AgentSettingDef {
+        key: "bell",
+        label: "bell",
+        desc: "terminal bell: attention rings for permission prompts and asks, always also when a turn ends",
+        kind: AgentSettingKind::Enum {
+            options: super::agent_status::BellMode::OPTIONS,
+            default: "attention",
+        },
+        scope: SettingScope::Global,
+    },
+    AgentSettingDef {
         key: SMOL_MODEL_KEY,
         label: "smol_model",
         desc: "cheap model for subagents with model = \"smol\", /goal checks and compaction",
