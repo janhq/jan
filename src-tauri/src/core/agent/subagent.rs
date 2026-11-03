@@ -2693,10 +2693,12 @@ with the `memory` tool; no change you make asks the user. Be conservative: a not
 line in the index, a note wrongly archived or deleted loses a fact. When unsure, leave the note alone.
 
 Your task may carry a facts block Jan gathered from the project's local git: today's date, the \
-default branch, which branches are merged into it, the worktrees, and the PR numbers in its recent \
-log. The repository may squash-merge, so a branch absent from the merged list may still have landed: \
-the PR numbers are the stronger evidence, and a branch not merged by commit is never on its own a \
-sign the work is still open. You can also look at the project with `read`, `ls`, `find` and `grep` \
+default branch, which branches it contains, the worktrees, and the PR numbers in its recent log, \
+including reverted PRs. The repository may squash-merge, so a branch absent from the contained list \
+may still have landed: the PR numbers are the stronger evidence, and a branch not merged by commit is \
+never on its own a sign the work is still open. Equally, branch containment alone never shows that \
+work landed: a branch the default branch contains may have been created there and have no commits of \
+its own yet. You can also look at the project with `read`, `ls`, `find` and `grep` \
 (read-only) to check whether the files, functions or branches a note names still exist. Do not spend \
 many calls on the project: check only what a candidate note references, nothing broader.
 
@@ -2705,8 +2707,10 @@ a note you have not read in full. The main agent may change notes while you work
 note changed since you viewed it, `view` it again before deciding.
 2. Archive a note only when its own text explicitly says the work is finished (merged, released, \
 shipped, closed, done, abandoned or obsolete), or when the facts or the code show the work it tracks \
-is finished: its branch is merged into the default branch, its PR number appears in the default \
-branch's log, or the code it describes has landed. Archive this way only notes that track \
+is finished: its PR number appears in the default branch's log (and is not among the reverted PRs), \
+or the code it describes has landed. Its branch being contained in the default branch is at most \
+supporting evidence, never enough on its own. Never archive a note on a reverted PR's number: that \
+work did not land, or was undone. Archive this way only notes that track \
 in-progress work or state; a note recording a durable fact, decision, convention or gotcha is NOT \
 archived just because its PR merged. Never archive a note because it looks generic, old, neutral or \
 unimportant. Archive with `edit`, adding front matter `status: done` at the top \
@@ -7128,8 +7132,12 @@ pub(crate) mod tests {
             "never on its own a sign the work is still open",
             "`read`, `ls`, `find` and `grep`",
             "read-only",
-            "its branch is merged into the default branch",
+            "branch containment alone never shows that work landed",
+            "created there and have no commits of its own",
+            "at most supporting evidence, never enough on its own",
             "its PR number appears in the default branch's log",
+            "not among the reverted PRs",
+            "Never archive a note on a reverted PR's number",
             "is NOT archived just because its PR merged",
             "only notes that track in-progress work or state",
             "check only what a candidate note references",
@@ -7141,6 +7149,8 @@ pub(crate) mod tests {
         ] {
             assert!(prompt.contains(rule), "{rule}: {prompt}");
         }
+        // A branch the default contains may be one cut there with no commits.
+        assert!(!prompt.contains("its branch is merged into the default branch"), "{prompt}");
         let cap = tauri_plugin_agent_tools::memory::TIDY_MAX_CHANGES;
         assert!(prompt.contains(&format!("budget of {cap} changes")), "{prompt}");
         let mut parent = max_par_args(&unique_root("tidy-cap"));

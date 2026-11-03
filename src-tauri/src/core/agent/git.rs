@@ -594,8 +594,8 @@ const TIDY_FACTS_MAX_LINES: usize = 200;
 
 /// What the memory tidy is told about `repo` so it can judge whether a note
 /// tracks finished work: the default branch and its head, which branches
-/// are merged into it, the registered worktrees (one gone from disk
-/// flagged), and the PR numbers squash merges left in its recent log.
+/// it contains, the registered worktrees (one gone from disk flagged), and
+/// the PR numbers squash merges and reverts left in its recent log.
 ///
 /// Jan runs these itself, from a fixed list, so the tidy never needs a
 /// shell. Everything is local: no fetch, no `gh`, so a remote-tracking
@@ -607,8 +607,10 @@ pub(crate) fn tidy_facts(repo: &Path, today: &str) -> Option<String> {
     let git = |args: &[&str]| run_limited(repo, args, TIDY_FACTS_GIT_LIMIT).ok();
     git(&["rev-parse", "--show-toplevel"])?;
     let default = default_branch(&git)?;
-    let head = git(&["log", "-1", "--date=short", "--format=%h %ad %s", &default])?;
+    // `--` so a work-tree path named like the branch cannot be read instead.
+    let head = git(&["log", "-1", "--date=short", "--format=%h %ad %s", &default, "--"])?;
     let merged_arg = format!("--merged={default}");
+    let at_head_arg = format!("--points-at={default}");
     let refs = |extra: &[&str]| -> Option<Vec<String>> {
         let mut args = vec!["for-each-ref", "--sort=-committerdate"];
         args.extend_from_slice(extra);
@@ -618,8 +620,13 @@ pub(crate) fn tidy_facts(repo: &Path, today: &str) -> Option<String> {
     let all = refs(&[])?;
     let merged = refs(&[merged_arg.as_str()])?;
     let open: Vec<String> = all.into_iter().filter(|b| !merged.contains(b)).collect();
+    // A branch at the default's very head has no commits of its own (just
+    // cut, or an agent worktree's), so it says nothing about landed work.
+    let at_head = refs(&[at_head_arg.as_str()])?;
+    let merged: Vec<String> = merged.into_iter().filter(|b| !at_head.contains(b)).collect();
     let worktrees = worktree_lines(&git(&["worktree", "list", "--porcelain"])?);
-    let subjects = git(&["log", "-n", TIDY_FACTS_LOG_DEPTH, "--format=%s", &default])?;
+    let subjects =
+        git(&["log", "-n", TIDY_FACTS_LOG_DEPTH, "--format=%s", &default, "--"])?;
     let prs = pr_numbers(&subjects);
 
     let mut out = vec![
@@ -628,7 +635,12 @@ pub(crate) fn tidy_facts(repo: &Path, today: &str) -> Option<String> {
             .to_string(),
         format!("Today: {today}"),
         format!("Default branch: {default}, head {head}"),
-        format!("Branches merged into {default} (their work landed), most recent first:"),
+        // Containment is all git can say: a branch cut from an older commit
+        // and never worked on is contained too, so this is not "landed".
+        format!(
+            "Branches whose tip is contained in {default} (fully merged, or created there with \
+             no commits of their own yet), most recent first:"
+        ),
     ];
     push_capped(&mut out, &merged, TIDY_FACTS_BRANCHES);
     // Squash and rebase merges land a branch's work without its commits, so
@@ -644,12 +656,15 @@ pub(crate) fn tidy_facts(repo: &Path, today: &str) -> Option<String> {
         "PR numbers in the subjects of {default}'s last {TIDY_FACTS_LOG_DEPTH} commits, newest \
          first (a squash merge reads `subject (#123)`; the surest sign a PR landed):"
     ));
-    if prs.is_empty() {
+    if prs.landed.is_empty() {
         out.push("  (none)".to_string());
     }
-    for chunk in prs.chunks(TIDY_FACTS_PRS_PER_LINE) {
-        let line: Vec<String> = chunk.iter().map(|n| format!("#{n}")).collect();
-        out.push(format!("  {}", line.join(" ")));
+    push_pr_lines(&mut out, &prs.landed);
+    if !prs.reverted.is_empty() {
+        out.push(
+            "PRs reverted in that log (their work did NOT land, or was undone):".to_string(),
+        );
+        push_pr_lines(&mut out, &prs.reverted);
     }
     if out.len() > TIDY_FACTS_MAX_LINES {
         out.truncate(TIDY_FACTS_MAX_LINES - 1);
@@ -716,22 +731,55 @@ fn worktree_lines(porcelain: &str) -> Vec<String> {
         .collect()
 }
 
-/// The PR numbers squash merges leave in commit subjects (`subject (#9497)`),
-/// each once, in the order first seen.
+/// The PR numbers in a log's subjects, each once, in the order first seen.
 #[cfg(feature = "cli")]
-fn pr_numbers(subjects: &str) -> Vec<String> {
-    let mut found: Vec<String> = Vec::new();
-    for mut rest in subjects.lines() {
-        while let Some(at) = rest.find("(#") {
-            rest = &rest[at + 2..];
-            let digits = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
-            let number = &rest[..digits];
-            if digits > 0 && rest[digits..].starts_with(')') && !found.iter().any(|n| n == number) {
-                found.push(number.to_string());
-            }
+#[derive(Debug, Default)]
+struct PrNumbers {
+    /// Squash merges' PRs (`subject (#9497)`), less any reverted.
+    landed: Vec<String>,
+    /// PRs a GitHub revert undid (`Revert "subject (#9497)" (#9500)`).
+    reverted: Vec<String>,
+}
+
+/// Sort `subjects`' PR numbers into landed and reverted. Only a subject's
+/// trailing `(#N)` is its own PR: one earlier in the text is a mention, and
+/// the one inside a revert's quotes is the PR it undid. A reverted PR is
+/// never landed, even with its own merge in the log too.
+#[cfg(feature = "cli")]
+fn pr_numbers(subjects: &str) -> PrNumbers {
+    let mut prs = PrNumbers::default();
+    let add = |list: &mut Vec<String>, n: &str| {
+        if !list.iter().any(|seen| seen == n) {
+            list.push(n.to_string());
+        }
+    };
+    for subject in subjects.lines() {
+        if let Some(n) = trailing_pr(subject) {
+            add(&mut prs.landed, n);
+        }
+        let quoted = subject.strip_prefix("Revert \"").and_then(|r| r.rsplit_once('"'));
+        if let Some(n) = quoted.and_then(|(inner, _)| trailing_pr(inner)) {
+            add(&mut prs.reverted, n);
         }
     }
-    found
+    prs.landed.retain(|n| !prs.reverted.contains(n));
+    prs
+}
+
+/// The `N` of a subject ending in `(#N)`.
+#[cfg(feature = "cli")]
+fn trailing_pr(subject: &str) -> Option<&str> {
+    let (_, number) = subject.trim_end().strip_suffix(')')?.rsplit_once("(#")?;
+    (!number.is_empty() && number.bytes().all(|b| b.is_ascii_digit())).then_some(number)
+}
+
+/// Append PR numbers to `out` as compact `#N` lines.
+#[cfg(feature = "cli")]
+fn push_pr_lines(out: &mut Vec<String>, numbers: &[String]) {
+    for chunk in numbers.chunks(TIDY_FACTS_PRS_PER_LINE) {
+        let line: Vec<String> = chunk.iter().map(|n| format!("#{n}")).collect();
+        out.push(format!("  {}", line.join(" ")));
+    }
 }
 
 /// Append `items` to `out` as a bulleted list of at most `cap`, saying how
@@ -1899,8 +1947,11 @@ mod tests {
     }
 
     /// The memory tidy's facts name the default branch and its head, sort the
-    /// branches by whether they landed, list the worktrees (a gone one
-    /// flagged) and the PR numbers squash merges left in the log.
+    /// branches by whether the default branch contains them, list the
+    /// worktrees (a gone one flagged) and the PR numbers squash merges left in
+    /// the log. A branch cut at the default's head has no commits of its own,
+    /// so it is in no list; one cut at an older commit is contained, and its
+    /// label says that may mean nothing landed.
     #[test]
     fn the_tidy_facts_say_what_landed_on_the_default_branch() {
         let Some(root) = init_repo() else { return };
@@ -1910,8 +1961,12 @@ mod tests {
         commit(&root, "landed work");
         git(&["-C", &r, "checkout", "-q", "main"]).expect("checkout");
         git(&["-C", &r, "merge", "-q", "--ff-only", "feat/landed"]).expect("merge");
+        git(&["-C", &r, "branch", "feat/older-start"]).expect("branch");
         commit(&root, "feat: squashed (#9497)");
+        commit(&root, "feat: undone (#30)");
+        commit(&root, "Revert \"feat: undone (#30)\" (#31)");
         commit(&root, "fix: another (#12)");
+        git(&["-C", &r, "branch", "feat/fresh"]).expect("branch");
         git(&["-C", &r, "checkout", "-q", "-b", "feat/open"]).expect("checkout");
         commit(&root, "open work (#77)");
         git(&["-C", &r, "checkout", "-q", "main"]).expect("checkout");
@@ -1936,15 +1991,32 @@ mod tests {
             "{facts}"
         );
         assert!(facts.contains("the surest sign a PR landed"), "{facts}");
+        assert!(
+            facts.contains("Branches whose tip is contained in main (fully merged, or created \
+                 there with no commits of their own yet), most recent first:"),
+            "{facts}"
+        );
+        assert!(!facts.contains("their work landed"), "{facts}");
         let (merged, rest) = facts.split_once("not merged into").expect("both lists");
         assert!(merged.contains("  - feat/landed\n"), "{facts}");
+        assert!(merged.contains("  - feat/older-start\n"), "{facts}");
         assert!(rest.contains("  - feat/open\n"), "{facts}");
         assert!(!merged.contains("feat/open"), "{facts}");
+        assert!(!facts.contains("feat/fresh"), "no commits of its own: {facts}");
+        assert!(!facts.contains("  - jan/agent/facts"), "a worktree branch at head: {facts}");
         assert!(!facts.contains("  - main\n"), "the default branch is not listed: {facts}");
         let gone = format!("{} [jan/agent/facts] (missing on disk)", wt.display());
         assert!(facts.contains(&gone), "{facts}");
         assert!(facts.contains(&format!("{} [main]\n", root.display())), "{facts}");
-        assert!(facts.contains("  #12 #9497"), "newest first, branch-only #77 left out: {facts}");
+        assert!(
+            facts.contains("  #12 #31 #9497\n"),
+            "newest first, reverted #30 and branch-only #77 left out: {facts}"
+        );
+        assert!(
+            facts.ends_with("PRs reverted in that log (their work did NOT land, or was undone):\n  \
+                 #30"),
+            "{facts}"
+        );
         assert!(!facts.contains("#77"), "{facts}");
         assert!(facts.is_ascii() && !facts.contains("truncated"), "{facts}");
         worktree_prune(&root);
@@ -1965,6 +2037,8 @@ mod tests {
             &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"],
         )
         .expect("origin/HEAD");
+        // Moved off the remote's head, which a listed branch must not share.
+        commit(&root, "local only");
         let facts = tidy_facts(&root, "2026-11-03").expect("facts");
         assert!(facts.contains("Default branch: origin/trunk, head "), "{facts}");
         assert!(facts.contains("  - main\n"), "a local branch is listed: {facts}");
@@ -1987,6 +2061,8 @@ mod tests {
         for i in 0..total {
             std::fs::write(heads.join(format!("b{i:03}")), format!("{head}\n")).unwrap();
         }
+        // Branches at the default's head are left out, so move it on.
+        commit(&root, "later");
         let facts = tidy_facts(&root, "2026-11-03").expect("facts");
         let listed = facts.lines().filter(|l| l.starts_with("  - b")).count();
         assert_eq!(listed, TIDY_FACTS_BRANCHES, "{facts}");
@@ -2026,9 +2102,41 @@ mod tests {
         assert_eq!(branch_names(listing, "main"), ["origin/feat/x", "last"]);
     }
 
+    /// Only a subject's trailing `(#N)` is its squash merge's PR; one named
+    /// earlier in the subject is just mentioned.
     #[test]
     fn pr_numbers_are_read_from_squash_merge_subjects() {
-        let found = pr_numbers("a (#1)\nb (#22) (#3)\nc #4\nd (#)\ne (#5x)\nf (#1)");
-        assert_eq!(found, ["1", "22", "3"]);
+        let prs = pr_numbers("a (#1)\nb (#22) (#3)\nc #4\nd (#)\ne (#5x)\nf (#1)\ng (#6) ");
+        assert_eq!(prs.landed, ["1", "3", "6"]);
+        assert!(prs.reverted.is_empty());
+    }
+
+    /// A GitHub revert names the reverted PR inside its quotes: that one is
+    /// reverted, not landed, even when its own merge is in the log too. The
+    /// revert's own PR did land.
+    #[test]
+    fn pr_numbers_set_reverted_prs_apart() {
+        let log = "Revert \"feat: x (#123)\" (#124)\nfeat: x (#123)\nRevert \"fix: y (#9)\"\n\
+                   Revert \"no number\" (#50)\nfeat: z (#7)";
+        let prs = pr_numbers(log);
+        assert_eq!(prs.landed, ["124", "50", "7"]);
+        assert_eq!(prs.reverted, ["123", "9"]);
+    }
+
+    /// A work-tree file named like the default branch must not make git read
+    /// the branch as a path.
+    #[test]
+    fn the_tidy_facts_survive_a_file_named_like_the_default_branch() {
+        let Some(root) = init_repo() else { return };
+        let r = root.to_string_lossy().to_string();
+        git(&["-C", &r, "branch", "-M", "main"]).expect("rename");
+        commit(&root, "feat: kept (#5)");
+        std::fs::write(root.join("main"), "x").unwrap();
+        let facts = tidy_facts(&root, "2026-11-03");
+        let _ = std::fs::remove_dir_all(&root);
+        let facts = facts.expect("facts despite the file");
+        assert!(facts.contains("Default branch: main, head "), "{facts}");
+        assert!(facts.contains("  #5"), "{facts}");
+        assert!(!facts.contains("PRs reverted"), "no reverts, no line: {facts}");
     }
 }
