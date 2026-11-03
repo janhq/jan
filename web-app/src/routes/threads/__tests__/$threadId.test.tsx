@@ -1918,6 +1918,8 @@ describe('ThreadDetail route', () => {
       await arrive(toolCall)
       const pending = dispatch(toolCall)
       await waitFor(() => expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1))
+      expect(h.toolApprovalState.requestApproval.mock.calls[0][4]).toBeUndefined()
+      expect(h.toolApprovalState.requestApproval.mock.calls[0][5]).toMatchObject({ native: { grantKey: expect.any(String) } })
       expect(shell.execute).not.toHaveBeenCalled()
       grant = { ...grant, shellNetwork: false }
       approve(true)
@@ -1974,7 +1976,7 @@ describe('ThreadDetail route', () => {
       const toolCall = call('frozen-skill-write', 'skill_write', { name: 'x', content: 'y' })
       await arrive(toolCall)
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
-        'frozen-skill-write', 'skill_write', 'thread-1', undefined, expect.any(Function),
+        'frozen-skill-write', 'skill_write', 'thread-1', undefined, undefined,
         { native: { grantKey: expect.stringContaining('"memoryWrite":true') } }
       )
       await dispatch(toolCall)

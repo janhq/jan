@@ -1045,7 +1045,7 @@ function ThreadDetail() {
               toolCall.toolName,
               threadId,
               serverName,
-              checkMcp,
+              isNative ? undefined : checkMcp,
               ...(isNative ? [{ native: { grantKey: grantKeyOf(nativeGrant) } }] as const : [])
             )
         )
@@ -1117,7 +1117,8 @@ function ThreadDetail() {
           let pending = approvals.get(toolCall.toolCallId)
           if (!pending) {
             pending = useToolApprovalRequests.getState().requestApproval(
-              toolCall.toolCallId, toolName, threadId, serverName, checkMcp,
+              toolCall.toolCallId, toolName, threadId, serverName,
+              !serverName && isScopedThreadTool(toolName) ? undefined : checkMcp,
               ...(!serverName && chatShellRoute(toolName) === 'builtin'
                 ? [{ native: { grantKey: grantKeyOf(classifiedGrant) } }] as const
                 : [])
