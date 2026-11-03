@@ -324,6 +324,10 @@ vi.mock('@/lib/utils', () => ({
   cn: (...classes: any[]) => classes.filter(Boolean).join(' '),
 }))
 
+vi.mock('@/containers/CoworkPreviewPanel', () => ({
+  CoworkPreviewPanel: () => null,
+}))
+
 vi.mock('@/lib/instructionTemplate', () => ({
   renderInstructions: (i: string) => `rendered:${i}`,
 }))
@@ -401,10 +405,6 @@ vi.mock('ai', async (importOriginal) => ({
   ...(await importOriginal<typeof import('ai')>()),
   generateId: () => 'gen-id',
   lastAssistantMessageIsCompleteWithToolCalls: () => true,
-}))
-
-vi.mock('zustand/react/shallow', () => ({
-  useShallow: (fn: any) => fn,
 }))
 
 vi.mock('@/hooks/use-chat', () => ({

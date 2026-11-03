@@ -25,6 +25,7 @@ import GlobalError from '@/containers/GlobalError'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
+import { useConversationPanels } from '@/containers/ConversationPanels'
 import ChatInput from '@/containers/ChatInput'
 import { ConversationColumn } from '@/components/ai-elements/conversation-column'
 import { useShallow } from 'zustand/react/shallow'
@@ -2515,6 +2516,13 @@ function ThreadDetail() {
     }
   }, [threadId])
 
+  // Contextual rail: derived from canonical messages. The hook subscribes to the
+  // thread's effective folder scope itself; no mode bit, no stored authority.
+  const contextualPanels = useConversationPanels({
+    threadId,
+    messages: chatMessages,
+  })
+
   const threadModel = useMemo(
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
@@ -2538,7 +2546,8 @@ function ThreadDetail() {
           <ConversationHeaderTitle title={thread?.title} project={thread?.metadata?.project} />
         </div>
       </HeaderPage>
-      <div className="flex flex-1 flex-col h-full overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col h-full overflow-hidden">
         {/* Messages Area */}
         <div
           className="message-zoom flex-1 relative"
@@ -2717,6 +2726,9 @@ function ThreadDetail() {
               />
             </div>
           )}
+          {contextualPanels.controls && (
+            <div className="pb-2">{contextualPanels.controls}</div>
+          )}
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}
@@ -2725,6 +2737,8 @@ function ThreadDetail() {
             toolsRunning={toolsRunning}
           />
         </ConversationColumn>
+      </div>
+      {contextualPanels.rail}
       </div>
     </div>
   )
