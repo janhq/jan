@@ -86,6 +86,7 @@ import {
   startCoworkSync,
   flushCowork,
   ensureCoworkRecorded,
+  getCoworkPersistence,
   flushCoworkDeletes,
   flushCoworkStartupWarnings,
   isCoworkMigrationDone,
@@ -657,6 +658,28 @@ describe('coworkSync startup', () => {
         backend.log.length = 0
         await expect(ensureCoworkRecorded(id)).resolves.toBeUndefined()
         expect(backend.log).toEqual([])
+        fault.restore()
+      })
+
+      it('settles a durable session\'s failed-deletion rollback before a run may record it', async () => {
+        let rollbackBroken = false
+        const fault = failing((c, a) =>
+          c === 'delete_thread' ||
+          (rollbackBroken && c === 'settings_set' && a.key === COWORK_DELETED_IDS_KEY && a.value === '[]'))
+        await startCoworkSync()
+        const id = useCoworkSessions.getState().createSession()
+        useCoworkSessions.getState().commitTurns(id, [{ role: 'user', content: 'x' }], [], [])
+        await flushCowork()
+        expect(getCoworkPersistence()!.isPersisted(id)).toBe(true)
+        fault.arm()
+        rollbackBroken = true
+        await expect(getCoworkPersistence()!.remove(id, { recordDeleted: true })).rejects.toThrow('deletion recovery pending')
+        // Still durable, but its deletion intent is journaled: a run must not start.
+        expect(getCoworkPersistence()!.isPersisted(id)).toBe(true)
+        await expect(ensureCoworkRecorded(id)).rejects.toThrow('disk failure')
+        rollbackBroken = false
+        await expect(ensureCoworkRecorded(id)).resolves.toBeUndefined()
+        expect(JSON.parse(backend.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual([])
         fault.restore()
       })
 

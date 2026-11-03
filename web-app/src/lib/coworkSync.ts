@@ -125,9 +125,10 @@ export async function ensureCoworkRecorded(id: string): Promise<void> {
   if (!session) throw new Error(`Cowork session ${id} is not available to record`)
   if (session.unavailable) throw new Error(`Cowork session ${id} is unavailable and cannot be recorded`)
   if (!persistence) throw new Error('Cowork persistence is unavailable')
-  // Already durable: the host can read it; do not flush unrelated work.
-  if (persistence.isPersisted(id)) return
-  persistence.schedule(session, { allowEmpty: true })
+  // Only a not-yet-durable session needs a write. An already durable one is
+  // not re-queued, but still settles its own pending rollback / in-flight
+  // delete via flushSession (a no-op with no storage calls when clean).
+  if (!persistence.isPersisted(id)) persistence.schedule(session, { allowEmpty: true })
   await persistence.flushSession(id)
   if (!persistence.isPersisted(id)) throw new Error(`Cowork session ${id} was not recorded`)
 }

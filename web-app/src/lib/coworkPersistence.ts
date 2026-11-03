@@ -582,13 +582,21 @@ export function createCoworkPersistence(
     isPersisted: (id) => persisted.has(id),
 
     async flushSession(id) {
+      // A target being deleted (or whose thread the host confirmed gone) must
+      // never report success: the caller would start work on a doomed record.
+      const assertUsable = () => {
+        if (tombstones.has(id)) throw new Error(`Cowork session ${id} is being deleted or was deleted`)
+        if (missing.has(id)) throw new Error(`Cowork session ${id} thread is missing`)
+      }
       if (pendingRollbacks.has(id)) await rollbackDeletion(id)
+      assertUsable()
       for (let pass = 0; pass < 3; pass++) {
         if (dirty.has(id)) {
           clearTimer(id)
           enqueue(id)
         }
         await (chains.get(id) ?? Promise.resolve())
+        assertUsable()
         if (!dirty.has(id)) return
       }
       throw new Error(`Cowork persistence flush failed; pending writes: ${id}`)
