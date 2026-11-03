@@ -7,7 +7,7 @@ import { threadWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
 import { Button } from '@/components/ui/button'
 import { CoworkDiffPanel } from '@/containers/CoworkDiffPanel'
 import { CoworkFilesPanel } from '@/containers/CoworkFilesPanel'
-import { CoworkPreviewPanel } from '@/containers/CoworkPreviewPanel'
+import { ChatPreviewPanel } from '@/containers/ChatPreviewPanel'
 import { CoworkTasksPanel } from '@/containers/CoworkTasksPanel'
 import { CoworkTodoPanel } from '@/containers/CoworkTodoPanel'
 import { getServiceHub } from '@/hooks/useServiceHub'
@@ -115,8 +115,10 @@ function closeOnEscape(onClose: () => void) {
   }
 }
 
-/** The single side panel. Preview roots are the only paths it may read. */
+/** The single side panel. Roots only filter what the UI offers; every read goes
+ * through the host's thread-scoped read, which is the authority. */
 export function ConversationPanelRail({
+  threadId,
   rail,
   content,
   roots,
@@ -124,6 +126,7 @@ export function ConversationPanelRail({
   onSelect,
   onClose,
 }: {
+  threadId: string
   rail: ConversationRail | null
   content: ConversationPanelContent
   roots: PanelRoots
@@ -153,8 +156,9 @@ export function ConversationPanelRail({
     const abs = resolvePanelPath(roots, rail.path)
     if (abs)
       panel = (
-        <CoworkPreviewPanel
-          roots={[roots.scratch ?? null, roots.folder ?? null]}
+        <ChatPreviewPanel
+          key={`${threadId}\n${abs}`}
+          threadId={threadId}
           path={abs}
           onClose={() => onSelect({ kind: 'files' })}
         />
@@ -179,7 +183,7 @@ export function ConversationPanelRail({
 }
 
 /** Preview roots: the thread's scratch sandbox plus the consented folder.
- * Both are only candidates; native root enforcement stays authoritative. The
+ * Both are only UI candidates; the host's scoped read stays authoritative. The
  * scratch path is keyed by thread so a switch never exposes the previous
  * thread's root for even one render. */
 export function useConversationRoots(
@@ -270,6 +274,7 @@ export function useConversationPanels({
     ) : null,
     rail: (
       <ConversationPanelRail
+        threadId={threadId}
         rail={rail}
         content={content}
         roots={roots}

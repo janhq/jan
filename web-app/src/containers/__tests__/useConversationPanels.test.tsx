@@ -41,9 +41,9 @@ vi.mock('@/containers/CoworkSidePanel', () => ({
   CoworkPanelButton: (p: any) => <button {...p} />,
   CoworkSidePanel: ({ children }: any) => <aside>{children}</aside>,
 }))
-vi.mock('@/containers/CoworkPreviewPanel', () => ({
-  CoworkPreviewPanel: ({ path, roots }: any) => (
-    <div data-testid="preview">{path}|{roots.filter(Boolean).join(',')}</div>
+vi.mock('@/containers/ChatPreviewPanel', () => ({
+  ChatPreviewPanel: ({ path, threadId }: any) => (
+    <div data-testid="preview">{path}|{threadId}</div>
   ),
 }))
 vi.mock('@/containers/CoworkFilesPanel', () => ({
@@ -111,7 +111,7 @@ describe('useConversationPanels', () => {
 
     await user.click(screen.getByRole('button', { name: 'common:overview.files' }))
     await user.click(screen.getByRole('button', { name: '/proj/a.html' }))
-    expect(screen.getByTestId('preview')).toHaveTextContent('/proj/a.html|/scratch/t1,/proj')
+    expect(screen.getByTestId('preview')).toHaveTextContent('/proj/a.html|t1')
 
     await setFolder('t1', null)
     expect(screen.queryByTestId('preview')).toBeNull()

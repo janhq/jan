@@ -17,8 +17,8 @@ vi.mock('@/containers/CoworkSidePanel', () => ({
     <aside><span>{title}</span><button onClick={onClose}>close</button>{children}</aside>
   ),
 }))
-vi.mock('@/containers/CoworkPreviewPanel', () => ({
-  CoworkPreviewPanel: ({ path, roots }: any) => <div data-testid="preview">{path}|{roots.join(',')}</div>,
+vi.mock('@/containers/ChatPreviewPanel', () => ({
+  ChatPreviewPanel: ({ path, threadId }: any) => <div data-testid="preview">{path}|{threadId}</div>,
 }))
 vi.mock('@/containers/CoworkFilesPanel', () => ({ CoworkFilesPanel: ({ artifacts, onPreview }: any) => <div>{artifacts.map((a: any) => <button key={a.path} onClick={() => onPreview(a.path)}>{a.title}</button>)}</div> }))
 vi.mock('@/containers/CoworkTasksPanel', () => ({ CoworkTasksPanel: () => <div>tasks-panel</div> }))
@@ -42,7 +42,7 @@ function Harness({ content }: { content: ConversationPanelContent }) {
     <div>
       <ConversationPanelControls content={content} active={active} panelId="p"
         onToggle={(k) => setRail(active === k ? null : { kind: k })} />
-      <ConversationPanelRail rail={rail} content={content} roots={{ scratch: '/r', folder: null }} panelId="p"
+      <ConversationPanelRail threadId="t1" rail={rail} content={content} roots={{ scratch: '/r', folder: null }} panelId="p"
         onSelect={setRail} onClose={() => setRail(null)} />
     </div>
   )
@@ -74,11 +74,11 @@ describe('ConversationPanels', () => {
     await user.keyboard('{Escape}')
     expect(screen.queryByText('todo-panel')).toBeNull()
   })
-  it('previews only permitted roots', async () => {
+  it('previews offered roots through the thread-scoped panel', async () => {
     const user = userEvent.setup()
     render(<Harness content={full} />)
     await user.click(screen.getByRole('button', { name: 'common:overview.files' }))
     await user.click(screen.getByText('a'))
-    expect(screen.getByTestId('preview')).toHaveTextContent('/r/a.html|/r')
+    expect(screen.getByTestId('preview')).toHaveTextContent('/r/a.html|t1')
   })
 })
