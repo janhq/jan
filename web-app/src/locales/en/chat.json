@@ -47,6 +47,6 @@
     "paused": "Queue paused after an error. New messages are added behind it.",
     "resume": "Resume queued messages",
     "clear": "Clear queue",
-    "attachmentsHeld": "Queued messages are on hold and can't carry attachments. Resume or clear the queue before sending attachments. Your text and files are kept."
+    "attachmentsHeld": "The message queue is text-only and can't carry attachments. Send attachments once the reply and tools finish and the queue is empty or resumed. Your text and files are kept."
   }
 }

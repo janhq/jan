@@ -771,15 +771,18 @@ const ChatInput = memo(function ChatInput({
       return false
     }
 
-    // The queue stores text only. A new submission behind a held queue would be
-    // enqueued without its files, so refuse it before any draft/history change.
-    if (
-      onSubmit &&
-      queueId &&
-      attachments.length > 0 &&
+    // While the model streams, tools run, or a held queue is non-empty, the
+    // submission is enqueued. The queue stores text only, so refuse a submission
+    // with attachments before any draft/history change instead of dropping files.
+    // A queue held after an error also keeps newer text behind it: sending it
+    // directly would run it before the older queued messages.
+    const behindHeldQueue =
+      !!queueId &&
       useMessageQueue.getState().isPaused(queueId) &&
       useMessageQueue.getState().getQueue(queueId).length > 0
-    ) {
+    const willEnqueue =
+      !!onSubmit && !!queueId && (isStreaming || toolsRunning || behindHeldQueue)
+    if (willEnqueue && attachments.length > 0) {
       toast.info(t('chat:queueRecovery.attachmentsHeld'))
       return false
     }
@@ -792,13 +795,8 @@ const ChatInput = memo(function ChatInput({
       // While the model is still streaming, or the turn's tools are still
       // running, queue the message for later. The queue waits for the tools, so
       // a second turn never starts under a tool loop that Stop still has to end.
-      // A queue held after an error also keeps newer text behind it: sending
-      // it directly would run it before the older queued messages.
-      const behindHeldQueue =
-        !!queueId &&
-        useMessageQueue.getState().isPaused(queueId) &&
-        useMessageQueue.getState().getQueue(queueId).length > 0
-      if ((isStreaming || toolsRunning || behindHeldQueue) && queueId) {
+      // Attachment submissions were refused above (the queue is text-only).
+      if (willEnqueue && queueId) {
         useMessageQueue.getState().enqueue(queueId, {
           id: generateId(),
           text: effectivePrompt,
