@@ -34,5 +34,19 @@
     "thoughtFor": "Thought for {{duration}}",
     "workedForAWhile": "Worked for a few seconds",
     "workedFor": "Worked for {{duration}}"
+  },
+  "failedDraft": {
+    "groupLabel": "Unsent draft",
+    "messageNotSent": "Message not sent",
+    "files_one": "{{count}} file",
+    "files_other": "{{count}} files",
+    "restore": "Restore draft",
+    "dismiss": "Dismiss"
+  },
+  "queueRecovery": {
+    "paused": "Queue paused after an error. New messages are added behind it.",
+    "resume": "Resume queued messages",
+    "clear": "Clear queue",
+    "attachmentsHeld": "The message queue is text-only and can't carry attachments. Send attachments once the reply and tools finish and the queue is empty or resumed. Your text and files are kept."
   }
 }
