@@ -47,6 +47,10 @@ expect 'jan-cli only' 'src-tauri/jan-cli/src/main.rs' \
 expect 'plugin guest-js' 'src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index.ts' \
   ts=true mlx=true rust=true cli=false 'app=["desktop","e2e"]' 'crates=["plugins/tauri-plugin-llamacpp"]'
 
+# The raw-invoke guard scans every .ts/.tsx under src-tauri/plugins.
+expect 'plugin TypeScript outside guest-js' 'src-tauri/plugins/tauri-plugin-rag/scripts/gen.ts' \
+  ts=true rust=true
+
 expect 'plugin Rust source is not TS' 'src-tauri/plugins/tauri-plugin-rag/src/lib.rs' \
   ts=false rust=true cli=false jan_cli=false adk=false 'crates=["plugins/tauri-plugin-rag"]'
 

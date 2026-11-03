@@ -98,7 +98,7 @@ else
         # scans all plugin TypeScript for raw invoke calls. llamacpp's lib.rs
         # also include_str!s its guest-js, so that side stays on as well.
         case "${file#src-tauri/plugins/"$name"/}" in
-          guest-js/* | package.json | rollup.config.js | tsconfig.json)
+          guest-js/* | package.json | rollup.config.js | tsconfig.json | *.ts | *.tsx)
             ts=true
             case "$name" in
               tauri-plugin-mlx | tauri-plugin-llamacpp) mlx=true ;;
