@@ -2537,13 +2537,16 @@ impl AgentRow {
     /// tall one.
     fn lines(&self, width: u16) -> Vec<Line<'static>> {
         let dim = Style::new().fg(theme::muted());
+        // A dispatch that names no child it can parse keeps a bare header, so
+        // the error it is answered with still has a title above it.
+        let bare = [(String::new(), String::new())];
+        let children = if self.children.is_empty() { &bare[..] } else { &self.children[..] };
         let mut out = Vec::new();
-        for (name, brief) in &self.children {
-            let mut head = vec![
-                Span::styled(self.verb(), Style::new().bold()),
-                Span::raw(" "),
-                agent_label(name),
-            ];
+        for (name, brief) in children {
+            let mut head = vec![Span::styled(self.verb(), Style::new().bold())];
+            if !name.is_empty() {
+                head.extend([Span::raw(" "), agent_label(name)]);
+            }
             if let Some(stats) = &self.stats {
                 head.push(Span::styled(format!(" \u{b7} {stats}"), dim));
             }
@@ -12173,6 +12176,9 @@ fn tool_kind(name: &str, args: &serde_json::Value) -> (&'static str, ToolOp) {
     match name {
         "memory" if matches!(op, Some("view" | "search")) => ("memory note", ToolOp::Read),
         "memory" => ("memory note", ToolOp::Update),
+        // Its names before it became one tool, still in journals a resume replays.
+        "memory_read" | "memory_list" => ("memory note", ToolOp::Read),
+        "memory_write" => ("memory note", ToolOp::Update),
         "skill_write" => ("skill", ToolOp::Update),
         n if n.starts_with("skill") => ("skill", ToolOp::Read),
         "read" => ("file", ToolOp::Read),
@@ -27390,6 +27396,28 @@ mod tests {
         assert!(blocks(&resumed).ends_with(&done[1..]), "{:?}", blocks(&resumed));
     }
 
+    /// A dispatch that names no child it can parse still has its header, so
+    /// the error the tool answers with is not left without a title.
+    #[test]
+    fn a_dispatch_without_children_keeps_its_header() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "d1".into(),
+            name: "dispatch_subagent".into(),
+            args: json!({ "task": "no subagents array" }),
+        });
+        assert!(transcript_text(&app).contains("\u{2022} Dispatching"), "{}", transcript_text(&app));
+        app.apply(StreamEvent::ToolResult {
+            id: "d1".into(),
+            content: "ERROR: missing required argument 'subagents'".into(),
+            is_error: true,
+            diff: None,
+        });
+        let text = transcript_text(&app);
+        assert!(text.contains("\u{2022} Dispatched"), "{text}");
+        assert!(text.contains("missing required argument"), "{text}");
+    }
+
     /// A dispatch the run never resolved reads as interrupted, not running,
     /// and still says what each child was sent to do.
     #[test]
@@ -30801,6 +30829,16 @@ fn a() {}
         assert_eq!(
             group_summary(&[kind("memory", json!({ "op": "edit", "name": "b" }))]),
             "Updated 1 memory note"
+        );
+        // The memory tool's names before it became one tool, still in old
+        // journals a resume replays.
+        assert_eq!(
+            group_summary(&[
+                kind("memory_read", json!({ "name": "a" })),
+                kind("memory_list", json!({})),
+                kind("memory_write", json!({ "name": "b" })),
+            ]),
+            "Read 2 memory notes; updated 1 memory note"
         );
     }
 
