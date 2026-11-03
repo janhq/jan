@@ -352,6 +352,11 @@ describe('Index route', () => {
       view.rerender(<Component />)
       expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+      // The control disappears with a persistent explanation; the elevated draft
+      // is stated as kept, and temporary tools are never enabled.
+      expect(screen.getByTestId('home-scope-unsupported')).toHaveTextContent(
+        'common:conversationScope.temporary common:conversationScope.pendingKept'
+      )
       // Leaving temporary mode resurfaces the preserved draft, explicitly pending.
       window.history.replaceState({}, '', '/')
       view.rerender(<Component />)
@@ -401,7 +406,7 @@ describe('Index route', () => {
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     })
 
-    it.each(['/?x-temporary-chat=true', '/?temporary-chat=truex', '/?temporary-chat=false', '/?temporary-chat=false&temporary-chat=true', '/?other=temporary-chat%3Dtrue'])(
+    it.each(['/?x-temporary-chat=true', '/?temporary-chat=truex', '/?temporary-chat=false', '/?temporary-chat=false&temporary-chat=false', '/?other=temporary-chat%3Dtrue'])(
       'does not treat %s as temporary mode',
       (url) => {
         h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
@@ -411,8 +416,14 @@ describe('Index route', () => {
       }
     )
 
-    it.each(['/?temporary%2Dchat=true', '/?temporary-chat=%74rue'])(
-      'treats encoded %s as temporary mode',
+    it.each([
+      '/?temporary%2Dchat=true',
+      '/?temporary-chat=%74rue',
+      '/?temporary-chat=false&temporary-chat=true',
+      '/?temporary-chat=true&temporary-chat=false',
+      '/?temporary-chat=true&temporary-chat=true',
+    ])(
+      'treats %s as temporary mode',
       (url) => {
         h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
         window.history.replaceState({}, '', url)
