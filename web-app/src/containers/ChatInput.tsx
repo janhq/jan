@@ -771,6 +771,19 @@ const ChatInput = memo(function ChatInput({
       return false
     }
 
+    // The queue stores text only. A new submission behind a held queue would be
+    // enqueued without its files, so refuse it before any draft/history change.
+    if (
+      onSubmit &&
+      queueId &&
+      attachments.length > 0 &&
+      useMessageQueue.getState().isPaused(queueId) &&
+      useMessageQueue.getState().getQueue(queueId).length > 0
+    ) {
+      toast.info(t('chat:queueRecovery.attachmentsHeld'))
+      return false
+    }
+
     setMessage('')
     addToHistory(effectivePrompt)
 

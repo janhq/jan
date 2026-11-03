@@ -1469,6 +1469,45 @@ describe('ChatInput', () => {
     expect(queueState['thread-1'].map((m) => m.text)).toEqual(['queued A', 'queued B', 'new C'])
   })
 
+  it.each([
+    ['document', { type: 'document', name: 'spec.pdf', path: '/docs/spec.pdf', fileType: 'pdf' }],
+    ['media', { type: 'image', name: 'fixture.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,xxx' }],
+  ])('refuses a %s submission behind a held queue and keeps draft and files', async (_kind, attachment) => {
+    queueState['thread-1'] = [{ id: 'a', text: 'queued A', createdAt: 1 }]
+    pausedState['thread-1'] = true
+    promptState = 'new C'
+    selectedModelOverride = { id: 'vision', provider: 'llamacpp', capabilities: ['vision'] }
+    attachmentsList = [attachment]
+    const originalAttachments = attachmentsList
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready' })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith('chat:queueRecovery.attachmentsHeld')
+    )
+    expect(enqueueMock).not.toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(addToHistoryMock).not.toHaveBeenCalled()
+    expect(setPromptMock).not.toHaveBeenCalled()
+    expect(clearAttachmentsMock).not.toHaveBeenCalled()
+    expect(promptState).toBe('new C')
+    expect(attachmentsList).toBe(originalAttachments)
+    expect(queueState['thread-1'].map((m) => m.text)).toEqual(['queued A'])
+  })
+
+  it('does not block attachments for another thread\'s held queue', async () => {
+    queueState['thread-2'] = [{ id: 'x', text: 'other', createdAt: 1 }]
+    pausedState['thread-2'] = true
+    promptState = 'mine'
+    attachmentsList = [{ type: 'document', name: 'spec.pdf', path: '/docs/spec.pdf', fileType: 'pdf' }]
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready' })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(enqueueMock).not.toHaveBeenCalled()
+    expect(toast.info).not.toHaveBeenCalledWith('chat:queueRecovery.attachmentsHeld')
+  })
+
   it('does not hold another thread\'s submission behind a different thread\'s held queue', async () => {
     queueState['thread-2'] = [{ id: 'x', text: 'other', createdAt: 1 }]
     pausedState['thread-2'] = true
