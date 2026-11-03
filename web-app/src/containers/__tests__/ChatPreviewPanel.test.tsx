@@ -254,15 +254,14 @@ describe('ChatPreviewPanel', () => {
     })
     expect(body()).toHaveTextContent('thread two')
   })
-})
 
-
-it('maps an oversized raster binary read error to unsupported without hiding permission failures', async () => {
-  executeAgentTool.mockResolvedValue({ error: 'ERROR: not a UTF-8 text file' })
-  const { rerender } = render(<ChatPreviewPanel threadId="t1" path="/w/huge.png" onClose={vi.fn()} />)
-  await waitFor(() => expect(body()).toHaveAttribute('data-status', 'unsupported'))
-  executeAgentTool.mockResolvedValue({ error: 'permission denied' })
-  rerender(<ChatPreviewPanel threadId="t1" path="/w/private.png" onClose={vi.fn()} />)
-  await waitFor(() => expect(body()).toHaveTextContent('permission denied'))
-  expect(body()).toHaveAttribute('data-status', 'failed')
+  it('maps an oversized raster binary read error to unsupported without hiding permission failures', async () => {
+    executeAgentTool.mockResolvedValue({ error: 'ERROR: not a UTF-8 text file' })
+    const { rerender } = render(<ChatPreviewPanel threadId="t1" path="/w/huge.png" onClose={vi.fn()} />)
+    await waitFor(() => expect(body()).toHaveAttribute('data-status', 'unsupported'))
+    executeAgentTool.mockResolvedValue({ error: 'permission denied' })
+    rerender(<ChatPreviewPanel threadId="t1" path="/w/private.png" onClose={vi.fn()} />)
+    await waitFor(() => expect(body()).toHaveTextContent('permission denied'))
+    expect(body()).toHaveAttribute('data-status', 'failed')
+  })
 })
