@@ -1845,11 +1845,8 @@ impl AbortOnDrop {
         let workspaces = self.bg.workspaces.clone();
         let events = self.events.clone();
         move || {
-            let kept = workspaces.finish_session();
-            if !kept.is_empty() {
-                let _ = events.send(crate::core::agent::events::StreamEvent::Notice {
-                    text: crate::core::agent::child_workspace::kept_notice(&kept),
-                });
+            for text in workspaces.finish_session().notices() {
+                let _ = events.send(crate::core::agent::events::StreamEvent::Notice { text });
             }
         }
     }

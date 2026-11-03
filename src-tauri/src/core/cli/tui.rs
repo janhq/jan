@@ -5331,6 +5331,11 @@ struct App {
     /// `shell_set`. Children outlive the run that dispatched them, so their
     /// panels survive a run end and a completion between runs starts a turn.
     subagent_set: Arc<crate::core::agent::subagent::BackgroundSubagents>,
+    /// Where the settling of a replaced conversation's subagent worktrees
+    /// reports the ones it kept, once their branches are back. `None` from
+    /// exit on, so the drain there ends when the last settle does.
+    cleanup_reports: Option<mpsc::UnboundedSender<String>>,
+    cleanup_rx: mpsc::UnboundedReceiver<String>,
     /// In-flight `await_subagent` calls, `(tool_call_id, run_id, subagent_name)`.
     /// Cleared on the matching `ToolResult` or `SubagentEnd`, whichever comes
     /// first (the two can race).
@@ -6060,6 +6065,7 @@ impl App {
         repo_root: Option<PathBuf>,
     ) -> Self {
         let slash_catalog = SlashCatalog::load(&project_root);
+        let (cleanup_reports, cleanup_rx) = mpsc::unbounded_channel();
         Self {
             smol_model: model.clone(),
             model,
@@ -6201,6 +6207,8 @@ impl App {
             subagent_set: Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
                 crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
             )),
+            cleanup_reports: Some(cleanup_reports),
+            cleanup_rx,
             awaiting: Vec::new(),
             parked_answer: None,
             starting: Vec::new(),
@@ -6354,6 +6362,7 @@ impl App {
         // Aborts the children themselves, not just their panels: the
         // conversation they would report into is going away.
         self.stop_subagents();
+        self.end_conversation_worktrees();
         self.subagents.clear();
         self.internal_agents.clear();
         self.stop_monitors();
@@ -6858,6 +6867,33 @@ impl App {
                 continue;
             }
             self.push_subagent_summary(panel, SubagentOutcome::Interrupted);
+        }
+    }
+
+    /// Settle the subagent worktrees of the conversation being replaced, as
+    /// exit does, but off the render loop: empty ones go, kept ones have their
+    /// branch brought back and are named in the transcript when that is done.
+    /// Called after `stop_subagents` (a stopped writer no longer holds its
+    /// worktree), and not from it: Esc stops the children but keeps the
+    /// conversation, whose worktrees later dispatches may still name.
+    fn end_conversation_worktrees(&mut self) {
+        let batch = self.subagent_set.workspaces.end_conversation();
+        if batch.is_empty() {
+            return;
+        }
+        let reports = self.cleanup_reports.clone();
+        // A notice counts as told once it is queued for the transcript; exit
+        // stops taking them after a while (see `EXIT_SETTLE_WAIT`), and an
+        // untold kept worktree is left for the next start to name.
+        let settle = move || {
+            batch.settle().report(&mut |notice| {
+                reports.as_ref().is_some_and(|reports| reports.send(notice).is_ok())
+            });
+        };
+        // A sync caller (a plain test) has no runtime, and no worktrees.
+        match tokio::runtime::Handle::try_current() {
+            Ok(rt) => drop(rt.spawn_blocking(settle)),
+            Err(_) => settle(),
         }
     }
 
@@ -14047,6 +14083,15 @@ pub async fn run(
     app.shell_set = shell_set;
     app.shell_detach = shell_detach;
     app.subagent_set = subagent_set;
+    // Weak, so exit's drain never waits on a startup sweep still fetching.
+    // The sweep runs on a thread exit does not join: a process that exits
+    // mid-sweep leaves the rest for the next start.
+    if let Some(reports) = app.cleanup_reports.as_ref().map(mpsc::UnboundedSender::downgrade) {
+        crate::core::agent::child_workspace::spawn_startup_sweep(
+            app.project_root.clone(),
+            move |kept| reports.upgrade().is_some_and(|reports| reports.send(kept).is_ok()),
+        );
+    }
     app.args = Some(args.clone());
     app.sync_think_tags();
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
@@ -14164,26 +14209,60 @@ pub async fn run(
     if app.update_installing {
         eprintln!("the update was still installing when jan exited; run `jan update` to finish it");
     }
-    // The interactive session is over: wipe the persistent bash `/tmp` scratch
-    // that its turns shared.
-    if let Some(session) = session_scratch.as_deref() {
-        let _ = workspace::remove_scratch_dir(session).await;
-    }
-    // And its subagents' worktrees that hold nothing; the rest are named on
-    // the real terminal, since they are what is left to merge. Children still
-    // running are stopped first: a live writer holds its worktree, which would
-    // otherwise be kept as busy and outlive the process even when empty.
-    // On the blocking pool, as every worktree sweep is: it runs git per
-    // worktree, and a runtime worker is no place to wait on that.
+    // The interactive session is over. Children still running are stopped
+    // first: they may still be writing into the scratch, and a live writer
+    // holds its worktree, which would otherwise outlive the process even
+    // when empty.
     app.subagent_set.abort_all();
+    // Then the persistent bash `/tmp` scratch its turns shared and its
+    // subagents' worktrees that hold nothing go, together (both are renames
+    // into trash); the rest are named on the real terminal, since they are
+    // what is left to merge. The worktrees on the blocking pool, as every
+    // worktree sweep is: it runs git per worktree.
     let workspaces = app.subagent_set.workspaces.clone();
-    let kept = tokio::task::spawn_blocking(move || workspaces.finish_session())
-        .await
-        .unwrap_or_default();
-    if !kept.is_empty() {
-        eprintln!("{}", crate::core::agent::child_workspace::kept_notice(&kept));
+    let scratch = async {
+        if let Some(session) = session_scratch.as_deref() {
+            let _ = workspace::trash_scratch_dir(session).await;
+        }
+    };
+    let ((), kept) = tokio::join!(
+        scratch,
+        tokio::task::spawn_blocking(move || workspaces.finish_session())
+    );
+    // A conversation replaced just before exit may still be bringing its
+    // branches back: wait a little for it, so what it kept is named too, but
+    // never the fetch's full limit. One still settling is marked only once
+    // told, so the next start's sweep names it instead.
+    app.cleanup_reports = None;
+    for earlier in drain_cleanup_reports(&mut app.cleanup_rx, EXIT_SETTLE_WAIT).await {
+        eprintln!("{earlier}");
+    }
+    for notice in kept.map(|kept| kept.notices()).unwrap_or_default() {
+        eprintln!("{notice}");
     }
     res
+}
+
+/// How long exit waits for a replaced conversation's settle to report.
+const EXIT_SETTLE_WAIT: Duration = Duration::from_secs(2);
+
+/// What the settles still running report within `wait`. The channel is closed
+/// before the last read, so a report sent later fails and its settle leaves
+/// the worktree unmarked rather than counting it as shown.
+async fn drain_cleanup_reports(
+    rx: &mut mpsc::UnboundedReceiver<String>,
+    wait: Duration,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let deadline = tokio::time::Instant::now() + wait;
+    while let Ok(Some(report)) = tokio::time::timeout_at(deadline, rx.recv()).await {
+        out.push(report);
+    }
+    rx.close();
+    while let Ok(report) = rx.try_recv() {
+        out.push(report);
+    }
+    out
 }
 
 const CLAUDE_ALIAS_NOTICE: &str = crate::core::cli::auth::account::CLAUDE_ALIAS_NOTICE;
@@ -14878,6 +14957,9 @@ async fn chat_loop<B: Backend>(
             }
             Some(report) = await_worktree_report(&mut worktree_task) => {
                 finish_worktree_report(app, report);
+            }
+            Some(kept) = app.cleanup_rx.recv() => {
+                app.notice(&kept, None);
             }
             Some((query, result)) = await_reported_usage(&mut reported_usage_task) => {
                 finish_reported_usage(app, &query, result);
@@ -23675,6 +23757,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     app.transcript.awaited.clear();
     // The conversation these would report into is being replaced.
     app.stop_subagents();
+    app.end_conversation_worktrees();
     app.stop_monitors();
     app.shell_set.take_notices();
     app.transcript.expanded.clear();
@@ -41100,6 +41183,165 @@ fn a() {}
         assert!(notes.contains("(0 commit(s), 0 uncommitted file(s))"), "{notes}");
         assert!(notes.contains("--worktree"), "{notes}");
         let _ = tokio::task::spawn_blocking(move || ledger.finish_session()).await;
+    }
+
+    /// A repository with one commit for the conversation-end tests, or
+    /// `None` without git.
+    fn conversation_repo() -> Option<tempfile::TempDir> {
+        let root = tempfile::tempdir().unwrap();
+        let ok = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(root.path())
+                .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+                .args(args)
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        std::fs::write(root.path().join("a.txt"), "a\n").ok()?;
+        (ok(&["init", "-q"]) && ok(&["add", "a.txt"])
+            && ok(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
+        .then_some(root)
+    }
+
+    /// An idle and a committed writer worktree in `app`'s ledger, returned as
+    /// (idle path, committed path, committed branch).
+    fn two_worktrees(
+        app: &App,
+        root: &std::path::Path,
+    ) -> (std::path::PathBuf, std::path::PathBuf, String) {
+        let ledger = app.subagent_set.workspaces.clone();
+        let (idle, l1) = ledger.assign(root, "general", true, None).unwrap();
+        let (work, l2) = ledger.assign(root, "general-2", true, None).unwrap();
+        drop((l1, l2));
+        let ok = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&work.root)
+            .args(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q"])
+            .args(["--no-gpg-sign", "--allow-empty", "-m", "b"])
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(ok);
+        let branch = work.worktree.as_ref().unwrap().branch.clone();
+        (idle.root, work.root, branch)
+    }
+
+    /// What the conversation's settle reports, once it is done.
+    async fn kept_report(app: &mut App) -> String {
+        tokio::time::timeout(Duration::from_secs(30), app.cleanup_rx.recv())
+            .await
+            .expect("the settle reports")
+            .expect("the channel is open")
+    }
+
+    #[tokio::test]
+    async fn new_and_clear_settle_the_conversations_subagent_worktrees() {
+        let Some(root) = conversation_repo() else { return };
+        let mut app = test_app();
+        let (idle, kept, branch) = two_worktrees(&app, root.path());
+        app.reset_session();
+        let report = kept_report(&mut app).await;
+        assert!(report.starts_with("subagent worktrees kept"), "{report}");
+        assert!(report.contains(&branch), "{report}");
+        assert!(!idle.exists(), "the empty worktree goes");
+        assert!(kept.is_dir());
+        assert!(app.subagent_set.workspaces.live().is_empty());
+        let reuse =
+            crate::core::agent::child_workspace::WorkspaceRequest::Reuse("general-2".into());
+        let err = app
+            .subagent_set
+            .workspaces
+            .assign(root.path(), "next", true, Some(&reuse))
+            .unwrap_err();
+        assert!(err.contains("no earlier subagent"), "{err}");
+        // Shown as the kept notice, one worktree per row.
+        app.notice(&report, None);
+        let shown: String = app.transcript.rows.iter().map(row_text).collect::<Vec<_>>().join("\n");
+        assert!(shown.contains(&branch), "{shown}");
+        let _ = std::fs::remove_dir_all(&kept);
+    }
+
+    #[tokio::test]
+    async fn resuming_a_thread_settles_the_previous_conversations_worktrees() {
+        let Some(root) = conversation_repo() else { return };
+        let mut app = test_app();
+        let history = vec![json!({ "role": "user", "content": "first" })];
+        let id = super::super::cli_save_thread(&app.agent_dir, None, "m", &history, None).unwrap();
+        let (idle, kept, branch) = two_worktrees(&app, root.path());
+        super::load_thread(&mut app, &json!({ "id": id }), "resumed").await;
+        let report = kept_report(&mut app).await;
+        assert!(report.contains(&branch), "{report}");
+        assert!(!idle.exists());
+        assert!(kept.is_dir());
+        assert!(app.subagent_set.workspaces.live().is_empty());
+        let _ = std::fs::remove_dir_all(&kept);
+    }
+
+    /// Esc stops the children but keeps the conversation: its worktrees stay
+    /// and a later dispatch may still name them.
+    #[tokio::test]
+    async fn cancel_keeps_the_conversations_worktrees() {
+        let Some(root) = conversation_repo() else { return };
+        let mut app = test_app();
+        let (idle, kept, _) = two_worktrees(&app, root.path());
+        app.cancel_run();
+        assert!(idle.is_dir() && kept.is_dir());
+        let reuse = crate::core::agent::child_workspace::WorkspaceRequest::Reuse("general".into());
+        let ledger = app.subagent_set.workspaces.clone();
+        assert!(ledger.assign(root.path(), "next", true, Some(&reuse)).is_ok());
+        let _ = tokio::task::spawn_blocking(move || ledger.finish_session()).await;
+        let _ = std::fs::remove_dir_all(&kept);
+    }
+
+    /// Exit takes the reports already sent, then stops waiting: a settle
+    /// still fetching is not waited for, and its later report is refused, so
+    /// it does not count as shown.
+    #[tokio::test]
+    async fn exit_waits_for_a_replaced_conversations_settle_only_so_long() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        tx.send("kept a".to_string()).unwrap();
+        let late = tx.clone();
+        let started = Instant::now();
+        let got = super::drain_cleanup_reports(&mut rx, Duration::from_millis(200)).await;
+        let took = started.elapsed();
+        assert_eq!(got, ["kept a"]);
+        assert!(took < Duration::from_secs(2), "waited {took:?}");
+        assert!(late.send("kept b".to_string()).is_err(), "a late report is refused");
+    }
+
+    /// `/new` hands the git to the blocking pool: a slow worktree does not
+    /// stall the frame.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_switch_does_not_block_the_render_loop() {
+        let Some(root) = conversation_repo() else { return };
+        let mut app = test_app();
+        let (idle, kept, _) = two_worktrees(&app, root.path());
+        let exclude = idle.join(".git/info/exclude");
+        let _ = std::fs::remove_file(&exclude);
+        if !std::process::Command::new("mkfifo").arg(&exclude).status().is_ok_and(|s| s.success()) {
+            return;
+        }
+        // Let the settle's status read through a second from now, before the
+        // switch: a switch that ran the git itself would then come back late
+        // and fail, rather than wait on the FIFO forever. On a thread, as
+        // opening a FIFO waits for its reader. Status opens the file twice,
+        // so a plain one takes the FIFO's place before it is let go.
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(1));
+            let held = std::fs::OpenOptions::new().write(true).open(&exclude);
+            let _ = std::fs::remove_file(&exclude);
+            let _ = std::fs::write(&exclude, "");
+            drop(held);
+        });
+        let started = Instant::now();
+        app.reset_session();
+        let took = started.elapsed();
+        let report = tokio::time::timeout(Duration::from_secs(30), app.cleanup_rx.recv()).await;
+        assert!(took < Duration::from_millis(500), "/new took {took:?}");
+        assert!(matches!(report, Ok(Some(_))), "the settle reports: {report:?}");
+        let _ = std::fs::remove_dir_all(&idle);
+        let _ = std::fs::remove_dir_all(&kept);
     }
 
     #[tokio::test]

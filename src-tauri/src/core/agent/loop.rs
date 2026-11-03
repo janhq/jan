@@ -13326,7 +13326,11 @@ mod tests {
             .into_iter()
             .flatten()
             .filter_map(Result::ok)
-            .filter(|e| e.file_name() != "cargo-target")
+            // Jan's records and trash are not checkouts.
+            .filter(|e| {
+                let name = e.file_name();
+                name != "cargo-target" && !name.to_string_lossy().starts_with('.')
+            })
             .map(|e| e.path().display().to_string())
             .collect();
         (checkouts, String::from_utf8_lossy(&branches.stdout).trim().to_string())

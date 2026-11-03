@@ -505,7 +505,8 @@ pub fn validate_write_root(
 ///
 /// Pure path arithmetic: `session` is not checked here. Anything that reaches
 /// the filesystem with an id from outside goes through [`ensure_scratch_dir`] or
-/// [`remove_scratch_dir`], which accept only a valid [`thread_segment`].
+/// [`remove_scratch_dir`] / [`trash_scratch_dir`], which accept only a valid
+/// [`thread_segment`].
 pub fn scratch_dir(session: &str) -> PathBuf {
     std::env::temp_dir().join(format!("jan-agent-{session}"))
 }
@@ -593,7 +594,9 @@ const SCRATCH_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(
 /// claim it: the id it is keyed to lives in the caller's state, not on disk, so
 /// no `keep` list can be reconstructed the way [`sweep_thread_workspaces`] does
 /// it. Age is the only signal available, so anything untouched for
-/// [`SCRATCH_STALE_AFTER`] is collected. Called once at startup.
+/// [`SCRATCH_STALE_AFTER`] is collected. Called once at startup. A scratch
+/// already moved into trash by [`trash_scratch_dir`] goes once it is
+/// [`TRASH_KEPT_FOR`] old.
 ///
 /// Failures are silent per entry: another user's `jan-agent-*` in a shared
 /// `/tmp` is not ours to delete and simply fails the unlink.
@@ -610,7 +613,8 @@ async fn sweep_scratch_older_than(root: &Path, max_age: std::time::Duration) -> 
     while let Ok(Some(entry)) = entries.next_entry().await {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
-        if !name.starts_with("jan-agent-") {
+        let trash = name.starts_with(SCRATCH_TRASH_PREFIX);
+        if !name.starts_with("jan-agent-") && !trash {
             continue;
         }
         // `symlink_metadata`: a symlink named like a scratch is not one, and
@@ -618,14 +622,24 @@ async fn sweep_scratch_older_than(root: &Path, max_age: std::time::Duration) -> 
         let Ok(meta) = tokio::fs::symlink_metadata(entry.path()).await else {
             continue;
         };
+        if trash && meta.file_type().is_symlink() {
+            let _ = tokio::fs::remove_file(entry.path()).await;
+            continue;
+        }
         if meta.file_type().is_symlink() || !meta.is_dir() {
             continue;
         }
-        let stale = meta
-            .modified()
-            .ok()
-            .and_then(|m| m.elapsed().ok())
-            .is_some_and(|age| age >= max_age);
+        // A trashed scratch is never in use (the rename that made it is
+        // atomic), but it holds the session's subagent results, kept a while
+        // in case the user wants one back.
+        let stale = if trash {
+            trash_expired(name, &meta)
+        } else {
+            meta.modified()
+                .ok()
+                .and_then(|m| m.elapsed().ok())
+                .is_some_and(|age| age >= max_age)
+        };
         if stale && tokio::fs::remove_dir_all(entry.path()).await.is_ok() {
             removed += 1;
         }
@@ -633,10 +647,78 @@ async fn sweep_scratch_older_than(root: &Path, max_age: std::time::Duration) -> 
     removed
 }
 
-/// Delete a session's scratch directory. Idempotent: a missing scratch is Ok.
+/// Prefix of a scratch moved aside for deletion. Deliberately not `jan-agent-`:
+/// a session id is any `thread_segment`, so `jan-agent-trash-*` could be a live
+/// scratch that the any-age trash sweep would wipe.
+const SCRATCH_TRASH_PREFIX: &str = "jan-trash-";
+
+/// How long Jan's trash (a removed scratch, a subagent worktree that read as
+/// empty) is kept before a startup sweep deletes it: long enough for a user
+/// to notice something they wanted went with it.
+pub const TRASH_KEPT_FOR: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
+/// The name under which `stem` goes to trash: `<stem>-<nanoseconds since the
+/// epoch>`. The time is in the name because a rename keeps the mtime of what
+/// it moves, which says when it was last written, not trashed.
+pub fn trash_name(stem: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!("{stem}-{nanos}")
+}
+
+/// Whether the trash entry `name` (made by [`trash_name`]) is at least
+/// [`TRASH_KEPT_FOR`] old. One whose name carries no time goes by `meta`'s
+/// mtime instead. A shorter number is not a time [`trash_name`] wrote (it
+/// may be a hex suffix that happens to be all digits), and must not read as
+/// one from 1970.
+pub fn trash_expired(name: &str, meta: &std::fs::Metadata) -> bool {
+    let stamp = name
+        .rsplit_once('-')
+        .filter(|(_, n)| n.len() >= 19)
+        .and_then(|(_, n)| n.parse::<u64>().ok())
+        .map(|n| std::time::UNIX_EPOCH + std::time::Duration::from_nanos(n));
+    stamp
+        .or_else(|| meta.modified().ok())
+        .and_then(|at| at.elapsed().ok())
+        .is_some_and(|age| age >= TRASH_KEPT_FOR)
+}
+
+/// Delete a session's scratch directory now. Idempotent: a missing scratch is
+/// Ok. For an explicit delete (a thread or session the user removed): its
+/// results and caches must not outlive it in the trash.
 pub async fn remove_scratch_dir(session: &str) -> Result<(), String> {
     let dir = checked_scratch_dir(session)?;
     match tokio::fs::remove_dir_all(&dir).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("ERROR: {e}")),
+    }
+}
+
+/// Move a finished session's scratch into trash, for the exit path only.
+/// Idempotent: a missing scratch is Ok.
+///
+/// Read-only subagents keep package caches there, so deleting it can walk
+/// tens of thousands of files while the user waits to exit. A rename is
+/// instant, and a startup sweep empties the trash once it is old.
+pub async fn trash_scratch_dir(session: &str) -> Result<(), String> {
+    let dir = checked_scratch_dir(session)?;
+    trash_dir_in(&std::env::temp_dir(), &dir, session).await
+}
+
+/// Move `dir` into `root` under a trash name made from `stem`, deleting it in
+/// place when the rename fails (another volume, a handle still open on
+/// Windows). A missing `dir` is Ok.
+async fn trash_dir_in(root: &Path, dir: &Path, stem: &str) -> Result<(), String> {
+    let trash = root.join(trash_name(&format!(
+        "{SCRATCH_TRASH_PREFIX}{stem}-{}",
+        std::process::id()
+    )));
+    if tokio::fs::rename(dir, &trash).await.is_ok() {
+        return Ok(());
+    }
+    match tokio::fs::remove_dir_all(dir).await {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(format!("ERROR: {e}")),
@@ -1001,6 +1083,77 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Exit must not wait for a scratch full of package caches to be deleted:
+    /// it is moved aside, whole, next to where it was.
+    #[tokio::test]
+    async fn removing_a_scratch_moves_it_to_trash_in_the_temp_dir() {
+        let root = tmp_root("scratch_trash");
+        let scratch = root.join("jan-agent-s1");
+        ensure_scratch_dir_path(&scratch).await.unwrap();
+        std::fs::write(scratch.join("cache.bin"), b"x").unwrap();
+        trash_dir_in(&root, &scratch, "s1").await.unwrap();
+        assert!(!scratch.exists());
+        let trashed: Vec<PathBuf> = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(trashed.len(), 1, "{trashed:?}");
+        let name = trashed[0].file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with(SCRATCH_TRASH_PREFIX), "{name}");
+        assert!(trashed[0].join("cache.bin").is_file());
+        // Idempotent: a scratch already gone is Ok.
+        trash_dir_in(&root, &scratch, "s1").await.unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A rename can fail (another volume, a handle still open on Windows);
+    /// the scratch is then deleted in place, as before.
+    #[tokio::test]
+    async fn a_scratch_that_cannot_be_renamed_is_deleted() {
+        let root = tmp_root("scratch_norename");
+        let scratch = root.join("jan-agent-s2");
+        ensure_scratch_dir_path(&scratch).await.unwrap();
+        std::fs::write(scratch.join("f"), b"x").unwrap();
+        trash_dir_in(&root.join("missing"), &scratch, "s2").await.unwrap();
+        assert!(!scratch.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A trashed scratch is kept a week (it holds the session's subagent
+    /// results), then the startup sweep empties it; a fresh live scratch and
+    /// a bystander stay, and a symlink named like trash is unlinked without
+    /// following it.
+    #[tokio::test]
+    async fn trash_is_kept_a_week_then_emptied_by_the_startup_sweep() {
+        let root = tmp_root("scratch_trash_sweep");
+        let live = root.join("jan-agent-live");
+        ensure_scratch_dir_path(&live).await.unwrap();
+        let ended = root.join("jan-agent-ended");
+        ensure_scratch_dir_path(&ended).await.unwrap();
+        trash_dir_in(&root, &ended, "ended").await.unwrap();
+        let trash = root.join("jan-trash-old-1-1000000000000000000");
+        std::fs::create_dir_all(trash.join("deep")).unwrap();
+        std::fs::write(trash.join("deep/f"), b"x").unwrap();
+        let bystander = root.join("not-a-scratch");
+        std::fs::create_dir_all(&bystander).unwrap();
+        std::fs::write(bystander.join("keep"), b"x").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&bystander, root.join("jan-trash-link")).unwrap();
+
+        assert_eq!(sweep_scratch_older_than(&root, SCRATCH_STALE_AFTER).await, 1);
+        assert!(!trash.exists(), "week-old trash goes");
+        let fresh = std::fs::read_dir(&root)
+            .unwrap()
+            .filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().starts_with("jan-trash-ended-"))
+            .count();
+        assert_eq!(fresh, 1, "fresh trash is kept");
+        assert!(live.is_dir(), "a fresh scratch is live");
+        assert!(bystander.join("keep").is_file(), "nothing outside trash is touched");
+        #[cfg(unix)]
+        assert!(std::fs::symlink_metadata(root.join("jan-trash-link")).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A session scratch as subagents leave it: session files under
     /// `subagents/` and results on `blackboard/`.
     fn seed_subagent_files(scratch: &Path) -> [PathBuf; 2] {
@@ -1020,7 +1173,7 @@ mod tests {
         let session = format!("sub-exit-{}", std::process::id());
         let scratch = ensure_scratch_dir(&session).await.unwrap();
         let files = seed_subagent_files(&scratch);
-        remove_scratch_dir(&session).await.unwrap();
+        trash_scratch_dir(&session).await.unwrap();
         assert!(files.iter().all(|f| !f.exists()) && !scratch.exists());
     }
 
@@ -1035,6 +1188,26 @@ mod tests {
         let files = seed_subagent_files(&scratch);
         remove_thread_workspace(&data, &thread).await.unwrap();
         assert!(files.iter().all(|f| !f.exists()) && !scratch.exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// An explicit delete is a delete: the thread's scratch is not parked in
+    /// the trash for a week, where its results and caches would outlive it.
+    #[tokio::test]
+    async fn thread_delete_leaves_no_scratch_in_the_trash() {
+        let data = unique_data_folder();
+        let thread = format!("no-trash-delete-{}", std::process::id());
+        ensure_thread_workspace(&data, &thread).await.unwrap();
+        let scratch = ensure_scratch_dir(&thread).await.unwrap();
+        std::fs::write(scratch.join("f"), b"x").unwrap();
+        remove_thread_workspace(&data, &thread).await.unwrap();
+        let trashed = format!("{SCRATCH_TRASH_PREFIX}{thread}-");
+        let left: Vec<_> = std::fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().starts_with(&trashed))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
         let _ = std::fs::remove_dir_all(&data);
     }
 
@@ -1127,6 +1300,7 @@ mod tests {
         for bad in ["../x", "..", "a/b", "a\\b", "", "nul"] {
             assert!(ensure_scratch_dir(bad).await.is_err(), "{bad:?}");
             assert!(remove_scratch_dir(bad).await.is_err(), "{bad:?}");
+            assert!(trash_scratch_dir(bad).await.is_err(), "{bad:?}");
         }
     }
 

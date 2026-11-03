@@ -2551,6 +2551,20 @@ async fn run_agent_loop(
     // records before the final result, which it prints only once every sender
     // (the reader's included) has dropped.
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
+    // Weak, so a slow sweep (a kept worktree's fetch) never holds the printer
+    // open; it runs on a thread exit does not join, so what is left when the
+    // run ends is done at the next start. A notice counts as told only where
+    // the format shows one: under `json` it is sent but left for a later
+    // start to report.
+    if let Some(root) = args.project_root.clone() {
+        let sweep_tx = tx.downgrade();
+        crate::core::agent::child_workspace::spawn_startup_sweep(root, move |text| {
+            sweep_tx
+                .upgrade()
+                .is_some_and(|tx| tx.send(StreamEvent::Notice { text }).is_ok())
+                && format.shows_notices()
+        });
+    }
     let reader = input.as_ref().map(|input| {
         spawn_input_reader(
             Arc::clone(input),
@@ -2695,7 +2709,7 @@ async fn run_agent_loop(
     // The one-shot CLI runs exactly one turn, so its session ends here: wipe
     // the persistent bash `/tmp` scratch this run used.
     if let Some(session) = args.session_id.as_deref() {
-        let _ = workspace::remove_scratch_dir(session).await;
+        let _ = workspace::trash_scratch_dir(session).await;
     }
     if aborted {
         return Ok(());

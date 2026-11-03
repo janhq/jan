@@ -182,6 +182,20 @@ fn outcome(out: &std::process::Output, args: &[&str]) -> Result<String, String> 
     }
 }
 
+/// A path git printed, as this platform names it: any bytes on Unix, valid
+/// UTF-8 elsewhere (git writes paths as UTF-8 there).
+#[cfg(feature = "cli")]
+fn os_path(bytes: &[u8]) -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        Some(PathBuf::from(<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(bytes)))
+    }
+    #[cfg(not(unix))]
+    {
+        std::str::from_utf8(bytes).ok().map(PathBuf::from)
+    }
+}
+
 /// A unique throwaway index path so one-off git operations (restore) never
 /// disturb the real index.
 #[cfg(feature = "cli")]
@@ -764,14 +778,26 @@ impl Checkout {
     /// `git <args>` in the checkout, its git dir and work tree named
     /// explicitly.
     fn run(&self, args: &[&str]) -> Result<String, String> {
+        let out = self.output(args)?;
+        outcome(&out, args)
+    }
+
+    /// [`Self::run`] with stdout as git wrote it: paths are bytes, and a
+    /// lossy decoding can name a file that does not exist.
+    fn run_raw(&self, args: &[&str]) -> Result<Vec<u8>, String> {
+        let out = self.output(args)?;
+        outcome(&out, args)?;
+        Ok(out.stdout)
+    }
+
+    fn output(&self, args: &[&str]) -> Result<std::process::Output, String> {
         let opts = self.hardened();
         let mut full: Vec<&str> = opts.iter().map(String::as_str).collect();
         full.extend_from_slice(args);
         let mut cmd = repo_command(&self.path, &full)?;
         cmd.env("GIT_DIR", self.path.join(".git"))
             .env("GIT_WORK_TREE", &self.path);
-        let out = cmd.output().map_err(|e| format!("failed to launch git: {e}"))?;
-        outcome(&out, args)
+        cmd.output().map_err(|e| format!("failed to launch git: {e}"))
     }
 
     /// The branch checked out there, `None` when detached or unreadable.
@@ -812,6 +838,50 @@ impl Checkout {
             full.push("--ignore-submodules=all");
             self.run(&full)
         })
+    }
+
+    /// Whether the checkout has no uncommitted change. `Err` when git cannot
+    /// tell, which a caller deciding on removal must never read as clean.
+    pub(crate) fn is_clean(&self) -> Result<bool, String> {
+        Ok(!self.holds_submodule_work()? && clean_with(|args| self.run(args))?)
+    }
+
+    /// Whether a submodule holds anything: status never looks inside one (see
+    /// [`Checkout::try_changed_paths`]), and `rev-list --all` does not see
+    /// the commits in `.git/modules`. A clone leaves `.git/modules` absent
+    /// and each submodule's directory empty, so anything there is the
+    /// child's: an initialised submodule, or a repository at its path.
+    fn holds_submodule_work(&self) -> Result<bool, String> {
+        let filled = |dir: &Path| match std::fs::read_dir(dir) {
+            Ok(mut entries) => Ok(entries.next().is_some()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(format!("could not read {}: {e}", dir.display())),
+        };
+        if filled(&self.path.join(".git/modules"))? {
+            return Ok(true);
+        }
+        // `<mode> <object> <stage>\t<path>`; mode 160000 is a submodule.
+        let listed = self.run_raw(&["ls-files", "--stage", "-z"])?;
+        for entry in listed.split(|&b| b == 0) {
+            let Some(tab) = entry.iter().position(|&b| b == b'\t') else { continue };
+            if !entry.starts_with(b"160000 ") {
+                continue;
+            }
+            // A path this platform cannot name is unknown, never clean.
+            let Some(path) = os_path(&entry[tab + 1..]) else { return Ok(true) };
+            let at = self.path.join(path);
+            match std::fs::symlink_metadata(&at) {
+                Ok(m) if m.is_dir() => {
+                    if filled(&at)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(_) => return Ok(true),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(format!("could not read {}: {e}", at.display())),
+            }
+        }
+        Ok(false)
     }
 
     /// Fetch `branch` into `repo` under the same name: the child's commits
@@ -878,6 +948,25 @@ pub(crate) fn try_changed_paths(worktree: &Path) -> Result<Vec<String>, String> 
     changed_paths_with(|args| run(worktree, None, args))
 }
 
+/// The status [`Checkout::is_clean`] runs, split out so its arguments are
+/// testable. `--untracked-files=normal` shows a new directory as one `?? dir/`
+/// line instead of walking every file a child left in it (`node_modules`,
+/// build output), and still overrides a user's `status.showUntrackedFiles=no`,
+/// under which new files would read as clean and be deleted. The user's
+/// global excludes file is emptied too: what it hides is still the child's.
+#[cfg(feature = "cli")]
+fn clean_with(git: impl Fn(&[&str]) -> Result<String, String>) -> Result<bool, String> {
+    let args = [
+        "-c",
+        "core.excludesFile=",
+        "status",
+        "--porcelain",
+        "--untracked-files=normal",
+        "--ignore-submodules=all",
+    ];
+    Ok(git(&args)?.trim().is_empty())
+}
+
 #[cfg(feature = "cli")]
 fn changed_paths_with(
     git: impl Fn(&[&str]) -> Result<String, String>,
@@ -893,6 +982,28 @@ fn changed_paths_with(
         })
         .filter(|s| !s.is_empty())
         .collect())
+}
+
+/// Run `f` with `config` as the user's global git config, as a user's own
+/// `~/.gitconfig` reaches every git Jan runs (repo config does not reach a
+/// clone). Tests run with one thread, so the variable is safe to set; it is
+/// put back even when `f` panics.
+#[cfg(all(test, feature = "cli"))]
+pub(crate) fn with_global_config<R>(config: &str, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<std::ffi::OsString>, tempfile::NamedTempFile);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(value) => std::env::set_var("GIT_CONFIG_GLOBAL", value),
+                None => std::env::remove_var("GIT_CONFIG_GLOBAL"),
+            }
+        }
+    }
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(file.path(), config).unwrap();
+    let restore = Restore(std::env::var_os("GIT_CONFIG_GLOBAL"), file);
+    std::env::set_var("GIT_CONFIG_GLOBAL", restore.1.path());
+    f()
 }
 
 #[cfg(all(test, feature = "cli"))]
@@ -1449,6 +1560,140 @@ mod tests {
         let _ = std::fs::remove_dir_all(&moved);
         let _ = std::fs::remove_dir_all(&wt);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The emptiness check asks git to show a new directory as one line rather
+    /// than walk it, and an unreadable status is never "clean".
+    #[test]
+    fn the_emptiness_check_lists_untracked_files_normally() {
+        let seen = std::cell::RefCell::new(Vec::new());
+        let answer = |out: Result<&str, &str>| {
+            clean_with(|args| {
+                seen.borrow_mut().extend(args.iter().map(|a| a.to_string()));
+                out.map(str::to_string).map_err(str::to_string)
+            })
+        };
+        assert_eq!(answer(Ok("")), Ok(true));
+        assert!(seen.borrow().iter().any(|a| a == "--untracked-files=normal"), "{seen:?}");
+        assert!(seen.borrow().iter().any(|a| a == "core.excludesFile="), "{seen:?}");
+        assert!(!seen.borrow().iter().any(|a| a == "--untracked-files=all"), "{seen:?}");
+        assert_eq!(answer(Ok("?? node_modules/")), Ok(false));
+        assert!(answer(Err("broken")).is_err());
+    }
+
+    /// A new directory full of files is work, even for a user who hides
+    /// untracked files from `git status`.
+    #[test]
+    fn is_clean_sees_a_new_directory_as_work_when_status_hides_untracked_files() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("clean");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/clean-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        assert_eq!(child.is_clean(), Ok(true));
+        let deep = wt.join("node_modules/a/b");
+        std::fs::create_dir_all(&deep).unwrap();
+        for i in 0..500 {
+            std::fs::write(deep.join(format!("{i}.js")), "x").unwrap();
+        }
+        let hidden = "[status]\n\tshowUntrackedFiles = no\n";
+        assert_eq!(with_global_config(hidden, || child.is_clean()), Ok(false));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Files only the user's own global excludes file hides are still the
+    /// child's work: that file is not the checkout's to decide by.
+    #[test]
+    fn is_clean_sees_files_the_users_global_excludes_hide() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("excludes");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/excludes-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::create_dir_all(wt.join("out")).unwrap();
+        std::fs::write(wt.join("out/report.md"), "x").unwrap();
+        let excludes = root.with_extension("excludes-file");
+        std::fs::write(&excludes, "out/\n").unwrap();
+        let config = format!("[core]\n\texcludesFile = {}\n", excludes.display());
+        assert_eq!(with_global_config(&config, || child.is_clean()), Ok(false));
+        let _ = std::fs::remove_file(&excludes);
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A submodule's own repository is never looked into (its config could
+    /// run a program), so one that holds anything counts as work: commits
+    /// in `.git/modules`, or a repository checked out at a submodule's path.
+    #[test]
+    fn a_submodule_repository_counts_as_work() {
+        let Some(root) = init_repo() else { return };
+        let r = root.to_string_lossy().to_string();
+        let head = head_sha(&root).unwrap();
+        let link = format!("160000,{head},sub");
+        git(&["-C", &r, "update-index", "--add", "--cacheinfo", &link]).unwrap();
+        run(&root, None, &["commit", "-q", "-m", "sub", "--no-gpg-sign"]).unwrap();
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("modules");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/modules-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        assert_eq!(child.is_clean(), Ok(true), "an empty submodule path is nothing");
+
+        std::fs::create_dir_all(wt.join(".git/modules/sub")).unwrap();
+        std::fs::write(wt.join(".git/modules/sub/HEAD"), "x").unwrap();
+        assert_eq!(child.is_clean(), Ok(false), "an initialised submodule");
+        std::fs::remove_dir_all(wt.join(".git/modules")).unwrap();
+        assert_eq!(child.is_clean(), Ok(true));
+
+        std::fs::create_dir_all(wt.join("sub/.git")).unwrap();
+        assert_eq!(child.is_clean(), Ok(false), "a repository at the submodule");
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A submodule path that is not UTF-8 is checked as the bytes git gave,
+    /// not a lossy decoding of them that names a path which does not exist:
+    /// a filled one still counts as work.
+    #[cfg(unix)]
+    #[test]
+    fn a_filled_submodule_at_a_non_utf8_path_counts_as_work() {
+        use std::os::unix::ffi::OsStrExt;
+        let Some(root) = init_repo() else { return };
+        let r = root.to_string_lossy().to_string();
+        let head = head_sha(&root).unwrap();
+        let name = std::ffi::OsStr::from_bytes(b"sub-\xff");
+        // `update-index --index-info` reads raw path bytes from stdin.
+        let mut add = std::process::Command::new("git")
+            .args(["-C", &r, "update-index", "--index-info"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut line = format!("160000 {head}\t").into_bytes();
+        line.extend_from_slice(name.as_bytes());
+        line.push(b'\n');
+        std::io::Write::write_all(add.stdin.as_mut().unwrap(), &line).unwrap();
+        drop(add.stdin.take());
+        assert!(add.wait().unwrap().success());
+        run(&root, None, &["commit", "-q", "-m", "sub", "--no-gpg-sign"]).unwrap();
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("rawsub");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/rawsub-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        assert_eq!(child.is_clean(), Ok(true), "an empty submodule path is nothing");
+        std::fs::create_dir_all(wt.join(name)).unwrap();
+        std::fs::write(wt.join(name).join("work.txt"), "x").unwrap();
+        let clean = child.is_clean();
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(clean, Ok(false), "a filled submodule at a non-UTF-8 path");
     }
 
     /// `current_branch` re-reads `HEAD` live rather than caching it, so a

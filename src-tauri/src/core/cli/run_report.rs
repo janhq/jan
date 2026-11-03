@@ -61,6 +61,13 @@ impl OutputFormat {
     pub(crate) fn is_stream_json(self) -> bool {
         matches!(self, OutputFormat::StreamJson)
     }
+
+    /// Whether a `StreamEvent::Notice` reaches the user: text prints it to
+    /// stderr and stream-json emits its record, but the json result object
+    /// has no place for one.
+    pub(crate) fn shows_notices(self) -> bool {
+        !matches!(self, OutputFormat::Json)
+    }
 }
 
 /// One NDJSON record: the compact serialization plus its terminating newline.
@@ -472,6 +479,20 @@ fn error_code(code: &str, message: &str) -> String {
 mod tests {
     use super::*;
     use crate::core::agent::events::Usage;
+
+    /// A `Notice` reaches the user in text (stderr) and stream-json (its own
+    /// record); the json result object carries none, so a caller must not
+    /// count one sent there as told.
+    #[test]
+    fn only_text_and_stream_json_show_a_notice() {
+        assert!(OutputFormat::Text.shows_notices());
+        assert!(OutputFormat::StreamJson.shows_notices());
+        assert!(!OutputFormat::Json.shows_notices());
+        let mut report = RunReport::for_run(false);
+        report.observe(&StreamEvent::Notice { text: "kept".into() });
+        let result = serde_json::to_string(&report.finish(None, None, "m", 1, None)).unwrap_or_default();
+        assert!(!result.contains("kept"), "the json result shows no notice: {result}");
+    }
 
     /// The module's doc comment as one string. The prose is line-wrapped in the
     /// source, so a phrase its marker quotes can straddle a line break, and
