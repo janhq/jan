@@ -76,9 +76,10 @@ function gpuVerdict(
   const label = describeGpus(gpus)
   if (!report || report.pending || report.unavailable) return { label }
 
-  // Metal is compiled into every macOS build and always present, so the engine
-  // never reports it as "a GPU build" and never enumerates it as a device.
-  // Reading those absences literally told Apple Silicon users they were on CPU.
+  // Metal is compiled into every macOS build and always present, so a Mac is
+  // never "a CPU build that found no GPU". The engine lists the Accelerate BLAS
+  // device ahead of Metal, which is why the backend is named after the first
+  // accelerator rather than the first device (see `backendFromDeviceIds`).
   if (backendGpuFamily(report.backend) === 'metal') {
     return { willUse: true, label }
   }

@@ -29,6 +29,27 @@ describe('backendFromDeviceIds', () => {
   it('only strips trailing digits', () => {
     expect(backendFromDeviceIds(['Vulkan10'])).toBe('vulkan')
   })
+
+  // On macOS the engine lists the Accelerate BLAS device before the Metal one
+  // (`jan-llama-worker --list-devices` -> [BLAS, MTL0]). BLAS is a CPU math
+  // library, not where the layers run, and Metal's id is `MTL`, not `Metal`;
+  // naming the backend `blas` told Apple Silicon users they were on the CPU.
+  it('names the GPU backend, not a CPU helper that is listed first', () => {
+    expect(backendFromDeviceIds(['BLAS', 'MTL0'])).toBe('metal')
+    expect(backendFromDeviceIds(['CPU', 'CUDA0'])).toBe('cuda')
+    expect(backendFromDeviceIds(['BLAS', 'Vulkan0', 'Vulkan1'])).toBe('vulkan')
+  })
+
+  it('names Metal for its own device id', () => {
+    expect(backendFromDeviceIds(['MTL0'])).toBe('metal')
+  })
+
+  // With no GPU device the CPU-side name is the honest answer, and it must
+  // keep reading as a CPU backend.
+  it('keeps a CPU-only device list as a CPU backend', () => {
+    expect(backendFromDeviceIds(['BLAS'])).toBe('blas')
+    expect(backendFromDeviceIds(['CPU'])).toBe('cpu')
+  })
 })
 
 describe('evaluateGpuOffload', () => {
