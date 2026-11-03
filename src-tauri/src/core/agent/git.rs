@@ -413,6 +413,26 @@ pub(crate) fn head_sha(repo: &Path) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// A path in the form git expects from this host. Windows `canonicalize`, and
+/// every path derived from it, is a verbatim `\\?\C:\...` path: git accepts one
+/// after `-C`, but `worktree add` cannot create directories under it
+/// (`Invalid argument`), so a caller that keeps canonical paths fails or works
+/// depending on which subcommand sees the path first.
+#[cfg(feature = "cli")]
+fn native_path(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{rest}");
+        }
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            return rest.to_string();
+        }
+    }
+    s.into_owned()
+}
+
 /// Create a worktree at `path`, checking out a new branch `branch` starting at
 /// `base` (a full commit id). The parent directory is created first: `git
 /// worktree add` requires the path's parent to exist but refuses the path
@@ -428,18 +448,11 @@ pub(crate) fn worktree_add(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
+    let path = native_path(path);
     run(
         repo,
         None,
-        &[
-            "worktree",
-            "add",
-            "-b",
-            branch,
-            "--",
-            &path.to_string_lossy(),
-            base,
-        ],
+        &["worktree", "add", "-b", branch, "--", &path, base],
     )
     .map(|_| ())
 }
@@ -890,6 +903,25 @@ mod tests {
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
+    /// A file's text with line endings normalized. Git for Windows checks a
+    /// tracked text file out as CRLF under its default `core.autocrlf=true`, so
+    /// a byte-exact comparison only passes on the machine that wrote the file.
+    /// These tests care which version of the file landed, not its EOL style.
+    fn text(path: PathBuf) -> String {
+        std::fs::read_to_string(path)
+            .expect("readable file")
+            .replace("\r\n", "\n")
+    }
+
+    /// A thread id unique to this test run. A thread's snapshot index lives in
+    /// the system temp dir and outlives the run, so a fixed id makes the next
+    /// run read an index that points at objects of a repo that is gone and fail
+    /// with "is not a valid object" before the test's own logic runs.
+    fn fresh_thread_id(tag: &str) -> String {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        format!("{tag}-{}-{n}", std::process::id())
+    }
+
     /// git, and whatever it runs (credential helpers, ssh, aliases), cannot
     /// prompt on the TUI's terminal. The `/dev/tty` probe is only meaningful
     /// when the test runner has a terminal (it says "opened" for a git that
@@ -962,10 +994,7 @@ mod tests {
             changed_paths(&root).is_empty(),
             "the user's checkout is clean"
         );
-        assert_eq!(
-            std::fs::read_to_string(root.join("a.txt")).unwrap(),
-            "one\n"
-        );
+        assert_eq!(text(root.join("a.txt")), "one\n");
 
         // A worktree the user deleted is forgotten, so its path is reusable.
         std::fs::remove_dir_all(&wt).unwrap();
@@ -990,11 +1019,51 @@ mod tests {
         let _ = std::fs::remove_dir_all(&wt);
         worktree_add(&root, &wt, "jan/agent/test2", &snap).expect("worktree add at a snapshot");
         assert_eq!(
-            std::fs::read_to_string(wt.join("a.txt")).unwrap(),
+            text(wt.join("a.txt")),
             "two\n",
             "the branch starts from the snapshot, not HEAD and not the live tree"
         );
         let _ = std::fs::remove_dir_all(&wt);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_path_strips_the_verbatim_prefix() {
+        assert_eq!(native_path(Path::new(r"\\?\C:\tmp\x")), r"C:\tmp\x");
+        assert_eq!(
+            native_path(Path::new(r"\\?\UNC\srv\share\x")),
+            r"\\srv\share\x"
+        );
+        assert_eq!(native_path(Path::new(r"C:\tmp\x")), r"C:\tmp\x");
+    }
+
+    /// `std::fs::canonicalize` yields a verbatim `\\?\C:\...` path on Windows,
+    /// and `git worktree add` refuses to create directories under one
+    /// (`could not create leading directories ... Invalid argument`) while
+    /// every other git call accepts it. Jan stores canonical paths for child
+    /// workspaces, so a worktree created from one must still be created.
+    #[cfg(windows)]
+    #[test]
+    fn worktree_add_accepts_a_canonicalized_path() {
+        let Some(root) = init_repo() else { return };
+        let root = root.canonicalize().expect("canonical root");
+        assert!(
+            root.to_string_lossy().starts_with(r"\\?\"),
+            "the test needs a verbatim path to reach the bug: {root:?}"
+        );
+
+        let wt = root.parent().unwrap().join(format!(
+            "{}-canon-wt",
+            root.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = std::fs::remove_dir_all(&wt);
+        let head = head_sha(&root).expect("a repo with one commit has a HEAD");
+        worktree_add(&root, &wt, "jan/agent/canon", &head)
+            .expect("worktree add from a canonical path");
+        assert!(wt.join("a.txt").is_file(), "the tree was checked out");
+
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -1044,7 +1113,8 @@ mod tests {
     fn snapshot_restore_roundtrip() {
         let Some(root) = init_repo() else { return };
 
-        let thread_id = "test-thread";
+        let id = fresh_thread_id("test-thread");
+        let thread_id = id.as_str();
         let base = snapshot(&root, None, "base", thread_id, &[]).expect("base snapshot");
 
         // Mutate: edit a file, add a new one, and drop something into an ignored dir.
@@ -1060,7 +1130,7 @@ mod tests {
 
         // Restore to base: a.txt reverts, b.txt (added) is removed, ignored file stays.
         restore(&root, &base, &turn).expect("restore");
-        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "one\n");
+        assert_eq!(text(root.join("a.txt")), "one\n");
         assert!(!root.join("b.txt").exists(), "added file must be removed");
         assert!(
             root.join("ignored/keep.txt").exists(),
@@ -1074,7 +1144,8 @@ mod tests {
     #[test]
     fn snapshot_is_invisible_to_user_state() {
         let Some(root) = init_repo() else { return };
-        let thread_id = "test-thread-2";
+        let id = fresh_thread_id("test-thread-2");
+        let thread_id = id.as_str();
         std::fs::write(root.join("a.txt"), "dirty\n").unwrap();
         let _ = snapshot(&root, None, "s", thread_id, &[]).expect("snapshot");
         // The user's index/branch are untouched: HEAD still the init commit and the
@@ -1088,7 +1159,8 @@ mod tests {
     #[test]
     fn base_snapshot_picks_up_preexisting_dirty_tracked_file() {
         let Some(root) = init_repo() else { return };
-        let thread_id = "test-thread-dirty-base";
+        let id = fresh_thread_id("test-thread-dirty-base");
+        let thread_id = id.as_str();
 
         // Dirty *before* the agent starts -- no tool call reported it, so the
         // base must still capture it via the tracked-only diff, not `changed`.
@@ -1109,7 +1181,8 @@ mod tests {
     #[test]
     fn base_snapshot_includes_dirty_tracked_file_that_became_ignored() {
         let Some(root) = init_repo() else { return };
-        let thread_id = "test-thread-dirty-now-ignored";
+        let id = fresh_thread_id("test-thread-dirty-now-ignored");
+        let thread_id = id.as_str();
         cleanup_snapshot_index(thread_id);
 
         // Generated files can be committed before their directory is added to
@@ -1171,7 +1244,8 @@ mod tests {
     #[test]
     fn checkpoint_only_stages_reported_paths() {
         let Some(root) = init_repo() else { return };
-        let thread_id = "test-thread-3";
+        let id = fresh_thread_id("test-thread-3");
+        let thread_id = id.as_str();
 
         let base = snapshot(&root, None, "base", thread_id, &[]).expect("base snapshot");
         let idx = snapshot_index(thread_id).unwrap();
