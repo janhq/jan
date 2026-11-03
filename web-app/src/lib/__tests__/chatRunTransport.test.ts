@@ -8,7 +8,10 @@ import { TOOL_DIFF_MAX_CHARS } from '../toolDiff'
 import { canContinueStoppedTurn, createChatRunStream, taskStatusRows, TASK_STATUS_PART } from '../chatRunTransport'
 import { expandChatRunContext, RUN_CONTEXT_PART, RUN_CONTEXT_MAX_CHARS } from '../chatRunContext'
 import { PING_OPEN, PING_CLOSE } from '../coworkPing'
-import { TASK_STATUS_TEXT_LIMIT, TASK_STATUS_CARRIER_TEXT_LIMIT } from '../chatTaskStatus'
+import {
+  TASK_STATUS_TEXT_LIMIT, TASK_STATUS_CARRIER_TEXT_LIMIT, TASK_STATUS_MAX_ROWS_PER_PART, TASK_STATUS_MAX_ID_CHARS,
+  TASK_STATUS_TRUNCATION_MARKER, shapeTaskStatusPart,
+} from '../chatTaskStatus'
 import { makeSibling } from '../message-branching'
 
 const stream = (chunks: UIMessageChunk[]) => new ReadableStream<UIMessageChunk>({ start(c) { chunks.forEach(v => c.enqueue(v)); c.close() } })
@@ -525,6 +528,167 @@ describe('task-status rows are an optional carrier budget (never cost the turn i
     const reloaded = convertThreadMessageToUIMessage(store(message, fields))
     expect(taskStatusRows([reloaded]).map(r => r.runId)).toEqual(['run-2'])
     expect(reloaded.parts.some(p => p.type === RUN_CONTEXT_PART)).toBe(true)
+  })
+
+  it('shed tiers: strip alone is enough for many bulky parts; drop is reached only when identity alone is over budget', () => {
+    const bulky = Array.from({ length: 40 }, (_, i) => statusPart(row(i, { finalOutput: 'x'.repeat(5000), error: 'e'.repeat(5000) })))
+    const a = assistantRecordFields({ id: 'm5', role: 'assistant', parts: [{ type: RUN_CONTEXT_PART, data: { text: 'ctx' } }, ...bulky] as UIMessage['parts'] }, {}, { stopped: false })
+    expect(a.metadata).not.toHaveProperty('uiPartsSkipped')
+    expect(a.metadata.uiTaskStatusShed).toMatchObject({ truncated: expect.any(Number), stripped: expect.any(Number) })
+    expect(a.metadata.uiTaskStatusShed).not.toHaveProperty('dropped')
+    const kept = (a.metadata.uiParts as { parts: { type: string }[] }).parts
+    expect(kept.filter(p => p.type === TASK_STATUS_PART)).toHaveLength(40)
+    expect(kept.some(p => p.type === RUN_CONTEXT_PART)).toBe(true)
+
+    const bare = Array.from({ length: 1800 }, (_, i) => statusPart({ runId: `run-${i}`, name: `child-${i}`, status: 'running', startedAt: 1000 + i }))
+    const b = assistantRecordFields({ id: 'm6', role: 'assistant', parts: [{ type: RUN_CONTEXT_PART, data: { text: 'ctx' } }, ...bare] as UIMessage['parts'] }, {}, { stopped: false })
+    expect(b.metadata).not.toHaveProperty('uiPartsSkipped')
+    expect(b.metadata.uiTaskStatusShed).toEqual({ dropped: expect.any(Number) })
+    const keptB = (b.metadata.uiParts as { parts: { type: string }[] }).parts
+    expect(keptB.some(p => p.type === RUN_CONTEXT_PART)).toBe(true)
+    expect(keptB.filter(p => p.type === TASK_STATUS_PART)).toHaveLength(1800 - (b.metadata.uiTaskStatusShed as { dropped: number }).dropped)
+    expect(JSON.stringify(b.metadata.uiParts).length).toBeLessThanOrEqual(256 * 1024)
+  })
+
+  describe('shapeTaskStatusPart bounds (enum, row count, id and text limits)', () => {
+    const good = (over: Record<string, unknown> = {}) => ({ runId: 'r', name: 'n', status: 'done', startedAt: 1, ...over })
+    const part = (rows: unknown[]) => ({ type: TASK_STATUS_PART, id: 'task-status:r', data: { subagents: rows } })
+    it('accepts the boundary values', () => {
+      for (const status of ['running', 'done', 'error']) expect(shapeTaskStatusPart(part([good({ status })]))).toBeDefined()
+      expect(shapeTaskStatusPart(part(Array.from({ length: TASK_STATUS_MAX_ROWS_PER_PART }, () => good())))).toBeDefined()
+      expect(shapeTaskStatusPart(part([good({ runId: 'r'.repeat(TASK_STATUS_MAX_ID_CHARS), name: 'n'.repeat(TASK_STATUS_MAX_ID_CHARS) })]))).toBeDefined()
+    })
+    it('rejects every malformed shape', () => {
+      const bad: [string, unknown][] = [
+        ['unknown status', part([good({ status: 'queued' })])],
+        ['missing status', part([good({ status: undefined })])],
+        ['zero rows', part([])],
+        ['too many rows', part(Array.from({ length: TASK_STATUS_MAX_ROWS_PER_PART + 1 }, () => good()))],
+        ['non-array rows', { type: TASK_STATUS_PART, id: 'x', data: { subagents: {} } }],
+        ['empty runId', part([good({ runId: '' })])],
+        ['long runId', part([good({ runId: 'r'.repeat(TASK_STATUS_MAX_ID_CHARS + 1) })])],
+        ['empty name', part([good({ name: '' })])],
+        ['long name', part([good({ name: 'n'.repeat(TASK_STATUS_MAX_ID_CHARS + 1) })])],
+        ['non-finite startedAt', part([good({ startedAt: Infinity })])],
+        ['string endedAt', part([good({ endedAt: '1' })])],
+        ['non-string finalOutput', part([good({ finalOutput: 1 })])],
+        ['non-string error', part([good({ error: {} })])],
+        ['extra row key', part([good({ extra: 1 })])],
+        ['array row', part([[]])],
+        ['null row', part([null])],
+        ['extra data key', { type: TASK_STATUS_PART, id: 'x', data: { subagents: [good()], other: 1 } }],
+        ['extra part key', { ...part([good()]), extra: 1 }],
+        ['empty id', { ...part([good()]), id: '' }],
+        ['no data', { type: TASK_STATUS_PART, id: 'x' }],
+        ['one bad row among good', part([good(), good({ status: 'nope' })])],
+      ]
+      for (const [label, p] of bad) expect(shapeTaskStatusPart(p), label).toBeUndefined()
+    })
+    it('bounds live text with the marker and keeps text within the limit unchanged', () => {
+      const shaped = shapeTaskStatusPart(part([good({ finalOutput: 'x'.repeat(TASK_STATUS_TEXT_LIMIT + 5), error: 'ok' })])) as { data: { subagents: { finalOutput: string; error: string }[] } }
+      expect(shaped.data.subagents[0].finalOutput).toHaveLength(TASK_STATUS_TEXT_LIMIT)
+      expect(shaped.data.subagents[0].finalOutput.endsWith(TASK_STATUS_TRUNCATION_MARKER)).toBe(true)
+      expect(shaped.data.subagents[0].error).toBe('ok')
+    })
+  })
+
+  describe('rehydrate tolerates malformed stored status parts (read side)', () => {
+    const base = () => {
+      const parts = [
+        { type: 'reasoning', text: 'thinking', state: 'done', providerMetadata: { anthropic: { signature: 'sig-r' } } },
+        { type: 'tool-edit', toolCallId: 'tc1', state: 'output-available', input: { path: 'a.txt' }, output: 'Edited' },
+        { type: RUN_CONTEXT_PART, data: { text: 'ctx-read-marker' } },
+        statusPart(row(0, { finalOutput: 'ok' })),
+        { type: 'text', text: 'final', state: 'done' },
+      ] as UIMessage['parts']
+      const message: UIMessage = { id: 'rd', role: 'assistant', parts }
+      const fields = assistantRecordFields(message, {}, { stopped: false })
+      expect(fields.metadata).not.toHaveProperty('uiPartsSkipped')
+      return { parts, stored: store(message, fields) }
+    }
+    const inject = (stored: ThreadMessage, extra: unknown[]): ThreadMessage => {
+      const copy = JSON.parse(JSON.stringify(stored)) as ThreadMessage
+      const carrier = (copy.metadata as { uiParts: { parts: unknown[] } }).uiParts
+      carrier.parts.splice(3, 0, ...extra)
+      return copy
+    }
+    const malformed = [
+      { type: TASK_STATUS_PART, id: 'task-status:x1', data: { subagents: [{ runId: 'x1', name: 'n', status: 'bogus', startedAt: 1 }] } },
+      { type: TASK_STATUS_PART, id: 'task-status:x2', data: { subagents: [] } },
+      { type: TASK_STATUS_PART, id: 'task-status:x3', data: { subagents: Array.from({ length: TASK_STATUS_MAX_ROWS_PER_PART + 1 }, (_, i) => ({ runId: `x${i}`, name: 'n', status: 'done', startedAt: 1 })) } },
+      { type: TASK_STATUS_PART, id: 'task-status:x4', data: { subagents: [{ runId: 'r'.repeat(TASK_STATUS_MAX_ID_CHARS + 1), name: 'n', status: 'done', startedAt: 1 }] } },
+      { type: TASK_STATUS_PART, id: 'task-status:x5', data: { subagents: [{ runId: 'x5', name: 'n', status: 'done', startedAt: 1, extra: true }] } },
+      { type: TASK_STATUS_PART, id: 'task-status:x6', data: 'junk' },
+    ]
+
+    it('one bad status part keeps the valid siblings, run-context and model context; only the bad part is omitted and noticed', async () => {
+      const { parts, stored } = base()
+      for (const bad of malformed) {
+        const reloaded = convertThreadMessageToUIMessage(inject(stored, [bad]))
+        expect(reloaded.parts.find(p => p.type === 'reasoning')).toMatchObject({ providerMetadata: { anthropic: { signature: 'sig-r' } } })
+        expect(reloaded.parts.find(p => p.type === 'tool-edit')).toMatchObject({ toolCallId: 'tc1', output: 'Edited' })
+        expect(reloaded.parts.filter(p => p.type === RUN_CONTEXT_PART)).toEqual(parts.filter(p => p.type === RUN_CONTEXT_PART))
+        expect(taskStatusRows([reloaded]).map(r => r.runId)).toEqual(['run-0'])
+        expect(JSON.stringify(reloaded.parts)).not.toContain('task-status:x')
+        expect((reloaded.metadata as Record<string, unknown>).uiTaskStatusShed).toEqual({ dropped: 1 })
+        expect(reloaded.metadata).not.toHaveProperty('uiPartsSkipped')
+        const model = JSON.stringify(await convertToModelMessages(expandChatRunContext([user, reloaded])))
+        expect(model.split('ctx-read-marker').length - 1).toBe(1)
+        expect(model).not.toContain('task-status')
+      }
+    })
+
+    it('several bad status parts are counted, added to the writer\'s own count, and never written back', () => {
+      const { stored } = base()
+      const withShed = { ...stored, metadata: { ...stored.metadata, uiTaskStatusShed: { truncated: 2, dropped: 1 } } } as ThreadMessage
+      const reloaded = convertThreadMessageToUIMessage(inject(withShed, malformed))
+      expect((reloaded.metadata as Record<string, unknown>).uiTaskStatusShed).toEqual({ truncated: 2, dropped: 1 + malformed.length })
+      expect(taskStatusRows([reloaded]).map(r => r.runId)).toEqual(['run-0'])
+      expect(withShed.metadata).toMatchObject({ uiTaskStatusShed: { truncated: 2, dropped: 1 } })
+    })
+
+    it('a clean carrier reloads with no new notice', () => {
+      const { stored } = base()
+      expect(convertThreadMessageToUIMessage(stored).metadata).not.toHaveProperty('uiTaskStatusShed')
+    })
+
+    it('a bad NON-status part still fails closed to content only', () => {
+      const { stored } = base()
+      for (const bad of [
+        { type: RUN_CONTEXT_PART, data: { text: 'a', other: 1 } },
+        { type: 'data-unknown-thing', data: 1 },
+        { type: 'text', text: 5 },
+      ]) {
+        const reloaded = convertThreadMessageToUIMessage(inject(stored, [malformed[0], bad]))
+        expect(reloaded.parts.some(p => p.type === RUN_CONTEXT_PART)).toBe(false)
+        expect(JSON.stringify(reloaded.parts)).not.toContain('sig-r')
+        expect(taskStatusRows([reloaded])).toEqual([])
+      }
+    })
+
+    it('a carrier whose canonical content no longer matches still fails closed (status filtering grants no authority)', () => {
+      const { stored } = base()
+      const changed = inject({ ...stored, content: [{ type: 'text', text: { value: 'edited elsewhere', annotations: [] } }] } as unknown as ThreadMessage, [malformed[0]])
+      const reloaded = convertThreadMessageToUIMessage(changed)
+      expect(JSON.stringify(reloaded.parts)).not.toContain('sig-r')
+      expect(reloaded.parts.some(p => p.type === RUN_CONTEXT_PART)).toBe(false)
+    })
+  })
+
+  it('drops only a malformed stored display status while keeping valid context and reasoning', () => {
+    const message = { id: 'stored-invalid', role: 'assistant', parts: [
+      { type: 'reasoning', text: 'r', state: 'done', providerMetadata: { anthropic: { signature: 'sig' } } },
+      { type: RUN_CONTEXT_PART, data: { text: 'keep-context' } },
+      { type: 'text', text: 'answer', state: 'done' },
+    ] } as UIMessage
+    const fields = assistantRecordFields(message, {}, {})
+    const record = store(message, fields)
+    ;(record.metadata!.uiParts as { parts: unknown[] }).parts.push({ type: TASK_STATUS_PART, id: 'bad', data: { subagents: [{ runId: 'bad', status: 'invalid' }] } })
+    const loaded = convertThreadMessageToUIMessage(record)
+    expect(loaded.parts).toEqual(message.parts)
+    expect(loaded.metadata?.uiTaskStatusShed).toEqual({ dropped: 1 })
+    ;(record.metadata!.uiParts as { parts: unknown[] }).parts.push({ type: 'unknown-canonical-part' })
+    expect(convertThreadMessageToUIMessage(record).parts.some(p => p.type === RUN_CONTEXT_PART)).toBe(false)
   })
 
   it('a rebuild clears stale shed metadata, and so does an edited branch', () => {

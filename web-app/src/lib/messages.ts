@@ -270,9 +270,24 @@ export function convertThreadMessageToUIMessage(
     unknown
   >
   // `uiPartsSkipped` stays visible: that turn reloads (and is re-sent) lossy.
-  const parts: any[] =
-    rehydrateUIParts(uiParts, threadMessage.content || [], metadata.toolErrors) ??
-    contentToUIParts(threadMessage)
+  const rehydrated = rehydrateUIParts(
+    uiParts,
+    threadMessage.content || [],
+    metadata.toolErrors
+  )
+  const parts: any[] = rehydrated?.parts ?? contentToUIParts(threadMessage)
+  // Display-only status parts dropped on this read are counted, on top of any
+  // omission the writer already recorded. Never written back (the writer
+  // clears it on rebuild), so no authority changes.
+  if (rehydrated?.dropped) {
+    const prior = (metadata.uiTaskStatusShed ?? {}) as Record<string, unknown>
+    metadata.uiTaskStatusShed = {
+      ...prior,
+      dropped:
+        (typeof prior.dropped === 'number' ? prior.dropped : 0) +
+        rehydrated.dropped,
+    }
+  }
 
   return {
     id: threadMessage.id,
@@ -833,24 +848,41 @@ function resolveContentPointers(part: unknown, content: any[]): unknown {
 // `content` and `metadata.toolErrors` from them gives back exactly what is
 // stored: any writer that changed either since (an older build's Stop rewrite,
 // which may touch only `toolErrors`, or an edit) invalidates them.
+// Task-status parts are display-only and optional. Only a malformed one is
+// filtered out (and counted); every other part, canonical or run-context, is
+// left for the strict sanitize, which still fails closed on its own malformed
+// parts. Used by the writer (uiPartsFor) and the reader (rehydrateUIParts).
+function filterTaskStatusParts<T>(parts: T[]): { parts: T[]; dropped: number } {
+  let dropped = 0
+  const kept = parts.flatMap((part) => {
+    if ((part as { type?: unknown } | null)?.type !== TASK_STATUS_TYPE) return [part]
+    const shaped = shapeTaskStatusPart(part)
+    if (shaped) return [shaped as unknown as T]
+    dropped += 1
+    return []
+  })
+  return { parts: kept, dropped }
+}
+
 function rehydrateUIParts(
   carrier: unknown,
   content: ThreadContent[],
   toolErrors: unknown
-): Record<string, unknown>[] | undefined {
+): { parts: Record<string, unknown>[]; dropped: number } | undefined {
   const { v, parts } = (carrier ?? {}) as { v?: unknown; parts?: unknown }
   if (v !== 1 || !Array.isArray(parts) || parts.length === 0) return undefined
   try {
-    const rehydrated = sanitizeUIParts(
+    const filtered = filterTaskStatusParts(
       parts.map((part) => resolveContentPointers(part, content))
     )
+    const rehydrated = sanitizeUIParts(filtered.parts)
     const derived = extractContentPartsFromUIMessage({
       parts: rehydrated,
     } as unknown as UIMessage)
     const derivedErrors = toolErrorsOf({ parts: rehydrated } as unknown as UIMessage)
     return canonicalJson(derived) === canonicalJson(content) &&
       canonicalJson(derivedErrors ?? {}) === canonicalJson(toolErrors ?? {})
-      ? rehydrated
+      ? { parts: rehydrated, dropped: filtered.dropped }
       : undefined
   } catch {
     return undefined
@@ -872,13 +904,8 @@ function uiPartsFor(
   try {
     // Task-status rows are display-only and optional: a malformed part is
     // dropped (and counted) instead of costing the turn its whole carrier.
-    const prepared = message.parts.flatMap((part) => {
-      if ((part as { type?: unknown }).type !== TASK_STATUS_TYPE) return [part]
-      const shaped = shapeTaskStatusPart(part)
-      if (shaped) return [shaped as unknown as typeof part]
-      shed.dropped = (shed.dropped ?? 0) + 1
-      return []
-    })
+    const { parts: prepared, dropped } = filterTaskStatusParts(message.parts)
+    if (dropped) shed.dropped = dropped
     const sanitized = sanitizeUIParts(prepared)
     const legacy = sanitizeUIParts(
       contentToUIParts({ ...message, content, metadata } as unknown as ThreadMessage)
