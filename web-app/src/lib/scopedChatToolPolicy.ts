@@ -30,9 +30,9 @@ export const SCOPED_CHAT_SCRATCH_TOOLS = Object.freeze([
 
 /** This policy emits only the NAME 'memory'; it builds no schema and filters
  * none. Shaping the advertised schema to read-only ops (view/search) is the
- * integrator's job when it attaches schemas. Mutation ops are gated at
- * dispatch by the memoryWrite grant regardless, never by swapping schemas
- * mid-turn. */
+ * integrator's job when it attaches schemas. Chat dispatch refuses every
+ * mutation op regardless of memoryWrite; that grant controls skill_write,
+ * not mutation through this read-only memory tool. */
 export const SCOPED_CHAT_MEMORY_TOOL = 'memory'
 
 /** Durable-mutation-only tools: advertised only when the turn snapshot already
@@ -106,8 +106,8 @@ const MEMORY_READ_OPS = ['view', 'search'] as const
 /** Read-only view of the Rust-owned `memory` parameter schema: `op` is narrowed
  * to view/search and the move-only `to` argument is dropped. Returns null (so
  * the caller withholds the tool) when the schema is not the expected shape,
- * rather than guessing. Advertisement only; dispatch still gates mutation by
- * the memoryWrite grant. Never mutates the cached input. */
+ * rather than guessing. Chat dispatch independently refuses mutation ops,
+ * regardless of the memoryWrite grant. Never mutates the cached input. */
 export function memoryReadOnlyParameters(
   parameters: unknown
 ): Record<string, unknown> | null {
