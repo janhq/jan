@@ -920,6 +920,9 @@ describe('run finalizer retention', () => {
     for (let i = 0; i < 50 && __testing.stateOf(t).children.size < 2; i++) {
       await Promise.race([reader.read(), settle(2)])
     }
+    // Prove this run actually dispatched before cancellation; otherwise cleanup is vacuous.
+    expect(__testing.stateOf(t).children.size).toBe(2)
+    expect(__testing.stateOf(t).statusRows.has('tk-a')).toBe(true)
     await reader.cancel('consumer closed')
     await settle(40)
     const state = __testing.stateOf(t)
