@@ -800,6 +800,9 @@ describe('ChatInput', () => {
       `?temporary%2Dchat=true`,
       `?temporary-chat=%74rue`,
       `?a=1&temporary-chat=true`,
+      `?temporary-chat=false&temporary-chat=true`,
+      `?temporary-chat=true&temporary-chat=false`,
+      `?temporary-chat=true&temporary-chat=true`,
     ])('treats %s as temporary: no persistent create, no preparation', (search) => {
       window.history.replaceState({}, '', `/${search}`)
       const prepare = vi.fn(() => async () => true)
@@ -814,7 +817,7 @@ describe('ChatInput', () => {
     it.each([
       '?temporary-chat=truex',
       '?x-temporary-chat=true',
-      '?temporary-chat=false&temporary-chat=true',
+      '?temporary-chat=false&temporary-chat=false',
       '?temporary-chat=True',
       '?other=temporary-chat%3Dtrue',
     ])('treats %s as a normal chat', async (search) => {

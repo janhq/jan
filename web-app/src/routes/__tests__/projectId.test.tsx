@@ -216,6 +216,7 @@ describe('Project route single Chat flow', () => {
     expect(screen.getByTestId('project-scope-status')).toBe(region)
     expect(region).toHaveTextContent('common:conversationScope.unsupported')
     expect(region).toHaveTextContent('common:conversationScope.pendingKept')
+    expect(region).not.toHaveTextContent('pendingKeptTemporary')
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     view.rerender(<Component />)
     expect(screen.getByTestId('project-scope-status')).toBe(region)
@@ -236,14 +237,27 @@ describe('Project route single Chat flow', () => {
     view.rerender(<Component />)
     expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
-    // A tool-capable model in temporary mode is not "unsupported".
-    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
+    // A tool-capable model in temporary mode is not "unsupported", but the
+    // hidden control is explained and the elevated draft is stated as kept.
+    expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
+      'common:conversationScope.temporaryPermissions common:conversationScope.pendingKeptTemporary'
+    )
     window.history.replaceState({}, '', '/')
     view.rerender(<Component />)
     expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
       'Conversation permissions (pending)'
     )
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+  })
+
+  it('temporary mode without an elevated draft shows exactly the temporary note with no pending-kept suffix', () => {
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    window.history.replaceState({}, '', '/?temporary-chat=true')
+    renderComponent()
+    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
+      'common:conversationScope.temporaryPermissions'
+    )
   })
 
   it('no selected model shows no unsupported notice, keeps the control hidden and prepare off, then resurfaces the pending draft', async () => {
@@ -270,7 +284,7 @@ describe('Project route single Chat flow', () => {
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
   })
 
-  it('temporary mode with a non-tools model shows no unsupported/pending notice, then a regular chat preserves the pending draft', async () => {
+  it('temporary mode with a non-tools model shows the temporary (not unsupported) notice, then a regular chat preserves the pending draft', async () => {
     const Component = Route.component as React.ComponentType
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     const view = renderComponent()
@@ -281,16 +295,24 @@ describe('Project route single Chat flow', () => {
     h.selectedModel = { id: 'model-b', capabilities: [] }
     window.history.replaceState({}, '', '/?temporary-chat=true')
     view.rerender(<Component />)
-    // Temporary chat never persists consent: no misleading notice, no prepare path.
+    // Temporary chat never persists consent: the temporary reason (not the
+    // unsupported-model one) is shown, with the draft kept, and no prepare path.
     expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
-    expect(screen.getByTestId('project-scope-status')).toBeEmptyDOMElement()
+    expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
+      'common:conversationScope.temporaryPermissions common:conversationScope.pendingKeptTemporary'
+    )
+    expect(screen.getByTestId('project-scope-unsupported')).not.toHaveTextContent(
+      'common:conversationScope.unsupported'
+    )
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     // Switching back to a regular chat still tells the truth about the kept draft.
     window.history.replaceState({}, '', '/')
     view.rerender(<Component />)
     expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
       'common:conversationScope.pendingKept'
+    )
+    expect(screen.getByTestId('project-scope-unsupported')).not.toHaveTextContent(
+      'pendingKeptTemporary'
     )
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     // And the draft survives to resurface on a tool-capable model.
@@ -306,7 +328,7 @@ describe('Project route single Chat flow', () => {
     '/?x-temporary-chat=true',
     '/?temporary-chat=truex',
     '/?temporary-chat=false',
-    '/?temporary-chat=false&temporary-chat=true',
+    '/?temporary-chat=false&temporary-chat=false',
     '/?other=temporary-chat%3Dtrue',
   ])('does not treat %s as temporary mode', (url) => {
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
@@ -315,7 +337,15 @@ describe('Project route single Chat flow', () => {
     expect(screen.getByTestId('project-scope-consent-trigger')).toBeInTheDocument()
   })
 
-  it.each(['/?temporary-chat=true', '/?a=1&temporary-chat=true', '/?temporary%2Dchat=true', '/?temporary-chat=%74rue'])(
+  it.each([
+    '/?temporary-chat=true',
+    '/?a=1&temporary-chat=true',
+    '/?temporary%2Dchat=true',
+    '/?temporary-chat=%74rue',
+    '/?temporary-chat=false&temporary-chat=true',
+    '/?temporary-chat=true&temporary-chat=false',
+    '/?temporary-chat=true&temporary-chat=true',
+  ])(
     'treats %s as temporary mode exactly',
     (url) => {
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
@@ -365,6 +395,9 @@ describe('Project route single Chat flow', () => {
     // The hidden pending draft is announced, not silently dropped.
     expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
       'common:conversationScope.pendingKept'
+    )
+    expect(screen.getByTestId('project-scope-unsupported')).not.toHaveTextContent(
+      'pendingKeptTemporary'
     )
     // Back on a tool-capable model the draft resurfaces explicitly pending.
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }

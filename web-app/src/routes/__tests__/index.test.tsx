@@ -306,6 +306,7 @@ describe('Index route', () => {
       expect(screen.getByTestId('home-scope-status')).toBe(region)
       expect(region).toHaveTextContent('common:conversationScope.unsupported')
       expect(region).toHaveTextContent('common:conversationScope.pendingKept')
+      expect(region).not.toHaveTextContent('pendingKeptTemporary')
       // Supported again: same node, text removed, region still mounted.
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
       view.rerender(<Component />)
@@ -352,6 +353,11 @@ describe('Index route', () => {
       view.rerender(<Component />)
       expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+      // The control disappears with a persistent explanation; the elevated draft
+      // is stated as kept, and temporary tools are never enabled.
+      expect(screen.getByTestId('home-scope-unsupported').textContent).toBe(
+        'common:conversationScope.temporaryPermissions common:conversationScope.pendingKeptTemporary'
+      )
       // Leaving temporary mode resurfaces the preserved draft, explicitly pending.
       window.history.replaceState({}, '', '/')
       view.rerender(<Component />)
@@ -359,6 +365,16 @@ describe('Index route', () => {
         'Conversation permissions (pending)'
       )
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+    })
+
+    it('temporary mode without an elevated draft shows exactly the temporary note with no pending-kept suffix', () => {
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      window.history.replaceState({}, '', '/?temporary-chat=true')
+      renderComponent()
+      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.getByTestId('home-scope-unsupported').textContent).toBe(
+        'common:conversationScope.temporaryPermissions'
+      )
     })
 
     it('no selected model shows no unsupported notice, keeps the control hidden and prepare off, then resurfaces the pending draft', async () => {
@@ -398,10 +414,13 @@ describe('Index route', () => {
       expect(screen.getByTestId('home-scope-unsupported')).toHaveTextContent(
         'common:conversationScope.pendingKept'
       )
+      expect(screen.getByTestId('home-scope-unsupported')).not.toHaveTextContent(
+        'pendingKeptTemporary'
+      )
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     })
 
-    it.each(['/?x-temporary-chat=true', '/?temporary-chat=truex', '/?temporary-chat=false', '/?temporary-chat=false&temporary-chat=true', '/?other=temporary-chat%3Dtrue'])(
+    it.each(['/?x-temporary-chat=true', '/?temporary-chat=truex', '/?temporary-chat=false', '/?temporary-chat=false&temporary-chat=false', '/?other=temporary-chat%3Dtrue'])(
       'does not treat %s as temporary mode',
       (url) => {
         h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
@@ -411,8 +430,14 @@ describe('Index route', () => {
       }
     )
 
-    it.each(['/?temporary%2Dchat=true', '/?temporary-chat=%74rue'])(
-      'treats encoded %s as temporary mode',
+    it.each([
+      '/?temporary%2Dchat=true',
+      '/?temporary-chat=%74rue',
+      '/?temporary-chat=false&temporary-chat=true',
+      '/?temporary-chat=true&temporary-chat=false',
+      '/?temporary-chat=true&temporary-chat=true',
+    ])(
+      'treats %s as temporary mode',
       (url) => {
         h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
         window.history.replaceState({}, '', url)
