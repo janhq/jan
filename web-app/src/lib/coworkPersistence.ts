@@ -274,7 +274,7 @@ export async function loadCoworkSessions(
 
 export type CoworkPersistence = {
   /** Record a new snapshot of a session; written after the debounce. */
-  schedule(session: CoworkSession, opts?: { legacy?: boolean }): void
+  schedule(session: CoworkSession, opts?: { legacy?: boolean; allowEmpty?: boolean }): void
   /** Delete a session: tombstone, drain, then delete its thread. */
   remove(id: string, opts?: { recordDeleted?: boolean; preserveThread?: boolean }): Promise<void>
   setCurrentId(id: string | null): void
@@ -449,7 +449,7 @@ export function createCoworkPersistence(
     schedule(session, o) {
       const id = session.id
       if ((tombstones.has(id) && !pendingRollbacks.has(id)) || session.unavailable) return
-      if (!persisted.has(id) && isEmpty(session)) return
+      if (!persisted.has(id) && isEmpty(session) && !o?.allowEmpty) return
       const prev = latest.get(id)
       latest.set(id, { session, legacy: o?.legacy ?? prev?.legacy ?? false })
       dirty.add(id)

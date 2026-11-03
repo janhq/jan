@@ -131,6 +131,19 @@ describe('coworkPersistence write protocol', () => {
     expect(b.extras.get('a').turns).toHaveLength(0)
   })
 
+  it('explicitly writes an empty new session only when allowEmpty is set', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
+    p.schedule(session('a', { turns: [], messages: [] }), { allowEmpty: false })
+    await p.flush()
+    expect(p.isPersisted('a')).toBe(false)
+
+    p.schedule(session('a', { turns: [], messages: [] }), { allowEmpty: true })
+    await p.flush()
+    expect(p.isPersisted('a')).toBe(true)
+    expect(b.threads.get('a')!.metadata.mode).toBe('cowork')
+    expect(b.extras.get('a').turns).toHaveLength(0)
+  })
+
   it('a failed write keeps the session dirty and retries', async () => {
     b = makeBackend({ failNext: { cmd: 'create_thread', times: 1 } })
     const onError = vi.fn()

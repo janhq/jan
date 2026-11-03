@@ -111,6 +111,22 @@ export async function flushCowork(): Promise<void> {
   await persistence?.flush()
 }
 
+/**
+ * Durably record an ACCEPTED run's session (even while still empty) so the host
+ * can read its record before the first tool call. Empty sessions are otherwise
+ * never written; only a run that was accepted calls this.
+ */
+export async function ensureCoworkRecorded(id: string): Promise<void> {
+  await startCoworkSync()
+  const session = useCoworkSessions.getState().sessions.find((s) => s.id === id)
+  if (!session) throw new Error(`Cowork session ${id} is not available to record`)
+  if (session.unavailable) throw new Error(`Cowork session ${id} is unavailable and cannot be recorded`)
+  if (!persistence) throw new Error('Cowork persistence is unavailable')
+  persistence.schedule(session, { allowEmpty: true })
+  await persistence.flush()
+  if (!persistence.isPersisted(id)) throw new Error(`Cowork session ${id} was not recorded`)
+}
+
 export function startCoworkSync(): Promise<void> {
   if (!isPlatformTauri()) return Promise.resolve()
   startPromise ??= doStart().catch((e) => {
