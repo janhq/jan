@@ -6604,6 +6604,11 @@ impl App {
             });
             return;
         }
+        // The end is an event of its own: what the parent said and did before
+        // it is committed first, so it lands below that and a later call opens
+        // a new group under it, as the journal's replay lays it out.
+        self.transcript.finalize_tool_group();
+        self.transcript.flush_assistant();
         let name = panel.name.clone();
         let elapsed = panel.started.map(|s| s.elapsed().as_secs());
         self.transcript.log(DisplayEntry::Subagent {
@@ -9537,13 +9542,15 @@ impl App {
         // Done is terminal: nothing more arrives on this stream, so a call that
         // never completed cannot be left animating for the rest of the session.
         self.resolve_orphan_tool_rows();
+        // Preserved so the final assistant turn can be resent with its
+        // reasoning (see below). Taken before the children close: a child's
+        // end commits the buffered answer to the transcript, and the answer
+        // would then never reach `history`.
+        let (reasoning, answer) = self.take_turn_answer();
         // Children cannot outlive the run that dispatched them: their events
         // arrive on its stream. Any panel still open here never got its own
         // `SubagentEnd`.
         self.close_live_background();
-        // Preserved so the final assistant turn can be resent with its
-        // reasoning (see below).
-        let (reasoning, answer) = self.take_turn_answer();
         let wire = answer_without_reasoning(&answer, self.transcript.parse_think_tags);
         if !wire.is_empty() {
             let mut msg = serde_json::json!({ "role": "assistant", "content": wire });
@@ -27394,6 +27401,71 @@ mod tests {
         let mut resumed = test_app();
         replay_display_log(&mut resumed, app.transcript.display_log.clone());
         assert!(blocks(&resumed).ends_with(&done[1..]), "{:?}", blocks(&resumed));
+    }
+
+    /// A child's end lands after what the parent said and did before it:
+    /// buffered prose and an open tool group are committed first, so the
+    /// `Finished` row never jumps above them and a later call never joins a
+    /// group above it. A resume lays it out the same way.
+    #[test]
+    fn a_child_ending_lands_after_the_parents_output_so_far() {
+        let read = |app: &mut App, id: &str, path: &str| {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "read".into(),
+                args: json!({ "path": path }),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: "x".into(),
+                is_error: false,
+                diff: None,
+            });
+        };
+        // The child starts first: starting commits the parent's output, so
+        // only what the parent emits while the child runs is at stake.
+        let start = |app: &mut App| {
+            app.apply(StreamEvent::SubagentStart {
+                run_id: "sub-explore-1".into(),
+                name: "explore".into(),
+                task: Some("look".into()),
+                workspace: None,
+                internal: false,
+            });
+        };
+        let end = |app: &mut App| {
+            app.apply(StreamEvent::SubagentEnd {
+                run_id: "sub-explore-1".into(),
+                name: "explore".into(),
+                error: None,
+            });
+        };
+        let order = |text: &str, items: &[&str]| {
+            let at: Vec<usize> = items
+                .iter()
+                .map(|i| text.find(i).unwrap_or_else(|| panic!("no {i:?}: {text}")))
+                .collect();
+            assert!(at.windows(2).all(|w| w[0] < w[1]), "{items:?} out of order: {text}");
+        };
+
+        let mut app = test_app();
+        start(&mut app);
+        app.apply(StreamEvent::Token { text: "Before completion.".into() });
+        end(&mut app);
+        app.transcript.settle(false);
+        order(&transcript_text(&app), &["Before completion.", "Finished explore"]);
+
+        let mut app = test_app();
+        start(&mut app);
+        read(&mut app, "r1", "a.rs");
+        end(&mut app);
+        read(&mut app, "r2", "b.rs");
+        app.transcript.settle(false);
+        let live = transcript_text(&app);
+        order(&live, &["a.rs", "Finished explore", "b.rs"]);
+        let mut resumed = test_app();
+        replay_display_log(&mut resumed, app.transcript.display_log.clone());
+        order(&transcript_text(&resumed), &["a.rs", "Finished explore", "b.rs"]);
     }
 
     /// A dispatch that names no child it can parse still has its header, so
