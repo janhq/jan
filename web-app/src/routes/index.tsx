@@ -115,6 +115,10 @@ function Index() {
       toast.info(t('common:conversationScope.temporary'))
       return
     }
+    if (!selectedModel) {
+      toast.info(t('common:conversationScope.folderSelectModel'))
+      return
+    }
     if (!modelSupportsTools) {
       toast.info(
         t('common:conversationScope.folderUnsupported')
@@ -135,7 +139,7 @@ function Index() {
       folderScope: { path: picked, access: 'read' },
     }))
     toast.info(t('common:conversationScope.folderSelected', { path: picked }))
-  }, [isTemporaryChat, modelSupportsTools, pickScopeFolder, t])
+  }, [isTemporaryChat, selectedModel, modelSupportsTools, pickScopeFolder, t])
   const prepareThreadCreation = useCallback(() => {
     const snapshot = scopeDraft
     return async (threadId: string) => {

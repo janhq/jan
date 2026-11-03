@@ -768,6 +768,7 @@
     "unsupported": "The selected model does not support tools, so this conversation cannot be granted folder, shell network, or memory access. Ordinary chat still works.",
     "pendingKept": "Your pending permission draft is kept and will be available when you select a tool-capable model.",
     "temporary": "A temporary chat keeps no folder access.",
+    "folderSelectModel": "Select a tool-capable model before adding folder access.",
     "folderUnsupported": "The selected model does not support tools, so folder access cannot be granted. Ordinary chat still works.",
     "invalidFolder": "This folder path is not supported. Choose another folder.",
     "folderSelected": "Read-only folder access to {{path}} is pending for your next chat.",
