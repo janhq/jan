@@ -2694,9 +2694,11 @@ line in the index, a note wrongly archived or deleted loses a fact. When unsure,
 
 Your task may carry a facts block Jan gathered from the project's local git: today's date, the \
 default branch, which branches are merged into it, the worktrees, and the PR numbers in its recent \
-log. You can also look at the project with `read`, `ls`, `find` and `grep` (read-only) to check \
-whether the files, functions or branches a note names still exist. Do not spend many calls on the \
-project: check only what a candidate note references, nothing broader.
+log. The repository may squash-merge, so a branch absent from the merged list may still have landed: \
+the PR numbers are the stronger evidence, and a branch not merged by commit is never on its own a \
+sign the work is still open. You can also look at the project with `read`, `ls`, `find` and `grep` \
+(read-only) to check whether the files, functions or branches a note names still exist. Do not spend \
+many calls on the project: check only what a candidate note references, nothing broader.
 
 1. `view` the index, then `view` each folder and every note you are considering changing. Never change \
 a note you have not read in full. The main agent may change notes while you work: if the tool says a \
@@ -7122,6 +7124,8 @@ pub(crate) mod tests {
         for rule in [
             "its own text explicitly says the work is finished",
             "facts block Jan gathered from the project's local git",
+            "the PR numbers are the stronger evidence",
+            "never on its own a sign the work is still open",
             "`read`, `ls`, `find` and `grep`",
             "read-only",
             "its branch is merged into the default branch",

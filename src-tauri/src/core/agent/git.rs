@@ -631,13 +631,18 @@ pub(crate) fn tidy_facts(repo: &Path, today: &str) -> Option<String> {
         format!("Branches merged into {default} (their work landed), most recent first:"),
     ];
     push_capped(&mut out, &merged, TIDY_FACTS_BRANCHES);
-    out.push(format!("Branches NOT merged into {default}, most recent first:"));
+    // Squash and rebase merges land a branch's work without its commits, so
+    // this list is "not merged by commit", never "still open".
+    out.push(format!(
+        "Branches not merged into {default} by commit (a squash-merged branch still lands here: \
+         check the PR numbers below), most recent first:"
+    ));
     push_capped(&mut out, &open, TIDY_FACTS_BRANCHES);
     out.push("Worktrees registered with git:".to_string());
     push_capped(&mut out, &worktrees, TIDY_FACTS_WORKTREES);
     out.push(format!(
         "PR numbers in the subjects of {default}'s last {TIDY_FACTS_LOG_DEPTH} commits, newest \
-         first (a squash merge reads `subject (#123)`):"
+         first (a squash merge reads `subject (#123)`; the surest sign a PR landed):"
     ));
     if prs.is_empty() {
         out.push("  (none)".to_string());
@@ -1923,7 +1928,15 @@ mod tests {
         assert!(facts.contains("Today: 2026-11-03"), "{facts}");
         assert!(facts.contains("Default branch: main, head "), "{facts}");
         assert!(facts.contains("fix: another (#12)"), "the head's subject: {facts}");
-        let (merged, rest) = facts.split_once("NOT merged").expect("both lists");
+        // Squash merges leave a landed branch unmerged by commit, so that
+        // list must not read as "still open".
+        assert!(
+            facts.contains("Branches not merged into main by commit (a squash-merged branch \
+                 still lands here: check the PR numbers below)"),
+            "{facts}"
+        );
+        assert!(facts.contains("the surest sign a PR landed"), "{facts}");
+        let (merged, rest) = facts.split_once("not merged into").expect("both lists");
         assert!(merged.contains("  - feat/landed\n"), "{facts}");
         assert!(rest.contains("  - feat/open\n"), "{facts}");
         assert!(!merged.contains("feat/open"), "{facts}");
