@@ -1,14 +1,22 @@
 import { describe, it } from 'vitest'
 
 /**
- * Scoped Chat activation — contract targets (issue #503/#505 activation).
+ * Scoped Chat security contract targets (`it.todo` entries are not assertions).
  *
- * These specs pin the coordinator-decided contracts for the activation work
- * that lands after the scoped-dispatch (#9544), runner (#9541) and
- * orchestration (#9542) dependencies merge. They are intentionally `it.todo`
- * until the implementing slice flips each one into a real test: the modules
- * under test are not merged yet, and this branch must not import unmerged
- * source.
+ * Native dispatch intersects stored, effective and process-confirmed consent.
+ * Revocation applies to the next admitted call, not cancellation of an already
+ * running shell; Stop is separate. Chat must not switch to legacy Session IPC
+ * for elevation. Elevated legacy Session calls require host-verified Cowork
+ * identity; renderer-supplied scope alone is not authority.
+ *
+ * Screenshot rendering can fetch remote subresources outside the shell jail.
+ * Chat excludes screenshot/native web tools; the existing Cowork screenshot
+ * renderer risk is not fixed by scoped Chat dispatch.
+ *
+ * Read-only root validation rejects roots containing/equal to the data folder,
+ * but does not exclude every strict descendant selected with explicit consent.
+ * Roots are canonicalized per call; atomic protection against a hostile local
+ * actor swapping the selected root after consent is outside this boundary.
  */
 
 describe('grant-aware approval (decided: normal approval path, no new persisted allow mechanism)', () => {
