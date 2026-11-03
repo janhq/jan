@@ -11,6 +11,7 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/containers/CoworkPage', () => ({ CoworkPage: () => null }))
 
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { useHomeMode } from '@/hooks/useHomeMode'
 
 type Opts = { beforeLoad: (a: { params?: Record<string, string> }) => void }
 const run = (o: Opts, params?: Record<string, string>) => {
@@ -74,6 +75,18 @@ describe('/cowork/$sessionId', () => {
     const { Route } = (await import('../cowork/$sessionId')) as unknown as { Route: Opts }
     seed(['a'], null)
     expect(run(Route, { sessionId: 'a' })).toBeNull()
+  })
+
+  it('sends an untouched session to unified home without changing the home mode', async () => {
+    const { Route } = (await import('../cowork/$sessionId')) as unknown as { Route: Opts }
+    useHomeMode.setState({ mode: 'chat' })
+    useCoworkSessions.setState({
+      sessions: [{ id: 'blank', title: 'blank', folder: null, turns: [], messages: [], updated: 1 }],
+      currentId: null,
+    })
+    expect(run(Route, { sessionId: 'blank' })).toMatchObject({ to: '/' })
+    expect(useHomeMode.getState().mode).toBe('chat')
+    expect(useCoworkSessions.getState().sessions).toHaveLength(1)
   })
 
   it('redirects an unknown id home', async () => {

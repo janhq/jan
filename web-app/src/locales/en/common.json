@@ -823,9 +823,9 @@
   "budget": {
     "stoppedSteps": "Stopped at {{max}} steps. The agent hasn’t finished.",
     "keepGoing": "Keep going",
-    "stoppedTokens": "Stopped — this session hit its token budget.",
+    "stoppedTokens": "Stopped — this conversation hit its token budget.",
     "compact": "Compact",
-    "newSession": "New session"
+    "newConversation": "New conversation"
   },
   "run": {
     "stopped": "Stopped.",
