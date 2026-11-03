@@ -668,11 +668,39 @@ fn remember_notes(
     }
 }
 
+/// Open an already-resolved read target by component, refusing any link. The
+/// only place `read` touches the filesystem after `landing`, so a parent swapped
+/// to a symlink between the two is refused here rather than followed.
+async fn read_resolved(resolved: &Path, shown: &str) -> Result<Vec<u8>, String> {
+    let read_path = resolved.to_path_buf();
+    match tokio::task::spawn_blocking(move || nofollow::read(&read_path)).await {
+        Ok(Ok(b)) => Ok(b),
+        Ok(Err(e)) if nofollow::is_link_refused(&e) => Err(format!(
+            "ERROR: refused to read through a symlink out of the workspace: {shown}"
+        )),
+        Ok(Err(e)) => Err(format!("ERROR: {e}")),
+        Err(e) => Err(format!("ERROR: {e}")),
+    }
+}
+
 async fn read(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
     read_roots: &[PathBuf],
+) -> (String, Option<Vec<ImageContentPart>>) {
+    read_with(args, root, scratch, read_roots, |_| {}).await
+}
+
+/// `read` with a hook run after the path is resolved and before it is opened.
+/// Private: production passes a no-op; tests use it to swap a parent in exactly
+/// that window. It receives the resolved path only and can't change it.
+async fn read_with(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    read_roots: &[PathBuf],
+    before_open: impl FnOnce(&Path),
 ) -> (String, Option<Vec<ImageContentPart>>) {
     let Some(path) = arg_str(args, "path") else {
         return ("ERROR: missing required argument 'path'".to_string(), None);
@@ -681,17 +709,28 @@ async fn read(
     let limit = arg_u64(args, "limit").map(|v| v as usize);
     let target = resolve_path(root, scratch, path);
     // Fail closed: a component swapped to a symlink after the gate validated
-    // the path must not redirect the open out of the workspace.
-    if symlink_escapes_any_root(root, scratch, read_roots, &target) {
-        return (
-            format!("ERROR: refused to read through a symlink out of the workspace: {path}"),
-            None,
-        );
-    }
+    // the path must not redirect the open out of the workspace. Resolve once and
+    // open exactly what was classified, walking it with `nofollow::read` so a
+    // link planted in a parent directory after the resolution is refused rather
+    // than followed. This narrows the swap window the way the writers do; it is
+    // not a proof of atomicity on every platform (Windows pins ancestors with
+    // share modes instead of `openat`).
+    let resolved = match landing(root, scratch, read_roots, &target) {
+        Landing::Inside(p) => p,
+        // Not under any root: the gate already put it to the user.
+        Landing::Outside(p) => p.unwrap_or_else(|| target.clone()),
+        Landing::Escapes => {
+            return (
+                format!("ERROR: refused to read through a symlink out of the workspace: {path}"),
+                None,
+            );
+        }
+    };
 
-    let bytes = match tokio::fs::read(&target).await {
+    before_open(&resolved);
+    let bytes = match read_resolved(&resolved, path).await {
         Ok(b) => b,
-        Err(e) => return (format!("ERROR: {e}"), None),
+        Err(msg) => return (msg, None),
     };
 
     // An image file is returned as an OpenAI `image_url` content part rather
@@ -699,7 +738,9 @@ async fn read(
     // plain read (no offset/limit) does this, since slicing an image makes no
     // sense and offset/limit still refers to text lines.
     if offset.is_none() && limit.is_none() && bytes.len() <= MAX_IMAGE_BYTES {
-        if let Some(mime) = crate::tools::image::detect(&target) {
+        // Decided from the bytes already read from `resolved`, never by
+        // reopening a path a link could since have been swapped under.
+        if let Some(mime) = crate::tools::image::detect_bytes(&bytes, &resolved) {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
             let name = target
@@ -3101,6 +3142,81 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A parent directory that is a link out of the workspace is refused by
+    /// `read` and the far side's content never comes back. Deterministic: the
+    /// link is in place before the call, so this pins the refusal, not the race
+    /// window; the by-component walk itself is pinned in `nofollow`'s tests.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_refuses_a_parent_component_symlink_out_of_the_root() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::write(outside.join("secret.txt"), b"classified").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("sub")).unwrap();
+        for path in ["sub/secret.txt", "sub/../sub/secret.txt"] {
+            let out =
+                execute_builtin(lookup("read").unwrap(), &json!({ "path": path }), &root).await;
+            assert!(out.starts_with("ERROR: refused to read"), "{path}: {out}");
+            assert!(!out.contains("classified"), "{path}: leaked: {out}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// The race itself, made deterministic: the path is clean when `landing`
+    /// classifies it, then a parent directory is swapped for a link to an outside
+    /// tree after resolution and before the open. `read` must refuse and never
+    /// return the outside secret. Kills `nofollow::read` -> `std::fs::read`.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_refuses_a_parent_swapped_after_resolution() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("sub/doc.txt"), b"ordinary").unwrap();
+        std::fs::write(outside.join("doc.txt"), b"classified").unwrap();
+
+        let swap_root = root.clone();
+        let swap_out = outside.clone();
+        let mut swapped = false;
+        let (out, image) = read_with(&json!({"path": "sub/doc.txt"}), &root, None, &[], |resolved| {
+            assert!(resolved.ends_with("sub/doc.txt"), "{resolved:?}");
+            std::fs::rename(swap_root.join("sub"), swap_root.join("sub-real")).unwrap();
+            std::os::unix::fs::symlink(&swap_out, swap_root.join("sub")).unwrap();
+            swapped = true;
+        })
+        .await;
+        assert!(swapped, "hook must run between landing and open");
+        assert!(image.is_none());
+        assert!(out.starts_with("ERROR: refused to read"), "got: {out}");
+        assert!(!out.contains("classified"), "leaked: {out}");
+
+        // No swap: the ordinary in-root file is still read through the same seam.
+        let (ok, _) = read_with(&json!({"path": "sub-real/doc.txt"}), &root, None, &[], |_| {}).await;
+        assert_eq!(ok, "ordinary");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A directory link that stays inside the workspace remains a valid read
+    /// parent, with offset/limit still applied to the bytes read.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_still_follows_an_in_root_parent_symlink() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
+        std::fs::write(root.join("pkg/a.txt"), b"one\ntwo\nthree").unwrap();
+        std::os::unix::fs::symlink(root.join("pkg"), root.join("linked")).unwrap();
+        let out = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "linked/a.txt", "offset": 2, "limit": 1}),
+            &root,
+        )
+        .await;
+        assert_eq!(out, "two");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The escaping-symlink refusals must not become a blanket "no symlinks":

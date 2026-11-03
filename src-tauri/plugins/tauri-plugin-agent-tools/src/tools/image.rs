@@ -40,7 +40,13 @@ pub fn mime_from_extension(path: &std::path::Path) -> Option<&'static str> {
 /// extension second. `None` when neither identifies a supported image.
 pub fn detect(path: &std::path::Path) -> Option<&'static str> {
     let bytes = std::fs::read(path).ok()?;
-    mime_from_signature(&bytes).or_else(|| mime_from_extension(path))
+    detect_bytes(&bytes, path)
+}
+
+/// As [`detect`], for bytes the caller already read from `resolved` (the
+/// canonical path): no second open, so nothing to swap between read and detect.
+pub fn detect_bytes(bytes: &[u8], resolved: &std::path::Path) -> Option<&'static str> {
+    mime_from_signature(bytes).or_else(|| mime_from_extension(resolved))
 }
 
 #[cfg(test)]
