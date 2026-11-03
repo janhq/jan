@@ -15,7 +15,6 @@ const h = vi.hoisted(() => ({
     updated_at: 1,
     assistantId: undefined as string | undefined,
   } as any,
-  startCoworkConversation: vi.fn(() => 'session-1'),
   toastError: vi.fn(),
   lastSubmitResult: undefined as unknown,
   setCaps: vi.fn(async () => undefined),
@@ -31,9 +30,6 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.coworkEnabled }))
-vi.mock('@/lib/startCoworkConversation', () => ({
-  startCoworkConversation: (opts: any) => h.startCoworkConversation(opts),
-}))
 vi.mock('sonner', () => ({ toast: { error: (...args: any[]) => h.toastError(...args) } }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -155,7 +151,6 @@ describe('Project route single Chat flow', () => {
     h.coworkEnabled = false
     h.selectedModel = undefined
     h.selectedProvider = ''
-    h.startCoworkConversation.mockReturnValue('session-1')
     h.lastSubmitResult = undefined
     h.projectId = 'project-1'
   })
@@ -172,7 +167,6 @@ describe('Project route single Chat flow', () => {
       expect(input).not.toHaveAttribute('data-scope-key')
       // No onSubmit override: a submit never starts a legacy Cowork session.
       fireEvent.click(screen.getByTestId('submit'))
-      expect(h.startCoworkConversation).not.toHaveBeenCalled()
       expect(h.navigate).not.toHaveBeenCalled()
     }
   )
@@ -204,7 +198,7 @@ describe('Project route single Chat flow', () => {
     const input = screen.getByTestId('chat-input')
     expect(input).not.toHaveAttribute('data-has-prepare')
     fireEvent.click(screen.getByTestId('submit'))
-    expect(h.startCoworkConversation).not.toHaveBeenCalled()
+    expect(h.navigate).not.toHaveBeenCalled()
   })
 
   it('keeps the live region mounted and updates only its inner text', async () => {

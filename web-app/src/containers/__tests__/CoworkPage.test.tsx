@@ -6,7 +6,6 @@ import { __resetCoworkRunCloseForTests, quiesceCoworkRuns, resumeCoworkAfterPrev
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { usePrompt } from '@/hooks/usePrompt'
-import { useHomeMode } from '@/hooks/useHomeMode'
 import { CoworkPage } from '../CoworkPage'
 import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
 import type { CoworkTurn, TodoList } from '@/types/coworkSession'
@@ -78,8 +77,7 @@ beforeEach(() => {
 })
 afterEach(() => { vi.useRealTimers() })
 describe('CoworkPage legacy new conversation action', () => {
-  it('routes to unified home without writing a home mode, keeping the legacy session', async () => {
-    useHomeMode.setState({ mode: 'chat' })
+  it('routes to unified home, keeping the legacy session', async () => {
     const legacy = { id: 'test', title: 'Legacy', folder: null, turns: [{ role: 'user' as const, content: 'Old question' }], messages: [], updated: 1 }
     useCoworkSessions.setState({ sessions: [legacy], currentId: 'test' })
     useCoworkRun.setState({ outcomes: { test: { stoppedBy: 'tokens' } } })
@@ -87,7 +85,6 @@ describe('CoworkPage legacy new conversation action', () => {
     await act(async () => {})
     fireEvent.click(screen.getByText('New conversation'))
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/' })
-    expect(useHomeMode.getState().mode).toBe('chat')
     expect(useCoworkSessions.getState().sessions).toEqual([legacy])
   })
 })
