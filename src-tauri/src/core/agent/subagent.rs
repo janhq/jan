@@ -2734,9 +2734,10 @@ Finish with a short report, one line per change: `archived <name>`, `merged <a> 
 /// Start the memory-tidy subagent on the session's registry, returning its run
 /// id. It runs on the `smol` model with the `memory` tool -- the one child
 /// that keeps memory (see [`without_memory`]) -- plus read-only project tools
-/// and the git facts Jan gathered, and in the background: the
+/// and the git `facts` from [`gather_tidy_facts`], and in the background: the
 /// caller collects it with [`await_subagent`]. It never rings the parent's
-/// doorbell, so a tidy never starts a model turn of its own.
+/// doorbell, so a tidy never starts a model turn of its own. The facts are
+/// the caller's to gather first, off its own loop: they take several gits.
 #[cfg(feature = "cli")]
 pub(crate) async fn spawn_memory_tidy(
     scope: &DispatchScope,
@@ -2744,11 +2745,12 @@ pub(crate) async fn spawn_memory_tidy(
     parent: &ParentRun,
     events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
     budget: Arc<tauri_plugin_agent_tools::memory::ChangeBudget>,
+    facts: Option<String>,
 ) -> Result<Dispatched, SubagentError> {
-    let Some(project_root) = parent_args.project_root.as_deref() else {
+    if parent_args.project_root.is_none() {
         return Err(SubagentError::Upstream("memory tidy needs an active project".to_string()));
-    };
-    let (resolved, req) = memory_tidy_dispatch(gather_tidy_facts(project_root).await);
+    }
+    let (resolved, req) = memory_tidy_dispatch(facts);
     let parent = &ParentRun {
         cost_remaining: child_cost_ceiling(&child_model(&resolved, parent), parent)?,
         ..parent.clone()
@@ -2780,8 +2782,7 @@ fn memory_tidy_args(
 /// On the blocking pool, since it runs several gits; each is time-limited
 /// there, so a stuck one delays the tidy by seconds, never stalls it.
 #[cfg(feature = "cli")]
-async fn gather_tidy_facts(project_root: &Path) -> Option<String> {
-    let root = project_root.to_path_buf();
+pub(crate) async fn gather_tidy_facts(root: PathBuf) -> Option<String> {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     tokio::task::spawn_blocking(move || crate::core::agent::git::tidy_facts(&root, &today))
         .await
@@ -7180,8 +7181,8 @@ pub(crate) mod tests {
     async fn the_tidy_facts_are_gathered_off_thread_or_omitted() {
         let plain = unique_root("tidy-facts-plain");
         std::fs::create_dir_all(&plain).unwrap();
-        assert_eq!(gather_tidy_facts(&plain).await, None);
-        let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        assert_eq!(gather_tidy_facts(plain).await, None);
+        let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         if let Some(facts) = gather_tidy_facts(here).await {
             assert!(facts.contains("Today: "), "{facts}");
             // Shown with `--nocapture`: the block a tidy of this repo gets.
