@@ -1518,6 +1518,19 @@ impl BackgroundSubagents {
         self.wake.notify_waiters();
     }
 
+    /// A running child `name` (`run_id`) calling `message_main_agent`, for
+    /// tests outside this module.
+    #[cfg(all(test, feature = "cli"))]
+    pub(crate) fn send_test_message(self: &Arc<Self>, run_id: &str, name: &str, text: &str) {
+        let link = ParentLink {
+            bg: self.clone(),
+            run_id: run_id.to_string(),
+            name: name.to_string(),
+            sent: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+        message_main_agent(&link, text).unwrap();
+    }
+
     /// Drop a queued ping for a run the parent collected explicitly: it already
     /// has the answer, and telling it again would spend context on nothing.
     fn drop_notice(&self, run_id: &str) {

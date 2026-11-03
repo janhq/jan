@@ -290,8 +290,50 @@ pub fn load_thread_record(base: &std::path::Path, thread_id: &str) -> Result<Loa
 
 /// List messages for a thread.
 pub fn cli_list_messages(thread_id: &str) -> Result<Vec<serde_json::Value>, String> {
-    let data_folder = resolve_jan_data_folder();
-    read_messages_from_file(&data_folder, thread_id)
+    cli_list_messages_in(&resolve_jan_data_folder(), thread_id)
+}
+
+/// [`cli_list_messages`] under `base`: a thread's wire messages as the
+/// `thread.message` records the command has always printed. A thread saved as
+/// a session file is rendered from it (its `messages.jsonl` is gone); one not
+/// yet migrated is read as it is.
+pub fn cli_list_messages_in(
+    base: &std::path::Path,
+    thread_id: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    if !has_session_file(&session_path(base, thread_id)?) {
+        return read_messages_from_file(base, thread_id);
+    }
+    let record = load_thread_record(base, thread_id)?.record;
+    Ok(record
+        .messages
+        .iter()
+        .enumerate()
+        .filter_map(|(i, m)| {
+            let role = m.get("role").and_then(|v| v.as_str())?;
+            // The old save minted a fresh id per message on every save; the
+            // position is at least stable across reads.
+            let mut out = serde_json::json!({
+                "id": format!("{thread_id}-{i}"),
+                "object": "thread.message",
+                "thread_id": thread_id,
+                "role": role,
+                "type": "text",
+                "status": "ready",
+                "content": [{
+                    "type": "text",
+                    "text": { "value": openai_content_text(m.get("content")), "annotations": [] },
+                }],
+            });
+            // The fields the text form cannot carry, as the old save kept them.
+            for key in ["tool_calls", "tool_call_id"] {
+                if let Some(v) = m.get(key) {
+                    out[key] = v.clone();
+                }
+            }
+            Some(out)
+        })
+        .collect())
 }
 
 /// Delete a thread directory.
@@ -4208,6 +4250,40 @@ mod tests {
             .unwrap()
             .sync(&[serde_json::json!({ "role": "user", "content": id })], None)
             .unwrap();
+    }
+
+    /// `jan cli threads messages` reads a thread saved as a session file, in
+    /// the `thread.message` shape it always printed, tool fields included; a
+    /// thread still on `messages.jsonl` reads as before.
+    #[test]
+    fn listing_messages_reads_the_session_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let history = vec![
+            serde_json::json!({ "role": "user", "content": "fix the bug" }),
+            serde_json::json!({ "role": "assistant", "content": "", "tool_calls": [
+                { "id": "c1", "type": "function", "function": { "name": "read", "arguments": "{}" } }
+            ] }),
+            serde_json::json!({ "role": "tool", "tool_call_id": "c1", "content": "fn main() {}" }),
+            serde_json::json!({ "role": "assistant", "content": "fixed" }),
+        ];
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+        let listed = cli_list_messages_in(base, &id).unwrap();
+        assert_eq!(listed.len(), 4, "{listed:?}");
+        assert!(listed.iter().all(|m| m["object"] == "thread.message" && m["thread_id"] == id.as_str()));
+        let roles: Vec<&str> = listed.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, ["user", "assistant", "tool", "assistant"]);
+        assert_eq!(thread_message_text(&listed[0]), "fix the bug");
+        assert_eq!(listed[1]["tool_calls"], history[1]["tool_calls"]);
+        assert_eq!(listed[2]["tool_call_id"], "c1");
+
+        use crate::core::threads::{helpers::write_messages_to_file, utils::get_messages_path};
+        let legacy = "legacy-thread";
+        let record = serde_json::json!({ "id": "x", "object": "thread.message", "role": "user" });
+        std::fs::create_dir_all(get_thread_dir(base, legacy).unwrap()).unwrap();
+        write_messages_to_file(std::slice::from_ref(&record), &get_messages_path(base, legacy).unwrap())
+            .unwrap();
+        assert_eq!(cli_list_messages_in(base, legacy).unwrap(), vec![record]);
     }
 
     /// A save writes the session file and `thread.json`, and nothing else.

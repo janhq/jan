@@ -2634,8 +2634,6 @@ fn message_row(verb: &str, other: &str, text: &str) -> EventRow {
     }
 }
 
-/// The event for a note `agent` raised: its gutter mark in `tone`, the agent
-/// as the title, each line of `text` under it.
 /// A system note's event: `text`'s first line is the title under `glyph`,
 /// the rest hangs under it as its description.
 fn note_row(glyph: &'static str, level: Level, text: &str) -> EventRow {
@@ -2651,6 +2649,8 @@ fn note_row(glyph: &'static str, level: Level, text: &str) -> EventRow {
     )
 }
 
+/// The event for a note `agent` raised: its gutter mark in `tone`, the agent
+/// as the title, each line of `text` under it.
 fn agent_note_row(agent: &str, tone: NoteTone, text: &str) -> EventRow {
     let (marker, body) = match tone {
         NoteTone::Info => {
@@ -6913,6 +6913,14 @@ impl App {
         }
         for notice in &subagents {
             crate::core::agent::reminder::attach(&mut self.history, &notice.text);
+            // Taken here, not by a loop, so no loop will report its delivery.
+            if let Some((from, text)) = &notice.message {
+                self.apply(StreamEvent::AgentMessage {
+                    from: from.clone(),
+                    to: MAIN_AGENT.to_string(),
+                    text: text.clone(),
+                });
+            }
         }
         self.begin_turn();
         self.want_start = true;
@@ -48642,6 +48650,30 @@ fn a() {}
             "the headline reports the command ended: {}",
             transcript_text(&app)
         );
+    }
+
+    /// A child's message that lands while the main agent is idle is taken
+    /// here, not by a loop: it is shown and journaled once, as the loop's
+    /// delivery would show it, and reaches the model.
+    #[test]
+    fn a_child_message_delivered_between_runs_is_shown_once() {
+        let mut app = test_app();
+        app.history
+            .push(serde_json::json!({ "role": "user", "content": "look" }));
+        app.subagent_set.send_test_message("sub-debug-1", "debug", "Found it in parse_command.");
+
+        app.submit_background_notices();
+
+        assert!(app.want_start, "the message arms a turn");
+        let last = app.history.last().unwrap();
+        assert!(last["content"].as_str().unwrap().contains("Found it"), "{last}");
+        let shown = transcript_text(&app);
+        let got = "\u{2022} Message from debug\n  \u{2514} Found it in parse_command.";
+        assert!(shown.contains(got), "{shown}");
+        assert_eq!(shown.matches("Found it").count(), 1, "{shown}");
+        let mut resumed = test_app();
+        replay_display_log(&mut resumed, app.transcript.display_log.clone());
+        assert!(transcript_text(&resumed).contains(got), "{}", transcript_text(&resumed));
     }
 
     /// The loop drains the registry itself while a run is up, so the TUI's

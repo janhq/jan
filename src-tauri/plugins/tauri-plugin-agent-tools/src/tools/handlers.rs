@@ -767,8 +767,10 @@ fn cap_read(s: &str, first_line: usize, max_lines: usize, max_bytes: usize) -> S
             out.push_str(&format!("\n[truncated: use offset={number} to read more]"));
             return out;
         }
-        if line.len() > max_bytes {
-            let body = line.strip_suffix('\n').unwrap_or(line);
+        // The newline is not part of what a cut would keep, so a line whose
+        // text is exactly the cap fits.
+        let body = line.strip_suffix('\n').unwrap_or(line);
+        if body.len() > max_bytes {
             let mut cut = max_bytes;
             while !body.is_char_boundary(cut) {
                 cut -= 1;
@@ -2486,6 +2488,19 @@ mod tests {
         assert!(note.contains("line 1"), "{note}");
         assert!(note.contains(&format!("{} of {} bytes", body.len(), long.len())), "{note}");
         assert!(note.contains("offset=2"), "{note}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A line whose text is exactly the byte cap fits: it is returned whole
+    /// with no note that part of it cannot be read.
+    #[tokio::test]
+    async fn read_returns_a_line_of_exactly_the_cap_whole() {
+        let root = unique_root();
+        let line = "x".repeat(MAX_BYTES);
+        std::fs::write(root.join("at.js"), format!("{line}\n")).unwrap();
+        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "at.js"}), &root).await;
+        assert!(out.starts_with(&line), "len {}", out.len());
+        assert!(!out.contains("cut at"), "{}", &out[MAX_BYTES..]);
         let _ = std::fs::remove_dir_all(&root);
     }
 
