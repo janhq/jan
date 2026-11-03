@@ -97,6 +97,7 @@ import {
 } from '@/lib/video-sentinel'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import { PING_OPEN } from '@/lib/coworkPing'
+import { expandChatRunContext } from '@/lib/chatRunContext'
 import { paramsSettings } from '@/lib/predefinedParams'
 import { CHAT_SLOT_ID } from '@/constants/models'
 import { createStepMetadata } from '@/lib/stepMetadata'
@@ -1090,12 +1091,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Refresh tools based on current state
-   * Reloads both RAG and MCP tools and merges them
-   * Filters out disabled tools based on thread settings
-   * @private
-   */
-  /**
    * llama.cpp slot pin for this surface. Every surface shares slot 0 -- the one
    * index guaranteed to exist -- and overrides only `thread_id`, which is what
    * the engine parks and restores the slot's KV cache by. See CHAT_SLOT_ID.
@@ -1137,6 +1132,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
+   * Refresh tools based on current state.
+   * Reloads both RAG and MCP tools and merges them, and filters out disabled
+   * tools based on thread settings.
    * @param modelSelection The model the tools are built for: the request's own
    * when called from sendMessages, else the current selection.
    */
@@ -1667,7 +1665,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // messages. Required by the Claude API (tool_use / tool_result pairing) and
     // it keeps the prompt prefix byte-identical across turns so llama.cpp reuses
     // the KV cache. See `splitAssistantToolWaves`.
-    const messagesToConvert = splitAssistantToolWaves(withoutChatRunNotices(options.messages))
+    const messagesToConvert = splitAssistantToolWaves(
+      expandChatRunContext(withoutChatRunNotices(options.messages))
+    )
 
     const inferenceParams = this.getActiveInferenceParams()
 

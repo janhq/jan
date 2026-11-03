@@ -5,6 +5,7 @@ import { STOPPED_TOOL_ERROR, untilAborted } from './stopped-tool-calls'
 import { CHAT_RUN_NOTICE_METADATA, isChatRunNotice } from './chatRunNotice'
 import { encodeToolImageSentinel } from './tool-image-sentinel'
 import { PING_OPEN, PING_CLOSE } from './coworkPing'
+import { RUN_CONTEXT_PART, boundRunContextText } from './chatRunContext'
 
 /** The existing runTurn inbox lane (SubagentInbox/MonitorLane pings), as text. */
 export type ChatRunInbox = {
@@ -200,6 +201,10 @@ export function createChatRunStream(options: {
               flushTaskStatus()
               const taken = inbox.take()
               flushTaskStatus()
+              // Persisted copy for reload only (`expandChatRunContext`). Emitted to the
+              // UI stream, never through the canonical `history` branch, so the live
+              // run replays these pings once, from `pingMarks`.
+              if (taken.length) emit({ type: RUN_CONTEXT_PART, data: { text: boundRunContextText(taken.join('\n')) } } as UIMessageChunk)
               if (taken.length) pingMarks.push({ at: completed?.parts.length ?? 0, message: { id: `${id}:ping:${pingMarks.length}`, role: 'user', parts: [{ type: 'text', text: `${PING_OPEN}\n${taken.join('\n')}\n${PING_CLOSE}` }] } as UIMessage })
               return taken
             },

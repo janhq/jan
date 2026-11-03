@@ -8,6 +8,7 @@ import {
 } from '@janhq/core'
 import type { UIMessage } from '@ai-sdk/react'
 import { isChatRunNotice } from './chatRunNotice'
+import { isRunContextData } from './chatRunContext'
 // Attachments are now handled upstream in newUserThreadContent
 
 type ThreadContent = NonNullable<ThreadMessage['content']>[number]
@@ -662,6 +663,9 @@ const PART_FIELDS: Record<string, readonly string[]> = {
   // as `unsupported-part`). convertToModelMessages drops data parts, so the
   // model never sees it.
   'data-task-status': ['type', 'id', 'data'],
+  // Pings a Chat run drained mid-run (chatRunContext RUN_CONTEXT_PART); bounded
+  // and shape-checked in sanitizeUIPart, expanded to user turns on reload.
+  'data-run-context': ['type', 'id', 'data'],
 }
 const APPROVAL_FIELDS = ['id', 'approved', 'reason']
 // Opaque provider/tool metadata objects: bounded, and plain JSON objects only.
@@ -701,6 +705,8 @@ function sanitizeUIPart(part: any): Record<string, unknown> {
     )
       throw new SkipUIParts('unsupported-part')
   }
+  if (type === 'data-run-context' && !isRunContextData(part.data))
+    throw new SkipUIParts('unsupported-part')
   const fields =
     typeof type === 'string' && type.startsWith('tool-') ? TOOL_FIELDS : PART_FIELDS[type]
   if (!fields) throw new SkipUIParts('unsupported-part')

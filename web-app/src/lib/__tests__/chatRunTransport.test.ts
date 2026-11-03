@@ -6,6 +6,8 @@ import { convertToModelMessages, readUIMessageStream, type UIMessageChunk, type 
 import { conversationDiffs } from '../conversationPanels'
 import { TOOL_DIFF_MAX_CHARS } from '../toolDiff'
 import { canContinueStoppedTurn, createChatRunStream, taskStatusRows, TASK_STATUS_PART } from '../chatRunTransport'
+import { expandChatRunContext, RUN_CONTEXT_PART, RUN_CONTEXT_MAX_CHARS } from '../chatRunContext'
+import { PING_OPEN, PING_CLOSE } from '../coworkPing'
 
 const stream = (chunks: UIMessageChunk[]) => new ReadableStream<UIMessageChunk>({ start(c) { chunks.forEach(v => c.enqueue(v)); c.close() } })
 const user: UIMessage = { id: 'u', role: 'user', parts: [{ type: 'text', text: 'fixture' }] }
@@ -352,6 +354,79 @@ describe('Chat runTurn stream adapter (real SDK reader and runner)', () => {
   })
 })
 
+
+describe('data-run-context: mid-run pings persist and expand once on reload', () => {
+  const toolCall = (name: string): UIMessageChunk[] => [{ type: 'start-step' }, { type: 'tool-input-available', toolCallId: 'tc', toolName: name, input: {} }, { type: 'finish-step' }, { type: 'finish' }]
+  const text = (t: string): UIMessageChunk[] => [{ type: 'start' }, { type: 'start-step' }, { type: 'text-start', id: '0' }, { type: 'text-delta', id: '0', delta: t }, { type: 'text-end', id: '0' }, { type: 'finish-step' }, { type: 'finish' }]
+  const joined = (messages: unknown) => JSON.stringify(messages)
+  for (const [kind, notice] of [
+    ['task', "Subagent 'a' (tk:a) finished. Its answer:\n\nUNIQUE-TASK-ANSWER"],
+    ['monitor', "Monitor 'm' fired:\n\nUNIQUE-MONITOR-ANSWER"],
+  ] as const) {
+    it(`${kind} ping: live run sees it once; reload expands it once as a user turn`, async () => {
+      const send = vi.fn().mockResolvedValueOnce(stream(toolCall(kind))).mockResolvedValueOnce(stream(text('ack'))).mockResolvedValueOnce(stream(text('final')))
+      const notices: string[] = []
+      let owed = false
+      let wake: () => void = () => {}
+      const inbox = {
+        take: () => { const t = notices.splice(0); if (t.length) owed = false; return t },
+        pending: () => owed || notices.length > 0,
+        wait: () => new Promise<void>((resolve) => { wake = resolve; if (notices.length) resolve() }),
+      }
+      const dispatch = vi.fn(async () => {
+        owed = true
+        setTimeout(() => { notices.push(notice); wake() }, 5)
+        return { output: 'Dispatched' }
+      })
+      const message = await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, sendStep: send, dispatch, inbox }))
+      expect(send).toHaveBeenCalledTimes(3)
+      const ctx = message.parts.filter(p => p.type === RUN_CONTEXT_PART)
+      expect(ctx).toHaveLength(1)
+      // Live: the canonical history branch never adds the data part, so the model sees the ping once.
+      const live = joined(await convertToModelMessages(expandChatRunContext(send.mock.calls[2][0] as UIMessage[])))
+      expect(live.split(`UNIQUE-${kind.toUpperCase()}-ANSWER`)).toHaveLength(2)
+      expect(joined(send.mock.calls[2][0])).not.toContain(RUN_CONTEXT_PART)
+      // Serialize / reload.
+      const stored = JSON.parse(JSON.stringify({
+        id: message.id, thread_id: 'fixture', role: 'assistant', status: 'ready', object: 'thread.message', created_at: 1, completed_at: 1,
+        ...assistantRecordFields(message, {}, { stopped: false }),
+      })) as ThreadMessage
+      expect(stored.metadata).not.toHaveProperty('uiPartsSkipped')
+      const reloaded = convertThreadMessageToUIMessage(stored)
+      expect(reloaded.parts.filter(p => p.type === RUN_CONTEXT_PART)).toHaveLength(1)
+      const expanded = expandChatRunContext([user, reloaded])
+      expect(expanded.some(m => m.parts.some(p => p.type === RUN_CONTEXT_PART))).toBe(false)
+      const model = await convertToModelMessages(expanded)
+      const holders = model.filter(m => joined(m).includes(`UNIQUE-${kind.toUpperCase()}-ANSWER`))
+      expect(holders).toHaveLength(1)
+      expect(holders[0].role).toBe('user')
+      expect(joined(holders[0])).toContain(PING_OPEN)
+      expect(joined(holders[0])).toContain(PING_CLOSE)
+      expect(joined(model).split(`UNIQUE-${kind.toUpperCase()}-ANSWER`)).toHaveLength(2)
+    })
+  }
+  it('plain chat is unchanged: one call, no run-context part', async () => {
+    const send = vi.fn().mockResolvedValueOnce(stream(text('hi')))
+    const message = await consume(createChatRunStream({ messages: [user], messageId: 'a', signal: new AbortController().signal, sendStep: send, dispatch: vi.fn() }))
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(message.parts.some(p => p.type === RUN_CONTEXT_PART)).toBe(false)
+  })
+  it('expands in order, strips the part, and drops invalid or oversized data', () => {
+    const ctx = (data: unknown) => ({ type: RUN_CONTEXT_PART, data }) as never
+    const a: UIMessage = { id: 'm', role: 'assistant', parts: [{ type: 'text', text: 'one' }, ctx({ text: 'P1' }), { type: 'text', text: 'two' }, ctx({ text: 'x'.repeat(RUN_CONTEXT_MAX_CHARS + 1) }), ctx({ text: 'P2', extra: 1 }), ctx({ text: 'P3' })] }
+    const out = expandChatRunContext([user, a])
+    expect(out.map(m => m.role)).toEqual(['user', 'assistant', 'user', 'assistant', 'user'])
+    expect(out.map(m => m.parts.map(p => (p as { text?: string }).text))).toEqual([['fixture'], ['one'], [`${PING_OPEN}\nP1\n${PING_CLOSE}`], ['two'], [`${PING_OPEN}\nP3\n${PING_CLOSE}`]])
+    expect(JSON.stringify(out)).not.toContain(RUN_CONTEXT_PART)
+    const plain: UIMessage = { id: 'p', role: 'assistant', parts: [{ type: 'text', text: 'x' }, { type: 'data-unknown', data: 1 } as never] }
+    expect(expandChatRunContext([plain])[0]).toBe(plain)
+  })
+  it('does not store an oversized or malformed run-context part', () => {
+    const bad = (data: unknown): UIMessage => ({ id: 'b', role: 'assistant', parts: [{ type: RUN_CONTEXT_PART, data } as never, { type: 'text', text: 'hi' }] })
+    for (const data of [{ text: 'x'.repeat(RUN_CONTEXT_MAX_CHARS + 1) }, { text: 1 }, { text: 'a', other: 1 }, 'str'])
+      expect(assistantRecordFields(bad(data), {}, { stopped: false }).metadata).toMatchObject({ uiPartsSkipped: expect.anything() })
+  })
+})
 
 describe('optional display diff carrier budget', () => {
   it('omits oversized aggregate display diffs without dropping canonical tool parts', async () => {
