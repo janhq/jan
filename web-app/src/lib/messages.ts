@@ -280,12 +280,10 @@ export function convertThreadMessageToUIMessage(
   // omission the writer already recorded. Never written back (the writer
   // clears it on rebuild), so no authority changes.
   if (rehydrated?.dropped) {
-    const prior = (metadata.uiTaskStatusShed ?? {}) as Record<string, unknown>
+    const prior = priorTaskStatusShed(metadata.uiTaskStatusShed)
     metadata.uiTaskStatusShed = {
       ...prior,
-      dropped:
-        (typeof prior.dropped === 'number' ? prior.dropped : 0) +
-        rehydrated.dropped,
+      dropped: (prior.dropped ?? 0) + rehydrated.dropped,
     }
   }
 
@@ -639,8 +637,24 @@ const TASK_STATUS_TYPE = 'data-task-status'
 // Display-only status parts shed to fit the carrier; see `uiPartsFor`.
 // Stored as `metadata.uiTaskStatusShed`, which is diagnostics only: it counts
 // what was cut, and nothing reads it to decide how a turn is shown, rebuilt or
-// sent to the model.
+// sent to the model. It is not surfaced anywhere today, and no UI notice is
+// promised for it later: a reader that finds it malformed ignores it.
 type TaskStatusShed = { truncated?: number; stripped?: number; dropped?: number }
+
+const isShedCount = (n: unknown): n is number =>
+  typeof n === 'number' && Number.isInteger(n) && n >= 0
+
+// The counts of a stored `uiTaskStatusShed`. Anything that is not a plain
+// object (a string, array or null from an older or foreign writer) yields no
+// counts, and a field that is not a finite non-negative integer is left out.
+function priorTaskStatusShed(value: unknown): TaskStatusShed {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const prior = value as Record<string, unknown>
+  const out: TaskStatusShed = {}
+  for (const key of ['truncated', 'stripped', 'dropped'] as const)
+    if (isShedCount(prior[key])) out[key] = prior[key]
+  return out
+}
 const PROVIDER_METADATA_MAX_CHARS = 8 * 1024
 const SETTLED_TOOL_STATES = new Set([
   'output-available',
@@ -850,7 +864,9 @@ function resolveContentPointers(part: unknown, content: any[]): unknown {
 // Task-status parts are display-only and optional. Only a malformed one is
 // filtered out (and counted); every other part, canonical or run-context, is
 // left for the strict sanitize, which still fails closed on its own malformed
-// parts. Used by the writer (uiPartsFor) and the reader (rehydrateUIParts).
+// parts. Used by the writer (uiPartsFor) and the reader (rehydrateUIParts),
+// the reader before pointers resolve, so a stray pointer on a status part
+// cannot fail the whole carrier.
 function filterTaskStatusParts<T>(parts: T[]): { parts: T[]; dropped: number } {
   let dropped = 0
   const kept = parts.flatMap((part) => {
@@ -875,10 +891,10 @@ function rehydrateUIParts(
   const { v, parts } = (carrier ?? {}) as { v?: unknown; parts?: unknown }
   if (v !== 1 || !Array.isArray(parts) || parts.length === 0) return undefined
   try {
-    const filtered = filterTaskStatusParts(
-      parts.map((part) => resolveContentPointers(part, content))
+    const filtered = filterTaskStatusParts(parts)
+    const rehydrated = sanitizeUIParts(
+      filtered.parts.map((part) => resolveContentPointers(part, content))
     )
-    const rehydrated = sanitizeUIParts(filtered.parts)
     const derived = extractContentPartsFromUIMessage({
       parts: rehydrated,
     } as unknown as UIMessage)

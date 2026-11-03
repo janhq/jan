@@ -788,6 +788,63 @@ describe('task-status rows are an optional carrier budget (never cost the turn i
       expect(withShed.metadata).toMatchObject({ uiTaskStatusShed: { truncated: 2, dropped: 1 } })
     })
 
+    it('a status part with a stray contentRef (missing or out of range) is dropped and counted; valid siblings survive', () => {
+      const { parts, stored } = base()
+      const strays = [
+        { type: TASK_STATUS_PART, id: 'task-status:s1', contentRef: 99, data: { subagents: [{ runId: 's1', name: 'n', status: 'done', startedAt: 1 }] } },
+        { type: TASK_STATUS_PART, id: 'task-status:s2', contentRef: 0, data: { subagents: [{ runId: 's2', name: 'n', status: 'done', startedAt: 1 }] } },
+        { type: TASK_STATUS_PART, id: 'task-status:s3', contentRef: -1, mediaType: 'image/png', data: { subagents: [{ runId: 's3', name: 'n', status: 'done', startedAt: 1 }] } },
+      ]
+      for (const stray of strays) {
+        const reloaded = convertThreadMessageToUIMessage(inject(stored, [stray]))
+        expect(reloaded.metadata).not.toHaveProperty('uiPartsSkipped')
+        expect(reloaded.parts.find(p => p.type === 'reasoning')).toMatchObject({ providerMetadata: { anthropic: { signature: 'sig-r' } } })
+        expect(reloaded.parts.find(p => p.type === 'tool-edit')).toMatchObject({ toolCallId: 'tc1', output: 'Edited' })
+        expect(reloaded.parts.filter(p => p.type === RUN_CONTEXT_PART)).toEqual(parts.filter(p => p.type === RUN_CONTEXT_PART))
+        expect(taskStatusRows([reloaded]).map(r => r.runId)).toEqual(['run-0'])
+        expect((reloaded.metadata as Record<string, unknown>).uiTaskStatusShed).toEqual({ dropped: 1 })
+      }
+    })
+
+    it('a status part with outputInContent: true is dropped and counted; valid siblings survive', () => {
+      const { stored } = base()
+      const data = { subagents: [{ runId: 'o1', name: 'n', status: 'done', startedAt: 1 }] }
+      // One pointing at a real tool output, one at a call that is not in content.
+      for (const toolCallId of ['tc1', 'no-such-call', undefined]) {
+        const stray = { type: TASK_STATUS_PART, id: 'task-status:o1', outputInContent: true, toolCallId, data }
+        const reloaded = convertThreadMessageToUIMessage(inject(stored, [stray]))
+        expect(reloaded.metadata).not.toHaveProperty('uiPartsSkipped')
+        expect(reloaded.parts.find(p => p.type === 'tool-edit')).toMatchObject({ toolCallId: 'tc1', output: 'Edited' })
+        expect(JSON.stringify(reloaded.parts)).not.toContain('task-status:o1')
+        expect(taskStatusRows([reloaded]).map(r => r.runId)).toEqual(['run-0'])
+        expect((reloaded.metadata as Record<string, unknown>).uiTaskStatusShed).toEqual({ dropped: 1 })
+      }
+    })
+
+    it('a stray pointer on a NON-status part still fails closed to content only', () => {
+      const { stored } = base()
+      const bad = { type: 'text', text: 'x', state: 'done', contentRef: 99 }
+      const reloaded = convertThreadMessageToUIMessage(inject(stored, [bad]))
+      expect(JSON.stringify(reloaded.parts)).not.toContain('sig-r')
+      expect(taskStatusRows([reloaded])).toEqual([])
+    })
+
+    it('a prior uiTaskStatusShed that is a string, array or null is ignored; valid counts are kept; bad fields are left out', () => {
+      const { stored } = base()
+      const bad = [{ type: TASK_STATUS_PART, id: 'task-status:p1', data: { subagents: [] } }]
+      const withPrior = (prior: unknown) => ({ ...stored, metadata: { ...stored.metadata, uiTaskStatusShed: prior } }) as ThreadMessage
+      const shed = (prior: unknown) => (convertThreadMessageToUIMessage(inject(withPrior(prior), bad)).metadata as Record<string, unknown>).uiTaskStatusShed
+      for (const prior of ['oops', ['a', 'b'], [1, 2], null, 7, true]) {
+        const out = shed(prior)
+        expect(out).toEqual({ dropped: 1 })
+        expect(Array.isArray(out)).toBe(false)
+      }
+      expect(shed({ truncated: 2, stripped: 3, dropped: 4 })).toEqual({ truncated: 2, stripped: 3, dropped: 5 })
+      expect(shed({ truncated: -1, stripped: 1.5, dropped: Infinity })).toEqual({ dropped: 1 })
+      expect(shed({ truncated: '2', stripped: NaN, dropped: -3 })).toEqual({ dropped: 1 })
+      expect(shed({ truncated: 0, other: 'x' })).toEqual({ truncated: 0, dropped: 1 })
+    })
+
     it('a clean carrier reloads with no new notice', () => {
       const { stored } = base()
       expect(convertThreadMessageToUIMessage(stored).metadata).not.toHaveProperty('uiTaskStatusShed')
