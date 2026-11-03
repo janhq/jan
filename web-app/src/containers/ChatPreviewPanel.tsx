@@ -83,6 +83,10 @@ export function ChatPreviewPanel({ threadId, path, onClose }: Props) {
       )
       if (!alive) return
       if (res.error !== undefined) {
+        if (kind === 'image' && res.error.includes('not a UTF-8 text file')) {
+          setState({ status: 'unsupported', path })
+          return
+        }
         setState({ status: 'failed', path, reason: res.error })
         return
       }
