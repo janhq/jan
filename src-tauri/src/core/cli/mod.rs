@@ -2553,13 +2553,16 @@ async fn run_agent_loop(
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     // Weak, so a slow sweep (a kept worktree's fetch) never holds the printer
     // open; it runs on a thread exit does not join, so what is left when the
-    // run ends is done at the next start.
+    // run ends is done at the next start. A notice counts as told only where
+    // the format shows one: under `json` it is sent but left for a later
+    // start to report.
     if let Some(root) = args.project_root.clone() {
         let sweep_tx = tx.downgrade();
         crate::core::agent::child_workspace::spawn_startup_sweep(root, move |text| {
             sweep_tx
                 .upgrade()
                 .is_some_and(|tx| tx.send(StreamEvent::Notice { text }).is_ok())
+                && format.shows_notices()
         });
     }
     let reader = input.as_ref().map(|input| {
