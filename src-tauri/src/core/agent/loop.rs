@@ -242,6 +242,12 @@ pub(crate) trait ModelInvoker: Send + Sync {
     fn summarizer(&self) -> Option<(&str, &dyn ModelInvoker)> {
         None
     }
+
+    /// The route `model_id` is served on rejected a resent
+    /// `reasoning_content`. An invoker that knows its route records it, so no
+    /// later run on that route sends the field again. Nothing to record for one
+    /// that does not.
+    fn reasoning_rejected(&self, _model_id: &str) {}
 }
 
 /// One tool call's outcome: `content` is the model-facing result string,
@@ -623,6 +629,10 @@ impl ModelInvoker for HttpModelInvoker {
         self.summarizer
             .as_deref()
             .map(|(id, model)| (id.as_str(), model as &dyn ModelInvoker))
+    }
+
+    fn reasoning_rejected(&self, model_id: &str) {
+        crate::core::agent::reasoning_routes::remember(self.provenance.provider.as_deref(), model_id);
     }
 
     async fn invoke(
@@ -4006,7 +4016,6 @@ async fn orchestrate_inner(
         transcript.record_prompt(&composed.prefix);
     }
     let volatile_projection: Option<String> = Some(volatile_system);
-    let send_reasoning = body_send_reasoning(json_body);
     // Paired with the addendum above: force the model's very first tool call
     // to actually be `todo` rather than leaving compliance up to a prompt it
     // could silently ignore.
@@ -4134,6 +4143,15 @@ async fn orchestrate_inner(
         .api_type
         .as_deref()
         .and_then(|api_type| converter_for(Some(api_type), provenance.oauth));
+    // The user's opt-out, narrowed by what this route is already known to
+    // reject. A route that rejected the field in an earlier run (or process)
+    // starts without it, so its first request is the bytes it will keep
+    // accepting rather than one more rejection followed by a history rewrite.
+    let send_reasoning = body_send_reasoning(json_body)
+        && !crate::core::agent::reasoning_routes::rejects(
+            provenance.provider.as_deref(),
+            &model_id,
+        );
 
     let http_model = HttpModelInvoker {
         client: client.clone(),
@@ -4194,6 +4212,9 @@ async fn orchestrate_inner(
             model_id: model_id.clone(),
             max_session_tokens,
             cost_ceiling,
+            // The user's opt-out only, not this route's answer: a child may run
+            // on another model, and it checks its own route's known rejection
+            // when it starts (`reasoning_routes`), as every run does.
             send_reasoning: body_send_reasoning(json_body),
             tool_ceiling: allowed_names.as_ref().map(|names| {
                 let mut names: Vec<String> = names.iter().cloned().collect();
@@ -5351,6 +5372,11 @@ async fn run_turn_cycle(
                         log::info!(
                             "agent: upstream rejected reasoning_content, retrying without it"
                         );
+                        // The retry rewrites every earlier assistant turn, so
+                        // the cached prefix is lost once. Remembering the route
+                        // keeps it to once: later runs, resumes and same-route
+                        // children start without the field.
+                        model.reasoning_rejected(model_id);
                         send_reasoning = false;
                         let _ = events.send(StreamEvent::MessagesUpdated {
                             messages: client_history(&transcript, send_reasoning),
@@ -12771,6 +12797,114 @@ mod tests {
         let tail = |b: &str| b.chars().rev().take(600).collect::<Vec<_>>().into_iter().rev().collect::<String>();
         assert!(sent[1].contains("# Memory Changes"), "{}", tail(&sent[1]));
         assert!(sent[1].contains("+ build_cmd"), "{}", tail(&sent[1]));
+    }
+
+    /// A route that rejects `reasoning_content` pays the rejected round trip
+    /// once. The run that discovers it retries without the field; every later
+    /// run on the route (a new prompt, a resume, a subagent on the same model)
+    /// starts without it instead of being rejected again. A route that never
+    /// rejected the field keeps receiving it. Driven end to end against a stub
+    /// provider that refuses any body carrying the field.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_route_that_rejects_reasoning_is_only_rejected_once() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let root = unique_project_root();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = bodies.clone();
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                let body = String::from_utf8_lossy(&body).into_owned();
+                let strict = body.contains("\"model\":\"rr-strict\"");
+                let rejected = strict && body.contains("reasoning_content");
+                seen.lock().unwrap().push(body);
+                if rejected {
+                    let err = r#"{"error":{"message":"property 'reasoning_content' is unsupported","type":"invalid_request_error"}}"#;
+                    let _ = write!(stream, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{err}", err.len());
+                    continue;
+                }
+                let chunk = json!({"id": "s", "object": "chat.completion.chunk", "created": 1, "model": "m",
+                    "choices": [{"index": 0, "delta": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"}]});
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
+        args.session_start = None;
+        args.sandbox = Some(false);
+        args.subagents_enabled = false;
+        args.project_memory = false;
+        args.provider_configs = Arc::new(Mutex::new(
+            std::iter::once((
+                "rr-stub".to_string(),
+                ProviderConfig {
+                    provider: "rr-stub".into(),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    api_key: Some("k".into()),
+                    models: vec!["rr-strict".into(), "rr-lenient".into()],
+                    ..Default::default()
+                },
+            ))
+            .collect(),
+        ));
+        let body = |model: &str| {
+            json!({"model": model, "messages": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hey", "reasoning_content": "thinking"},
+                {"role": "user", "content": "again"},
+            ]})
+        };
+        let sent = |bodies: &Arc<std::sync::Mutex<Vec<String>>>| {
+            std::mem::take(&mut *bodies.lock().unwrap())
+        };
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        run_orchestration_streamed(&tx, &body("rr-strict"), &args)
+            .await
+            .expect("the discovering run recovers");
+        let first = sent(&bodies);
+        assert_eq!(first.len(), 2, "rejected once, then retried: {first:?}");
+        assert!(!first[1].contains("reasoning_content"), "{}", first[1]);
+
+        run_orchestration_streamed(&tx, &body("rr-strict"), &args)
+            .await
+            .expect("a later run on the route");
+        let second = sent(&bodies);
+        assert_eq!(second.len(), 1, "a known route is not rejected again: {second:?}");
+        assert!(!second[0].contains("reasoning_content"), "{}", second[0]);
+        assert_eq!(
+            first[1], second[0],
+            "the later run sends the bytes the retry did, so its prefix is cached"
+        );
+
+        run_orchestration_streamed(&tx, &body("rr-lenient"), &args)
+            .await
+            .expect("a route that accepts the field");
+        let lenient = sent(&bodies);
+        assert_eq!(lenient.len(), 1, "{lenient:?}");
+        assert!(
+            lenient[0].contains("\"reasoning_content\":\"thinking\""),
+            "another model on the same provider still gets reasoning: {}",
+            lenient[0]
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A child that names `memory` anyway is refused at the gate.

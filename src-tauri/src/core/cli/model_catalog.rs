@@ -152,6 +152,11 @@ fn unique_bare_match<'a>(
 pub struct Catalog {
     #[serde(default)]
     providers: BTreeMap<String, BTreeMap<String, ModelInfo>>,
+    /// provider id -> model ids that rejected a resent `reasoning_content`
+    /// field (see [`crate::core::agent::reasoning_routes`]). Learned from a
+    /// request, not a listing, so a listing refresh leaves it alone.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    reasoning_rejected: BTreeMap<String, std::collections::BTreeSet<String>>,
 }
 
 fn catalog_path() -> Result<PathBuf, String> {
@@ -199,6 +204,23 @@ impl Catalog {
 
     pub fn remove_provider(&mut self, provider: &str) {
         self.providers.remove(provider);
+        self.reasoning_rejected.remove(provider);
+    }
+
+    /// Whether `model_id` on `provider` is known to reject `reasoning_content`.
+    pub(crate) fn rejects_reasoning(&self, provider: &str, model_id: &str) -> bool {
+        self.reasoning_rejected
+            .get(provider)
+            .is_some_and(|models| models.contains(model_id))
+    }
+
+    /// Record that `model_id` on `provider` rejects `reasoning_content`.
+    /// `false` when it was already known, so the caller can skip a write.
+    pub(crate) fn remember_reasoning_rejected(&mut self, provider: &str, model_id: &str) -> bool {
+        self.reasoning_rejected
+            .entry(provider.to_string())
+            .or_default()
+            .insert(model_id.to_string())
     }
 
     /// Replace one provider's entries and keep the provider even when `models`
@@ -649,6 +671,34 @@ mod tests {
             catalog.set_provider("tokamak", BTreeMap::new());
             catalog.save().expect("save");
             assert!(load().provider_ids("tokamak").is_empty());
+        });
+    }
+
+    /// A learned rejection of `reasoning_content` survives a reload and a
+    /// listing refresh, which replaces only the listed metadata, and goes
+    /// with its provider on sign-out.
+    #[test]
+    fn a_reasoning_rejection_round_trips_and_outlives_a_refresh() {
+        with_temp_home(|_| {
+            let mut catalog = Catalog::default();
+            assert!(!catalog.rejects_reasoning("groq", "m"));
+            assert!(catalog.remember_reasoning_rejected("groq", "m"));
+            assert!(!catalog.remember_reasoning_rejected("groq", "m"), "already known");
+            catalog.save().expect("save");
+
+            let mut reloaded = load();
+            assert!(reloaded.rejects_reasoning("groq", "m"));
+            assert!(!reloaded.rejects_reasoning("groq", "other"));
+            assert!(!reloaded.rejects_reasoning("other", "m"));
+
+            reloaded.set_provider(
+                "groq",
+                parse_listing(&json!({"data": [router_entry("m")]})),
+            );
+            assert!(reloaded.rejects_reasoning("groq", "m"), "a refresh keeps it");
+
+            reloaded.remove_provider("groq");
+            assert!(!reloaded.rejects_reasoning("groq", "m"));
         });
     }
 

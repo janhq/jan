@@ -54,6 +54,8 @@ pub mod prompt;
 #[cfg(not(feature = "cli"))]
 pub(crate) mod proxy_budget;
 pub mod provenance;
+/// Routes known to reject a resent `reasoning_content` field.
+pub mod reasoning_routes;
 pub mod reminder;
 pub mod request_headers;
 pub mod secrets;
