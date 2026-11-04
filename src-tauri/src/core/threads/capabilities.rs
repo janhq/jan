@@ -193,18 +193,39 @@ pub async fn read_conversation_capabilities(
     serde_json::to_value(stored.intersect(mirror)?).map_err(|e| e.to_string())
 }
 
-/// Host-owned folder authority for a migrated Cowork conversation.
+/// List-only annotation key. Present on a listed Cowork thread when the host
+/// STORES a folder grant that the in-process mirror currently denies (a failed
+/// confirmation, or a durable DENY that outlived the CONFIRM across a restart).
+/// Its value is `{"denied":true,"path":"<stored folder>"}`: a display path and
+/// a status, never an access level, so it cannot be mistaken for authority.
+/// It is never persisted and never read as a grant.
+pub const DENIED_FOLDER_KEY: &str = "conversationCapabilitiesDenied";
+
+/// Host-owned folder authority for a migrated Cowork conversation: the
+/// EFFECTIVE grant only (stored grant intersected with the in-process mirror).
 ///
-/// `Null` means the host holds no record: a legacy or never-granted session.
-/// Its displayed folder stays inactive until the strict setter confirms access.
-/// Any stored record --
-/// including `folderScope: null` after a detach -- is authoritative from then
-/// on and is restored through the same marker/ledger path as Chat, so a revoke
-/// is never resurrected from `metadata.folder`.
+/// `Null` means the host holds no record: a legacy or never-granted session,
+/// which stays inactive until the strict setter confirms access. Any stored
+/// record -- including `folderScope: null` after a detach -- is authoritative
+/// from then on and is restored through the same marker/ledger path as Chat, so
+/// a revoke is never resurrected from `metadata.folder`. A stored grant the
+/// mirror denies is NOT widened here; listing reports it separately through
+/// [`read_cowork_listing`].
 pub async fn read_cowork_capabilities(
     data_folder: &Path,
     thread_id: &str,
 ) -> Result<Value, String> {
+    read_cowork_listing(data_folder, thread_id).await.map(|(value, _)| value)
+}
+
+/// [`read_cowork_capabilities`] plus the stored folder path when the host holds
+/// a folder grant that the effective intersection denies. The second value is
+/// for display only: `None` for a true detach (stored `folderScope: null`), a
+/// missing record, or a folder that is effectively granted.
+pub async fn read_cowork_listing(
+    data_folder: &Path,
+    thread_id: &str,
+) -> Result<(Value, Option<String>), String> {
     super::utils::validate_thread_id(thread_id)?;
     if super::helpers::should_use_sqlite() {
         return Err("Conversation capabilities are unavailable on mobile".into());
@@ -215,7 +236,7 @@ pub async fn read_cowork_capabilities(
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
         // A legacy session has no thread record at all.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Value::Null),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((Value::Null, None)),
         Err(e) => return Err(e.to_string()),
     };
     let thread: Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
@@ -226,7 +247,7 @@ pub async fn read_cowork_capabilities(
     }
     let value = thread["metadata"]["conversationCapabilities"].clone();
     if value.is_null() {
-        return Ok(Value::Null);
+        return Ok((Value::Null, None));
     }
     validate_conversation_capabilities(&value)?;
     let stored: tauri_plugin_agent_tools::thread_capabilities::ThreadCapabilities =
@@ -237,7 +258,10 @@ pub async fn read_cowork_capabilities(
     )
     .await?;
     let (mirror, _) = tauri_plugin_agent_tools::thread_capabilities::current(thread_id);
-    serde_json::to_value(stored.intersect(mirror)?).map_err(|e| e.to_string())
+    let stored_path = stored.folder_scope.as_ref().map(|scope| scope.path.clone());
+    let effective = stored.intersect(mirror)?;
+    let denied_path = stored_path.filter(|_| effective.folder_scope.is_none());
+    Ok((serde_json::to_value(effective).map_err(|e| e.to_string())?, denied_path))
 }
 
 /// The all-off grant, as the wire value.
@@ -286,11 +310,16 @@ pub fn confirm_failure_error(
 /// Attach host-owned consent to a listed thread. A host read error fails
 /// CLOSED: `conversationCapabilities` is the explicit all-off grant
 /// (`denied_value()`, `folderScope: null`) and `conversationCapabilitiesError`
-/// carries the error. Dropping the field would let the frontend fall back to
-/// its legacy default (a writable folder for Cowork). The sentinel alone looks
-/// like an acknowledged detach, so consumers must check the error field BEFORE
-/// interpreting the record. Only a Cowork thread the host holds no record for
-/// (`Null`) keeps both fields absent, which is the legacy default.
+/// carries the error. An absent field is NOT a writable default: the frontend
+/// treats it as inactive (the host refuses the folder and the UI asks for
+/// confirmation). The sentinel alone looks like an acknowledged detach, so
+/// consumers must check the error field BEFORE interpreting the record. Only a
+/// Cowork thread the host holds no record for (`Null`) keeps both fields
+/// absent, and that session stays inactive until access is confirmed.
+///
+/// Every branch also drops any [`DENIED_FOLDER_KEY`] already in the metadata:
+/// that annotation is list-only and is set solely by
+/// [`apply_listed_denied_folder`] from this read.
 pub fn apply_listed_capabilities(thread: &mut Value, cowork: bool, read: Result<Value, String>) {
     if thread["metadata"].is_null() {
         if matches!(&read, Ok(v) if cowork && v.is_null()) {
@@ -300,6 +329,7 @@ pub fn apply_listed_capabilities(thread: &mut Value, cowork: bool, read: Result<
     }
     // A non-object, non-null metadata cannot carry the field; it is listed as is.
     let Some(metadata) = thread["metadata"].as_object_mut() else { return };
+    metadata.remove(DENIED_FOLDER_KEY);
     match read {
         Ok(value) if cowork && value.is_null() => {
             metadata.remove("conversationCapabilities");
@@ -312,6 +342,25 @@ pub fn apply_listed_capabilities(thread: &mut Value, cowork: bool, read: Result<
         Err(error) => {
             metadata.insert("conversationCapabilities".into(), denied_value());
             metadata.insert("conversationCapabilitiesError".into(), Value::String(error));
+        }
+    }
+}
+
+/// Mark a listed Cowork thread whose stored folder grant the host currently
+/// denies, so it is not read as an acknowledged detach. `denied_path` is the
+/// stored path from [`read_cowork_listing`]. The effective
+/// `conversationCapabilities` is left exactly as listed (all-off for the
+/// folder); this adds display information only and never any access level.
+pub fn apply_listed_denied_folder(thread: &mut Value, denied_path: Option<&str>) {
+    if let Some(metadata) = thread["metadata"].as_object_mut() {
+        // This read is authoritative for display too: a true detach must not
+        // retain an annotation from an older denied grant.
+        metadata.remove(DENIED_FOLDER_KEY);
+        if let Some(path) = denied_path {
+            metadata.insert(
+                DENIED_FOLDER_KEY.into(),
+                serde_json::json!({"denied": true, "path": path}),
+            );
         }
     }
 }

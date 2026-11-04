@@ -1067,6 +1067,93 @@ describe('loadCoworkSessions', () => {
     })
   })
 
+  describe('actual host wire shape for a stored-but-denied folder', () => {
+    // apply_listed_denied_folder: the effective record is the all-off denied_value()
+    // (folderScope null) PLUS conversationCapabilitiesDenied {denied:true,path}.
+    const deniedValue = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
+    const seedDenied = (id: string, annotation: unknown, metadata: Json = {}) => {
+      b.threads.set(id, {
+        id, title: 'T', updated: 1, assistants: [],
+        metadata: {
+          mode: 'cowork', folder: '/folderA',
+          conversationCapabilities: deniedValue,
+          conversationCapabilitiesDenied: annotation,
+          ...metadata,
+        },
+      })
+      b.extras.set(id, { version: 1, turns: [], messages: [] })
+    }
+
+    it('preserves the stored path and stays inactive (folderAccess null), not a detach', async () => {
+      seedDenied('a', { denied: true, path: '/folderB' })
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderB')
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('never widens: the annotation carries no access, whatever extra fields it has', async () => {
+      seedDenied('a', { denied: true, path: '/folderB', access: 'write', folderAccess: 'write' })
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderB')
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('a read error still wins over the annotation', async () => {
+      seedDenied('a', { denied: true, path: '/folderB' }, { conversationCapabilitiesError: 'read failed' })
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderA')
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('an effective grant wins over a stray annotation', async () => {
+      seedDenied('a', { denied: true, path: '/folderB' }, {
+        conversationCapabilities: hostCaps({ path: '/folderC', access: 'read' }),
+      })
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderC')
+      expect(s.folderAccess).toBe('read')
+    })
+
+    it.each([
+      ['denied is not true', { denied: false, path: '/folderB' }],
+      ['denied is a string', { denied: 'true', path: '/folderB' }],
+      ['the path is relative', { denied: true, path: 'folderB' }],
+      ['the path is missing', { denied: true }],
+      ['the annotation is not an object', 'yes'],
+      ['the annotation is an array', [{ denied: true, path: '/folderB' }]],
+    ])('fails closed when %s: metadata folder shown, no access', async (_n, annotation) => {
+      seedDenied('a', annotation)
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderA')
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('without the annotation the same all-off record is still a true detach', async () => {
+      seedStale('a', deniedValue)
+      const s = await loadOne('a')
+      expect(s.folder).toBeNull()
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('a later flush strips the annotation and keeps the displayed folder', async () => {
+      seedDenied('a', { denied: true, path: '/folderB' })
+      const s = await loadOne('a')
+      const rec = sessionToThreadRecord(s, b.threads.get('a'))
+      expect(rec.metadata.folder).toBe('/folderB')
+      expect(rec.metadata.conversationCapabilitiesDenied).toBeUndefined()
+      expect(rec.metadata.conversationCapabilities).toBeUndefined()
+      expect(rec.metadata.conversationCapabilitiesError).toBeUndefined()
+    })
+
+    it('strips the annotation even when the session was never loaded from it', () => {
+      const rec = sessionToThreadRecord(session('a'), {
+        id: 'a',
+        metadata: { mode: 'cowork', conversationCapabilitiesDenied: { denied: true, path: '/x' } },
+      })
+      expect('conversationCapabilitiesDenied' in rec.metadata).toBe(false)
+    })
+  })
+
   it('loads cowork threads only, newest first, and ignores chat threads', async () => {
     commit('old', { updated: 1_600_000_000_000 })
     commit('new', { updated: 1_700_000_000_000 })

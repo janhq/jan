@@ -8,6 +8,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import {
   createCoworkPersistence,
+  HOST_LIST_KEYS,
   loadCoworkSessions,
   type CoworkPersistence,
 } from '@/lib/coworkPersistence'
@@ -71,12 +72,11 @@ function upsertThread(thread: Json) {
     // one already in the store (from the strict setter / list_threads).
     metadata: {
       ...(thread.metadata ?? {}),
-      ...(existing?.metadata && 'conversationCapabilities' in existing.metadata
-        ? { conversationCapabilities: existing.metadata.conversationCapabilities }
-        : {}),
-      ...(existing?.metadata && 'conversationCapabilitiesError' in existing.metadata
-        ? { conversationCapabilitiesError: existing.metadata.conversationCapabilitiesError }
-        : {}),
+      ...Object.fromEntries(
+        HOST_LIST_KEYS.filter((key) => existing?.metadata && key in existing.metadata).map(
+          (key) => [key, existing.metadata?.[key]]
+        )
+      ),
     },
   } as Thread
   const all = { ...useThreads.getState().threads, [next.id]: next }
