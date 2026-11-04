@@ -37,16 +37,9 @@ export const useTools = () => {
         updateTools(mcpTools)
 
         const mcpNames = mcpTools.map((t) => t.name)
-        const mcpNameSet = new Set(mcpNames)
-        const ragOnly = ragToolNames.filter((n) => !mcpNameSet.has(n))
-        if (ragOnly.length !== ragToolNames.length) {
-          const shadowed = ragToolNames.filter((n) => mcpNameSet.has(n))
-          console.warn(
-            `[tools] RAG tool(s) shadowed by MCP and routed to MCP: ${shadowed.join(', ')}`
-          )
-        }
         updateMcpToolNames(mcpNames)
-        updateRagToolNames(ragOnly)
+        // Preserve overlaps: transport gives RAG names precedence over MCP tools.
+        updateRagToolNames(ragToolNames)
 
         // Initialize default disabled tools for new users (only once)
         if (!isDefaultsInitialized() && mcpTools.length > 0 && mcpExtension?.getDefaultDisabledTools) {

@@ -7,6 +7,15 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import packageJson from './package.json'
 const host = process.env.TAURI_DEV_HOST
 
+// `tauri dev` / `tauri build` set TAURI_ENV_PLATFORM; a direct Tauri build
+// (`build:e2e:app`, which runs `vite build` then cargo) does not, and would bake
+// IS_MACOS=false into a macOS app (title-bar inset and traffic-light spacing
+// lost). Tauri-only builds fall back to the host OS; plain web builds do not.
+const hostPlatform: Record<string, string> = { darwin: 'darwin', win32: 'windows', linux: 'linux' }
+const tauriPlatform =
+  process.env.TAURI_ENV_PLATFORM ??
+  (process.env.IS_TAURI === 'true' ? (hostPlatform[process.platform] ?? '') : '')
+
 // Plugin to inject GA scripts in HTML
 function injectGoogleAnalytics(gaMeasurementId?: string): Plugin {
   return {
@@ -93,13 +102,13 @@ export default defineConfig(({ mode }) => {
       IS_DEV: JSON.stringify(process.env.IS_DEV),
       IS_WEB_APP: JSON.stringify(false),
       IS_MACOS: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('darwin') ?? false
+        tauriPlatform.includes('darwin')
       ),
       IS_WINDOWS: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('windows') ?? false
+        tauriPlatform.includes('windows')
       ),
       IS_LINUX: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('linux') ?? false
+        tauriPlatform.includes('linux')
       ),
       IS_IOS: JSON.stringify(
         process.env.TAURI_ENV_PLATFORM?.includes('ios') ?? false

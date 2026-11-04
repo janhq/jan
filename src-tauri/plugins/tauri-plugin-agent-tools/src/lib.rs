@@ -15,6 +15,7 @@ pub mod permissions;
 pub mod preview;
 pub mod screenshot_pages;
 pub mod skills;
+pub mod thread_capabilities;
 pub mod tools;
 pub mod workspace;
 
@@ -44,6 +45,15 @@ pub use tools::appcontainer::run_helper_if_requested as run_sandbox_helper_if_re
 
 #[cfg(feature = "tauri")]
 pub use commands::{AgentToolsError, ToolResult};
+/// The host-confirmation seam the native thread surface owns: the strict
+/// consent setter narrows before it writes and confirms only on success, and
+/// the delete boundary forgets. Re-exported individually rather than opening
+/// the whole command module, so nothing else widens this surface. Desktop-only
+/// like the module it comes from: the headless CLI has no thread surface.
+#[cfg(feature = "tauri")]
+pub use commands::{
+    cancel_thread_shells, confirm_thread_consent, forget_thread_consent, revoke_thread_consent,
+};
 
 /// Initializes the agent tools plugin.
 #[cfg(feature = "tauri")]
@@ -73,6 +83,7 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::subagent_result_fill,
             commands::blackboard_write,
             commands::attachment_import,
+            commands::execute_thread_tool,
             commands::execute_tool,
             commands::execute_tool_streaming,
             commands::start_monitor,
@@ -80,6 +91,11 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::list_monitors,
             commands::session_monitor_ids,
             commands::stop_session_monitors,
+            commands::start_thread_monitor,
+            commands::stop_thread_monitor,
+            commands::list_thread_monitors,
+            commands::stop_all_thread_monitors,
+            commands::revoke_thread_capabilities,
             commands::cancel_thread_bash,
             commands::preview_register_root,
             commands::preview_unregister_root,

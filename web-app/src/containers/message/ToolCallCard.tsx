@@ -23,16 +23,17 @@ const identityResolver = (input: string) => Promise.resolve(input)
 export type ToolCallCardProps = {
   part: MessagePartLike
   messageId: string
+  threadId?: string
   /** Citation count from earlier tool calls in this turn, for continuous numbering. */
   citationOffset?: number
   className?: string
 }
 
 export const ToolCallCard = memo(
-  ({ part, messageId, citationOffset = 0, className }: ToolCallCardProps) => {
+  ({ part, messageId, threadId, citationOffset = 0, className }: ToolCallCardProps) => {
     const { t } = useTranslation()
     const toolName = part.type.split('-').slice(1).join('-')
-    const origin = useToolOrigin(toolName)
+    const origin = useToolOrigin(toolName, part.toolCallId, messageId, threadId)
     if (!isToolPart(part)) return null
 
     const isError = part.state === 'output-error'
@@ -84,6 +85,7 @@ export const ToolCallCard = memo(
         state={part.state}
         toolCallId={part.toolCallId}
         messageId={messageId}
+        threadId={threadId}
         className={className}
       >
         <ToolHeader

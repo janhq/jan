@@ -12,10 +12,14 @@ import {
   ASK_TOOL_NAME,
   TASK_TOOL_NAME,
   TODO_TOOL_NAME,
+  capabilityModeRefusal,
+  type CapabilityMode,
+  unadvertisedToolRefusal,
 } from '@/lib/coworkTools'
 import { MONITOR_TOOL_NAME } from '@/lib/coworkMonitor'
 import { MAX_SUBAGENT_STEPS } from '@/lib/coworkBudget'
 import { createStepMetadata } from '@/lib/stepMetadata'
+import { truncateUtf16 } from '@/lib/truncateUtf16'
 import {
   runTurn,
   type PendingToolCall,
@@ -108,6 +112,14 @@ export function formatDispatchedPlan(
  */
 export type SubagentNotice = { headline: string; text: string }
 
+const SUBAGENT_OUTPUT_TRUNCATION_MARKER = `\n\n[truncated: subagent output exceeded ${SUBAGENT_INLINE_MAX} characters]`
+
+/** Inline subagent output, bounded to SUBAGENT_INLINE_MAX UTF-16 units with an
+ * explicit marker (surrogate-pair safe). Exactly-at-limit output is unchanged. */
+function boundInlineOutput(output: string): string {
+  return truncateUtf16(output, SUBAGENT_INLINE_MAX, SUBAGENT_OUTPUT_TRUNCATION_MARKER)
+}
+
 export function subagentCompletionNotice(opts: {
   name: string
   callId: string
@@ -117,13 +129,13 @@ export function subagentCompletionNotice(opts: {
 }): SubagentNotice {
   const who = `Subagent '${opts.name}' (${opts.callId})`
   if (opts.isError) {
-    const headline = `${who} failed: ${opts.output}`
+    const headline = `${who} failed: ${boundInlineOutput(opts.output)}`
     return { headline, text: headline }
   }
   const headline = `${who} finished`
   const detail = opts.savedPath
     ? `Its full answer is in ${opts.savedPath} -- read that file when you need it.`
-    : `Its answer:\n\n${opts.output.slice(0, SUBAGENT_INLINE_MAX)}`
+    : `Its answer:\n\n${boundInlineOutput(opts.output)}`
   return { headline, text: `${headline}. ${detail}` }
 }
 
@@ -143,10 +155,10 @@ export function planCompletionNotice(opts: {
   const headline = `Subagent plan finished: ${totalSubagents} subagent(s) across ${phaseCount} phases`
   const parts = finalPhase.map(({ name, result, savedPath }) => {
     const body = result.isError
-      ? `failed: ${result.output}`
+      ? `failed: ${boundInlineOutput(result.output)}`
       : savedPath
         ? `see ${savedPath}`
-        : result.output.slice(0, SUBAGENT_INLINE_MAX)
+        : boundInlineOutput(result.output)
     return `### ${name}\n\n${body}`
   })
   const text = parts.length
@@ -657,6 +669,12 @@ export type RunSubagentOptions = {
     bashAvailable: boolean
     environment?: CoworkEnvironment | null
   }
+  /**
+   * The run's plan-mode and web state, read per call. Only picks the refusal
+   * text for a call the child's record does not advertise; such a call never
+   * reaches `dispatch`.
+   */
+  mode: () => CapabilityMode
   /** Runs one of the child's tool calls. Same sandbox as the parent. */
   dispatch: (call: PendingToolCall, signal: AbortSignal) => Promise<ToolOutcome>
   signal: AbortSignal
@@ -675,7 +693,7 @@ export type SubagentResult = {
 }
 
 /** One model turn for a child, as a UI message stream the runner can consume. */
-function childStep(opts: {
+export function childStep(opts: {
   model: LanguageModel
   system: string
   tools: Record<string, Tool>
@@ -787,7 +805,17 @@ export async function runSubagent(
             messages: msgs,
             signal,
           }),
-        dispatch: opts.dispatch,
+        // Enforce the same narrowed record sent to every child step, including
+        // resolved implicit skill reads, before invoking any host callback.
+        // A mode reason only replaces the generic text: either way the call
+        // is refused here, before any host callback.
+        dispatch: (call, signal) => {
+          const refusal = unadvertisedToolRefusal(call.toolName, tools)
+          if (!refusal) return opts.dispatch(call, signal)
+          return Promise.resolve(
+            capabilityModeRefusal(call.toolName, opts.mode()) ?? refusal
+          )
+        },
         sink,
         onStep: ({ result, outcomes }) => {
           if (result.text.trim()) finalText = result.text

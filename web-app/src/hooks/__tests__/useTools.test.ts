@@ -4,7 +4,10 @@ import { SystemEvent } from '@/types/events'
 
 // Mock functions
 const mockGetTools = vi.fn()
+const mockGetRagToolNames = vi.fn()
 const mockUpdateTools = vi.fn()
+const mockUpdateRagToolNames = vi.fn()
+const mockUpdateMcpToolNames = vi.fn()
 const mockListen = vi.fn()
 const mockUnsubscribe = vi.fn()
 const mockInvalidateCache = vi.fn()
@@ -15,7 +18,24 @@ vi.mock('@/lib/mcp-orchestrator/mcp-orchestrator', () => ({
 
 // Mock useAppState
 vi.mock('../useAppState', () => ({
-  useAppState: (selector: any) => selector({ updateTools: mockUpdateTools }),
+  useAppState: (selector: any) => selector({
+    updateTools: mockUpdateTools,
+    updateRagToolNames: mockUpdateRagToolNames,
+    updateMcpToolNames: mockUpdateMcpToolNames,
+  }),
+}))
+
+// Keep fixtures isolated from persisted availability and real extensions.
+vi.mock('../useToolAvailable', () => ({
+  useToolAvailable: () => ({
+    isDefaultsInitialized: () => true,
+    setDisabledTools: vi.fn(),
+    markDefaultsAsInitialized: vi.fn(),
+  }),
+}))
+
+vi.mock('@/lib/extension', () => ({
+  ExtensionManager: { getInstance: () => ({ get: () => undefined }) },
 }))
 
 // Mock the ServiceHub
@@ -25,7 +45,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
       getTools: mockGetTools,
     }),
     rag: () => ({
-      getToolNames: vi.fn(() => Promise.resolve([])),
+      getToolNames: mockGetRagToolNames,
     }),
     events: () => ({
       listen: mockListen,
@@ -38,6 +58,7 @@ describe('useTools', () => {
     vi.clearAllMocks()
     mockListen.mockResolvedValue(mockUnsubscribe)
     mockGetTools.mockResolvedValue([])
+    mockGetRagToolNames.mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -62,6 +83,40 @@ describe('useTools', () => {
 
     expect(mockGetTools).toHaveBeenCalledTimes(1)
     expect(mockUpdateTools).toHaveBeenCalledWith(mockTools)
+  })
+
+  it('preserves overlapping RAG names on mount and MCP_UPDATE for RAG-precedence routing', async () => {
+    const { useTools } = await import('../useTools')
+    const mcpTools = [
+      { name: 'shared-tool', description: 'MCP overlap' },
+      { name: 'mcp-only', description: 'MCP only' },
+    ]
+    mockGetTools.mockResolvedValue(mcpTools)
+    mockGetRagToolNames.mockResolvedValue(['shared-tool', 'rag-only'])
+
+    let refresh!: () => Promise<void>
+    mockListen.mockImplementation((_event, callback) => {
+      refresh = callback
+      return Promise.resolve(mockUnsubscribe)
+    })
+
+    await act(async () => {
+      renderHook(() => useTools())
+    })
+
+    expect(mockUpdateTools).toHaveBeenLastCalledWith(mcpTools)
+    expect(mockUpdateMcpToolNames).toHaveBeenLastCalledWith(['shared-tool', 'mcp-only'])
+    expect(mockUpdateRagToolNames).toHaveBeenLastCalledWith(['shared-tool', 'rag-only'])
+
+    mockGetRagToolNames.mockResolvedValue(['shared-tool', 'new-rag-only'])
+    await act(async () => {
+      await refresh()
+    })
+
+    expect(mockUpdateTools).toHaveBeenLastCalledWith(mcpTools)
+    expect(mockUpdateMcpToolNames).toHaveBeenLastCalledWith(['shared-tool', 'mcp-only'])
+    expect(mockUpdateRagToolNames).toHaveBeenLastCalledWith(['shared-tool', 'new-rag-only'])
+    expect(mockUpdateRagToolNames).toHaveBeenCalledTimes(2)
   })
 
   it('should set up event listener for MCP_UPDATE', async () => {

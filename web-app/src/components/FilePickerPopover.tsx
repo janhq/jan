@@ -4,7 +4,9 @@
  * Scoped to the session's working directory. Supports keyboard navigation
  * (arrows, tab to complete, enter to select, esc to dismiss).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useFloatingLayer } from '@/components/ui/overlay-layer'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { Folder, File, FileCode, FileText, ImageIcon, FileJson, FileType } from 'lucide-react'
 import type { FilePickerEntry } from '@/types/path-reference'
@@ -75,6 +77,7 @@ export function FilePickerPopover({
   onClose,
   textareaRef,
 }: FilePickerPopoverProps) {
+  const floatingLayer = useFloatingLayer()
   const [activeIndex, setActiveIndex] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map())
@@ -84,16 +87,36 @@ export function FilePickerPopover({
     setActiveIndex(0)
   }, [entries.length])
 
-  // Position the popover relative to textarea cursor
-  const popoverStyle = useMemo(() => {
-    if (!position || !textareaRef.current) {
-      return { top: 0, left: 0, opacity: 0 as const }
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({ visibility: 'hidden' })
+
+  // The composer supplies offsets from the textarea's bottom edge. Convert to
+  // viewport coordinates before portalling so its z-20/overflow cannot trap us.
+  useLayoutEffect(() => {
+    if (!open || !position || !textareaRef.current) return
+    const textarea = textareaRef.current
+    const update = () => {
+      const rect = textarea.getBoundingClientRect()
+      const width = Math.min(400, Math.max(0, window.innerWidth - 16))
+      const height = popoverRef.current?.getBoundingClientRect().height ?? 300
+      setPopoverStyle({
+        width,
+        left: Math.max(8, Math.min(rect.left + position.left, window.innerWidth - width - 8)),
+        top: Math.max(8, Math.min(rect.bottom + position.top, window.innerHeight - height - 8)),
+      })
     }
-    return {
-      top: position.top,
-      left: position.left,
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(textarea)
+    if (popoverRef.current) observer.observe(popoverRef.current)
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
     }
-  }, [position, textareaRef])
+  }, [open, position, textareaRef, entries.length])
 
   // Scroll active item into view
   useEffect(() => {
@@ -138,11 +161,13 @@ export function FilePickerPopover({
 
   if (!open || entries.length === 0) return null
 
-  return (
+  return createPortal(
     <div
-      className="absolute z-50 w-[400px] max-h-[300px] overflow-y-auto rounded-xl border border-border bg-popover shadow-popover p-1"
+      ref={popoverRef}
+      className={cn("fixed w-[400px] max-h-[300px] overflow-y-auto rounded-xl border border-border bg-popover shadow-popover p-1", floatingLayer)}
       style={popoverStyle}
       onKeyDown={handleKeyDown}
+      onPointerDown={(event) => event.preventDefault()}
       role="listbox"
       tabIndex={-1}
     >
@@ -193,6 +218,7 @@ export function FilePickerPopover({
           </div>
         ))}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

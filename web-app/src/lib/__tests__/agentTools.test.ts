@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const notifyMemoryMutation = vi.fn()
+vi.mock('@/lib/memorySaveFeedback', () => ({
+  notifyMemoryMutation: (...args: unknown[]) => notifyMemoryMutation(...args),
+}))
+
 const toolSchemas = vi.fn()
 const executeTool = vi.fn()
+const executeThreadTool = vi.fn()
+const effectiveGrant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
 const threadWorkspaceDelete = vi.fn()
 const threadWorkspaceSweep = vi.fn()
 const sandboxStatus = vi.fn()
@@ -11,7 +18,12 @@ const subagentResultReserve = vi.fn()
 const subagentResultFill = vi.fn()
 const getJanDataFolder = vi.fn()
 
+vi.mock('@/hooks/useThreads', () => ({
+  useThreads: { getState: () => ({ getConversationCapabilities: () => effectiveGrant }) },
+}))
+
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
+  executeThreadTool: (...args: unknown[]) => executeThreadTool(...args),
   toolSchemas: () => toolSchemas(),
   executeTool: (...args: unknown[]) => executeTool(...args),
   threadWorkspaceDelete: (...args: unknown[]) => threadWorkspaceDelete(...args),
@@ -36,8 +48,10 @@ const schemaFor = (name: string) => ({
 describe('agentTools', () => {
   beforeEach(() => {
     vi.resetModules()
+    notifyMemoryMutation.mockReset()
     toolSchemas.mockReset()
     executeTool.mockReset()
+    executeThreadTool.mockReset()
     threadWorkspaceDelete.mockReset().mockResolvedValue(undefined)
     threadWorkspaceSweep.mockReset().mockResolvedValue(0)
     sandboxStatus
@@ -102,7 +116,7 @@ describe('agentTools', () => {
   /// The diff must reach the caller so the UI can render it, but stay out of
   /// `content`, which is what gets sent back to the model.
   it('returns the diff alongside content, not inside it', async () => {
-    executeTool.mockResolvedValue({
+    executeThreadTool.mockResolvedValue({
       content: 'Applied 1 edit(s) to a.txt',
       diff: '@@ edit 1/1 @@\n-    1 | a\n+    1 | A',
       isError: false,
@@ -115,7 +129,7 @@ describe('agentTools', () => {
   })
 
   it('omits the diff for tools that produce none', async () => {
-    executeTool.mockResolvedValue({
+    executeThreadTool.mockResolvedValue({
       content: 'a.txt',
       diff: null,
       isError: false,
@@ -127,7 +141,7 @@ describe('agentTools', () => {
 
   it('passes returned images through, dropping an empty list', async () => {
     const images = [{ dataUrl: 'data:image/png;base64,AA', name: 'a.html' }]
-    executeTool.mockResolvedValue({
+    executeThreadTool.mockResolvedValue({
       content: 'Screenshot of a.html (1280x960)',
       diff: null,
       isError: false,
@@ -135,10 +149,10 @@ describe('agentTools', () => {
     })
     const { executeAgentTool } = await import('../agentTools')
     expect(
-      (await executeAgentTool('screenshot', { path: 'a.html' }, 'thread-1'))
+      (await executeAgentTool('read', { path: 'a.html' }, 'thread-1'))
         .images
     ).toEqual(images)
-    executeTool.mockResolvedValue({ content: 'x', diff: null, isError: false })
+    executeThreadTool.mockResolvedValue({ content: 'x', diff: null, isError: false })
     expect(
       (await executeAgentTool('read', { path: 'a.txt' }, 'thread-1')).images
     ).toBeUndefined()
@@ -173,27 +187,22 @@ describe('agentTools', () => {
   })
 
   // Chat's shell runs with the network closed; no global setting can open it.
-  it('keeps the sandbox network closed unless the caller opens it', async () => {
-    executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
+  it('passes denied network authority to the scoped native entry', async () => {
+    executeThreadTool.mockResolvedValue({ content: '', diff: null, isError: false })
     const { executeAgentTool } = await import('../agentTools')
     await executeAgentTool('shell', { command: 'ls' }, 'thread-1')
-    expect(executeTool).toHaveBeenLastCalledWith(
-      '/data',
+    expect(executeThreadTool).toHaveBeenLastCalledWith(
       'thread-1',
       'shell',
       { command: 'ls' },
-      undefined,
-      undefined,
-      false,
-      undefined,
-      false,
-      'thread'
+      effectiveGrant
     )
+    expect(executeTool).not.toHaveBeenCalled()
   })
 
-  // Cowork opens the sandbox network per call.
-  it('opens the network when the caller asks', async () => {
-    executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
+  // Caller flags cannot override thread authority.
+  it('ignores caller network flags in thread scope', async () => {
+    executeThreadTool.mockResolvedValue({ content: '', diff: null, isError: false })
     const { executeAgentTool } = await import('../agentTools')
     await executeAgentTool(
       'shell',
@@ -203,18 +212,13 @@ describe('agentTools', () => {
       'thread',
       true
     )
-    expect(executeTool).toHaveBeenLastCalledWith(
-      '/data',
+    expect(executeThreadTool).toHaveBeenLastCalledWith(
       'thread-1',
       'shell',
       { command: 'ls' },
-      undefined,
-      undefined,
-      true,
-      undefined,
-      false,
-      'thread'
+      effectiveGrant
     )
+    expect(executeTool).not.toHaveBeenCalled()
   })
 
   it('caches the schemas so every turn does not re-cross IPC', async () => {
@@ -228,7 +232,7 @@ describe('agentTools', () => {
   /// The thread id scopes the sandbox, so it must reach the plugin on every
   /// call; without it two conversations would share one scratch directory.
   it('scopes execution to the calling thread and attaches no folder by default', async () => {
-    executeTool.mockResolvedValue({
+    executeThreadTool.mockResolvedValue({
       content: 'hello',
       diff: null,
       isError: false,
@@ -237,53 +241,43 @@ describe('agentTools', () => {
     await expect(
       executeAgentTool('read', { path: 'a.txt' }, 'thread-1')
     ).resolves.toEqual({ content: 'hello' })
-    expect(executeTool).toHaveBeenCalledWith(
-      '/data',
+    expect(executeThreadTool).toHaveBeenCalledWith(
       'thread-1',
       'read',
       { path: 'a.txt' },
-      undefined,
-      undefined,
-      false,
-      undefined,
-      false,
-      'thread'
+      effectiveGrant
     )
+    expect(executeTool).not.toHaveBeenCalled()
   })
 
-  // The workspace UI promises "reads from <folder>", so the folder has to reach
-  // the plugin; Rust is what makes it read-only.
-  it('forwards an attached folder as the read-only project', async () => {
-    vi.mocked(executeTool).mockResolvedValue({
+  // An arbitrary caller project is not explicit thread consent.
+  it('ignores an unconsented caller project in thread scope', async () => {
+    vi.mocked(executeThreadTool).mockResolvedValue({
       content: 'ok',
       isError: false,
       diff: null,
     } as never)
     const { executeAgentTool } = await import('../agentTools')
     await executeAgentTool('read', { path: 'a.txt' }, 'thread-1', '/home/u/repo')
-    expect(executeTool).toHaveBeenLastCalledWith(
-      '/data',
+    expect(executeThreadTool).toHaveBeenLastCalledWith(
       'thread-1',
       'read',
       { path: 'a.txt' },
-      undefined,
-      undefined,
-      false,
-      '/home/u/repo',
-      false,
-      'thread'
+      effectiveGrant
     )
+    expect(executeTool).not.toHaveBeenCalled()
   })
 
-  it('sends undefined, not null, when no folder is attached', async () => {
-    vi.mocked(executeTool).mockResolvedValue({
+  it('passes denied effective scope when caller folder is null', async () => {
+    vi.mocked(executeThreadTool).mockResolvedValue({
       content: 'ok',
       isError: false,
       diff: null,
     } as never)
     const { executeAgentTool } = await import('../agentTools')
     await executeAgentTool('read', { path: 'a.txt' }, 'thread-1', null)
-    expect(vi.mocked(executeTool).mock.calls.at(-1)?.[7]).toBeUndefined()
+    expect(executeThreadTool).toHaveBeenCalledExactlyOnceWith('thread-1', 'read', { path: 'a.txt' }, effectiveGrant)
+    expect(executeTool).not.toHaveBeenCalled()
   })
 
   // Cowork layers the attached folder's skills over the permanent store, so the
@@ -322,18 +316,19 @@ describe('agentTools', () => {
 
   // Chat never passes a skill overlay, so its skills stay global-only.
   it('leaves the skill-overlay project undefined by default', async () => {
-    vi.mocked(executeTool).mockResolvedValue({
+    vi.mocked(executeThreadTool).mockResolvedValue({
       content: 'ok',
       isError: false,
       diff: null,
     } as never)
     const { executeAgentTool } = await import('../agentTools')
     await executeAgentTool('skill_list', {}, 'thread-1', '/home/u/repo')
-    expect(vi.mocked(executeTool).mock.calls.at(-1)?.[4]).toBeUndefined()
+    expect(executeThreadTool).toHaveBeenCalledExactlyOnceWith('thread-1', 'skill_list', {}, effectiveGrant)
+    expect(executeTool).not.toHaveBeenCalled()
   })
 
   it('maps a gate refusal to an error rather than content', async () => {
-    executeTool.mockResolvedValue({
+    executeThreadTool.mockResolvedValue({
       content: "tool 'write' needs user approval",
       diff: null,
       isError: true,
@@ -345,7 +340,7 @@ describe('agentTools', () => {
   })
 
   it('reports a rejected invoke as an error instead of throwing', async () => {
-    executeTool.mockRejectedValue({ message: 'denied by policy' })
+    executeThreadTool.mockRejectedValue({ message: 'denied by policy' })
     const { executeAgentTool } = await import('../agentTools')
     await expect(executeAgentTool('read', {}, 'thread-1')).resolves.toEqual({
       error: 'denied by policy',
@@ -357,25 +352,21 @@ describe('agentTools', () => {
     const { executeAgentTool } = await import('../agentTools')
     const result = await executeAgentTool('read', {}, 'thread-1')
     expect(result.error).toBeTruthy()
+    expect(executeThreadTool).not.toHaveBeenCalled()
     expect(executeTool).not.toHaveBeenCalled()
   })
 
   it('coerces a non-object input to empty args', async () => {
-    executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
+    executeThreadTool.mockResolvedValue({ content: '', diff: null, isError: false })
     const { executeAgentTool } = await import('../agentTools')
     await executeAgentTool('skill_list', undefined, 'thread-1')
-    expect(executeTool).toHaveBeenCalledWith(
-      '/data',
+    expect(executeThreadTool).toHaveBeenCalledWith(
       'thread-1',
       'skill_list',
       {},
-      undefined,
-      undefined,
-      false,
-      undefined,
-      false,
-      'thread'
+      effectiveGrant
     )
+    expect(executeTool).not.toHaveBeenCalled()
   })
 
   // ---- shared memory recall ----------------------------------------------
@@ -449,13 +440,38 @@ describe('agentTools', () => {
     const { executeAgentTool, getMemoryCatalog } = await import('../agentTools')
     memoryCatalog.mockResolvedValue([])
     await getMemoryCatalog()
-    await executeAgentTool('memory', { op: 'write', name: 'a', content: 'b' }, 't1')
+    await executeAgentTool('memory', { op: 'write', name: 'a', content: 'b' }, 't1', undefined, 'session')
     await getMemoryCatalog()
     expect(memoryCatalog).toHaveBeenCalledTimes(2)
   })
 
+  it('never announces a denied thread memory mutation', async () => {
+    const { executeAgentTool } = await import('../agentTools')
+    const result = await executeAgentTool('memory', { op: 'write', name: 'x', content: 'y' }, 't1')
+    expect(result.error).toContain('durable memory')
+    expect(executeThreadTool).not.toHaveBeenCalled()
+    expect(notifyMemoryMutation).not.toHaveBeenCalled()
+  })
+
+  it('only forwards successful memory mutation results to feedback', async () => {
+    const { executeAgentTool } = await import('../agentTools')
+    const signal = new AbortController().signal
+    const run = () => executeAgentTool('memory', { op: 'write' }, 's1', null, 'session', false, false, null, undefined, signal)
+    executeTool.mockResolvedValue({ content: 'Wrote 2 bytes to memory/a.md', isError: false })
+    await run()
+    expect(notifyMemoryMutation).toHaveBeenCalledWith({ op: 'write' }, 'Wrote 2 bytes to memory/a.md', signal)
+    notifyMemoryMutation.mockClear()
+    executeTool.mockResolvedValue({ content: 'Wrote 2 bytes to memory/a.md', isError: true })
+    await run()
+    executeTool.mockRejectedValue(new Error('permission denied'))
+    await run()
+    executeTool.mockResolvedValue({ content: 'some note', isError: false })
+    await executeAgentTool('memory', { op: 'view' }, 's1', null, 'session')
+    expect(notifyMemoryMutation).not.toHaveBeenCalled()
+  })
+
   it('keeps the snapshot across a memory view', async () => {
-    executeTool.mockResolvedValue({ content: 'ok', diff: null, isError: false })
+    executeThreadTool.mockResolvedValue({ content: 'ok', diff: null, isError: false })
     const { executeAgentTool, getMemoryCatalog } = await import('../agentTools')
     memoryCatalog.mockResolvedValue([])
     await getMemoryCatalog()

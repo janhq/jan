@@ -406,5 +406,28 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "agentSettings": "Agent",
+  "workspace": {
+    "readOnly": "nur lesen",
+    "allowChanges": "Dateiänderungen erlauben",
+    "footnoteReadOnly": "Der Agent kann diesen Ordner lesen, aber nicht ändern. Aktiviere „Dateiänderungen erlauben“, damit er Dateien bearbeiten kann.",
+    "a11yWithFolderReadOnly": "Projektordner {{folder}}, mit Lesezugriff angehängt. Ändern oder trennen."
+  },
+  "conversationScope": {
+    "noToolsModel": "Das ausgewählte Modell unterstützt keine Werkzeuge. Diese Berechtigungen wirken erst, wenn du ein Modell mit Werkzeugunterstützung auswählst.",
+    "noSandbox": "Auf diesem System ist keine Betriebssystem-Sandbox verfügbar. Daher werden keine Shell-Befehle angeboten.",
+    "live": "Änderungen gelten sofort für dieses Gespräch. Ein Jan-Projekt gewährt keinen Ordnerzugriff.",
+    "draft": "Wird beim Senden deiner Nachricht angewendet. Ein Jan-Projekt gewährt keinen Ordnerzugriff.",
+    "folderNeedsConfirmation": "Inaktiv · Bestätigung erforderlich",
+    "confirmFolder": "Bestätigen",
+    "removeFolder": "Entfernen",
+    "hostRevokeUnconfirmed": "Jan konnte diese Berechtigungsänderung nicht bestätigen. Hintergrundaufgaben haben möglicherweise noch den bisherigen Zugriff. Versuche es erneut oder beende Jan, um sie zu stoppen.",
+    "saveFailed": "Die Berechtigungsänderung konnte nicht gespeichert werden. Erweiterter Zugriff bleibt bis zum erfolgreichen Speichern deaktiviert."
+  },
+  "memoryFeedback": {
+    "saved": "Erinnerung gespeichert",
+    "inspect": "Ansehen",
+    "inspectLabel": "Gespeicherte Erinnerung ansehen"
   }
 }

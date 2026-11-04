@@ -48,7 +48,7 @@ deep-link = ["dep:tauri-plugin-deep-link"]
 # @wdio/tauri-service can drive it. Required on macOS, where no WKWebView driver
 # exists to attach from outside; used on Linux too so both platforms exercise
 # one path. Opt-in so release builds never ship a remote-control listener.
-e2e = ["dep:tauri-plugin-wdio-webdriver"]
+e2e = ["dep:tauri-plugin-wdio-webdriver", "tauri/dynamic-acl", "tauri-plugin-agent-tools/e2e"]
 # MLX (tauri-plugin-mlx) is Apple-Silicon-only; it's a macOS-target dependency
 # (see [target.'cfg(target_os = "macos")'.dependencies]) rather than a feature.
 desktop = [

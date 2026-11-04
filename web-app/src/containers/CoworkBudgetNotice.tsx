@@ -4,7 +4,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type Props =
   | { kind: 'steps'; max: number; onContinue: () => void }
-  | { kind: 'tokens'; onCompact: () => void; onNewSession: () => void }
+  | { kind: 'tokens'; onCompact?: () => void; onNewConversation: () => void }
 
 /**
  * Why a run stopped short of an answer.
@@ -38,21 +38,23 @@ export function CoworkBudgetNotice(props: Props) {
       ) : (
         <>
           <span>{t('common:budget.stoppedTokens')}</span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7"
-            onClick={props.onCompact}
-          >
-            {t('common:budget.compact')}
-          </Button>
+          {props.onCompact && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={props.onCompact}
+            >
+              {t('common:budget.compact')}
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
             className="h-7"
-            onClick={props.onNewSession}
+            onClick={props.onNewConversation}
           >
-            {t('common:budget.newSession')}
+            {t('common:budget.newConversation')}
           </Button>
         </>
       )}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 // ---- Module mocks ----------------------------------------------------------
@@ -122,7 +122,8 @@ vi.mock('@/components/PromptProgress', () => ({
 }))
 
 const pendingApprovalsRef = vi.hoisted(() => ({ current: {} as any }))
-vi.mock('@/hooks/useToolApprovalRequests', () => ({
+vi.mock('@/hooks/useToolApprovalRequests', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useToolApprovalRequests')>()),
   useToolApprovalRequests: (selector: any) =>
     selector({ pending: pendingApprovalsRef.current }),
 }))
@@ -259,8 +260,9 @@ describe('MessageItem', () => {
     expect(onContinue).toHaveBeenCalledWith('msg-1')
   })
 
-  // Continue extends partial text; with none there is nothing to resume.
-  it('hides Continue on a stopped turn that never wrote any text', () => {
+  it('offers Continue on a stopped turn whose tool settled, even with no text', () => {
+    // The settled (error-marked) wave is a kept-history resume point: Continue
+    // replays it as canonical history instead of regenerating it away.
     render(
       <MessageItem
         message={
@@ -273,6 +275,31 @@ describe('MessageItem', () => {
                 state: 'output-error',
                 input: {},
                 errorText: 'Stopped before the tool finished.',
+              },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+        onContinue={vi.fn()}
+      />
+    )
+    expect(screen.queryByTitle('chat:actions.continue')).toBeInTheDocument()
+  })
+
+  it('hides Continue on a stopped turn whose only tool is still in flight', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            metadata: { createdAt: new Date(), stopped: true },
+            parts: [
+              {
+                type: 'tool-slow_wait',
+                toolCallId: 'c1',
+                state: 'input-available',
+                input: {},
               },
             ],
           }) as any
@@ -438,7 +465,7 @@ describe('MessageItem', () => {
     expect(screen.getByTestId('token-speed').getAttribute('data-streaming')).toBe('true')
   })
 
-  it('renders user image attachment', () => {
+  it('renders user image attachment and previews it in a portalled, dismissible dialog', async () => {
     render(
       <MessageItem
         message={
@@ -461,6 +488,12 @@ describe('MessageItem', () => {
     )
     const img = screen.getByAltText('pic.png') as HTMLImageElement
     expect(img.src).toContain('blob:foo')
+    fireEvent.click(img)
+    const dialog = screen.getByRole('dialog', { name: 'pic.png' })
+    expect(dialog.parentElement).toBe(document.body)
+    expect(dialog).toHaveClass('z-(--layer-modal)')
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
   it('renders a CoT block containing reasoning', () => {
@@ -903,6 +936,52 @@ describe('MessageItem', () => {
       const regenerate = screen.getByTestId('regenerate-message')
       expect(regenerate.parentElement?.className).toContain('opacity-100')
       expect(regenerate.parentElement?.className).not.toContain('opacity-0')
+    })
+  })
+
+  describe('run-end budget notice', () => {
+    const notice = { type: 'text', text: '\n\nStopped at the step limit. You can continue this turn.', providerMetadata: { jan: { chatRunNotice: true } } }
+    const capped = (reason: 'steps' | 'tokens') => makeMsg({
+      parts: [{ type: 'text', text: 'Partial answer' }, notice],
+      metadata: { createdAt: new Date(), stopped: true, runStopReason: reason },
+    })
+
+    it('shows the Cowork budget notice instead of the raw cap sentence, and Keep going continues', () => {
+      const onContinue = vi.fn()
+      render(<MessageItem message={capped('steps') as any} isFirstMessage isLastMessage status={'ready' as any} onContinue={onContinue} />)
+      expect(screen.getByTestId('cowork-budget-notice')).toBeInTheDocument()
+      expect(screen.queryByText(/Stopped at the step limit/)).toBeNull()
+      fireEvent.click(screen.getByText('common:budget.keepGoing'))
+      expect(onContinue).toHaveBeenCalledWith('msg-1')
+    })
+
+    it('offers New conversation (no Compact) when the token budget was hit', () => {
+      const onNewConversation = vi.fn()
+      render(<MessageItem message={capped('tokens') as any} isFirstMessage isLastMessage status={'ready' as any} onNewConversation={onNewConversation} />)
+      expect(screen.queryByText('common:budget.compact')).toBeNull()
+      fireEvent.click(screen.getByText('common:budget.newConversation'))
+      expect(onNewConversation).toHaveBeenCalledOnce()
+    })
+
+    it('marks a user-stopped turn with the quiet Stopped notice, but not a normal or capped one', () => {
+      const stopped = makeMsg({ parts: [{ type: 'text', text: 'Half an ans' }], metadata: { createdAt: new Date(), stopped: true } })
+      const { unmount } = render(<MessageItem message={stopped as any} isFirstMessage isLastMessage status={'ready' as any} />)
+      expect(screen.getByTestId('cowork-run-notice')).toHaveTextContent('common:run.stopped')
+      unmount()
+      render(<MessageItem message={makeMsg() as any} isFirstMessage isLastMessage status={'ready' as any} />)
+      expect(screen.queryByTestId('cowork-run-notice')).toBeNull()
+    })
+
+    it('does not add a second Stopped marker to a capped turn', () => {
+      render(<MessageItem message={capped('steps') as any} isFirstMessage isLastMessage status={'ready' as any} />)
+      expect(screen.queryByTestId('cowork-run-notice')).toBeNull()
+      expect(screen.getByTestId('cowork-budget-notice')).toBeInTheDocument()
+    })
+
+    it('never renders a notice sentence as an answer when the reason is unknown', () => {
+      render(<MessageItem message={makeMsg({ parts: [notice], metadata: { createdAt: new Date() } }) as any} isFirstMessage isLastMessage status={'ready' as any} />)
+      expect(screen.queryByText(/Stopped at the step limit/)).toBeNull()
+      expect(screen.queryByTestId('cowork-budget-notice')).toBeNull()
     })
   })
 })

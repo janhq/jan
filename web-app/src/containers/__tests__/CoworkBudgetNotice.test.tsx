@@ -24,20 +24,21 @@ describe('CoworkBudgetNotice', () => {
     expect(onContinue).toHaveBeenCalled()
   })
 
-  it('offers Compact and New session when the token budget is hit', async () => {
+  it('offers Compact and New conversation when the token budget is hit', async () => {
     const onCompact = vi.fn()
-    const onNewSession = vi.fn()
+    const onNewConversation = vi.fn()
     render(
       <CoworkBudgetNotice
         kind="tokens"
         onCompact={onCompact}
-        onNewSession={onNewSession}
+        onNewConversation={onNewConversation}
       />
     )
     await userEvent.click(screen.getByText('common:budget.compact'))
     expect(onCompact).toHaveBeenCalled()
-    await userEvent.click(screen.getByText('common:budget.newSession'))
-    expect(onNewSession).toHaveBeenCalled()
+    expect(screen.queryByText('common:budget.newSession')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByText('common:budget.newConversation'))
+    expect(onNewConversation).toHaveBeenCalled()
   })
 
   // Routine, not a failure: a destructive/red treatment would teach users to

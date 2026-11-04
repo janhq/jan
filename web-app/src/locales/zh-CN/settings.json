@@ -264,5 +264,34 @@
     }
   },
   "backendInstallSuccess": "后端安装成功",
-  "backendInstallError": "后端安装失败"
+  "backendInstallError": "后端安装失败",
+  "cowork": {
+    "title": "智能体",
+    "description": "设置 Jan 在您电脑上的能力：沙箱中的 shell，以及永久保存在 Jan 数据文件夹中的记忆和技能。",
+    "networkDesc": "允许 shell 命令访问网络，例如安装软件包或拉取代码仓库。默认开启。沙箱仍会限制命令可以访问的文件。",
+    "memoryWrite": "允许保存记忆和技能",
+    "memoryWriteDesc": "允许模型保存可跨对话使用的记忆和技能。默认开启。您可以在下方查看和编辑所有内容。",
+    "permissionSaveFailed": "无法保存此设置。设置未更改。",
+    "shell": "Shell 命令",
+    "shellChecking": "正在检查沙箱…",
+    "shellSandboxed": "命令受 {{backend}} 限制：只能在会话工作区内写入，无法读取您主文件夹中的文件。",
+    "shellUnavailable": "此系统没有可用的沙箱，因此不提供 shell 工具。命令绝不会在未隔离的环境中运行。",
+    "network": "允许网络访问",
+    "openFolder": "打开文件夹",
+    "memories": "记忆",
+    "noMemories": "暂无记忆。模型学到值得保留的信息时，会使用记忆工具添加记录。",
+    "skills": "技能",
+    "noSkills": "暂无技能。技能是一组可重复使用的指令，模型可以按需加载。",
+    "add": "添加",
+    "editMemory": "编辑记忆",
+    "editMemoryDesc": "每条笔记只记录一个主题。模型会使用记忆工具重新读取这些笔记。",
+    "editSkill": "编辑技能",
+    "editSkillDesc": "Markdown 格式的指令，可在 YAML 前置信息中添加描述。模型加载技能前会先看到此描述。",
+    "namePlaceholder": "名称",
+    "contentPlaceholder": "内容",
+    "loadFailed": "无法加载智能体工作区",
+    "saveFailed": "无法保存",
+    "deleteFailed": "无法删除",
+    "revealFailed": "无法打开文件夹"
+  }
 }

@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
 import { route } from '@/constants/routes'
-import { ensureCoworkEnabled } from '@/lib/coworkAccess'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { Card, CardItem } from '@/containers/Card'
@@ -26,7 +25,7 @@ import {
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useCoworkConfig } from '@/hooks/useCoworkConfig'
+import { useChatPermissions } from '@/hooks/useChatPermissions'
 import { getSandboxStatus } from '@/lib/agentTools'
 import type { SandboxStatus } from '@janhq/tauri-plugin-agent-tools-api'
 import {
@@ -45,7 +44,6 @@ import {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.cowork as any)({
-  beforeLoad: () => ensureCoworkEnabled(route.settings.general),
   component: CoworkSettingsContent,
 })
 
@@ -69,8 +67,13 @@ const SKILL_TEMPLATE = '---\ndescription: \n---\n\n'
 
 function CoworkSettingsContent() {
   const { t } = useTranslation()
-  const networkEnabled = useCoworkConfig((s) => s.networkEnabled)
-  const setNetworkEnabled = useCoworkConfig((s) => s.setNetworkEnabled)
+  const networkEnabled = useChatPermissions((s) => s.shellNetwork)
+  const memoryWriteEnabled = useChatPermissions((s) => s.memoryWrite)
+  const setPermissions = useChatPermissions((s) => s.set)
+  // The host owns these; a rejected write leaves the switch where it was.
+  const changePermission = (next: { shellNetwork?: boolean; memoryWrite?: boolean }) => {
+    void setPermissions(next).catch(() => toast.error(t('settings:cowork.permissionSaveFailed')))
+  }
   // `undefined` until the probe answers, so the row reads as "checking" rather
   // than briefly claiming there is no sandbox.
   const [sandbox, setSandbox] = useState<SandboxStatus | undefined>()
@@ -285,11 +288,22 @@ function CoworkSettingsContent() {
                   actions={
                     <Switch
                       checked={networkEnabled}
-                      onCheckedChange={setNetworkEnabled}
+                      onCheckedChange={(shellNetwork) => changePermission({ shellNetwork })}
                     />
                   }
                 />
               )}
+              <CardItem
+                title={t('settings:cowork.memoryWrite')}
+                description={t('settings:cowork.memoryWriteDesc')}
+                align="start"
+                actions={
+                  <Switch
+                    checked={memoryWriteEnabled}
+                    onCheckedChange={(memoryWrite) => changePermission({ memoryWrite })}
+                  />
+                }
+              />
             </Card>
 
             <Card header={sectionHeader('settings:cowork.memories', 'memory')}>

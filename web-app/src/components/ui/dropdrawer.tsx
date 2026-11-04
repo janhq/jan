@@ -949,7 +949,7 @@ function DropDrawerSubContent({
       data-slot="drop-drawer-sub-content"
       sideOffset={sideOffset}
       className={cn(
-        "z-50 min-w-32 overflow-hidden rounded-md border p-1 shadow-lg",
+        "min-w-32 overflow-hidden rounded-md border p-1 shadow-lg",
         className,
       )}
       {...props}

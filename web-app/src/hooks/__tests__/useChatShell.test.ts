@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Real zustand persist, fake disk, as in useCoworkConfig.test.ts.
+// Real zustand persistence with a fake backend settings store.
 const disk = vi.hoisted(() => new Map<string, string>())
 vi.mock('@/lib/backendStorage', () => ({
   backendStorage: {

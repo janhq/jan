@@ -25,7 +25,7 @@ const GUIDELINES = [
 
 /** Ported verbatim from `core/agent/plan.rs::plan_mode_prompt_addendum`, whose
  * `plan_review` question id the ask card special-cases. */
-const PLAN_ADDENDUM =
+export const PLAN_ADDENDUM =
   'PLAN MODE (read only): You are exploring to produce a plan. You may only ' +
   'read, search, and list files, do web research, and read memory/skills. You ' +
   'CANNOT edit files, run shell commands, or make any change; those tools are ' +

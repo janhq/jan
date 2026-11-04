@@ -3,7 +3,7 @@ import type {
   AskQuestion,
   AskRequestPayload,
 } from '@/types/coworkSession'
-import type { ToolOutcome } from '@/lib/coworkRunner'
+import type { ToolOutcome } from '@/lib/clientToolDispatch'
 
 /**
  * The `ask` tool: suspend the run until the user answers.
@@ -24,6 +24,7 @@ export function parseAskRequest(input: unknown): AskRequestPayload | string {
   const questions: AskQuestion[] = []
   const ids = new Set<string>()
   for (const entry of raw.questions) {
+    if (!entry || typeof entry !== 'object') return 'each question must be an object'
     const q = entry as Partial<AskQuestion>
     if (typeof q.id !== 'string' || !q.id.trim()) {
       return 'each question requires a non-empty `id`'
@@ -44,6 +45,7 @@ export function parseAskRequest(input: unknown): AskRequestPayload | string {
     let recommended: number | undefined
     const options: AskQuestion['options'] = []
     q.options.forEach((entry, i) => {
+      if (!entry || typeof entry !== 'object') return
       const o = entry as { label?: unknown; description?: unknown }
       if (typeof o.label !== 'string') return
       // Models trained on other harnesses mark a suggestion by suffixing the

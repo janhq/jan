@@ -167,6 +167,16 @@ describe('useMCPServers', () => {
     })
   })
 
+  describe('saveSettings', () => {
+    it('does not commit failed writes and allows retry', async () => {
+      mockUpdateMCPConfig.mockRejectedValueOnce(new Error('disk full'))
+      await expect(useMCPServers.getState().saveSettings({ maxToolOutputChars: 12000 })).rejects.toThrow('disk full')
+      expect(useMCPServers.getState().settings.maxToolOutputChars).toBe(40000)
+      await useMCPServers.getState().saveSettings({ maxToolOutputChars: 12000 })
+      expect(useMCPServers.getState().settings.maxToolOutputChars).toBe(12000)
+    })
+  })
+
   describe('syncServers', () => {
     it('should call updateMCPConfig', async () => {
       const { result } = renderHook(() => useMCPServers())

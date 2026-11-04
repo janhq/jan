@@ -1,3 +1,6 @@
+import { chatPlanEnabled, useChatPlan } from '@/hooks/useChatPlan'
+import { chatPlanToolRefusal } from './chatPlan'
+import { PLAN_ADDENDUM } from './coworkPrompt'
 import { type UIMessage } from '@ai-sdk/react'
 import {
   convertToModelMessages,
@@ -12,6 +15,8 @@ import {
   InvalidToolInputError,
   lastAssistantMessageIsCompleteWithToolCalls,
 } from 'ai'
+import { withoutChatRunNotices } from './chatRunNotice'
+import { uniqueMcpTools, warnNativeShadowedMcpTool, warnWithheldMcpTools } from './chatMcpIdentity'
 import { repairToolArgs } from './toolCallRepair'
 import {
   encodeMcpToolImages,
@@ -43,7 +48,23 @@ import {
   refreshMemoryDigest,
   sandboxEnforces,
 } from '@/lib/agentTools'
+import { resolveToolCapabilities } from './toolCapabilityPolicy'
+import {
+  memoryReadOnlyParameters,
+  MEMORY_READ_DESCRIPTION,
+  resolveScopedChatToolPolicy,
+} from './scopedChatToolPolicy'
 import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
+import { isScopedThreadTool } from '@/lib/scopedToolDispatch'
+import {
+  ASK_TOOL_NAME,
+  TODO_TOOL_NAME,
+  askTool,
+  todoTool,
+  TASK_TOOL_NAME,
+  taskTool,
+} from '@/lib/coworkTools'
+import { MONITOR_TOOL_NAME, monitorTool } from '@/lib/coworkMonitor'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
@@ -79,6 +100,7 @@ import {
 } from '@/lib/video-sentinel'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import { PING_OPEN } from '@/lib/coworkPing'
+import { expandChatRunContext } from '@/lib/chatRunContext'
 import { paramsSettings } from '@/lib/predefinedParams'
 import { CHAT_SLOT_ID } from '@/constants/models'
 import { createStepMetadata } from '@/lib/stepMetadata'
@@ -864,11 +886,120 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private routerModel: LanguageModel | null = null
   private routerModelKey = ''
   protected tools: Record<string, Tool> = {}
+  private ragIdentities = new Set<string>()
+  private turnRagIdentities?: Set<string>
+  private mcpIdentities = new Map<string, string>()
+  private turnMcpIdentities?: Map<string, string>
+
+  hasAdvertisedNativeTool(name: string): boolean {
+    const tools = this.chatRunSnapshot?.tools ?? this.tools
+    return isScopedThreadTool(name) && Object.prototype.hasOwnProperty.call(tools, name) && !this.getMcpServerForTool(name)
+  }
+
+  /** Operation authority never widens beyond the schema shown to this run. */
+  hasAdvertisedMemoryOperation(input: unknown): boolean {
+    if (!this.hasAdvertisedNativeTool('memory')) return false
+    const op = input && typeof input === 'object' ? (input as { op?: unknown }).op : undefined
+    const tools = this.chatRunSnapshot?.tools ?? this.tools
+    const schema = tools.memory?.inputSchema as { jsonSchema?: { properties?: { op?: { enum?: unknown[] } } } } | undefined
+    return typeof op === 'string' && schema?.jsonSchema?.properties?.op?.enum?.includes(op) === true
+  }
+
+  /** The run's frozen advertised record (a copy). Children narrow from this,
+   * never from a live refresh. */
+  getAdvertisedTools(): Record<string, Tool> {
+    return { ...(this.chatRunSnapshot?.tools ?? this.tools) }
+  }
+
+  /** The model instance this turn runs on, for bounded child steps. */
+  getChildModel(): LanguageModel | null {
+    return this.model
+  }
+
+  hasAdvertisedClientTool(name: string): boolean {
+    const tools = this.chatRunSnapshot?.tools ?? this.tools
+    return (
+      (name === TODO_TOOL_NAME || name === ASK_TOOL_NAME || name === TASK_TOOL_NAME || name === MONITOR_TOOL_NAME) &&
+      Object.prototype.hasOwnProperty.call(tools, name) &&
+      !this.getMcpServerForTool(name)
+    )
+  }
+
+  /** Only the validated plan-review answer may transition the active run. */
+  executeReviewedPlan(): void {
+    if (!this.chatRunSnapshot?.planMode) return
+    this.chatRunSnapshot.planMode = false
+    this.chatRunSnapshot.tools = undefined
+    this.chatRunSnapshot.system = undefined
+    this.chatRunSnapshot.systemReady = false
+  }
+
+  isPlanActive(): boolean {
+    if (chatPlanEnabled(this.threadId) && this.chatRunSnapshot && !this.chatRunSnapshot.planMode) {
+      this.chatRunSnapshot.planMode = true
+      this.chatRunSnapshot.tools = undefined
+      this.chatRunSnapshot.system = undefined
+      this.chatRunSnapshot.systemReady = false
+    }
+    return this.chatRunSnapshot?.planMode === true || chatPlanEnabled(this.threadId)
+  }
+
+  /** Run-frozen mode cannot be relaxed mid-turn; enabling Plan revokes writes immediately. */
+  planToolRefusal(name: string, input?: unknown): string | undefined {
+    return chatPlanToolRefusal(
+      this.isPlanActive(),
+      name, input, !!this.getMcpServerForTool(name),
+      (this.turnRagIdentities ?? this.ragIdentities).has(name)
+    )
+  }
+
+  getMcpServerForTool(name: string): string | undefined {
+    return (this.turnMcpIdentities ?? this.mcpIdentities).get(name)
+  }
+  private chatRunSnapshot: { tools?: Record<string, Tool>; system?: string; systemReady?: boolean; planMode?: boolean } | null = null
+
+  /** Bracket one runTurn, not each model step. Refresh events during a run
+   * must not mutate its advertised schemas or system prefix. */
+  private chatRunAbort?: () => void
+  private chatOperation: Promise<void> = Promise.resolve()
+  trackChatOperation(operation: Promise<void>): void { this.chatOperation = operation }
+  private chatRunDone: Promise<void> = Promise.resolve()
+  private finishChatRun?: () => void
+  async cancelChatRun(): Promise<void> {
+    // Snapshot the owning operation; its settlement includes SDK stream drain,
+    // ready/onFinish and reservation release, unlike the adapter finalizer.
+    const operation = this.chatOperation
+    this.chatRunAbort?.()
+    await this.chatRunDone
+    await operation.catch(() => {})
+  }
+  beginChatRun(abort?: () => void): () => void {
+    if (this.chatRunSnapshot) throw new Error('Chat turn already running')
+    const snapshot = { planMode: chatPlanEnabled(this.threadId) }
+    this.chatRunSnapshot = snapshot
+    // Latch even if the toolbar is switched on and off between tool calls.
+    const latch = () => { this.isPlanActive() }
+    const unsubscribeDraft = useChatPlan.subscribe(latch)
+    const unsubscribeThread = useThreads.subscribe?.(latch)
+    this.chatRunAbort = abort
+    this.chatRunDone = new Promise(resolve => { this.finishChatRun = resolve })
+    return () => {
+      unsubscribeDraft()
+      unsubscribeThread?.()
+      if (this.chatRunSnapshot === snapshot) {
+        this.chatRunSnapshot = null
+        this.chatRunAbort = undefined
+        this.finishChatRun?.()
+        this.finishChatRun = undefined
+      }
+    }
+  }
   // Smart tool routing selects tools from the latest user message, which would
   // change the tool set (and thus the cached prompt prefix) every turn. Freeze
   // the routed set for the thread's lifetime so the prefix stays stable;
   // re-route only when the connected servers or disabled-tool set changes.
   private frozenRoutedTools: MCPTool[] | null = null
+  private frozenIdentityInventory: MCPTool[] | null = null
   private frozenRoutedSig = ''
   private onTokenUsage?: TokenUsageCallback
   private hasDocuments = false
@@ -922,8 +1053,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   ): ModelSelection {
     const continuesTurn =
       this.turnModelSelection !== null &&
-      trigger === 'submit-message' &&
-      lastAssistantMessageIsCompleteWithToolCalls({ messages })
+      ((this.chatRunSnapshot?.systemReady ?? false) ||
+        (trigger === 'submit-message' && lastAssistantMessageIsCompleteWithToolCalls({ messages })))
     if (!continuesTurn) {
       const { selectedProvider, selectedModel } = this.getModelSelection()
       this.turnModelSelection = { selectedProvider, selectedModel }
@@ -1007,12 +1138,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Refresh tools based on current state
-   * Reloads both RAG and MCP tools and merges them
-   * Filters out disabled tools based on thread settings
-   * @private
-   */
-  /**
    * llama.cpp slot pin for this surface. Every surface shares slot 0 -- the one
    * index guaranteed to exist -- and overrides only `thread_id`, which is what
    * the engine parks and restores the slot's KV cache by. See CHAT_SLOT_ID.
@@ -1030,6 +1155,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const raw =
       [
         this.systemMessage,
+        this.isPlanActive() ? PLAN_ADDENDUM : undefined,
         this.buildMemorySystemInstruction(),
         this.buildFilesSystemInstruction(messages),
         this.buildWebSearchSystemInstruction(),
@@ -1054,23 +1180,34 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
+   * Refresh tools based on current state.
+   * Reloads both RAG and MCP tools and merges them, and filters out disabled
+   * tools based on thread settings.
    * @param modelSelection The model the tools are built for: the request's own
    * when called from sendMessages, else the current selection.
    */
   async refreshTools(
     abortSignal?: AbortSignal,
-    modelSelection: ModelSelection = this.getModelSelection()
+    modelSelection: ModelSelection = this.getModelSelection(),
+    /** Only sendMessages may initialize an active run's advertised record. */
+    runOwned = false
   ) {
+    if (this.chatRunSnapshot && !runOwned) return
+    if (this.chatRunSnapshot?.tools) return
+    const owningSnapshot = this.chatRunSnapshot
     // Resolve the memory digest before the prompt is built: the builder is
     // sync, so it reads the snapshot this await guarantees. Error-safe and
     // cached inside agentTools, so this is one IPC round-trip per store change.
     await refreshMemoryDigest()
     if (!this.serviceHub) {
+      this.mcpIdentities.clear()
       this.tools = {}
       return
     }
 
     const toolsRecord: Record<string, Tool> = {}
+    const mcpIdentities = new Map<string, string>()
+    const ragIdentities = new Set<string>()
 
     // Tool availability is global (shared across all chats).
     const disabledToolKeys = useToolAvailable.getState().getDisabledTools()
@@ -1125,6 +1262,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               const serverName =
                 (tool as { server?: string }).server || 'unknown'
               if (!isToolDisabled(serverName, tool.name)) {
+                ragIdentities.add(tool.name)
                 toolsRecord[tool.name] = {
                   description: tool.description,
                   inputSchema: jsonSchema(
@@ -1144,6 +1282,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       try {
         const mcpService = this.serviceHub.mcp()
         let mcpTools: MCPTool[]
+        let identityInventory: MCPTool[]
         const mcpSettings = useMCPServers.getState().settings
         const routingEnabled = mcpSettings.enableSmartToolRouting
 
@@ -1159,7 +1298,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           })
           if (this.frozenRoutedTools && this.frozenRoutedSig === routedSig) {
             mcpTools = this.frozenRoutedTools
+            identityInventory = this.frozenIdentityInventory ?? []
           } else {
+            // Refresh collision ownership with the routed set, not every turn.
+            // Dispatch still performs fresh target revocation checks.
+            identityInventory = await mcpService.getTools()
+
             const routerModel =
               mcpSettings.useLightweightRouterModel &&
               mcpSettings.routerModelProvider.trim() &&
@@ -1169,7 +1313,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             mcpTools = await mcpOrchestrator.getRelevantTools(
               this.lastUserMessage,
               {
-                getTools: () => mcpService.getTools(),
+                getTools: async () => identityInventory,
                 getToolsForServers: (names) =>
                   mcpService.getToolsForServers!(names),
                 getServerSummaries: () => Promise.resolve(summaries),
@@ -1180,25 +1324,24 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                 abortSignal,
               }
             )
+            this.frozenIdentityInventory = identityInventory
             this.frozenRoutedTools = mcpTools
             this.frozenRoutedSig = routedSig
           }
         } else {
           mcpTools = await mcpService.getTools()
+          identityInventory = mcpTools
         }
 
+        warnWithheldMcpTools(identityInventory)
         if (Array.isArray(mcpTools) && mcpTools.length > 0) {
-          const seenBy = new Map<string, string>()
-          mcpTools.forEach((tool) => {
-            const serverName = tool.server || 'unknown'
-            if (isToolDisabled(serverName, tool.name)) return
-            const prevServer = seenBy.get(tool.name)
-            if (prevServer && prevServer !== serverName) {
-              console.warn(
-                `[tools] MCP tool name collision: "${tool.name}" exposed by both "${prevServer}" and "${serverName}". Using "${serverName}".`
-              )
-            }
-            seenBy.set(tool.name, serverName)
+          const eligible = uniqueMcpTools(identityInventory)
+          uniqueMcpTools(mcpTools).forEach((tool) => {
+            if (!eligible.some((candidate) => candidate.name === tool.name && candidate.server === tool.server)) return
+            const serverName = tool.server!
+            // Internal retrieval owns its names; MCP must not replace its schema.
+            if (isToolDisabled(serverName, tool.name) || toolsRecord[tool.name]) return
+            mcpIdentities.set(tool.name, serverName)
             toolsRecord[tool.name] = {
               description: tool.description,
               inputSchema: jsonSchema(
@@ -1211,9 +1354,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         console.warn('Failed to load MCP tools:', error)
       }
 
+      const policy = resolveToolCapabilities({
+        surface: 'chat',
+        modelSupportsTools,
+        shellEnabled: useChatShell.getState().shellEnabled,
+        webSearch: useWebSearchConfig.getState().webSearchEnabled,
+      })
+
       // Native web tools, provided by the websearch plugin (not an MCP server).
       // Advertised whenever the user has web search enabled.
-      if (useWebSearchConfig.getState().webSearchEnabled) {
+      if (policy.webSearch) {
+        mcpIdentities.delete('web_search')
+        mcpIdentities.delete('web_fetch')
         toolsRecord['web_search'] = {
           description: WEB_SEARCH_DESCRIPTION,
           inputSchema: jsonSchema(WEB_SEARCH_INPUT_SCHEMA as Record<string, unknown>),
@@ -1224,26 +1376,109 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         } as Tool
       }
 
-      // The main chat offers exactly one built-in agent tool: the sandboxed
-      // shell, with no network. The full toolset lives in Cowork. Schemas come
-      // from Rust so they are never re-typed here, and `getAgentToolSchemas`
-      // already withholds shell when no sandbox backend can confine it. A user
-      // who switched it off (#9222) gets none of it.
+      // Scoped native namespace: advertised per turn from the model gate, the
+      // sandbox, and this thread's CURRENT effective grant (re-read on every
+      // refresh, so a revoke shows on the next turn; the run's frozen record
+      // below keeps it stable within one). Schemas come from Rust and are never
+      // re-typed here; names absent from getAgentToolSchemas are simply not
+      // advertised. Advertisement is not authority: dispatch re-checks per call.
+      // Screenshot/web/monitor/task are never in the scoped list. A user who
+      // switched the shell off (#9222) still gets no shell.
       try {
-        const shellOn = useChatShell.getState().shellEnabled
-        for (const schema of shellOn ? await getAgentToolSchemas() : []) {
-          if (!CHAT_AGENT_TOOL_NAMES.has(schema.function.name)) continue
-          toolsRecord[schema.function.name] = {
-            description: schema.function.description,
-            inputSchema: jsonSchema(schema.function.parameters),
+        const schemas = await getAgentToolSchemas()
+        const scoped = resolveScopedChatToolPolicy(
+          { modelSupportsTools, sandboxAvailable: sandboxEnforces() },
+          this.turnGrantSnapshot()
+        )
+        const shellEnabled = useChatShell.getState().shellEnabled
+        for (const schema of schemas) {
+          const name = schema.function.name
+          if (!scoped.advertisesNativeTool(name)) continue
+          if (CHAT_AGENT_TOOL_NAMES.has(name) && !shellEnabled) continue
+          // User-configured MCP identities retain non-shell names. Shell keeps
+          // its existing explicit switch contract; other natives are withheld.
+          if (name !== 'shell' && mcpIdentities.has(name)) continue
+          let parameters: unknown = schema.function.parameters
+          let description: string = schema.function.description
+          if (name === 'memory' && (!scoped.memoryMutationAdvertised || this.isPlanActive())) {
+            parameters = memoryReadOnlyParameters(parameters)
+            if (!parameters) continue
+            description = MEMORY_READ_DESCRIPTION
+          }
+          // Native ownership stays; the replaced MCP tool is reported, not silent.
+          const shadowed = mcpIdentities.get(name)
+          if (shadowed) warnNativeShadowedMcpTool(name, shadowed)
+          mcpIdentities.delete(name)
+          toolsRecord[name] = {
+            description,
+            inputSchema: jsonSchema(parameters as Record<string, unknown>),
           } as Tool
         }
       } catch (error) {
         console.warn('Failed to load agent tools:', error)
       }
+
+      // Conversation-owned todo/ask reuse Cowork's existing schemas (no copy,
+      // no new RPC). Dispatch is a client-side route, not an MCP server tool.
+      // An MCP tool of the same name is shadowed: say so (names only).
+      for (const name of [TODO_TOOL_NAME, ASK_TOOL_NAME]) {
+        const server = mcpIdentities.get(name)
+        if (server !== undefined) {
+          console.warn(
+            `[tools] MCP tool ${JSON.stringify(name)} from server ${JSON.stringify(server)} is shadowed by the conversation ${name} tool`
+          )
+        }
+        mcpIdentities.delete(name)
+      }
+      toolsRecord[TODO_TOOL_NAME] = todoTool
+      toolsRecord[ASK_TOOL_NAME] = askTool
+      // Bounded task + consent-gated monitor: same model/sandbox gate and the
+      // thread's CURRENT grant snapshot as the scoped native namespace.
+      const orchestration = resolveScopedChatToolPolicy(
+        { modelSupportsTools, sandboxAvailable: sandboxEnforces() },
+        this.turnGrantSnapshot()
+      ).advertisedOrchestrationTools
+      for (const name of orchestration) {
+        mcpIdentities.delete(name)
+        toolsRecord[name] = name === TASK_TOOL_NAME ? taskTool([], { blackboard: false }) : monitorTool()
+      }
     }
 
+    if (this.isPlanActive()) {
+      for (const name of Object.keys(toolsRecord)) {
+        // Plan can be enabled while discovery awaits; narrow again at commit.
+        if (name === 'memory' && !mcpIdentities.has(name)) {
+          const tool = toolsRecord[name]
+          const parameters = memoryReadOnlyParameters((tool.inputSchema as { jsonSchema?: unknown }).jsonSchema)
+          if (!parameters) { delete toolsRecord[name]; continue }
+          toolsRecord[name] = { ...tool, description: MEMORY_READ_DESCRIPTION, inputSchema: jsonSchema(parameters) } as Tool
+        }
+        if (chatPlanToolRefusal(true, name, { op: 'view' }, mcpIdentities.has(name), ragIdentities.has(name))) {
+          delete toolsRecord[name]
+          mcpIdentities.delete(name)
+        }
+      }
+    }
+
+    // Never let discovery started outside this run, or a slower competing
+    // discovery, overwrite its first committed advertised record.
+    if (this.chatRunSnapshot !== owningSnapshot || owningSnapshot?.tools) return
+    this.ragIdentities = ragIdentities
+    this.mcpIdentities = mcpIdentities
     this.tools = toolsRecord
+    if (owningSnapshot) owningSnapshot.tools = toolsRecord
+  }
+
+  /** This thread's effective grant for the turn being built. Any failure or a
+   * missing store method falls back to the denied default (fail closed). */
+  private turnGrantSnapshot(): unknown {
+    try {
+      const get = useThreads.getState().getConversationCapabilities
+      if (this.threadId && typeof get === 'function') return get(this.threadId)
+    } catch (error) {
+      console.warn('Failed to read conversation capabilities:', error)
+    }
+    return null
   }
 
   private async resolveRouterModel(settings: {
@@ -1489,18 +1724,30 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       throw engineFailure('model-errors:createModelFailed', error)
     }
 
-    await this.refreshTools(options.abortSignal, turnModelSelection)
+    await this.refreshTools(options.abortSignal, turnModelSelection, true)
+    const turnMcpIdentities = new Map(this.mcpIdentities)
+    const turnRagIdentities = new Set(this.ragIdentities)
+    const turnTools = this.tools
 
     // Split assistant turns that place text after tool calls into separate
     // messages. Required by the Claude API (tool_use / tool_result pairing) and
     // it keeps the prompt prefix byte-identical across turns so llama.cpp reuses
     // the KV cache. See `splitAssistantToolWaves`.
-    const messagesToConvert = splitAssistantToolWaves(options.messages)
+    // Skills are resolved and persisted by the composer at submission. Never
+    // reinterpret historical user text (paths and removed skills are valid text).
+    const messagesToConvert = splitAssistantToolWaves(
+      expandChatRunContext(withoutChatRunNotices(options.messages))
+    )
 
     const inferenceParams = this.getActiveInferenceParams()
 
 
-    const effectiveSystem = this.buildSystemPrompt(messagesToConvert)
+    const snapshot = this.chatRunSnapshot
+    const effectiveSystem = snapshot?.systemReady ? snapshot.system : this.buildSystemPrompt(messagesToConvert)
+    if (snapshot && !snapshot.systemReady) {
+      snapshot.system = effectiveSystem
+      snapshot.systemReady = true
+    }
 
     const maxOutputTokens: number | undefined = (() => {
       const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
@@ -1637,7 +1884,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       : baseMessages
 
     // Include tools only if we have tools loaded AND model supports them
-    const hasTools = Object.keys(this.tools).length > 0
+    const hasTools = Object.keys(turnTools).length > 0
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
@@ -1653,6 +1900,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     useAppState.getState().updateLiveTokenStats(undefined)
     useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
 
+    // Bind callbacks to this request, not a background menu refresh.
+    this.turnRagIdentities = turnRagIdentities
+    this.turnMcpIdentities = turnMcpIdentities
     const result = streamText({
       model: this.model,
       messages: modelMessages,
@@ -1660,7 +1910,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Hosted providers keep the SDK's two backoff retries for transient
       // 429/5xx; local servers fail at once (see isLocalChatServer).
       maxRetries: isLocalChatServer(providerId, provider.base_url) ? 0 : 2,
-      tools: shouldEnableTools ? this.tools : undefined,
+      tools: shouldEnableTools ? turnTools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystem,
       // 0 means "no cap" in assistant params; the SDK rejects anything below 1.
@@ -1752,9 +2002,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return routeRefusedToolCalls(
       continuedStream,
       (toolName) =>
-        CHAT_AGENT_TOOL_NAMES.has(toolName) &&
         !(toolName in this.tools) &&
-        !useChatShell.getState().shellEnabled
+        (toolName === TODO_TOOL_NAME || toolName === ASK_TOOL_NAME || toolName === TASK_TOOL_NAME || toolName === MONITOR_TOOL_NAME
+          ? // Unadvertised conversation todo/ask: dispatch refuses explicitly.
+            true
+          : CHAT_AGENT_TOOL_NAMES.has(toolName)
+          ? !useChatShell.getState().shellEnabled
+          : // Other native names (e.g. skill_write after a revoke) reach the
+            // route so the dispatch boundary can refuse them with a reason.
+            isScopedThreadTool(toolName))
     )
   }
 
@@ -1892,26 +2148,50 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Static instruction for the one built-in tool chat offers: the sandboxed
-   * shell. Empty when no sandbox backend enforces or when the user has turned
-   * the shell off, because shell is then withheld too — stating limits for a
-   * tool that is not offered would only confuse the model, and an empty string
-   * keeps the prompt prefix stable.
+   * Static instruction for the built-in tools this turn actually offers. Built
+   * from the advertised record, so it never names a tool the model was not
+   * given (a revoked skill_write, a switched-off shell, no sandbox) and an empty
+   * string keeps the prompt prefix stable when none are offered.
    */
   buildAgentToolsSystemInstruction(): string {
-    // Describing a tool the model was not given only invites it to ask for it.
-    if (!useChatShell.getState().shellEnabled || !sandboxEnforces()) return ''
-    // Stating the limits up front is cheaper than letting the model discover
-    // them by having a command refused.
-    return [
-      '# Shell',
-      'shell runs commands in an isolated scratch workspace under an OS',
-      'sandbox: it starts there, can only write there, and cannot read files',
-      "in the user's home directory. The workspace belongs to this",
-      'conversation alone and is deleted with it, so do not keep anything',
-      'there that should last. It has no network access, so commands that',
-      'download or upload will fail.',
-    ].join(' ')
+    const offered = (name: string) =>
+      name in this.tools && !this.mcpIdentities.has(name)
+    const files = ['read', 'ls', 'find', 'grep', 'write', 'edit'].filter(offered)
+    const lines: string[] = []
+    if (files.length > 0) {
+      lines.push(
+        '# Workspace files',
+        `${files.join(', ')} work inside an isolated scratch workspace that belongs`,
+        'to this conversation alone and is deleted with it, so do not keep anything',
+        'there that should last. Folders outside it are reachable only if the user',
+        'granted them to this conversation.'
+      )
+    }
+    if (useChatShell.getState().shellEnabled && sandboxEnforces() && offered('shell')) {
+      lines.push(
+        '# Shell',
+        "shell starts in this conversation's isolated scratch workspace under an OS sandbox.",
+        'Scratch files are deleted with the conversation. Access outside scratch and',
+        'network access require explicit conversation permissions. Each invocation is',
+        'limited by both the permissions present when the call was classified and',
+        'the current permissions; revocation can narrow a pending call.',
+        'Do not assume access to other folders or network destinations. Ask the',
+        'user to grant the needed folder or network access in conversation permissions.'
+      )
+    }
+    const skills = ['skill_list', 'skill_read', 'skill_write'].filter(offered)
+    if (skills.length > 0) {
+      lines.push('# Skills', `${skills.join(', ')} manage reusable skills.`)
+    }
+    if (offered('memory')) {
+      lines.push(
+        '# Memory',
+        this.hasAdvertisedMemoryOperation({ op: 'write' })
+          ? 'memory can view, search and update saved notes in the shared persistent memory store. Mutations require the memory write permission and normal tool approval.'
+          : 'memory can only view and search your saved notes in the shared persistent memory store; it cannot change them.'
+      )
+    }
+    return lines.join(' ')
   }
 
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {

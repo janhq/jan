@@ -55,6 +55,20 @@ describe('message-branching', () => {
     expect(backfillParentIds(filled)).toEqual([])
   })
 
+  it('makeSibling drops the assistant-record carrier only when the text is edited', () => {
+    const carrier = { v: 1, parts: [{ type: 'step-start' }, { type: 'text', text: 'x' }] }
+    const src = {
+      ...msg('a1', 'assistant', 'u1'),
+      metadata: { parentId: 'u1', uiParts: carrier, uiPartsSkipped: 'size' },
+    } as ThreadMessage
+    const edited = makeSibling(src, { id: 'a2', createdAt: 5000, text: 'edited' })
+    expect(edited.metadata).not.toHaveProperty('uiParts')
+    expect(edited.metadata).not.toHaveProperty('uiPartsSkipped')
+    const copy = makeSibling(src, { id: 'a3', createdAt: 5000 })
+    expect(copy.metadata).toMatchObject({ uiParts: carrier, uiPartsSkipped: 'size' })
+    expect(copy.content).toEqual(src.content)
+  })
+
   it('makeSibling shares the parent and clears active/error state', () => {
     const u = msg('a', 'user', 'orig', { parentId: null })
     const sib = makeSibling(u, { id: 'a2', createdAt: 5000, text: 'edited' })

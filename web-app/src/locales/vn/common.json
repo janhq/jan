@@ -406,5 +406,28 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "agentSettings": "Tác nhân",
+  "workspace": {
+    "readOnly": "chỉ đọc",
+    "allowChanges": "Cho phép sửa đổi tệp",
+    "footnoteReadOnly": "Tác nhân có thể đọc nhưng không thể thay đổi thư mục này. Bật “Cho phép sửa đổi tệp” để tác nhân có thể chỉnh sửa các tệp.",
+    "a11yWithFolderReadOnly": "Thư mục dự án {{folder}} được đính kèm với quyền chỉ đọc. Thay đổi hoặc gỡ đính kèm."
+  },
+  "conversationScope": {
+    "noToolsModel": "Mô hình đã chọn không hỗ trợ công cụ, nên các quyền này chỉ có hiệu lực khi bạn chọn mô hình hỗ trợ công cụ.",
+    "noSandbox": "Hệ thống này không có môi trường cách ly của hệ điều hành, nên không cung cấp lệnh shell.",
+    "live": "Các thay đổi áp dụng ngay cho cuộc trò chuyện này. Dự án Jan không cấp quyền truy cập thư mục.",
+    "draft": "Áp dụng khi bạn gửi tin nhắn. Dự án Jan không cấp quyền truy cập thư mục.",
+    "folderNeedsConfirmation": "Không hoạt động · cần xác nhận",
+    "confirmFolder": "Xác nhận",
+    "removeFolder": "Gỡ bỏ",
+    "hostRevokeUnconfirmed": "Jan không thể xác nhận thay đổi quyền này. Các tác vụ nền có thể vẫn giữ quyền truy cập trước đó. Hãy thử lại hoặc thoát Jan để dừng chúng.",
+    "saveFailed": "Không thể lưu thay đổi quyền. Quyền truy cập nâng cao vẫn tắt cho đến khi lưu thành công."
+  },
+  "memoryFeedback": {
+    "saved": "Đã lưu bộ nhớ",
+    "inspect": "Xem",
+    "inspectLabel": "Xem bộ nhớ đã lưu"
   }
 }

@@ -51,6 +51,12 @@ static INDEX_LOCK: Mutex<()> = Mutex::new(());
 static KEYRING_DOWN: AtomicBool = AtomicBool::new(false);
 
 fn keyring_down() -> bool {
+    // Native QA must never access the installed app's shared OS credential
+    // namespace, even if the launcher forgets an environment flag. The fallback
+    // stays under the separately isolated desktop data folder.
+    if cfg!(feature = "e2e") {
+        return true;
+    }
     KEYRING_DOWN.load(Ordering::Relaxed)
 }
 
@@ -457,10 +463,19 @@ mod tests {
         assert!(file_remove("never-stored").is_ok());
     }
 
+    #[cfg(feature = "e2e")]
+    #[test]
+    fn e2e_never_uses_os_keyring() {
+        // Independent of environment flags and the infrastructure-failure latch.
+        KEYRING_DOWN.store(false, Ordering::Relaxed);
+        assert!(keyring_down());
+    }
+
     /// The Secret Service backend is async underneath, and `load_provider_keys`
     /// is sync and reached from async CLI paths (`cli::providers`). zbus's
     /// `tokio` `block_on` drives a runtime of its own, which panics when it is
     /// already inside one; the `async-io` feature must be what is selected.
+    #[cfg(not(feature = "e2e"))]
     #[tokio::test]
     async fn keyring_read_survives_being_called_inside_a_runtime() {
         let _tmp = TempDataFolder::new();

@@ -1,4 +1,4 @@
-import { Folder, FolderPlus, GitBranch, PencilLine } from 'lucide-react'
+import { Eye, Folder, FolderPlus, GitBranch, PencilLine } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -7,6 +7,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { basenameOf } from '@/lib/coworkPreview'
@@ -16,6 +17,14 @@ type Props = {
   /** Attached project folder, or null when the session is sandbox-only. */
   folder: string | null
   gitBranch?: string | null
+  /** What the agent may do in the folder. Old Cowork folders were always
+   * read and write, so that stays the default; a unified thread can grant read
+   * only, and the pill must not claim more than the grant. */
+  access?: 'read' | 'write' | null
+  /** Disable mutations and folder actions while a strict grant save is pending. */
+  saving?: boolean
+  /** When set, the popover offers an "Allow changes" switch for the folder. */
+  onAccessChange?: (access: 'read' | 'write') => void
   onAttach: () => void
   onDetach: () => void
 }
@@ -35,6 +44,9 @@ type Props = {
 export function CoworkWorkspacePill({
   folder,
   gitBranch,
+  access = 'write',
+  saving = false,
+  onAccessChange,
   onAttach,
   onDetach,
 }: Props) {
@@ -89,22 +101,25 @@ export function CoworkWorkspacePill({
     <Popover>
       <PopoverTrigger asChild>
         <Button
-          variant="ghost"
-          size={folderName ? 'xs' : 'icon-xs'}
-          className="shrink-0 text-muted-foreground"
+          variant={folderName ? 'outline' : 'ghost'}
+          size={folderName ? 'sm' : 'icon-xs'}
+          className={folderName
+            ? 'h-9 max-w-64 shrink-0 gap-2 rounded-full border-border bg-background px-4 text-muted-foreground shadow-none hover:bg-muted has-[>svg]:px-4'
+            : 'shrink-0 text-muted-foreground'}
           aria-label={
             folderName
-              ? t('common:workspace.a11yWithFolder', { folder: folderName })
+              ? access === null
+                ? folderName
+                : t(access === 'write' ? 'common:workspace.a11yWithFolder' : 'common:workspace.a11yWithFolderReadOnly', { folder: folderName })
               : t('common:workspace.a11yNoFolder')
           }
         >
           {folderName ? (
             <>
-              <Folder className="size-3.5 shrink-0" />
-              <span className="max-w-[120px] truncate text-foreground">
+              <Folder className="size-4 shrink-0" />
+              <span className="max-w-[160px] truncate">
                 {folderName}
               </span>
-              <PencilLine className="size-3 shrink-0 text-muted-foreground/70" />
             </>
           ) : (
             <FolderPlus className="size-[18px] shrink-0" />
@@ -115,15 +130,15 @@ export function CoworkWorkspacePill({
       <PopoverContent align="start" className="w-80 p-3">
         {folder ? (
           <>
-            <p className="text-xs font-medium text-muted-foreground">
+            {access !== null && <p className="text-xs font-medium text-muted-foreground">
               {t('common:workspace.readsFrom')}
-            </p>
+            </p>}
             <div className="mt-1 flex items-center gap-2">
               <Folder size={14} className="shrink-0 text-muted-foreground" />
               <span className="truncate text-sm font-medium">{folderName}</span>
               <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
-                <PencilLine size={10} />
-                {t('common:workspace.writable')}
+                {access === null ? null : access === 'write' ? <PencilLine size={10} /> : <Eye size={10} />}
+                {access === null ? '—' : t(access === 'write' ? 'common:workspace.writable' : 'common:workspace.readOnly')}
               </span>
             </div>
             <p
@@ -143,6 +158,7 @@ export function CoworkWorkspacePill({
                 variant="ghost"
                 size="sm"
                 className="ml-auto h-7"
+                disabled={saving}
                 onClick={handleOpen}
               >
                 {t('common:workspace.open')}
@@ -151,6 +167,7 @@ export function CoworkWorkspacePill({
                 variant="ghost"
                 size="sm"
                 className="h-7"
+                disabled={saving}
                 onClick={handleReveal}
               >
                 {t('common:workspace.reveal')}
@@ -160,22 +177,34 @@ export function CoworkWorkspacePill({
           </>
         ) : null}
 
-        <p className="text-xs text-muted-foreground">
+        {folder && onAccessChange && (
+          <label className="mb-2 flex items-center gap-2 text-sm">
+            <span className="flex-1">{t('common:workspace.allowChanges')}</span>
+            <Switch
+              disabled={saving}
+              checked={access === 'write'}
+              onCheckedChange={(on) => onAccessChange(on ? 'write' : 'read')}
+            />
+          </label>
+        )}
+
+        {access !== null && <p className="text-xs text-muted-foreground">
           {folder
-            ? t('common:workspace.footnote')
+            ? t(access === 'write' ? 'common:workspace.footnote' : 'common:workspace.footnoteReadOnly')
             : t('common:workspace.footnoteEmpty')}
-        </p>
+        </p>}
 
         <div className="mt-3 flex items-center gap-2">
           {folder ? (
             <>
-              <Button variant="ghost" size="sm" onClick={onDetach}>
+              <Button variant="ghost" size="sm" disabled={saving} onClick={onDetach}>
                 {t('common:workspace.detach')}
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 className="ml-auto"
+                disabled={saving}
                 onClick={onAttach}
               >
                 {t('common:workspace.change')}
@@ -186,6 +215,7 @@ export function CoworkWorkspacePill({
               variant="outline"
               size="sm"
               className="ml-auto"
+              disabled={saving}
               onClick={onAttach}
             >
               {t('common:workspace.attach')}
