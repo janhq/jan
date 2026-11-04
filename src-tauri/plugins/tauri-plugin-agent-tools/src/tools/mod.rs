@@ -593,6 +593,12 @@ impl<'a> ToolContext<'a> {
         self
     }
 
+    /// The attached folders as the path helpers take them: what decides whether
+    /// an absolute `/tmp/...` path is the scratch or a folder mounted over it.
+    pub fn attached(&self) -> crate::tools::sandbox::Attached<'a> {
+        crate::tools::sandbox::Attached::new(self.read_roots, self.write_roots)
+    }
+
     pub fn with_confined_writes(mut self, confine: bool) -> Self {
         self.confine_writes = confine;
         self
