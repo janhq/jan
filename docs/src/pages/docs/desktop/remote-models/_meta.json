@@ -23,6 +23,9 @@
   "huggingface": {
     "title": "Hugging Face"
   },
+  "minimax": {
+    "title": "MiniMax"
+  },
   "custom-endpoint": {
     "title": "Custom Endpoints"
   }

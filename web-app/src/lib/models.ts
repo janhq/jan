@@ -1,6 +1,28 @@
 import { providerModels as models } from '@/constants/models'
 import { ModelCapabilities } from '@/types/models'
 
+/** Filter discovery results only; persisted and manually entered model IDs stay intact. */
+export const suggestedModelIds = (provider: string, ids: string[]): string[] => {
+  const current =
+    provider === 'minimax'
+      ? models.minimax.models
+      : provider === 'openrouter'
+        ? ['minimax/minimax-m3.1-flash:free', 'minimax/minimax-m3']
+        : undefined
+  if (!current) return ids
+
+  const textModel =
+    provider === 'minimax' ? /^MiniMax-M\d/i : /^minimax\/minimax-m\d/i
+  const currentIds: readonly string[] = current
+  const filtered = ids.filter((id) => !textModel.test(id) || currentIds.includes(id))
+  const preferred = filtered
+    .filter((id) => textModel.test(id))
+    .sort((a, b) => currentIds.indexOf(a) - currentIds.indexOf(b))
+  // Reorder only MiniMax text slots, preserving other providers and media IDs.
+  let index = 0
+  return filtered.map((id) => textModel.test(id) ? preferred[index++] : id)
+}
+
 export const defaultModel = (provider?: string) => {
   if (!provider || !Object.keys(models).includes(provider)) {
     return models.openai.models[0]
