@@ -483,7 +483,8 @@
     "update": "Update",
     "searchProjects": "Search projects...",
     "noProjectsFound": "No projects found",
-    "tryDifferentSearch": "Try a different search term"
+    "tryDifferentSearch": "Try a different search term",
+    "viewProject": "View Project"
   },
   "attachmentsIngestion": {
     "title": "Choose how to ingest attachments",
@@ -718,7 +719,7 @@
   "skillsUsedLabel": "Skills used",
   "skillsUsed": "Skills used: {{skills}}",
   "artifactsAll": "All",
-  "artifactsEmpty": "Nothing produced yet. Artifacts from Cowork runs show up here.",
+  "artifactsEmpty": "Nothing produced yet. Files created in your conversations show up here.",
   "artifactsNoMatch": "No artifacts match.",
   "artifactsLibraryDescription": "Files created across your conversations, all in one place.",
   "artifactsLibraryFiles": "files",
@@ -773,13 +774,13 @@
     "writable": "Task tools can read and write files in the selected folder. Your existing task permissions still apply.",
     "optional": "Optional folder for read/write task access. Without a folder, tasks use their managed workspace.",
     "permissions": "Folder selection does not change network or persistent memory settings.",
-    "unsupported": "The selected model does not support tools, so this conversation cannot be granted folder, shell network, or memory access. Ordinary chat still works.",
+    "unsupported": "This model can't use tools, so folder, shell and memory access aren't available. Regular chat still works.",
     "pendingKept": "Your pending permission draft is kept and will be available when you select a tool-capable model.",
     "pendingKeptTemporary": "Your pending permission draft is kept and will be available when you start a regular chat with a tool-capable model.",
     "temporary": "A temporary chat keeps no folder access.",
     "temporaryPermissions": "Temporary chats cannot use granted folder, shell network, or persistent memory access.",
     "folderSelectModel": "Select a tool-capable model before adding folder access.",
-    "folderUnsupported": "The selected model does not support tools, so folder access cannot be granted. Ordinary chat still works.",
+    "folderUnsupported": "This model can't use tools, so a folder can't be added. Regular chat still works.",
     "invalidFolder": "This folder path is not supported. Choose another folder.",
     "folderNeedsConfirmation": "Inactive · needs confirmation",
     "confirmFolder": "Confirm",
@@ -862,5 +863,11 @@
     "saved": "Memory saved",
     "inspect": "Inspect",
     "inspectLabel": "Inspect saved memory"
+  },
+  "sidebar": {
+    "toggle": "Toggle sidebar",
+    "navigation": "Navigation",
+    "navigationDescription": "Jump to chats, projects, artifacts, skills and settings.",
+    "more": "More"
   }
 }

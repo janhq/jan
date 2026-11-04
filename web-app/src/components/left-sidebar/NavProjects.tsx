@@ -45,6 +45,7 @@ function ProjectItem({
 }) {
 
   const navigate = useNavigate()
+  const { t } = useTranslation()
 
   return (
     <SidebarMenuItem>
@@ -61,7 +62,7 @@ function ProjectItem({
         <DropdownMenuTrigger asChild>
           <SidebarMenuAction showOnHover className="hover:bg-sidebar-foreground/8">
             <MoreHorizontal />
-            <span className="sr-only">More</span>
+            <span className="sr-only">{t('common:sidebar.more')}</span>
           </SidebarMenuAction>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -73,16 +74,16 @@ function ProjectItem({
             navigate({ to: '/project/$projectId', params: { projectId: item.id } })
           }}>
             <FolderOpenIcon className="text-muted-foreground" />
-            <span>View Project</span>
+            <span>{t('common:projects.viewProject')}</span>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => onEdit(item)}>
             <FolderEditIcon className="text-muted-foreground" />
-            <span>Edit Project</span>
+            <span>{t('common:projects.editProject')}</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onSelect={() => onDelete(item)}>
             <Trash2 />
-            <span>Delete Project</span>
+            <span>{t('common:projects.deleteProject')}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

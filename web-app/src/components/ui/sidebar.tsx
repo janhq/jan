@@ -9,7 +9,12 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import {
+	Sheet,
+	SheetContent,
+	SheetDescription,
+	SheetTitle,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
 	Tooltip,
@@ -19,6 +24,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSidebarResize } from "@/hooks/use-sidebar-resize";
+import { useTranslation } from "@/i18n/react-i18next-compat";
 import { mergeButtonRefs } from "@/lib/merge-button-refs";
 import { cn } from "@/lib/utils";
 
@@ -40,13 +46,16 @@ type SidebarContext = {
 	openMobile: boolean;
 	setOpenMobile: (open: boolean) => void;
 	isMobile: boolean;
-	toggleSidebar: () => void;
+	/** `opener` is the control that was activated; focus returns there on close. */
+	toggleSidebar: (opener?: HTMLElement | null) => void;
 	//* new properties for sidebar resizing
 	width: string;
 	setWidth: (width: string) => void;
 	//* new properties for tracking is dragging rail
 	isDraggingRail: boolean;
 	setIsDraggingRail: (isDraggingRail: boolean) => void;
+	//* element to refocus when the mobile overlay closes
+	mobileReturnFocusRef: React.MutableRefObject<HTMLElement | null>;
 };
 
 const SidebarContext = React.createContext<SidebarContext | null>(null);
@@ -60,6 +69,36 @@ function useSidebar() {
 	return context;
 }
 
+/** Like useSidebar, but null outside a provider (isolated header renders). */
+function useOptionalSidebar() {
+	return React.useContext(SidebarContext);
+}
+
+/**
+ * Where focus lands when the mobile navigation overlay closes: the control that
+ * opened it, or any visible sidebar toggle if that control was re-rendered away
+ * (for example by the navigation the overlay just performed).
+ */
+function isRenderedVisible(element: HTMLElement) {
+	if (!element.isConnected) return false;
+	for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+		if (node.hidden || node.getAttribute("aria-hidden") === "true") return false;
+		const style = window.getComputedStyle(node);
+		if (style.display === "none" || style.visibility === "hidden") return false;
+	}
+	return true;
+}
+
+function restoreMobileFocus(opener: HTMLElement | null) {
+	const target =
+		opener && isRenderedVisible(opener)
+			? opener
+			: Array.from(
+					document.querySelectorAll<HTMLElement>("[data-sidebar-toggle]"),
+				).find(isRenderedVisible);
+	target?.focus();
+}
+
 const SidebarProvider = React.forwardRef<
 	HTMLDivElement,
 	React.ComponentProps<"div"> & {
@@ -68,6 +107,11 @@ const SidebarProvider = React.forwardRef<
 		onOpenChange?: (open: boolean) => void;
 		//* new prop for default width
 		defaultWidth?: string;
+		/**
+		 * Register the built-in Cmd/Ctrl+B listener. Apps that own the shortcut
+		 * elsewhere (configurable KeyboardShortcutsProvider) pass `false`.
+		 */
+		keyboardShortcut?: boolean;
 		//* new prop for width change callback
 		onWidthChange?: (width: string) => void;
 	}
@@ -82,6 +126,7 @@ const SidebarProvider = React.forwardRef<
 			children,
 			defaultWidth = SIDEBAR_WIDTH,
 			onWidthChange,
+			keyboardShortcut = true,
 			...props
 		},
 		ref,
@@ -95,7 +140,31 @@ const SidebarProvider = React.forwardRef<
 			setWidthState(newWidth);
 			onWidthChange?.(newWidth);
 		}, [onWidthChange]);
-		const [openMobile, setOpenMobile] = React.useState(false);
+		const [openMobile, setOpenMobileState] = React.useState(false);
+		const mobileReturnFocusRef = React.useRef<HTMLElement | null>(null);
+		// An explicit opener (the control that was activated) always wins over
+		// document.activeElement, which may be an unrelated field such as the composer.
+		const openMobileFrom = React.useCallback(
+			(value: boolean, opener?: HTMLElement | null) => {
+				if (value) {
+					const active = document.activeElement;
+					if (opener) mobileReturnFocusRef.current = opener;
+					else if (active instanceof HTMLElement && active !== document.body)
+						mobileReturnFocusRef.current = active;
+				}
+				setOpenMobileState(value);
+			},
+			[],
+		);
+		const setOpenMobile = React.useCallback(
+			(value: boolean) => openMobileFrom(value),
+			[openMobileFrom],
+		);
+		// An overlay left open while the window grows to the desktop layout must
+		// not pop back open when it shrinks again.
+		React.useEffect(() => {
+			if (!isMobile) setOpenMobileState(false);
+		}, [isMobile]);
 		//* new state for tracking is dragging rail
 		const [isDraggingRail, setIsDraggingRail] = React.useState(false);
 
@@ -119,19 +188,19 @@ const SidebarProvider = React.forwardRef<
 		);
 
 		// Helper to toggle the sidebar.
-		const toggleSidebar = React.useCallback(() => {
-			return isMobile
-				? setOpenMobile((open) => !open)
-				: setOpen((open) => !open);
-		}, [
-			isMobile,
-			setOpen,
-			//* remove setOpenMobile from dependencies because setOpenMobile are state setters created by useState
-			// setOpenMobile
-		]);
+		const toggleSidebar = React.useCallback(
+			(opener?: HTMLElement | null) => {
+				if (!isMobile) return setOpen((open) => !open);
+				// WebKit does not focus buttons on click, so the activated control is
+				// passed in rather than read from document.activeElement.
+				openMobileFrom(!openMobile, opener);
+			},
+			[isMobile, setOpen, openMobileFrom, openMobile],
+		);
 
 		// Adds a keyboard shortcut to toggle the sidebar.
 		React.useEffect(() => {
+			if (!keyboardShortcut) return;
 			const handleKeyDown = (event: KeyboardEvent) => {
 				if (
 					event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
@@ -144,7 +213,7 @@ const SidebarProvider = React.forwardRef<
 
 			window.addEventListener("keydown", handleKeyDown);
 			return () => window.removeEventListener("keydown", handleKeyDown);
-		}, [toggleSidebar]);
+		}, [toggleSidebar, keyboardShortcut]);
 
 		// We add a state so that we can do data-state="expanded" or "collapsed".
 		// This makes it easier to style the sidebar with Tailwind classes.
@@ -165,6 +234,7 @@ const SidebarProvider = React.forwardRef<
 				//* new context for tracking is dragging rail
 				isDraggingRail,
 				setIsDraggingRail,
+				mobileReturnFocusRef,
 			}),
 			[
 				state,
@@ -172,6 +242,7 @@ const SidebarProvider = React.forwardRef<
 				setOpen,
 				isMobile,
 				openMobile,
+				setOpenMobile,
 				toggleSidebar,
 				width,
 				setWidth,
@@ -234,7 +305,9 @@ const Sidebar = React.forwardRef<
 			setOpenMobile,
 			//* new property for tracking is dragging rail
 			isDraggingRail,
+			mobileReturnFocusRef,
 		} = useSidebar();
+		const { t } = useTranslation();
 
 		if (collapsible === "none") {
 			return (
@@ -264,7 +337,19 @@ const Sidebar = React.forwardRef<
 							} as React.CSSProperties
 						}
 						side={side}
+						onCloseAutoFocus={(event) => {
+							// Radix only refocuses a Sheet.Trigger; the sidebar is opened
+							// from toggle buttons elsewhere, so return focus explicitly.
+							event.preventDefault();
+							restoreMobileFocus(mobileReturnFocusRef.current);
+						}}
 					>
+						<SheetTitle className="sr-only">
+							{t("common:sidebar.navigation")}
+						</SheetTitle>
+						<SheetDescription className="sr-only">
+							{t("common:sidebar.navigationDescription")}
+						</SheetDescription>
 						<div className="flex h-full w-full flex-col">{children}</div>
 					</SheetContent>
 				</Sheet>
@@ -328,23 +413,26 @@ const SidebarTrigger = React.forwardRef<
 	React.ElementRef<typeof Button>,
 	React.ComponentProps<typeof Button>
 >(({ className, onClick, ...props }, ref) => {
-	const { toggleSidebar } = useSidebar();
+	const { toggleSidebar, isMobile, openMobile, open } = useSidebar();
+	const { t } = useTranslation();
 
 	return (
 		<Button
 			ref={ref}
 			data-sidebar="trigger"
+			data-sidebar-toggle="sidebar"
+			aria-expanded={isMobile ? openMobile : open}
 			variant="ghost"
 			size="icon"
 			className={cn("size-8", className)}
 			onClick={(event) => {
 				onClick?.(event);
-				toggleSidebar();
+				toggleSidebar(event.currentTarget);
 			}}
 			{...props}
 		>
 			<PanelLeft />
-			<span className="sr-only">Toggle Sidebar</span>
+			<span className="sr-only">{t("common:sidebar.toggle")}</span>
 		</Button>
 	);
 });
@@ -359,6 +447,7 @@ const SidebarRail = React.forwardRef<
 >(({ className, enableDrag = true, ...props }, ref) => {
 	const { toggleSidebar, setWidth, state, width, setIsDraggingRail } =
 		useSidebar();
+	const { t } = useTranslation();
 
 	const { dragRef, handleMouseDown } = useSidebarResize({
 		direction: "right",
@@ -385,12 +474,12 @@ const SidebarRail = React.forwardRef<
 			//* updated ref to use combinedRef
 			ref={combinedRef}
 			data-sidebar="rail"
-			aria-label="Toggle Sidebar"
+			aria-label={t("common:sidebar.toggle")}
 			tabIndex={-1}
 			// onClick={toggleSidebar}
 			//* replace onClick with onMouseDown
 			onMouseDown={handleMouseDown}
-			title="Toggle Sidebar"
+			title={t("common:sidebar.toggle")}
 			className={cn(
 				"absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 hover:after:bg-sidebar group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex",
 				// Cursor styles for resize
@@ -857,4 +946,5 @@ export {
 	SidebarSeparator,
 	SidebarTrigger,
 	useSidebar,
+	useOptionalSidebar,
 };
