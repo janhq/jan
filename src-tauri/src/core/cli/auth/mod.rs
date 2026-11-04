@@ -95,6 +95,17 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
                 open_in_browser: false,
             },
         },
+        ProviderDefinition {
+            id: "uberllm",
+            name: "UberLLM",
+            default_base_url: "https://api.uberllm.dev/v1".to_string(),
+            transport: Transport::OpenAi,
+            api_key: ApiKeyMetadata {
+                keys_url: "https://uberllm.dev/dashboard/keys".to_string(),
+                hint: "get a key at uberllm.dev/dashboard/keys",
+                open_in_browser: false,
+            },
+        },
         // Not a fixed endpoint: the deployment this run signs in to (a dev
         // stack's `TOKAMAK_BASE_URL`, or where the last sign-in went), so a
         // paste sign-in verifies and stores the key against the same host the
@@ -156,11 +167,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_lists_the_five_providers_in_picker_order() {
+    fn catalog_lists_the_six_providers_in_picker_order() {
         let ids: Vec<&str> = provider_catalog().iter().map(|p| p.id).collect();
         assert_eq!(
             ids,
-            vec!["openai", "anthropic", "opencode", "deepseek", "tokamak"]
+            vec![
+                "openai",
+                "anthropic",
+                "opencode",
+                "deepseek",
+                "uberllm",
+                "tokamak",
+            ]
         );
         assert_eq!(provider_by_id("deepseek").unwrap().name, "DeepSeek");
         assert!(provider_by_id("nope").is_none());
