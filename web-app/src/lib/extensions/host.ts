@@ -456,12 +456,24 @@ export class ExtensionHost {
     extensionId: string,
     name: string,
     input: unknown,
-    options: { signal?: AbortSignal; maxOutputChars?: number } = {}
+    options: {
+      signal?: AbortSignal
+      maxOutputChars?: number
+      /** `ExtensionTool.generation` the caller approved; a rebound handler is refused. */
+      generation?: number
+    } = {}
   ): Promise<ToolCallOutcome> {
-    const handler = own(own(this.contributions.getState().tools, extensionId), name)
-      ?.handler
+    const tool = own(own(this.contributions.getState().tools, extensionId), name)
+    const handler = tool?.handler
     if (!handler)
       return { error: `Tool '${name}' of '${extensionId}' is not available` }
+    if (
+      options.generation !== undefined &&
+      tool.generation !== options.generation
+    )
+      return {
+        error: `Tool '${name}' of '${extensionId}' changed since it was offered`,
+      }
     const cancellation = new CancellationTokenSource()
     const cancel = () => cancellation.cancel()
     if (options.signal?.aborted) cancel()

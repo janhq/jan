@@ -275,7 +275,7 @@ describe('useTools', () => {
       useContributions.setState({
         tools: {
           'acme.one': {
-            echo: { ...declared, handler: async () => ({ content: [] }) },
+            echo: { ...declared, handler: async () => ({ content: [] }), generation: 3 },
           },
         },
       })
@@ -286,6 +286,7 @@ describe('useTools', () => {
         extensionId: 'acme.one',
         name: 'echo',
         server: 'ext:acme.one',
+        generation: 3,
       }),
     ])
     const calls = mockUpdateExtensionTools.mock.calls.length

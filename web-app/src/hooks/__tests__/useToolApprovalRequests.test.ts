@@ -677,51 +677,102 @@ describe('native elevated approvals (explicit native identity)', () => {
     act(() => {
       result.current.requestApproval('tc1', 'x_tool', 'thread-1', 'ext:acme.one')
     })
-    expect(result.current.pending['tc1']).toBeDefined()
+    expect(result.current.pending[approvalKey('thread-1', 'tc1')]).toBeDefined()
   })
+
+  const ext = (generation: number) => ({ extension: { generation } })
 
   it('keeps an allow-thread approval with the extension that got it', async () => {
     const { result } = renderHook(() => useToolApprovalRequests())
     let p: Promise<boolean>
     act(() => {
-      p = result.current.requestApproval('tc1', 'x_tool', 'thread-1', 'ext:acme.one')
+      p = result.current.requestApproval('tc1', 'x_tool', 'thread-1', 'ext:acme.one', undefined, ext(1))
     })
-    act(() => result.current.resolveApproval('tc1', 'allow-thread'))
+    act(() => result.current.resolveApproval('tc1', 'allow-thread', 'thread-1'))
     await expect(p!).resolves.toBe(true)
     // The same tool name from another extension, or from an MCP server, asks.
     act(() => {
-      result.current.requestApproval('tc2', 'x_tool', 'thread-1', 'ext:acme.two')
+      result.current.requestApproval('tc2', 'x_tool', 'thread-1', 'ext:acme.two', undefined, ext(1))
       result.current.requestApproval('tc3', 'x_tool', 'thread-1', 'mcp-server')
       result.current.requestApproval('tc4', 'x_tool', 'thread-1')
     })
-    expect(Object.keys(result.current.pending).sort()).toEqual(['tc2', 'tc3', 'tc4'])
-    // The extension that was approved is not asked again.
+    expect(Object.keys(result.current.pending).sort()).toEqual(
+      ['tc2', 'tc3', 'tc4'].map((id) => approvalKey('thread-1', id)).sort()
+    )
+    // The extension that was approved is not asked again, in that thread only.
     let again: Promise<boolean>
     act(() => {
-      again = result.current.requestApproval('tc5', 'x_tool', 'thread-1', 'ext:acme.one')
+      again = result.current.requestApproval('tc5', 'x_tool', 'thread-1', 'ext:acme.one', undefined, ext(1))
     })
     await expect(again!).resolves.toBe(true)
+    act(() => {
+      result.current.requestApproval('tc6', 'x_tool', 'thread-2', 'ext:acme.one', undefined, ext(1))
+    })
+    expect(result.current.pending[approvalKey('thread-2', 'tc6')]).toBeDefined()
   })
 
   it('keeps an allow-always approval to the one extension tool that got it', async () => {
     const { result } = renderHook(() => useToolApprovalRequests())
     let p: Promise<boolean>
     act(() => {
-      p = result.current.requestApproval('tc1', 'x_tool', 'thread-1', 'ext:acme.one')
+      p = result.current.requestApproval('tc1', 'always_tool', 'thread-1', 'ext:acme.one', undefined, ext(1))
     })
-    act(() => result.current.resolveApproval('tc1', 'allow-always'))
+    act(() => result.current.resolveApproval('tc1', 'allow-always', 'thread-1'))
     await expect(p!).resolves.toBe(true)
     expect(useToolApproval.getState().approvedServers).toEqual([])
     // Another tool of the same extension (one an update added, say) asks.
     act(() => {
-      result.current.requestApproval('tc2', 'y_tool', 'thread-1', 'ext:acme.one')
+      result.current.requestApproval('tc2', 'other_tool', 'thread-1', 'ext:acme.one', undefined, ext(1))
     })
-    expect(Object.keys(result.current.pending)).toEqual(['tc2'])
+    expect(Object.keys(result.current.pending)).toEqual([approvalKey('thread-1', 'tc2')])
     // The approved tool runs without asking, in any thread.
     let again: Promise<boolean>
     act(() => {
-      again = result.current.requestApproval('tc3', 'x_tool', 'thread-2', 'ext:acme.one')
+      again = result.current.requestApproval('tc3', 'always_tool', 'thread-2', 'ext:acme.one', undefined, ext(1))
     })
     await expect(again!).resolves.toBe(true)
+  })
+
+  it('never carries an extension grant to a rebound handler, and never persists it', async () => {
+    const { result } = renderHook(() => useToolApprovalRequests())
+    for (const [id, decision] of [['a1', 'allow-always'], ['a2', 'allow-thread']] as const) {
+      let p: Promise<boolean>
+      act(() => {
+        p = result.current.requestApproval(id, `t_${id}`, 'thread-1', 'ext:acme.one', undefined, ext(1))
+      })
+      act(() => result.current.resolveApproval(id, decision, 'thread-1'))
+      await expect(p!).resolves.toBe(true)
+    }
+    // Nothing process-local reaches the persisted approval store.
+    const stored = useToolApproval.getState()
+    expect(stored.approvedTools).toEqual({})
+    expect(stored.approvedMCPTools).toEqual([])
+    expect(stored.approvedToolsGlobal).toEqual([])
+    expect(stored.approvedServers).toEqual([])
+    // The same extension tool rebound under a new generation asks again.
+    act(() => {
+      result.current.requestApproval('b1', 't_a1', 'thread-1', 'ext:acme.one', undefined, ext(2))
+      result.current.requestApproval('b2', 't_a2', 'thread-1', 'ext:acme.one', undefined, ext(2))
+    })
+    expect(Object.keys(result.current.pending).sort()).toEqual(
+      ['b1', 'b2'].map((id) => approvalKey('thread-1', id)).sort()
+    )
+  })
+
+  it('treats a request with no generation as allow-once only', async () => {
+    const { result } = renderHook(() => useToolApprovalRequests())
+    let p: Promise<boolean>
+    act(() => {
+      p = result.current.requestApproval('tc1', 'once_tool', 'thread-1', 'ext:acme.one')
+    })
+    act(() => result.current.resolveApproval('tc1', 'allow-always', 'thread-1'))
+    await expect(p!).resolves.toBe(true)
+    act(() => {
+      result.current.requestApproval('tc2', 'once_tool', 'thread-1', 'ext:acme.one')
+      result.current.requestApproval('tc3', 'once_tool', 'thread-1', 'ext:acme.one', undefined, ext(1))
+    })
+    expect(Object.keys(result.current.pending).sort()).toEqual(
+      ['tc2', 'tc3'].map((id) => approvalKey('thread-1', id)).sort()
+    )
   })
 })

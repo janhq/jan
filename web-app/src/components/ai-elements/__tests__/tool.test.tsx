@@ -150,6 +150,39 @@ describe('ToolApprovalActions', () => {
     ).toBeInTheDocument()
   })
 
+  it('keeps extension approvals session-scoped: no always button', () => {
+    const controls = (pending: Record<string, unknown>) => {
+      const view = renderApproval({ tc1: { toolCallId: 'tc1', ...pending } })
+      const labels = screen.getAllByRole('button').map((b) => b.textContent)
+      view.unmount()
+      return labels
+    }
+    expect(controls({ toolName: 'run', serverName: 'ext:acme' })).toEqual([
+      'tools:toolApproval.deny',
+      'tools:toolApproval.allowOnce',
+      'tools:toolApproval.allowInThread',
+    ])
+    expect(controls({ toolName: 'run', serverName: 'github' })).toEqual([
+      'tools:toolApproval.deny',
+      'tools:toolApproval.allowOnce',
+      'tools:toolApproval.allowInThread',
+      'tools:toolApproval.allowServerAlways:github',
+    ])
+    expect(controls({ toolName: 'do_thing' })).toEqual([
+      'tools:toolApproval.deny',
+      'tools:toolApproval.allowOnce',
+      'tools:toolApproval.allowInThread',
+      'tools:toolApproval.allowToolAlways:do_thing',
+    ])
+  })
+
+  it('still grants extension tools once or in thread', () => {
+    renderApproval({ tc1: { toolCallId: 'tc1', toolName: 'run', serverName: 'ext:acme' } })
+    fireEvent.click(screen.getByText('tools:toolApproval.allowOnce'))
+    fireEvent.click(screen.getByText('tools:toolApproval.allowInThread'))
+    expect(resolveApproval.mock.calls.map((c) => c[1])).toEqual(['allow-once', 'allow-thread'])
+  })
+
   it('grants each scope the reader picked', () => {
     renderApproval({
       tc1: { toolCallId: 'tc1', toolName: 'create_issue', serverName: 'github' },

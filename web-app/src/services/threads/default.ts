@@ -105,37 +105,42 @@ export class DefaultThreadsService implements ThreadsService {
       : [{ id: 'model-only', name: 'Model', model: modelPayload }]
 
     const api = window.core?.api
-    if (options?.strict && !api?.createThread) throw new Error('Chat persistence unavailable')
-    return (
-      api
-        ?.createThread({
-          thread: {
-            ...thread,
-            assistants: assistantsPayload,
-            metadata: {
-              ...thread.metadata,
-              order: thread.order,
-            },
+    if (typeof api?.createThread !== 'function') {
+      // Strict callers must never receive a thread nothing persisted; the
+      // lenient path keeps the in-memory fallback.
+      if (options?.strict) throw new Error('Chat persistence unavailable')
+      return thread
+    }
+    try {
+      const e: StoredThread = await api.createThread({
+        thread: {
+          ...thread,
+          assistants: assistantsPayload,
+          metadata: {
+            ...thread.metadata,
+            order: thread.order,
           },
-        })
-        .then((e: StoredThread) => {
-          if (options?.strict && (!e?.id || e.id !== thread.id)) throw new Error('Invalid persisted chat response')
-          const model = fromModelResponse(e.assistants?.[0]?.model, thread.model)
+        },
+      })
+      if (options?.strict && (!e?.id || e.id !== thread.id)) {
+        throw new Error('Invalid persisted chat response')
+      }
+      const model = fromModelResponse(e.assistants?.[0]?.model, thread.model)
+      const assistants = e.assistants
 
-          const assistants = e.assistants
-
-          const created = {
-            ...e,
-            updated: e.updated,
-            model,
-            order: e.metadata?.order ?? thread.order,
-            assistants,
-          } as Thread
-          creationReceipts.set(created, JSON.parse(JSON.stringify(e)))
-          return created
-        })
-        .catch((error) => { if (options?.strict) throw error; return thread }) ?? thread
-    )
+      const created = {
+        ...e,
+        updated: e.updated,
+        model,
+        order: e.metadata?.order ?? thread.order,
+        assistants,
+      } as Thread
+      creationReceipts.set(created, JSON.parse(JSON.stringify(e)))
+      return created
+    } catch (error: unknown) {
+      if (options?.strict) throw error
+      return thread
+    }
   }
 
   async updateThread(thread: Thread): Promise<void> {

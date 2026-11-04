@@ -37,8 +37,7 @@ vi.mock('@/hooks/useCoworkSessions', () => ({
 vi.mock('@/hooks/useCoworkRun', () => ({ useCoworkRun: {} }))
 vi.mock('@/lib/coworkRunner', () => ({ abortRun: vi.fn() }))
 vi.mock('@/lib/coworkMonitor', () => ({ dropMonitorLane: vi.fn() }))
-vi.mock('@/lib/extension', () => ({ ExtensionManager: { getInstance: () => ({ get: () => undefined }) } }))
-vi.mock('@janhq/core', () => ({ ExtensionTypeEnum: {}, VectorDBExtension: class {}, EngineManager: { instance: () => ({ get: () => undefined }) } }))
+vi.mock('@janhq/core', () => ({ VectorDBExtension: class {}, EngineManager: { instance: () => ({ get: () => undefined }) } }))
 
 function thread(id = 'chat', metadata: Thread['metadata'] = {}): Thread {
   return { id, title: 'Conversation', assistants: [], updated: 123, metadata }

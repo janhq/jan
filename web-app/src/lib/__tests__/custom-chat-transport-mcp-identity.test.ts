@@ -71,9 +71,6 @@ vi.mock('@/hooks/useMCPServers', () => ({
 vi.mock('@/hooks/useWebSearchConfig', () => ({
   useWebSearchConfig: { getState: () => ({ webSearchEnabled: h.webEnabled }) },
 }))
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: { getInstance: () => ({ get: () => null }) },
-}))
 vi.mock('@/lib/mcp-orchestrator', () => ({
   mcpOrchestrator: { getRelevantTools: async () => h.routedTools },
 }))
@@ -86,7 +83,11 @@ vi.mock('../model-factory', () => ({
 
 vi.mock('@/hooks/useAppState', () => ({
   useAppState: {
-    getState: () => new Proxy({}, { get: () => () => undefined }),
+    getState: () =>
+      new Proxy(
+        {},
+        { get: (_t, key) => (key === 'extensionTools' ? [] : () => undefined) }
+      ),
   },
 }))
 vi.mock('@/lib/reasoningProviderOptions', () => ({

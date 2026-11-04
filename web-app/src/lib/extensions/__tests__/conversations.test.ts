@@ -197,9 +197,12 @@ describe('createConversationsApi', () => {
       thread_id: TEMPORARY_CHAT_ID,
     } as never)
     api.createMessage.mockRejectedValueOnce(new Error('disk full'))
-    await messages.createMessage(
-      storedMessage('failed', 1700000000000, 'not persisted') as never
-    )
+    // A failed write is surfaced to its caller and never announced.
+    await expect(
+      messages.createMessage(
+        storedMessage('failed', 1700000000000, 'not persisted') as never
+      )
+    ).rejects.toThrow('disk full')
 
     expect(listener).toHaveBeenCalledTimes(2)
     expect(listener.mock.calls[0][0]).toEqual({

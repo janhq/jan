@@ -287,6 +287,10 @@ const grantKeyOf = (grant: unknown): string => {
   try { return JSON.stringify(sort(grant)) ?? 'none' } catch { return 'unserializable' }
 }
 const callMcpIdentities = new Map<string, Map<string, string | undefined>>()
+// Host-owned handler generation of a contributed tool, frozen with its identity
+// when the call is first seen. Approval validation and dispatch both require the
+// live binding to still carry it, so a reloaded handler never inherits approval.
+const callExtensionGenerations = new Map<string, Map<string, number | undefined>>()
 const callMcpValidators = new Map<string, Map<string, (signal?: AbortSignal) => Promise<void>>>()
 // Who a call id was first bound to (root model vs a child run, and which tool).
 // A root call id can textually equal a child's tuple id, so a cached
@@ -321,6 +325,7 @@ const forgetApprovals = (threadId: string) => {
   toolApprovalPromises.delete(threadId)
   callNativeGrants.delete(threadId)
   callMcpIdentities.delete(threadId)
+  callExtensionGenerations.delete(threadId)
   callMcpValidators.delete(threadId)
   callMcpBindings.delete(threadId)
   useChildApprovalCalls.getState().clearThread(threadId)
@@ -595,16 +600,21 @@ function ThreadDetail() {
   const serviceHub = useServiceHub()
   // A contributed tool is validated against the live extension tool list, never
   // the MCP inventory: the frozen `ext:<id>` pair must still be bound and enabled.
-  const assertExtensionToolAvailable = (toolName: string, serverName: string, signal?: AbortSignal) => {
+  const assertExtensionToolAvailable = (toolName: string, serverName: string, generation: number | undefined, signal?: AbortSignal) => {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const tool = extensionToolOf(toolName)
     if (!tool || tool.server !== serverName || useToolAvailable.getState().isToolDisabled(serverName, toolName)) {
       throw new Error(`Extension tool '${toolName}' is unavailable or disabled`)
     }
+    // A handler rebound since the model was offered the tool is not the code
+    // the user approved, even when its declaration is identical.
+    if (generation === undefined || tool.generation !== generation) {
+      throw new Error(`Extension tool '${toolName}' changed since it was offered; start a new turn`)
+    }
   }
-  const makeMcpValidator = (toolName: string, serverName?: string) => memoizeMcpValidation(
+  const makeMcpValidator = (toolName: string, serverName?: string, generation?: number) => memoizeMcpValidation(
     isExtensionServer(serverName)
-      ? async (signal) => assertExtensionToolAvailable(toolName, serverName, signal)
+      ? async (signal) => assertExtensionToolAvailable(toolName, serverName, generation, signal)
       : (signal) => assertMcpIdentityAvailable(
       toolName, serverName,
       () => serviceHub.mcp().getTools({ validationServer: serverName, validationTool: toolName }),
@@ -647,7 +657,19 @@ function ThreadDetail() {
       identities = new Map()
       callMcpIdentities.set(threadId, identities)
     }
+    let generations = callExtensionGenerations.get(threadId)
+    if (!generations) {
+      generations = new Map()
+      callExtensionGenerations.set(threadId, generations)
+    }
     if (!identities.has(toolCall.toolCallId)) {
+      generations.set(
+        toolCall.toolCallId,
+        child
+          ? child.extensionGenerations?.get(toolCall.toolName)
+          : useChatSessions.getState().sessions[threadId]?.transport
+              .getExtensionGenerationForTool(toolCall.toolName)
+      )
       // A child keeps the parent's identity frozen at task dispatch; a refresh
       // after that can neither rebind a name to another server nor to native.
       const serverName = child
@@ -658,6 +680,7 @@ function ThreadDetail() {
       useToolCallRuntime.getState().recordOrigin(toolCall.toolCallId, serverName, threadId)
     }
     const serverName = identities.get(toolCall.toolCallId)
+    const generation = generations.get(toolCall.toolCallId)
     let validators = callMcpValidators.get(threadId)
     if (!validators) {
       validators = new Map()
@@ -665,10 +688,10 @@ function ThreadDetail() {
     }
     let checkMcp = validators.get(toolCall.toolCallId)
     if (!checkMcp) {
-      checkMcp = makeMcpValidator(toolCall.toolName, serverName)
+      checkMcp = makeMcpValidator(toolCall.toolName, serverName, generation)
       validators.set(toolCall.toolCallId, checkMcp)
     }
-    return { serverName, checkMcp }
+    return { serverName, checkMcp, generation }
   }
 
   const search = useSearch({ from: Route.id })
@@ -1111,7 +1134,7 @@ function ThreadDetail() {
       if (useChatSessions.getState().sessions[threadId]?.transport.planToolRefusal(toolCall.toolName, toolCall.input)) return
       let bound: ReturnType<typeof bindMcpCall>
       try { bound = bindMcpCall(toolCall) } catch { return }
-      const { serverName, checkMcp } = bound
+      const { serverName, checkMcp, generation } = bound
       // Conversation todo/ask never prompt: dispatch serves or refuses them.
       if (!serverName && isConversationClientTool(toolCall.toolName)) return
       const isNative = !serverName && chatShellRoute(toolCall.toolName) === 'builtin'
@@ -1148,7 +1171,11 @@ function ThreadDetail() {
               threadId,
               serverName,
               isNative ? undefined : checkMcp,
-              ...(isNative ? [{ native: { grantKey: grantKeyOf(nativeGrant) } }] as const : [])
+              ...(isNative
+                ? [{ native: { grantKey: grantKeyOf(nativeGrant) } }] as const
+                : isExtensionServer(serverName) && generation !== undefined
+                  ? [{ extension: { generation } }] as const
+                  : [])
             )
         )
       }
@@ -1188,7 +1215,7 @@ function ThreadDetail() {
         if (child && (!child.mcpServers.has(toolName) || isConversationClientTool(toolName))) {
           return { output: `The \`${toolName}\` tool is not available to this run. Use an advertised tool.`, isError: true }
         }
-        const { serverName, checkMcp } = bindMcpCall(toolCall, child)
+        const { serverName, checkMcp, generation } = bindMcpCall(toolCall, child)
         if (!serverName && isScopedThreadTool(toolName) &&
           !(toolName === 'shell' && chatShellRoute(toolName) === 'disabled') &&
           !useChatSessions.getState().sessions[threadId]?.transport.hasAdvertisedNativeTool(toolName)) {
@@ -1231,6 +1258,7 @@ function ThreadDetail() {
                 getModel: () => transport.getChildModel(),
                 readGrant: () => classifyScopedGrant(threadId),
                 serverFor: (name) => transport.getMcpServerForTool(name),
+                generationFor: (name) => transport.getExtensionGenerationForTool(name),
                 dispatch: dispatchChatTool,
               })
             },
@@ -1292,7 +1320,9 @@ function ThreadDetail() {
               !serverName && isScopedThreadTool(toolName) ? undefined : checkMcp,
               ...(!serverName && chatShellRoute(toolName) === 'builtin'
                 ? [{ native: { grantKey: grantKeyOf(classifiedGrant) } }] as const
-                : [])
+                : isExtensionServer(serverName) && generation !== undefined
+                  ? [{ extension: { generation } }] as const
+                  : [])
             )
             // The SDK presentation reader may trail the runner. Publish the
             // fallback promise before yielding so its callback cannot prompt twice.
@@ -1397,14 +1427,21 @@ function ThreadDetail() {
               await checkMcp(stopSignal)
               if (stopSignal.aborted) throw new DOMException('Aborted', 'AbortError')
               const extensionTool = extensionToolOf(toolName)
-              if (!extensionTool || extensionTool.server !== serverName) {
+              if (
+                !extensionTool ||
+                extensionTool.server !== serverName ||
+                generation === undefined ||
+                extensionTool.generation !== generation
+              ) {
                 throw new Error(`Tool identity changed for ${toolName}; start a new turn`)
               }
+              // The host re-checks the generation atomically with the handler
+              // lookup, so there is no gap between this check and the call.
               return await getExtensionHost().callTool(
                 extensionTool.extensionId,
                 extensionTool.name,
                 toolCall.input,
-                { signal: stopSignal, maxOutputChars }
+                { signal: stopSignal, maxOutputChars, generation }
               )
             } else if (serverName) {
               await checkMcp(stopSignal)
@@ -2844,7 +2881,6 @@ function ThreadDetail() {
                     onSwitchVersion={handleSwitchVersion}
                     isAnimating={!pendingContinueMessage}
                     hideActions={!!pendingContinueMessage}
-                    threadId={threadId}
                   />
                 )
               })}

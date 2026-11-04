@@ -28,6 +28,10 @@ export type PendingApproval = {
  * they stop applying once the thread's grant changes. */
 export type NativeApprovalOptions = { native: { grantKey: string } }
 
+/** Options for a contributed-tool request: the host-owned handler generation
+ * the call was frozen with. Grants are bound to it (see `extensionGrantKey`). */
+export type ExtensionApprovalOptions = { extension: { generation: number } }
+
 export const nativeApprovalKey = (toolName: string, grantKey: string): string =>
   `native:${toolName}:${grantKey}`
 
@@ -58,7 +62,7 @@ type ToolApprovalRequestsState = {
     threadId: string,
     serverName?: string,
     validate?: ApprovalValidator,
-    options?: NativeApprovalOptions
+    options?: NativeApprovalOptions | ExtensionApprovalOptions
   ) => Promise<ApprovalResult>
   resolveApproval: (toolCallId: string, decision: ApprovalDecision, threadId: string) => void
   cancelApproval: (toolCallId: string, threadId: string) => void
@@ -74,10 +78,17 @@ type ToolApprovalRequestsState = {
 export const isExtensionServer = (serverName?: string): serverName is string =>
   serverName?.startsWith(EXTENSION_SERVER_PREFIX) ?? false
 
-export const extensionApprovalKey = (toolName: string, serverName: string): string =>
-  `${serverName}/${toolName}`
+/**
+ * An extension grant names the exact handler binding it was given for. The
+ * generation is process-local, so these grants are held in memory only (never
+ * in the persisted approval store): a reload, update, rollback or restart gives
+ * the tool a new generation and the grant misses, so new code always asks.
+ */
+const extensionGrantKey = (toolName: string, serverName: string, generation: number): string =>
+  JSON.stringify([serverName, toolName, generation])
 
 type InFlightApproval = PendingApproval & {
+  extensionGeneration?: number
   validate?: ApprovalValidator
   controller: AbortController
   deciding: boolean
@@ -88,6 +99,9 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
     // Includes validations with no visible prompt, so cancellation can invalidate
     // their continuations. Object identity also protects reused tool-call IDs.
     const inFlight = new Map<string, InFlightApproval>()
+    // In-memory extension grants, bound to a handler generation.
+    const extensionAlways = new Set<string>()
+    const extensionThread = new Set<string>()
     const isCurrent = (entry: InFlightApproval) =>
       inFlight.get(approvalKey(entry.threadId, entry.toolCallId)) === entry
     const removePrompt = (entry: InFlightApproval) => {
@@ -110,15 +124,18 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       pending: {},
 
       requestApproval: (toolCallId, toolName, threadId, serverName, validate, options) => {
-        const nativeKey = !serverName && options?.native
+        const nativeKey = !serverName && options && 'native' in options
           ? nativeApprovalKey(toolName, options.native.grantKey)
+          : undefined
+        const extensionGeneration = options && 'extension' in options
+          ? options.extension.generation
           : undefined
         const key = approvalKey(threadId, toolCallId)
         const previous = inFlight.get(key)
         if (previous) finish(previous, false)
         return new Promise<ApprovalResult>((resolve) => {
           const entry: InFlightApproval = {
-            toolCallId, toolName, threadId, serverName, resolve, validate, nativeKey,
+            toolCallId, toolName, threadId, serverName, resolve, validate, nativeKey, extensionGeneration,
             deciding: false, controller: new AbortController(),
           }
           inFlight.set(key, entry)
@@ -132,7 +149,9 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
             const preApproved = nativeKey
               ? settings.isToolApproved(threadId, nativeKey)
               : isExtensionServer(serverName)
-                ? settings.isToolApproved(threadId, extensionApprovalKey(toolName, serverName))
+                ? extensionGeneration !== undefined &&
+                  (extensionAlways.has(extensionGrantKey(toolName, serverName, extensionGeneration)) ||
+                    extensionThread.has(JSON.stringify([threadId, extensionGrantKey(toolName, serverName, extensionGeneration)])))
                 : settings.allowAllMCPPermissions ||
                   settings.isToolApproved(threadId, toolName, serverName)
             if (preApproved) {
@@ -175,14 +194,24 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
           inFlight.delete(key)
           const approval = useToolApproval.getState()
           const extension = isExtensionServer(entry.serverName)
-          const stored = entry.nativeKey
-            ?? (extension ? extensionApprovalKey(entry.toolName, entry.serverName!) : entry.toolName)
+          if (extension) {
+            // Never persisted and never keyed by name alone: only this exact
+            // handler binding is trusted, and only while this process lives.
+            // A request with no generation can be allowed once, not remembered.
+            if (entry.extensionGeneration !== undefined && decision !== 'allow-once') {
+              const grantKey = extensionGrantKey(entry.toolName, entry.serverName!, entry.extensionGeneration)
+              if (decision === 'allow-thread') extensionThread.add(JSON.stringify([entry.threadId, grantKey]))
+              else extensionAlways.add(grantKey)
+            }
+            entry.resolve(true)
+            return
+          }
+          const stored = entry.nativeKey ?? entry.toolName
           if (decision === 'allow-thread') {
-            approval.approveToolForThread(entry.threadId, stored, extension ? undefined : entry.serverName)
+            approval.approveToolForThread(entry.threadId, stored, entry.serverName)
           } else if (decision === 'allow-always') {
-            // An MCP server is trusted whole. An extension is not: an update
-            // can add tools, and those must ask before they first run.
-            if (entry.serverName && !extension) approval.approveServer(entry.serverName)
+            // An MCP server is trusted whole.
+            if (entry.serverName) approval.approveServer(entry.serverName)
             else approval.approveToolEverywhere(stored)
           }
           entry.resolve(true)

@@ -57,6 +57,7 @@ import { ContributedOverflowMenu } from '@/containers/extensions/ContributedMenu
 
 export type MessageItemProps = {
   message: UIMessage
+  /** The thread the message belongs to; extension message actions need it. */
   threadId?: string
   isFirstMessage: boolean
   isLastMessage: boolean
@@ -85,8 +86,6 @@ export type MessageItemProps = {
   /** Surface-specific content (e.g. produced files), above message actions. */
   beforeFooter?: React.ReactNode
   highlightedPrefix?: string | null
-  /** The thread the message belongs to; extension message actions need it. */
-  threadId?: string
 }
 
 // Footer icon buttons: 28px boxes (a roomier hover highlight at the same pitch
@@ -121,7 +120,6 @@ export const MessageItem = memo(
     versionInfo,
     onSwitchVersion,
     highlightedPrefix,
-    threadId,
   }: MessageItemProps) => {
     const { t } = useTranslation()
     // Footer controls fade in on hover or keyboard focus. Keyboard only

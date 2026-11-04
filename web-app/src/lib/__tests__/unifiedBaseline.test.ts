@@ -79,9 +79,6 @@ vi.mock('@/hooks/useMCPServers', () => ({
     getState: () => ({ settings: { enableSmartToolRouting: false } }),
   },
 }))
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: { getInstance: () => ({ get: () => null }) },
-}))
 vi.mock('@/lib/mcp-orchestrator', () => ({
   mcpOrchestrator: { getRelevantTools: vi.fn() },
 }))

@@ -160,16 +160,6 @@ vi.mock('@/hooks/useAttachmentIngestionPrompt', () => ({
   useAttachmentIngestionPrompt: vi.fn(),
 }))
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      get: () => undefined,
-      getByName: () => undefined,
-      listExtensions: () => [],
-    }),
-  },
-}))
-
 vi.mock('@/containers/ComposerModelPicker', () => ({
   default: () => <button aria-label="Select model">Model</button>,
 }))

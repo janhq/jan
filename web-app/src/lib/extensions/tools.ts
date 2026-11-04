@@ -15,6 +15,13 @@ export interface ExtensionTool {
   description: string
   inputSchema: JsonSchemaObject
   /**
+   * Host-assigned identity of the handler binding behind this tool. It
+   * changes whenever the handler is replaced (reload, update, crash restart)
+   * even if the declaration is identical, so a fingerprint of this object
+   * tells approved code from replacement code.
+   */
+  generation: number
+  /**
    * Groups the tool in the tool toggles and approval prompts. Namespaced so
    * an extension cannot pose as an MCP server the user already trusts.
    */
@@ -70,13 +77,14 @@ export function listExtensionTools(state: ContributionState): ExtensionTool[] {
     const tools = state.tools[extensionId]
     for (const name of Object.keys(tools).sort()) {
       const tool = tools[name]
-      if (!tool.handler) continue
+      if (!tool.handler || tool.generation === undefined) continue
       result.push({
         wireName: toolWireName(extensionId, name),
         extensionId,
         name,
         description: tool.description,
         inputSchema: tool.inputSchema,
+        generation: tool.generation,
         server: extensionToolServer(extensionId),
       })
     }

@@ -1,14 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DefaultThreadsService } from '@/services/threads/default'
 import { useThreads } from '../useThreads'
 
-// Only the extension boundary is faked: the store calls the actual default
+// Only the native backend route is faked: the store calls the actual default
 // service through the service hub, including its strict rejection behavior.
 const boundary = vi.hoisted(() => ({
   service: undefined as DefaultThreadsService | undefined,
   available: true,
   createThread: vi.fn(),
-  getExtension: vi.fn(),
   invoke: vi.fn(),
 }))
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -18,12 +17,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
     core: () => ({ invoke: boundary.invoke }),
   }),
 }))
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: { getInstance: () => ({ get: boundary.getExtension }) },
-}))
 vi.mock('@janhq/core', () => ({
-  ExtensionTypeEnum: { Conversational: 'conversational' },
-  ConversationalExtension: class {},
   VectorDBExtension: class {},
 }))
 vi.mock('@/hooks/useMessages', () => ({ useMessages: { getState: () => ({ getMessages: () => [] }) } }))
@@ -37,11 +31,25 @@ vi.mock('@/lib/coworkRunner', () => ({ abortRun: vi.fn() }))
 vi.mock('@/lib/coworkMonitor', () => ({ dropMonitorLane: vi.fn() }))
 
 describe('strict store creation with real DefaultThreadsService', () => {
+  const originalCore = window.core
+  afterEach(() => {
+    window.core = originalCore
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     boundary.service = new DefaultThreadsService()
     boundary.available = true
-    boundary.getExtension.mockImplementation(() => boundary.available ? { createThread: boundary.createThread } : undefined)
+    // The service reaches the backend route directly on window.core.api.
+    Object.defineProperty(window, 'core', {
+      configurable: true,
+      writable: true,
+      value: {
+        get api() {
+          return boundary.available ? { createThread: boundary.createThread } : {}
+        },
+      },
+    })
     useThreads.getState().setThreads([{ id: 'prior', title: 'Prior', updated: 1 }])
     useThreads.getState().setCurrentThreadId('prior')
   })
@@ -73,7 +81,6 @@ describe('strict store creation with real DefaultThreadsService', () => {
         expect(useThreads.getState().getFilteredThreads('Unpersisted')).toEqual([])
       }
       expect(changed).not.toHaveBeenCalled()
-      expect(boundary.getExtension).toHaveBeenCalledTimes(3)
       expect(boundary.createThread).toHaveBeenCalledTimes(boundary.available ? 3 : 0)
       expect(boundary.invoke).not.toHaveBeenCalled()
     } finally {
