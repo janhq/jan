@@ -2315,6 +2315,12 @@ mod tests {
         .await
         .unwrap();
         assert!(err.is_error, "Plan memory mutation must be refused: {}", err.content);
+        assert!(
+            err.content.contains("plan_mode_read_only"),
+            "Memory write must fail specifically because of Plan: {}",
+            err.content
+        );
+        assert!(!workspace::permanent_store(&data).join("memory/planned.md").exists());
         assert!(!folder.join("x.txt").exists() && !folder.join("shell-ran.txt").exists());
         assert!(!workspace::permanent_store(&data).join("skills/planned").exists());
         // Plan reads (incl. skills and memory view) still work.
