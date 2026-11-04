@@ -475,6 +475,35 @@ describe('ChatInput', () => {
     expect(onSubmit.mock.calls[0][3]).toBe(text)
   })
 
+  it.each(['/clear', '/help me debug', '/plan the migration'])('does not auto-invoke reserved skill collisions: %s', async (text) => {
+    skillMocks.useSkills.mockReturnValue({
+      skills: ['clear', 'help', 'plan'].map((name) => ({ name, description: '' })), enabled: [],
+    })
+    try {
+      promptState = text
+      const onSubmit = vi.fn(async (..._args: any[]) => true)
+      renderInput({ initialMessage: true, onSubmit })
+      fireEvent.click(screen.getByTestId('send-message-button'))
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+      expect(onSubmit.mock.calls[0][0]).toBe(text)
+      expect(skillMocks.expand).not.toHaveBeenCalled()
+    } finally {
+      skillMocks.useSkills.mockReturnValue({ skills: [{ name: 'review', description: 'Review' }], enabled: [] })
+    }
+  })
+
+  it.each(['/clear', '/skill:clear'])('only offers reserved skill collisions through explicit syntax: %s', (text) => {
+    skillMocks.useSkills.mockReturnValue({ skills: [{ name: 'clear', description: '' }], enabled: [] })
+    try {
+      promptState = text
+      renderInput({ initialMessage: true, onSubmit: vi.fn() })
+      if (text.startsWith('/skill:')) expect(screen.getByRole('option')).toBeInTheDocument()
+      else expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    } finally {
+      skillMocks.useSkills.mockReturnValue({ skills: [{ name: 'review', description: 'Review' }], enabled: [] })
+    }
+  })
+
   it('expands a resolved installed bare command in the pending submission folder', async () => {
     promptState = '/review source'
     const onSubmit = vi.fn(async (..._args: any[]) => true)

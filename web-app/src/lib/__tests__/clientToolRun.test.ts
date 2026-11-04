@@ -12,9 +12,11 @@ vi.mock('@/lib/agentTools', () => native)
 vi.mock('@/lib/webSearchTool', () => ({
   WEB_TOOL_NAMES: new Set(['web_search', 'web_fetch']), ...web,
 }))
-vi.mock('@/hooks/useCoworkConfig', () => ({
-  useCoworkConfig: { getState: () => ({ networkEnabled: false }) },
+vi.mock('@/hooks/useChatPermissions', () => ({
+  useChatPermissions: { getState: () => ({ shellNetwork: false, memoryWrite: false }) },
 }))
+
+import { useChatPermissions } from '@/hooks/useChatPermissions'
 
 import { dispatchCoworkTool, type DispatchContext } from '../coworkDispatch'
 import {
@@ -91,6 +93,10 @@ afterEach(() => {
 })
 
 describe('runTurn through the real Cowork/client dispatch seam', () => {
+  it('keeps the fixture shell network and memory writes disabled', () => {
+    expect(useChatPermissions.getState()).toMatchObject({ shellNetwork: false, memoryWrite: false })
+  })
+
   it('answers directly with exactly one model call and no dispatch', async () => {
     const f = fixture([[text('direct answer')]])
     const out = await f.start()

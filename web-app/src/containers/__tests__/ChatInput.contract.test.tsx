@@ -362,13 +362,36 @@ describe('real ChatInput + real stores + production restoreSubmittedDraft', () =
     expect(screen.getByRole('button', { name: 'common:planMode.label' })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('unavailable old Cowork commands are not sent and retain the draft', async () => {
+  it.each(['/help me debug', '/plan the migration', '/clear'])('sends reserved slash text unchanged: %s', async (text) => {
     const onSubmit = vi.fn()
     render(<ChatInput onSubmit={onSubmit} />)
-    fireEvent.change(textarea(), { target: { value: '/clear' } })
+    fireEvent.change(textarea(), { target: { value: text } })
     await send()
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    expect(onSubmit.mock.calls[0][0]).toBe(text)
+    expect(useChatPlan.getState().drafts[THREAD]).not.toBe(true)
+  })
+
+  it.each(['/a', '/an', '/n'])('does not suggest or toggle Plan for non-prefix %s', async (text) => {
+    const onSubmit = vi.fn()
+    render(<ChatInput onSubmit={onSubmit} />)
+    fireEvent.change(textarea(), { target: { value: text } })
+    expect(screen.queryByRole('option', { name: '/plan' })).not.toBeInTheDocument()
+    fireEvent.keyDown(textarea(), { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    expect(onSubmit.mock.calls[0][0]).toBe(text)
+    expect(useChatPlan.getState().drafts[THREAD]).not.toBe(true)
+  })
+
+  it.each(['/p', '/pl'])('suggests Plan for prefix %s', (text) => {
+    const onSubmit = vi.fn()
+    render(<ChatInput onSubmit={onSubmit} />)
+    fireEvent.change(textarea(), { target: { value: text } })
+    expect(screen.getByRole('option', { name: '/plan' })).toBeInTheDocument()
+    fireEvent.keyDown(textarea(), { key: 'Enter' })
+    expect(useChatPlan.getState().drafts[THREAD]).toBe(true)
+    expect(textarea()).toHaveValue('')
     expect(onSubmit).not.toHaveBeenCalled()
-    expect(textarea()).toHaveValue('/clear')
   })
 
   it('control: an accepted send clears the prompt and attachments', async () => {

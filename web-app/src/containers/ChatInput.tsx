@@ -404,9 +404,11 @@ const ChatInput = memo(function ChatInput({
   const [slashDismissed, setSlashDismissed] = useState(false)
   useEffect(() => { setSlashIndex(0); setSlashDismissed(false) }, [prompt])
   const slashSkills = unifiedCommands && slashQuery !== undefined
-    ? filterSkillCommands(commandSkills, slashQuery.startsWith('skill:') ? slashQuery.slice(6) : slashQuery).slice(0, 8)
+    ? filterSkillCommands(commandSkills, slashQuery.startsWith('skill:') ? slashQuery.slice(6) : slashQuery)
+      .filter((skill) => slashQuery.startsWith('skill:') || unifiedSkillCommandAvailable(`/${skill.name}`))
+      .slice(0, 8)
     : []
-  const showPlanCommand = slashQuery !== undefined && !slashQuery.startsWith('skill:') && 'plan'.includes(slashQuery.toLowerCase())
+  const showPlanCommand = slashQuery !== undefined && !slashQuery.startsWith('skill:') && 'plan'.startsWith(slashQuery.toLowerCase())
   const slashCount = slashSkills.length + (showPlanCommand ? 1 : 0)
   const updateCurrentThreadAssistant = useThreads(
     (state) => state.updateCurrentThreadAssistant
@@ -844,14 +846,14 @@ const ChatInput = memo(function ChatInput({
         return
       }
       const parsed = parseSkillCommand(prompt)
-      if ((parsed && !unifiedSkillCommandAvailable(prompt)) || (!parsed && prompt.trim().startsWith('/skill:'))) {
+      if (!parsed && prompt.trim().startsWith('/skill:')) {
         toast.error('This command is unavailable. Choose an installed skill or /plan.')
         return false
       }
       // A leading slash can be ordinary prose or an absolute path. Only
       // explicit skill requests or discovered commands enter skill expansion;
       // expansion revalidates availability in the captured submission folder.
-      isSkillCommand = !!parsed && (parsed.explicit || !!resolveSkillCommand(commandSkills, parsed))
+      isSkillCommand = !!parsed && unifiedSkillCommandAvailable(prompt) && (parsed.explicit || !!resolveSkillCommand(commandSkills, parsed))
     }
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')

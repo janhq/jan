@@ -24,9 +24,10 @@ describe('unified skill invocation', () => {
     await expect(expandUnifiedSkillCommand('/skill:missing args')).rejects.toThrow('Skill command /missing is unavailable')
     expect(invokeSkill).not.toHaveBeenCalled()
   })
-  it('does not dispatch a reserved built-in even if a skill has that name', async () => {
-    vi.mocked(listSkills).mockResolvedValue([{ name: 'clear', description: '' }])
-    await expect(expandUnifiedSkillCommand('/clear')).rejects.toThrow('unavailable')
+  it.each(['/clear', '/help me debug', '/plan the migration'])('preserves reserved slash prose despite skill collisions: %s', async (text) => {
+    vi.mocked(listSkills).mockResolvedValue(['clear', 'help', 'plan'].map((name) => ({ name, description: '' })))
+    expect(await expandUnifiedSkillCommand(text)).toBe(text)
+    expect(listSkills).not.toHaveBeenCalled()
     expect(invokeSkill).not.toHaveBeenCalled()
     expect(await expandUnifiedSkillCommand('/skill:clear')).toBe('expanded skill')
   })
@@ -49,7 +50,6 @@ describe('unified skill invocation', () => {
   it('refuses unavailable and non-user-invocable commands', async () => {
     vi.mocked(listSkills).mockResolvedValue([{ name: 'hidden', description: '', user_invocable: false }])
     await expect(expandUnifiedSkillCommand('/skill:hidden')).rejects.toThrow('unavailable')
-    await expect(expandUnifiedSkillCommand('/clear')).rejects.toThrow('unavailable')
     expect(invokeSkill).not.toHaveBeenCalled()
   })
 })

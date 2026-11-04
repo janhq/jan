@@ -13,7 +13,7 @@ export function unifiedSkillCommandAvailable(text: string): boolean {
 export async function expandUnifiedSkillCommand(text: string, folder?: string): Promise<string> {
   const parsed = parseSkillCommand(text)
   if (!parsed) return text
-  if (!unifiedSkillCommandAvailable(text)) throw new Error(`Command /${parsed.name} is unavailable in this composer.`)
+  if (!unifiedSkillCommandAvailable(text)) return text
   const global = await listSkills(storeScope)
   const project = folder ? await listSkills(projectScope(folder)) : []
   const merged = new Map(global.map((s) => [s.name, s]))
