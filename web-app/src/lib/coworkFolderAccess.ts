@@ -41,8 +41,9 @@ const queues = new Map<string, Promise<unknown>>()
 /**
  * Persist a folder grant for a Cowork session through the host's strict setter,
  * and only then record it locally. The setter narrows the host before it
- * writes, so a failure leaves the host denied: the UI then keeps the folder
- * visible with no access instead of claiming the old one. Requests for one
+ * writes, so a failure leaves the host denied: the UI then shows the requested
+ * folder (or, for a failed detach, the current one) with no access instead of
+ * claiming the old grant. Requests for one
  * session run in order.
  */
 export function setCoworkFolderGrant(
@@ -68,10 +69,15 @@ export function setCoworkFolderGrant(
       const current = useCoworkSessions
         .getState()
         .sessions.find((s) => s.id === sessionId)
-      if (current?.folder) {
+      // Display only, never access. A failed attach/switch shows the REQUESTED
+      // folder inactive: the host may already have stored it (a failed
+      // confirmation), so showing the previous folder would disagree with the
+      // host after a reload. A failed detach keeps the current folder inactive.
+      const display = folderScope?.path ?? current?.folder
+      if (display) {
         useCoworkSessions
           .getState()
-          .setFolderGrant(sessionId, { path: current.folder, access: null })
+          .setFolderGrant(sessionId, { path: display, access: null })
       }
       throw error
     }

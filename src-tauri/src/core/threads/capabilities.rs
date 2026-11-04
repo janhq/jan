@@ -67,7 +67,7 @@ pub fn patch_conversation_capabilities(
     thread_id: &str,
     value: Value,
 ) -> Result<(), String> {
-    patch_capabilities(data_folder, thread_id, value, false)
+    patch_capabilities(data_folder, thread_id, value, false, false)
 }
 
 /// Marker failure permits only a subset of host-stored authority. The caller
@@ -77,7 +77,7 @@ pub fn patch_narrowing_capabilities(
     thread_id: &str,
     value: Value,
 ) -> Result<(), String> {
-    patch_capabilities(data_folder, thread_id, value, true)
+    patch_capabilities(data_folder, thread_id, value, true, false)
 }
 
 fn patch_capabilities(
@@ -85,6 +85,7 @@ fn patch_capabilities(
     thread_id: &str,
     mut value: Value,
     narrowing_only: bool,
+    retain_attempted_path: bool,
 ) -> Result<(), String> {
     validate_conversation_capabilities(&value)?;
     let path = super::utils::get_thread_metadata_path(data_folder, thread_id)?;
@@ -98,6 +99,9 @@ fn patch_capabilities(
     if thread_id == "temporary-chat" {
         return Err("Conversation capabilities require a persistent conversation".into());
     }
+    // Display-only path of an attempted folder that this write narrows away.
+    // Every write replaces the marker, so any new grant or true detach clears it.
+    let mut attempted_path: Option<String> = None;
     if narrowing_only {
         use tauri_plugin_agent_tools::thread_capabilities::{denied, ThreadCapabilities};
         let stored = &thread["metadata"]["conversationCapabilities"];
@@ -119,9 +123,12 @@ fn patch_capabilities(
         let requested: ThreadCapabilities = serde_json::from_value(value.clone())
             .map_err(|e| e.to_string())?;
         requested.validate()?;
-        let subset = requested.intersect(previous)?;
+        let subset = requested.intersect(previous.clone())?;
         if serde_json::to_value(subset).map_err(|e| e.to_string())? != value {
             return Err("Requested permissions widen stored authority; metadata was not changed".into());
+        }
+        if retain_attempted_path && value["folderScope"].is_null() {
+            attempted_path = previous.folder_scope.as_ref().map(|scope| scope.path.clone());
         }
     }
     let object = thread.as_object_mut().ok_or("Invalid stored thread")?;
@@ -129,10 +136,12 @@ fn patch_capabilities(
     if metadata.is_null() {
         *metadata = serde_json::json!({});
     }
-    metadata
-        .as_object_mut()
-        .ok_or("Invalid stored thread metadata")?
-        .insert("conversationCapabilities".into(), value);
+    let metadata = metadata.as_object_mut().ok_or("Invalid stored thread metadata")?;
+    metadata.insert("conversationCapabilities".into(), value);
+    metadata.remove(ATTEMPTED_FOLDER_KEY);
+    if let Some(path) = attempted_path {
+        metadata.insert(ATTEMPTED_FOLDER_KEY.into(), serde_json::json!({"path": path}));
+    }
     super::helpers::update_thread_metadata(data_folder, thread_id, &thread)?;
     // The general metadata writer treats directory sync as best-effort. Consent
     // cannot: removing the durable denial before this rename is durable could
@@ -201,6 +210,15 @@ pub async fn read_conversation_capabilities(
 /// It is never persisted and never read as a grant.
 pub const DENIED_FOLDER_KEY: &str = "conversationCapabilitiesDenied";
 
+/// Host-owned, persisted DISPLAY marker `{"path":"<folder>"}`: the folder a
+/// failed confirmation attempted to attach after its compensating DENY also
+/// failed and stored authority was narrowed to all-off. It is never authority:
+/// permission checks read only `conversationCapabilities`. Written solely by
+/// [`narrow_after_failed_compensation`], cleared by every other capability
+/// write (so a true detach or a new grant drops it), and stripped from every
+/// caller-supplied record (create/modify) and from listings.
+pub const ATTEMPTED_FOLDER_KEY: &str = "conversationCapabilitiesAttemptedFolder";
+
 /// Host-owned folder authority for a migrated Cowork conversation: the
 /// EFFECTIVE grant only (stored grant intersected with the in-process mirror).
 ///
@@ -258,10 +276,31 @@ pub async fn read_cowork_listing(
     )
     .await?;
     let (mirror, _) = tauri_plugin_agent_tools::thread_capabilities::current(thread_id);
-    let stored_path = stored.folder_scope.as_ref().map(|scope| scope.path.clone());
+    // Display only: the stored folder, else a validated attempted-folder marker
+    // retained after a narrowing (never consulted for permission).
+    let stored_path = match stored.folder_scope.as_ref() {
+        Some(scope) => Some(scope.path.clone()),
+        None => attempted_folder_marker(&thread["metadata"][ATTEMPTED_FOLDER_KEY]),
+    };
     let effective = stored.intersect(mirror)?;
     let denied_path = stored_path.filter(|_| effective.folder_scope.is_none());
     Ok((serde_json::to_value(effective).map_err(|e| e.to_string())?, denied_path))
+}
+
+/// Strictly validated marker path; anything malformed is ignored.
+fn attempted_folder_marker(marker: &Value) -> Option<String> {
+    if !exact_keys(marker, &["path"]) {
+        return None;
+    }
+    let path = marker["path"].as_str()?;
+    // Same lexical + host identity checks a grant must pass (display only).
+    let probe = serde_json::json!({"version":1,"folderScope":{"path":path,"access":"read"},
+        "shellNetwork":false,"memoryWrite":false});
+    validate_conversation_capabilities(&probe).ok()?;
+    let probe: tauri_plugin_agent_tools::thread_capabilities::ThreadCapabilities =
+        serde_json::from_value(probe).ok()?;
+    probe.validate().ok()?;
+    Some(path.to_string())
 }
 
 /// The all-off grant, as the wire value.
@@ -274,7 +313,7 @@ pub fn denied_value() -> Value {
 /// metadata, so a CONFIRM that persists late meets nothing to grant. Never
 /// widens (it goes through the narrowing-only patch). Caller holds the thread lock.
 pub fn narrow_after_failed_compensation(data_folder: &Path, thread_id: &str) -> Result<(), String> {
-    patch_narrowing_capabilities(data_folder, thread_id, denied_value())
+    patch_capabilities(data_folder, thread_id, denied_value(), true, true)
 }
 
 /// Truthful setter error for a grant whose confirmation returned false.
@@ -330,6 +369,7 @@ pub fn apply_listed_capabilities(thread: &mut Value, cowork: bool, read: Result<
     // A non-object, non-null metadata cannot carry the field; it is listed as is.
     let Some(metadata) = thread["metadata"].as_object_mut() else { return };
     metadata.remove(DENIED_FOLDER_KEY);
+    metadata.remove(ATTEMPTED_FOLDER_KEY);
     match read {
         Ok(value) if cowork && value.is_null() => {
             metadata.remove("conversationCapabilities");
@@ -356,6 +396,7 @@ pub fn apply_listed_denied_folder(thread: &mut Value, denied_path: Option<&str>)
         // This read is authoritative for display too: a true detach must not
         // retain an annotation from an older denied grant.
         metadata.remove(DENIED_FOLDER_KEY);
+        metadata.remove(ATTEMPTED_FOLDER_KEY);
         if let Some(path) = denied_path {
             metadata.insert(
                 DENIED_FOLDER_KEY.into(),
