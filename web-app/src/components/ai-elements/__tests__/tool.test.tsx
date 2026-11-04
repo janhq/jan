@@ -104,6 +104,21 @@ describe('ToolApprovalActions', () => {
     ).toBeInTheDocument()
   })
 
+  // A strict request saves no grant, so it offers only this call.
+  it('offers only this call for a strict request', () => {
+    renderApproval({
+      tc1: { toolCallId: 'tc1', toolName: 'web_fetch', strict: true },
+    })
+    expect(screen.getByText('tools:toolApproval.allowOnce')).toBeInTheDocument()
+    expect(screen.getByText('tools:toolApproval.deny')).toBeInTheDocument()
+    expect(
+      screen.queryByText('tools:toolApproval.allowInThread')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/tools:toolApproval.allowToolAlways/)
+    ).not.toBeInTheDocument()
+  })
+
   it('grants each scope the reader picked', () => {
     renderApproval({
       tc1: { toolCallId: 'tc1', toolName: 'create_issue', serverName: 'github' },

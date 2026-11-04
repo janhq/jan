@@ -98,7 +98,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
-import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import {
+  useToolApprovalRequests,
+  type ApprovalOptions,
+} from '@/hooks/useToolApprovalRequests'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
@@ -356,6 +359,12 @@ function isAutoAllowedTool(toolName: string, threadId: string): boolean {
     (webRoute(toolName) === 'builtin' && !turnOnExtensionProvider(threadId)) ||
     chatShellRoute(toolName) === 'builtin'
   )
+}
+
+// Every call the model an extension serves makes is asked for on its own:
+// neither "allow all MCP" nor a grant given on another turn covers it.
+function approvalOptions(threadId: string): ApprovalOptions | undefined {
+  return turnOnExtensionProvider(threadId) ? { strict: true } : undefined
 }
 
 function turnOnExtensionProvider(threadId: string): boolean {
@@ -882,7 +891,8 @@ function ThreadDetail() {
                       toolCall.toolCallId,
                       toolName,
                       threadId,
-                      serverForTool(toolName)
+                      serverForTool(toolName),
+                      approvalOptions(threadId)
                     ))
             approvalsOf(threadId).delete(toolCall.toolCallId)
             // Only an explicit Stop skips the result. Deleting the thread also
@@ -1148,7 +1158,8 @@ function ThreadDetail() {
               toolCall.toolCallId,
               toolCall.toolName,
               threadId,
-              serverForTool(toolCall.toolName)
+              serverForTool(toolCall.toolName),
+              approvalOptions(threadId)
             )
         )
       }

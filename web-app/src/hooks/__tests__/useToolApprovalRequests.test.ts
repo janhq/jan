@@ -62,6 +62,34 @@ describe('useToolApprovalRequests', () => {
     expect(result.current.pending['tc1']).toBeUndefined()
   })
 
+  // janhq/jan-internal#517: a call the model an extension serves made to a
+  // built-in tool. Neither the MCP shortcut nor a grant saved on an ordinary
+  // turn may answer it: the user has to see that this model wants the tool.
+  it('asks for a strict request whatever the shortcuts and saved grants say', async () => {
+    useToolApproval.setState({ allowAllMCPPermissions: true })
+    act(() => {
+      useToolApproval.getState().approveToolForThread('thread-1', 'web_fetch')
+      useToolApproval.getState().approveToolEverywhere('web_fetch')
+    })
+    const { result } = renderHook(() => useToolApprovalRequests())
+    let p: Promise<boolean>
+    act(() => {
+      p = result.current.requestApproval('tc1', 'web_fetch', 'thread-1', undefined, {
+        strict: true,
+      })
+    })
+    expect(result.current.pending['tc1']).toBeDefined()
+    // Only this call: a strict approval is never saved as a grant.
+    act(() => result.current.resolveApproval('tc1', 'allow-always'))
+    await expect(p!).resolves.toBe(true)
+    act(() => {
+      result.current.requestApproval('tc2', 'web_fetch', 'thread-1', undefined, {
+        strict: true,
+      })
+    })
+    expect(result.current.pending['tc2']).toBeDefined()
+  })
+
   it('auto-resolves true (no pending) when the tool is already approved for the thread', async () => {
     act(() => {
       useToolApproval.getState().approveToolForThread('thread-1', 'tool-a')

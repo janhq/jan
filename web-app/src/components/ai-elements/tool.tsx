@@ -371,27 +371,33 @@ export const ToolApprovalActions = memo(() => {
         >
           {t('tools:toolApproval.allowOnce')}
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => resolveApproval(toolCallId, 'allow-thread')}
-        >
-          {t('tools:toolApproval.allowInThread')}
-        </Button>
-        <Button
-          size="sm"
-          autoFocus
-          onClick={() => resolveApproval(toolCallId, 'allow-always')}
-        >
-          {/* Trusting a server tool-by-tool is the same decision repeated. */}
-          {pending.serverName
-            ? t('tools:toolApproval.allowServerAlways', {
-                server: pending.serverName,
-              })
-            : t('tools:toolApproval.allowToolAlways', {
-                tool: pending.toolName,
-              })}
-        </Button>
+        {/* A strict request saves no grant (see ApprovalOptions.strict), so
+            offering a wider scope would be a promise it does not keep. */}
+        {!pending.strict && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => resolveApproval(toolCallId, 'allow-thread')}
+            >
+              {t('tools:toolApproval.allowInThread')}
+            </Button>
+            <Button
+              size="sm"
+              autoFocus
+              onClick={() => resolveApproval(toolCallId, 'allow-always')}
+            >
+              {/* Trusting a server tool-by-tool is the same decision repeated. */}
+              {pending.serverName
+                ? t('tools:toolApproval.allowServerAlways', {
+                    server: pending.serverName,
+                  })
+                : t('tools:toolApproval.allowToolAlways', {
+                    tool: pending.toolName,
+                  })}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   )

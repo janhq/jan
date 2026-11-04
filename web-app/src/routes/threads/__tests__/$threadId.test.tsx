@@ -1679,7 +1679,15 @@ describe('ThreadDetail route', () => {
       }))
       try {
         await run(webCall('w4'))
-        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+        // Strict: neither "allow all MCP" nor a grant from an ordinary turn
+        // may answer for the model an extension serves.
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+          'w4',
+          'web_search',
+          'thread-1',
+          undefined,
+          { strict: true }
+        )
         expect(webTool.executeWebTool).toHaveBeenCalledTimes(1)
       } finally {
         h.modelProviderState.getProviderByName = byName
@@ -1747,6 +1755,7 @@ describe('ThreadDetail route', () => {
         'tc1',
         'fetch',
         'thread-1',
+        undefined,
         undefined
       )
     })
@@ -1766,7 +1775,8 @@ describe('ThreadDetail route', () => {
         'tc-server',
         'fetch',
         'thread-1',
-        'fetch-server'
+        'fetch-server',
+        undefined
       )
     })
 
@@ -2844,7 +2854,8 @@ describe('ThreadDetail route', () => {
           'te1',
           wireName,
           'thread-1',
-          'ext:acme.one'
+          'ext:acme.one',
+          undefined
         )
         expect(extensionHost.callTool).toHaveBeenCalledWith(
           'acme.one',

@@ -11,7 +11,19 @@ export type PendingApproval = {
   threadId: string
   /** MCP server the tool belongs to, so the prompt can offer to trust it. */
   serverName?: string
+  /** Asked for this call alone; see `ApprovalOptions.strict`. */
+  strict?: boolean
   resolve: (approved: boolean) => void
+}
+
+export type ApprovalOptions = {
+  /**
+   * Ask, whatever "allow all MCP" or a saved grant says, and save no grant
+   * from the answer. For a call made by a model an extension serves
+   * (janhq/jan-internal#517): grants were given to the user's own models,
+   * and must not cover one that can send the extension's data anywhere.
+   */
+  strict?: boolean
 }
 
 /**
@@ -34,7 +46,8 @@ type ToolApprovalRequestsState = {
     toolCallId: string,
     toolName: string,
     threadId: string,
-    serverName?: string
+    serverName?: string,
+    options?: ApprovalOptions
   ) => Promise<boolean>
   resolveApproval: (toolCallId: string, decision: ApprovalDecision) => void
   clearPendingForThread: (threadId: string) => void
@@ -69,11 +82,13 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
   (set, get) => ({
     pending: {},
 
-    requestApproval: (toolCallId, toolName, threadId, serverName) => {
+    requestApproval: (toolCallId, toolName, threadId, serverName, options) => {
+      const strict = options?.strict ?? false
       return new Promise<boolean>((resolve) => {
         const settings = useToolApproval.getState()
         // The shortcut is for MCP; extension tools always go through approval.
         if (
+          !strict &&
           settings.allowAllMCPPermissions &&
           !isExtensionTool(toolName, serverName)
         ) {
@@ -81,6 +96,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
           return
         }
         if (
+          !strict &&
           settings.isToolApproved(
             threadId,
             approvalKey(toolName, serverName),
@@ -98,6 +114,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
               toolName,
               threadId,
               serverName,
+              strict,
               resolve,
             },
           },
@@ -110,7 +127,9 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       if (!entry) return
       const approval = useToolApproval.getState()
       const key = approvalKey(entry.toolName, entry.serverName)
-      if (decision === 'allow-thread') {
+      if (entry.strict) {
+        // Answers this call only; nothing is saved.
+      } else if (decision === 'allow-thread') {
         approval.approveToolForThread(entry.threadId, key)
       } else if (decision === 'allow-always') {
         // An MCP server is trusted whole. An extension is not: an update can
