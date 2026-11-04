@@ -15,6 +15,8 @@ pub mod child_workspace;
 pub mod commands;
 pub mod compaction;
 pub mod context;
+/// The continuation state a compaction leaves in place of the span it covers.
+pub mod continuation;
 pub mod correlation;
 pub mod events;
 pub mod genai_bridge;

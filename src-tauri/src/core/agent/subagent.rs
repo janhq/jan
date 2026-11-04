@@ -918,6 +918,14 @@ pub(crate) struct ParentLink {
     sent: Arc<std::sync::atomic::AtomicUsize>,
 }
 
+impl ParentLink {
+    /// `name (run_id)` of the child this link belongs to, which its
+    /// continuation state names so a compacted child still knows who it is.
+    pub(crate) fn identity(&self) -> String {
+        format!("{} ({})", self.name, self.run_id)
+    }
+}
+
 /// The notice-queue key of a child's mid-run messages, apart from its own
 /// `run_id` so collecting the child does not retract them.
 fn message_notice_key(run_id: &str) -> String {
@@ -1288,7 +1296,47 @@ pub(crate) struct BackgroundSubagents {
     /// so a later dispatch can name an earlier child's workspace, and swept
     /// when the session ends.
     pub(crate) workspaces: Arc<crate::core::agent::child_workspace::Ledger>,
+    /// Every child this registry dispatched, in dispatch order, for the
+    /// roster a parent's continuation state carries. Apart from `inner`
+    /// because a teardown drains `inner`, and a compaction afterwards still
+    /// has to name the children whose answers sit on the blackboard.
+    roster: std::sync::Mutex<Vec<RosterEntry>>,
 }
+
+/// How a dispatched child stands, as a parent's continuation state shows it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ChildStatus {
+    Queued,
+    Running,
+    Done,
+    Failed,
+}
+
+impl ChildStatus {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Done => "done",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// One dispatched child, for the roster.
+#[derive(Clone, Debug)]
+pub(crate) struct RosterEntry {
+    pub name: String,
+    pub run_id: String,
+    pub status: ChildStatus,
+    /// The first line of its task, clipped: enough to say what it was asked.
+    pub task: String,
+    /// Where its answer is (or will be) written, `blackboard/<name>.md`.
+    pub blackboard: Option<String>,
+}
+
+/// Longest task line a roster entry keeps.
+const ROSTER_TASK_CHARS: usize = 160;
 
 /// Default cap on concurrently *running* subagents per parent run when
 /// `agent.toml` does not set `max_parallel_subagents`.
@@ -1354,7 +1402,68 @@ impl BackgroundSubagents {
             generation: std::sync::atomic::AtomicU64::new(0),
             session_events: std::sync::Mutex::new(None),
             workspaces: Arc::default(),
+            roster: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    /// Add a dispatched child to the roster.
+    pub(crate) fn roster_add(
+        &self,
+        name: &str,
+        run_id: &str,
+        task: &str,
+        queued: bool,
+        blackboard: Option<String>,
+    ) {
+        let line = task.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+        let task = if line.chars().count() > ROSTER_TASK_CHARS {
+            format!("{}...", line.chars().take(ROSTER_TASK_CHARS).collect::<String>())
+        } else {
+            line.to_string()
+        };
+        self.roster.lock().unwrap().push(RosterEntry {
+            name: name.to_string(),
+            run_id: run_id.to_string(),
+            status: if queued { ChildStatus::Queued } else { ChildStatus::Running },
+            task,
+            blackboard,
+        });
+    }
+
+    /// Move a rostered child to `status`.
+    pub(crate) fn roster_set(&self, run_id: &str, status: ChildStatus) {
+        let mut roster = self.roster.lock().unwrap();
+        if let Some(entry) = roster.iter_mut().find(|e| e.run_id == run_id) {
+            entry.status = status;
+        }
+    }
+
+    /// The roster as a parent's continuation state shows it: one line per
+    /// child with its id, status and task, and its blackboard path instead of
+    /// its answer -- the parent can re-read the file, so keeping the text in
+    /// the state would only cost context on every request.
+    pub(crate) fn roster_lines(&self) -> Vec<String> {
+        self.roster
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                let mut line = format!(
+                    "- {} ({}): {} -- task: {}",
+                    e.name,
+                    e.run_id,
+                    e.status.label(),
+                    e.task
+                );
+                if let Some(path) = &e.blackboard {
+                    line.push_str(&match e.status {
+                        ChildStatus::Done | ChildStatus::Failed => format!(" -- result: {path}"),
+                        _ => format!(" -- result will be at {path}"),
+                    });
+                }
+                line
+            })
+            .collect()
     }
 
     /// Install the durable channel a session's children report into. Called
@@ -1566,6 +1675,8 @@ impl BackgroundSubagents {
             if entry.finished.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 continue;
             }
+            // Cut off before it answered: nothing will reach its blackboard.
+            self.roster_set(&entry.run_id, ChildStatus::Failed);
             let _ = entry.events.send(StreamEvent::SubagentEnd {
                 run_id: entry.run_id,
                 name: entry.name,
@@ -1607,6 +1718,7 @@ impl BackgroundSubagents {
         // A child that already finished emitted its own end event; claimed with
         // a swap so the child's own end cannot also fire.
         if !entry.finished.swap(true, Ordering::SeqCst) {
+            self.roster_set(&entry.run_id, ChildStatus::Failed);
             let _ = entry.events.send(StreamEvent::SubagentEnd {
                 run_id: entry.run_id,
                 name: entry.name,
@@ -2584,6 +2696,7 @@ fn start_dispatch(
         sent: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     };
     registry.running.fetch_add(1, Ordering::SeqCst);
+    registry.roster_add(&name, &run_id, &description, waiting > 0, display_path.clone());
     let handle = tokio::spawn(async move {
         // Held for the child's whole life, including the wait for a permit, so a
         // teardown that aborts it here releases its slot exactly as a completion
@@ -2604,6 +2717,7 @@ fn start_dispatch(
             }
         };
         let _permit = permit;
+        registry.roster_set(&run_id_task, ChildStatus::Running);
         let end_events = task_events.clone();
         let result = run_subagent(
             parent_args,
@@ -2628,6 +2742,10 @@ fn start_dispatch(
         // writes the checkout while its branch is read.
         let result = with_branch_footer(ws_done, result).await;
         task_lease.release();
+        registry.roster_set(
+            &run_id_task,
+            if result.is_ok() { ChildStatus::Done } else { ChildStatus::Failed },
+        );
         if let Some((_, path)) = &result_file {
             fill_subagent_result(
                 path,

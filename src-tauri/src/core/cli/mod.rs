@@ -518,9 +518,10 @@ pub(crate) const MISSING_TOOL_RESULT: &str =
 /// conversation where it is broken: a result whose call is gone is dropped, and a
 /// call whose result is missing (a crash between the two) gets the placeholder
 /// above. A `system` prompt is the agent's and is left out, as are messages
-/// carrying neither text nor calls. Two `system` messages are history rather
-/// than a prompt and are kept: a compaction summary, placed first since it
-/// stands for everything before the rest, and the cost ceiling note, in place.
+/// carrying neither text nor calls. A compaction summary is history rather
+/// than a prompt and is kept, placed first since it stands for everything
+/// before the rest: the `user`-role continuation state, or the `system` form
+/// older sessions saved. So is the cost ceiling note, in place.
 pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
     fn answer_open(out: &mut Vec<serde_json::Value>, open: &mut Vec<String>) {
         for id in open.drain(..) {
@@ -576,6 +577,12 @@ pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_
             continue;
         }
         let mut msg = serde_json::json!({ "role": role, "content": text });
+        // A continuation state stands for everything before the rest, like
+        // the older `system` summary it replaced.
+        if crate::core::agent::continuation::is_state(&msg) {
+            summaries.push(msg);
+            continue;
+        }
         if let Some(calls) = calls {
             msg["tool_calls"] = calls.clone();
             open = calls
@@ -4819,6 +4826,47 @@ mod tests {
             load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest)).unwrap();
         assert_eq!(second.history, first.history);
         assert!(crate::core::agent::compaction::is_compaction_summary(&second.history[1]));
+    }
+
+    /// (h) The continuation state -- a `user` message -- survives save and
+    /// resume twice, is still recognized as a summary, and is not counted as
+    /// a user turn. The older `system` form is covered by the test above.
+    #[test]
+    fn a_continuation_state_survives_save_resume_save_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let gathered = crate::core::agent::continuation::gather(&[
+            serde_json::json!({ "role": "user", "content": "build a.txt" }),
+        ]);
+        let state = crate::core::agent::continuation::build(
+            &gathered,
+            &crate::core::agent::continuation::HarnessContext::default(),
+            1_000,
+            Some("## Progress\nwrote a.txt"),
+        );
+        let history = vec![
+            serde_json::json!({ "role": "system", "content": "You are Jan." }),
+            state.clone(),
+            serde_json::json!({ "role": "assistant", "content": "", "tool_calls": [call("c1", "write")] }),
+            serde_json::json!({ "role": "tool", "tool_call_id": "c1", "content": "wrote 1 line" }),
+            serde_json::json!({ "role": "assistant", "content": "Done." }),
+        ];
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+        let first =
+            load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest)).unwrap();
+        assert_eq!(first.history, history);
+        cli_save_thread(base, Some(&id), "m", &first.history, None).unwrap();
+        let second =
+            load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest)).unwrap();
+        assert_eq!(second.history, history);
+        assert!(crate::core::agent::compaction::is_compaction_summary(&second.history[1]));
+        assert!(!is_user_turn(&second.history[1]), "the state is not a user turn");
+        assert_eq!(user_turn_count(&second.history), 0);
+        let rebuilt = rebuild_wire_history(&[
+            serde_json::json!({ "role": "user", "content": "hi" }),
+            state.clone(),
+        ]);
+        assert_eq!(rebuilt[0], state, "a state is placed first on rebuild");
     }
 
     /// A summary is placed first, whatever order the saved records came in.

@@ -389,6 +389,14 @@ pub(crate) trait ToolInvoker: Send + Sync {
     /// project and therefore no hook files to read.
     async fn pre_compact(&self, _message_count: usize) {}
 
+    /// The harness context this invoker can see, for a compaction's
+    /// continuation state: the workspace and its git status, background work
+    /// with its ids, and for a child its identity and tools. The default knows
+    /// nothing, which is right for an invoker with no workspace.
+    fn harness_context(&self) -> crate::core::agent::continuation::HarnessContext {
+        crate::core::agent::continuation::HarnessContext::default()
+    }
+
     /// The `# Memory Changes` block, when it differs from the one this run
     /// last sent: called after a batch with a successful `memory` call, so a
     /// later request in the same run learns what changed. `None` when nothing
@@ -2311,6 +2319,54 @@ impl ToolInvoker for CompositeToolInvoker {
             message_count,
         )
         .await;
+    }
+
+    fn harness_context(&self) -> crate::core::agent::continuation::HarnessContext {
+        use crate::core::agent::continuation::{HarnessContext, Role};
+        // A child is the run with a link back to the agent that dispatched it.
+        let role = if self.parent_link.is_some() { Role::Child } else { Role::Parent };
+        let mut out = HarnessContext {
+            role,
+            git_status: crate::core::agent::git::workspace_status(&self.project_root),
+            ..Default::default()
+        };
+        let mut workspace = format!("Working directory: {}", self.project_root.display());
+        if let Some(branch) = crate::core::agent::git::current_branch(&self.project_root) {
+            workspace.push_str(&format!("\nBranch: {branch}"));
+        }
+        if self.workspace.read_only {
+            workspace.push_str("\nThe working directory is read-only for this run.");
+        }
+        for root in &self.workspace.write_roots {
+            workspace.push_str(&format!("\nWritable worktree: {}", root.display()));
+        }
+        out.push("Workspace", workspace);
+        if let Some(link) = &self.parent_link {
+            let mut who = format!("You are the subagent {}.", link.identity());
+            if let Some(allowed) = &self.allowed_names {
+                let mut names: Vec<&str> = allowed.iter().map(String::as_str).collect();
+                names.sort_unstable();
+                who.push_str(&format!("\nAllowed tools: {}", names.join(", ")));
+            }
+            out.push("Subagent", who);
+        }
+        if let Some(ctx) = &self.subagents {
+            out.push("Subagents", ctx.bg.roster_lines().join("\n"));
+        }
+        // A child's own shells and monitors are its business too: it started
+        // them, and it is the one waiting on them.
+        let mut running = Vec::new();
+        for id in self.bg_shells.running_ids() {
+            running.push(format!("- background shell {id}"));
+        }
+        for monitor in self.monitors.snapshot() {
+            running.push(format!(
+                "- monitor {} ({}): {}",
+                monitor.monitor_id, monitor.name, monitor.script
+            ));
+        }
+        out.push("Running in the background", running.join("\n"));
+        out
     }
 
     async fn await_background(&self) {
@@ -4555,8 +4611,37 @@ pub(crate) async fn compact_history(
     // than somewhere a client cannot read.
     let mut model = side_call_invoker(args, model_id, None).await?;
     model.summarizer = smol_summarizer(args, model_id, None).await;
-    crate::core::agent::compaction::compact_conversation(messages, model_id, &model, keep_recent)
-        .await
+    // What the harness can see between turns: the workspace and the todo
+    // list. Background work belongs to the run that owned it.
+    let mut harness = crate::core::agent::continuation::HarnessContext::default();
+    if let Some(root) = args.project_root.as_deref() {
+        harness.git_status = crate::core::agent::git::workspace_status(root);
+        let mut workspace = format!("Working directory: {}", root.display());
+        if let Some(branch) = crate::core::agent::git::current_branch(root) {
+            workspace.push_str(&format!("\nBranch: {branch}"));
+        }
+        harness.push("Workspace", workspace);
+    }
+    if let Some(registry) = &args.todo_registry {
+        if let Some(todo) = crate::core::agent::continuation::render_todo(&*registry.lock().await) {
+            harness.push("Todo list", todo);
+        }
+    }
+    // With no configured window the conversation itself is the best measure
+    // of one: it fit, or the user would not be compacting it by hand.
+    let window = args.compaction.map_or_else(
+        || crate::core::agent::compaction::estimate_token_count(messages).max(32_000),
+        |budget| budget.context_window,
+    );
+    Ok(crate::core::agent::compaction::compact_conversation(
+        messages,
+        model_id,
+        &model,
+        keep_recent,
+        &harness,
+        window,
+    )
+    .await)
 }
 
 /// Run one stateless `/goal` evaluation against `smol_model_id` (the session's
@@ -4829,36 +4914,98 @@ fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Valu
     dropped
 }
 
-/// Compact the run's record in place: summarize the span the plan names, and
-/// record the point that stands in for it. `Some(messages summarized)` when a
-/// compaction happened; `None` when there is nothing safe to drop, which is how
-/// the caller tells a no-op from a shrink instead of comparing lengths.
+/// What a compaction needs beyond the record: the window it sizes against,
+/// the request it may extend from cache, and where the harness context comes
+/// from.
+struct CompactionScope<'a> {
+    /// The window to size the tail and the user-message cap against: the
+    /// route's, or on a route with none an estimate taken from the request it
+    /// just rejected.
+    window: u64,
+    /// The exact request the run was about to send, when the cached path may
+    /// extend it. Only the preflight has one: after a rejection that request
+    /// no longer fits, and extending it could only fail too.
+    cached: Option<&'a serde_json::Value>,
+    tools: &'a dyn ToolInvoker,
+    todo_registry: Option<&'a crate::core::agent::todo::TodoRegistry>,
+    run_mode: crate::core::agent::plan::RunMode,
+    json_body: &'a serde_json::Value,
+}
+
+impl CompactionScope<'_> {
+    /// The harness context for the continuation state, read now: the
+    /// invoker's (workspace, background work, subagent identity) plus what the
+    /// loop holds itself (todo list, mode, goal, budget).
+    async fn harness(
+        &self,
+        budget: &SessionBudget,
+    ) -> crate::core::agent::continuation::HarnessContext {
+        use crate::core::agent::continuation::render_todo;
+        let mut out = self.tools.harness_context();
+        if let Some(registry) = self.todo_registry {
+            if let Some(todo) = render_todo(&*registry.lock().await) {
+                out.push("Todo list", todo);
+            }
+        }
+        if self.run_mode == crate::core::agent::plan::RunMode::Plan {
+            out.push(
+                "Mode",
+                "Plan mode (read-only): explore and plan, do not change anything.".to_string(),
+            );
+        }
+        if self
+            .json_body
+            .get("goal_mode")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            out.push(
+                "Goal",
+                "A /goal is active: keep working until its condition holds.".to_string(),
+            );
+        }
+        let mut spend = format!("Tokens spent this run: {}", budget.spent());
+        if let Some(max) = budget.max_tokens() {
+            spend.push_str(&format!(" of {max}"));
+        }
+        if let (Some(spent), Some(max)) = (budget.spent_usd(), budget.max_usd()) {
+            spend.push_str(&format!("\nSpent ${spent:.4} of a ${max:.4} ceiling"));
+        }
+        out.push("Budget", spend);
+        out
+    }
+}
+
+/// Compact the run's record in place: replace the span the plan names with a
+/// continuation state, and record the point that stands in for it.
+/// `Some(messages compacted)` when a compaction happened; `None` when there is
+/// nothing safe to drop, which is how the caller tells a no-op from a shrink
+/// instead of comparing lengths.
 ///
 /// The original span stays in the record - only the projection omits it - so a
-/// later turn, a different provider, or a changed `keep_recent` can still
-/// rebuild from it.
+/// later turn, a different provider, or a changed tail can still rebuild from
+/// it. Never fails: a model that cannot write its sections leaves the state
+/// with the code-built ones, which carry the task and the user's words.
 ///
-/// The summarizer's request is billed like any other, so its usage is folded
-/// into `budget` here. A turn can compact several times (the preflight plus the
+/// The side requests are billed like any other, so their usage is folded into
+/// `budget` here. A turn can compact several times (the preflight plus the
 /// overflow retries), and spend the budget never saw would make `/usage` and
 /// the money ceiling agree with each other while both undercounted.
 ///
 /// Every in-run compaction goes through here, so this is where it is reported:
-/// `Compaction { Started }` before the summarizer call and `Finished` (with
-/// the summarizer's report) or `Failed` after it. A plan with nothing to drop sends nothing, since no
-/// summarizer call was made.
+/// `Compaction { Started }` before the model call and `Finished` (with its
+/// report) after it. A plan with nothing to drop sends nothing.
 async fn compact(
     transcript: &mut Transcript,
-    keep_recent: usize,
     model_id: &str,
     model: &dyn ModelInvoker,
     budget: &mut SessionBudget,
     events: &mpsc::UnboundedSender<StreamEvent>,
     reason: CompactionReason,
-) -> Result<Option<usize>, String> {
-    let Some(plan) = transcript.compaction_plan(keep_recent) else {
-        return Ok(None);
-    };
+    scope: &CompactionScope<'_>,
+) -> Option<usize> {
+    let plan =
+        transcript.compaction_plan(crate::core::agent::compaction::tail_tokens(scope.window))?;
     let summarized = plan.summarize.len();
     let announce = |phase, messages, report| {
         let _ = events.send(StreamEvent::Compaction {
@@ -4869,20 +5016,22 @@ async fn compact(
         });
     };
     announce(CompactionPhase::Started, None, None);
-    let (summary, report) =
-        match crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model)
-            .await
-        {
-            Ok(done) => done,
-            Err(error) => {
-                announce(CompactionPhase::Failed, None, None);
-                return Err(error);
-            }
-        };
+    let gathered = crate::core::agent::continuation::gather(&plan.summarize);
+    let harness = scope.harness(budget).await;
+    let (state, report) = crate::core::agent::compaction::continuation_state(
+        &gathered,
+        &plan.summarize,
+        scope.cached,
+        &harness,
+        scope.window,
+        model_id,
+        model,
+    )
+    .await;
     budget.record_side_request(&report.usage);
-    transcript.record_compaction(summary, plan.covers);
+    transcript.record_compaction(state, plan.covers);
     announce(CompactionPhase::Finished, Some(summarized), Some(report));
-    Ok(Some(summarized))
+    Some(summarized)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5033,7 +5182,6 @@ async fn run_turn_cycle(
         // the loop gives up if a pass fails to shrink the message list. Kept as
         // the fallback, and the only path for a route whose window is unknown.
         let completion = {
-            let mut keep_recent = crate::core::agent::compaction::DEFAULT_KEEP_RECENT;
             let mut attempts = 0usize;
             loop {
                 let request_value = build_completion_request(
@@ -5054,21 +5202,33 @@ async fn run_turn_cycle(
                         let estimate =
                             crate::core::agent::compaction::estimate_request_tokens(&request_value);
                         if estimate > window.trigger_tokens() {
+                            // The side request is invoked directly, never
+                            // through this loop, so it cannot re-enter the
+                            // preflight; `preflighted` already holds for the
+                            // retry below.
+                            let scope = CompactionScope {
+                                window: window.context_window,
+                                cached: Some(&request_value),
+                                tools,
+                                todo_registry,
+                                run_mode,
+                                json_body,
+                            };
                             if let Some(dropped) = compact(
                                 &mut transcript,
-                                crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                                 model_id,
                                 model,
                                 budget,
                                 events,
                                 CompactionReason::Preflight,
+                                &scope,
                             )
-                            .await?
+                            .await
                             {
                                 log::info!(
                                     "agent: prompt estimated at {estimate} tokens against a {} \
                                      token trigger on a {} token window, compacted {dropped} \
-                                     messages into a summary before dispatch",
+                                     messages into a continuation state before dispatch",
                                     window.trigger_tokens(),
                                     window.context_window
                                 );
@@ -5099,20 +5259,40 @@ async fn run_turn_cycle(
                                 send_reasoning,
                             ))
                             .await;
+                        // The request no longer fits, so the cached path is
+                        // out and the span is summarized instead. A route
+                        // with no known window sizes against the request it
+                        // just rejected, and each further attempt halves it:
+                        // the provider's maths and ours evidently differ.
+                        let window = compaction.map_or_else(
+                            || {
+                                crate::core::agent::compaction::estimate_request_tokens(
+                                    &request_value,
+                                )
+                            },
+                            |b| b.context_window,
+                        ) >> attempts;
+                        let scope = CompactionScope {
+                            window,
+                            cached: None,
+                            tools,
+                            todo_registry,
+                            run_mode,
+                            json_body,
+                        };
                         // Nothing safe left to drop: the request is smaller than the
                         // window only in the provider's own maths.
-                        let dropped =
-                            compact(
-                                &mut transcript,
-                                keep_recent,
-                                model_id,
-                                model,
-                                budget,
-                                events,
-                                CompactionReason::ContextOverflow,
-                            )
-                            .await?
-                            .ok_or(e)?;
+                        let dropped = compact(
+                            &mut transcript,
+                            model_id,
+                            model,
+                            budget,
+                            events,
+                            CompactionReason::ContextOverflow,
+                            &scope,
+                        )
+                        .await
+                        .ok_or(e)?;
                         log::info!(
                             "agent: context overflow, compacted {dropped} messages into a \
                              summary (attempt {})",
@@ -5125,7 +5305,6 @@ async fn run_turn_cycle(
                         let _ = events.send(StreamEvent::MessagesUpdated {
                             messages: client_history(&transcript, send_reasoning),
                         });
-                        keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
                     }
                     // This provider rejects `reasoning_content` outright rather
@@ -6679,7 +6858,7 @@ mod tests {
                 // The summarizer call is tiny by construction; answer it.
                 let summarizing = request["messages"][0]["content"]
                     .as_str()
-                    .is_some_and(|c| c.starts_with("Summarize the AI agent"));
+                    .is_some_and(|c| c.starts_with("You condense part of an AI agent"));
                 if !summarizing {
                     self.requests.lock().unwrap().push(request.clone());
                     let estimate = crate::core::agent::compaction::estimate_request_tokens(request);
@@ -8090,6 +8269,345 @@ mod tests {
         );
     }
 
+    /// A model for the compaction tests: the preflight's cached side request
+    /// (it carries the compaction instruction) is answered with model
+    /// sections and recorded apart; every other request gets the next queued
+    /// answer.
+    struct CompactingModel {
+        answers: StdMutex<VecDeque<serde_json::Value>>,
+        turns: StdMutex<Vec<serde_json::Value>>,
+        side: StdMutex<Vec<serde_json::Value>>,
+    }
+    impl CompactingModel {
+        fn new(answers: Vec<serde_json::Value>) -> Self {
+            Self {
+                answers: StdMutex::new(answers.into_iter().collect()),
+                turns: StdMutex::new(Vec::new()),
+                side: StdMutex::new(Vec::new()),
+            }
+        }
+    }
+    #[async_trait]
+    impl ModelInvoker for CompactingModel {
+        async fn invoke(
+            &self,
+            request: &serde_json::Value,
+            _events: &mpsc::UnboundedSender<StreamEvent>,
+        ) -> Result<serde_json::Value, String> {
+            let last = request["messages"]
+                .as_array()
+                .and_then(|m| m.last())
+                .and_then(|m| m["content"].as_str())
+                .unwrap_or("");
+            let fallback = request["messages"][0]["content"]
+                .as_str()
+                .is_some_and(|c| c.starts_with("You condense part of an AI agent"));
+            if fallback {
+                return Ok(final_answer("## Progress\nFALLBACK\n## Current step\na\n## Next actions\nb"));
+            }
+            if last.contains("[Compaction request from the harness]") {
+                self.side.lock().unwrap().push(request.clone());
+                return Ok(final_answer(
+                    "## Progress\nread files\n## Current step\nreading\n## Next actions\nfix it",
+                ));
+            }
+            self.turns.lock().unwrap().push(request.clone());
+            self.answers
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| "mock exhausted".to_string())
+        }
+    }
+
+    /// A tool whose every result is `size` bytes, so a few calls cross a small
+    /// window's trigger.
+    struct BigResultTool(usize);
+    #[async_trait]
+    impl ToolInvoker for BigResultTool {
+        async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String> {
+            Ok(tool_calls
+                .iter()
+                .map(|tc| {
+                    let id = tc["id"].as_str().unwrap_or("").to_string();
+                    ToolOutcome::plain(id, "r".repeat(self.0))
+                })
+                .collect())
+        }
+    }
+
+    fn read_call(id: &str) -> serde_json::Value {
+        json!({ "choices": [{ "message": { "content": serde_json::Value::Null,
+            "tool_calls": [{ "id": id, "type": "function",
+                "function": { "name": "read", "arguments": "{\"path\":\"big.txt\"}" } }] } }] })
+    }
+
+    fn small_window() -> Option<crate::core::agent::compaction::CompactionBudget> {
+        Some(crate::core::agent::compaction::CompactionBudget {
+            context_window: 40_000,
+            ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            reserve_tokens: None,
+            window_pinned: false,
+        })
+    }
+
+    fn published_histories(rx: &mut mpsc::UnboundedReceiver<StreamEvent>) -> Vec<Vec<serde_json::Value>> {
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::MessagesUpdated { messages } => Some(messages),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// (f), (g) and the cached path end to end: a run of large tool results
+    /// crosses the trigger, the preflight asks the run model with the exact
+    /// next request plus the instruction, the state replaces the span, and
+    /// the tail -- the last complete tool call and its result -- keeps the
+    /// next request under the trigger instead of re-overflowing. The
+    /// instruction never reaches a turn request or the published history.
+    #[tokio::test]
+    async fn a_tail_of_large_results_compacts_once_and_stays_under_the_trigger() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut answers: Vec<serde_json::Value> =
+            (0..24).map(|i| read_call(&format!("c{i}"))).collect();
+        answers.push(final_answer("done"));
+        let model = CompactingModel::new(answers);
+        // ~3K tokens a result on a 40K window: the trigger (32K) is crossed
+        // after ten, and a tail of that many would be ~30K. The overshoot
+        // past the trigger is at most one result, so the cached request plus
+        // its reply still fits the window.
+        let tool = BigResultTool(12_000);
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "the task" })]),
+            Some("Today's date is 2026-11-04.".to_string()),
+            true,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            small_window(),
+        )
+        .await
+        .expect("run completes");
+
+        let side = model.side.lock().unwrap();
+        let turns = model.turns.lock().unwrap();
+        assert!(!side.is_empty(), "the preflight took the cached path");
+        // The side request extends the request the turn was about to send:
+        // the same messages, then the instruction.
+        let first_side = &side[0];
+        let messages = first_side["messages"].as_array().unwrap();
+        // Byte for byte: the side request is the turn request the preflight
+        // held back, plus the instruction.
+        let held_back = turns
+            .iter()
+            .filter(|t| t["messages"].as_array().unwrap().len() == messages.len() - 1)
+            .any(|t| t["messages"].as_array().unwrap()[..] == messages[..messages.len() - 1]);
+        let unsent = turns.iter().all(|t| {
+            t["messages"].as_array().unwrap().len() != messages.len() - 1
+                || t["messages"].as_array().unwrap()[..] != messages[..messages.len() - 1]
+        });
+        // The held-back request is never sent (it is what got compacted), so
+        // it matches no recorded turn; what the side request carries before
+        // the instruction must still be a complete, valid turn request.
+        assert!(unsent && !held_back, "the over-trigger request was sent anyway");
+        assert_eq!(messages.last().unwrap()["role"], "user");
+        assert!(
+            crate::core::agent::reminder::is_reminder_only(&messages.last().unwrap()["content"]),
+            "the instruction is a harness notice, not a user turn"
+        );
+        let trigger = small_window().unwrap().trigger_tokens();
+        for request in turns.iter() {
+            let estimate = crate::core::agent::compaction::estimate_request_tokens(request);
+            assert!(estimate <= trigger + 3_500, "a request re-overflowed: {estimate} > {trigger}");
+            let body = serde_json::to_string(request).unwrap();
+            assert!(!body.contains("[Compaction request from the harness]"), "the instruction leaked");
+        }
+        assert!(
+            side.len() <= 3,
+            "a token-sized tail must not compact on every turn: {} compactions",
+            side.len()
+        );
+        let last = turns.last().unwrap()["messages"].as_array().unwrap();
+        let state = last
+            .iter()
+            .find(|m| crate::core::agent::continuation::is_state(m))
+            .expect("the request after compaction carries the state");
+        assert!(state["content"].as_str().unwrap().contains("the task"));
+        assert!(state["content"].as_str().unwrap().contains("## Next actions\nfix it"));
+        // The tail opens on the newest complete call before the last result.
+        let after: Vec<&serde_json::Value> =
+            last.iter().skip_while(|m| !crate::core::agent::continuation::is_state(m)).skip(1).collect();
+        assert_eq!(after[0]["role"], "assistant", "the tail opens on a call: {after:?}");
+        assert!(after[0].get("tool_calls").is_some());
+
+        for history in published_histories(&mut rx) {
+            let body = serde_json::to_string(&history).unwrap();
+            assert!(!body.contains("[Compaction request from the harness]"), "published the instruction");
+        }
+    }
+
+    /// (c) A child's task -- phase handoff included -- and its parent's
+    /// steering messages survive two compactions word for word.
+    #[tokio::test]
+    async fn a_childs_task_and_steering_survive_two_compactions_verbatim() {
+        let task = "Fix the parser.\n\n## Results from the previous phase\nexplore: the bug is in src/parse.rs:42";
+        let steer_one = "Correction: keep the public API unchanged.";
+        let steer_two = "Also add a regression test.";
+        let mut transcript =
+            Transcript::from_history(vec![json!({ "role": "user", "content": task })]);
+        let push_round = |t: &mut Transcript, i: usize| {
+            t.record_message(json!({ "role": "assistant", "content": serde_json::Value::Null,
+                "tool_calls": [{ "id": format!("c{i}"), "type": "function",
+                    "function": { "name": "read", "arguments": "{\"path\":\"a\"}" } }] }));
+            t.record_message(json!({ "role": "tool", "tool_call_id": format!("c{i}"),
+                "content": "x".repeat(1_500) }));
+        };
+        let model = MockModel::new(vec![
+            final_answer("## Progress\nfirst\n## Current step\na\n## Next actions\nb"),
+            final_answer("## Progress\nsecond\n## Current step\na\n## Next actions\nb"),
+        ]);
+        let tool = MockTool::default();
+        let scope = CompactionScope {
+            window: 20_000,
+            cached: None,
+            tools: &tool,
+            todo_registry: None,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            json_body: &json!({}),
+        };
+        let mut budget = SessionBudget::new(None);
+        let (tx, _rx) = mpsc::unbounded_channel();
+        for i in 0..6 {
+            push_round(&mut transcript, i);
+        }
+        transcript.record_message(json!({ "role": "user", "content": steer_one }));
+        for i in 6..12 {
+            push_round(&mut transcript, i);
+        }
+        compact(&mut transcript, "m", &model, &mut budget, &tx, CompactionReason::Preflight, &scope)
+            .await
+            .expect("first compaction");
+        transcript.record_message(json!({ "role": "user", "content": steer_two }));
+        for i in 12..18 {
+            push_round(&mut transcript, i);
+        }
+        compact(&mut transcript, "m", &model, &mut budget, &tx, CompactionReason::Preflight, &scope)
+            .await
+            .expect("second compaction");
+
+        let projected = project(&transcript, None, true);
+        let states: Vec<&serde_json::Value> = projected
+            .iter()
+            .filter(|m| crate::core::agent::continuation::is_state(m))
+            .collect();
+        assert_eq!(states.len(), 1, "one state stands for everything compacted");
+        let back = crate::core::agent::continuation::parse(states[0]).unwrap();
+        assert_eq!(back.task.as_deref(), Some(task));
+        assert_eq!(back.user_messages, vec![steer_one.to_string(), steer_two.to_string()]);
+        assert!(back.model_sections.unwrap().contains("second"));
+    }
+
+    /// The parent's state lists its todo items verbatim with their statuses;
+    /// the per-turn addendum never does.
+    #[tokio::test]
+    async fn the_todo_items_appear_verbatim_in_the_state() {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
+        let registry = std::sync::Arc::new(tokio::sync::Mutex::new(TodoList {
+            phases: vec![TodoPhase {
+                name: "Ship".into(),
+                tasks: vec![
+                    TodoItem { content: "write the ledger".into(), status: TodoStatus::Completed },
+                    TodoItem { content: "wire the preflight".into(), status: TodoStatus::InProgress },
+                    TodoItem { content: "old idea".into(), status: TodoStatus::Abandoned },
+                ],
+            }],
+        }));
+        let mut transcript = Transcript::default();
+        for i in 0..12 {
+            transcript.record_message(json!({ "role": "user", "content": format!("turn {i}") }));
+            transcript.record_message(json!({ "role": "assistant", "content": "x".repeat(2_000) }));
+        }
+        let model = MockModel::new(vec![final_answer("## Current step\na\n## Next actions\nb")]);
+        let tool = MockTool::default();
+        let scope = CompactionScope {
+            window: 10_000,
+            cached: None,
+            tools: &tool,
+            todo_registry: Some(&registry),
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            json_body: &json!({}),
+        };
+        let (tx, _rx) = mpsc::unbounded_channel();
+        compact(
+            &mut transcript,
+            "m",
+            &model,
+            &mut SessionBudget::new(None),
+            &tx,
+            CompactionReason::Preflight,
+            &scope,
+        )
+        .await
+        .unwrap();
+        let projected = project(&transcript, None, true);
+        let text = projected[0]["content"].as_str().unwrap();
+        assert!(text.contains("## Todo list\nPhase: Ship\n- [completed] write the ledger\n\
+                               - [in_progress] wire the preflight\n- [abandoned] old idea"), "{text}");
+    }
+
+    /// (h) Resume: the published history reloads into the same projection,
+    /// with the state recognized as condensed history rather than a turn.
+    #[tokio::test]
+    async fn a_compacted_history_round_trips_through_resume() {
+        let mut transcript = Transcript::from_history(vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "the task" }),
+        ]);
+        for i in 0..12 {
+            transcript.record_message(json!({ "role": "assistant", "content": "x".repeat(2_000) }));
+            transcript.record_message(json!({ "role": "user", "content": format!("more {i}") }));
+        }
+        let model = MockModel::new(vec![final_answer("## Current step\na\n## Next actions\nb")]);
+        let tool = MockTool::default();
+        let scope = CompactionScope {
+            window: 10_000,
+            cached: None,
+            tools: &tool,
+            todo_registry: None,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            json_body: &json!({}),
+        };
+        let (tx, _rx) = mpsc::unbounded_channel();
+        compact(
+            &mut transcript,
+            "m",
+            &model,
+            &mut SessionBudget::new(None),
+            &tx,
+            CompactionReason::Preflight,
+            &scope,
+        )
+        .await
+        .unwrap();
+        let published = client_history(&transcript, true);
+        assert_eq!(published[0]["role"], "system");
+        assert!(crate::core::agent::continuation::is_state(&published[1]));
+        let resumed = Transcript::from_history(published.clone());
+        assert_eq!(project(&resumed, None, true), published);
+        assert!(crate::core::agent::reminder::is_reminder_only(&published[1]["content"]));
+    }
+
     /// A compaction is a paid request and has to reach the run's budget. It is
     /// not the metered dispatch, so nothing else charges it: a turn can make up
     /// to five of them (the preflight plus `MAX_COMPACTION_ATTEMPTS` overflow
@@ -8128,18 +8646,27 @@ mod tests {
         assert!(!budget.over_cost_ceiling(), "nothing spent yet");
 
         let (tx, _rx) = mpsc::unbounded_channel();
+        let tool = MockTool::default();
+        let scope = CompactionScope {
+            // A tail of a few short messages: the rest is compacted.
+            window: 200,
+            cached: None,
+            tools: &tool,
+            todo_registry: None,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            json_body: &json!({}),
+        };
         let dropped = compact(
             &mut transcript,
-            4,
             "m",
             &model,
             &mut budget,
             &tx,
             CompactionReason::Preflight,
+            &scope,
         )
-            .await
-            .expect("the summarizer answered")
-            .expect("a long history has a span to compact");
+        .await
+        .expect("a long history has a span to compact");
         assert!(dropped > 0);
 
         let spent = budget.spent_usd().expect("metered");
@@ -8709,12 +9236,11 @@ mod tests {
         );
     }
 
-    /// When the *target-model summarizer* itself overflows, compaction must not
-    /// fabricate a fallback-note history (which could still overflow and would
-    /// silently drop the whole span). The turn exits with the summarizer error
-    /// and no `MessagesUpdated` is published for a made-up history.
+    /// (e) A summarizer that itself overflows does not fail the run: the span
+    /// is replaced by the code-built state, which still carries the task word
+    /// for word, and the retried request goes out.
     #[tokio::test]
-    async fn turn_cycle_surfaces_summarizer_overflow_without_fabricating_history() {
+    async fn a_summarizer_overflow_leaves_the_run_going_on_the_code_built_state() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let overflow = || {
             Err(format!(
@@ -8722,16 +9248,28 @@ mod tests {
                 crate::core::agent::upstream::CONTEXT_OVERFLOW_MARKER
             ))
         };
-        // 1) the main request overflows, 2) the summarizer it spawned overflows too.
+        // 1) the main request overflows, 2) the summarizer it spawned overflows
+        // too, 3) the retry on the code-built state succeeds.
         let model = ResultQueueModel {
-            results: StdMutex::new(vec![overflow(), overflow()].into_iter().collect()),
+            results: StdMutex::new(
+                vec![
+                    overflow(),
+                    overflow(),
+                    Ok(json!({ "choices": [{ "message": { "content": "final" }, "finish_reason": "stop" }] })),
+                ]
+                .into_iter()
+                .collect(),
+            ),
         };
         let tool = MockTool::default();
         let mut budget = SessionBudget::new(None);
-        let mut convo = vec![json!({ "role": "system", "content": "sys" })];
+        let mut convo = vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "THE VERBATIM TASK" }),
+        ];
         for i in 0..60 {
-            let r = if i % 2 == 0 { "user" } else { "assistant" };
-            convo.push(json!({ "role": r, "content": format!("m{i}") }));
+            let r = if i % 2 == 0 { "assistant" } else { "user" };
+            convo.push(json!({ "role": r, "content": format!("m{i} {}", "x".repeat(400)) }));
         }
 
         let result = run_turn_cycle(
@@ -8752,35 +9290,24 @@ mod tests {
             None,
             None,
         )
-        .await;
+        .await
+        .expect("a summarizer overflow must not fail the run");
+        assert_eq!(result["choices"][0]["message"]["content"], "final");
 
-        assert!(
-            result.is_err(),
-            "a summarizer context overflow must fail the turn"
-        );
-        assert!(
-            crate::core::agent::upstream::is_context_overflow_error(result.as_ref().unwrap_err()),
-            "the summarizer overflow must propagate, not be rewritten"
-        );
         drop(tx);
-        let mut published = false;
-        let mut failed = false;
+        let mut state = None;
         while let Ok(ev) = rx.try_recv() {
-            match ev {
-                StreamEvent::MessagesUpdated { .. } => published = true,
-                // The throbber a `Started` put up has to come down again.
-                StreamEvent::Compaction {
-                    phase: CompactionPhase::Failed,
-                    ..
-                } => failed = true,
-                _ => {}
+            if let StreamEvent::MessagesUpdated { messages } = ev {
+                state = messages
+                    .iter()
+                    .find(|m| crate::core::agent::continuation::is_state(m))
+                    .cloned();
             }
         }
-        assert!(
-            !published,
-            "no fabricated compacted history may be published"
-        );
-        assert!(failed, "a summarizer failure ends the compaction as Failed");
+        let state = state.expect("the compacted history carries a continuation state");
+        let text = state["content"].as_str().unwrap();
+        assert!(text.contains("THE VERBATIM TASK"), "{text}");
+        assert!(text.contains("summarizer could not run"), "{text}");
     }
 
     #[tokio::test]

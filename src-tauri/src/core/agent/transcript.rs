@@ -325,24 +325,23 @@ impl Transcript {
     }
 
     /// What a compaction would summarize, and how far into the record its
-    /// summary would reach. `None` when there is nothing safe to drop, which is
-    /// how the caller detects a no-op instead of retrying.
+    /// summary would reach, keeping a tail of at most `keep_tokens`. `None`
+    /// when there is nothing safe to drop, which is how the caller detects a
+    /// no-op instead of retrying.
     ///
     /// The boundary itself is computed by
-    /// [`crate::core::agent::compaction::tail_start`] over the messages, where
-    /// the tool-pairing rule lives.
-    pub(crate) fn compaction_plan(&self, keep_recent: usize) -> Option<CompactionPlan> {
+    /// [`crate::core::agent::compaction::token_tail_start`] over the messages,
+    /// where the tool-pairing rule lives. The span starts with the previous
+    /// continuation state when there is one, which is how the next state
+    /// carries the task and the user's words forward.
+    pub(crate) fn compaction_plan(&self, keep_tokens: u64) -> Option<CompactionPlan> {
         let (messages, sources) = self.conversation();
-        if messages.len() <= keep_recent {
-            return None;
-        }
-        let cut =
-            crate::core::agent::compaction::tail_start(&messages, messages.len() - keep_recent)?;
+        let cut = crate::core::agent::compaction::token_tail_start(&messages, keep_tokens)?;
         Some(CompactionPlan {
             // Only the conversation is summarized: the prompt is not history,
             // it is placed around it.
             summarize: messages[..cut].to_vec(),
-            covers: sources[cut],
+            covers: sources.get(cut).copied().unwrap_or(self.events.len()),
         })
     }
 }
@@ -361,6 +360,23 @@ mod tests {
                 })
             })
             .collect()
+    }
+
+    /// A tail budget that keeps the last `n` of the short `convo` messages:
+    /// each costs 8 or 9 estimated tokens, so `9n` holds `n` and not `n + 1`
+    /// for the small `n` these tests use.
+    fn keep(n: u64) -> u64 {
+        9 * n
+    }
+
+    /// A continuation state whose model sections say `text`.
+    fn state(text: &str) -> Value {
+        crate::core::agent::continuation::build(
+            &crate::core::agent::continuation::Gathered::default(),
+            &crate::core::agent::continuation::HarnessContext::default(),
+            0,
+            Some(&format!("## Progress\n{text}")),
+        )
     }
 
     fn nothing() -> Projection<'static> {
@@ -398,7 +414,7 @@ mod tests {
     fn a_compaction_point_keeps_the_span_it_replaced() {
         let mut transcript = Transcript::from_history(convo(20));
         let plan = transcript
-            .compaction_plan(4)
+            .compaction_plan(keep(4))
             .expect("20 messages are worth compacting");
         assert_eq!(plan.summarize.len(), 16);
         transcript.record_compaction(
@@ -540,9 +556,9 @@ mod tests {
             send_reasoning: true,
         };
         let before = transcript.project(&projection);
-        let plan = transcript.compaction_plan(4).unwrap();
+        let plan = transcript.compaction_plan(keep(4)).unwrap();
         transcript.record_compaction(
-            crate::core::agent::compaction::summary_message("earlier work"),
+            state("earlier work"),
             plan.covers,
         );
 
@@ -572,10 +588,10 @@ mod tests {
         let before = transcript.project(&projection);
         let expected: Vec<&Value> = before.iter().filter(|m| is_system_node(m)).collect();
 
-        for keep_recent in [8, 4] {
-            let plan = transcript.compaction_plan(keep_recent).unwrap();
+        for keep_recent in [8u64, 4] {
+            let plan = transcript.compaction_plan(keep(keep_recent)).unwrap();
             transcript.record_compaction(
-                crate::core::agent::compaction::summary_message("earlier work"),
+                state("earlier work"),
                 plan.covers,
             );
             let after = transcript.project(&projection);
@@ -608,9 +624,9 @@ mod tests {
         for message in convo(12) {
             transcript.record_message(message);
         }
-        let plan = transcript.compaction_plan(4).unwrap();
+        let plan = transcript.compaction_plan(keep(4)).unwrap();
         transcript.record_compaction(
-            crate::core::agent::compaction::summary_message("earlier work"),
+            state("earlier work"),
             plan.covers,
         );
 
@@ -629,7 +645,7 @@ mod tests {
     #[test]
     fn a_short_history_has_no_compaction_plan() {
         let transcript = Transcript::from_history(convo(4));
-        assert!(transcript.compaction_plan(8).is_none());
+        assert!(transcript.compaction_plan(keep(8)).is_none());
     }
 
     /// A second compaction covers more of the record than the first, and the
@@ -637,9 +653,9 @@ mod tests {
     #[test]
     fn a_second_compaction_extends_the_boundary() {
         let mut transcript = Transcript::from_history(convo(30));
-        let first = transcript.compaction_plan(8).unwrap();
+        let first = transcript.compaction_plan(keep(8)).unwrap();
         transcript.record_compaction(json!({"role": "system", "content": "first"}), first.covers);
-        let second = transcript.compaction_plan(4).unwrap();
+        let second = transcript.compaction_plan(keep(4)).unwrap();
         assert!(
             second.covers > first.covers,
             "the boundary moves forward: {} then {}",
