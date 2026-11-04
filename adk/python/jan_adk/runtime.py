@@ -361,7 +361,7 @@ class JanRuntime:
         inherited the pipes can keep them open past that; the readers are daemon
         threads and release the pipes whenever it lets go.
 
-        The bound is about ``2 * shutdown_grace`` (graceful; ``+ 0.25s`` when a
+        The bound is about ``3 * shutdown_grace`` (graceful; ``+ 0.25s`` when a
         blocked write to a child that stopped reading had to be broken by a
         kill) or about 0.5s (forced), plus the OS's time to reap a killed child.
         A child that cannot be reaped (uninterruptible sleep) is not covered.
