@@ -390,11 +390,35 @@ it('keeps invocations compact after completion and retry while retaining instruc
   )
 })
 
+it('does not use the folder skill override while the folder is unconfirmed', async () => {
+  backend.skills.set('example', 'Global instructions')
+  backend.projectSkills.set('example', 'Project instructions')
+  const id = useCoworkSessions.getState().createSession()
+  // Legacy/metadata-only folder: no host-acknowledged grant, so it is inactive.
+  useCoworkSessions.getState().setFolder(id, '/project')
+  render(<CoworkPage />)
+  act(() => usePrompt.getState().setPrompt('/example'))
+  await screen.findByText('/example')
+  fireEvent.click(screen.getByText('Send'))
+  await waitFor(() => expect(backend.received).toHaveLength(1))
+  expect(backend.received[0].at(-1)?.parts).toContainEqual({
+    type: 'text',
+    text: 'Global instructions\nArguments: ',
+  })
+  expect(backend.received[0].at(-1)?.parts).not.toContainEqual({
+    type: 'text',
+    text: 'Project instructions\nArguments: ',
+  })
+})
+
 it('invokes the project skill when it shadows a global skill', async () => {
   backend.skills.set('example', 'Global instructions')
   backend.projectSkills.set('example', 'Project instructions')
   const id = useCoworkSessions.getState().createSession()
-  useCoworkSessions.getState().setFolder(id, '/project')
+  // The host acknowledged this folder, so its skills are active.
+  useCoworkSessions
+    .getState()
+    .setFolderGrant(id, { path: '/project', access: 'write' })
   render(<CoworkPage />)
   act(() => usePrompt.getState().setPrompt('/example'))
   await screen.findByText('/example')
