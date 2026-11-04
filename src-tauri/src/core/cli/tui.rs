@@ -14644,6 +14644,8 @@ async fn chat_loop<B: Backend>(
                 let args = app.args.clone().unwrap_or_else(|| args.clone());
                 let model = app.model.clone();
                 let history = app.history.clone();
+                let run_mode = app.run_mode;
+                let goal_active = app.goal.as_ref().is_some_and(|g| g.is_active());
                 compact_base = history.len();
                 app.compacting = Some(kind);
                 app.compact_started = Some(Instant::now());
@@ -14653,7 +14655,8 @@ async fn chat_loop<B: Backend>(
                         &args,
                         &model,
                         &history,
-                        kind.keep_recent(),
+                        run_mode,
+                        goal_active,
                     )
                     .await
                 }));
@@ -18470,8 +18473,8 @@ async fn await_memory_tidy(
 /// recovery so a model that overflows at any size still hands control back.
 const MAX_OVERFLOW_RETRIES: u8 = 2;
 
-/// Which path asked for a compaction: `/compact` keeps a shorter tail than the
-/// automatic one and reports itself differently.
+/// Which path asked for a compaction. Both keep the same token-sized tail a
+/// run's own compaction keeps; they differ in how they report themselves.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum CompactKind {
     Manual,
@@ -18479,13 +18482,6 @@ enum CompactKind {
 }
 
 impl CompactKind {
-    fn keep_recent(self) -> usize {
-        match self {
-            CompactKind::Manual => crate::core::agent::compaction::MANUAL_KEEP_RECENT,
-            CompactKind::Auto => crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
-        }
-    }
-
     fn label(self) -> &'static str {
         match self {
             CompactKind::Manual => "compacting",
@@ -18534,6 +18530,15 @@ fn finish_compaction(app: &mut App, result: CompactResult, base_len: usize) {
     let kind = app.compacting.take().unwrap_or(CompactKind::Manual);
     let since = app.compact_started.take();
     let retrying = std::mem::take(&mut app.retry_after_compact);
+    // Billed whether or not it shrank anything: a summarizer that ran was a
+    // paid request. Between turns no run is open to meter it, so it goes to
+    // the session totals `/usage` prices, as a run's own requests do.
+    if let Ok((_, Some(report))) = &result {
+        if let Some(usage) = &report.usage {
+            let key = app.usage_key();
+            app.session_usage.entry(key).or_default().add(usage);
+        }
+    }
     match &result {
         Ok((compacted, Some(report))) if compacted.len() < base_len => {
             let folded = base_len - (compacted.len() - 1);
@@ -42929,6 +42934,34 @@ fn a() {}
         assert!(app.compact_started.is_none());
         let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("compacted 4 -> 2 messages"), "got: {text}");
+    }
+
+    /// A `/compact` is a billed request like any other: its usage lands in the
+    /// session totals `/usage` prices, even though no run is open to meter it.
+    #[test]
+    fn finish_compaction_charges_the_session_usage() {
+        use crate::core::agent::events::{CompactionReport, Usage};
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Manual);
+        app.history = (0..4)
+            .map(|i| json!({ "role": "user", "content": format!("m{i}") }))
+            .collect();
+        let report = CompactionReport {
+            model: Some("m".into()),
+            input_tokens: 100,
+            usage: Some(Usage {
+                prompt_tokens: Some(9_000),
+                completion_tokens: Some(400),
+                ..Default::default()
+            }),
+            summary: String::new(),
+        };
+        let compacted = vec![json!({ "role": "user", "content": "state" })];
+        finish_compaction(&mut app, Ok((compacted, Some(report))), 4);
+        let recorded = app.session_usage.values().next().expect("usage recorded");
+        assert_eq!(recorded.requests, 1);
+        assert_eq!(recorded.prompt_tokens, 9_000);
+        assert_eq!(recorded.completion_tokens, 400);
     }
 
     #[test]

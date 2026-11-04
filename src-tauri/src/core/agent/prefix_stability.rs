@@ -61,9 +61,9 @@ use {
 /// that reads the clock would be testing the clock.
 const DAY: &str = "2026-09-16";
 
-/// How much of the conversation a compaction keeps.
+/// Tokens of conversation a compaction keeps: about one short message.
 #[cfg(feature = "cli")]
-const KEEP_RECENT: usize = 4;
+const KEEP_TOKENS: u64 = 20;
 
 // ---------------------------------------------------------------------------
 // Comparing request bytes
@@ -359,7 +359,7 @@ async fn compacted(history: &[Value]) -> Vec<Value> {
         history,
         "test-model",
         &StubSummarizer,
-        KEEP_RECENT,
+        KEEP_TOKENS,
         &HarnessContext::default(),
         100_000,
     )
