@@ -40,12 +40,17 @@ pub mod host_schema;
 pub mod interaction;
 pub mod r#loop;
 pub mod memory;
+/// Pure per-model context-window resolution, for the compaction budget.
+pub mod model_window;
 pub mod otel;
 pub mod plan;
 pub mod plugin_commands;
 pub mod plugins;
 pub mod project;
 pub mod prompt;
+/// The compaction budget for the desktop API server's orchestration runs.
+#[cfg(not(feature = "cli"))]
+pub(crate) mod proxy_budget;
 pub mod provenance;
 pub mod reminder;
 pub mod request_headers;

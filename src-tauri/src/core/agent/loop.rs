@@ -3065,8 +3065,9 @@ pub(crate) async fn run_server_side_openai_orchestration(
         parent_link: None,
         // Nobody can type into a proxy run.
         shell_detach: None,
-        // Server-side runs take whatever window the proxy's route reports
-        // through its own path, so the loop has none to size against here.
+        // Sized inside the run once the model is picked (see
+        // `proxy_budget`): the body may name none, and the choice is the
+        // loop's.
         compaction: None,
         // Each proxy request is a session of one run: it snapshots its own.
         session_start: None,
@@ -4052,6 +4053,23 @@ async fn orchestrate_inner(
     )
     .await?;
 
+    // A desktop run arrives without a budget: its only Rust caller is the API
+    // server, which cannot size one before the model is picked above. Sized
+    // here instead, from the catalog or the loaded engine model's context, so
+    // the run compacts before dispatch rather than after a rejection. Still
+    // `None` when the window is unknown, which keeps it reactive.
+    #[cfg(not(feature = "cli"))]
+    let compaction = &match compaction {
+        Some(budget) => Some(*budget),
+        None => {
+            static ENGINE_CLIENT: std::sync::LazyLock<reqwest::Client> =
+                std::sync::LazyLock::new(tauri_plugin_llamacpp::engine::worker::loopback_client);
+            let pc = provider_configs.lock().await.clone();
+            crate::core::agent::proxy_budget::resolve(&model_id, &pc, llama_state, &ENGINE_CLIENT)
+                .await
+        }
+    };
+
     let max_turns = body_turn_cap(json_body);
     let cost_ceiling = body_cost_ceiling(json_body);
 
@@ -4111,7 +4129,12 @@ async fn orchestrate_inner(
             .is_none()
             .then(|| crate::core::agent::subagent::AbortOnDrop::new(bg.clone(), events));
         let subagents = args.subagents_enabled.then(|| SubagentContext {
-            parent_args: args.clone(),
+            // With the budget this run resolved, so a child re-sizes from it
+            // (`CompactionBudget::for_model`) rather than starting reactive.
+            parent_args: OrchestrationArgs {
+                compaction: *compaction,
+                ..args.clone()
+            },
             model_id: model_id.clone(),
             max_session_tokens,
             cost_ceiling,
@@ -5276,8 +5299,9 @@ async fn run_turn_cycle(
             // then throws away live context and saves no spend. With a known
             // window, a history that really is oversized is compacted by the
             // preflight above, on the next request that would carry it. With
-            // none (`compaction` is `None`, only the desktop API-server proxy)
-            // nothing shrinks it proactively: the overflow path compacts once a
+            // none (`compaction` is `None`: a desktop API-server run on a model
+            // neither the catalog nor the loaded engine can size) nothing
+            // shrinks it proactively: the overflow path compacts once a
             // provider rejects a request. A pass here would not help that route
             // anyway, since its HTTP client owns the history and resends it.
             let _ = events.send(StreamEvent::MessagesUpdated {
@@ -13414,5 +13438,90 @@ mod tests {
         assert!(worktrees.is_empty(), "{worktrees:?}");
         assert!(branches.is_empty(), "{branches}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The desktop API server's orchestration run compacts ahead of dispatch
+    /// when its route's window is knowable: a catalog model (200K) under a
+    /// provider ratio of 0.10 trips the preflight on a ~30K-token history, so
+    /// the first request upstream is the summary, not the oversized prompt a
+    /// provider would reject. Driven end to end against a stub provider.
+    #[cfg(not(feature = "cli"))]
+    #[tokio::test]
+    async fn the_proxy_orchestration_compacts_before_dispatch_on_a_known_window() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = bodies.clone();
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                seen.lock().unwrap().push(String::from_utf8_lossy(&body).into_owned());
+                let chunk = json!({"id": "s", "object": "chat.completion.chunk", "created": 1,
+                    "model": "claude-haiku-4-5", "choices": [{"index": 0,
+                    "delta": {"role": "assistant", "content": "brief"}, "finish_reason": "stop"}]});
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        let providers: HashMap<String, ProviderConfig> = std::iter::once((
+            "stub".to_string(),
+            ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["claude-haiku-4-5".into()],
+                compaction_ratio: Some(0.10),
+                ..Default::default()
+            },
+        ))
+        .collect();
+        let filler = "x".repeat(10_000);
+        let mut messages = Vec::new();
+        for i in 0..12 {
+            let role = if i % 2 == 0 { "user" } else { "assistant" };
+            messages.push(json!({"role": role, "content": format!("{i} {filler}")}));
+        }
+        messages.push(json!({"role": "user", "content": "and now?"}));
+        let body = json!({"model": "claude-haiku-4-5", "messages": messages});
+        let out = run_server_side_openai_orchestration(
+            &body,
+            &crate::core::agent::upstream::agent_http_client(),
+            Arc::new(Mutex::new(providers)),
+            Arc::new(LlamacppState::default()),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(crate::core::mcp::models::McpSettings::default())),
+            &std::env::temp_dir().to_string_lossy(),
+        )
+        .await;
+        out.expect("run completes");
+        let sent = bodies.lock().unwrap().clone();
+        assert_eq!(sent.len(), 2, "a summary, then the compacted request: {}", sent.len());
+        assert!(
+            sent[0].contains("Summarize the AI agent conversation"),
+            "the first request is the preflight summary"
+        );
+        // The full history is 120K chars of filler; the kept tail is 8 of the
+        // 13 messages, so a dispatched request under 100K is the compacted one.
+        assert!(
+            sent[1].len() < 100_000,
+            "the dispatched request is the compacted one: {}",
+            sent[1].len()
+        );
+        assert!(sent[1].contains("[Summary of earlier conversation"));
     }
 }

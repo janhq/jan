@@ -1964,14 +1964,14 @@ fn model_window(
     (resolved.source != ContextWindowSource::Fallback).then_some(resolved.tokens)
 }
 
-/// No model catalog outside the `cli` build, so no window can be sized here;
-/// a child keeps the budget it inherited.
+/// The desktop keeps no provider listing, so only the built-in catalog can
+/// size a window here; a model it cannot place keeps the inherited budget.
 #[cfg(not(feature = "cli"))]
 fn model_window(
-    _model: &str,
+    model: &str,
     _provider_configs: &std::collections::HashMap<String, crate::core::state::ProviderConfig>,
 ) -> Option<u64> {
-    None
+    crate::core::agent::proxy_budget::catalog_window(model)
 }
 
 /// The per-token rates a model is published at, or `None` when it cannot be
