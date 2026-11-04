@@ -939,7 +939,7 @@ async fn the_request_after_compaction_keeps_the_system_prompt_and_tools() {
     let before = turn(project.root(), &history, "", &tools);
 
     let model = RecordingSummarizer(std::sync::Mutex::new(Vec::new()));
-    let (state, _) = continuation_state(
+    let state = continuation_state(
         &gather(&history[..12]),
         &history[..12],
         None,
@@ -949,7 +949,8 @@ async fn the_request_after_compaction_keeps_the_system_prompt_and_tools() {
         "test-model",
         &model,
     )
-    .await;
+    .await
+    .state;
     assert_eq!(state["role"], "user", "the summary is a user message");
     let mut compacted = vec![state];
     compacted.extend_from_slice(&history[12..]);

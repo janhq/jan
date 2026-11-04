@@ -5120,7 +5120,7 @@ async fn compact(
     events: &mpsc::UnboundedSender<StreamEvent>,
     reason: CompactionReason,
     scope: &CompactionScope<'_>,
-) -> Option<usize> {
+) -> Option<Compacted> {
     let harness = scope.harness(budget).await;
     let fitted = crate::core::agent::compaction::fit(transcript, scope.sizing, &harness)?;
     let plan = fitted.plan;
@@ -5134,22 +5134,32 @@ async fn compact(
         });
     };
     announce(CompactionPhase::Started, None, None);
-    let (state, report) = crate::core::agent::compaction::continuation_state(
-        &fitted.gathered,
-        &plan.summarize,
-        // A forced tool choice can only be answered with that tool call.
-        scope.cached.filter(|r| crate::core::agent::compaction::cacheable(r)),
-        &harness,
-        scope.sizing,
-        fitted.caps,
-        model_id,
-        model,
-    )
-    .await;
+    let crate::core::agent::compaction::Continuation { state, report, reasoning_rejected } =
+        crate::core::agent::compaction::continuation_state(
+            &fitted.gathered,
+            &plan.summarize,
+            // A forced tool choice can only be answered with that tool call.
+            scope.cached.filter(|r| crate::core::agent::compaction::cacheable(r)),
+            &harness,
+            scope.sizing,
+            fitted.caps,
+            model_id,
+            model,
+        )
+        .await;
     budget.record_side_request(&report.usage);
     transcript.record_compaction(state, plan.covers);
     announce(CompactionPhase::Finished, Some(summarized), Some(report));
-    Some(summarized)
+    Some(Compacted { messages: summarized, reasoning_rejected })
+}
+
+/// What [`compact`] did.
+struct Compacted {
+    /// Messages the continuation state stands in for.
+    messages: usize,
+    /// The cached side request learned that the route rejects a resent
+    /// `reasoning_content`; the run stops sending it from its next request.
+    reasoning_rejected: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5339,7 +5349,7 @@ async fn run_turn_cycle(
                                 run_mode,
                                 json_body,
                             };
-                            if let Some(dropped) = compact(
+                            if let Some(done) = compact(
                                 &mut transcript,
                                 model_id,
                                 model,
@@ -5352,11 +5362,19 @@ async fn run_turn_cycle(
                             {
                                 log::info!(
                                     "agent: prompt estimated at {estimate} tokens against a {} \
-                                     token trigger on a {} token window, compacted {dropped} \
+                                     token trigger on a {} token window, compacted {} \
                                      messages into a continuation state before dispatch",
                                     window.trigger_tokens(),
-                                    window.context_window
+                                    window.context_window,
+                                    done.messages
                                 );
+                                // The side request already met the route's
+                                // refusal; the next request would carry the
+                                // same field. The prefix breaks here anyway,
+                                // so stripping now costs no cache.
+                                if done.reasoning_rejected {
+                                    send_reasoning = false;
+                                }
                                 // Published for the same reason the overflow
                                 // path below publishes: a client holding the
                                 // oversized history would send it again next turn.
@@ -5417,6 +5435,7 @@ async fn run_turn_cycle(
                         };
                         // Nothing safe left to drop: the request is smaller than the
                         // window only in the provider's own maths.
+                        // No cached request here, so no reasoning verdict.
                         let dropped = compact(
                             &mut transcript,
                             model_id,
@@ -5427,7 +5446,8 @@ async fn run_turn_cycle(
                             &scope,
                         )
                         .await
-                        .ok_or(e)?;
+                        .ok_or(e)?
+                        .messages;
                         log::info!(
                             "agent: context overflow, compacted {dropped} messages into a \
                              summary (attempt {})",
@@ -9092,7 +9112,8 @@ mod tests {
             &scope,
         )
         .await
-        .expect("a long history has a span to compact");
+        .expect("a long history has a span to compact")
+        .messages;
         assert!(dropped > 0);
 
         let spent = budget.spent_usd().expect("metered");
@@ -9586,6 +9607,89 @@ mod tests {
             1,
             "exactly one retry without the field"
         );
+    }
+
+    /// A strict route that first rejects `reasoning_content` on the cached
+    /// compaction's side request has told the run what the next request would
+    /// meet too. The strip lands at the compaction boundary, where the cache
+    /// breaks anyway, so the request after it carries no reasoning and is not
+    /// rejected a second time.
+    #[tokio::test]
+    async fn a_side_request_reasoning_rejection_strips_the_next_request() {
+        struct Strict {
+            side: StdMutex<Vec<serde_json::Value>>,
+            turns: StdMutex<Vec<serde_json::Value>>,
+            rejected_turns: StdMutex<usize>,
+        }
+        #[async_trait]
+        impl ModelInvoker for Strict {
+            async fn invoke(
+                &self,
+                request: &serde_json::Value,
+                _events: &mpsc::UnboundedSender<StreamEvent>,
+            ) -> Result<serde_json::Value, String> {
+                let body = serde_json::to_string(request).unwrap();
+                let reasoning = body.contains("reasoning_content");
+                let reject = || {
+                    Err("Upstream returned HTTP 400: property 'reasoning_content' is unsupported"
+                        .to_string())
+                };
+                if body.contains("[Compaction request from the harness]") {
+                    self.side.lock().unwrap().push(request.clone());
+                    if reasoning {
+                        return reject();
+                    }
+                    return Ok(final_answer("## Progress\np\n## Current step\na\n## Next actions\nb"));
+                }
+                self.turns.lock().unwrap().push(request.clone());
+                if reasoning {
+                    *self.rejected_turns.lock().unwrap() += 1;
+                    return reject();
+                }
+                Ok(final_answer("done"))
+            }
+        }
+        let model = Strict {
+            side: StdMutex::new(Vec::new()),
+            turns: StdMutex::new(Vec::new()),
+            rejected_turns: StdMutex::new(0),
+        };
+        let mut history = vec![json!({ "role": "user", "content": "the task" })];
+        for i in 0..10 {
+            history.push(json!({ "role": "assistant", "content": "x".repeat(13_600),
+                "reasoning_content": format!("thought {i}") }));
+            history.push(json!({ "role": "user", "content": format!("go on {i}") }));
+        }
+        history.push(json!({ "role": "assistant", "content": "hey", "reasoning_content": "thinking" }));
+        history.push(json!({ "role": "user", "content": "again" }));
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut budget = SessionBudget::new(None);
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(history),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            small_window(),
+        )
+        .await
+        .expect("the run completes");
+        assert_eq!(result["choices"][0]["message"]["content"], "done");
+        assert_eq!(model.side.lock().unwrap().len(), 2, "the side request was rejected, then retried");
+        assert_eq!(*model.rejected_turns.lock().unwrap(), 0, "the next request was rejected again");
+        let turns = model.turns.lock().unwrap();
+        assert_eq!(turns.len(), 1);
+        assert!(!serde_json::to_string(&turns[0]).unwrap().contains("reasoning_content"));
     }
 
     /// A run that never recovers from overflow still has to hand its compacted

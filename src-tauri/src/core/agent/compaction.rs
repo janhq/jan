@@ -496,7 +496,7 @@ pub(crate) async fn compact_conversation(
     // The interactive `/compact` meters nothing: it is not inside a run's
     // budget, so there is no ceiling for this request to be charged against.
     // Its usage still rides on the report, which is what `/agents` shows.
-    let (state, report) = continuation_state(
+    let Continuation { state, report, .. } = continuation_state(
         &gathered,
         &rest[..cut],
         None,
@@ -630,11 +630,16 @@ fn add_usage(total: &mut Option<Usage>, more: Option<Usage>) {
 /// retry rewrites every earlier assistant turn and so misses the cache, but
 /// only for itself: the fallback would read the whole span anyway, and it
 /// also has to pay for every chunk.
+///
+/// `rejected` is set when the route refused the field, so the caller can stop
+/// sending it on the run's own next request instead of waiting for that one
+/// to be refused too.
 async fn ask_cached(
     side: &Value,
     model_id: &str,
     model: &dyn ModelInvoker,
     usage: &mut Option<Usage>,
+    rejected: &mut bool,
 ) -> Option<String> {
     // A dropped receiver: the reply is a summary, not the answer the user is
     // reading.
@@ -659,6 +664,7 @@ async fn ask_cached(
                     && crate::core::agent::upstream::is_reasoning_field_error(&e) =>
             {
                 model.reasoning_rejected(model_id);
+                *rejected = true;
                 let retry = without_reasoning(side);
                 if retry == *side {
                     return None;
@@ -727,6 +733,18 @@ fn sections_from(completion: &Value) -> Option<String> {
 /// Heading of the harness's note on what this compaction could not do.
 const NOTE_HEADING: &str = "Compaction note";
 
+/// What [`continuation_state`] produced.
+pub(crate) struct Continuation {
+    /// The state message that replaces the span.
+    pub(crate) state: Value,
+    pub(crate) report: CompactionReport,
+    /// The cached side request found that the route rejects a resent
+    /// `reasoning_content`. The run's next request would carry the field
+    /// too, so the run stops sending it here, at the compaction, where the
+    /// prefix breaks anyway, rather than paying one more rejected round trip.
+    pub(crate) reasoning_rejected: bool,
+}
+
 /// Build the continuation state for a compaction and say what it took.
 ///
 /// The model sections come from `cached` first -- the request the run was
@@ -751,14 +769,15 @@ pub(crate) async fn continuation_state(
     caps: Caps,
     model_id: &str,
     model: &dyn ModelInvoker,
-) -> (Value, CompactionReport) {
+) -> Continuation {
     let mut usage: Option<Usage> = None;
     let mut written: Option<(String, String)> = None;
     let mut notes: Vec<String> = Vec::new();
+    let mut reasoning_rejected = false;
     if let Some(request) = cached {
         let side = cached_compaction_request(request, harness.role, sizing.trigger);
         if estimate_request_tokens(&side) + reply_cap(sizing.trigger) <= sizing.window {
-            written = ask_cached(&side, model_id, model, &mut usage)
+            written = ask_cached(&side, model_id, model, &mut usage, &mut reasoning_rejected)
                 .await
                 .map(|sections| (model_id.to_string(), sections));
         }
@@ -819,7 +838,7 @@ pub(crate) async fn continuation_state(
         usage,
         summary: written.map(|(_, s)| s).unwrap_or_default(),
     };
-    (state, report)
+    Continuation { state, report, reasoning_rejected }
 }
 
 /// Flatten one wire message to text for the fallback summarizer. Reasoning is
@@ -1352,7 +1371,7 @@ mod tests {
         model: &dyn ModelInvoker,
     ) -> (Value, CompactionReport) {
         let sizing = Sizing::new(window, DEFAULT_COMPACTION_RATIO);
-        continuation_state(
+        let out = continuation_state(
             &continuation::gather(span),
             span,
             cached,
@@ -1362,7 +1381,8 @@ mod tests {
             "m",
             model,
         )
-        .await
+        .await;
+        (out.state, out.report)
     }
 
     fn state_text(state: &Value) -> &str {
