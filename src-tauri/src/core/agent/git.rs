@@ -280,6 +280,41 @@ pub(crate) fn current_branch(path: &Path) -> Option<String> {
         .filter(|s| !s.is_empty() && s != "HEAD")
 }
 
+/// Most lines of `git status` / diff stat a continuation state carries. A run
+/// that regenerated a build tree can list thousands of paths, and the state is
+/// re-sent on every request after the compaction that wrote it.
+const WORKSPACE_STATUS_LINES: usize = 80;
+
+/// `git status --short` plus `git diff --stat HEAD` for the work tree holding
+/// `path`, for a compaction's Files touched: the write/edit ledger cannot see
+/// what a `shell` call changed, and git can. `None` outside a work tree or
+/// with no change. Long output keeps its head and says how much was cut.
+pub(crate) fn workspace_status(path: &Path) -> Option<String> {
+    let p = path.to_string_lossy();
+    let status = git(&["-C", &p, "status", "--short", "--untracked-files=normal"]).ok()?;
+    if status.trim().is_empty() {
+        return None;
+    }
+    // No stat on an unborn HEAD: `status` already lists every path.
+    let stat = git(&["-C", &p, "diff", "--stat", "HEAD"]).unwrap_or_default();
+    let clip = |text: &str| {
+        let lines: Vec<&str> = text.lines().collect();
+        if lines.len() <= WORKSPACE_STATUS_LINES {
+            return text.to_string();
+        }
+        format!(
+            "{}\n[... {} more lines]",
+            lines[..WORKSPACE_STATUS_LINES].join("\n"),
+            lines.len() - WORKSPACE_STATUS_LINES
+        )
+    };
+    let mut out = format!("Workspace `git status --short`:\n{}", clip(&status));
+    if !stat.trim().is_empty() {
+        out.push_str(&format!("\nDiff stat against HEAD:\n{}", clip(&stat)));
+    }
+    Some(out)
+}
+
 /// The canonical empty tree object every git repo has, without needing a
 /// commit to hash it from -- used as the base tree when `HEAD` is unborn.
 #[cfg(feature = "cli")]
@@ -1300,6 +1335,26 @@ mod tests {
         // a box without one configured) is irrelevant and must be off.
         run(&root, None, &["commit", "-q", "-m", "init", "--no-gpg-sign"]).ok()?;
         repo_root(&root)
+    }
+
+    /// A file changed by a shell command (no write/edit call involved) and a
+    /// new one both show up, which is what the write/edit ledger cannot see.
+    #[test]
+    fn workspace_status_reports_edits_made_outside_the_file_tools() {
+        let Some(root) = init_repo() else { return };
+        assert!(workspace_status(&root).is_none(), "a clean tree reports nothing");
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("echo two >> a.txt && echo new > shell_made.txt")
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        let status = workspace_status(&root).expect("a dirty tree reports");
+        assert!(status.contains("M a.txt"), "{status}");
+        assert!(status.contains("?? shell_made.txt"), "{status}");
+        assert!(status.contains("Diff stat"), "{status}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
