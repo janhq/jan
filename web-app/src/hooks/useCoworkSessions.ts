@@ -44,7 +44,7 @@ export type CoworkSession = {
    * session's own sandbox, never here. */
   folder: string | null
   /** What the HOST acknowledged for `folder`. `undefined`: the host holds no
-   * record (legacy session), so the old read+write default applies. `null`: a
+   * record (legacy session), which is inactive, not read+write. `null`: a
    * host record exists and grants no access to this folder. Only the strict
    * setter, or hydration of what the host stored, may set it. A grant with
    * `access: null` keeps the folder shown but unusable (a failed save). */

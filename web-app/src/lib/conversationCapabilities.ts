@@ -63,14 +63,20 @@ export function isConversationFolderPath(path: unknown): path is string {
 /** Unknown versions, extra fields, malformed paths and permissions fail closed
  * as a whole; never partially salvage an escalation from corrupt metadata. */
 export function resolveConversationCapabilities(value: unknown): ConversationCapabilitiesV1 {
+  return parseConversationCapabilities(value) ?? defaultConversationCapabilities()
+}
+
+/** Strict parse: `null` when the value is not a well-formed v1 record, so a
+ * caller can tell malformed apart from a valid record with no folder scope. */
+export function parseConversationCapabilities(value: unknown): ConversationCapabilitiesV1 | null {
   if (!record(value) || !keys(value, ['version', 'folderScope', 'shellNetwork', 'memoryWrite']) ||
     value.version !== 1 || typeof value.shellNetwork !== 'boolean' || typeof value.memoryWrite !== 'boolean') {
-    return defaultConversationCapabilities()
+    return null
   }
   const folder = value.folderScope
   if (folder !== null && (!record(folder) || !keys(folder, ['path', 'access']) ||
     !isConversationFolderPath(folder.path) || (folder.access !== 'read' && folder.access !== 'write'))) {
-    return defaultConversationCapabilities()
+    return null
   }
   return {
     version: 1,

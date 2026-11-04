@@ -9,7 +9,7 @@ import {
   type CoworkSidecar,
   type Invoke,
 } from '@/lib/migrateCoworkSessions'
-import { resolveConversationCapabilities } from '@/lib/conversationCapabilities'
+import { parseConversationCapabilities } from '@/lib/conversationCapabilities'
 
 /**
  * Persistence for Cowork sessions stored as threads (`metadata.mode =
@@ -105,23 +105,28 @@ export function sessionToThreadRecord(
 }
 
 /**
- * The folder access the host stored for this session. No record at all (a
- * legacy session) leaves `folderAccess` absent, which keeps the old read+write
- * default. Once a record exists it is authoritative: a grant for a different
- * folder, or none, is `null`, never a fallback to `metadata.folder`.
+ * The folder and access the host stored for this session. No record at all (a
+ * legacy session) leaves `folderAccess` absent, which is inactive: the host
+ * refuses legacy no-record folder calls. Once a record exists it is the only
+ * authority, and `metadata.folder` is just a debounced display copy that can
+ * lag the strict setter (a reload between the two). A valid record hydrates
+ * the folder from its own `folderScope.path` and the acknowledged access; an
+ * explicit `folderScope: null` is detached. A host read error (`null`) or a
+ * malformed record is denied: the metadata folder is shown with no access.
  */
-function hostFolderAccess(meta: Json): Pick<CoworkSession, 'folderAccess'> {
-  // Absent key: no host record (legacy). An explicit `null` is the host's
-  // "record exists but could not be read" signal: fail closed (denied), never
-  // the legacy read+write default.
-  if (!('conversationCapabilities' in meta) || meta.conversationCapabilities === undefined) return {}
-  const stored = meta.conversationCapabilities
-  if (stored === null) return { folderAccess: null }
-  const scope = resolveConversationCapabilities(stored).folderScope
-  return {
-    folderAccess:
-      scope && scope.path === meta.folder ? scope.access : null,
+function hostFolderGrant(
+  meta: Json
+): Pick<CoworkSession, 'folder' | 'folderAccess'> {
+  const metaFolder = typeof meta.folder === 'string' ? meta.folder : null
+  if (!('conversationCapabilities' in meta) || meta.conversationCapabilities === undefined) {
+    return { folder: metaFolder }
   }
+  const record = parseConversationCapabilities(meta.conversationCapabilities)
+  if (!record) return { folder: metaFolder, folderAccess: null }
+  const scope = record.folderScope
+  return scope
+    ? { folder: scope.path, folderAccess: scope.access }
+    : { folder: null, folderAccess: null }
 }
 
 /** Rebuild a session from its thread record and sidecar. */
@@ -140,8 +145,7 @@ export function sessionFromThread(
       model && model.id && model.id !== '*'
         ? { id: String(model.id), provider: String(model.engine ?? 'llamacpp') }
         : undefined,
-    folder: typeof meta.folder === 'string' ? meta.folder : null,
-    ...hostFolderAccess(meta),
+    ...hostFolderGrant(meta),
     ...(meta.project && { project: meta.project }),
     turns: sidecar?.turns ?? [],
     messages: sidecar?.messages ?? [],

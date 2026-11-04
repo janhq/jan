@@ -913,7 +913,7 @@ describe('thread record mapping', () => {
       version: 1, folderScope, shellNetwork: true, memoryWrite: true,
     })
 
-    it('leaves access absent when the host holds no record (legacy read+write default)', () => {
+    it('leaves access absent when the host holds no record (legacy, inactive)', () => {
       expect('folderAccess' in restore({})).toBe(false)
     })
 
@@ -926,13 +926,28 @@ describe('thread record mapping', () => {
       expect(restore({ conversationCapabilities: caps({ path: '/proj', access: 'write' }) }).folderAccess).toBe('write')
     })
 
-    it.each([
-      ['no folder grant', caps(null)],
-      ['a grant for a different folder', caps({ path: '/other', access: 'write' })],
-      ['a malformed record', { version: 1, folderScope: { path: '/proj', access: 'admin' } }],
-    ])('is denied (null), not the legacy default, for %s', (_name, stored) => {
-      expect(restore({ conversationCapabilities: stored }).folderAccess).toBeNull()
+    it('hydrates a valid record from its own folderScope, not stale metadata.folder', () => {
+      const s = restore({ conversationCapabilities: caps({ path: '/other', access: 'read' }) })
+      expect(s.folder).toBe('/other')
+      expect(s.folderAccess).toBe('read')
     })
+
+    it('treats an explicit detach record as no folder and no access', () => {
+      const s = restore({ conversationCapabilities: caps(null) })
+      expect(s.folder).toBeNull()
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it.each([
+      ['a malformed record', { version: 1, folderScope: { path: '/proj', access: 'admin' } }],
+      ['a record with a malformed path', caps({ path: 'relative', access: 'write' })],
+    ])('is denied (null), not the legacy default, for %s', (_name, stored) => {
+      const s = restore({ conversationCapabilities: stored })
+      expect(s.folder).toBe('/proj')
+      expect(s.folderAccess).toBeNull()
+    })
+
+
     it('hydrates a host read error (explicit null record) as denied, never the legacy default', () => {
       expect(restore({ conversationCapabilities: null }).folderAccess).toBeNull()
     })
@@ -963,6 +978,47 @@ describe('loadCoworkSessions', () => {
     b.threads.set(id, { ...sessionToThreadRecord(session(id, extra)) })
     b.extras.set(id, { version: 1, turns: session(id).turns, messages: session(id).messages })
   }
+
+  const hostCaps = (folderScope: Json | null) => ({
+    version: 1, folderScope, shellNetwork: true, memoryWrite: true,
+  })
+  const seedStale = (id: string, stored: unknown) => {
+    // metadata.folder is still A: the debounced flush has not run yet.
+    b.threads.set(id, {
+      id, title: 'T', updated: 1, assistants: [],
+      metadata: { mode: 'cowork', folder: '/folderA', conversationCapabilities: stored },
+    })
+    b.extras.set(id, { version: 1, turns: [], messages: [] })
+  }
+  const loadOne = async (id: string) =>
+    (await loadCoworkSessions(b.invoke, { migrationSettled: true })).sessions.find((x) => x.id === id)!
+
+  it.each([['write'], ['read']] as const)(
+    'reload between the strict setter and the debounced flush hydrates acknowledged folder B with %s access',
+    async (access) => {
+      seedStale('a', hostCaps({ path: '/folderB', access }))
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderB')
+      expect(s.folderAccess).toBe(access)
+    }
+  )
+
+  it('an explicit detach record hydrates as no folder and no access, not stale metadata A', async () => {
+    seedStale('a', hostCaps(null))
+    const s = await loadOne('a')
+    expect(s.folder).toBeNull()
+    expect(s.folderAccess).toBeNull()
+  })
+
+  it.each([
+    ['a host read error (null)', null],
+    ['a malformed record', { version: 1, folderScope: { path: '/folderB', access: 'admin' } }],
+  ])('stays denied for %s: metadata folder shown, no access', async (_n, stored) => {
+    seedStale('a', stored)
+    const s = await loadOne('a')
+    expect(s.folder).toBe('/folderA')
+    expect(s.folderAccess).toBeNull()
+  })
 
   it('loads cowork threads only, newest first, and ignores chat threads', async () => {
     commit('old', { updated: 1_600_000_000_000 })
