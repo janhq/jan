@@ -47,6 +47,8 @@ pub mod plugins;
 pub mod project;
 pub mod prompt;
 pub mod provenance;
+/// Routes known to reject a resent `reasoning_content` field.
+pub mod reasoning_routes;
 pub mod reminder;
 pub mod request_headers;
 pub mod secrets;
