@@ -44,14 +44,27 @@ fn route(provider: Option<&str>, model_id: &str) -> Route {
 
 /// Whether `model_id` on `provider` is known to reject `reasoning_content`.
 pub(crate) fn rejects(provider: Option<&str>, model_id: &str) -> bool {
-    let key = route(provider, model_id);
-    let mut routes = ROUTES.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(known) = routes.get(&key) {
+    lookup(route(provider, model_id), persisted_rejects)
+}
+
+/// The memoized answer for `key`, reading it with `read` the first time.
+///
+/// The read is a file load, so it runs with [`ROUTES`] released: every run
+/// and subagent asks at its start, and holding a process-wide lock across
+/// disk I/O would queue routes that are already known behind one that is not.
+/// Two first asks may both read; `or_insert` keeps whichever answer landed
+/// first, so a `true` from [`remember`] meanwhile is never overwritten by the
+/// older value on disk.
+fn lookup(key: Route, read: impl FnOnce(&Route) -> bool) -> bool {
+    if let Some(known) = ROUTES.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
         return *known;
     }
-    let persisted = persisted_rejects(&key);
-    routes.insert(key, persisted);
-    persisted
+    let persisted = read(&key);
+    *ROUTES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry(key)
+        .or_insert(persisted)
 }
 
 /// Record that `model_id` on `provider` rejected `reasoning_content`, for the
@@ -147,6 +160,24 @@ mod tests {
         assert!(!rejects(provider, "rr-scope-other-model"));
         assert!(!rejects(Some("rr-scope-other-provider"), "rr-scope-model"));
         assert!(!rejects(None, "rr-scope-model"));
+    }
+
+    /// The catalog is read with the lock released: a read that takes the lock
+    /// itself (as another route's lookup or a `remember` on another thread
+    /// would) does not deadlock, and a rejection recorded meanwhile is not
+    /// overwritten by the older value read from disk.
+    #[test]
+    fn the_persisted_value_is_read_outside_the_lock_and_never_overwrites() {
+        let provider = Some("rr-lock-provider");
+        let seen = lookup(route(provider, "rr-lock-model"), |_| {
+            remember(provider, "rr-lock-model");
+            assert!(!lookup(route(provider, "rr-lock-other"), |_| false));
+            false
+        });
+        assert!(seen, "the rejection recorded during the read wins");
+        assert!(rejects(provider, "rr-lock-model"));
+        assert!(lookup(route(provider, "rr-lock-fresh"), |_| true));
+        assert!(lookup(route(provider, "rr-lock-fresh"), |_| false), "read at most once");
     }
 
     /// A route that rejected the field in an earlier process starts this one
