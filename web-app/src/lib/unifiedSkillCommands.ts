@@ -21,6 +21,9 @@ export async function expandUnifiedSkillCommand(text: string, folder?: string): 
   const enabled = folder ? await invoke<string[]>('agent_skill_enabled_get', { project: folder }) : []
   const available = [...merged.values()].filter((skill) => enabled.length === 0 || enabled.includes(skill.name))
   const skill = resolveSkillCommand(available, parsed)
-  if (!skill) throw new Error(`Skill command /${parsed.name} is unavailable. Use an installed, user-invocable skill.`)
+  if (!skill) {
+    if (!parsed.explicit) return text
+    throw new Error(`Skill command /${parsed.name} is unavailable. Use an installed, user-invocable skill.`)
+  }
   return invokeSkill(project.some((s) => s.name === skill.name) && folder ? projectScope(folder) : storeScope, skill.name, parsed.args)
 }

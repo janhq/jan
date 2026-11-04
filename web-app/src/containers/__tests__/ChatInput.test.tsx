@@ -465,6 +465,37 @@ describe('ChatInput', () => {
     resetAll()
   })
 
+  it.each(['/usr/bin/python', '/tmp/example', '/word', '/word args'])('sends ordinary slash text unchanged: %s', async (text) => {
+    promptState = text
+    const onSubmit = vi.fn(async (..._args: any[]) => true)
+    renderInput({ initialMessage: true, pendingSkillFolder: '/pending/project', onSubmit })
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toBe(text)
+    expect(onSubmit.mock.calls[0][3]).toBe(text)
+  })
+
+  it('expands a resolved installed bare command in the pending submission folder', async () => {
+    promptState = '/review source'
+    const onSubmit = vi.fn(async (..._args: any[]) => true)
+    renderInput({ initialMessage: true, pendingSkillFolder: '/pending/project', onSubmit })
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(skillMocks.expand).toHaveBeenCalledWith('/review source', '/pending/project')
+    expect(onSubmit.mock.calls[0][0]).toBe('Resolved durable skill instructions')
+  })
+
+  it('retains an explicit missing skill draft and reports the expansion refusal', async () => {
+    promptState = '/skill:missing args'
+    skillMocks.expand.mockRejectedValueOnce(new Error('Skill command /missing is unavailable.'))
+    const onSubmit = vi.fn()
+    renderInput({ initialMessage: true, pendingSkillFolder: '/pending/project', onSubmit })
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Skill command /missing is unavailable.'))
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(promptState).toBe('/skill:missing args')
+  })
+
   it('uses the pending folder for both skill discovery and durable submission', async () => {
     promptState = '/skill:review source'
     const onSubmit = vi.fn(async (..._args: any[]) => true)

@@ -844,11 +844,14 @@ const ChatInput = memo(function ChatInput({
         return
       }
       const parsed = parseSkillCommand(prompt)
-      if (!parsed || !unifiedSkillCommandAvailable(prompt) || !resolveSkillCommand(commandSkills, parsed)) {
+      if ((parsed && !unifiedSkillCommandAvailable(prompt)) || (!parsed && prompt.trim().startsWith('/skill:'))) {
         toast.error('This command is unavailable. Choose an installed skill or /plan.')
         return false
       }
-      isSkillCommand = true
+      // A leading slash can be ordinary prose or an absolute path. Only
+      // explicit skill requests or discovered commands enter skill expansion;
+      // expansion revalidates availability in the captured submission folder.
+      isSkillCommand = !!parsed && (parsed.explicit || !!resolveSkillCommand(commandSkills, parsed))
     }
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')

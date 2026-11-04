@@ -24,7 +24,7 @@ type State = ChatPermissions & {
   set: (next: Partial<ChatPermissions>) => Promise<void>
 }
 
-export const useChatPermissions = create<State>()((set, get) => {
+export const useChatPermissions = create<State>()((set) => {
   // Reads share the write queue so a slow load cannot overwrite a newer save.
   // Keep a recovered tail, but return the original result to each caller.
   let pending = Promise.resolve()
@@ -49,8 +49,12 @@ export const useChatPermissions = create<State>()((set, get) => {
     set: (next) => {
       const patch = { ...next }
       return enqueue(async () => {
-        // Merge only when this patch reaches the host, against the last ack.
-        const { shellNetwork, memoryWrite } = get()
+        // Read inside the queue: the mirror may still contain defaults after a
+        // failed load, or another client may have changed the host setting.
+        // A failed read must reject this save rather than persist defaults.
+        const { shellNetwork, memoryWrite } = await getServiceHub()
+          .core()
+          .invoke<ChatPermissions>('get_chat_permissions')
         const value = { shellNetwork, memoryWrite, ...patch }
         const saved = await getServiceHub()
           .core()

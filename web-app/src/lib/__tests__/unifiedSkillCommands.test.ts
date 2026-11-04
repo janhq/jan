@@ -14,6 +14,27 @@ describe('unified skill invocation', () => {
     expect(await expandUnifiedSkillCommand('hello')).toBe('hello')
     expect(listSkills).not.toHaveBeenCalled()
   })
+  it.each(['/usr/bin/python', '/tmp/example', '/word', '/word args'])('preserves ordinary slash text: %s', async (text) => {
+    vi.mocked(listSkills).mockResolvedValue([])
+    expect(await expandUnifiedSkillCommand(text)).toBe(text)
+    expect(invokeSkill).not.toHaveBeenCalled()
+  })
+  it('refuses explicitly requested missing skills instead of sending the command', async () => {
+    vi.mocked(listSkills).mockResolvedValue([])
+    await expect(expandUnifiedSkillCommand('/skill:missing args')).rejects.toThrow('Skill command /missing is unavailable')
+    expect(invokeSkill).not.toHaveBeenCalled()
+  })
+  it('does not dispatch a reserved built-in even if a skill has that name', async () => {
+    vi.mocked(listSkills).mockResolvedValue([{ name: 'clear', description: '' }])
+    await expect(expandUnifiedSkillCommand('/clear')).rejects.toThrow('unavailable')
+    expect(invokeSkill).not.toHaveBeenCalled()
+    expect(await expandUnifiedSkillCommand('/skill:clear')).toBe('expanded skill')
+  })
+  it('preserves bare commands that do not resolve to an enabled user-invocable skill', async () => {
+    vi.mocked(listSkills).mockResolvedValue([{ name: 'hidden', description: '', user_invocable: false }])
+    expect(await expandUnifiedSkillCommand('/hidden')).toBe('/hidden')
+    expect(invokeSkill).not.toHaveBeenCalled()
+  })
   it('uses project precedence, namespaced names and arguments', async () => {
     vi.mocked(listSkills).mockResolvedValueOnce([{ name: 'team:review', description: '' }]).mockResolvedValueOnce([{ name: 'team:review', description: '' }])
     expect(await expandUnifiedSkillCommand('/review this change', '/project')).toBe('expanded skill')

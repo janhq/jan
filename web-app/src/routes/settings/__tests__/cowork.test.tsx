@@ -81,7 +81,9 @@ describe('Settings: chat permissions', () => {
   })
 
   it('saves each switch through the host, one field at a time', async () => {
-    h.invoke.mockImplementation(async (_cmd: string, args: any) => args.value)
+    h.invoke.mockImplementation(async (cmd: string, args: any) =>
+      cmd === 'get_chat_permissions' ? { ...DEFAULT_CHAT_PERMISSIONS } : args.value
+    )
     renderScreen()
     fireEvent.click(await memorySwitch())
     await waitFor(() =>
