@@ -23,9 +23,10 @@
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use crate::core::agent::continuation::{self, Gathered, HarnessContext, Role};
+use crate::core::agent::continuation::{self, Caps, Gathered, HarnessContext, Role};
 use crate::core::agent::events::{CompactionReport, Usage};
 use crate::core::agent::r#loop::ModelInvoker;
+use crate::core::agent::transcript::{CompactionPlan, Transcript};
 use crate::core::agent::upstream::extract_choice_message;
 
 /// Per-message envelope (role, delimiters) in [`estimate_token_count`], the
@@ -243,34 +244,144 @@ fn role(msg: &Value) -> &str {
 }
 
 /// Rough tokens of one wire message, by the preflight's own rule.
-fn message_tokens(msg: &Value) -> u64 {
+pub(crate) fn message_tokens(msg: &Value) -> u64 {
     (json_text_len(msg) as u64).div_ceil(4) + 4
 }
 
-/// Share of the window each of the kept tail and the verbatim user messages
-/// may take: together with the model's sections and the harness context they
-/// leave the next request well under a 0.80 trigger, so it cannot compact
-/// again straight away.
+/// Share of the trigger each of the kept tail, the verbatim user messages and
+/// the model's reply may take. Shares of the trigger rather than the window:
+/// the request after a compaction has to land under the trigger, and on a
+/// low `compaction_ratio` a tenth of the window is a third of the trigger, so
+/// window-sized shares alone could put the next request back over it.
 const SHARE_DIVISOR: u64 = 10;
 
-/// Tokens the kept tail may hold on a `window`-token route.
-pub(crate) fn tail_tokens(window: u64) -> u64 {
-    window / SHARE_DIVISOR
+/// Tokens the kept tail may hold under a `trigger`-token trigger.
+pub(crate) fn tail_tokens(trigger: u64) -> u64 {
+    trigger / SHARE_DIVISOR
 }
 
-/// Tokens the verbatim user messages may take on a `window`-token route.
-fn user_cap_tokens(window: u64) -> u64 {
-    window / SHARE_DIVISOR
+/// The caps on the state's verbatim sections under a `trigger`-token trigger:
+/// a share for the user messages, and twice that for the task, which is the
+/// one text the run cannot do without.
+pub(crate) fn caps(trigger: u64) -> Caps {
+    Caps {
+        user: trigger / SHARE_DIVISOR,
+        task: trigger * 2 / SHARE_DIVISOR,
+    }
 }
 
 /// Longest reply a compaction asks for. The sections it writes are re-sent on
 /// every request until the next compaction, so a dense brief is the goal.
 const SUMMARY_MAX_TOKENS: u64 = 8_192;
 
-/// The reply cap on a `window`-token route: [`SUMMARY_MAX_TOKENS`], or a
-/// tenth of a small window, so the state written fits beside the tail.
-fn reply_cap(window: u64) -> u64 {
-    SUMMARY_MAX_TOKENS.min(window / SHARE_DIVISOR).max(256)
+/// The reply cap under a `trigger`-token trigger: [`SUMMARY_MAX_TOKENS`], or
+/// a share of a small trigger, so the state written fits beside the tail.
+fn reply_cap(trigger: u64) -> u64 {
+    SUMMARY_MAX_TOKENS.min(trigger / SHARE_DIVISOR).max(256)
+}
+
+/// What a compaction sizes against.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Sizing {
+    /// The route's context window: what any request, the side request
+    /// included, has to fit.
+    pub(crate) window: u64,
+    /// Prompt tokens at which the run compacts: what the request after the
+    /// compaction has to stay under, or the next turn compacts again.
+    pub(crate) trigger: u64,
+    /// Tokens of the next request that are not conversation -- system prompt,
+    /// tool schemas, volatile tail -- and stay whatever is compacted.
+    pub(crate) overhead: u64,
+}
+
+impl Sizing {
+    /// Sizing on a `window`-token route at `ratio`, with no known overhead.
+    pub(crate) fn new(window: u64, ratio: f64) -> Self {
+        Self {
+            window,
+            trigger: trigger_tokens(window, ratio, None),
+            overhead: 0,
+        }
+    }
+}
+
+/// The tokens of `request` a compaction cannot remove: everything but its
+/// non-system messages, plus the `volatile` tail placed again after one.
+pub(crate) fn request_overhead(request: &Value, volatile: Option<&str>) -> u64 {
+    let conversation: usize = request
+        .get("messages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|m| role(m) != "system")
+        .map(json_text_len)
+        .sum();
+    let fixed = json_text_len(request).saturating_sub(conversation) as u64 / 4;
+    fixed + volatile.map_or(0, |text| message_tokens(&json!({ "content": text })))
+}
+
+/// Whether the cached path can answer `request`. A forced `tool_choice` (the
+/// eager todo plan on a run's first turn) makes the model call that tool, so
+/// the reply could never be the sections: the side request would be a
+/// full-size request paid for nothing.
+pub(crate) fn cacheable(request: &Value) -> bool {
+    request
+        .get("tool_choice")
+        .is_none_or(|choice| choice.as_str() == Some("auto"))
+}
+
+/// A compaction whose tail and caps fit the trigger.
+pub(crate) struct Fitted {
+    pub(crate) plan: CompactionPlan,
+    pub(crate) gathered: Gathered,
+    pub(crate) caps: Caps,
+}
+
+/// Bound on the shrinking in [`fit`]: each step halves one share.
+const MAX_FIT_STEPS: usize = 64;
+
+/// Below this a share is dropped to nothing rather than halved again.
+const MIN_SHARE_TOKENS: u64 = 256;
+
+/// Plan a compaction of `transcript` whose next request fits under the
+/// trigger: system prompt and tools, the state at its largest (the code
+/// sections plus a full reply) and the kept tail. Shares that do not fit are
+/// shrunk -- the tail first, since what it drops still reaches the state, then
+/// the user messages, then the task -- so a large task or a low ratio cannot
+/// leave a run compacting on every turn. `None` when nothing is safe to drop.
+pub(crate) fn fit(transcript: &Transcript, sizing: Sizing, harness: &HarnessContext) -> Option<Fitted> {
+    let reply = reply_cap(sizing.trigger);
+    let mut keep = tail_tokens(sizing.trigger);
+    let mut caps = caps(sizing.trigger);
+    let mut plan = transcript.compaction_plan(keep)?;
+    let mut gathered = continuation::gather(&plan.summarize);
+    let halve = |share: u64| if share < MIN_SHARE_TOKENS { 0 } else { share / 2 };
+    for _ in 0..MAX_FIT_STEPS {
+        let state = continuation::build(&gathered, harness, caps, None);
+        let next = sizing.overhead + message_tokens(&state) + reply + plan.tail_tokens;
+        if next <= sizing.trigger {
+            break;
+        }
+        if plan.tail_tokens > 0 {
+            keep = halve(keep);
+            if let Some(smaller) = transcript.compaction_plan(keep) {
+                gathered = continuation::gather(&smaller.summarize);
+                plan = smaller;
+            }
+        } else if caps.user > 0 {
+            caps.user = halve(caps.user);
+        } else if caps.task > continuation::MIN_CLIP_TOKENS {
+            caps.task = (caps.task / 2).max(continuation::MIN_CLIP_TOKENS);
+        } else {
+            log::warn!(
+                "agent: the compacted request is estimated at {next} tokens, over its {} token \
+                 trigger with nothing left to shrink",
+                sizing.trigger
+            );
+            break;
+        }
+    }
+    Some(Fitted { plan, gathered, caps })
 }
 
 /// Where a tail of at most `keep_tokens` begins. Walks back over whole groups
@@ -361,6 +472,7 @@ pub(crate) async fn fire_pre_compact(
 /// by [`token_tail_start`] as a run's own compaction cuts it. The input comes
 /// back unchanged with no report when there is nothing safe to drop. Never
 /// fails: a summarizer that cannot run leaves the code-built state.
+/// The caps come from `sizing`'s trigger, the same one the tail was cut from.
 #[cfg(feature = "cli")]
 pub(crate) async fn compact_conversation(
     messages: &[Value],
@@ -368,7 +480,7 @@ pub(crate) async fn compact_conversation(
     model: &dyn ModelInvoker,
     keep_tokens: u64,
     harness: &HarnessContext,
-    window: u64,
+    sizing: Sizing,
 ) -> (Vec<Value>, Option<CompactionReport>) {
     let sys_end = messages
         .iter()
@@ -389,7 +501,8 @@ pub(crate) async fn compact_conversation(
         &rest[..cut],
         None,
         harness,
-        window,
+        sizing,
+        caps(sizing.trigger),
         model_id,
         model,
     )
@@ -467,25 +580,104 @@ fn fallback_prompt(role: Role) -> String {
 }
 
 /// The request a cached compaction sends: exactly `request` -- the body the
-/// run was about to send, tools and `tool_choice` included -- plus one user
+/// run was about to send, tools and `tool_choice` included -- plus one
 /// instruction, so every byte before it is a prefix the provider has cached.
-/// Only `max_tokens` changes, which is not part of any prompt cache key.
-pub(crate) fn cached_compaction_request(request: &Value, role: Role, window: u64) -> Value {
+///
+/// The instruction goes in the way [`crate::core::agent::reminder::attach`]
+/// places a reminder: appended to a trailing user message (usually the
+/// volatile tail) rather than as a second user message after it, which a
+/// template that demands alternating roles rejects. Appending to the text
+/// leaves every byte before it where it was.
+///
+/// `max_tokens` is set to the reply cap whatever the user asked for: it is not
+/// part of any prompt cache key, and a small user cap (or one that also covers
+/// an `o*` model's reasoning) would cut the sections short or leave them empty.
+pub(crate) fn cached_compaction_request(request: &Value, role: Role, trigger: u64) -> Value {
     let mut side = request.clone();
     if let Some(messages) = side.get_mut("messages").and_then(Value::as_array_mut) {
-        messages.push(json!({
-            "role": "user",
-            "content": crate::core::agent::reminder::wrap(&compaction_instruction(role)),
-        }));
+        let mut list = std::mem::take(messages);
+        crate::core::agent::reminder::attach(&mut list, &compaction_instruction(role));
+        *messages = list;
     }
-    let cap = side
-        .get("max_tokens")
-        .and_then(Value::as_u64)
-        .map_or(reply_cap(window), |v| v.min(reply_cap(window)));
     if let Some(map) = side.as_object_mut() {
-        map.insert("max_tokens".to_string(), json!(cap));
+        map.insert("max_tokens".to_string(), json!(reply_cap(trigger)));
     }
     side
+}
+
+/// `side` with `reasoning_content` removed from its assistant turns.
+fn without_reasoning(side: &Value) -> Value {
+    let mut out = side.clone();
+    if let Some(messages) = out.get_mut("messages").and_then(Value::as_array_mut) {
+        *messages = crate::core::agent::r#loop::strip_assistant_reasoning(messages);
+    }
+    out
+}
+
+/// Fold `more` into `total`.
+fn add_usage(total: &mut Option<Usage>, more: Option<Usage>) {
+    *total = match (total.take(), more) {
+        (Some(a), Some(b)) => Some(a.plus(&b)),
+        (a, b) => a.or(b),
+    };
+}
+
+/// Ask the run's model for the sections with the cached request `side`.
+///
+/// A route not yet known to reject a resent `reasoning_content` rejects the
+/// side request for it before the main request finds out, so the route is
+/// remembered here and the side request retried once without the field. That
+/// retry rewrites every earlier assistant turn and so misses the cache, but
+/// only for itself: the fallback would read the whole span anyway, and it
+/// also has to pay for every chunk.
+async fn ask_cached(
+    side: &Value,
+    model_id: &str,
+    model: &dyn ModelInvoker,
+    usage: &mut Option<Usage>,
+) -> Option<String> {
+    // A dropped receiver: the reply is a summary, not the answer the user is
+    // reading.
+    let (sink, _rx) = mpsc::unbounded_channel();
+    let mut stripped = None;
+    loop {
+        let request = stripped.as_ref().unwrap_or(side);
+        match model.invoke(request, &sink).await {
+            Ok(completion) => {
+                add_usage(usage, Usage::from_completion(&completion));
+                let sections = sections_from(&completion);
+                if sections.is_none() {
+                    log::warn!(
+                        "agent: cached compaction on {model_id} returned no usable sections, \
+                         summarizing the span instead"
+                    );
+                }
+                return sections;
+            }
+            Err(e)
+                if stripped.is_none()
+                    && crate::core::agent::upstream::is_reasoning_field_error(&e) =>
+            {
+                model.reasoning_rejected(model_id);
+                let retry = without_reasoning(side);
+                if retry == *side {
+                    return None;
+                }
+                log::info!(
+                    "agent: cached compaction on {model_id} rejected reasoning_content, \
+                     retrying without it"
+                );
+                stripped = Some(retry);
+            }
+            Err(e) => {
+                log::warn!(
+                    "agent: cached compaction on {model_id} failed, summarizing the span \
+                     instead: {e}"
+                );
+                return None;
+            }
+        }
+    }
 }
 
 /// Drop `<think>` blocks a route inlines into content: the state keeps the
@@ -532,77 +724,91 @@ fn sections_from(completion: &Value) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
+/// Heading of the harness's note on what this compaction could not do.
+const NOTE_HEADING: &str = "Compaction note";
+
 /// Build the continuation state for a compaction and say what it took.
 ///
 /// The model sections come from `cached` first -- the request the run was
 /// about to send, extended by one instruction -- when it fits the window. A
 /// route with no usable answer there (no `cached`, a tool call, an empty
 /// reply, an error) falls back to the summarizer over `span`, which tries the
-/// smol model first. If that fails too, the state carries the code-built
-/// sections alone: the task and the user's words are never lost, and the run
-/// never fails for want of a summary.
+/// smol model first.
+///
+/// A summarizer that fails part-way keeps what it wrote; one that wrote
+/// nothing leaves the previous state's model sections, so a third compaction
+/// that fails does not erase what the first two merged. Either way a note says
+/// what went unsummarized. Only with nothing at all does the state carry the
+/// code-built sections alone: the task and the user's words are never lost,
+/// and the run never fails for want of a summary.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn continuation_state(
     gathered: &Gathered,
     span: &[Value],
     cached: Option<&Value>,
     harness: &HarnessContext,
-    window: u64,
+    sizing: Sizing,
+    caps: Caps,
     model_id: &str,
     model: &dyn ModelInvoker,
 ) -> (Value, CompactionReport) {
     let mut usage: Option<Usage> = None;
-    let mut charge = |more: Option<Usage>| {
-        usage = match (usage.take(), more) {
-            (Some(a), Some(b)) => Some(a.plus(&b)),
-            (a, b) => a.or(b),
-        };
-    };
     let mut written: Option<(String, String)> = None;
+    let mut notes: Vec<String> = Vec::new();
     if let Some(request) = cached {
-        let side = cached_compaction_request(request, harness.role, window);
-        if estimate_request_tokens(&side) + reply_cap(window) <= window {
-            // A dropped receiver: the reply is a summary, not the answer the
-            // user is reading.
-            let (sink, _rx) = mpsc::unbounded_channel();
-            match model.invoke(&side, &sink).await {
-                Ok(completion) => {
-                    charge(Usage::from_completion(&completion));
-                    match sections_from(&completion) {
-                        Some(sections) => written = Some((model_id.to_string(), sections)),
-                        None => log::warn!(
-                            "agent: cached compaction on {model_id} returned no usable sections, \
-                             summarizing the span instead"
-                        ),
-                    }
-                }
-                Err(e) => log::warn!(
-                    "agent: cached compaction on {model_id} failed, summarizing the span \
-                     instead: {e}"
-                ),
-            }
+        let side = cached_compaction_request(request, harness.role, sizing.trigger);
+        if estimate_request_tokens(&side) + reply_cap(sizing.trigger) <= sizing.window {
+            written = ask_cached(&side, model_id, model, &mut usage)
+                .await
+                .map(|sections| (model_id.to_string(), sections));
         }
     }
+    let mut sections = written.as_ref().map(|(_, s)| s.clone());
     if written.is_none() {
-        let (sections, spent) =
-            summarize_in_chunks(
-                span,
-                gathered.previous_model.as_deref(),
-                harness.role,
-                window,
-                model_id,
-                model,
-            )
-            .await;
-        charge(spent);
-        written = sections;
+        let (chunked, spent) = summarize_in_chunks(
+            span,
+            gathered.previous_model.as_deref(),
+            harness.role,
+            sizing,
+            model_id,
+            model,
+        )
+        .await;
+        add_usage(&mut usage, spent);
+        if chunked.clipped {
+            notes.push(
+                "The compacted span was too long to summarize whole within the request limit, \
+                 so the middle of its longest messages was clipped before summarizing."
+                    .to_string(),
+            );
+        }
+        if chunked.done < chunked.total {
+            notes.push(format!(
+                "Only {} of {} parts of the compacted span were summarized before the summarizer \
+                 failed: the newest part is not in the sections below. Re-check recent work on \
+                 disk before relying on them.",
+                chunked.done, chunked.total
+            ));
+        }
+        written = chunked.written;
+        sections = written
+            .as_ref()
+            .map(|(_, s)| s.clone())
+            .or_else(|| gathered.previous_model.clone());
     }
-    let sections = written.as_ref().map(|(_, s)| s.as_str());
-    let state = continuation::build(gathered, harness, user_cap_tokens(window), sections);
+    let harness = if notes.is_empty() {
+        std::borrow::Cow::Borrowed(harness)
+    } else {
+        let mut with_notes = harness.clone();
+        with_notes.push(NOTE_HEADING, notes.join("\n"));
+        std::borrow::Cow::Owned(with_notes)
+    };
+    let state = continuation::build(gathered, &harness, caps, sections.as_deref());
     let report = CompactionReport {
         model: written.as_ref().map(|(m, _)| m.clone()),
         input_tokens: span.iter().map(message_tokens).sum(),
         usage,
-        summary: sections.unwrap_or_default().to_string(),
+        summary: written.map(|(_, s)| s).unwrap_or_default(),
     };
     (state, report)
 }
@@ -641,26 +847,23 @@ fn render_message(msg: &Value) -> String {
 /// Split `span` into rendered chunks of at most `max_chars`, on message
 /// boundaries where a message fits and on char boundaries where one does not.
 fn render_chunks(span: &[Value], max_chars: usize) -> Vec<String> {
+    let rendered: Vec<String> = span.iter().map(render_message).collect();
+    pack(&rendered, max_chars)
+}
+
+/// Pack rendered messages, in order, into chunks of at most `max_chars`.
+fn pack(rendered: &[String], max_chars: usize) -> Vec<String> {
     let mut chunks = Vec::new();
     let mut current = String::new();
-    for msg in span {
-        let text = render_message(msg);
+    for text in rendered {
         if current.len() + text.len() > max_chars && !current.is_empty() {
             chunks.push(std::mem::take(&mut current));
         }
         if text.len() <= max_chars {
-            current.push_str(&text);
+            current.push_str(text);
             continue;
         }
-        let mut rest = text.as_str();
-        while !rest.is_empty() {
-            let mut end = max_chars.min(rest.len());
-            while !rest.is_char_boundary(end) {
-                end -= 1;
-            }
-            chunks.push(rest[..end].to_string());
-            rest = &rest[end..];
-        }
+        chunks.extend(split_chars(text, max_chars));
     }
     if !current.trim().is_empty() {
         chunks.push(current);
@@ -668,41 +871,168 @@ fn render_chunks(span: &[Value], max_chars: usize) -> Vec<String> {
     chunks
 }
 
-/// Bounds of one fallback chunk, in tokens. Half the window leaves room for
-/// the prompt, the sections carried from the chunk before and the reply; the
-/// floor keeps a tiny window from fanning out into hundreds of requests.
+/// `text` in pieces of at most `max_chars`, cut on char boundaries.
+fn split_chars(text: &str, max_chars: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let mut end = max_chars.min(rest.len());
+        while !rest.is_char_boundary(end) {
+            end -= 1;
+        }
+        out.push(rest[..end].to_string());
+        rest = &rest[end..];
+    }
+    out
+}
+
+/// `text` cut to `max_chars` by dropping its middle, keeping the head (what a
+/// message set out to do) and the tail (what it ended on).
+fn clip_text_middle(text: &str, max_chars: usize) -> String {
+    const MARK: &str = "\n[... middle clipped to bound the summary requests ...]\n";
+    if text.len() <= max_chars.max(MARK.len()) {
+        return text.to_string();
+    }
+    let keep = max_chars.saturating_sub(MARK.len());
+    let mut head = keep / 2;
+    while !text.is_char_boundary(head) {
+        head -= 1;
+    }
+    let mut tail = text.len() - (keep - head);
+    while !text.is_char_boundary(tail) {
+        tail += 1;
+    }
+    format!("{}{MARK}{}", &text[..head], &text[tail..])
+}
+
+/// Bounds of one fallback chunk, in tokens. Half the writer's window leaves
+/// room for the prompt, the sections carried from the chunk before and the
+/// reply; the floor keeps a tiny window from fanning out into hundreds of
+/// requests, and the ceiling keeps each request's price in proportion.
 const CHUNK_TOKENS: (u64, u64) = (4_000, 48_000);
+
+/// Most requests one fallback summary makes. They run one after another at
+/// full price, so an unknown window or a small local model must not turn a
+/// long span into a hundred of them: past this the chunks grow to what the
+/// writer can take, and past that each message's middle is clipped.
+pub(crate) const MAX_CHUNKS: usize = 8;
+
+/// Window assumed for a summarizer whose own window cannot be resolved: small
+/// enough for the local models a smol model usually is.
+const SMOL_FALLBACK_WINDOW: u64 = 32_000;
+
+/// The context window of the summarizer `model_id`, as the CLI resolves a
+/// run's (provider listing, then catalog), or [`SMOL_FALLBACK_WINDOW`].
+#[cfg(feature = "cli")]
+fn summarizer_window(model_id: &str) -> u64 {
+    use crate::core::cli::model_capabilities::{
+        reported_window, resolve_context_window, ContextWindowSource,
+    };
+    let resolved = resolve_context_window(model_id, None, reported_window(None, model_id));
+    match resolved.source {
+        ContextWindowSource::Fallback => SMOL_FALLBACK_WINDOW,
+        _ => resolved.tokens,
+    }
+}
+
+/// The desktop keeps no provider listing, so only the catalog sizes it.
+#[cfg(not(feature = "cli"))]
+fn summarizer_window(model_id: &str) -> u64 {
+    crate::core::agent::proxy_budget::catalog_window(model_id).unwrap_or(SMOL_FALLBACK_WINDOW)
+}
+
+/// The span as at most [`MAX_CHUNKS`] chunks a `window`-token writer can read,
+/// and whether messages had to be clipped to get there.
+fn bounded_chunks(span: &[Value], window: u64) -> (Vec<String>, bool) {
+    let preferred = (window / 2).clamp(CHUNK_TOKENS.0, CHUNK_TOKENS.1);
+    let largest = (window / 2).max(CHUNK_TOKENS.0);
+    let chunks = render_chunks(span, (preferred * 4) as usize);
+    if chunks.len() <= MAX_CHUNKS {
+        return (chunks, false);
+    }
+    // Larger chunks first: they read every word, only in fewer requests.
+    // Grown by steps, since packing whole messages leaves each chunk short of
+    // its size and the even split alone can still come out one over.
+    let total: u64 = chunks.iter().map(|c| c.len() as u64).sum::<u64>().div_ceil(4);
+    let mut grown = total.div_ceil(MAX_CHUNKS as u64).max(preferred);
+    while grown <= largest {
+        let chunks = render_chunks(span, (grown * 4) as usize);
+        if chunks.len() <= MAX_CHUNKS {
+            return (chunks, false);
+        }
+        grown += grown / 4;
+    }
+    // Still too long: every message is cut to one per-message cap, the
+    // largest whose packing fits, so short messages stay whole and the long
+    // ones lose their middles. Packed on message boundaries, so no chunk
+    // starts mid-word; a cap of nothing but the clip marks always fits.
+    let max_chars = (largest * 4) as usize;
+    let rendered: Vec<String> = span.iter().map(render_message).collect();
+    let packed = |cap: usize| -> Vec<String> {
+        let clipped: Vec<String> = rendered.iter().map(|t| clip_text_middle(t, cap)).collect();
+        pack(&clipped, max_chars)
+    };
+    let (mut low, mut high) = (0usize, rendered.iter().map(String::len).max().unwrap_or(0));
+    while low < high {
+        let mid = (low + high).div_ceil(2);
+        if packed(mid).len() <= MAX_CHUNKS {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    let mut chunks = packed(low);
+    // Even marks alone can overflow a span of thousands of messages: then
+    // the oldest go, which is what the previous sections already cover best.
+    if chunks.len() > MAX_CHUNKS {
+        chunks.drain(..chunks.len() - MAX_CHUNKS);
+    }
+    (chunks, true)
+}
+
+/// What the fallback summarizer got done.
+#[derive(Debug, Default)]
+struct Chunked {
+    /// The sections and who wrote them, when any request in this pass
+    /// answered. They already merge the earlier sections handed in.
+    written: Option<(String, String)>,
+    /// Chunks summarized, of `total`.
+    done: usize,
+    total: usize,
+    /// Messages were clipped to keep within [`MAX_CHUNKS`].
+    clipped: bool,
+}
 
 /// The fallback summarizer: the span rendered to text and summarized chunk by
 /// chunk, each request carrying the sections written so far, so a span of any
 /// size is read whole instead of having its middle cut out. The smol model
-/// writes when it answers; any failure there moves the rest of the work to the
-/// run's model. A failure on the run's model gives up -- `None` -- and the
-/// caller keeps the code-built sections. Usage covers every request made.
+/// writes when it answers, with the chunks sized for its own window; any
+/// failure there moves the rest of the work to the run's model. A failure on
+/// the run's model stops, keeping the sections the chunks before it wrote.
+/// Usage covers every request made.
 async fn summarize_in_chunks(
     span: &[Value],
     previous: Option<&str>,
     role: Role,
-    window: u64,
+    sizing: Sizing,
     model_id: &str,
     model: &dyn ModelInvoker,
-) -> (Option<(String, String)>, Option<Usage>) {
-    let chunk_tokens = (window / 2).clamp(CHUNK_TOKENS.0, CHUNK_TOKENS.1);
-    let chunks = render_chunks(span, (chunk_tokens * 4) as usize);
-    let mut usage: Option<Usage> = None;
-    let mut add = |more: Option<Usage>| {
-        usage = match (usage.take(), more) {
-            (Some(a), Some(b)) => Some(a.plus(&b)),
-            (a, b) => a.or(b),
-        };
+) -> (Chunked, Option<Usage>) {
+    let mut smol = model.summarizer();
+    let writer_window = match smol {
+        // Never larger than the run's: smol hands off to it on a failure.
+        Some((smol_id, _)) => summarizer_window(smol_id).min(sizing.window),
+        None => sizing.window,
     };
-    if chunks.is_empty() {
-        return (previous.map(|p| (model_id.to_string(), p.to_string())), None);
-    }
+    let (chunks, clipped) = bounded_chunks(span, writer_window);
+    let mut usage: Option<Usage> = None;
+    let mut out = Chunked {
+        total: chunks.len(),
+        clipped,
+        ..Chunked::default()
+    };
     let prompt = fallback_prompt(role);
     let mut sections = previous.map(str::to_string);
-    let mut smol = model.summarizer();
-    let mut writer = model_id.to_string();
     let total = chunks.len();
     for (index, chunk) in chunks.iter().enumerate() {
         let body = match &sections {
@@ -714,13 +1044,13 @@ async fn summarize_in_chunks(
         };
         let mut answered = None;
         if let Some((smol_id, smol_model)) = smol {
-            match request_summary(&prompt, &body, window, smol_id, smol_model).await {
+            match request_summary(&prompt, &body, sizing.trigger, smol_id, smol_model).await {
                 Ok((Some(text), spent)) => {
-                    add(spent);
+                    add_usage(&mut usage, spent);
                     answered = Some((smol_id.to_string(), text));
                 }
                 Ok((None, spent)) => {
-                    add(spent);
+                    add_usage(&mut usage, spent);
                     log::warn!(
                         "agent: compaction summary from {smol_id} was empty, retrying on \
                          {model_id}"
@@ -735,31 +1065,37 @@ async fn summarize_in_chunks(
             }
         }
         if answered.is_none() {
-            match request_summary(&prompt, &body, window, model_id, model).await {
+            match request_summary(&prompt, &body, sizing.trigger, model_id, model).await {
                 Ok((Some(text), spent)) => {
-                    add(spent);
+                    add_usage(&mut usage, spent);
                     answered = Some((model_id.to_string(), text));
                 }
                 Ok((None, spent)) => {
-                    add(spent);
-                    log::warn!("agent: compaction summary from {model_id} was empty");
-                    return (None, usage);
+                    add_usage(&mut usage, spent);
+                    log::warn!(
+                        "agent: compaction summary from {model_id} was empty at part {} of \
+                         {total}, keeping the sections written so far",
+                        index + 1
+                    );
+                    return (out, usage);
                 }
                 Err(e) => {
                     log::warn!(
-                        "agent: compaction summary from {model_id} failed, keeping the \
-                         code-built state only: {e}"
+                        "agent: compaction summary from {model_id} failed at part {} of \
+                         {total}, keeping the sections written so far: {e}",
+                        index + 1
                     );
-                    return (None, usage);
+                    return (out, usage);
                 }
             }
         }
         if let Some((by, text)) = answered {
-            writer = by;
-            sections = Some(text);
+            sections = Some(text.clone());
+            out.written = Some((by, text));
+            out.done = index + 1;
         }
     }
-    (sections.map(|s| (writer, s)), usage)
+    (out, usage)
 }
 
 /// One fallback summarizer request: the sections it wrote (`None` when the
@@ -767,7 +1103,7 @@ async fn summarize_in_chunks(
 async fn request_summary(
     prompt: &str,
     body: &str,
-    window: u64,
+    trigger: u64,
     model_id: &str,
     model: &dyn ModelInvoker,
 ) -> Result<(Option<String>, Option<Usage>), String> {
@@ -777,7 +1113,7 @@ async fn request_summary(
             { "role": "system", "content": prompt },
             { "role": "user", "content": body },
         ],
-        "max_tokens": reply_cap(window),
+        "max_tokens": reply_cap(trigger),
     });
     // Discard the summarizer's streamed tokens: a dropped receiver means these
     // never reach the user-facing event stream.
@@ -987,12 +1323,14 @@ mod tests {
         window: u64,
         model: &dyn ModelInvoker,
     ) -> (Value, CompactionReport) {
+        let sizing = Sizing::new(window, DEFAULT_COMPACTION_RATIO);
         continuation_state(
             &continuation::gather(span),
             span,
             cached,
             &HarnessContext::default(),
-            window,
+            sizing,
+            caps(sizing.trigger),
             "m",
             model,
         )
@@ -1018,12 +1356,121 @@ mod tests {
         assert_eq!(side["tools"], request["tools"]);
         assert_eq!(side["tool_choice"], request["tool_choice"]);
         let messages = side["messages"].as_array().unwrap();
-        assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0], request["messages"][0]);
-        assert!(crate::core::agent::reminder::is_reminder_only(&messages[1]["content"]));
+        assert_eq!(messages.len(), 1, "folded into the trailing user message");
+        let text = messages[0]["content"].as_str().unwrap();
+        assert!(text.starts_with("hi\n\n<SYSTEM>\n[Compaction request from the harness]"), "{text}");
+        let after_tool = json!({ "model": "m", "messages": [
+            { "role": "user", "content": "hi" },
+            { "role": "assistant", "content": Value::Null, "tool_calls": [{ "id": "a" }] },
+            { "role": "tool", "tool_call_id": "a", "content": "out" },
+        ] });
+        let side_after_tool = cached_compaction_request(&after_tool, Role::Parent, 100_000);
+        let last = side_after_tool["messages"].as_array().unwrap().last().unwrap().clone();
+        assert!(
+            crate::core::agent::reminder::is_reminder_only(&last["content"]),
+            "never folded into a tool result"
+        );
         assert_eq!(side["max_tokens"], SUMMARY_MAX_TOKENS);
         let small = cached_compaction_request(&request, Role::Parent, 8_000);
-        assert_eq!(small["max_tokens"], 800, "a small window gets a smaller reply");
+        assert_eq!(small["max_tokens"], 800, "a small trigger gets a smaller reply");
+    }
+
+    /// (#12) The instruction joins a trailing user message -- the volatile
+    /// tail, on a real request -- instead of following it as a second one,
+    /// which a template demanding alternating roles rejects. Its text is
+    /// appended, so every byte of that message's text is still a prefix.
+    #[test]
+    fn the_instruction_folds_into_a_trailing_user_message() {
+        let tail = crate::core::agent::reminder::wrap("Today's date is 2026-11-04.");
+        let request = json!({
+            "model": "m",
+            "messages": [
+                { "role": "user", "content": "the task" },
+                { "role": "assistant", "content": "ok" },
+                { "role": "user", "content": tail },
+            ],
+        });
+        let side = cached_compaction_request(&request, Role::Parent, 100_000);
+        let messages = side["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 3, "no message is added after the tail");
+        assert_eq!(&messages[..2], &request["messages"].as_array().unwrap()[..2]);
+        let last = messages[2]["content"].as_str().unwrap();
+        assert!(last.starts_with(&tail), "the tail's text is kept as it was: {last}");
+        assert!(last.contains("[Compaction request from the harness]"));
+        assert!(crate::core::agent::reminder::is_reminder_only(&messages[2]["content"]));
+    }
+
+    /// (#10) The reply cap is not the user's `max_tokens`: a small one would
+    /// cut the sections short, and it is not part of any cache key.
+    #[test]
+    fn the_reply_cap_ignores_the_users_max_tokens() {
+        for user_cap in [512, 1_000_000] {
+            let request = json!({
+                "model": "m",
+                "max_tokens": user_cap,
+                "messages": [{ "role": "user", "content": "hi" }],
+            });
+            let side = cached_compaction_request(&request, Role::Parent, 100_000);
+            assert_eq!(side["max_tokens"], SUMMARY_MAX_TOKENS);
+        }
+    }
+
+    /// (#7) A forced tool choice can only be answered with that tool call, so
+    /// such a request never takes the cached path.
+    #[test]
+    fn a_forced_tool_choice_is_not_cacheable() {
+        let forced = json!({ "tool_choice": { "type": "function", "function": { "name": "todo" } } });
+        assert!(!cacheable(&forced));
+        assert!(!cacheable(&json!({ "tool_choice": "required" })));
+        assert!(cacheable(&json!({ "tool_choice": "auto" })));
+        assert!(cacheable(&json!({ "messages": [] })));
+    }
+
+    /// A run model that rejects a resent `reasoning_content` the way a strict
+    /// route does, and answers once the field is gone.
+    struct RejectsReasoning {
+        requests: StdMutex<Vec<Value>>,
+        rejected: StdMutex<Vec<String>>,
+    }
+    #[async_trait]
+    impl ModelInvoker for RejectsReasoning {
+        async fn invoke(
+            &self,
+            request: &Value,
+            _events: &mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+        ) -> Result<Value, String> {
+            self.requests.lock().unwrap().push(request.clone());
+            if serde_json::to_string(request).unwrap().contains("reasoning_content") {
+                return Err("Upstream returned HTTP 400: unsupported field reasoning_content".into());
+            }
+            Ok(json!({ "choices": [{ "message": { "content": "## Progress\nretried" } }] }))
+        }
+        fn reasoning_rejected(&self, model_id: &str) {
+            self.rejected.lock().unwrap().push(model_id.to_string());
+        }
+    }
+
+    /// (#9) A reasoning rejection on the side request is remembered for the
+    /// route and retried once without the field, rather than falling back to
+    /// a full chunked summary.
+    #[tokio::test]
+    async fn a_reasoning_rejection_on_the_side_request_retries_without_it() {
+        let model = RejectsReasoning {
+            requests: StdMutex::new(Vec::new()),
+            rejected: StdMutex::new(Vec::new()),
+        };
+        let mut span = self::span(4);
+        span[1]["reasoning_content"] = json!("thinking");
+        let request = json!({ "model": "m", "messages": span });
+        let (state, report) = state_of(&span, Some(&request), 100_000, &model).await;
+        assert!(state_text(&state).contains("## Progress\nretried"));
+        assert_eq!(report.model.as_deref(), Some("m"));
+        assert_eq!(*model.rejected.lock().unwrap(), vec!["m".to_string()]);
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2, "one rejection, one retry, no fallback");
+        let retry = &requests[1]["messages"];
+        assert!(retry[1].get("reasoning_content").is_none());
+        assert_eq!(retry.as_array().unwrap().len(), 5, "the instruction still follows");
     }
 
     /// Each role is told what to keep: the parent the cross-task decisions
@@ -1155,6 +1602,135 @@ mod tests {
         }
     }
 
+    /// A previous state whose model sections say `progress`.
+    fn previous_state(progress: &str) -> Value {
+        let gathered = continuation::gather(&[json!({ "role": "user", "content": "the task" })]);
+        continuation::build(
+            &gathered,
+            &HarnessContext::default(),
+            caps(80_000),
+            Some(&format!("## Progress\n{progress}\n## Current step\na\n## Next actions\nb")),
+        )
+    }
+
+    /// (#1) Two compactions merged their sections; a third whose summarizer
+    /// fails keeps them, with a note that the newest span went unsummarized,
+    /// rather than replacing them with the no-summary placeholder.
+    #[tokio::test]
+    async fn a_failed_summarizer_keeps_the_earlier_model_sections() {
+        let model = stub("## Progress\nFIRST and SECOND\n## Current step\na\n## Next actions\nb");
+        let first = state_of(&span(6), None, 100_000, &model).await.0;
+        let mut second_span = vec![first];
+        second_span.extend(span(6).into_iter().skip(1));
+        let second = state_of(&second_span, None, 100_000, &model).await.0;
+        assert!(state_text(&second).contains("FIRST and SECOND"));
+
+        let mut third_span = vec![second];
+        third_span.extend(span(6).into_iter().skip(1));
+        let (third, report) = state_of(&third_span, None, 100_000, &FailingModel).await;
+        let text = state_text(&third);
+        assert!(text.contains("## Progress\nFIRST and SECOND"), "{text}");
+        assert!(!text.contains("summarizer could not run"), "{text}");
+        assert!(text.contains("## Compaction note\nOnly 0 of 1 parts"), "{text}");
+        assert_eq!(report.model, None, "no model wrote sections this time");
+        // And they keep being carried: the next pass still has them to merge.
+        let back = continuation::parse(&third).unwrap();
+        assert!(back.model_sections.unwrap().contains("FIRST and SECOND"));
+    }
+
+    /// A summarizer that answers some chunks and then fails.
+    struct FailsAfter {
+        answered: StdMutex<usize>,
+        limit: usize,
+    }
+    #[async_trait]
+    impl ModelInvoker for FailsAfter {
+        async fn invoke(
+            &self,
+            _request: &Value,
+            _events: &mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+        ) -> Result<Value, String> {
+            let mut answered = self.answered.lock().unwrap();
+            if *answered >= self.limit {
+                return Err("boom".into());
+            }
+            *answered += 1;
+            Ok(json!({ "choices": [{ "message": {
+                "content": format!("## Progress\nPART{}", *answered)
+            } }] }))
+        }
+    }
+
+    /// (#1) A failure at chunk k keeps the sections chunks 1 to k-1 wrote.
+    #[tokio::test]
+    async fn a_failure_part_way_keeps_the_chunks_already_summarized() {
+        let mut big = vec![previous_state("EARLIER")];
+        for i in 0..20 {
+            big.push(json!({ "role": "assistant", "content": format!("m{i} {}", "x".repeat(8_000)) }));
+        }
+        let model = FailsAfter { answered: StdMutex::new(0), limit: 2 };
+        let (state, report) = state_of(&big, None, 8_000, &model).await;
+        let text = state_text(&state);
+        assert!(text.contains("## Progress\nPART2"), "{text}");
+        assert!(!text.contains("EARLIER"), "PART2 already merged the earlier sections: {text}");
+        assert!(text.contains("Only 2 of "), "{text}");
+        assert_eq!(report.model.as_deref(), Some("m"));
+    }
+
+    /// (#4) However long the span, the fallback makes at most `MAX_CHUNKS`
+    /// requests: the chunks grow first, and past what the writer can read the
+    /// long messages lose their middles, which the state says.
+    #[tokio::test]
+    async fn the_fallback_makes_a_bounded_number_of_requests() {
+        let model = stub("## Progress\nok");
+        // ~500K tokens on a 16K window: 125 chunks at the old sizing.
+        let mut big = vec![json!({ "role": "user", "content": "the task" })];
+        for i in 0..250 {
+            big.push(json!({ "role": "assistant", "content": format!("HEAD{i} {} TAIL{i}", "x".repeat(8_000)) }));
+        }
+        let (state, _) = state_of(&big, None, 16_000, &model).await;
+        let requests = model.requests.lock().await;
+        assert!(requests.len() <= MAX_CHUNKS, "{} requests", requests.len());
+        let sent: String = requests
+            .iter()
+            .map(|r| r["messages"][1]["content"].as_str().unwrap().to_string())
+            .collect();
+        for i in [0, 125, 249] {
+            assert!(sent.contains(&format!("HEAD{i} ")) && sent.contains(&format!(" TAIL{i}")), "{i}");
+        }
+        for request in requests.iter() {
+            let body = request["messages"][1]["content"].as_str().unwrap();
+            assert!(body.len() <= 8_000 * 4 + 1_000, "a chunk past the writer's half: {}", body.len());
+        }
+        assert!(state_text(&state).contains("middle of its longest messages was clipped"));
+
+        // A span that fits in eight larger chunks is read whole, unclipped.
+        let model = stub("## Progress\nok");
+        let mid: Vec<Value> = big[..60].to_vec();
+        let (state, _) = state_of(&mid, None, 100_000, &model).await;
+        assert!(model.requests.lock().await.len() <= MAX_CHUNKS);
+        assert!(!state_text(&state).contains("clipped"));
+    }
+
+    /// (#4) Chunks are sized for the smol model's window when smol writes:
+    /// one it cannot place is assumed small, not as large as the run's.
+    #[tokio::test]
+    async fn the_smol_writer_gets_chunks_its_window_holds() {
+        let model = WithSmol { run: stub("## Progress\nrun"), smol: stub("## Progress\nsmol") };
+        let mut big = vec![json!({ "role": "user", "content": "the task" })];
+        for i in 0..30 {
+            big.push(json!({ "role": "assistant", "content": format!("m{i} {}", "x".repeat(8_000)) }));
+        }
+        state_of(&big, None, 1_000_000, &model).await;
+        let requests = model.smol.requests.lock().await;
+        assert!(requests.len() > 1, "a 60K-token span is several chunks for a 32K writer");
+        for request in requests.iter() {
+            let body = request["messages"][1]["content"].as_str().unwrap();
+            assert!(body.len() <= SMOL_FALLBACK_WINDOW as usize * 2 + 1_000, "{}", body.len());
+        }
+        assert_eq!(*model.run.calls.lock().unwrap(), 0);
+    }
+
     /// An empty smol reply was still billed, so its usage is charged along
     /// with the run model's retry rather than dropped with the empty text.
     #[tokio::test]
@@ -1187,6 +1763,12 @@ mod tests {
         assert!(!body.contains(SUMMARY_MARKER), "the old summary is not rendered as transcript");
     }
 
+    /// The sizing `/compact` tests run under: a 100K window at the default ratio.
+    #[cfg(feature = "cli")]
+    fn default_sizing() -> Sizing {
+        Sizing::new(100_000, DEFAULT_COMPACTION_RATIO)
+    }
+
     #[cfg(feature = "cli")]
     fn convo(n: usize) -> Vec<Value> {
         let mut v = vec![json!({ "role": "system", "content": "sys" })];
@@ -1207,7 +1789,7 @@ mod tests {
         // Each `msgN` message is 8 or 9 tokens by the preflight's rule: 36
         // holds the newest four.
         let (out, report) =
-            compact_conversation(&input, "m", &model, 36, &HarnessContext::default(), 100_000)
+            compact_conversation(&input, "m", &model, 36, &HarnessContext::default(), default_sizing())
                 .await;
         assert!(report.is_some());
         assert_eq!(out[0], input[0]);
@@ -1217,7 +1799,7 @@ mod tests {
 
         // A conversation that fits the tail has nothing to drop.
         let (same, none) =
-            compact_conversation(&convo(4), "m", &model, 1_000, &HarnessContext::default(), 100_000)
+            compact_conversation(&convo(4), "m", &model, 1_000, &HarnessContext::default(), default_sizing())
                 .await;
         assert_eq!(same, convo(4));
         assert!(none.is_none());
@@ -1236,7 +1818,7 @@ mod tests {
         }
         let keep = tail_tokens(100_000);
         let (out, _) =
-            compact_conversation(&input, "m", &model, keep, &HarnessContext::default(), 100_000)
+            compact_conversation(&input, "m", &model, keep, &HarnessContext::default(), default_sizing())
                 .await;
         let kept: u64 = out[2..].iter().map(message_tokens).sum();
         assert!(kept <= 3 * keep, "kept {kept} tokens");
@@ -1305,7 +1887,7 @@ mod tests {
     fn both_summary_forms_are_recognized() {
         assert!(is_compaction_summary(&summary_message("x")));
         assert_eq!(legacy_summary_text(&summary_message("x")), Some("x"));
-        let state = continuation::build(&continuation::Gathered::default(), &HarnessContext::default(), 10, None);
+        let state = continuation::build(&continuation::Gathered::default(), &HarnessContext::default(), Caps::user_only(10), None);
         assert!(is_compaction_summary(&state));
         assert!(!is_compaction_summary(&json!({ "role": "system", "content": "prompt" })));
     }

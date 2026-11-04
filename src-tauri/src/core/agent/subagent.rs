@@ -916,6 +916,9 @@ pub(crate) struct ParentLink {
     run_id: String,
     name: String,
     sent: Arc<std::sync::atomic::AtomicUsize>,
+    /// The child's session file as the model spells it, `None` when the run
+    /// has no scratch to keep one in.
+    session: Option<String>,
 }
 
 impl ParentLink {
@@ -923,6 +926,12 @@ impl ParentLink {
     /// continuation state names so a compacted child still knows who it is.
     pub(crate) fn identity(&self) -> String {
         format!("{} ({})", self.name, self.run_id)
+    }
+
+    /// Where the child's full task can be re-read when its continuation state
+    /// has to clip it: the session file records the prompt whole.
+    pub(crate) fn session(&self) -> Option<&str> {
+        self.session.as_deref()
     }
 }
 
@@ -1646,6 +1655,7 @@ impl BackgroundSubagents {
             run_id: run_id.to_string(),
             name: name.to_string(),
             sent: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            session: None,
         };
         message_main_agent(&link, text).unwrap();
     }
@@ -2166,7 +2176,14 @@ fn child_body(
     body.insert("model".to_string(), serde_json::json!(model));
     body.insert(
         "messages".to_string(),
-        serde_json::json!([{ "role": "user", "content": description }]),
+        // Neutralized like a parent's steering message: a description carries
+        // other models' blackboard text in a phase handoff, and a marker in it
+        // would read as the harness, or cut the task short where the
+        // continuation state copies it.
+        serde_json::json!([{
+            "role": "user",
+            "content": crate::core::agent::reminder::neutralize(description),
+        }]),
     );
     // Unbounded turns: guarded by the inherited budget and parent teardown.
     body.insert("max_turns".to_string(), serde_json::json!(0));
@@ -2704,6 +2721,7 @@ fn start_dispatch(
         run_id: run_id.clone(),
         name: name.clone(),
         sent: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        session: session_display.clone(),
     };
     registry.running.fetch_add(1, Ordering::SeqCst);
     registry.roster_add(&name, &run_id, &description, waiting > 0, display_path.clone());
@@ -8039,6 +8057,7 @@ pub(crate) mod tests {
             run_id: "sub-explore-1".to_string(),
             name: "explore".to_string(),
             sent: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            session: None,
         }
     }
 

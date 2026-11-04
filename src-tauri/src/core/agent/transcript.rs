@@ -97,6 +97,9 @@ pub(crate) struct CompactionPlan {
     /// Record index the kept tail begins at, i.e. the number of events the
     /// summary covers.
     pub covers: usize,
+    /// Estimated tokens of the kept tail, which the request after the
+    /// compaction still carries.
+    pub tail_tokens: u64,
 }
 
 impl Transcript {
@@ -342,6 +345,10 @@ impl Transcript {
             // it is placed around it.
             summarize: messages[..cut].to_vec(),
             covers: sources.get(cut).copied().unwrap_or(self.events.len()),
+            tail_tokens: messages[cut..]
+                .iter()
+                .map(crate::core::agent::compaction::message_tokens)
+                .sum(),
         })
     }
 }
@@ -374,7 +381,7 @@ mod tests {
         crate::core::agent::continuation::build(
             &crate::core::agent::continuation::Gathered::default(),
             &crate::core::agent::continuation::HarnessContext::default(),
-            0,
+            crate::core::agent::continuation::Caps::user_only(0),
             Some(&format!("## Progress\n{text}")),
         )
     }

@@ -30,7 +30,9 @@
 
 #[cfg(feature = "cli")]
 use super::compaction::compact_conversation;
-use super::compaction::{cached_compaction_request, continuation_state};
+use super::compaction::{
+    cached_compaction_request, caps, continuation_state, Sizing, DEFAULT_COMPACTION_RATIO,
+};
 use super::continuation::{gather, HarnessContext, Role};
 use super::context::{compose_system_prompt, SessionStart};
 use super::events::StreamEvent;
@@ -361,7 +363,7 @@ async fn compacted(history: &[Value]) -> Vec<Value> {
         &StubSummarizer,
         KEEP_TOKENS,
         &HarnessContext::default(),
-        100_000,
+        Sizing::new(100_000, DEFAULT_COMPACTION_RATIO),
     )
     .await
     .0
@@ -876,8 +878,8 @@ impl ModelInvoker for RecordingSummarizer {
 /// (a) janhq/jan-internal#516: the compaction request is the request the run
 /// was about to send plus one instruction, so every byte of it -- tools,
 /// `tool_choice`, the volatile tail -- is a prefix the provider cached. The
-/// serialized side request starts with the serialized next request, minus its
-/// closing brackets.
+/// serialized side request starts with the serialized next request up to the
+/// end of its last message's text, to which the instruction is appended.
 #[tokio::test]
 async fn the_compaction_request_extends_the_request_it_replaces() {
     let project = Project::new("cached-compaction");
@@ -896,7 +898,8 @@ async fn the_compaction_request_extends_the_request_it_replaces() {
         &history,
         Some(&request),
         &HarnessContext::default(),
-        1_000_000,
+        Sizing::new(1_000_000, DEFAULT_COMPACTION_RATIO),
+        caps(800_000),
         "test-model",
         &model,
     )
@@ -904,10 +907,12 @@ async fn the_compaction_request_extends_the_request_it_replaces() {
     let sent = model.0.lock().unwrap();
     assert_eq!(sent.len(), 1, "the cached path answered, no fallback request");
     let side = serde_json::to_string(&sent[0]).unwrap();
-    assert_eq!(sent[0], cached_compaction_request(&request, Role::Parent, 1_000_000));
+    assert_eq!(sent[0], cached_compaction_request(&request, Role::Parent, 800_000));
 
-    // Everything up to the end of the last message the run would have sent.
-    let shared_until = next.last_message_end();
+    // Everything up to the end of the last message's text: the instruction
+    // is appended to that text (the volatile tail), so roles keep
+    // alternating, and only the closing quote and brace after it move.
+    let shared_until = next.last_message_end() - "\"}".len();
     assert_prefix_kept(
         "the compaction request must extend the next request",
         &next.body,
@@ -939,7 +944,8 @@ async fn the_request_after_compaction_keeps_the_system_prompt_and_tools() {
         &history[..12],
         None,
         &HarnessContext::default(),
-        100_000,
+        Sizing::new(100_000, DEFAULT_COMPACTION_RATIO),
+        caps(80_000),
         "test-model",
         &model,
     )
