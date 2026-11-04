@@ -115,6 +115,13 @@ describe('dispatchCoworkTool', () => {
       expect(executeAgentTool).toHaveBeenCalledOnce()
     })
 
+    it('passes a Plan callback that returns true while the run is in Plan', async () => {
+      await dispatchCoworkTool(call('read', { path: 'a' }), planCtx())
+      const planActive = executeAgentTool.mock.calls[0][10]
+      expect(planActive).toEqual(expect.any(Function))
+      expect(planActive()).toBe(true)
+    })
+
     it('runs todo and ask through their callbacks', async () => {
       const c = planCtx()
       await dispatchCoworkTool(call('todo'), c)
@@ -128,6 +135,31 @@ describe('dispatchCoworkTool', () => {
     const out = await dispatchCoworkTool(call(name), ctx())
     expect(out.isError).toBeFalsy()
     expect(executeAgentTool).toHaveBeenCalledWith(name, {}, 's1', null, 'session', true, true, null, undefined, undefined, expect.any(Function))
+  })
+
+  describe('Plan callback handed to executeAgentTool', () => {
+    const planActiveOf = () => executeAgentTool.mock.calls[0][10] as () => boolean
+
+    it('returns false for a normal (non-Plan) run', async () => {
+      await dispatchCoworkTool(call('read', { path: 'a' }), ctx({ planMode: false }))
+      expect(planActiveOf()()).toBe(false)
+    })
+
+    it('returns true for a Plan run', async () => {
+      await dispatchCoworkTool(call('read', { path: 'a' }), ctx({ planMode: true }))
+      expect(planActiveOf()()).toBe(true)
+    })
+
+    it('follows the latched state on Execute/Exit transitions, not a snapshot', async () => {
+      const c = ctx({ planMode: true })
+      await dispatchCoworkTool(call('read', { path: 'a' }), c)
+      const planActive = planActiveOf()
+      expect(planActive()).toBe(true)
+      c.planMode = false // reviewed Execute/Exit clears the latch
+      expect(planActive()).toBe(false)
+      c.planMode = true // and a later Plan entry latches again
+      expect(planActive()).toBe(true)
+    })
   })
 
   // The trailing 'session' is load-bearing: under the default 'thread' scope a
