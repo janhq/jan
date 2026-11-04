@@ -1101,6 +1101,11 @@ fn resolve_workspace_root(
 /// are refused here regardless of what the frontend asks for, until a permission
 /// round-trip exists; a read that escapes the project root prompts too. `bash`
 /// runs only under an enforcing sandbox (see the module docs).
+///
+/// `plan_mode` is the Cowork run's effective Plan state at dispatch. It is
+/// required (a caller that predates it fails closed at IPC deserialization, it
+/// is never defaulted to `false`) and only tightens: tool hooks go inert and the
+/// mutating tools are refused, exactly as for scoped Chat.
 #[tauri::command]
 // `read_only_project` is a folder the user attached read-only. It is validated
 // here rather than trusted: an unusable one is an error, never a silent drop,
@@ -1119,6 +1124,7 @@ pub async fn execute_tool<R: tauri::Runtime>(
     project_writable: Option<bool>,
     scope: Option<WorkspaceScope>,
     call_id: Option<String>,
+    plan_mode: bool,
 ) -> Result<ToolResult, AgentToolsError> {
     guard_caller_session(
         scope,
@@ -1144,12 +1150,24 @@ pub async fn execute_tool<R: tauri::Runtime>(
         scope,
         call_id,
         None,
+        ToolRun {
+            plan_mode,
+            folder_skills: false,
+        },
     )
     .await
 }
 
 /// Chat-only execution: both persisted consent and the caller's narrower
 /// effective limits must authorize each capability. Legacy Cowork is separate.
+///
+/// `plan_mode` is the caller's *effective, run-latched* Plan state at dispatch
+/// (enabled mid-run stays on; a later toggle-off cannot widen the active turn;
+/// the reviewed Execute transition sends `false`). It is required, so a caller
+/// that predates it fails closed at IPC deserialization rather than silently
+/// running tool hooks in Plan. It can only tighten: native honors it by making
+/// tool hooks inert (a hook is a shell command with the folder's write grant)
+/// and by refusing mutating tools outright.
 #[tauri::command]
 pub async fn execute_thread_tool<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
@@ -1157,6 +1175,7 @@ pub async fn execute_thread_tool<R: tauri::Runtime>(
     tool_name: String,
     args: serde_json::Value,
     effective_grant: crate::thread_capabilities::ThreadCapabilities,
+    plan_mode: bool,
 ) -> Result<ToolResult, AgentToolsError> {
     let (data_folder, stored) = crate::thread_capabilities::snapshot(thread_id.clone()).await?;
     execute_thread_tool_inner(
@@ -1167,6 +1186,7 @@ pub async fn execute_thread_tool<R: tauri::Runtime>(
         args,
         stored,
         effective_grant,
+        plan_mode,
     )
     .await
 }
@@ -1180,6 +1200,7 @@ async fn execute_thread_tool_inner(
     args: serde_json::Value,
     stored: serde_json::Value,
     effective: crate::thread_capabilities::ThreadCapabilities,
+    plan_mode: bool,
 ) -> Result<ToolResult, AgentToolsError> {
     // No loop-dispatched monitor/subagent tools, management commands, legacy
     // aliases or unknown tools can enter this narrow surface.
@@ -1237,6 +1258,10 @@ async fn execute_thread_tool_inner(
         Some(WorkspaceScope::Thread),
         None,
         None,
+        ToolRun {
+            plan_mode,
+            folder_skills: true,
+        },
     )
     .await
 }
@@ -1284,6 +1309,7 @@ pub async fn execute_tool_streaming<R: tauri::Runtime>(
     scope: Option<WorkspaceScope>,
     call_id: Option<String>,
     on_output: tauri::ipc::Channel<ToolOutputChunk>,
+    plan_mode: bool,
 ) -> Result<ToolResult, AgentToolsError> {
     let sink = output_sink(on_output, call_id.clone());
     guard_caller_session(
@@ -1310,6 +1336,10 @@ pub async fn execute_tool_streaming<R: tauri::Runtime>(
         scope,
         call_id,
         Some(sink),
+        ToolRun {
+            plan_mode,
+            folder_skills: false,
+        },
     )
     .await
 }
@@ -1428,6 +1458,30 @@ async fn guard_caller_session(
     legacy_elevation_decision(scope, kind, elevated)
 }
 
+/// The hooks for one call. Tests substitute a per-thread set, because the real
+/// resolver is a process-wide `OnceLock` shared by every test in the binary.
+fn resolve_hooks(project: Option<&Path>, thread_id: &str) -> crate::tools::hooks::HookSet {
+    #[cfg(test)]
+    if let Some(set) = tests::test_hooks(thread_id) {
+        return set;
+    }
+    #[cfg(not(test))]
+    let _ = thread_id;
+    crate::tools::hooks::resolve_for(project)
+}
+
+/// Host-derived facts about one native call that no legacy IPC argument may
+/// supply. Only [`execute_thread_tool_inner`] builds a non-default value.
+#[derive(Debug, Clone, Copy, Default)]
+struct ToolRun {
+    /// Effective run-latched Plan: tool hooks are inert (they are shell commands
+    /// running with the folder's grant, so a Plan-allowed read must not fire one).
+    plan_mode: bool,
+    /// Derive skill roots and the enabled whitelist from the effective authorized
+    /// folder (the validated `read_only_project`), never from a caller path.
+    folder_skills: bool,
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn execute_tool_inner(
     screenshot_backend: Option<crate::tools::ScreenshotBackend>,
@@ -1443,7 +1497,18 @@ async fn execute_tool_inner(
     scope: Option<WorkspaceScope>,
     call_id: Option<String>,
     sink: Option<crate::tools::OutputSink>,
+    run: ToolRun,
 ) -> Result<ToolResult, AgentToolsError> {
+    // Plan is read-only. Callers already refuse these, but the host does not
+    // rely on that: the latched bit it was handed refuses them here too, on
+    // every entry point (scoped Chat and legacy Cowork, streaming included).
+    if run.plan_mode && matches!(name.as_str(), "write" | "edit" | "shell" | "skill_write") {
+        return Err(format!(
+            "tool '{name}' is disabled in Plan mode, which is read-only. Stage changes in the \
+             plan and ask the user to leave Plan mode before implementation."
+        )
+        .into());
+    }
     let allow_network = enforce_global_tool_policy(
         &name,
         &args,
@@ -1472,8 +1537,6 @@ async fn execute_tool_inner(
         .map(str::trim)
         .filter(|p| !p.is_empty())
         .map(PathBuf::from);
-    let skill_project: Option<PathBuf> =
-        project_dir.as_deref().map(workspace::project_store);
     let writable = project_writable.unwrap_or(false);
     let attached = attach_folder(
         read_only_project.as_deref(),
@@ -1481,6 +1544,15 @@ async fn execute_tool_inner(
         &data_folder,
         writable,
     )?;
+    // Scoped Chat: the skill overlay and whitelist belong to the folder the host
+    // just validated from the effective grant, exactly what the composer
+    // discovers from. Legacy callers keep the project they passed (Cowork).
+    let skill_folder: Option<PathBuf> = if run.folder_skills {
+        attached.first().cloned()
+    } else {
+        project_dir.clone()
+    };
+    let skill_project: Option<PathBuf> = skill_folder.as_deref().map(workspace::project_store);
     let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
     let tool = lookup(&name)
         .ok_or_else(|| AgentToolsError::from(format!("unknown built-in tool '{name}'")))?;
@@ -1580,7 +1652,10 @@ async fn execute_tool_inner(
         }
     }
 
-    let enabled = enabled_skills.unwrap_or_default();
+    let enabled = match (run.folder_skills, skill_folder.as_deref()) {
+        (true, Some(folder)) => skills::enabled_for_project(folder),
+        _ => enabled_skills.unwrap_or_default(),
+    };
     // The hooks that apply to this call, resolved through the app-installed
     // resolver (`hooks::set_resolver`): this command is handed one tool call
     // with no run around it, so unlike the CLI loop it has no run-start
@@ -1590,9 +1665,9 @@ async fn execute_tool_inner(
     // `project` is the attached folder Cowork passes, which is the only project
     // this surface knows about; chat has none and gets the user's global hooks
     // alone.
-    let hooks = crate::tools::hooks::resolve_for(project_dir.as_deref());
+    let hooks = resolve_hooks(project_dir.as_deref(), &thread_id);
     let mut ctx = ToolContext::new(&root, &store, &enabled)
-        .with_hooks(&hooks, false, None)
+        .with_hooks(&hooks, run.plan_mode, None)
         .with_network(allow_network)
         .with_confined_writes(true)
         .with_mask_root(Path::new(&data_folder))
@@ -1746,6 +1821,18 @@ mod tests {
 
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    /// Per-thread hook sets: the production resolver is a process-wide
+    /// `OnceLock`, so tests cannot each install their own.
+    fn hook_map() -> &'static Mutex<std::collections::HashMap<String, crate::tools::hooks::HookSet>> {
+        static MAP: std::sync::OnceLock<
+            Mutex<std::collections::HashMap<String, crate::tools::hooks::HookSet>>,
+        > = std::sync::OnceLock::new();
+        MAP.get_or_init(Default::default)
+    }
+    pub(super) fn test_hooks(thread_id: &str) -> Option<crate::tools::hooks::HookSet> {
+        hook_map().lock().unwrap().get(thread_id).cloned()
+    }
 
     /// Chunks recorded by [`test_sink`]: monotonic `(seq, call_id, text)`.
     type SeenChunks = Arc<Mutex<Vec<(u64, Option<String>, String)>>>;
@@ -2017,6 +2104,17 @@ mod tests {
         stored: serde_json::Value,
         effective: serde_json::Value,
     ) -> Result<ToolResult, AgentToolsError> {
+        chat_call_in(data, name, args, stored, effective, false).await
+    }
+
+    async fn chat_call_in(
+        data: &Path,
+        name: &str,
+        args: serde_json::Value,
+        stored: serde_json::Value,
+        effective: serde_json::Value,
+        plan_mode: bool,
+    ) -> Result<ToolResult, AgentToolsError> {
         // One thread id per data folder, so concurrently running tests cannot
         // see each other's host confirmation.
         let id = format!(
@@ -2041,6 +2139,7 @@ mod tests {
             args,
             stored,
             serde_json::from_value(effective).unwrap(),
+            plan_mode,
         )
         .await;
         crate::thread_capabilities::clear(&id);
@@ -2071,6 +2170,7 @@ mod tests {
                 args,
                 denied.clone(),
                 serde_json::from_value(forged.clone()).unwrap(),
+                false,
             )
         };
         let shell = call("shell", json!({"command":"printf temporary-chat-shell"}))
@@ -2111,6 +2211,328 @@ mod tests {
         let _ = std::fs::remove_dir_all(data);
     }
 
+
+    // ---- Plan / hooks (QA01) ------------------------------------------------
+
+    fn chat_id(data: &Path) -> String {
+        format!("chat-boundary-{}", data.file_name().unwrap().to_string_lossy())
+    }
+
+    fn hook_for(event: &str, matcher: &str, command: &str) -> crate::tools::hooks::HookSet {
+        let mut set = crate::tools::hooks::HookSet::new();
+        set.extend_from(
+            vec![crate::tools::hooks::HookEntry {
+                event: event.into(),
+                matcher: Some(matcher.into()),
+                command: command.into(),
+                timeout_secs: Some(20),
+            }],
+            Path::new("config.toml"),
+        );
+        set
+    }
+
+    /// A writable attached folder holding `known.txt`, a mutating hook on
+    /// `event` matching `read`, and the call run with the given latched Plan.
+    /// Returns (read result, whether the hook's marker appeared).
+    async fn read_with_marker_hook(event: &str, plan_mode: bool) -> (ToolResult, bool) {
+        let data = unique_data_folder();
+        let folder = repo_outside_tmp("plan-hook");
+        std::fs::write(folder.join("known.txt"), "known content").unwrap();
+        hook_map().lock().unwrap().insert(
+            chat_id(&data),
+            hook_for(event, "read", "printf ran > plan-hook-marker.txt"),
+        );
+        let write = consent(Some(&folder), true, false, false);
+        let out = chat_call_in(
+            &data,
+            "read",
+            json!({"path": "known.txt"}),
+            write.clone(),
+            write,
+            plan_mode,
+        )
+        .await
+        .expect("read is a Plan-allowed tool and must run");
+        let marker = folder.join("plan-hook-marker.txt").exists();
+        hook_map().lock().unwrap().remove(&chat_id(&data));
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+        (out, marker)
+    }
+
+    /// The positive control proves the hook and the enforcing sandbox really ran
+    /// the mutation; without it "marker absent in Plan" would also be what a hook
+    /// that never starts looks like.
+    #[tokio::test]
+    async fn plan_read_keeps_tool_hooks_inert_while_normal_read_runs_them() {
+        if !jail::backend().enforces() {
+            eprintln!("skipping: no enforcing OS sandbox, so hooks cannot start here");
+            return;
+        }
+        for event in ["PreToolUse", "PostToolUse"] {
+            let (normal, marker) = read_with_marker_hook(event, false).await;
+            assert!(!normal.is_error, "{}", normal.content);
+            assert!(marker, "{event}: control — a normal read must run the mutating hook");
+
+            let (planned, marker) = read_with_marker_hook(event, true).await;
+            assert!(!planned.is_error, "{}", planned.content);
+            assert!(planned.content.contains("known content"), "{}", planned.content);
+            assert!(!marker, "{event}: a Plan read must not run a mutating hook");
+        }
+    }
+
+    #[tokio::test]
+    async fn plan_mode_refuses_mutating_thread_tools_at_the_host() {
+        let data = unique_data_folder();
+        let folder = repo_outside_tmp("plan-refuse");
+        let write = consent(Some(&folder), true, true, true);
+        for (name, args) in [
+            ("write", json!({"path": "x.txt", "content": "no"})),
+            ("edit", json!({"path": "x.txt", "old_string": "a", "new_string": "b"})),
+            ("shell", json!({"command": "touch shell-ran.txt"})),
+            ("skill_write", json!({"name": "planned", "content": "no"})),
+        ] {
+            let err = chat_call_in(&data, name, args, write.clone(), write.clone(), true)
+                .await
+                .unwrap_err();
+            assert!(err.message.contains("Plan mode"), "{name}: {}", err.message);
+        }
+        let err = chat_call_in(
+            &data,
+            "memory",
+            json!({"op": "write", "name": "planned", "content": "no"}),
+            write.clone(),
+            write.clone(),
+            true,
+        )
+        .await
+        .unwrap();
+        assert!(err.is_error, "Plan memory mutation must be refused: {}", err.content);
+        assert!(!folder.join("x.txt").exists() && !folder.join("shell-ran.txt").exists());
+        assert!(!workspace::permanent_store(&data).join("skills/planned").exists());
+        // Plan reads (incl. skills and memory view) still work.
+        for (name, args) in [
+            ("ls", json!({"path": "."})),
+            ("skill_list", json!({})),
+            ("memory", json!({"op": "view"})),
+        ] {
+            let out = chat_call_in(&data, name, args, write.clone(), write.clone(), true)
+                .await
+                .unwrap();
+            assert!(!out.is_error || name == "memory", "{name}: {}", out.content);
+        }
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    // ---- Legacy Cowork IPC carries the run-latched Plan (QA01) --------------
+
+    /// The legacy entry points' shared inner path, as `execute_tool` /
+    /// `execute_tool_streaming` build it from their required `plan_mode`
+    /// argument. `streaming` supplies an output sink like the streaming command.
+    async fn legacy_call(
+        data: &Path,
+        thread: &str,
+        folder: &Path,
+        name: &str,
+        args: serde_json::Value,
+        plan_mode: bool,
+        streaming: bool,
+    ) -> Result<ToolResult, AgentToolsError> {
+        let sink = streaming
+            .then(|| test_sink(Arc::new(Mutex::new(Vec::new())), Some("call-1".into())));
+        execute_tool_inner(
+            None,
+            data.to_string_lossy().into_owned(),
+            thread.into(),
+            Some(folder.to_string_lossy().into_owned()),
+            name.into(),
+            args,
+            None,
+            None,
+            Some(folder.to_string_lossy().into_owned()),
+            Some(true),
+            None,
+            Some("call-1".into()),
+            sink,
+            ToolRun {
+                plan_mode,
+                folder_skills: false,
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn legacy_plan_read_keeps_tool_hooks_inert_streaming_or_not() {
+        if !jail::backend().enforces() {
+            eprintln!("skipping: no enforcing OS sandbox, so hooks cannot start here");
+            return;
+        }
+        for streaming in [false, true] {
+            for event in ["PreToolUse", "PostToolUse"] {
+                for plan_mode in [false, true] {
+                    let data = unique_data_folder();
+                    let folder = repo_outside_tmp("legacy-plan-hook");
+                    std::fs::write(folder.join("known.txt"), "known content").unwrap();
+                    let thread = format!("legacy-plan-{}", data.file_name().unwrap().to_string_lossy());
+                    hook_map().lock().unwrap().insert(
+                        thread.clone(),
+                        hook_for(event, "read", "printf ran > plan-hook-marker.txt"),
+                    );
+                    let out = legacy_call(
+                        &data, &thread, &folder, "read", json!({"path": "known.txt"}), plan_mode, streaming,
+                    )
+                    .await
+                    .expect("read is Plan-allowed");
+                    assert!(!out.is_error, "{}", out.content);
+                    let marker = folder.join("plan-hook-marker.txt").exists();
+                    // Control (plan off) proves the hook really runs here; Plan must not.
+                    assert_eq!(
+                        marker, !plan_mode,
+                        "streaming={streaming} {event} plan={plan_mode}: hook marker"
+                    );
+                    hook_map().lock().unwrap().remove(&thread);
+                    let _ = std::fs::remove_dir_all(folder);
+                    let _ = std::fs::remove_dir_all(data);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_plan_refuses_mutating_tools_but_unplanned_runs_them() {
+        for streaming in [false, true] {
+            let data = unique_data_folder();
+            let folder = repo_outside_tmp("legacy-plan-refuse");
+            let thread = format!("legacy-refuse-{}", data.file_name().unwrap().to_string_lossy());
+            for (name, args) in [
+                ("write", json!({"path": "x.txt", "content": "no"})),
+                ("edit", json!({"path": "x.txt", "old_string": "a", "new_string": "b"})),
+                ("shell", json!({"command": "touch shell-ran.txt"})),
+                ("skill_write", json!({"name": "planned", "content": "no"})),
+            ] {
+                let err = legacy_call(&data, &thread, &folder, name, args, true, streaming)
+                    .await
+                    .unwrap_err();
+                assert!(err.message.contains("Plan mode"), "{name}: {}", err.message);
+            }
+            assert!(!folder.join("x.txt").exists() && !folder.join("shell-ran.txt").exists());
+            // Control: the same write is allowed once Plan is off.
+            let ok = legacy_call(
+                &data, &thread, &folder, "write", json!({"path": "x.txt", "content": "yes"}), false, streaming,
+            )
+            .await
+            .unwrap();
+            assert!(!ok.is_error, "{}", ok.content);
+            assert!(folder.join("x.txt").exists());
+            let _ = std::fs::remove_dir_all(folder);
+            let _ = std::fs::remove_dir_all(data);
+        }
+    }
+
+    // ---- Folder skills (QA05) -----------------------------------------------
+
+    /// Distinct bodies so a result proves which layer answered.
+    fn seed_skill(root: &Path, name: &str, body: &str) {
+        skills::write(root, name, &format!("---\nname: {name}\ndescription: {body} skill\n---\n{body}"))
+            .unwrap();
+    }
+
+    async fn skill_call(
+        data: &Path,
+        name: &str,
+        args: serde_json::Value,
+        folder: Option<&Path>,
+    ) -> ToolResult {
+        let grant = consent(folder, false, false, false);
+        chat_call(data, name, args, grant.clone(), grant).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn chat_skill_tools_follow_the_authorized_folder() {
+        let data = unique_data_folder();
+        let folder = repo_outside_tmp("skills-folder");
+        let global = workspace::permanent_store(&data);
+        let project = workspace::project_store(&folder.canonicalize().unwrap());
+        seed_skill(&global, "audit-demo", "GLOBAL");
+        seed_skill(&project, "audit-demo", "PROJECT");
+        seed_skill(&project, "folder-only", "FOLDERONLY");
+        seed_skill(&global, "global-only", "GLOBALONLY");
+        skills::test_support::set_enabled(&folder, &[]);
+
+        // Folder skill overrides the same-named global one, like slash expansion.
+        let read = skill_call(&data, "skill_read", json!({"name": "audit-demo"}), Some(&folder)).await;
+        assert!(read.content.contains("PROJECT") && !read.content.contains("GLOBAL"), "{}", read.content);
+        // A folder-only skill is discoverable and readable.
+        let list = skill_call(&data, "skill_list", json!({}), Some(&folder)).await;
+        assert!(list.content.contains("folder-only") && list.content.contains("global-only"), "{}", list.content);
+        let only = skill_call(&data, "skill_read", json!({"name": "folder-only"}), Some(&folder)).await;
+        assert!(only.content.contains("FOLDERONLY"), "{}", only.content);
+
+        // No folder: skill-only/override layers are absent, global answers.
+        let list = skill_call(&data, "skill_list", json!({}), None).await;
+        assert!(!list.content.contains("folder-only"), "{}", list.content);
+        let read = skill_call(&data, "skill_read", json!({"name": "audit-demo"}), None).await;
+        assert!(read.content.contains("GLOBAL") && !read.content.contains("PROJECT"), "{}", read.content);
+        let _ = std::fs::remove_dir_all(project);
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[tokio::test]
+    async fn chat_skill_whitelist_comes_from_the_folder_not_the_caller() {
+        let data = unique_data_folder();
+        let folder = repo_outside_tmp("skills-whitelist");
+        let global = workspace::permanent_store(&data);
+        let project = workspace::project_store(&folder.canonicalize().unwrap());
+        seed_skill(&global, "blocked-global", "BLOCKED");
+        seed_skill(&global, "allowed-global", "ALLOWED");
+        seed_skill(&project, "allowed-folder", "FOLDERALLOWED");
+        skills::test_support::set_enabled(&folder, &["allowed-global", "allowed-folder"]);
+
+        let list = skill_call(&data, "skill_list", json!({}), Some(&folder)).await;
+        assert!(!list.content.contains("blocked-global"), "{}", list.content);
+        assert!(list.content.contains("allowed-global") && list.content.contains("allowed-folder"), "{}", list.content);
+        let blocked = skill_call(&data, "skill_read", json!({"name": "blocked-global"}), Some(&folder)).await;
+        assert!(blocked.is_error || blocked.content.contains("disabled") || blocked.content.contains("not found"), "{}", blocked.content);
+        assert!(!blocked.content.contains("BLOCKED"), "{}", blocked.content);
+        // Without the folder grant the folder's whitelist and overlay do not apply.
+        let list = skill_call(&data, "skill_list", json!({}), None).await;
+        assert!(list.content.contains("blocked-global") && !list.content.contains("allowed-folder"), "{}", list.content);
+        let _ = std::fs::remove_dir_all(project);
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    /// The forged caller overlay is not an authority: an effective grant naming
+    /// a different folder than the stored consent cannot select its skills.
+    #[tokio::test]
+    async fn chat_skill_overlay_cannot_be_selected_by_an_unconsented_folder() {
+        let data = unique_data_folder();
+        let granted = repo_outside_tmp("skills-granted");
+        let forged = repo_outside_tmp("skills-forged");
+        seed_skill(&workspace::project_store(&forged.canonicalize().unwrap()), "forged-only", "FORGED");
+        skills::test_support::set_enabled(&granted, &[]);
+        skills::test_support::set_enabled(&forged, &[]);
+        let stored = consent(Some(&granted), false, false, false);
+        let overlay = consent(Some(&forged), false, false, false);
+        let list = chat_call(&data, "skill_list", json!({}), stored, overlay).await.unwrap();
+        assert!(!list.content.contains("forged-only"), "{}", list.content);
+        let _ = std::fs::remove_dir_all(workspace::project_store(&forged.canonicalize().unwrap()));
+        let _ = std::fs::remove_dir_all(granted);
+        let _ = std::fs::remove_dir_all(forged);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[test]
+    fn unresolved_folder_whitelist_fails_closed() {
+        // No resolver override for this path and none installed in unit tests.
+        let missing = std::env::temp_dir().join("jan-no-whitelist-resolver");
+        assert_eq!(skills::enabled_for_project(&missing), vec![String::new()]);
+    }
+
     #[tokio::test]
     async fn postfix_verifier_chat_rejects_outbound_aliases_before_setup() {
         let data = unique_data_folder();
@@ -2142,6 +2564,7 @@ mod tests {
                 let err = execute_tool_inner(
                     None, data.to_string_lossy().into_owned(), id.clone(), None,
                     name.into(), json!({}), None, None, None, None, scope, None, None,
+                    ToolRun::default(),
                 )
                 .await
                 .unwrap_err();
@@ -2194,6 +2617,7 @@ mod tests {
                     args,
                     write.clone(),
                     serde_json::from_value(write).unwrap(),
+                    false,
                 )
                 .await
             }
@@ -2446,6 +2870,7 @@ mod tests {
             scope,
             call_id,
             None,
+            ToolRun::default(),
         )
         .await
     }

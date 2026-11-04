@@ -10,6 +10,7 @@ import { PreviewBody } from '@/containers/CoworkPreviewPanel'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { executeAgentTool } from '@/lib/agentTools'
 import { useThreads } from '@/hooks/useThreads'
+import { useChatSessions } from '@/stores/chat-session-store'
 import {
   basenameOf,
   previewKindFor,
@@ -79,7 +80,12 @@ export function ChatPreviewPanel({ threadId, path, onClose }: Props) {
         false,
         false,
         null,
-        grant
+        grant,
+        undefined,
+        // The active run's latched Plan (a toggle-off mid-run must not widen a
+        // preview read into running hooks); idle threads use the live toggle.
+        () =>
+          useChatSessions.getState().sessions[threadId]?.transport.isPlanActive() === true
       )
       if (!alive) return
       if (res.error !== undefined) {

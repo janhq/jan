@@ -411,13 +411,16 @@ export async function executeTool(
   threadId: string,
   name: string,
   args: Record<string, unknown>,
-  project?: string,
-  enabledSkills?: string[],
-  allowNetwork?: boolean,
-  readOnlyProject?: string,
-  projectWritable?: boolean,
-  scope?: WorkspaceScope,
-  callId?: string
+  project: string | undefined,
+  enabledSkills: string[] | undefined,
+  allowNetwork: boolean | undefined,
+  readOnlyProject: string | undefined,
+  projectWritable: boolean | undefined,
+  scope: WorkspaceScope | undefined,
+  callId: string | undefined,
+  /** Cowork's effective, run-latched Plan state. Required, with no default: the
+   * host refuses a call without it rather than assuming Plan is off. */
+  planMode: boolean
 ): Promise<ToolResult> {
   return await invoke('plugin:agent-tools|execute_tool', {
     dataFolder,
@@ -431,6 +434,7 @@ export async function executeTool(
     projectWritable,
     scope,
     callId,
+    planMode,
   })
 }
 
@@ -447,6 +451,8 @@ export async function executeToolStreaming(
   name: string,
   args: Record<string, unknown>,
   onOutput: Channel<ToolOutputChunk>,
+  /** Required, no default: see `executeTool`'s `planMode`. */
+  planMode: boolean,
   options?: {
     project?: string
     enabledSkills?: string[]
@@ -470,6 +476,7 @@ export async function executeToolStreaming(
     projectWritable: options?.projectWritable,
     scope: options?.scope,
     callId: options?.callId,
+    planMode,
   })
 }
 
@@ -616,13 +623,19 @@ export interface ThreadCapabilities {
   shellNetwork: boolean
   memoryWrite: boolean
 }
+/**
+ * `planMode` is the caller's effective, run-latched Plan state at dispatch. It is
+ * required (there is no default): native uses it to keep tool hooks inert and
+ * refuse mutating tools, and can only tighten.
+ */
 export async function executeThreadTool(
   threadId: string,
   toolName: string,
   args: Record<string, unknown>,
-  effectiveGrant: ThreadCapabilities
+  effectiveGrant: ThreadCapabilities,
+  planMode: boolean
 ): Promise<ToolResult> {
   return await invoke('plugin:agent-tools|execute_thread_tool', {
-    threadId, toolName, args, effectiveGrant,
+    threadId, toolName, args, effectiveGrant, planMode,
   })
 }

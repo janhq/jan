@@ -15,6 +15,8 @@ vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({ app: () => ({ getJanDataFolder: mocks.getJanDataFolder }) }),
 }))
 vi.mock('@/hooks/useThreads', () => ({ useThreads: { getState: mocks.getState } }))
+const livePlan = vi.hoisted(() => ({ on: false }))
+vi.mock('@/hooks/useChatPlan', () => ({ chatPlanEnabled: () => livePlan.on }))
 
 import { executeAgentTool } from '../agentTools'
 
@@ -52,7 +54,7 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
     mocks.overlay = defaultConversationCapabilities()
     firstSetup.resolve('/isolated/verifier-data')
     await expect(first).resolves.toMatchObject({ content: 'scoped output' })
-    expect(mocks.executeThreadTool).toHaveBeenLastCalledWith(threadId, 'shell', { command: 'echo scratch' }, defaultConversationCapabilities())
+    expect(mocks.executeThreadTool).toHaveBeenLastCalledWith(threadId, 'shell', { command: 'echo scratch' }, defaultConversationCapabilities(), false)
 
     const secondSetup = deferred<string>()
     mocks.getJanDataFolder.mockReturnValueOnce(secondSetup.promise)
@@ -61,7 +63,7 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
     mocks.overlay = granted
     secondSetup.resolve('/isolated/verifier-data')
     await second
-    expect(mocks.executeThreadTool).toHaveBeenLastCalledWith(threadId, 'shell', {}, granted)
+    expect(mocks.executeThreadTool).toHaveBeenLastCalledWith(threadId, 'shell', {}, granted, false)
     expect(mocks.getState).toHaveBeenCalledTimes(2)
     expect(mocks.getConversationCapabilities.mock.calls).toEqual([[threadId], [threadId]])
     expect(mocks.executeTool).not.toHaveBeenCalled()
@@ -86,7 +88,7 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
   it('keeps shell scratch dispatch while narrowing folder/network; ignores forged legacy caller flags', async () => {
     mocks.overlay = defaultConversationCapabilities()
     await expect(executeAgentTool('shell', { command: 'echo scratch' }, threadId, '/forged/project', 'thread', true, true, '/forged/skills')).resolves.toMatchObject({ content: 'scoped output' })
-    expect(mocks.executeThreadTool.mock.calls).toEqual([[threadId, 'shell', { command: 'echo scratch' }, defaultConversationCapabilities()]])
+    expect(mocks.executeThreadTool.mock.calls).toEqual([[threadId, 'shell', { command: 'echo scratch' }, defaultConversationCapabilities(), false]])
     expect(mocks.executeTool).not.toHaveBeenCalled()
   })
 
@@ -94,7 +96,7 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
     mocks.persisted = defaultConversationCapabilities()
     await expect(executeAgentTool('shell', { command: 'printf temporary-scratch' }, 'temporary-chat', '/forged/project', 'thread', true, true, '/forged/skills')).resolves.toMatchObject({ content: 'scoped output' })
     expect(mocks.getConversationCapabilities).toHaveBeenCalledExactlyOnceWith('temporary-chat')
-    expect(mocks.executeThreadTool).toHaveBeenCalledExactlyOnceWith('temporary-chat', 'shell', { command: 'printf temporary-scratch' }, defaultConversationCapabilities())
+    expect(mocks.executeThreadTool).toHaveBeenCalledExactlyOnceWith('temporary-chat', 'shell', { command: 'printf temporary-scratch' }, defaultConversationCapabilities(), false)
     mocks.executeThreadTool.mockClear()
     for (const name of ['memory', 'skill_write']) {
       await expect(executeAgentTool(name, { op: 'write', memoryWrite: true, effectiveGrant: granted }, 'temporary-chat', '/forged/project', 'thread', true, true, '/forged/skills')).resolves.toEqual({ error: expect.stringContaining('durable memory') })
@@ -106,7 +108,7 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
   it('takes the exact explicit grant, not the caller-selected folder or network flags', async () => {
     mocks.overlay = { ...granted, folderScope: { path: '/explicit/read-only', access: 'read' }, shellNetwork: false }
     await executeAgentTool('read', { path: 'example.txt' }, threadId, '/forged', 'thread', true, true, '/forged/skills')
-    expect(mocks.executeThreadTool).toHaveBeenCalledExactlyOnceWith(threadId, 'read', { path: 'example.txt' }, mocks.overlay)
+    expect(mocks.executeThreadTool).toHaveBeenCalledExactlyOnceWith(threadId, 'read', { path: 'example.txt' }, mocks.overlay, false)
     expect(mocks.executeTool).not.toHaveBeenCalled()
   })
 
@@ -120,12 +122,12 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
   it.each(['view', 'search'])('keeps memory %s recall after revoke', async (op) => {
     mocks.overlay = defaultConversationCapabilities()
     await executeAgentTool('memory', { op }, threadId)
-    expect(mocks.executeThreadTool).toHaveBeenCalledExactlyOnceWith(threadId, 'memory', { op }, defaultConversationCapabilities())
+    expect(mocks.executeThreadTool).toHaveBeenCalledExactlyOnceWith(threadId, 'memory', { op }, defaultConversationCapabilities(), false)
   })
 
   it('preserves Cowork session legacy arguments without reading Chat authority', async () => {
     await expect(executeAgentTool('shell', { command: 'echo session' }, 'cowork-session', '/cowork/folder', 'session', true, true, '/cowork/skills')).resolves.toMatchObject({ content: 'legacy output' })
-    expect(mocks.executeTool).toHaveBeenCalledExactlyOnceWith('/isolated/verifier-data', 'cowork-session', 'shell', { command: 'echo session' }, '/cowork/skills', undefined, true, '/cowork/folder', true, 'session')
+    expect(mocks.executeTool).toHaveBeenCalledExactlyOnceWith('/isolated/verifier-data', 'cowork-session', 'shell', { command: 'echo session' }, '/cowork/skills', undefined, true, '/cowork/folder', true, 'session', undefined, false)
     expect(mocks.executeThreadTool).not.toHaveBeenCalled()
     expect(mocks.getState).not.toHaveBeenCalled()
   })
@@ -148,7 +150,7 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
   it('malformed grant narrows the complete shell request instead of partially salvaging consent', async () => {
     mocks.overlay = { ...granted, extra: true }
     await executeAgentTool('shell', {}, threadId)
-    expect(mocks.executeThreadTool).toHaveBeenCalledExactlyOnceWith(threadId, 'shell', {}, defaultConversationCapabilities())
+    expect(mocks.executeThreadTool).toHaveBeenCalledExactlyOnceWith(threadId, 'shell', {}, defaultConversationCapabilities(), false)
   })
 
   it('preserves diff and images from dedicated native results', async () => {
@@ -167,7 +169,7 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
       await expect(call('memory', defaultConversationCapabilities(), { op: 'write' })).resolves.toEqual({ error: expect.stringContaining('durable memory') })
       expect(mocks.executeThreadTool).not.toHaveBeenCalled()
       await call('shell', defaultConversationCapabilities(), { command: 'echo scratch' })
-      expect(mocks.executeThreadTool).toHaveBeenCalledExactlyOnceWith(threadId, 'shell', { command: 'echo scratch' }, defaultConversationCapabilities())
+      expect(mocks.executeThreadTool).toHaveBeenCalledExactlyOnceWith(threadId, 'shell', { command: 'echo scratch' }, defaultConversationCapabilities(), false)
     })
 
     it('does not auto-expand a scratch call when folder is granted after classification', async () => {
@@ -202,6 +204,61 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
       mocks.overlay = granted
       await call('shell', { ...granted, extra: 1 }, {})
       expect(mocks.executeThreadTool.mock.calls[0][3]).toEqual(defaultConversationCapabilities())
+    })
+  })
+
+  describe('effective run-latched Plan crosses the native boundary', () => {
+    const planArg = () => mocks.executeThreadTool.mock.calls.at(-1)?.[4]
+    beforeEach(() => { livePlan.on = false; mocks.overlay = granted })
+
+    it('is false for a normal run, even for an allowed read with a write grant', async () => {
+      await executeAgentTool('read', { path: 'a.txt' }, threadId)
+      expect(planArg()).toBe(false)
+      await executeAgentTool('read', { path: 'a.txt' }, threadId, undefined, 'thread', false, false, undefined, undefined, undefined, () => false)
+      expect(planArg()).toBe(false)
+    })
+
+    it('carries the run latch even after the live toolbar is switched off', async () => {
+      livePlan.on = false
+      await executeAgentTool('read', { path: 'a.txt' }, threadId, undefined, 'thread', false, false, undefined, undefined, undefined, () => true)
+      expect(planArg()).toBe(true)
+    })
+
+    it('late-enabled live Plan tightens a call whose run snapshot is not yet latched', async () => {
+      livePlan.on = true
+      await executeAgentTool('read', { path: 'a.txt' }, threadId, undefined, 'thread', false, false, undefined, undefined, undefined, () => false)
+      expect(planArg()).toBe(true)
+      await executeAgentTool('read', { path: 'a.txt' }, threadId)
+      expect(planArg()).toBe(true)
+    })
+
+    it('reads Plan at dispatch, after async setup and approval-time changes', async () => {
+      const setup = deferred<string>()
+      mocks.getJanDataFolder.mockReturnValueOnce(setup.promise)
+      let latched = false
+      const call = executeAgentTool('read', { path: 'a.txt' }, threadId, undefined, 'thread', false, false, undefined, undefined, undefined, () => latched)
+      latched = true // Plan enabled while the call was waiting
+      setup.resolve('/isolated/verifier-data')
+      await call
+      expect(planArg()).toBe(true)
+    })
+
+    it('reviewed Execute transition (latch and live both cleared) sends false', async () => {
+      let latched = true
+      livePlan.on = true
+      await executeAgentTool('read', { path: 'a.txt' }, threadId, undefined, 'thread', false, false, undefined, undefined, undefined, () => latched)
+      expect(planArg()).toBe(true)
+      latched = false
+      livePlan.on = false
+      await executeAgentTool('read', { path: 'a.txt' }, threadId, undefined, 'thread', false, false, undefined, undefined, undefined, () => latched)
+      expect(planArg()).toBe(false)
+    })
+
+    it('does not send Plan on the legacy Cowork session path', async () => {
+      livePlan.on = true
+      await executeAgentTool('read', {}, 'cowork-session', '/cowork/folder', 'session', false, true)
+      expect(mocks.executeThreadTool).not.toHaveBeenCalled()
+      expect(mocks.executeTool).toHaveBeenCalledTimes(1)
     })
   })
 })

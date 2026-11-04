@@ -18,6 +18,7 @@ const subagentResultReserve = vi.fn()
 const subagentResultFill = vi.fn()
 const getJanDataFolder = vi.fn()
 
+vi.mock('@/hooks/useChatPlan', () => ({ chatPlanEnabled: () => false }))
 vi.mock('@/hooks/useThreads', () => ({
   useThreads: { getState: () => ({ getConversationCapabilities: () => effectiveGrant }) },
 }))
@@ -196,7 +197,7 @@ describe('agentTools', () => {
       'shell',
       { command: 'ls' },
       effectiveGrant
-    )
+    , false)
     expect(executeTool).not.toHaveBeenCalled()
   })
 
@@ -217,7 +218,7 @@ describe('agentTools', () => {
       'shell',
       { command: 'ls' },
       effectiveGrant
-    )
+    , false)
     expect(executeTool).not.toHaveBeenCalled()
   })
 
@@ -246,7 +247,7 @@ describe('agentTools', () => {
       'read',
       { path: 'a.txt' },
       effectiveGrant
-    )
+    , false)
     expect(executeTool).not.toHaveBeenCalled()
   })
 
@@ -264,7 +265,7 @@ describe('agentTools', () => {
       'read',
       { path: 'a.txt' },
       effectiveGrant
-    )
+    , false)
     expect(executeTool).not.toHaveBeenCalled()
   })
 
@@ -276,7 +277,7 @@ describe('agentTools', () => {
     } as never)
     const { executeAgentTool } = await import('../agentTools')
     await executeAgentTool('read', { path: 'a.txt' }, 'thread-1', null)
-    expect(executeThreadTool).toHaveBeenCalledExactlyOnceWith('thread-1', 'read', { path: 'a.txt' }, effectiveGrant)
+    expect(executeThreadTool).toHaveBeenCalledExactlyOnceWith('thread-1', 'read', { path: 'a.txt' }, effectiveGrant, false)
     expect(executeTool).not.toHaveBeenCalled()
   })
 
@@ -310,11 +311,13 @@ describe('agentTools', () => {
       true,
       '/repo',
       true,
-      'session'
+      'session',
+      undefined,
+      false
     )
   })
 
-  // Chat never passes a skill overlay, so its skills stay global-only.
+  // Chat derives its authorized folder skill overlay on the native host.
   it('leaves the skill-overlay project undefined by default', async () => {
     vi.mocked(executeThreadTool).mockResolvedValue({
       content: 'ok',
@@ -323,7 +326,7 @@ describe('agentTools', () => {
     } as never)
     const { executeAgentTool } = await import('../agentTools')
     await executeAgentTool('skill_list', {}, 'thread-1', '/home/u/repo')
-    expect(executeThreadTool).toHaveBeenCalledExactlyOnceWith('thread-1', 'skill_list', {}, effectiveGrant)
+    expect(executeThreadTool).toHaveBeenCalledExactlyOnceWith('thread-1', 'skill_list', {}, effectiveGrant, false)
     expect(executeTool).not.toHaveBeenCalled()
   })
 
@@ -365,7 +368,7 @@ describe('agentTools', () => {
       'skill_list',
       {},
       effectiveGrant
-    )
+    , false)
     expect(executeTool).not.toHaveBeenCalled()
   })
 

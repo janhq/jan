@@ -2721,7 +2721,7 @@ describe('ThreadDetail route', () => {
           const result = await childDispatch(call('task-n:ctl', 'skill_write', skillWrite), nativeBinding(grant({ memoryWrite: true }), 'skill_write'))
           expect(result).not.toMatchObject({ isError: true })
           expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_write', skillWrite, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }), expect.any(AbortSignal))
+          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_write', skillWrite, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }), expect.any(AbortSignal), expect.any(Function))
         })
 
         it('a later widen cannot enlarge a child: skill_write is denied before approval or execution', async () => {
@@ -2760,7 +2760,7 @@ describe('ThreadDetail route', () => {
           const result = await childDispatch(call(`task-n:read-${_label}`, 'skill_read', { name: 'x' }), nativeBinding(ceiling, 'skill_read'))
           expect(result).not.toMatchObject({ isError: true })
           expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
-          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_read', { name: 'x' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining(expected), expect.any(AbortSignal))
+          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_read', { name: 'x' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining(expected), expect.any(AbortSignal), expect.any(Function))
         })
       })
 
@@ -2781,7 +2781,7 @@ describe('ThreadDetail route', () => {
           expect(getMcpTools).not.toHaveBeenCalled()
           expect(run).not.toHaveBeenCalled()
           expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
-          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }), expect.any(AbortSignal))
+          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }), expect.any(AbortSignal), expect.any(Function))
         })
 
         it('an unmapped child tool name is refused before binding, validation, approval or execution', async () => {
@@ -3010,7 +3010,7 @@ describe('ThreadDetail route', () => {
       approve(true)
       await pending
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('shell', { command: 'echo safe' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: true }), expect.any(AbortSignal))
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('shell', { command: 'echo safe' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: true }), expect.any(AbortSignal), expect.any(Function))
       h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }))
     })
 
@@ -3096,7 +3096,7 @@ describe('ThreadDetail route', () => {
       await arrive(toolCall)
       await dispatch(toolCall)
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('memory', toolCall.input, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }), expect.any(AbortSignal))
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('memory', toolCall.input, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }), expect.any(AbortSignal), expect.any(Function))
     })
 
     it('denies advertised memory mutations when the current global grant is OFF', async () => {
@@ -3170,7 +3170,7 @@ describe('ThreadDetail route', () => {
       await dispatch(toolCall)
       // dispatch reused the arrival grant: one prompt, one execution under it
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_write', { name: 'x', content: 'y' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }), expect.any(AbortSignal))
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_write', { name: 'x', content: 'y' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }), expect.any(AbortSignal), expect.any(Function))
       expect(reads).toBe(1)
     })
 
@@ -3181,8 +3181,24 @@ describe('ThreadDetail route', () => {
       const toolCall = call('native-read', 'read', { path: 'scratch.txt' })
       await arrive(toolCall)
       await dispatch(toolCall)
-      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }), expect.any(AbortSignal))
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }), expect.any(AbortSignal), expect.any(Function))
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+    })
+
+    it('passes a live callback reading the owning transport Plan latch to native dispatch', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      const transport = h.chatSessionsState.sessions['thread-1'].transport
+      transport.getMcpServerForTool = () => undefined
+      transport.hasAdvertisedNativeTool = () => true
+      renderComponent()
+      const toolCall = call('latch-read', 'read', { path: 'scratch.txt' })
+      await arrive(toolCall)
+      await dispatch(toolCall)
+      const planActive = shell.execute.mock.calls[0][10] as () => boolean
+      transport.isPlanActive = () => false
+      expect(planActive()).toBe(false)
+      transport.isPlanActive = () => true
+      expect(planActive()).toBe(true)
     })
 
     it('carries the diff from the native executor through the real dispatchTool outcome, not into the model output', async () => {
@@ -3728,7 +3744,7 @@ describe('ThreadDetail route', () => {
       ] : textStep))
       await act(async () => { await chat.sendMessage({ text: 'read the scratch file' }) })
       expect(steps).toHaveBeenCalledTimes(2)
-      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }), expect.any(AbortSignal))
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }), expect.any(AbortSignal), expect.any(Function))
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
       expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ toolCallId: 'native-read-sdk', state: 'output-available' }))
       expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ type: 'text', text: 'continued' }))

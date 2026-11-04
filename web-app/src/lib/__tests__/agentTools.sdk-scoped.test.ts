@@ -17,6 +17,8 @@ vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({ app: () => ({ getJanDataFolder: mocks.getJanDataFolder }) }),
 }))
 vi.mock('@/hooks/useThreads', () => ({ useThreads: { getState: mocks.getState } }))
+const livePlan = vi.hoisted(() => ({ on: false }))
+vi.mock('@/hooks/useChatPlan', () => ({ chatPlanEnabled: () => livePlan.on }))
 
 import { executeAgentTool } from '../agentTools'
 
@@ -88,8 +90,8 @@ describe('real AI SDK consumption of scoped agent tools', () => {
       { error: expect.stringContaining('durable memory') },
     ])
     expect(mocks.executeThreadTool.mock.calls).toEqual([
-      [threadId, 'shell', calls[0].input, defaults],
-      [threadId, 'memory', calls[2].input, persisted],
+      [threadId, 'shell', calls[0].input, defaults, false],
+      [threadId, 'memory', calls[2].input, persisted, false],
     ])
     expect(mocks.getJanDataFolder).toHaveBeenCalledTimes(4)
     expect(mocks.getConversationCapabilities.mock.calls).toEqual(Array.from({ length: 4 }, () => [threadId]))

@@ -274,6 +274,12 @@ pub fn run() {
         crate::core::agent::hooks_config::resolve_hooks_for(project)
     }));
 
+    // Scoped Chat derives a folder's skill whitelist host-side from the
+    // authorized folder; `agent.toml` is the app's format, so the app reads it.
+    tauri_plugin_agent_tools::skills::set_enabled_resolver(std::sync::Arc::new(|folder| {
+        crate::core::agent::project::enabled_skills_fail_closed(folder)
+    }));
+
     let builder = tauri::Builder::default();
     // Shadowed rather than mutated: under `e2e` the plugin below is the only
     // thing that touched `builder`, and a `mut` binding would then be unused --

@@ -1339,7 +1339,8 @@ function ThreadDetail() {
                 undefined,
                 undefined,
                 classifiedGrant,
-                stopSignal
+                stopSignal,
+                () => useChatSessions.getState().sessions[threadId]?.transport.isPlanActive() === true
               )
               // The diff is display-only. It is returned as a separate
               // outcome field (see `record`), never as part of `output`, so
