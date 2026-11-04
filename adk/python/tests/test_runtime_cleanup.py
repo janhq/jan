@@ -27,6 +27,7 @@ import unittest
 import warnings
 from pathlib import Path
 from typing import Callable, List, Optional
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -40,7 +41,7 @@ from jan_adk import JanRuntime, JanRuntimeError  # noqa: E402
 # stdout, then a stderr marker) and "notify" (a notification frame).
 FAKE = textwrap.dedent(
     """
-    import json, subprocess, sys, time
+    import json, os, subprocess, sys, time
 
     pid_file, descendant_seconds, mode = sys.argv[1], float(sys.argv[2]), sys.argv[3]
     if descendant_seconds > 0:
@@ -48,8 +49,10 @@ FAKE = textwrap.dedent(
             [sys.executable, "-c", "import time; time.sleep(%r)" % descendant_seconds],
             stdin=subprocess.DEVNULL,  # stdout and stderr are inherited on purpose
         )
-        with open(pid_file, "w") as handle:
+        # Published atomically: a reader never sees an empty or partial pid.
+        with open(pid_file + ".tmp", "w") as handle:
             handle.write(str(child.pid))
+        os.replace(pid_file + ".tmp", pid_file)
     sys.stderr.write("fake runtime up\\n")
     sys.stderr.flush()
     for line in sys.stdin:
@@ -143,6 +146,16 @@ class RuntimeCleanupTest(unittest.TestCase):
             return int(self.pid_file.read_text())
         except (OSError, ValueError):
             return None
+
+    def _wait_for_descendant(self, timeout: float = DEADLINE / 2) -> int:
+        """Block until the fake runtime has published its descendant's pid."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            pid = self._descendant()
+            if pid:
+                return pid
+            time.sleep(0.01)
+        self.fail("the fake runtime never published its descendant's pid")
 
     def _reap_descendant(self) -> None:
         pid = self._descendant()
@@ -356,16 +369,36 @@ class RuntimeCleanupTest(unittest.TestCase):
         self.assertEqual([str(entry.message) for entry in found], [])
 
     def test_a_failed_handshake_with_a_descendant_does_not_wait_out_the_grace(self) -> None:
+        original = JanRuntime._handshake
+        proof: List[int] = []
+
+        # Gate the handshake: its 0.3s timeout starts only once the descendant
+        # exists and its pid is on disk, so a slow runner cannot kill the fake
+        # runtime first and pass without exercising the inherited-pipe case.
+        def gated(runtime: JanRuntime) -> None:
+            pid = self._wait_for_descendant()
+            self.assertGreater(pid, 0)
+            if os.name == "posix":
+                os.kill(pid, 0)  # raises if the descendant is not alive
+            proof.append(pid)
+            original(runtime)
+
         def body() -> None:
             started = time.monotonic()
-            with self.assertRaises(JanRuntimeError):
-                JanRuntime.start(
-                    bin=sys.executable,
-                    args=self._args(20.0, "silent"),
-                    handshake_timeout=0.3,
-                    shutdown_grace=8.0,
-                )
+            with mock.patch.object(JanRuntime, "_handshake", gated):
+                with self.assertRaises(JanRuntimeError):
+                    JanRuntime.start(
+                        bin=sys.executable,
+                        args=self._args(20.0, "silent"),
+                        handshake_timeout=0.3,
+                        shutdown_grace=8.0,
+                    )
             self.assertLess(time.monotonic() - started, 4.0)
+            self.assertEqual(proof, [self._descendant()], "the descendant must exist before the handshake times out")
+            if os.name == "posix":
+                # Still alive after start() failed: it outlived the runtime and
+                # held the inherited pipes, which is the case under test.
+                os.kill(proof[0], 0)
             self._reap_descendant()
 
         found = self._collect_warnings(lambda: _within_deadline(body))
