@@ -855,7 +855,7 @@ pub fn set_cowork_resolver(resolver: SnapshotResolver) {
 
 /// [`authorize`] for a host-verified Cowork thread. `None` means the host
 /// holds NO folder record for it (a legacy or never-narrowed conversation):
-/// the old read+write behaviour of the caller's attached folder stands. Once a
+/// the folder is inactive and the caller must not use it as read+write. Once a
 /// record exists -- including `folderScope: null` after a detach -- it is the
 /// ceiling, intersected with the same process confirmation, so a revoke or
 /// detach narrows immediately and nothing resurrects the old folder.
@@ -867,10 +867,10 @@ pub async fn authorize_cowork(
         .ok_or("Cowork consent resolver is unavailable")?(thread_id.to_string())
     .await?;
     if stored.is_null() {
-        // No record is only the legacy default while nothing says otherwise. A
-        // revoke whose record write failed leaves a process entry and/or a
-        // durable denial; either keeps the folder off (fail closed), never
-        // falling back to the old read+write.
+        // No record is the inactive legacy state while nothing says otherwise.
+        // A revoke whose record write failed leaves a process entry and/or a
+        // durable denial; either keeps the folder off (fail closed) with the
+        // mirror, never a read+write fallback.
         if confirmed().lock().unwrap().contains_key(thread_id) || denial_evidence(thread_id) {
             let (mirror, generation) = current(thread_id);
             return Ok((data_folder, Some(mirror), generation));
