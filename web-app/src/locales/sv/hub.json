@@ -1,0 +1,19 @@
+{
+  "sortNewest": "Nyast",
+  "sortMostDownloaded": "Mest hämtade",
+  "newChat": "Ny chatt",
+  "download": "Hämta",
+  "downloadFailed": "Det gick inte att starta hämtningen",
+  "downloaded": "Hämtad",
+  "loadingModels": "Läser in modeller…",
+  "noModels": "Inga modeller hittades",
+  "by": "Av",
+  "downloads": "Hämtningar",
+  "variants": "Varianter",
+  "showVariants": "Visa varianter",
+  "useModel": "Använd den här modellen",
+  "downloadModel": "Hämta modell",
+  "tools": "Verktyg",
+  "searchPlaceholder": "Sök efter modeller på Hugging Face…",
+  "resumeUnavailable": "Det går inte att återuppta hämtningen. Starta den igen."
+}
