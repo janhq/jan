@@ -226,7 +226,10 @@ export function CoworkPage() {
   const folderAccess = session?.folder ? session.folderAccess ?? null : null
   // Skills, git and tools only ever see a folder the host has granted.
   const grantedFolder = coworkFolderGrant(session).folder
-  const [folderSaving, setFolderSaving] = useState(false)
+  // In-flight grant saves per session. Overlapping requests and session switches
+  // must not clear or leak each other's busy state.
+  const [folderSavePending, setFolderSavePending] = useState<Record<string, number>>({})
+  const folderSaving = !!currentId && (folderSavePending[currentId] ?? 0) > 0
 
   const { skills: skillCommands, invoke: invokeSkillCommand } = useSkills(grantedFolder)
   const planMode = session?.planMode ?? false
@@ -342,13 +345,16 @@ export function CoworkPage() {
   // no access (the setter has already narrowed the host).
   const saveFolderGrant = useCallback(
     async (sid: string, scope: { path: string; access: 'read' | 'write' } | null) => {
-      setFolderSaving(true)
+      setFolderSavePending((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }))
       try {
         await setCoworkFolderGrant(sid, scope)
       } catch {
         toast.error(t('common:conversationScope.saveFailed'))
       } finally {
-        setFolderSaving(false)
+        setFolderSavePending((p) => {
+          const { [sid]: count = 0, ...rest } = p
+          return count > 1 ? { ...rest, [sid]: count - 1 } : rest
+        })
       }
     },
     [t]
@@ -370,10 +376,11 @@ export function CoworkPage() {
     if (session?.id) void saveFolderGrant(session.id, null)
   }, [session?.id, saveFolderGrant])
 
-  // Explicit confirmation for a folder with no host grant (a legacy session).
+  // An inactive folder may be a denied read-only grant, not just a legacy
+  // session. Confirm read-only; write requires a separate explicit access change.
   const allowFolderAccess = useCallback(() => {
     if (session?.id && session.folder) {
-      void saveFolderGrant(session.id, { path: session.folder, access: 'write' })
+      void saveFolderGrant(session.id, { path: session.folder, access: 'read' })
     }
   }, [session?.id, session?.folder, saveFolderGrant])
 
@@ -1958,7 +1965,7 @@ export function CoworkPage() {
                   onStop={handleStop}
                   chatStatus={running ? 'streaming' : 'ready'}
                   tokenSource={tokenSource}
-                  menuWorkspace={<CoworkComposerMenu section="workspace" projects={projects} projectId={session?.project?.id} onAttachFolder={() => void attachFolder()} onSelectProject={(project) => {
+                  menuWorkspace={<CoworkComposerMenu section="workspace" projects={projects} projectId={session?.project?.id} onAttachFolder={folderSaving ? undefined : () => void attachFolder()} onSelectProject={(project) => {
                     if (session?.id) updateThreadProject(session.id, project)
                   }} />}
                   menuControls={<CoworkComposerMenu section="controls" planMode={planMode} onPlanChange={(next) => {

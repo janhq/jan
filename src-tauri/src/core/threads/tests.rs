@@ -2494,11 +2494,11 @@ async fn list_threads_annotates_stored_folder_the_mirror_denies_but_not_a_true_d
     assert!(metadata.get(DENIED_FOLDER_KEY).is_none(), "detach is not a denied folder");
 }
 
-// Failed confirmation of a widened Cowork grant: Unix keeps the stored grant
-// (annotated, effective scope null); a ledger backend narrowed the stored record
-// to all-off (a true detach, no annotation).
+// Failed confirmation of a widened Cowork grant keeps the folder visible but
+// inactive: Unix retains the stored grant; the ledger backend narrows to all-off
+// and retains only the host-owned attempted-folder display marker.
 #[tokio::test]
-async fn list_threads_annotates_a_failed_confirmation_only_when_the_grant_is_stored() {
+async fn list_threads_keeps_failed_confirmation_folder_visible_without_authority() {
     use super::capabilities::DENIED_FOLDER_KEY;
     let folder = authority_folder_path("denied-display-confirm-tree");
     let (app, _data_dir) = mock_app_with_temp_data_dir();

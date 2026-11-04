@@ -160,6 +160,25 @@ function hostFolderGrant(
 }
 
 /**
+ * The folder PATH the host currently stores for a listed Cowork record, for
+ * display after a failed save. `undefined` means the listing cannot say (no
+ * record, a host read error, or a malformed record/annotation); `null` is an
+ * acknowledged detach. It never yields access: an effective grant and a
+ * stored-but-denied folder both resolve to just their path.
+ */
+export function hostStoredFolder(meta: Json): string | null | undefined {
+  const error = meta.conversationCapabilitiesError
+  if (error !== undefined && error !== null) return undefined
+  if (meta.conversationCapabilities === undefined) return undefined
+  const record = parseConversationCapabilities(meta.conversationCapabilities)
+  if (!record) return undefined
+  if (record.folderScope) return record.folderScope.path
+  const denied = deniedFolder(meta.conversationCapabilitiesDenied)
+  if (denied === undefined) return null
+  return denied ?? undefined
+}
+
+/**
  * The stored path of a host `conversationCapabilitiesDenied` annotation.
  * `undefined`: no annotation. `null`: present but malformed (still denied, so
  * the caller falls back to the metadata folder). Never yields access.
