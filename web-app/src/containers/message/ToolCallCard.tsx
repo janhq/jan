@@ -17,6 +17,8 @@ import { RagToolWidget } from './RagToolWidget'
 import { WebToolWidget } from './WebToolWidget'
 import { AgentToolWidget, TerminalWidget } from './AgentToolWidget'
 import { SubagentToolWidget } from './SubagentToolWidget'
+import { isExtensionToolName } from '@/lib/extensions/tools'
+import { withRemoteImages } from '@/lib/extensions/remoteImages'
 
 const identityResolver = (input: string) => Promise.resolve(input)
 
@@ -79,7 +81,9 @@ export const ToolCallCard = memo(
     const showBar =
       bar && (bar.variant !== 'subagent' || isToolRunning(part.state))
 
-    return (
+    // A contributed tool's output is its extension's text: any citation in it
+    // must not fetch favicons, in any message.
+    const card = (
       <Tool
         state={part.state}
         toolCallId={part.toolCallId}
@@ -160,6 +164,7 @@ export const ToolCallCard = memo(
         </ToolContent>
       </Tool>
     )
+    return isExtensionToolName(toolName) ? withRemoteImages(false, card) : card
   }
 )
 

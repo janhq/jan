@@ -1669,6 +1669,23 @@ describe('ThreadDetail route', () => {
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
     })
 
+    // janhq/jan-internal#517: on an extension's provider the model is the
+    // extension's, so a free web_fetch would reach any host it has no grant for.
+    it('asks before serving the built-in on a turn an extension provider serves', async () => {
+      const byName = h.modelProviderState.getProviderByName
+      h.modelProviderState.getProviderByName = vi.fn((name: string) => ({
+        ...byName(name),
+        source: { extensionId: 'acme.provider', extensionName: 'Acme' },
+      }))
+      try {
+        await run(webCall('w4'))
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+        expect(webTool.executeWebTool).toHaveBeenCalledTimes(1)
+      } finally {
+        h.modelProviderState.getProviderByName = byName
+      }
+    })
+
     it.each(['web_search', 'web_fetch'])(
       'serves an MCP tool named %s through MCP, with a prompt, while web search is off',
       async (name) => {

@@ -58,6 +58,17 @@ export function toolWireName(extensionId: string, name: string): string {
   return wireName
 }
 
+const WIRE_NAME_PATTERN = new RegExp(`^x_[0-9a-f]{${HASH_HEX_DIGITS}}__`)
+
+/**
+ * Whether `toolName` has the shape of a `toolWireName`, whether or not the
+ * tool is still loaded: a stored call outlives its extension, and its output
+ * is still that extension's text. An MCP tool that happens to share the
+ * shape is only treated as more untrusted, never less.
+ */
+export const isExtensionToolName = (toolName: string): boolean =>
+  WIRE_NAME_PATTERN.test(toolName)
+
 /**
  * Every contributed tool with a bound handler, in a stable order (the tool
  * list is part of the prompt prefix, so it must not reshuffle). Should two

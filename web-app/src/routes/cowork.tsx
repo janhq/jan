@@ -53,7 +53,12 @@ import {
   userTurn,
 } from '@/lib/coworkTurns'
 import { extractFilesFromPrompt } from '@/lib/fileMetadata'
-import { coworkLocalModel, coworkModelContext, recoverCoworkContext } from '@/lib/coworkModelControls'
+import {
+  coworkAllowsProvider,
+  coworkLocalModel,
+  coworkModelContext,
+  recoverCoworkContext,
+} from '@/lib/coworkModelControls'
 import { isContextOverflowMessage } from '@/utils/error'
 import { importAttachedFiles, withAttachedFiles } from '@/lib/coworkAttachments'
 import { useToolCallRuntime, withToolTiming } from '@/hooks/useToolCallRuntime'
@@ -463,13 +468,18 @@ function CoworkPage() {
           }
         : undefined)
     const selectedProvider = modelChoice?.provider ?? ''
-    const selectedModel = modelState.providers
-      .find(
-        (provider) => provider.provider === selectedProvider && provider.active
-      )
-      ?.models.find((model) => model.id === modelChoice?.id)
+    const runProvider = modelState.providers.find(
+      (provider) => provider.provider === selectedProvider && provider.active
+    )
+    const selectedModel = runProvider?.models.find(
+      (model) => model.id === modelChoice?.id
+    )
     if (!selectedModel?.id) {
       toast.error(t('common:selectModel'))
+      return
+    }
+    if (!coworkAllowsProvider(runProvider)) {
+      toast.error(t('common:coworkExtensionProvider'))
       return
     }
     // Without tool calling the transport drops the tool set silently, and the

@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import { useToolApproval } from './useToolApproval'
-import { EXTENSION_SERVER_PREFIX } from '@/lib/extensions/tools'
+import {
+  EXTENSION_SERVER_PREFIX,
+  isExtensionToolName,
+} from '@/lib/extensions/tools'
 
 export type PendingApproval = {
   toolCallId: string
@@ -38,15 +41,29 @@ type ToolApprovalRequestsState = {
 }
 
 /**
- * The name a grant is recorded under. A contributed tool is keyed by its
- * `ext:<id>` server as well, so a thread or global grant can never cover
- * a same-named tool of another extension or of an MCP server.
+ * The name a grant is recorded under. A tool with a server is keyed by it
+ * as well, so a grant can never cover a same-named tool of another
+ * extension or MCP server. The two get separate namespaces (`ext:` and
+ * `mcp:`), so neither can spell the other's key.
  */
-const approvalKey = (toolName: string, serverName?: string) =>
-  isExtensionServer(serverName) ? `${serverName}/${toolName}` : toolName
+const approvalKey = (toolName: string, serverName?: string) => {
+  if (!serverName) return toolName
+  return isExtensionTool(toolName, serverName)
+    ? `${serverName}/${toolName}`
+    : `mcp:${serverName}/${toolName}`
+}
 
-const isExtensionServer = (serverName?: string): serverName is string =>
-  serverName?.startsWith(EXTENSION_SERVER_PREFIX) ?? false
+/**
+ * A contributed tool: an `ext:` server and a wire name. Both, because the
+ * user names MCP servers and could call one `ext:<id>`; such a server's
+ * tools keep MCP keys, so they never share an extension's grant.
+ */
+const isExtensionTool = (
+  toolName: string,
+  serverName?: string
+): serverName is string =>
+  (serverName?.startsWith(EXTENSION_SERVER_PREFIX) ?? false) &&
+  isExtensionToolName(toolName)
 
 export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
   (set, get) => ({
@@ -58,7 +75,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
         // The shortcut is for MCP; extension tools always go through approval.
         if (
           settings.allowAllMCPPermissions &&
-          !isExtensionServer(serverName)
+          !isExtensionTool(toolName, serverName)
         ) {
           resolve(true)
           return
@@ -98,7 +115,10 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       } else if (decision === 'allow-always') {
         // An MCP server is trusted whole. An extension is not: an update can
         // add tools, and those must ask before they first run.
-        if (entry.serverName && !isExtensionServer(entry.serverName)) {
+        if (
+          entry.serverName &&
+          !isExtensionTool(entry.toolName, entry.serverName)
+        ) {
           approval.approveServer(entry.serverName)
         } else {
           approval.approveToolEverywhere(key)

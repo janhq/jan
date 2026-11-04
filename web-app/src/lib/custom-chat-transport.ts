@@ -48,6 +48,7 @@ import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
 import { getExtensionHost } from '@/lib/extensions/host'
+import { extensionAuthorMetadata } from '@/lib/extensions/authorship'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
   tokensForThinkingBudgetLevel,
@@ -97,7 +98,13 @@ export type ModelSelection = {
   selectedModel: Model | null
 }
 /** Partial assistant output replayed as a prefill to resume a stopped turn. */
-export type ContinuationContent = { text?: string; reasoning?: string }
+export type ContinuationContent = {
+  text?: string
+  reasoning?: string
+  /** The extension that wrote the stopped reply, if one did: the continued
+   * reply replaces it and must keep its author (see extensions/authorship). */
+  extensionAuthor?: string
+}
 export type ServiceHub = {
   rag(): {
     getTools(): Promise<
@@ -1691,7 +1698,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       },
     })
 
-    const stepMetadata = createStepMetadata()
+    // A reply from an extension's provider names its author from the first
+    // chunk, so it never renders a remote image (see extensions/authorship).
+    // So does one continuing such a reply, whatever model it runs on now.
+    const author =
+      continueContent?.extensionAuthor ?? provider.source?.extensionId
+    const stepMetadata = createStepMetadata(
+      author ? extensionAuthorMetadata(author) : undefined
+    )
 
     const uiStream = result.toUIMessageStream({
       // Usage and token speed, assembled by the one implementation every

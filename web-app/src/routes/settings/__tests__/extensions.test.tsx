@@ -29,12 +29,6 @@ vi.mock('@/containers/Card', () => ({
   ),
 }))
 
-vi.mock('@/containers/RenderMarkdown', () => ({
-  RenderMarkdown: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="render-markdown">{children}</div>
-  ),
-}))
-
 const hosted = vi.hoisted(() => ({
   list: [] as Array<Record<string, unknown>>,
 }))
@@ -110,6 +104,28 @@ describe('Extensions Settings Route', () => {
     expect(screen.getByText('Host acme.off')).toBeInTheDocument()
     expect(screen.getByText('extensions:activationFailed')).toBeInTheDocument()
     expect(screen.queryByTestId('settings-form-acme.off')).toBeNull()
+  })
+
+  it('shows a manifest description as plain text, never as markdown', () => {
+    const description = 'Hi ![x](https://evil.example/p?d=1) **bold**'
+    hosted.list = [
+      {
+        id: 'acme.one',
+        manifest: {
+          id: 'acme.one',
+          displayName: 'One',
+          version: '0.1.0',
+          description,
+        },
+        source: 'dev',
+        state: 'active',
+      },
+    ]
+    const Component = ExtensionsRoute.component as React.ComponentType
+    const { container } = render(<Component />)
+
+    expect(screen.getByText(description)).toBeInTheDocument()
+    expect(container.querySelector('img')).toBeNull()
   })
 
   it('should render the extensions settings page', () => {

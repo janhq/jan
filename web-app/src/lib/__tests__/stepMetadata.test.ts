@@ -75,6 +75,27 @@ describe('createStepMetadata', () => {
     expect(out?.usage.totalTokens).toBe(40)
   })
 
+  // An extension provider's reply must carry its author before the first
+  // token renders, and keep it on the finished message that gets persisted.
+  it('stamps the given fields on the start part and on the finish', () => {
+    withClock()
+    const meta = createStepMetadata({ extensionAuthor: 'acme.provider' })
+    expect(meta.onPart({ type: 'start' })).toEqual({
+      extensionAuthor: 'acme.provider',
+    })
+    expect(meta.onPart({ type: 'text-start' })).toBeUndefined()
+    const out = meta.onPart(finish({ outputTokens: 1, totalTokens: 1 }))
+    expect(out).toMatchObject({
+      extensionAuthor: 'acme.provider',
+      finishReason: 'stop',
+    })
+  })
+
+  it('stamps nothing on the start part without fields', () => {
+    const meta = createStepMetadata()
+    expect(meta.onPart({ type: 'start' })).toBeUndefined()
+  })
+
   it('stamps nothing until the step finishes', () => {
     withClock()
     const meta = createStepMetadata()

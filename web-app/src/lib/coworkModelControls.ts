@@ -4,6 +4,17 @@ import { useCoworkRun } from '@/hooks/useCoworkRun'
 import type { ModelsService } from '@/services/models/types'
 import { getLocalPropsExtension, readCtxLen } from '@/lib/llamacppRouterProps'
 
+/**
+ * Whether Cowork may run on `provider`. Not on one an extension contributed:
+ * Cowork has no per-call approval (its shell has network access, its web and
+ * MCP tools run unprompted), so a model the extension serves could reach any
+ * host its `network:` grants leave out. Chat, which asks first, still offers
+ * such providers.
+ */
+export const coworkAllowsProvider = (
+  provider: Pick<ModelProvider, 'source'> | undefined
+): boolean => !provider?.source
+
 export function coworkLocalModel(
   provider: ModelProvider | undefined,
   modelId: string | undefined

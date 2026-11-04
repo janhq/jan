@@ -13,8 +13,22 @@ import {
 import { ulid } from 'ulidx'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import type { ServiceHub } from '@/services'
+import { extensionAuthorMetadata } from './authorship'
 
 type ConversationServices = Pick<ServiceHub, 'threads' | 'messages'>
+
+/**
+ * The host side of `ctx.conversations`. `appendMessage` also takes the id of
+ * the worker extension that called it, stamped on the message so it renders
+ * without remote images (see `authorship.ts`); undefined for a built-in.
+ */
+export interface HostConversations extends ConversationsApi {
+  appendMessage(
+    threadId: string,
+    msg: Parameters<ConversationsApi['appendMessage']>[1],
+    author?: string
+  ): ReturnType<ConversationsApi['appendMessage']>
+}
 
 // Stored timestamps mix seconds and milliseconds (older threads and messages
 // were written in ms); the public DTOs are always epoch milliseconds.
@@ -54,7 +68,7 @@ const notFound = (threadId: string) =>
  */
 export function createConversationsApi(
   hub: () => ConversationServices
-): ConversationsApi {
+): HostConversations {
   const findThread = async (id: string) => {
     if (id === TEMPORARY_CHAT_ID) return undefined
     const threads = await hub().threads().fetchThreads()
@@ -110,7 +124,7 @@ export function createConversationsApi(
       return toThreadInfo(created)
     },
 
-    appendMessage: async (threadId, { role, text }) => {
+    appendMessage: async (threadId, { role, text }, author) => {
       if (!(await findThread(threadId))) throw notFound(threadId)
       const now = Date.now()
       const message: ThreadMessage = {
@@ -124,6 +138,7 @@ export function createConversationsApi(
         status: MessageStatus.Ready,
         created_at: now,
         completed_at: now,
+        ...(author ? { metadata: extensionAuthorMetadata(author) } : {}),
       }
       return toMessageInfo(await hub().messages().createMessage(message))
     },

@@ -175,6 +175,11 @@ pub fn parse(bytes: &[u8]) -> Result<CuratedIndex> {
             if !is_https(&v.tarball) {
                 return bad(format!("a tarball for {at} that is not https"));
             }
+            // `is_https` above parsed it; this adds the host rules hops get.
+            let tarball = Url::parse(&v.tarball).ok();
+            if let Some(reason) = tarball.as_ref().and_then(tarball_url_refusal) {
+                return bad(format!("a tarball for {at} with {reason}"));
+            }
             if !is_sri(&v.integrity) {
                 return bad(format!("an integrity for {at} that is not a sha512 SRI"));
             }
@@ -244,34 +249,36 @@ pub fn resolve<'a>(index: &'a CuratedIndex, id: &str, version: &str) -> Result<&
         .ok_or_else(|| Error::NotFound(format!("the index does not list {id}@{version}")))
 }
 
-/// Why a redirect of a tarball download is refused, if it is.
+/// Why a tarball URL is refused, if it is: the listed URL and every
+/// redirect hop after it.
 ///
 /// Redirects stay allowed because common tarball hosts (GitHub release
-/// assets, CDNs) answer with one to another host. A hop must stay on https
-/// and name a host by DNS: an IP literal or a localhost name is refused, so
-/// a listing cannot bounce Jan onto loopback or a private address it spells
-/// out. A name that resolves to a private address is the accepted DNS risk
-/// described in [`crate::http`]; TLS still has to verify for it.
-pub fn redirect_refusal(url: &Url) -> Option<&'static str> {
+/// assets, CDNs) answer with one to another host. Every URL must stay on
+/// https and name a host by DNS: an IP literal or a localhost name is
+/// refused, so a listing cannot point or bounce Jan onto loopback or a
+/// private address it spells out. A name that resolves to a private address
+/// is the accepted DNS risk described in [`crate::http`]; TLS still has to
+/// verify for it.
+pub fn tarball_url_refusal(url: &Url) -> Option<&'static str> {
     if url.scheme() != "https" {
-        return Some("redirect away from https");
+        return Some("a scheme other than https");
     }
     match url.host() {
         Some(url::Host::Domain(name)) => {
             let name = name.trim_end_matches('.').to_ascii_lowercase();
             if name == "localhost" || name.ends_with(".localhost") {
-                Some("redirect to localhost")
+                Some("a localhost host")
             } else {
                 None
             }
         }
-        Some(_) => Some("redirect to an IP address"),
-        None => Some("redirect without a host"),
+        Some(_) => Some("an IP address host"),
+        None => Some("no host"),
     }
 }
 
 /// The client used for tarballs: no cookies, at most 5 redirects, each
-/// checked by [`redirect_refusal`]. Index documents use
+/// checked by [`tarball_url_refusal`]. Index documents use
 /// [`document_client`], which follows none.
 pub fn client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
@@ -279,8 +286,8 @@ pub fn client() -> Result<reqwest::Client> {
             if attempt.previous().len() >= 5 {
                 return attempt.error("too many redirects");
             }
-            match redirect_refusal(attempt.url()) {
-                Some(reason) => attempt.error(reason),
+            match tarball_url_refusal(attempt.url()) {
+                Some(reason) => attempt.error(format!("redirect to {reason}")),
                 None => attempt.follow(),
             }
         }))
@@ -382,11 +389,18 @@ pub async fn fetch_index_at(client: &reqwest::Client, url: &Url, public_key: Opt
     verify_and_parse(&bytes, signature, public_key)
 }
 
-/// Downloads the tarball of `version` (https only, at most 50 MiB) and
-/// checks it against the pinned SRI.
+/// Downloads the tarball of `version` (https to a named host, at most
+/// 50 MiB) and checks it against the pinned SRI.
 pub async fn download_tarball(client: &reqwest::Client, version: &IndexVersion) -> Result<Vec<u8>> {
     if !is_https(&version.tarball) {
         return Err(Error::Invalid(format!("{} is not an https URL", version.tarball)));
+    }
+    // Checked here as well as in `parse`: the redirect policy only sees hops,
+    // never the first URL.
+    let url = Url::parse(&version.tarball)
+        .map_err(|e| Error::Invalid(format!("{} is not a valid URL: {e}", version.tarball)))?;
+    if let Some(reason) = tarball_url_refusal(&url) {
+        return Err(Error::Invalid(format!("{} has {reason}", version.tarball)));
     }
     let bytes = get_capped(client, &version.tarball, MAX_TARBALL_BYTES, TARBALL_TIMEOUT).await?;
     integrity::verify(&bytes, &version.integrity)?;
@@ -399,8 +413,8 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn redirects_only_reach_named_https_hosts() {
-        let refused = |u: &str| redirect_refusal(&Url::parse(u).unwrap());
+    fn tarball_hops_only_reach_named_https_hosts() {
+        let refused = |u: &str| tarball_url_refusal(&Url::parse(u).unwrap());
         for ok in [
             "https://objects.githubusercontent.com/x.tgz",
             "https://cdn.example.com/a",
@@ -483,6 +497,30 @@ mod tests {
             v["extensions"][0]["versions"][0]["tarball"] = json!(url);
             assert!(parse_value(&v).is_err(), "{url}");
         }
+    }
+
+    #[test]
+    fn rejects_a_tarball_on_loopback_or_an_ip() {
+        for url in [
+            "https://127.0.0.1/x.tgz",
+            "https://10.0.0.5:8443/x.tgz",
+            "https://[::1]/x.tgz",
+            "https://localhost/x.tgz",
+            "https://api.localhost./x.tgz",
+        ] {
+            let mut v = sample();
+            v["extensions"][0]["versions"][0]["tarball"] = json!(url);
+            assert!(parse_value(&v).is_err(), "{url}");
+        }
+    }
+
+    #[tokio::test]
+    async fn download_refuses_a_tarball_on_loopback() {
+        let mut index = parse_value(&sample()).unwrap();
+        let mut version = index.extensions.remove(0).versions.remove(0);
+        version.tarball = "https://127.0.0.1:9/x.tgz".into();
+        let err = download_tarball(&client().unwrap(), &version).await.unwrap_err();
+        assert!(matches!(err, Error::Invalid(_)), "{err}");
     }
 
     #[test]

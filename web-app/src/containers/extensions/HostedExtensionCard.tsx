@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/containers/Card'
-import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useLocalize } from '@/lib/extensions/l10n'
 import { getExtensionHost, type HostedExtension } from '@/lib/extensions/host'
@@ -18,14 +17,16 @@ function Version({ version }: { version: string }) {
   )
 }
 
+/**
+ * Plain text on purpose: the description is authored by the extension, and
+ * markdown would let it load a remote image (the app's img-src allows any
+ * https host) as soon as this page opens, outside its network grants.
+ */
 function Description({ content }: { content: string }) {
   return (
-    <RenderMarkdown
-      content={content}
-      components={{
-        p: ({ ...props }) => <p {...props} className="mb-0!" />,
-      }}
-    />
+    <p className="text-sm text-muted-foreground whitespace-pre-line wrap-break-word">
+      {content}
+    </p>
   )
 }
 

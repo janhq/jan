@@ -2,7 +2,6 @@ import {
   ExtensionError,
   toDisposable,
   type CommandContext,
-  type ConversationsApi,
   type HttpRequestInit,
   type HttpResponse,
   type Logger,
@@ -18,6 +17,7 @@ import {
 } from '@janhq/extension-runtime'
 import type { HttpResponse as PluginHttpResponse } from '@janhq/tauri-plugin-extensions-api'
 import { own, type ContributionStore } from './contributions'
+import type { HostConversations } from './conversations'
 import type { PermissionDispatcher } from './dispatcher'
 import {
   fetchHop,
@@ -46,7 +46,7 @@ export interface HostApiDeps {
   settings: ExtensionSettingsStore
   storage: AppSettingsBackend
   notify: Notify
-  conversations?: ConversationsApi
+  conversations?: HostConversations
   /**
    * The network path of `ctx.http.fetch`. Only installed extensions get
    * one: the plugin checks their grants in extensions.json, where neither
@@ -124,6 +124,11 @@ function logText(value: unknown): string {
  * listeners or run many requests (see `createHostApi`).
  */
 export interface HostApiLimits {
+  /**
+   * Whether this is a built-in. A worker's appended messages are stamped
+   * with its id, so they render without remote images (`authorship.ts`).
+   */
+  builtin: boolean
   /** Notifications: a burst of 5, then one every 2 s. */
   notifyRate: boolean
   /** MAX_SUBSCRIPTIONS_PER_EVENT listeners per event. */
@@ -133,12 +138,14 @@ export interface HostApiLimits {
 }
 
 export const WORKER_LIMITS: HostApiLimits = {
+  builtin: false,
   notifyRate: true,
   subscriptions: true,
   fetchConcurrency: true,
 }
 
 export const BUILTIN_LIMITS: HostApiLimits = {
+  builtin: true,
   notifyRate: false,
   subscriptions: false,
   fetchConcurrency: false,
@@ -275,7 +282,7 @@ export function createHostApi(
       subscription.dispose()
     })
   }
-  const conversations = (): ConversationsApi => {
+  const conversations = (): HostConversations => {
     if (!deps.conversations) throw notProvided('Conversations')
     return deps.conversations
   }
@@ -339,7 +346,11 @@ export function createHostApi(
     'conversations.createThread': (_call, input) =>
       conversations().createThread(input),
     'conversations.appendMessage': (_call, threadId, msg) =>
-      conversations().appendMessage(threadId, msg),
+      conversations().appendMessage(
+        threadId,
+        msg,
+        limits.builtin ? undefined : id
+      ),
     'tools.register': (_call, name, handler) =>
       contributions.registerTool(id, name, handler),
     'providers.register': (_call, providerId, handlers) => {
