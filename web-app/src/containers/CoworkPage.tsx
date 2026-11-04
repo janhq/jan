@@ -373,10 +373,11 @@ export function CoworkPage() {
     if (session?.id) void saveFolderGrant(session.id, null)
   }, [session?.id, saveFolderGrant])
 
-  // Explicit confirmation for a folder with no host grant (a legacy session).
+  // An inactive folder may be a denied read-only grant, not just a legacy
+  // session. Confirm read-only; write requires a separate explicit access change.
   const allowFolderAccess = useCallback(() => {
     if (session?.id && session.folder) {
-      void saveFolderGrant(session.id, { path: session.folder, access: 'write' })
+      void saveFolderGrant(session.id, { path: session.folder, access: 'read' })
     }
   }, [session?.id, session?.folder, saveFolderGrant])
 
