@@ -342,7 +342,7 @@ class RuntimeCleanupTest(unittest.TestCase):
             runtime.close(force=True)
             elapsed = time.monotonic() - started
             self.assertLess(elapsed, 3.0, "a forced close must not spend the 8s grace on the readers")
-            # A forced close after a graceful one still kills; neither hangs.
+            # Repeating a forced close remains safe; neither call hangs.
             started = time.monotonic()
             runtime.close(force=True)
             self.assertLess(time.monotonic() - started, 3.0)
