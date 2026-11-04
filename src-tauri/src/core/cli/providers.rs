@@ -771,8 +771,10 @@ async fn probe_models(
     }))
     .await;
 
-    let mut catalog = super::model_catalog::load();
-    let mut catalog_dirty = false;
+    // Collected, then merged into the file in one locked update at the end:
+    // a snapshot loaded here and saved whole would drop anything another
+    // writer (a learned reasoning rejection, another process) saved meanwhile.
+    let mut catalog_updates = Vec::new();
     let mut refresh = ModelRefresh::default();
     let default_model = crate::core::agent::global_config::default_model()
         .ok()
@@ -850,8 +852,7 @@ async fn probe_models(
         // clearing it: a degraded id-only response is not a statement that the
         // windows and prices cached earlier are wrong.
         if !listing.info.is_empty() {
-            catalog.set_provider(&config.provider, listing.info);
-            catalog_dirty = true;
+            catalog_updates.push((config.provider.clone(), listing.info));
         }
         refresh.listed.push(ProviderModels {
             provider: config.provider,
@@ -874,8 +875,14 @@ async fn probe_models(
             }
         }
     }
-    if catalog_dirty {
-        if let Err(e) = catalog.save() {
+    if !catalog_updates.is_empty() {
+        let written = super::model_catalog::update(|catalog| {
+            for (provider, models) in catalog_updates {
+                catalog.set_provider(&provider, models);
+            }
+            true
+        });
+        if let Err(e) = written {
             // The catalog only ever improves a readout, so a failed write is a
             // warning: the ids it accompanies are already persisted.
             log::warn!("could not save the model catalog: {e}");

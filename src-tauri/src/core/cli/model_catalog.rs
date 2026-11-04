@@ -167,8 +167,8 @@ fn catalog_path() -> Result<PathBuf, String> {
 /// error: this is metadata that improves a display, so a corrupt cache must
 /// never block a run.
 ///
-/// Disk only, on purpose: every catalog write starts from this (`probe_models`,
-/// [`cache_listing`], [`forget`]), so anything merged in here would be saved to
+/// Disk only, on purpose: every catalog write starts from the file (`probe_models`,
+/// [`cache_listing`], [`forget`], all through [`update`]), so anything merged in here would be saved to
 /// `model_catalog.json` by the next write for any provider. A reader that must
 /// see the session-scoped provider's in-memory prices goes through
 /// [`effective`] instead.
@@ -270,13 +270,23 @@ impl Catalog {
     }
 
     /// Persist the cache, creating `~/.jan` if needed.
+    ///
+    /// Atomic (a reader never sees half a file), but it replaces whatever
+    /// another writer saved since this catalog was loaded: a writer that
+    /// changes part of the cache goes through [`update`] instead, which merges.
     pub fn save(&self) -> Result<(), String> {
         let path = catalog_path()?;
+        let _lock = WriteLock::take(&path)?;
+        self.write_to(&path)
+    }
+
+    fn write_to(&self, path: &std::path::Path) -> Result<(), String> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let body = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        std::fs::write(&path, body).map_err(|e| format!("{}: {e}", path.display()))
+        crate::core::threads::helpers::write_atomic(path, body.as_bytes())
+            .map_err(|e| format!("{}: {e}", path.display()))
     }
 
     #[cfg(test)]
@@ -288,6 +298,68 @@ impl Catalog {
     }
 }
 
+/// Serializes catalog writers: a thread lock for this process, and an
+/// advisory lock on a sibling `model_catalog.json.lock` for other `jan`
+/// processes. Held from the re-read to the rename, so no writer saves a
+/// snapshot another has already moved past.
+struct WriteLock {
+    _thread: std::sync::MutexGuard<'static, ()>,
+    _file: std::fs::File,
+}
+
+impl WriteLock {
+    fn take(path: &std::path::Path) -> Result<Self, String> {
+        static THREADS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let thread = THREADS.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let mut name = path.as_os_str().to_owned();
+        name.push(".lock");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(PathBuf::from(name))
+            .map_err(|e| e.to_string())?;
+        fs4::FileExt::lock(&file).map_err(|e| e.to_string())?;
+        Ok(Self {
+            _thread: thread,
+            _file: file,
+        })
+    }
+}
+
+/// Change part of the cache without losing anyone else's change: under the
+/// write lock, re-read the file, apply `change`, and save atomically if it
+/// reports a change. `Ok(false)` means nothing changed and nothing was written.
+pub fn update(change: impl FnOnce(&mut Catalog) -> bool) -> Result<bool, String> {
+    update_at(&catalog_path()?, change)
+}
+
+/// [`update`] on the cache at `path`, for a caller that resolved it on another
+/// thread (the path depends on the home, which tests set per thread).
+pub(crate) fn update_at(
+    path: &std::path::Path,
+    change: impl FnOnce(&mut Catalog) -> bool,
+) -> Result<bool, String> {
+    let _lock = WriteLock::take(path)?;
+    let mut catalog: Catalog = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+    if !change(&mut catalog) {
+        return Ok(false);
+    }
+    catalog.write_to(path)?;
+    Ok(true)
+}
+
+/// Where the cache lives, for a caller that writes it from another thread.
+pub(crate) fn path() -> Result<PathBuf, String> {
+    catalog_path()
+}
+
 /// Cache whatever `listing` (a raw `/models` body) says about `provider`'s
 /// models. Best-effort by contract: this metadata only ever improves a readout,
 /// so a sign-in must never fail over it.
@@ -296,18 +368,21 @@ pub fn cache_listing(provider: &str, listing: &serde_json::Value) {
     if models.is_empty() {
         return;
     }
-    let mut catalog = load();
-    catalog.set_provider(provider, models);
-    if let Err(e) = catalog.save() {
+    let written = update(|catalog| {
+        catalog.set_provider(provider, models);
+        true
+    });
+    if let Err(e) = written {
         log::warn!("could not cache model metadata for '{provider}': {e}");
     }
 }
 
 /// Drop a provider's cached metadata, for a sign-out that removed its entry.
 pub fn forget(provider: &str) {
-    let mut catalog = load();
-    catalog.remove_provider(provider);
-    let _ = catalog.save();
+    let _ = update(|catalog| {
+        catalog.remove_provider(provider);
+        true
+    });
 }
 
 /// Per-model metadata from a `/models` payload, keyed by id. Ids with nothing
@@ -699,6 +774,94 @@ mod tests {
 
             reloaded.remove_provider("groq");
             assert!(!reloaded.rejects_reasoning("groq", "m"));
+        });
+    }
+
+    /// A save replaces the file by renaming a finished sibling over it, so a
+    /// reader (or a crash) never sees a half-written cache, and no temp file
+    /// is left behind.
+    #[test]
+    fn a_save_replaces_the_file_atomically() {
+        with_temp_home(|_| {
+            let path = catalog_path().unwrap();
+            let mut catalog = Catalog::default();
+            catalog.remember_reasoning_rejected("p", "old");
+            catalog.save().expect("save");
+            // An open handle keeps reading the file it opened: a rename swaps
+            // in a new file, an in-place write would truncate this one.
+            let mut before = std::fs::File::open(&path).unwrap();
+            catalog.remember_reasoning_rejected("p", "new");
+            catalog.save().expect("save");
+            let mut seen = String::new();
+            std::io::Read::read_to_string(&mut before, &mut seen).unwrap();
+            assert!(seen.contains("old") && !seen.contains("new"), "{seen}");
+            assert!(load().rejects_reasoning("p", "new"));
+            let stray: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.ends_with(".tmp"))
+                .collect();
+            assert!(stray.is_empty(), "{stray:?}");
+        });
+    }
+
+    /// `update` re-reads the file under the lock, so a writer holding an
+    /// older snapshot cannot drop what another wrote in between: a listing
+    /// refresh and a learned rejection both survive, in either order.
+    #[test]
+    fn an_update_merges_into_what_is_on_disk() {
+        with_temp_home(|_| {
+            let path = catalog_path().unwrap();
+            update_at(&path, |c| c.remember_reasoning_rejected("groq", "m")).expect("update");
+            update_at(&path, |c| {
+                c.set_provider("groq", parse_listing(&json!({"data": [router_entry("m")]})));
+                true
+            })
+            .expect("update");
+            let after = load();
+            assert!(after.rejects_reasoning("groq", "m"), "the rejection survives a refresh");
+            assert_eq!(after.provider_ids("groq"), vec!["m".to_string()]);
+            // Nothing changed: no write at all.
+            let stamp = std::fs::metadata(&path).unwrap().modified().unwrap();
+            assert!(!update_at(&path, |c| c.remember_reasoning_rejected("groq", "m")).unwrap());
+            assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), stamp);
+        });
+    }
+
+    /// Writers racing from many threads each land: none reads a snapshot
+    /// another is about to overwrite.
+    #[test]
+    fn concurrent_updates_lose_nothing() {
+        with_temp_home(|_| {
+            let path = catalog_path().unwrap();
+            std::thread::scope(|scope| {
+                for i in 0..16 {
+                    let path = &path;
+                    scope.spawn(move || {
+                        update_at(path, |c| {
+                            if i % 2 == 0 {
+                                c.remember_reasoning_rejected("p", &format!("m{i}"))
+                            } else {
+                                c.set_provider(
+                                    &format!("provider{i}"),
+                                    parse_listing(&json!({"data": [router_entry("x")]})),
+                                );
+                                true
+                            }
+                        })
+                        .expect("update");
+                    });
+                }
+            });
+            let after = load();
+            for i in 0..16 {
+                if i % 2 == 0 {
+                    assert!(after.rejects_reasoning("p", &format!("m{i}")), "m{i}");
+                } else {
+                    assert_eq!(after.provider_ids(&format!("provider{i}")), vec!["x".to_string()]);
+                }
+            }
         });
     }
 
