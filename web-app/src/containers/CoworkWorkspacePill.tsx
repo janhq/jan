@@ -17,9 +17,13 @@ type Props = {
   /** Attached project folder, or null when the session is sandbox-only. */
   folder: string | null
   gitBranch?: string | null
-  /** What the agent may do in the folder. Old Cowork folders were always
-   * read and write, so that stays the default; a unified thread can grant read
-   * only, and the pill must not claim more than the grant. */
+  /** What the host has acknowledged for the folder: `'read'`, `'write'`, or
+   * `null` when it is inactive (no host grant, a denied/failed confirmation, or
+   * a host read error), which shows the confirmation control instead of an
+   * access claim. CoworkPage always passes this explicitly, mapping a missing
+   * session value to `null`; the pill never infers write access for a session.
+   * The `'write'` default only applies to a caller that omits the prop. The
+   * pill must not claim more than the grant. */
   access?: 'read' | 'write' | null
   /** Disable mutations and folder actions while a strict grant save is pending. */
   saving?: boolean

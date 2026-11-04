@@ -22,7 +22,9 @@ vi.mock('@/lib/migrateCoworkSessions', async (importOriginal) => ({
   migrateCoworkSessionsToThreads: async () => ({ status: 'done' }),
   isCoworkMigrationSettled: async () => true,
 }))
-vi.mock('@/lib/coworkPersistence', () => ({
+vi.mock('@/lib/coworkPersistence', async (importOriginal) => ({
+  // Keep unmocked exports (e.g. HOST_LIST_KEYS, read by coworkSync.upsertThread) real.
+  ...await importOriginal<typeof import('@/lib/coworkPersistence')>(),
   createCoworkPersistence: (...args: unknown[]) => storage.create(...args),
   loadCoworkSessions: async () => ({
     threads: [], sessions: [], currentId: null, legacyIds: new Set(),

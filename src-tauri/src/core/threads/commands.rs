@@ -63,14 +63,20 @@ pub async fn list_threads<R: Runtime>(
                                 continue;
                             }
                             let cowork = thread["metadata"]["mode"].as_str() == Some("cowork");
-                            let read = if cowork {
-                                super::capabilities::read_cowork_capabilities(&data_folder, &id).await
+                            let (read, denied_folder) = if cowork {
+                                match super::capabilities::read_cowork_listing(&data_folder, &id).await {
+                                    Ok((value, denied)) => (Ok(value), denied),
+                                    Err(error) => (Err(error), None),
+                                }
                             } else {
-                                super::capabilities::read_conversation_capabilities(&data_folder, &id).await
+                                (super::capabilities::read_conversation_capabilities(&data_folder, &id).await, None)
                             };
                             // A host read error fails CLOSED (explicit all-off + error), never
-                            // an absent field the frontend would default to a writable folder.
+                            // an absent field the frontend would treat as anything but inactive.
                             super::capabilities::apply_listed_capabilities(&mut thread, cowork, read);
+                            // A stored folder the host currently denies is not a detach: list
+                            // its path (display only, never an access level).
+                            super::capabilities::apply_listed_denied_folder(&mut thread, denied_folder.as_deref());
                         }
                         threads.push(thread)
                     },
@@ -129,6 +135,7 @@ pub async fn create_thread<R: Runtime>(
     {
         metadata.remove("conversationCapabilities");
         metadata.remove("conversationCapabilitiesError");
+        metadata.remove(super::capabilities::DENIED_FOLDER_KEY);
     }
     thread["id"] = serde_json::Value::String(uuid.clone());
     let thread_dir = get_thread_dir(&data_folder, &uuid)?;
@@ -248,8 +255,9 @@ pub async fn modify_thread<R: Runtime>(
         .cloned();
     if let Some(metadata) = thread.get_mut("metadata").and_then(|m| m.as_object_mut()) {
         metadata.remove("conversationCapabilities");
-        // List-only fail-closed annotation; never persisted from a UI snapshot.
+        // List-only annotations; never persisted from a UI snapshot.
         metadata.remove("conversationCapabilitiesError");
+        metadata.remove(super::capabilities::DENIED_FOLDER_KEY);
     }
     if let Some(current) = current {
         if !thread.get("metadata").is_some_and(|m| m.is_object()) {
@@ -319,7 +327,7 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
     // Test seam: break the platform's durable store after the DENY+metadata
     // steps so both the CONFIRM and its compensating DENY fail.
     #[cfg(test)]
-    if SETTER_BREAK_STORE_BEFORE_CONFIRM.lock().unwrap().as_deref() == Some(thread_id.as_str()) {
+    if SETTER_BREAK_STORE_BEFORE_CONFIRM.lock().unwrap().contains(&thread_id) {
         let store = tauri_plugin_agent_tools::thread_capabilities::denial_store_path(&thread_id)
             .unwrap()
             .expect("consent root configured");
@@ -357,8 +365,9 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
 /// before the confirm, so the CONFIRM append fails (Windows ledger: its
 /// compensating DENY fails too; Unix marker: the remove fails).
 #[cfg(test)]
-pub(super) static SETTER_BREAK_STORE_BEFORE_CONFIRM: std::sync::Mutex<Option<String>> =
-    std::sync::Mutex::new(None);
+/// A set of thread ids (not one slot) so parallel tests never disarm each other.
+pub(super) static SETTER_BREAK_STORE_BEFORE_CONFIRM: std::sync::Mutex<Vec<String>> =
+    std::sync::Mutex::new(Vec::new());
 
 /// Test seam: forces a `stop_all_thread_monitors`-style barrier bump between
 /// the strict setter's narrow and its confirm (per-thread id, so parallel
