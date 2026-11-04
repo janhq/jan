@@ -14,17 +14,17 @@ describe('real agent-tools guest invoke contract', () => {
     const args = { command: 'echo isolated' }
     const result = { content: 'isolated', isError: false, diff: 'fixture diff', images: [{ mimeType: 'image/png', base64: 'fixture' }] }
     invoke.mockResolvedValueOnce(result)
-    await expect(executeThreadTool('verifier-thread', 'shell', args, grant)).resolves.toBe(result)
+    await expect(executeThreadTool('verifier-thread', 'shell', args, grant, false)).resolves.toBe(result)
     expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:agent-tools|execute_thread_tool', {
-      threadId: 'verifier-thread', toolName: 'shell', args, effectiveGrant: grant,
+      threadId: 'verifier-thread', toolName: 'shell', args, effectiveGrant: grant, planMode: false,
     })
-    expect(Object.keys(invoke.mock.calls[0][1]).sort()).toEqual(['args', 'effectiveGrant', 'threadId', 'toolName'])
+    expect(Object.keys(invoke.mock.calls[0][1]).sort()).toEqual(['args', 'effectiveGrant', 'planMode', 'threadId', 'toolName'])
   })
 
   it('propagates scoped command rejection with no legacy retry', async () => {
     const failure = new Error('native scoped refusal')
     invoke.mockRejectedValueOnce(failure)
-    await expect(executeThreadTool('verifier-thread', 'shell', {}, grant)).rejects.toBe(failure)
+    await expect(executeThreadTool('verifier-thread', 'shell', {}, grant, false)).rejects.toBe(failure)
     expect(invoke).toHaveBeenCalledTimes(1)
     expect(invoke.mock.calls[0][0]).toBe('plugin:agent-tools|execute_thread_tool')
   })
@@ -32,7 +32,7 @@ describe('real agent-tools guest invoke contract', () => {
   it('returns scoped isError unchanged without legacy retry', async () => {
     const result = { content: 'denied', isError: true }
     invoke.mockResolvedValueOnce(result)
-    await expect(executeThreadTool('verifier-thread', 'memory', { op: 'write' }, grant)).resolves.toBe(result)
+    await expect(executeThreadTool('verifier-thread', 'memory', { op: 'write' }, grant, false)).resolves.toBe(result)
     expect(invoke).toHaveBeenCalledTimes(1)
   })
 

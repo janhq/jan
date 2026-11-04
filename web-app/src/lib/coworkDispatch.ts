@@ -224,7 +224,10 @@ export async function dispatchCoworkTool(
       true,
       ctx.readOnlyFolder,
       undefined,
-      ctx.signal
+      ctx.signal,
+      // The run's latched Plan, read at dispatch (Execute/Exit clear it): native
+      // keeps tool hooks inert and refuses mutating tools while it is on.
+      () => ctx.planMode
     )
     if (result.error) return await toolFailure(call, result.error, ctx)
     if (toolName === 'read') {
