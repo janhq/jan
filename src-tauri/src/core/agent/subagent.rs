@@ -2689,16 +2689,31 @@ pub(crate) const MEMORY_TIDY_AGENT: &str = "memory-tidy";
 /// the main conversation never loads them.
 #[cfg(feature = "cli")]
 const MEMORY_TIDY_PROMPT: &str = "You are Jan's memory tidier. You curate the agent's long-term memory \
-with the `memory` tool and nothing else; no change you make asks the user. Be conservative: a note \
-left alone costs a line in the index, a note wrongly archived or deleted loses a fact. When unsure, \
-leave the note alone.
+with the `memory` tool; no change you make asks the user. Be conservative: a note left alone costs a \
+line in the index, a note wrongly archived or deleted loses a fact. When unsure, leave the note alone.
+
+Your task may carry a facts block Jan gathered from the project's local git: today's date, the \
+default branch, which branches it contains, the worktrees, and the PR numbers in its recent log, \
+including reverted PRs. The repository may squash-merge, so a branch absent from the contained list \
+may still have landed: the PR numbers are the stronger evidence, and a branch not merged by commit is \
+never on its own a sign the work is still open. Equally, branch containment alone never shows that \
+work landed: a branch the default branch contains may have been created there and have no commits of \
+its own yet. You can also look at the project with `read`, `ls`, `find` and `grep` \
+(read-only) to check whether the files, functions or branches a note names still exist. Do not spend \
+many calls on the project: check only what a candidate note references, nothing broader.
 
 1. `view` the index, then `view` each folder and every note you are considering changing. Never change \
 a note you have not read in full. The main agent may change notes while you work: if the tool says a \
 note changed since you viewed it, `view` it again before deciding.
-2. Archive a note only when its own content explicitly says the work is finished: merged, released, \
-shipped, closed, done, abandoned or obsolete. Never archive a note because it looks generic, old, \
-neutral or unimportant. Archive with `edit`, adding front matter `status: done` at the top \
+2. Archive a note only when its own text explicitly says the work is finished (merged, released, \
+shipped, closed, done, abandoned or obsolete), or when the facts or the code show the work it tracks \
+is finished: its PR number appears in the default branch's log (and is not among the reverted PRs), \
+or the code it describes has landed. Its branch being contained in the default branch is at most \
+supporting evidence, never enough on its own. Never archive a note on a reverted PR's number: that \
+work did not land, or was undone. Archive this way only notes that track \
+in-progress work or state; a note recording a durable fact, decision, convention or gotcha is NOT \
+archived just because its PR merged. Never archive a note because it looks generic, old, neutral or \
+unimportant. Archive with `edit`, adding front matter `status: done` at the top \
 (`---\\nstatus: done\\n---\\n`); keep its content.
 3. Merge only clear duplicates: two notes stating the same fact. `edit` or `write` the clearer one with \
 the combined content, then `delete` the other.
@@ -2717,10 +2732,12 @@ Finish with a short report, one line per change: `archived <name>`, `merged <a> 
 `no changes` when nothing needed doing.";
 
 /// Start the memory-tidy subagent on the session's registry, returning its run
-/// id. It runs on the `smol` model with only the `memory` tool -- the one child
-/// that keeps memory (see [`without_memory`]) -- and in the background: the
+/// id. It runs on the `smol` model with the `memory` tool -- the one child
+/// that keeps memory (see [`without_memory`]) -- plus read-only project tools
+/// and the git `facts` from [`gather_tidy_facts`], and in the background: the
 /// caller collects it with [`await_subagent`]. It never rings the parent's
-/// doorbell, so a tidy never starts a model turn of its own.
+/// doorbell, so a tidy never starts a model turn of its own. The facts are
+/// the caller's to gather first, off its own loop: they take several gits.
 #[cfg(feature = "cli")]
 pub(crate) async fn spawn_memory_tidy(
     scope: &DispatchScope,
@@ -2728,11 +2745,12 @@ pub(crate) async fn spawn_memory_tidy(
     parent: &ParentRun,
     events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
     budget: Arc<tauri_plugin_agent_tools::memory::ChangeBudget>,
+    facts: Option<String>,
 ) -> Result<Dispatched, SubagentError> {
     if parent_args.project_root.is_none() {
         return Err(SubagentError::Upstream("memory tidy needs an active project".to_string()));
     }
-    let (resolved, req) = memory_tidy_dispatch();
+    let (resolved, req) = memory_tidy_dispatch(facts);
     let parent = &ParentRun {
         cost_remaining: child_cost_ceiling(&child_model(&resolved, parent), parent)?,
         ..parent.clone()
@@ -2759,11 +2777,34 @@ fn memory_tidy_args(
     args
 }
 
-/// The tidy subagent's resolved definition and request: the `smol` model, the
-/// `memory` tool alone, and the internal memory-access flag.
+/// The git facts a tidy of `project_root` is handed (see
+/// [`crate::core::agent::git::tidy_facts`]), or `None` when there are none.
+/// On the blocking pool, since it runs several gits; each is time-limited
+/// there, so a stuck one delays the tidy by seconds, never stalls it.
 #[cfg(feature = "cli")]
-fn memory_tidy_dispatch() -> (ResolvedDispatch, SubagentRequest) {
-    let tools = vec![tauri_plugin_agent_tools::tools::MEMORY_TOOL.to_string()];
+pub(crate) async fn gather_tidy_facts(root: PathBuf) -> Option<String> {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    tokio::task::spawn_blocking(move || crate::core::agent::git::tidy_facts(&root, &today))
+        .await
+        .ok()
+        .flatten()
+}
+
+/// The tidy subagent's resolved definition and request: the `smol` model, the
+/// `memory` tool plus the read-only project tools `explore` has, and the
+/// internal memory-access flag. `facts` (from [`gather_tidy_facts`]) ride in
+/// its task.
+#[cfg(feature = "cli")]
+fn memory_tidy_dispatch(facts: Option<String>) -> (ResolvedDispatch, SubagentRequest) {
+    // Read tools only: a note is checked against the project, never the
+    // project changed, and no shell, web or skills to wander off with.
+    let memory = tauri_plugin_agent_tools::tools::MEMORY_TOOL;
+    let tools: Vec<String> = [memory, "read", "ls", "find", "grep"].map(String::from).to_vec();
+    let mut task = "Tidy the memory now.".to_string();
+    if let Some(facts) = facts {
+        task.push_str("\n\n");
+        task.push_str(&facts);
+    }
     let definition = SubagentDefinition {
         name: MEMORY_TIDY_AGENT.to_string(),
         description: "Tidies the agent's memory".to_string(),
@@ -2778,7 +2819,7 @@ fn memory_tidy_dispatch() -> (ResolvedDispatch, SubagentRequest) {
     };
     let req = SubagentRequest {
         name: MEMORY_TIDY_AGENT.to_string(),
-        description: "Tidy the memory now.".to_string(),
+        description: task,
         allowed_tools: None,
         agent: MEMORY_TIDY_AGENT.to_string(),
         memory_access: true,
@@ -7036,18 +7077,27 @@ pub(crate) mod tests {
         assert!(create["function"]["parameters"]["properties"].get("allowed_tools").is_none());
     }
 
-    /// The tidy subagent is the one child with memory: the `memory` tool and
-    /// nothing else, on the cheap model, and not a name the model can dispatch.
+    /// The tidy subagent is the one child with memory: the `memory` tool plus
+    /// the project read tools and nothing else, on the cheap model, and not a
+    /// name the model can dispatch.
     #[cfg(feature = "cli")]
     #[test]
-    fn the_tidy_subagent_keeps_memory_and_nothing_else() {
-        let (resolved, req) = memory_tidy_dispatch();
+    fn the_tidy_subagent_keeps_memory_and_only_reads_the_project() {
+        let (resolved, req) = memory_tidy_dispatch(None);
         assert!(req.memory_access);
         assert!(req.internal, "a tidy is Jan's own agent, listed as internal");
-        assert_eq!(resolved.allowed_tools, Some(vec!["memory".to_string()]));
+        let five = ["memory", "read", "ls", "find", "grep"].map(String::from).to_vec();
+        assert_eq!(resolved.allowed_tools, Some(five.clone()));
+        assert_eq!(resolved.definition.allowed_tools, Some(five));
         assert_eq!(resolved.definition.model.as_deref(), Some(SMOL_ROLE));
         let child = without_memory(max_par_args(&unique_root("tidy-child")), req.memory_access);
         assert!(!child.permissions.is_denied("memory"));
+        // A reader on the parent's checkout: no worktree, and read-only there.
+        assert!(!crate::core::agent::child_workspace::is_writer(
+            resolved.allowed_tools.as_deref(),
+            &ToolPermissions::allow_all(),
+        ));
+        assert!(req.workspace.is_none(), "never a worktree");
         let reg = SubagentRegistry::load(&unique_root("tidy-not-dispatchable"));
         assert!(!reg.dispatchable_names().contains(&MEMORY_TIDY_AGENT));
         let prompt = &resolved.definition.system_prompt;
@@ -7077,7 +7127,21 @@ pub(crate) mod tests {
     fn the_tidy_prompt_is_conservative_and_names_the_cap() {
         let prompt = MEMORY_TIDY_PROMPT;
         for rule in [
-            "explicitly says the work is finished",
+            "its own text explicitly says the work is finished",
+            "facts block Jan gathered from the project's local git",
+            "the PR numbers are the stronger evidence",
+            "never on its own a sign the work is still open",
+            "`read`, `ls`, `find` and `grep`",
+            "read-only",
+            "branch containment alone never shows that work landed",
+            "created there and have no commits of its own",
+            "at most supporting evidence, never enough on its own",
+            "its PR number appears in the default branch's log",
+            "not among the reverted PRs",
+            "Never archive a note on a reverted PR's number",
+            "is NOT archived just because its PR merged",
+            "only notes that track in-progress work or state",
+            "check only what a candidate note references",
             "Never archive a note because it looks generic",
             "never `write` a copy and",
             "Never create index, overview",
@@ -7086,6 +7150,8 @@ pub(crate) mod tests {
         ] {
             assert!(prompt.contains(rule), "{rule}: {prompt}");
         }
+        // A branch the default contains may be one cut there with no commits.
+        assert!(!prompt.contains("its branch is merged into the default branch"), "{prompt}");
         let cap = tauri_plugin_agent_tools::memory::TIDY_MAX_CHANGES;
         assert!(prompt.contains(&format!("budget of {cap} changes")), "{prompt}");
         let mut parent = max_par_args(&unique_root("tidy-cap"));
@@ -7093,6 +7159,35 @@ pub(crate) mod tests {
             Some(Arc::new(tauri_plugin_agent_tools::memory::ChangeBudget::new(cap)));
         assert!(without_memory(parent.clone(), true).memory_change_budget.is_some());
         assert!(without_memory(parent, false).memory_change_budget.is_none());
+    }
+
+    /// The facts Jan gathered ride in the tidy's task, after the instruction;
+    /// without any the task is the bare instruction.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn the_tidy_task_carries_the_gathered_facts() {
+        let (_, bare) = memory_tidy_dispatch(None);
+        assert_eq!(bare.description, "Tidy the memory now.");
+        let facts = "Today: 2026-11-03\nDefault branch: main, head abc";
+        let (_, req) = memory_tidy_dispatch(Some(facts.to_string()));
+        assert!(req.description.starts_with("Tidy the memory now.\n\n"), "{}", req.description);
+        assert!(req.description.ends_with(facts), "{}", req.description);
+    }
+
+    /// The facts come from the project's repository, and a project outside
+    /// one gets none rather than an error.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn the_tidy_facts_are_gathered_off_thread_or_omitted() {
+        let plain = unique_root("tidy-facts-plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        assert_eq!(gather_tidy_facts(plain).await, None);
+        let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        if let Some(facts) = gather_tidy_facts(here).await {
+            assert!(facts.contains("Today: "), "{facts}");
+            // Shown with `--nocapture`: the block a tidy of this repo gets.
+            println!("{facts}");
+        }
     }
 
     /// Subagents have no memory, so `memory` is never a name a dispatch or a

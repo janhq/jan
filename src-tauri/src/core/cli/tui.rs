@@ -5147,9 +5147,11 @@ struct App {
     /// A memory tidy was asked for (`/memory tidy`, or the auto trigger); the
     /// chat loop starts it on the session's subagent registry. Taken once.
     tidy_request: Option<TidyKind>,
-    /// The tidy in flight, if any: one at a time.
+    /// The tidy in flight, if any: one at a time. Set from when its git facts
+    /// start being gathered, before its child exists.
     tidy_running: Option<TidyKind>,
-    /// The in-flight tidy's subagent run id, so entering plan mode can stop it.
+    /// The in-flight tidy's subagent run id, so entering plan mode can stop it;
+    /// `None` while its facts are gathered.
     tidy_run_id: Option<String>,
     /// Whether this session already queued an automatic tidy. Auto-tidy runs
     /// at most once per session, so a tidy that cannot get the index under
@@ -14415,6 +14417,8 @@ async fn chat_loop<B: Backend>(
     let mut compact_base = 0usize;
     // A memory tidy runs as a session-owned subagent; this collects its answer.
     let mut tidy_task: Option<tokio::task::JoinHandle<Result<String, String>>> = None;
+    // A begun tidy's git facts, gathered before its child starts.
+    let mut tidy_facts_task: Option<tokio::task::JoinHandle<Option<String>>> = None;
 
     // The dock's branch indicator is captured once at startup; re-read it on a
     // slow timer so a checkout made outside the TUI (another terminal, an
@@ -14654,19 +14658,23 @@ async fn chat_loop<B: Backend>(
         }
 
         // Entering plan mode stops the tidy and drops `tidy_running`; its
-        // collector would only report the cancellation as a failure.
+        // collector would only report the cancellation as a failure, and its
+        // facts must not start a child once they land.
         if app.tidy_running.is_none() {
             if let Some(task) = tidy_task.take() {
                 task.abort();
             }
+            if let Some(task) = tidy_facts_task.take() {
+                task.abort();
+            }
         }
 
-        // A memory tidy was asked for: start it in the background. It writes
+        // A memory tidy was asked for: begin it in the background. It writes
         // only memory and never starts a turn, so it runs beside whatever else
-        // the session is doing.
-        if tidy_task.is_none() {
+        // the session is doing; its facts arrive in the select below.
+        if tidy_task.is_none() && tidy_facts_task.is_none() {
             if let Some(kind) = app.tidy_request.take() {
-                tidy_task = start_memory_tidy(app, kind, &session_events_tx).await;
+                tidy_facts_task = begin_memory_tidy(app, kind);
             }
         }
 
@@ -14965,6 +14973,9 @@ async fn chat_loop<B: Backend>(
             }
             compacted = await_compaction(&mut compact_task) => {
                 finish_compaction(app, compacted, compact_base);
+            }
+            facts = await_tidy_facts(&mut tidy_facts_task) => {
+                tidy_task = start_memory_tidy(app, facts, &session_events_tx).await;
             }
             tidied = await_memory_tidy(&mut tidy_task) => {
                 finish_memory_tidy(app, tidied);
@@ -18269,20 +18280,49 @@ enum TidyKind {
     Auto,
 }
 
-/// Start the requested tidy on the session's registry. Fire-and-forget from
-/// the caller's view: the result is collected off the render loop.
-async fn start_memory_tidy(
+/// Begin the requested tidy: mark it running and gather its git facts on a
+/// task of their own, which the loop hands to [`start_memory_tidy`] when they
+/// land. Never waits: the facts take several gits, each allowed seconds, and
+/// the loop must keep drawing meanwhile. Running already, so `/memory tidy`
+/// and the auto trigger stand off, and entering plan mode stops it here too.
+fn begin_memory_tidy(
     app: &mut App,
     kind: TidyKind,
-    events: &mpsc::UnboundedSender<StreamEvent>,
-) -> Option<tokio::task::JoinHandle<Result<String, String>>> {
-    let args = app.args.clone()?;
-    if app.model.is_empty() {
+) -> Option<tokio::task::JoinHandle<Option<String>>> {
+    let root = app.args.as_ref()?.project_root.clone();
+    let problem = if app.model.is_empty() {
+        "memory tidy needs a model: run /login first"
+    } else {
+        "memory tidy failed to start: no active project"
+    };
+    let Some(root) = root.filter(|_| !app.model.is_empty()) else {
         if kind == TidyKind::Manual {
-            app.note("memory tidy needs a model: run /login first");
+            app.note(problem);
         }
         return None;
-    }
+    };
+    app.tidy_running = Some(kind);
+    app.note(match kind {
+        TidyKind::Manual => "tidying memory in the background",
+        TidyKind::Auto => "memory index is over its budget: tidying in the background",
+    });
+    Some(tokio::spawn(crate::core::agent::subagent::gather_tidy_facts(root)))
+}
+
+/// Start the tidy [`begin_memory_tidy`] began, with its gathered `facts`, on
+/// the session's registry. Fire-and-forget from the caller's view: the result
+/// is collected off the render loop. Nothing starts when the tidy was stopped
+/// while its facts were gathered (plan mode drops `tidy_running`).
+async fn start_memory_tidy(
+    app: &mut App,
+    facts: Option<String>,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) -> Option<tokio::task::JoinHandle<Result<String, String>>> {
+    app.tidy_running?;
+    let Some(args) = app.args.clone() else {
+        app.tidy_running = None;
+        return None;
+    };
     let parent = crate::core::agent::subagent::ParentRun {
         model: app.model.clone(),
         smol_model: crate::core::agent::subagent::configured_smol_model(),
@@ -18302,17 +18342,12 @@ async fn start_memory_tidy(
         &parent,
         events,
         budget.clone(),
+        facts,
     )
     .await;
     match dispatched {
         Ok(dispatched) => {
-            app.tidy_running = Some(kind);
             app.tidy_run_id = Some(dispatched.run_id.clone());
-            let label = match kind {
-                TidyKind::Manual => "tidying memory in the background",
-                TidyKind::Auto => "memory index is over its budget: tidying in the background",
-            };
-            app.note(label);
             Some(tokio::spawn(async move {
                 let report = crate::core::agent::subagent::await_subagent(&set, &dispatched.run_id)
                     .await
@@ -18322,12 +18357,27 @@ async fn start_memory_tidy(
             }))
         }
         Err(e) => {
-            if kind == TidyKind::Manual {
-                app.note(&format!("memory tidy failed to start: {e}"));
-            }
+            // Either kind has announced itself by now (see
+            // `begin_memory_tidy`), so a silent failure would leave that note
+            // promising a tidy that never reports back.
+            app.tidy_running = None;
+            app.note(&format!("memory tidy failed to start: {e}"));
             None
         }
     }
+}
+
+/// The git facts a begun tidy is waiting on; pending while there is none.
+async fn await_tidy_facts(
+    task: &mut Option<tokio::task::JoinHandle<Option<String>>>,
+) -> Option<String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    // A facts task that died leaves the tidy without facts, as a failed git does.
+    joined.ok().flatten()
 }
 
 /// Report a finished tidy: its own summary of what it changed, as one note.
@@ -26940,7 +26990,8 @@ mod tests {
         await_shell_ping, brand,
         build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
         drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
-        finish_memory_tidy, memory_command, start_memory_tidy, TidyKind, with_cap_note,
+        begin_memory_tidy, finish_memory_tidy, memory_command, start_memory_tidy, TidyKind,
+        with_cap_note,
         finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
         agent_stats, finish_update_install, fork_at, format_tokens, group_detail_lines, group_summary,
         tool_kind, ToolOp,
@@ -47099,7 +47150,9 @@ fn a() {}
         own_project(&mut app);
         app.args = Some(test_args(&app, providers));
         let (tx, _rx) = mpsc::unbounded_channel();
-        let task = start_memory_tidy(&mut app, TidyKind::Manual, &tx).await.expect("tidy started");
+        let facts = begin_memory_tidy(&mut app, TidyKind::Manual).expect("facts gathering");
+        let facts = facts.await.expect("facts task");
+        let task = start_memory_tidy(&mut app, facts, &tx).await.expect("tidy started");
         assert_eq!(app.tidy_running, Some(TidyKind::Manual));
         assert_eq!(app.subagent_set.live_run_ids().len(), 1, "the tidy child is live");
         run_command(&mut app, "plan", &no_mcp()).await;
@@ -47108,6 +47161,75 @@ fn a() {}
         assert_eq!(app.tidy_running, None, "a later tidy may start once plan mode is left");
         let collected = tokio::time::timeout(Duration::from_secs(5), task).await;
         assert!(matches!(collected, Ok(Ok(Err(_)))), "the tidy produced no report");
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped: plan mode is read only"), "{text}");
+    }
+
+    /// Starting a tidy never waits on its git facts: the loop gets the facts
+    /// task back at once, and until it lands the tidy already counts as
+    /// running, so neither `/memory tidy` nor the auto trigger starts another.
+    #[tokio::test]
+    async fn a_tidy_gathers_its_facts_without_blocking_the_loop() {
+        let mut app = test_app();
+        own_project(&mut app);
+        app.args = Some(test_args(&app, std::collections::HashMap::new()));
+        let facts = begin_memory_tidy(&mut app, TidyKind::Manual).expect("facts gathering");
+        assert_eq!(app.tidy_running, Some(TidyKind::Manual), "running while facts are pending");
+        assert_eq!(app.tidy_run_id, None, "no child before the facts land");
+        assert!(app.subagent_set.live_run_ids().is_empty());
+        memory_command(&mut app, "tidy");
+        assert_eq!(app.tidy_request, None);
+        app.auto_tidy_checked = false;
+        app.maybe_auto_tidy();
+        assert_eq!(app.tidy_request, None, "no auto tidy beside a pending one");
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("tidying memory in the background"), "{text}");
+        assert!(text.contains("already running"), "{text}");
+        facts.abort();
+    }
+
+    /// An automatic tidy has already announced itself when its facts are sent
+    /// off, so a dispatch that fails afterwards must say so, or the transcript
+    /// promises a tidy that never reports back.
+    #[tokio::test]
+    async fn an_auto_tidy_that_fails_to_start_says_so() {
+        let mut app = test_app();
+        own_project(&mut app);
+        app.args = Some(test_args(&app, std::collections::HashMap::new()));
+        let facts = begin_memory_tidy(&mut app, TidyKind::Auto).expect("facts gathering");
+        facts.abort();
+        // The project goes away before dispatch, so the spawn itself fails.
+        let mut args = (**app.args.as_ref().unwrap()).clone();
+        args.project_root = None;
+        app.args = Some(Arc::new(args));
+        let (tx, _rx) = mpsc::unbounded_channel();
+        assert!(start_memory_tidy(&mut app, None, &tx).await.is_none());
+        assert_eq!(app.tidy_running, None);
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("over its budget: tidying in the background"), "{text}");
+        assert!(text.contains("memory tidy failed to start"), "{text}");
+    }
+
+    /// Plan mode entered while a tidy's facts are being gathered stops it
+    /// there: the facts that land afterwards start no child, and an automatic
+    /// tidy gets its check back.
+    #[tokio::test]
+    async fn plan_mode_during_the_facts_phase_starts_no_tidy() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        own_project(&mut app);
+        app.args = Some(test_args(&app, stub_upstream("no changes")));
+        app.auto_tidy_checked = true;
+        let facts = begin_memory_tidy(&mut app, TidyKind::Auto).expect("facts gathering");
+        run_command(&mut app, "plan", &no_mcp()).await;
+        assert_eq!(app.run_mode, RunMode::Plan);
+        assert_eq!(app.tidy_running, None);
+        assert!(!app.auto_tidy_checked, "the auto tidy runs again after plan mode");
+        let facts = facts.await.expect("facts task");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        assert!(start_memory_tidy(&mut app, facts, &tx).await.is_none(), "no tidy started");
+        assert!(app.subagent_set.live_run_ids().is_empty(), "no child");
+        assert_eq!(app.tidy_run_id, None);
         let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("memory tidy stopped: plan mode is read only"), "{text}");
     }
