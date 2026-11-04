@@ -145,6 +145,7 @@ export function dispatchConversationClientTool(
     threadId: string
     signal: AbortSignal
     getMessages: () => readonly UIMessage[]
+    onAnswer?: (request: AskRequestPayload, answers: AskAnswer[] | null) => void
     /** Chat-owned orchestration handlers; absent means unsupported. */
     onTask?: (toolCallId: string, input: unknown) => Promise<ToolOutcome>
     onMonitor?: (toolCallId: string, input: unknown) => Promise<ToolOutcome>
@@ -170,6 +171,7 @@ export function dispatchConversationClientTool(
       onTodo: (list) => {
         entry.pendingTodo = { signal, list, baseline: JSON.stringify(conversationTodos(opts.getMessages())) }
       },
+      onAnswer: opts.onAnswer,
       pendingAsks: entry.pendingAsks,
       showAsk: (id, request) => setCard(entry, { id, request }),
       hideAsk: (id) => {

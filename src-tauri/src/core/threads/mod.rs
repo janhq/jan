@@ -14,6 +14,7 @@
 pub mod commands;
 pub mod constants;
 pub mod capabilities;
+pub mod global_grants;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 pub mod db;
 pub mod helpers;

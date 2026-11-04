@@ -3,7 +3,11 @@ import { memo, useState, useCallback, useEffect, useMemo } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
-import { canContinueStoppedTurn } from '@/lib/chatRunTransport'
+import { canContinueStoppedTurn, isCappedTurn } from '@/lib/chatRunTransport'
+import { CoworkRunNotice } from '@/containers/CoworkRunNotice'
+import { isChatRunNotice } from '@/lib/chatRunNotice'
+import { CoworkBudgetNotice } from '@/containers/CoworkBudgetNotice'
+import { MAX_AGENT_STEPS } from '@/lib/coworkBudget'
 import { usedSkillNames } from '@/lib/agentActivity'
 
 import { ChainOfThoughtGroup } from './message/ChainOfThoughtGroup'
@@ -62,6 +66,8 @@ export type MessageItemProps = {
   onReasoningScrollToBottom?: () => void
   onRegenerate?: (messageId: string) => void
   onContinue?: (messageId: string) => void
+  /** Leave a conversation that hit its token budget for a fresh one. */
+  onNewConversation?: () => void
   onEdit?: (messageId: string, newText: string) => void
   onDelete?: (messageId: string) => void
   /** Ask this question again, unchanged, dropping whatever it produced. Only
@@ -105,6 +111,7 @@ export const MessageItem = memo(
     onReasoningScrollToBottom,
     onRegenerate,
     onContinue,
+    onNewConversation,
     onEdit,
     onDelete,
     onRetry,
@@ -556,6 +563,27 @@ export const MessageItem = memo(
         }
         if (t === CONTENT_TYPE.TEXT) {
           if (!part.text || part.text.trim() === '') continue
+          // The runner's cap line is a UI notice, not an answer: show the same
+          // budget notice Cowork did (Keep going / Compact / New conversation)
+          // and keep the stored text out of the transcript body.
+          if (isChatRunNotice(part as never)) {
+            flushCot(true)
+            const reason = (metadata as { runStopReason?: unknown } | undefined)?.runStopReason
+            if (reason === 'steps' || reason === 'tokens') {
+              elements.push(
+                <CoworkBudgetNotice
+                  key={`${message.id}-budget-${i}`}
+                  {...(reason === 'steps'
+                    ? { kind: 'steps' as const, max: MAX_AGENT_STEPS, onContinue: () => onContinue?.(message.id) }
+                    : {
+                        kind: 'tokens' as const,
+                        onNewConversation: () => onNewConversation?.(),
+                      })}
+                />
+              )
+            }
+            continue
+          }
           flushCot(true)
           elements.push(
             renderTextPart(part as { type: 'text'; text: string }, i)
@@ -568,9 +596,21 @@ export const MessageItem = memo(
         }
       }
       flushCot(false)
+      // A user Stop leaves the same quiet marker Cowork showed. A cap has its
+      // own notice above, so it is not marked twice.
+      if (
+        message.role === 'assistant' &&
+        (metadata as { stopped?: unknown } | undefined)?.stopped === true &&
+        !isCappedTurn(metadata) &&
+        !isStreaming
+      ) {
+        elements.push(<CoworkRunNotice key={`${message.id}-stopped`} kind="stopped" />)
+      }
       return elements
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
+      onContinue,
+      onNewConversation,
       message.parts,
       isStreaming,
       isReasoningAtBottom,

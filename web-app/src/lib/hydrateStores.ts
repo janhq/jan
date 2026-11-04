@@ -20,7 +20,7 @@ import { useJanModelPromptDismissed } from '@/hooks/useJanModelPrompt'
 import { useDefaultEmbeddingModel } from '@/hooks/useDefaultEmbeddingModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
-import { useCoworkConfig } from '@/hooks/useCoworkConfig'
+import { useChatPermissions } from '@/hooks/useChatPermissions'
 import { useChatShell } from '@/hooks/useChatShell'
 import { useCoTDuration } from '@/hooks/useCoTDuration'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
@@ -55,7 +55,6 @@ const secondaryStores = [
   useDefaultEmbeddingModel,
   useAgentMode,
   useWebSearchConfig,
-  useCoworkConfig,
   useChatShell,
   useCoTDuration,
   useImageAttachmentConfig,
@@ -66,4 +65,6 @@ export async function hydrateBackendStores(): Promise<void> {
   await Promise.all(
     secondaryStores.map((store) => Promise.resolve(store.persist.rehydrate()))
   )
+  // Not a persisted store: the host owns this value, so read it from there.
+  await useChatPermissions.getState().load()
 }

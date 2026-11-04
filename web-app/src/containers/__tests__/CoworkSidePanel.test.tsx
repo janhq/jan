@@ -22,6 +22,21 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 const renderPanel = (close = vi.fn()) => render(<div><button>Conversation</button><CoworkSidePanel title="Preview" onClose={close}><button>Open file</button></CoworkSidePanel></div>)
 
 describe('CoworkSidePanel sizing and keyboard access', () => {
+  it('measures the real content row through a display:contents wrapper', () => {
+    // The wrapper has no box (width 0); only the row it sits in is 1000 wide.
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const width = this.dataset.testid === 'row' ? 1000 : 0
+      return { width, height: 600, x: 0, y: 0, top: 0, left: 0, right: width, bottom: 600, toJSON: () => ({}) }
+    })
+    render(
+      <div data-testid="row" style={{ display: 'flex' }}>
+        <div style={{ display: 'contents' }}>
+          <CoworkSidePanel title="Preview" onClose={vi.fn()}><button>Open file</button></CoworkSidePanel>
+        </div>
+      </div>
+    )
+    expect(screen.getByRole('separator')).toHaveAttribute('aria-valuenow', '500')
+  })
   it('starts at half the parent area, not half the window', () => {
     available = 1000
     renderPanel()

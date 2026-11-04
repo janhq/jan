@@ -2,10 +2,12 @@ import { useEffect, useId, useMemo, useState, type KeyboardEvent, type ReactNode
 import { useShallow } from 'zustand/react/shallow'
 import type { UIMessage } from 'ai'
 import { AnimatePresence } from 'motion/react'
-import { FileDiff, FileText, ListChecks, Network } from 'lucide-react'
+import { FileDiff, FileText, ListChecks, Network, PanelRight } from 'lucide-react'
 import { threadWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
 import { Button } from '@/components/ui/button'
 import { CoworkDiffPanel } from '@/containers/CoworkDiffPanel'
+import { CoworkOverviewPanel } from '@/containers/CoworkOverviewPanel'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { CoworkFilesPanel } from '@/containers/CoworkFilesPanel'
 import { ChatPreviewPanel } from '@/containers/ChatPreviewPanel'
 import { CoworkTasksPanel } from '@/containers/CoworkTasksPanel'
@@ -171,7 +173,8 @@ export function ConversationPanelRail({
         <div
           key="conversation-rail"
           id={panelId}
-          className="flex h-full min-w-0 shrink-0"
+          // No box of its own: the panel lays out in (and measures) the content row.
+          className="contents"
           tabIndex={-1}
           onKeyDown={closeOnEscape(onClose)}
         >
@@ -221,7 +224,11 @@ export function useConversationPanels({
 }: {
   threadId: string
   messages: readonly UIMessage[]
-}): { controls: ReactNode; rail: ReactNode } {
+}): { controls: ReactNode; rail: ReactNode; toggle: ReactNode; overview: ReactNode; overviewSpacer: ReactNode } {
+  const { t } = useTranslation()
+  const desktopOverview = useMediaQuery('(min-width: 1280px)', true)
+  const [overviewOpen, setOverviewOpen] = useState(true)
+  const [overviewRequested, setOverviewRequested] = useState(false)
   const panelId = useId()
   const [requested, setRequested] = useState<{ threadId: string; rail: ConversationRail | null }>({ threadId, rail: null })
   // Effective (overlay) grant, re-derived on every store notification so a
@@ -260,8 +267,60 @@ export function useConversationPanels({
   const set = (next: ConversationRail | null) => setRequested({ threadId, rail: next })
   const active = rail && rail.kind !== 'preview' ? rail.kind : rail ? 'files' : null
   const hasControls = CONVERSATION_PANEL_ORDER.some((kind) => available[kind])
+  // The overview is the old Cowork page's always-available right rail. A docked
+  // panel (files/diff/todos/tasks/preview) replaces it, as it did there.
+  const docked = rail !== null
+  const overviewShown = overviewOpen && !docked
+  const toggleOverview = () => {
+    setOverviewRequested(true)
+    if (!desktopOverview && !overviewRequested) { set(null); setOverviewOpen(true); return }
+    if (docked) { set(null); setOverviewOpen(true) }
+    else setOverviewOpen((open) => !open)
+  }
+  const openRail = (next: ConversationRail) => { setOverviewOpen(false); set(next) }
 
   return {
+    toggle: (
+      <button
+        type="button"
+        aria-label={t(overviewShown ? 'common:overview.close' : 'common:overview.title')}
+        data-testid="overview-toggle"
+        aria-pressed={overviewShown}
+        onClick={toggleOverview}
+        className={cn(
+          'ml-auto flex size-8 shrink-0 items-center justify-center rounded-full bg-muted/70 text-muted-foreground transition-[margin,background-color,color] duration-250 ease-out motion-reduce:transition-none hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          overviewShown && 'xl:mr-80'
+        )}
+      >
+        <PanelRight className="size-4" />
+      </button>
+    ),
+    overviewSpacer: (
+      <div
+        className={cn(
+          'hidden shrink-0 transition-[width] duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none xl:block',
+          overviewShown ? 'w-80' : 'w-0'
+        )}
+        aria-hidden="true"
+      />
+    ),
+    overview: (
+      <AnimatePresence initial={false}>
+        {overviewShown && (desktopOverview || overviewRequested) && (
+          <CoworkOverviewPanel
+            todos={content.todos}
+            attachments={[]}
+            artifacts={content.artifacts}
+            files={content.diffs}
+            subagents={content.tasks}
+            onPreview={(path) => { if (isPermittedPath(roots, path)) openRail({ kind: 'preview', path }) }}
+            onChanges={() => openRail({ kind: 'diff' })}
+            onAgents={() => openRail({ kind: 'tasks' })}
+            onClose={() => setOverviewOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+    ),
     // No available kind means no element at all, not an empty wrapper, so the
     // caller's own `controls &&` guard and spacing stay correct.
     controls: hasControls ? (

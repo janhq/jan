@@ -27,13 +27,8 @@ import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useHomeScope } from '@/hooks/useHomeScope'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { Folder, ShieldCheck, X } from 'lucide-react'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import { ConversationCapabilitiesConsent } from '@/containers/ConversationCapabilitiesConsent'
+import { Folder, X } from 'lucide-react'
+import { DraftWorkspacePill } from '@/containers/DraftWorkspacePill'
 import {
   defaultConversationCapabilities,
   isConversationFolderPath,
@@ -202,6 +197,7 @@ function Index() {
               showSpeedToken={false}
               model={threadModel}
               initialMessage={true}
+              pendingSkillFolder={scopeDraft.folderScope?.path ?? null}
               projectId={project?.id}
               projectAssistantId={project?.assistantId}
               supportsAssistants={true}
@@ -223,30 +219,11 @@ function Index() {
             />
           </div>
           {chatScopeAvailable && (
-            <div className="pt-2" data-testid="home-scope-consent">
-              <Collapsible>
-                <CollapsibleTrigger asChild>
-                  <button
-                    type="button"
-                    className="flex items-center gap-1.5 rounded-sm p-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    data-testid="home-scope-consent-trigger"
-                  >
-                    <ShieldCheck className="size-4 shrink-0" aria-hidden="true" />
-                    <span>
-                      Conversation permissions
-                      {scopeDraftElevated ? ' (pending)' : ''}
-                    </span>
-                  </button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="pt-2">
-                  <ConversationCapabilitiesConsent
-                    value={scopeDraft}
-                    onChange={setScopeDraft}
-                    onPickFolder={pickScopeFolder}
-                  />
-                </CollapsibleContent>
-              </Collapsible>
-            </div>
+            <DraftWorkspacePill
+              value={scopeDraft}
+              onChange={setScopeDraft}
+              onPickFolder={() => void attachScopeFolder()}
+            />
           )}
           {/* Persistent live region: stays mounted so screen readers announce
               text that appears or changes inside it. The inner <p> carries no

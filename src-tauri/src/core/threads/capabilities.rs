@@ -213,18 +213,27 @@ pub async fn resolve_thread_kind(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(_) => return ThreadKind::Unknown,
     };
-    let (mut legacy, mut deleted) = (false, false);
-    if record.is_none() {
-        let blob = crate::core::app::settings_store::settings_get("code-sessions".into());
-        let journal = crate::core::app::settings_store::settings_get("cowork_deleted_ids".into());
-        match (
-            legacy_blob_has_session(blob.as_deref(), thread_id),
-            deleted_journal_has(journal.as_deref(), thread_id),
-        ) {
-            (Ok(l), Ok(d)) => (legacy, deleted) = (l, d),
-            _ => return ThreadKind::Unknown,
+    let (legacy, deleted) = if record.is_none() {
+        // The headless host has no desktop settings-store snapshot. Without
+        // positive legacy identity evidence, an absent record stays Unknown.
+        #[cfg(feature = "cli")]
+        return ThreadKind::Unknown;
+
+        #[cfg(not(feature = "cli"))]
+        {
+            let blob = crate::core::app::settings_store::settings_get("code-sessions".into());
+            let journal = crate::core::app::settings_store::settings_get("cowork_deleted_ids".into());
+            match (
+                legacy_blob_has_session(blob.as_deref(), thread_id),
+                deleted_journal_has(journal.as_deref(), thread_id),
+            ) {
+                (Ok(l), Ok(d)) => (l, d),
+                _ => return ThreadKind::Unknown,
+            }
         }
-    }
+    } else {
+        (false, false)
+    };
     classify_thread_kind(thread_id, record.as_ref(), legacy, deleted)
 }
 
@@ -233,6 +242,35 @@ mod kind_tests {
     use super::*;
     use serde_json::json;
     use tauri_plugin_agent_tools::thread_capabilities::ThreadKind::*;
+
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn cli_resolver_requires_persisted_identity() {
+        let root = tempfile::tempdir().unwrap();
+        let id = "cli-identity";
+        let path = super::super::utils::get_thread_metadata_path(root.path(), id).unwrap();
+        assert_eq!(resolve_thread_kind(root.path(), id).await, Unknown);
+        // Resolving an absent id must not create a record or directory.
+        assert!(!path.parent().unwrap().exists());
+        assert_eq!(resolve_thread_kind(root.path(), "../invalid").await, Unknown);
+        assert_eq!(resolve_thread_kind(root.path(), "temporary-chat").await, Chat);
+
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        for (record, expected) in [
+            (json!({"id":id,"metadata":null}), Chat),
+            (json!({"id":id,"metadata":{"mode":"cowork"}}), Cowork),
+            (json!({"id":"another-id","metadata":null}), Unknown),
+            (json!({"id":id,"metadata":"invalid"}), Unknown),
+        ] {
+            std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+            assert_eq!(resolve_thread_kind(root.path(), id).await, expected);
+        }
+        std::fs::write(&path, "{invalid json").unwrap();
+        assert_eq!(resolve_thread_kind(root.path(), id).await, Unknown);
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert_eq!(resolve_thread_kind(root.path(), id).await, Unknown);
+    }
 
     #[test]
     fn classifies_records_and_fails_closed() {

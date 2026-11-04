@@ -35,8 +35,8 @@ export function ToasterProvider() {
         },
         classNames: {
           toast: 'toast select-none',
-          title: 'text-foreground! select-none',
-          description: 'text-muted-foreground! select-none',
+          title: 'select-none',
+          description: 'select-none',
         },
       }}
     />

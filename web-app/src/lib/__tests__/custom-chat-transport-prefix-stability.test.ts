@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   providerId: 'openai',
   serviceHub: null as unknown,
   predefinedRemote: false,
+  ragTools: [] as Array<{ name: string; description: string; inputSchema: object; server: string }>,
 }))
 
 const mcpService = {
@@ -27,7 +28,7 @@ const mcpService = {
 
 h.serviceHub = {
   mcp: () => mcpService,
-  rag: () => ({ getTools: async () => [] }),
+  rag: () => ({ getTools: async () => h.ragTools }),
 }
 
 vi.mock('ai', async () => {
@@ -133,6 +134,7 @@ vi.mock('../model-factory', () => ({
   ModelFactory: { createModel: vi.fn(async () => ({ modelId: 'gpt' })) },
 }))
 
+import { useChatPlan } from '@/hooks/useChatPlan'
 import { CustomChatTransport } from '../custom-chat-transport'
 import { CoworkChatTransport } from '../coworkTransport'
 import { ModelFactory } from '../model-factory'
@@ -162,8 +164,10 @@ const send = (transport: CustomChatTransport, messages: UIMessage[]) =>
 
 describe('CustomChatTransport prompt-prefix stability across turns', () => {
   beforeEach(() => {
+    useChatPlan.setState({ drafts: {} })
     streamTextCalls.length = 0
     h.disabledTools = []
+    h.ragTools = []
     h.servers = ['srv']
     h.providerId = 'openai'
     h.assistantParameters = null
@@ -176,6 +180,77 @@ describe('CustomChatTransport prompt-prefix stability across turns', () => {
     h.getRelevantTools.mockResolvedValue([
       { name: 'tool_a', description: 'a', inputSchema: {}, server: 'srv' },
     ])
+  })
+
+  it('freezes Plan prompt and advertisement until a validated review transition', async () => {
+    useChatPlan.getState().setDraft('thread-1', true)
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    const finish = transport.beginChatRun()
+    try {
+      await drain(await send(transport, [user('u1', 'investigate')]))
+      expect(String(streamTextCalls.at(-1)?.system)).toContain('PLAN MODE (read only)')
+      expect(Object.keys(streamTextCalls.at(-1)?.tools as object)).not.toContain('tool_a')
+      expect(transport.planToolRefusal('shell')).toContain('read-only')
+      useChatPlan.getState().setDraft('thread-1', false)
+      expect(transport.planToolRefusal('shell')).toContain('read-only')
+      transport.executeReviewedPlan()
+      await drain(await send(transport, [user('u1', 'investigate')]))
+      expect(String(streamTextCalls.at(-1)?.system)).not.toContain('PLAN MODE (read only)')
+      expect(transport.planToolRefusal('shell')).toBeUndefined()
+      useChatPlan.getState().setDraft('thread-1', true)
+      expect(transport.planToolRefusal('shell')).toContain('read-only')
+    } finally { finish() }
+  })
+
+  it.each([false, true])('Plan advertises trusted attachment reads but rejects MCP collisions (spoof=%s)', async (spoof) => {
+    useChatPlan.getState().setDraft('thread-1', true)
+    h.ragTools = ['retrieve', 'list_attachments', 'get_chunks'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, server: 'rag' }))
+    if (spoof) {
+      const external = h.ragTools.map(tool => ({ ...tool, server: 'external' }))
+      h.getRelevantTools.mockResolvedValue(external)
+      mcpService.getTools.mockResolvedValueOnce(external as never).mockResolvedValueOnce(external as never)
+    }
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await transport.updateRagToolsAvailability(!spoof, true, true)
+    const finish = transport.beginChatRun()
+    try {
+      await drain(await send(transport, [user('u1', 'read attachments')]))
+      const tools = Object.keys(streamTextCalls.at(-1)?.tools as object)
+      for (const { name } of h.ragTools) {
+        if (spoof) {
+          expect(tools).not.toContain(name)
+        } else {
+          expect(tools).toContain(name)
+          expect(transport.planToolRefusal(name)).toBeUndefined()
+        }
+      }
+    } finally { finish() }
+  })
+
+  it('latches Plan activated during an initially normal run even between dispatches', async () => {
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    const finish = transport.beginChatRun()
+    try {
+      await drain(await send(transport, [user('u1', 'investigate')]))
+      useChatPlan.getState().setDraft('thread-1', true)
+      useChatPlan.getState().setDraft('thread-1', false)
+      expect(transport.isPlanActive()).toBe(true)
+      expect(transport.planToolRefusal('shell')).toContain('read-only')
+      await drain(await send(transport, [user('u1', 'investigate')]))
+      expect(String(streamTextCalls.at(-1)?.system)).toContain('PLAN MODE (read only)')
+      transport.executeReviewedPlan()
+      expect(transport.isPlanActive()).toBe(false)
+      expect(transport.planToolRefusal('shell')).toBeUndefined()
+    } finally { finish() }
+  })
+
+  it('never reinterprets slash paths or removed skills from reloaded history', async () => {
+    const messages = [user('u1', '/tmp/logs'), assistant('a1', 'ok'), user('u2', '/skill:deleted'), assistant('a2', 'done'), user('u3', 'continue')]
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(await send(transport, messages))
+    const sent = JSON.stringify(streamTextCalls.at(-1)?.messages)
+    expect(sent).toContain('/tmp/logs')
+    expect(sent).toContain('/skill:deleted')
   })
 
   it('sends a byte-identical prefix (system + tools + prior turns) on the next turn', async () => {
@@ -288,6 +363,7 @@ describe('CustomChatTransport prompt-prefix stability across turns', () => {
 
 describe('CustomChatTransport assistant completion (continuation prefill)', () => {
   beforeEach(() => {
+    useChatPlan.setState({ drafts: {} })
     streamTextCalls.length = 0
     h.disabledTools = []
     h.servers = ['srv']
@@ -385,6 +461,7 @@ describe('CustomChatTransport assistant completion (continuation prefill)', () =
 // the SDK, and counts it against the context window (janhq/jan#9227).
 describe('CustomChatTransport output-token cap', () => {
   beforeEach(() => {
+    useChatPlan.setState({ drafts: {} })
     streamTextCalls.length = 0
     h.providerId = 'anthropic'
     h.predefinedRemote = true
@@ -477,6 +554,7 @@ it('sends an MCP image result to an OpenAI-compatible provider as a sentinel', a
 it.each(['anthropic', 'google', 'openai'])(
   'sends an MCP image result to %s as an image-data tool output',
   async (name) => {
+    useChatPlan.setState({ drafts: {} })
     streamTextCalls.length = 0
     provider.provider = name
     h.providerId = name
@@ -522,6 +600,7 @@ it.each(['groq', 'anthropic', 'google', 'openai'])(
     h.providerId = name
     selectedModel.id = 'gpt'
     selectedModel.capabilities = ['tools', 'vision']
+    useChatPlan.setState({ drafts: {} })
     streamTextCalls.length = 0
     const transport = new CustomChatTransport('fixture system', 'thread-1')
     await drain(await send(transport, [initial, live!]))

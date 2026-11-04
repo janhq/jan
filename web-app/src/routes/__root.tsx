@@ -8,20 +8,17 @@ import { InterfaceProvider } from '@/providers/InterfaceProvider'
 import { KeyboardShortcutsProvider } from '@/providers/KeyboardShortcuts'
 import { DataProvider } from '@/providers/DataProvider'
 import { route } from '@/constants/routes'
-import { ExtensionProvider } from '@/providers/ExtensionProvider'
 import { ToasterProvider } from '@/providers/ToasterProvider'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import { useIsOnboarding } from '@/hooks/useIsOnboarding'
 import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
-import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import { DownloadEventListener } from '@/providers/DownloadEventListener'
-import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
 import { WindowControls } from '@/components/WindowControls'
@@ -114,26 +111,20 @@ function RootLayout() {
 
   return (
     <Fragment>
-      <ServiceHubProvider>
-        <ThemeProvider />
-        <InterfaceProvider />
-        <ToasterProvider />
-        <TranslationProvider>
-          <ExtensionProvider>
-            <DataProvider />
-            <GlobalEventHandler />
-            <DownloadEventListener />
-            {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
-          </ExtensionProvider>
-          {/* <TanStackRouterDevtools position="bottom-right" /> */}
-          <AttachmentIngestionDialog />
-          <ErrorDialog />
-          <LlamacppBusyOnExitDialog />
-          <LlamacppOomListener />
-          <MissingDependenciesDialog />
-          <OutOfContextPromiseModal />
-        </TranslationProvider>
-      </ServiceHubProvider>
+      <ThemeProvider />
+      <InterfaceProvider />
+      <ToasterProvider />
+      <DataProvider />
+      <GlobalEventHandler />
+      <DownloadEventListener />
+      {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
+      {/* <TanStackRouterDevtools position="bottom-right" /> */}
+      <AttachmentIngestionDialog />
+      <ErrorDialog />
+      <LlamacppBusyOnExitDialog />
+      <LlamacppOomListener />
+      <MissingDependenciesDialog />
+      <OutOfContextPromiseModal />
     </Fragment>
   )
 }

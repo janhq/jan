@@ -128,6 +128,8 @@ macro_rules! invoke_commands_with_extras {
         core::threads::commands::create_thread,
         core::threads::commands::modify_thread,
         core::threads::commands::set_thread_conversation_capabilities,
+        core::threads::global_grants::get_chat_permissions,
+        core::threads::global_grants::set_chat_permissions,
         core::threads::commands::rollback_created_thread,
         core::threads::commands::read_thread_extra,
         core::threads::commands::write_thread_extra,
@@ -381,6 +383,8 @@ pub fn run() {
                 tauri_plugin_agent_tools::workspace::set_data_folder_resolver(Arc::new(
                     move || get_jan_data_folder_path(handle.clone()),
                 ));
+                let handle = app.handle().clone();
+                core::threads::global_grants::install(&get_jan_data_folder_path(handle.clone()));
                 let handle = app.handle().clone();
                 tauri_plugin_agent_tools::thread_capabilities::set_resolver(Arc::new(move |id| {
                     let data_folder = get_jan_data_folder_path(handle.clone());

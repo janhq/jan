@@ -646,13 +646,22 @@ enum PollVerdict {
     Denied(String),
 }
 
+fn poll_network_allowed(ceiling: bool, global: bool) -> bool {
+    ceiling && global
+}
+
 /// Run the script once under the same confinement `bash` gets.
 async fn eval_script(
     ctx: &MonitorCtx,
     script: &str,
     barrier: Option<(&ThreadAuthority, u64)>,
 ) -> PollVerdict {
-    let tool_ctx = ctx.as_tool_context();
+    // Re-read on EVERY poll, including legacy Session monitors whose context
+    // otherwise stays fixed. A requested/start-time false is a permanent ceiling.
+    let tool_ctx = ctx.as_tool_context().with_network(poll_network_allowed(
+        ctx.allow_network,
+        crate::thread_capabilities::get_global_grants().shell_network,
+    ));
     // Thread-only PreToolUse gate, fired for the poll script exactly as the
     // `shell` tool would fire it, BEFORE any spawn. Only the thread-owned
     // resolver populates `ctx.hooks` (re-resolved each poll); the Session
@@ -821,6 +830,14 @@ mod tests {
             std::env::temp_dir().join(format!("jan_monitor_test_{}_{}", std::process::id(), n));
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    #[test]
+    fn monitor_network_keeps_ceiling_and_observes_global_off_on_later_polls() {
+        assert!(poll_network_allowed(true, true));
+        assert!(!poll_network_allowed(true, false));
+        assert!(!poll_network_allowed(false, true));
+        assert!(!poll_network_allowed(false, false));
     }
 
     fn ctx_for(root: &Path) -> MonitorCtx {

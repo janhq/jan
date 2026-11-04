@@ -45,7 +45,7 @@ vi.mock('@/hooks/useModelProvider', () => ({
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({
-    dialog: () => ({ open: vi.fn(async () => null) }),
+    dialog: () => ({ open: vi.fn(async () => '/synthetic/workspace') }),
   }),
 }))
 
@@ -79,12 +79,14 @@ vi.mock('@/containers/ChatInput', () => ({
     leadingControls,
     projectId,
     scopeKey,
+    pendingSkillFolder,
     supportsAssistants,
     ownsToolSet,
     prepareThreadCreation,
   }: any) => (
     <div
       data-testid="chat-input"
+      data-pending-skill-folder={pendingSkillFolder ?? "none"}
       data-project-id={projectId}
       data-scope-key={scopeKey}
       data-supports-assistants={String(supportsAssistants)}
@@ -132,6 +134,7 @@ vi.mock('@/containers/dialogs/DeleteAllThreadsInProjectDialog', () => ({
 }))
 vi.mock('@/lib/utils', () => ({
   cn: (...c: any[]) => c.filter(Boolean).join(' '),
+  truncateMiddle: (v: string) => v,
 }))
 
 import { Route } from '../project/$projectId'
@@ -139,6 +142,16 @@ import { Route } from '../project/$projectId'
 const renderComponent = () => {
   const Component = Route.component as React.ComponentType
   return render(<Component />)
+}
+
+// Elevate the draft the way users do: attach a folder from the pill.
+const attachDraftFolder = async () => {
+  // The popover can already be open (same mounted component across routes).
+  if (!screen.queryByRole('button', { name: 'common:workspace.attach' })) {
+    fireEvent.click(await screen.findByRole('button', { name: 'common:workspace.a11yNoFolder' }))
+  }
+  fireEvent.click(await screen.findByRole('button', { name: 'common:workspace.attach' }))
+  await screen.findByTestId('draft-workspace-pill')
 }
 
 describe('Project route single Chat flow', () => {
@@ -174,12 +187,12 @@ describe('Project route single Chat flow', () => {
   it('offers draft conversation permissions only for a tool-capable model', () => {
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     const view = renderComponent()
-    expect(screen.getByTestId('project-scope-consent-trigger')).toBeInTheDocument()
+    expect(screen.getByTestId('draft-workspace-pill')).toBeInTheDocument()
     expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
     view.unmount()
     h.selectedModel = { id: 'model-b', capabilities: [] }
     renderComponent()
-    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
   })
 
   it('states a truthful unsupported reason without refusing ordinary direct chat', () => {
@@ -207,10 +220,7 @@ describe('Project route single Chat flow', () => {
     const view = renderComponent()
     const region = screen.getByTestId('project-scope-status')
     expect(region).toBeEmptyDOMElement()
-    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
-    fireEvent.click(
-      await screen.findByLabelText('Allow shell commands to access the network')
-    )
+    await attachDraftFolder()
     h.selectedModel = { id: 'model-b', capabilities: [] }
     view.rerender(<Component />)
     expect(screen.getByTestId('project-scope-status')).toBe(region)
@@ -228,14 +238,12 @@ describe('Project route single Chat flow', () => {
     const Component = Route.component as React.ComponentType
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     const view = renderComponent()
-    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
-    fireEvent.click(
-      await screen.findByLabelText('Allow shell commands to access the network')
-    )
+    await attachDraftFolder()
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-pending-skill-folder', '/synthetic/workspace')
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     window.history.replaceState({}, '', '/?temporary-chat=true')
     view.rerender(<Component />)
-    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     // A tool-capable model in temporary mode is not "unsupported", but the
     // hidden control is explained and the elevated draft is stated as kept.
@@ -244,9 +252,7 @@ describe('Project route single Chat flow', () => {
     )
     window.history.replaceState({}, '', '/')
     view.rerender(<Component />)
-    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
-      'Conversation permissions (pending)'
-    )
+    expect(screen.getByTestId('draft-workspace-pill')).toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
   })
 
@@ -254,7 +260,7 @@ describe('Project route single Chat flow', () => {
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     window.history.replaceState({}, '', '/?temporary-chat=true')
     renderComponent()
-    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
     expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
       'common:conversationScope.temporaryPermissions'
     )
@@ -265,22 +271,17 @@ describe('Project route single Chat flow', () => {
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     const view = renderComponent()
     expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
-    fireEvent.click(
-      await screen.findByLabelText('Allow shell commands to access the network')
-    )
+    await attachDraftFolder()
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     // No model selected yet: not a "model without tools", so no false notice.
     h.selectedModel = undefined
     view.rerender(<Component />)
     expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     view.rerender(<Component />)
-    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
-      'Conversation permissions (pending)'
-    )
+    expect(screen.getByTestId('draft-workspace-pill')).toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
   })
 
@@ -288,16 +289,13 @@ describe('Project route single Chat flow', () => {
     const Component = Route.component as React.ComponentType
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     const view = renderComponent()
-    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
-    fireEvent.click(
-      await screen.findByLabelText('Allow shell commands to access the network')
-    )
+    await attachDraftFolder()
     h.selectedModel = { id: 'model-b', capabilities: [] }
     window.history.replaceState({}, '', '/?temporary-chat=true')
     view.rerender(<Component />)
     // Temporary chat never persists consent: the temporary reason (not the
     // unsupported-model one) is shown, with the draft kept, and no prepare path.
-    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
     expect(screen.getByTestId('project-scope-unsupported').textContent).toBe(
       'common:conversationScope.temporaryPermissions common:conversationScope.pendingKeptTemporary'
     )
@@ -318,9 +316,7 @@ describe('Project route single Chat flow', () => {
     // And the draft survives to resurface on a tool-capable model.
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     view.rerender(<Component />)
-    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
-      'Conversation permissions (pending)'
-    )
+    expect(screen.getByTestId('draft-workspace-pill')).toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
   })
 
@@ -334,7 +330,7 @@ describe('Project route single Chat flow', () => {
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     window.history.replaceState({}, '', url)
     renderComponent()
-    expect(screen.getByTestId('project-scope-consent-trigger')).toBeInTheDocument()
+    expect(screen.getByTestId('draft-workspace-pill')).toBeInTheDocument()
   })
 
   it.each([
@@ -351,7 +347,7 @@ describe('Project route single Chat flow', () => {
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
       window.history.replaceState({}, '', url)
       renderComponent()
-      expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     }
   )
@@ -361,17 +357,14 @@ describe('Project route single Chat flow', () => {
     h.prepareOutcome = undefined
     renderComponent()
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
-    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
-    fireEvent.click(
-      await screen.findByLabelText('Allow shell commands to access the network')
-    )
+    await attachDraftFolder()
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     fireEvent.click(screen.getByTestId('invoke-prepare'))
     await waitFor(() =>
       expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
         version: 1,
-        folderScope: null,
-        shellNetwork: true,
+        folderScope: { path: '/synthetic/workspace', access: 'read' },
+        shellNetwork: false,
         memoryWrite: false,
       })
     )
@@ -382,15 +375,12 @@ describe('Project route single Chat flow', () => {
     const Component = Route.component as React.ComponentType
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     const view = renderComponent()
-    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
-    fireEvent.click(
-      await screen.findByLabelText('Allow shell commands to access the network')
-    )
+    await attachDraftFolder()
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     // A non-tools model hides the consent UI and removes the prepare path.
     h.selectedModel = { id: 'model-b', capabilities: [] }
     view.rerender(<Component />)
-    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
     // The hidden pending draft is announced, not silently dropped.
     expect(screen.getByTestId('project-scope-unsupported')).toHaveTextContent(
@@ -402,9 +392,7 @@ describe('Project route single Chat flow', () => {
     // Back on a tool-capable model the draft resurfaces explicitly pending.
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     view.rerender(<Component />)
-    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
-      'Conversation permissions (pending)'
-    )
+    expect(screen.getByTestId('draft-workspace-pill')).toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
   })
 
@@ -412,19 +400,15 @@ describe('Project route single Chat flow', () => {
     const Component = Route.component as React.ComponentType
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
     const view = renderComponent()
-    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
-    fireEvent.click(
-      await screen.findByLabelText('Allow shell commands to access the network')
-    )
+    await attachDraftFolder()
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     // Same component instance, new project param: project A's elevated draft
     // must not survive into project B even for one committed render.
     h.projectId = 'project-2'
     view.rerender(<Component />)
     expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
-    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
-      /^Conversation permissions$/
-    )
+    // The reset draft shows the empty, icon-only attach button.
+    expect(screen.getByRole('button', { name: 'common:workspace.a11yNoFolder' })).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('invoke-prepare'))
     expect(h.setCaps).not.toHaveBeenCalled()
   })

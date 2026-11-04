@@ -1,3 +1,7 @@
+import { unifiedSkillCommandAvailable, expandUnifiedSkillCommand } from '@/lib/unifiedSkillCommands'
+import { HOME_PLAN_KEY, useChatPlan, setChatPlan } from '@/hooks/useChatPlan'
+import { useSkills, effectiveEnabled } from '@/hooks/useSkills'
+import { filterSkillCommands, parseSkillCommand, resolveSkillCommand } from '@/lib/skillCommands'
 import TextareaAutosize from 'react-textarea-autosize'
 import { cn, formatBytes } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
@@ -21,9 +25,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
-import { ArrowRight, PlusIcon, SlidersHorizontal, UserRound } from 'lucide-react'
+import { ArrowRight, PlusIcon, SlidersHorizontal, UserRound, ClipboardList } from 'lucide-react'
 import {
-  IconPhoto,
   IconMusic,
   IconVideo,
   IconTool,
@@ -34,15 +37,7 @@ import {
   IconWorldSearch,
   IconTerminal2,
   IconBrandChrome,
-  IconShield,
 } from '@tabler/icons-react'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
-import { ConversationScopeControl } from '@/containers/ConversationScopeControl'
-import { isCoworkThread } from '@/lib/threadMode'
 import { generateId } from 'ai'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { QueuedMessageChip } from '@/containers/QueuedMessageBubble'
@@ -97,6 +92,7 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 import { toast } from 'sonner'
 import { isPlatformTauri } from '@/lib/platform/utils'
+import { AUDIO_EXTS, IMAGE_EXTS, VIDEO_EXTS, routeUploadPaths } from '@/lib/uploadRouting'
 import { shouldShowTokenCounter } from '@/lib/tokenCounterVisibility'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import {
@@ -170,6 +166,8 @@ type ChatInputProps = {
   // Callers outside the general chat (e.g. Cowork, keyed by session id) pass
   // their own id so each gets an independent queue and attachment draft.
   scopeKey?: string
+  /** Pending home/project grant; null explicitly means no folder. */
+  pendingSkillFolder?: string | null
   /**
    * Whether the surface's tool set is configured from this composer.
    *
@@ -198,7 +196,126 @@ type ChatInputProps = {
 }
 
 // Video containers llama-server can decode via ffmpeg/ffprobe into frames.
-const VIDEO_EXTS = ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v']
+const DOCUMENT_EXTS = [
+  'pdf',
+  'docx',
+  'txt',
+  'md',
+  'csv',
+  'xlsx',
+  'xls',
+  'ods',
+  'pptx',
+  'html',
+  'htm',
+  'js',
+  'mjs',
+  'cjs',
+  'ts',
+  'mts',
+  'cts',
+  'jsx',
+  'tsx',
+  'py',
+  'pyw',
+  'pyi',
+  'c',
+  'h',
+  'cpp',
+  'cc',
+  'cxx',
+  'hpp',
+  'hh',
+  'rs',
+  'go',
+  'swift',
+  'zig',
+  'java',
+  'kt',
+  'kts',
+  'scala',
+  'groovy',
+  'rb',
+  'php',
+  'lua',
+  'pl',
+  'r',
+  'jl',
+  'cs',
+  'fs',
+  'vb',
+  'xaml',
+  'csproj',
+  'sln',
+  'cu',
+  'cuh',
+  'hlsl',
+  'glsl',
+  'cg',
+  'shader',
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'ps1',
+  'bat',
+  'cmd',
+  'vbs',
+  'asm',
+  's',
+  'm',
+  'mm',
+  'pas',
+  'pp',
+  'erl',
+  'hrl',
+  'ex',
+  'exs',
+  'clj',
+  'cljs',
+  'hs',
+  'lhs',
+  'ml',
+  'mli',
+  'f',
+  'f90',
+  'css',
+  'scss',
+  'sass',
+  'less',
+  'vue',
+  'svelte',
+  'astro',
+  'asp',
+  'aspx',
+  'jsp',
+  'json',
+  'jsonc',
+  'yaml',
+  'yml',
+  'toml',
+  'xml',
+  'ini',
+  'cfg',
+  'conf',
+  'env',
+  'properties',
+  'dockerfile',
+  'makefile',
+  'cmake',
+  'lock',
+  'sql',
+  'graphql',
+  'gql',
+  'tex',
+  'rst',
+  'adoc',
+  'textile',
+  'log',
+  'diff',
+  'patch',
+  'gitignore',
+]
 const videoMimeForExt = (ext: string | undefined): string => {
   switch (ext) {
     case 'mov':
@@ -231,6 +348,7 @@ const ChatInput = memo(function ChatInput({
   chatStatus,
   toolsRunning,
   scopeKey,
+  pendingSkillFolder,
   ownsToolSet = true,
   surfaceControls,
   leadingControls,
@@ -269,6 +387,29 @@ const ChatInput = memo(function ChatInput({
   const navigateHistory = usePrompt((state) => state.navigateHistory)
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const currentThread = useThreads((state) => state.getCurrentThread())
+  const planKey = scopeKey ?? (initialMessage ? HOME_PLAN_KEY : currentThreadId ?? HOME_PLAN_KEY)
+  const planDraft = useChatPlan((s) => s.drafts[planKey] === true)
+  const planThread = useThreads((s) => s.threads[planKey])
+  const planMode = planThread ? planThread.metadata?.planMode === true : planDraft
+  const unifiedCommands = ownsToolSet
+  const threadSkillFolder = useThreads((s) => s.getConversationCapabilities(planKey).folderScope?.path ?? null)
+  const skillFolder = pendingSkillFolder !== undefined ? pendingSkillFolder : threadSkillFolder
+  const { skills: installedSkills, enabled: enabledSkills } = useSkills(skillFolder)
+  const commandSkills = useMemo(() => {
+    const allowed = effectiveEnabled(enabledSkills, installedSkills.map((skill) => skill.name))
+    return installedSkills.filter((skill) => allowed.has(skill.name) && skill.user_invocable !== false)
+  }, [installedSkills, enabledSkills])
+  const slashQuery = /^\/([^\s]*)$/.exec(prompt)?.[1]
+  const [slashIndex, setSlashIndex] = useState(0)
+  const [slashDismissed, setSlashDismissed] = useState(false)
+  useEffect(() => { setSlashIndex(0); setSlashDismissed(false) }, [prompt])
+  const slashSkills = unifiedCommands && slashQuery !== undefined
+    ? filterSkillCommands(commandSkills, slashQuery.startsWith('skill:') ? slashQuery.slice(6) : slashQuery)
+      .filter((skill) => slashQuery.startsWith('skill:') || unifiedSkillCommandAvailable(`/${skill.name}`))
+      .slice(0, 8)
+    : []
+  const showPlanCommand = slashQuery !== undefined && !slashQuery.startsWith('skill:') && 'plan'.startsWith(slashQuery.toLowerCase())
+  const slashCount = slashSkills.length + (showPlanCommand ? 1 : 0)
   const updateCurrentThreadAssistant = useThreads(
     (state) => state.updateCurrentThreadAssistant
   )
@@ -304,7 +445,8 @@ const ChatInput = memo(function ChatInput({
   useEffect(() => {
     let live = true
     void getSandboxStatus().then((s) => {
-      if (live) setSandboxEnforcesShell(s.enforces)
+      if (!live) return
+      setSandboxEnforcesShell(s.enforces)
     })
     return () => {
       live = false
@@ -432,24 +574,6 @@ const ChatInput = memo(function ChatInput({
   const maxRows = 10
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
-  // Scoped conversation permissions exist for any persistent Chat thread on a
-  // surface that owns its tool set; temporary chats and Cowork sessions never
-  // get a consent control. Deliberately NOT gated on agent mode or model tool
-  // capability: a thread may already hold an elevated grant, and the shield is
-  // its only revocation surface, so it must stay reachable when agent mode is
-  // on or a non-tool model is selected. Granting there claims no tool support;
-  // access is enforced per dispatch. The control re-checks these guards.
-  const scopeControlThread =
-    ownsToolSet &&
-    currentThread &&
-    currentThread.id !== TEMPORARY_CHAT_ID &&
-    !isCoworkThread(currentThread)
-      ? currentThread
-      : null
-  const pickScopeFolder = useCallback(async () => {
-    const picked = await serviceHub.dialog().open({ directory: true })
-    return typeof picked === 'string' ? picked : null
-  }, [serviceHub])
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const [message, setMessage] = useState('')
   const [optionsOpen, setOptionsOpen] = useState(false)
@@ -714,6 +838,23 @@ const ChatInput = memo(function ChatInput({
   const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
   const handleSendMessage = async (prompt: string) => {
+    let isSkillCommand = false
+    if (unifiedCommands && prompt.trim().startsWith('/')) {
+      if (prompt.trim() === '/plan') {
+        setChatPlan(planKey, !planMode)
+        setPrompt('')
+        return
+      }
+      const parsed = parseSkillCommand(prompt)
+      if (!parsed && prompt.trim().startsWith('/skill:')) {
+        toast.error('This command is unavailable. Choose an installed skill or /plan.')
+        return false
+      }
+      // A leading slash can be ordinary prose or an absolute path. Only
+      // explicit skill requests or discovered commands enter skill expansion;
+      // expansion revalidates availability in the captured submission folder.
+      isSkillCommand = !!parsed && unifiedSkillCommandAvailable(prompt) && (parsed.explicit || !!resolveSkillCommand(commandSkills, parsed))
+    }
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
       return
@@ -745,9 +886,20 @@ const ChatInput = memo(function ChatInput({
     // `@token` (a pasted decorator) stays in the text as typed.
     const { text: resolvedText, resolvedContents } =
       await expandPromptReferences(prompt, workingDir)
+    let submittedText = resolvedText
+    if (isSkillCommand) {
+      try {
+        // Only user-authored input may resolve local files. Assemble the skill
+        // afterwards and keep its body literal in the durable transcript.
+        submittedText = await expandUnifiedSkillCommand(resolvedText, skillFolder ?? undefined)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Unable to resolve skill command.')
+        return false
+      }
+    }
     const effectivePrompt = resolvedContents
-      ? `${resolvedText}\n\n---\nReferenced file contents:\n\n${resolvedContents}`
-      : resolvedText
+      ? `${submittedText}\n\n---\nReferenced file contents:\n\n${resolvedContents}`
+      : submittedText
 
     if (!effectivePrompt.trim() && !hasSendableMedia) {
       return
@@ -875,6 +1027,7 @@ const ChatInput = memo(function ChatInput({
           JSON.stringify(messagePayload)
         )
         sessionStorage.setItem('temp-chat-nav', 'true')
+        if (unifiedCommands) setChatPlan(TEMPORARY_CHAT_ID, planMode)
         // Transfer agent mode from home screen to temporary thread
         if (effectiveAgentMode && agentModeKey !== TEMPORARY_CHAT_ID) {
           useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
@@ -965,6 +1118,10 @@ const ChatInput = memo(function ChatInput({
           }
         }
 
+        if (unifiedCommands) {
+          setChatPlan(newThread.id, planMode)
+          useChatPlan.getState().setDraft(planKey, false)
+        }
         acceptCreatedThread(newThread.id)
 
         // Transfer agent mode from home screen to the new thread
@@ -985,7 +1142,7 @@ const ChatInput = memo(function ChatInput({
         })
       }
 
-      setPrompt('')
+      if (usePrompt.getState().prompt === prompt) setPrompt('')
       // Don't clear attachments here — document attachments stored under
       // NEW_THREAD_ATTACHMENT_KEY need to survive until the thread detail
       // page transfers and processes them.  The thread detail page's
@@ -1134,161 +1291,21 @@ const ChatInput = memo(function ChatInput({
     ]
   )
 
-  const handleAttachDocsIngest = async () => {
+  const handleAttachDocsIngest = async (preselected?: string[]) => {
     try {
       if (!attachmentsEnabled) {
         toast.info('Attachments are disabled in Settings')
         return
       }
-      const selection = await serviceHub.dialog().open({
-        multiple: true,
-        filters: [
-          {
-            name: 'Documents & Code',
-            extensions: [
-              // Documents
-              'pdf',
-              'docx',
-              'txt',
-              'md',
-              'csv',
-              'xlsx',
-              'xls',
-              'ods',
-              'pptx',
-              'html',
-              'htm',
-              // JavaScript / TypeScript
-              'js',
-              'mjs',
-              'cjs',
-              'ts',
-              'mts',
-              'cts',
-              'jsx',
-              'tsx',
-              // Python
-              'py',
-              'pyw',
-              'pyi',
-              // C / C++
-              'c',
-              'h',
-              'cpp',
-              'cc',
-              'cxx',
-              'hpp',
-              'hh',
-              // Systems languages
-              'rs',
-              'go',
-              'swift',
-              'zig',
-              // JVM languages
-              'java',
-              'kt',
-              'kts',
-              'scala',
-              'groovy',
-              // Scripting languages
-              'rb',
-              'php',
-              'lua',
-              'pl',
-              'r',
-              'jl',
-              // .NET
-              'cs',
-              'fs',
-              'vb',
-              'xaml',
-              'csproj',
-              'sln',
-              // CUDA
-              'cu',
-              'cuh',
-              // Shaders
-              'hlsl',
-              'glsl',
-              'cg',
-              'shader',
-              // Shell
-              'sh',
-              'bash',
-              'zsh',
-              'fish',
-              'ps1',
-              'bat',
-              'cmd',
-              'vbs',
-              // More languages
-              'asm',
-              's',
-              'm',
-              'mm',
-              'pas',
-              'pp',
-              'erl',
-              'hrl',
-              'ex',
-              'exs',
-              'clj',
-              'cljs',
-              'hs',
-              'lhs',
-              'ml',
-              'mli',
-              'f',
-              'f90',
-              // Web
-              'css',
-              'scss',
-              'sass',
-              'less',
-              'vue',
-              'svelte',
-              'astro',
-              'php',
-              'asp',
-              'aspx',
-              'jsp',
-              // Data / config formats
-              'json',
-              'jsonc',
-              'yaml',
-              'yml',
-              'toml',
-              'xml',
-              'ini',
-              'cfg',
-              'conf',
-              'env',
-              'properties',
-              'dockerfile',
-              'makefile',
-              'cmake',
-              'lock',
-              // Query / markup
-              'sql',
-              'graphql',
-              'gql',
-              'tex',
-              'rst',
-              'adoc',
-              'textile',
-              // Misc text
-              'log',
-              'diff',
-              'patch',
-              'gitignore',
-            ],
-          },
-          {
-            name: 'All Files',
-            extensions: ['*'],
-          },
-        ],
-      })
+      const selection =
+        preselected ??
+        (await serviceHub.dialog().open({
+          multiple: true,
+          filters: [
+            { name: 'Documents & Code', extensions: DOCUMENT_EXTS },
+            { name: 'All Files', extensions: ['*'] },
+          ],
+        }))
       if (!selection) return
       const paths = Array.isArray(selection) ? selection : [selection]
       if (!paths.length) return
@@ -1787,47 +1804,6 @@ const ChatInput = memo(function ChatInput({
     if (textareaRef.current) textareaRef.current.focus()
   }
 
-  const openAudioPicker = useCallback(async () => {
-    if (isPlatformTauri()) {
-      try {
-        const selected = await serviceHub.dialog().open({
-          multiple: true,
-          filters: [{ name: 'Audio', extensions: ['wav', 'mp3'] }],
-        })
-        if (selected) {
-          const paths = Array.isArray(selected) ? selected : [selected]
-          const files: File[] = []
-          for (const path of paths) {
-            try {
-              const { convertFileSrc } = await import('@tauri-apps/api/core')
-              const fileUrl = convertFileSrc(path)
-              const response = await fetch(fileUrl)
-              if (!response.ok) throw new Error(response.statusText)
-              const blob = await response.blob()
-              const fileName =
-                path.split(/[\\/]/).filter(Boolean).pop() || 'audio'
-              const ext = fileName.toLowerCase().split('.').pop()
-              const mimeType = ext === 'mp3' ? 'audio/mpeg' : 'audio/wav'
-              files.push(new File([blob], fileName, { type: mimeType }))
-            } catch (error) {
-              console.error('Failed to read audio file:', error)
-              toast.error('Failed to read audio file', {
-                description:
-                  error instanceof Error ? error.message : String(error),
-              })
-            }
-          }
-          if (files.length > 0) await processAudioFiles(files)
-        }
-      } catch (error) {
-        console.error('Failed to open audio dialog:', error)
-      }
-      if (textareaRef.current) textareaRef.current.focus()
-    } else {
-      audioInputRef.current?.click()
-    }
-  }, [serviceHub, processAudioFiles])
-
   const processVideoFiles = useCallback(
     async (files: File[]) => {
       const maxBytes = 100 * 1024 * 1024
@@ -1926,116 +1902,78 @@ const ChatInput = memo(function ChatInput({
     if (textareaRef.current) textareaRef.current.focus()
   }
 
-  const openVideoPicker = useCallback(async () => {
-    if (isPlatformTauri()) {
-      try {
-        const selected = await serviceHub.dialog().open({
-          multiple: true,
-          filters: [{ name: 'Video', extensions: VIDEO_EXTS }],
-        })
-        if (selected) {
-          const paths = Array.isArray(selected) ? selected : [selected]
-          const files: File[] = []
-          for (const path of paths) {
-            try {
-              const { convertFileSrc } = await import('@tauri-apps/api/core')
-              const fileUrl = convertFileSrc(path)
-              const response = await fetch(fileUrl)
-              if (!response.ok) throw new Error(response.statusText)
-              const blob = await response.blob()
-              const fileName =
-                path.split(/[\\/]/).filter(Boolean).pop() || 'video'
-              const ext = fileName.toLowerCase().split('.').pop()
-              files.push(
-                new File([blob], fileName, { type: videoMimeForExt(ext) })
-              )
-            } catch (error) {
-              console.error('Failed to read video file:', error)
-              toast.error('Failed to read video file', {
-                description:
-                  error instanceof Error ? error.message : String(error),
-              })
-            }
-          }
-          if (files.length > 0) await processVideoFiles(files)
-        }
-      } catch (error) {
-        console.error('Failed to open video dialog:', error)
-      }
-      if (textareaRef.current) textareaRef.current.focus()
-    } else {
-      videoInputRef.current?.click()
+  // One picker for everything a user can attach. Files are routed by type, the
+  // same split drag-and-drop uses: media goes to the model when it can take it,
+  // everything else becomes a document attachment.
+  const openUploadPicker = async () => {
+    if (!isPlatformTauri()) {
+      // The browser build has no file paths: only media can be attached there.
+      if (hasMmproj) fileInputRef.current?.click()
+      else if (audioSupported) audioInputRef.current?.click()
+      else if (videoSupported) videoInputRef.current?.click()
+      return
     }
-  }, [serviceHub, processVideoFiles])
-
-  // Open the image picker dialog (extracted for reuse)
-  const openImagePicker = useCallback(async () => {
-    if (isPlatformTauri()) {
-      try {
-        const selected = await serviceHub.dialog().open({
-          multiple: true,
-          filters: [
-            {
-              name: 'Images',
-              extensions: ['jpg', 'jpeg', 'png'],
-            },
-          ],
+    try {
+      const selected = await serviceHub.dialog().open({
+        multiple: true,
+        filters: [
+          {
+            name: 'All supported files',
+            extensions: [...IMAGE_EXTS, ...AUDIO_EXTS, ...VIDEO_EXTS, ...DOCUMENT_EXTS],
+          },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      })
+      if (!selected) return
+      const paths = Array.isArray(selected) ? selected : [selected]
+      const extOf = (p: string) => p.toLowerCase().split('.').pop() ?? ''
+      const routed = routeUploadPaths(paths, {
+        image: hasMmproj,
+        audio: audioSupported,
+        video: videoSupported,
+      })
+      if (routed.imagesAsDocuments > 0) {
+        toast.info("This model can't see images", {
+          description: 'They are attached as files instead.',
         })
-
-        if (selected) {
-          const paths = Array.isArray(selected) ? selected : [selected]
-          const files: File[] = []
-
-          for (const path of paths) {
-            try {
-              // Use Tauri's convertFileSrc to create a valid URL for the file
-              const { convertFileSrc } = await import('@tauri-apps/api/core')
-              const fileUrl = convertFileSrc(path)
-
-              // Fetch the file as blob
-              const response = await fetch(fileUrl)
-              if (!response.ok) {
-                throw new Error(`Failed to fetch file: ${response.statusText}`)
-              }
-
-              const blob = await response.blob()
-              const fileName =
-                path.split(/[\\/]/).filter(Boolean).pop() || 'image'
-              const ext = fileName.toLowerCase().split('.').pop()
-              const mimeType =
-                ext === 'png'
-                  ? 'image/png'
-                  : ext === 'jpg' || ext === 'jpeg'
-                    ? 'image/jpeg'
-                    : 'image/jpeg'
-
-              const file = new File([blob], fileName, { type: mimeType })
-              files.push(file)
-            } catch (error) {
-              console.error('Failed to read file:', error)
-              toast.error('Failed to read file', {
-                description:
-                  error instanceof Error ? error.message : String(error),
-              })
-            }
-          }
-
-          if (files.length > 0) {
-            await processImageFiles(files)
+      }
+      const toFiles = async (list: string[], mimeFor: (ext: string) => string) => {
+        const { convertFileSrc } = await import('@tauri-apps/api/core')
+        const files: File[] = []
+        for (const path of list) {
+          try {
+            const response = await fetch(convertFileSrc(path))
+            if (!response.ok) throw new Error(response.statusText)
+            const blob = await response.blob()
+            const name = path.split(/[\\/]/).filter(Boolean).pop() || 'file'
+            files.push(new File([blob], name, { type: mimeFor(extOf(name)) }))
+          } catch (error) {
+            console.error('Failed to read file:', error)
+            toast.error('Failed to read file', {
+              description: error instanceof Error ? error.message : String(error),
+            })
           }
         }
-      } catch (error) {
-        console.error('Failed to open file dialog:', error)
+        return files
       }
-
-      if (textareaRef.current) {
-        textareaRef.current.focus()
+      if (routed.image.length > 0) {
+        const files = await toFiles(routed.image, (e) => (e === 'png' ? 'image/png' : 'image/jpeg'))
+        if (files.length > 0) await processImageFiles(files)
       }
-    } else {
-      // Fallback to input click for web
-      fileInputRef.current?.click()
+      if (routed.audio.length > 0) {
+        const files = await toFiles(routed.audio, (e) => (e === 'mp3' ? 'audio/mpeg' : 'audio/wav'))
+        if (files.length > 0) await processAudioFiles(files)
+      }
+      if (routed.video.length > 0) {
+        const files = await toFiles(routed.video, (e) => videoMimeForExt(e))
+        if (files.length > 0) await processVideoFiles(files)
+      }
+      if (routed.documents.length > 0) await handleAttachDocsIngest(routed.documents)
+    } catch (error) {
+      console.error('Failed to open file dialog:', error)
     }
-  }, [serviceHub, processImageFiles])
+    textareaRef.current?.focus()
+  }
 
   const dropAcceptsAnything = hasMmproj || audioSupported || videoSupported
 
@@ -2492,6 +2430,19 @@ const ChatInput = memo(function ChatInput({
                   {prompt.slice(highlightedPrefix.length)}
                 </div>
               )}
+              {unifiedCommands && !slashDismissed && slashQuery !== undefined && slashCount > 0 && (
+                <div role="listbox" aria-label={t('common:commands')} className="mb-2 max-h-56 overflow-y-auto rounded-lg border bg-popover p-1">
+                  {showPlanCommand &&
+                    <button type="button" role="option" aria-selected={slashIndex === 0} className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-accent aria-selected:bg-accent" onClick={() => { setChatPlan(planKey, !planMode); setPrompt('') }}>
+                      <ClipboardList className="size-4" /> /plan
+                    </button>}
+                  {slashSkills.map((skill, index) => <button type="button" role="option" aria-selected={slashIndex === index + (showPlanCommand ? 1 : 0)} key={skill.name}
+                    className="flex w-full flex-col rounded px-3 py-2 text-left hover:bg-accent aria-selected:bg-accent"
+                    onClick={() => { setPrompt(`/skill:${skill.name} `); textareaRef.current?.focus() }}>
+                    <span>/{skill.name}</span><span className="truncate text-xs text-muted-foreground">{skill.description}</span>
+                  </button>)}
+                </div>
+              )}
               <TextareaAutosize
                 data-composer-width={composerWidth}
                 dir="auto"
@@ -2537,6 +2488,23 @@ const ChatInput = memo(function ChatInput({
                   // e.keyCode 229 is for IME input with Safari
                   const isComposing =
                     e.nativeEvent.isComposing || e.keyCode === 229
+                  if (unifiedCommands && !slashDismissed && slashQuery !== undefined && slashCount > 0 && !isComposing) {
+                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                      e.preventDefault()
+                      setSlashIndex((index) => (index + (e.key === 'ArrowDown' ? 1 : -1) + slashCount) % slashCount)
+                      return
+                    }
+                    if (e.key === 'Escape') { e.preventDefault(); setSlashDismissed(true); return }
+                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                      e.preventDefault()
+                      if (showPlanCommand && slashIndex === 0) { setChatPlan(planKey, !planMode); setPrompt('') }
+                      else {
+                        const skill = slashSkills[slashIndex - (showPlanCommand ? 1 : 0)]
+                        if (skill) setPrompt(`/skill:${skill.name} `)
+                      }
+                      return
+                    }
+                  }
                   if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
                     e.preventDefault()
                     // Submit prompt when Enter is pressed without Shift and prompt is not empty.
@@ -2667,63 +2635,20 @@ const ChatInput = memo(function ChatInput({
                             event.preventDefault()
                         }}
                       >
-                        {!effectiveAgentMode && hasMmproj && (
-                          <DropdownMenuItem
-                            disabled={isStreaming}
-                            onClick={() => void openImagePicker()}
-                          >
-                            <IconPhoto
-                              size={18}
-                              className="text-muted-foreground"
-                            />
-                            <span>Add Images</span>
-                          </DropdownMenuItem>
-                        )}
-                        {!effectiveAgentMode && audioSupported && (
-                          <DropdownMenuItem
-                            disabled={isStreaming}
-                            onClick={() => void openAudioPicker()}
-                          >
-                            <IconMusic
-                              size={18}
-                              className="text-muted-foreground"
-                            />
-                            <span>Add Audio</span>
-                          </DropdownMenuItem>
-                        )}
-                        {!effectiveAgentMode && videoSupported && (
-                          <DropdownMenuItem
-                            disabled={isStreaming}
-                            onClick={() => void openVideoPicker()}
-                          >
-                            <IconVideo
-                              size={18}
-                              className="text-muted-foreground"
-                            />
-                            <span>Add Video</span>
-                          </DropdownMenuItem>
-                        )}
-                        {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
                         {!effectiveAgentMode && (
                           <DropdownMenuItem
-                            disabled={isStreaming}
-                            onClick={handleAttachDocsIngest}
+                            disabled={isStreaming || ingestingDocs}
+                            onClick={() => void openUploadPicker()}
                           >
                             {ingestingDocs ? (
-                              <IconLoader2
-                                size={18}
-                                className="text-muted-foreground animate-spin"
-                              />
+                              <IconLoader2 size={18} className="animate-spin" />
                             ) : (
-                              <IconPaperclip
-                                size={18}
-                                className="text-muted-foreground"
-                              />
+                              <IconPaperclip size={18} />
                             )}
                             <span>
                               {ingestingDocs
                                 ? 'Indexing documents…'
-                                : 'Upload or add files'}
+                                : 'Upload files or photos'}
                             </span>
                           </DropdownMenuItem>
                         )}
@@ -2773,6 +2698,13 @@ const ChatInput = memo(function ChatInput({
                             {t('common:web_search')}
                           </DropdownMenuCheckboxItem>
                         )}
+                        {unifiedCommands && <DropdownMenuCheckboxItem
+                          indicatorAlign="right" checked={planMode}
+                          onCheckedChange={(checked) => setChatPlan(planKey, checked === true)}
+                        >
+                          <ClipboardList className="size-4 text-muted-foreground" />
+                          {t('common:planMode.label')}
+                        </DropdownMenuCheckboxItem>}
                         {menuControls}
                         {showToolControls &&
                           sandboxEnforcesShell &&
@@ -2888,37 +2820,6 @@ const ChatInput = memo(function ChatInput({
                       </DropdownMenuContent>
                     </DropdownMenu>
                     {leadingControls}
-                    {/* The permissions shield is the revocation surface, so it
-                        must stay reachable at every width and during
-                        streaming (revocation applies to the next dispatch,
-                        including within the current turn). It therefore lives
-                        OUTSIDE the narrow-hidden tool group. */}
-                    {scopeControlThread && (
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-label="Conversation permissions"
-                            data-testid="conversation-scope-trigger"
-                          >
-                            <IconShield
-                              size={18}
-                              className="text-muted-foreground"
-                            />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent
-                          align="start"
-                          className="w-[min(380px,calc(100vw-16px))] p-2"
-                        >
-                          <ConversationScopeControl
-                            threadId={scopeControlThread.id}
-                            pickFolder={pickScopeFolder}
-                          />
-                        </PopoverContent>
-                      </Popover>
-                    )}
                     <div
                       className={cn(
                         'flex items-center gap-1 @max-[520px]/composer:hidden',
@@ -3117,6 +3018,15 @@ const ChatInput = memo(function ChatInput({
                         )}
                     </div>
                   </div>
+                  {unifiedCommands && planMode && <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon-xs" className="text-primary" aria-pressed={true}
+                        aria-label={t('common:planMode.label')} onClick={() => setChatPlan(planKey, false)}>
+                        <ClipboardList className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t('common:planMode.label')}</TooltipContent>
+                  </Tooltip>}
                   {surfaceControls && (
                     // Surface actions remain available through menuControls/menuWorkspace.
                     <div className="flex shrink-0 items-center gap-1 @max-[520px]/composer:hidden">

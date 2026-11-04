@@ -14,6 +14,19 @@ import { useFailedDrafts } from '@/stores/failed-draft-store'
 
 // --- Module mocks (must be declared before component import) ---------------
 
+const skillMocks = vi.hoisted(() => ({
+  useSkills: vi.fn(() => ({ skills: [{ name: 'review', description: 'Review' }], enabled: [] })),
+  expand: vi.fn(async () => 'Resolved durable skill instructions'),
+}))
+vi.mock('@/hooks/useSkills', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useSkills')>()),
+  useSkills: skillMocks.useSkills,
+}))
+vi.mock('@/lib/unifiedSkillCommands', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/unifiedSkillCommands')>()),
+  expandUnifiedSkillCommand: skillMocks.expand,
+}))
+
 // Store backing state for usePrompt (settable by tests)
 let promptState = ''
 const setPromptMock = vi.fn((val: string) => {
@@ -452,92 +465,136 @@ describe('ChatInput', () => {
     resetAll()
   })
 
-  describe('conversation scope control', () => {
-    const persistentThread = { id: 'thread-1', title: 'Chat', assistants: [], updated: 1, metadata: {} }
-    beforeEach(() => {
+  it.each(['/usr/bin/python', '/tmp/example', '/word', '/word args'])('sends ordinary slash text unchanged: %s', async (text) => {
+    promptState = text
+    const onSubmit = vi.fn(async (..._args: any[]) => true)
+    renderInput({ initialMessage: true, pendingSkillFolder: '/pending/project', onSubmit })
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toBe(text)
+    expect(onSubmit.mock.calls[0][3]).toBe(text)
+  })
+
+  it.each(['/clear', '/help me debug', '/plan the migration'])('does not auto-invoke reserved skill collisions: %s', async (text) => {
+    skillMocks.useSkills.mockReturnValue({
+      skills: ['clear', 'help', 'plan'].map((name) => ({ name, description: '' })), enabled: [],
+    })
+    try {
+      promptState = text
+      const onSubmit = vi.fn(async (..._args: any[]) => true)
+      renderInput({ initialMessage: true, onSubmit })
+      fireEvent.click(screen.getByTestId('send-message-button'))
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+      expect(onSubmit.mock.calls[0][0]).toBe(text)
+      expect(skillMocks.expand).not.toHaveBeenCalled()
+    } finally {
+      skillMocks.useSkills.mockReturnValue({ skills: [{ name: 'review', description: 'Review' }], enabled: [] })
+    }
+  })
+
+  it.each(['/clear', '/skill:clear'])('only offers reserved skill collisions through explicit syntax: %s', (text) => {
+    skillMocks.useSkills.mockReturnValue({ skills: [{ name: 'clear', description: '' }], enabled: [] })
+    try {
+      promptState = text
+      renderInput({ initialMessage: true, onSubmit: vi.fn() })
+      if (text.startsWith('/skill:')) expect(screen.getByRole('option')).toBeInTheDocument()
+      else expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    } finally {
+      skillMocks.useSkills.mockReturnValue({ skills: [{ name: 'review', description: 'Review' }], enabled: [] })
+    }
+  })
+
+  it('expands a resolved installed bare command in the pending submission folder', async () => {
+    promptState = '/review source'
+    const onSubmit = vi.fn(async (..._args: any[]) => true)
+    renderInput({ initialMessage: true, pendingSkillFolder: '/pending/project', onSubmit })
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(skillMocks.expand).toHaveBeenCalledWith('/review source', '/pending/project')
+    expect(onSubmit.mock.calls[0][0]).toBe('Resolved durable skill instructions')
+  })
+
+  it('retains an explicit missing skill draft and reports the expansion refusal', async () => {
+    promptState = '/skill:missing args'
+    skillMocks.expand.mockRejectedValueOnce(new Error('Skill command /missing is unavailable.'))
+    const onSubmit = vi.fn()
+    renderInput({ initialMessage: true, pendingSkillFolder: '/pending/project', onSubmit })
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Skill command /missing is unavailable.'))
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(promptState).toBe('/skill:missing args')
+  })
+
+  it('uses the pending folder for both skill discovery and durable submission', async () => {
+    promptState = '/skill:review source'
+    const onSubmit = vi.fn(async (..._args: any[]) => true)
+    renderInput({ initialMessage: true, pendingSkillFolder: '/pending/project', onSubmit })
+    expect(skillMocks.useSkills).toHaveBeenLastCalledWith('/pending/project')
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(skillMocks.expand).toHaveBeenCalledWith('/skill:review source', '/pending/project')
+    expect(onSubmit.mock.calls[0][0]).toBe('Resolved durable skill instructions')
+    expect(onSubmit.mock.calls[0][3]).toBe('/skill:review source')
+  })
+
+  it('expands only user references before assembling a literal skill body', async () => {
+    promptState = '/skill:review @/user/request.txt keep these args'
+    const body = 'Skill instructions: @/private/secret.txt'
+    skillMocks.expand.mockResolvedValueOnce(body)
+    expandPromptReferencesMock.mockImplementationOnce(async (text: string) => ({
+      text: text.replace('@/user/request.txt', 'request.txt'),
+      resolvedContents: text.includes('@/private/secret.txt') ? 'PRIVATE SECRET' : 'User requested contents',
+    }))
+    const onSubmit = vi.fn(async (..._args: any[]) => true)
+    renderInput({ initialMessage: true, pendingSkillFolder: '/pending/project', onSubmit })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(expandPromptReferencesMock).toHaveBeenCalledWith('/skill:review @/user/request.txt keep these args')
+    expect(skillMocks.expand).toHaveBeenCalledWith('/skill:review request.txt keep these args', '/pending/project')
+    expect(onSubmit.mock.calls[0][0]).toBe(`${body}\n\n---\nReferenced file contents:\n\nUser requested contents`)
+    expect(onSubmit.mock.calls[0][0]).not.toContain('PRIVATE SECRET')
+    expect(onSubmit.mock.calls[0][3]).toBe('/skill:review @/user/request.txt keep these args')
+  })
+
+  it.each([undefined, 'project-1'])('keeps a newer initial draft while skill resolution and thread creation yield (%s)', async (projectId) => {
+    promptState = '/skill:review original args'
+    Object.assign(getServiceHub(), { projects: () => ({ getProjectById: vi.fn().mockResolvedValue({ id: 'project-1', name: 'Project', updated_at: 1 }) }) })
+    let resolveSkill!: (value: string) => void
+    let resolveThread!: (value: { id: string }) => void
+    skillMocks.expand.mockReturnValueOnce(new Promise<string>((resolve) => { resolveSkill = resolve }))
+    createThreadMock.mockReturnValueOnce(new Promise<{ id: string }>((resolve) => { resolveThread = resolve }))
+    const view = renderInput({ initialMessage: true, projectId })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(skillMocks.expand).toHaveBeenCalled())
+    promptState = 'New draft during skill resolution'
+    view.rerender(<ChatInput initialMessage projectId={projectId} />)
+    await act(async () => { resolveSkill('Literal expanded skill body') })
+    await waitFor(() => expect(createThreadMock).toHaveBeenCalled())
+    promptState = 'Newest draft during thread creation'
+    view.rerender(<ChatInput initialMessage projectId={projectId} />)
+    await act(async () => { resolveThread({ id: 'created-thread' }) })
+    expect(promptState).toBe('Newest draft during thread creation')
+    expect(JSON.parse(sessionStorage.getItem(`${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}created-thread`)!)).toMatchObject({
+      text: 'Literal expanded skill body', draft: '/skill:review original args',
+    })
+  })
+
+  it('an explicit null pending folder discovers store skills, not HOME_PLAN_KEY scope', () => {
+    renderInput({ initialMessage: true, pendingSkillFolder: null })
+    expect(skillMocks.useSkills).toHaveBeenLastCalledWith(null)
+  })
+
+  describe('conversation permissions', () => {
+    // Folder access lives in the workspace pill above the composer and the
+    // + menu; the composer itself carries no permissions control.
+    it('renders no permissions trigger, even in a persistent chat thread', () => {
+      const persistentThread = { id: 'thread-1', title: 'Chat', assistants: [], updated: 1, metadata: {} }
       for (const key of Object.keys(threadsMockState)) delete threadsMockState[key]
-      getCurrentThreadMock.mockReturnValue(undefined)
-    })
-
-    it('shows the permissions trigger only for a persistent chat thread, and opens the control', async () => {
       threadsMockState['thread-1'] = persistentThread
       getCurrentThreadMock.mockReturnValue(persistentThread)
-      renderInput()
-      const trigger = screen.getByTestId('conversation-scope-trigger')
-      fireEvent.click(trigger)
-      expect(
-        await screen.findByText('Conversation permissions', { selector: 'legend' })
-      ).toBeInTheDocument()
-    })
-
-    it('stays reachable outside the narrow-hidden tool group and while streaming', () => {
-      threadsMockState['thread-1'] = persistentThread
-      getCurrentThreadMock.mockReturnValue(persistentThread)
-      renderInput({ chatStatus: 'streaming' })
-      const trigger = screen.getByTestId('conversation-scope-trigger')
-      // Revocation surface: never inside the @max-[520px] hidden group, never
-      // under an inert (pointer-events-none) ancestor during streaming
-      // (revocation applies to the next dispatch). Checks ancestors only: the
-      // button's own utility classes legitimately contain prefixed
-      // pointer-events-none variants.
-      let node = trigger.parentElement
-      while (node) {
-        const cls = node.getAttribute('class') ?? ''
-        expect(cls).not.toMatch(/(?:^|\s)pointer-events-none(?:\s|$)/)
-        expect(cls).not.toContain('@max-[520px]/composer:hidden')
-        node = node.parentElement
-      }
-      expect(trigger).toBeEnabled()
-    })
-
-    it('is absent with no current thread', () => {
       renderInput()
       expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
-    })
-
-    it('is absent on a temporary chat', () => {
-      const temp = { ...persistentThread, id: 'temporary-chat' }
-      threadsMockState['temporary-chat'] = temp
-      getCurrentThreadMock.mockReturnValue(temp)
-      renderInput()
-      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
-    })
-
-    it('is absent on a Cowork session thread', () => {
-      const cowork = { ...persistentThread, metadata: { mode: 'cowork' } }
-      threadsMockState['thread-1'] = cowork
-      getCurrentThreadMock.mockReturnValue(cowork)
-      renderInput()
-      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
-    })
-
-    it('stays reachable for a model without tool support: an existing grant must remain revocable', () => {
-      threadsMockState['thread-1'] = persistentThread
-      getCurrentThreadMock.mockReturnValue(persistentThread)
-      selectedModelOverride = { id: 'model-a', capabilities: [], provider: 'llamacpp' }
-      renderInput()
-      expect(screen.getByTestId('conversation-scope-trigger')).toBeEnabled()
-    })
-
-    it('stays reachable in agent mode: an existing grant must remain revocable', async () => {
-      threadsMockState['thread-1'] = persistentThread
-      getCurrentThreadMock.mockReturnValue(persistentThread)
-      agentModeOn = true
-      renderInput()
-      const trigger = screen.getByTestId('conversation-scope-trigger')
-      expect(trigger).toBeEnabled()
-      // The control itself opens and offers revocation, not a tool claim.
-      fireEvent.click(trigger)
-      expect(
-        await screen.findByText('Conversation permissions', { selector: 'legend' })
-      ).toBeInTheDocument()
-    })
-
-    it('is absent when the composer does not own the tool set', () => {
-      threadsMockState['thread-1'] = persistentThread
-      getCurrentThreadMock.mockReturnValue(persistentThread)
-      renderInput({ ownsToolSet: false })
-      expect(screen.queryByTestId('conversation-scope-trigger')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Conversation permissions')).not.toBeInTheDocument()
     })
   })
 
@@ -653,6 +710,7 @@ describe('ChatInput', () => {
       expect(applied).toEqual(['original'])
       expect(newerPrepare).not.toHaveBeenCalled()
       expect(JSON.parse(sessionStorage.getItem(initialMessageKey)!)).toMatchObject({ text: 'Expanded original', draft: 'Keep this draft' })
+      expect(promptState).toBe('Newer draft')
     })
 
     it.each(['false', 'throw', 'prepare throw'] as const)('retains draft and attachments without delivery on %s', async (outcome) => {
@@ -1967,7 +2025,15 @@ describe('ChatInput', () => {
   // all. A document can still go into the prompt as text.
   describe('document attachments', () => {
     const attachDocs = () =>
-      screen.getByText('Upload or add files').closest('button')!
+      screen.getByText('Upload files or photos').closest('button')!
+
+    it('are one merged row, with no separate image, audio or video entries', () => {
+      renderInput()
+      expect(screen.getAllByText('Upload files or photos')).toHaveLength(1)
+      for (const old of ['Add Images', 'Add Audio', 'Add Video', 'Upload or add files']) {
+        expect(screen.queryByText(old)).not.toBeInTheDocument()
+      }
+    })
 
     it('stay available for a model that cannot call tools', () => {
       selectedModelOverride = {

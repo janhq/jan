@@ -161,13 +161,9 @@ describe('chat critical path', () => {
       expect.stringContaining(MOCK_REPLY_PREFIX + SECOND_PROMPT)
     )
 
-    // Reload from `/`, and only from `/`. browser.refresh() re-requests whatever
-    // is in the address bar; our routes are pushState-only and the Tauri asset
-    // protocol has no SPA fallback, so refreshing at /threads/<id> asks it for a
-    // deep path and 404s into a dead window. That is the same reason goto()
-    // exists instead of browser.url(). Shallow first, then reload, then push
-    // back in -- this ordering is load-bearing, not incidental.
-    await goto('/')
+    // Reload the conversation URL directly. Startup services and extensions
+    // must initialize before the initial route's beforeLoad classification;
+    // navigating home first masks that lifecycle regression.
     await browser.refresh()
 
     await $('#root').waitForExist({ timeout: 60_000 })
@@ -178,12 +174,16 @@ describe('chat critical path', () => {
     await $('[data-testid="model-selector-trigger"]').waitForDisplayed({
       timeout: 60_000,
       timeoutMsg:
-        'the app never came back up at `/` with a usable provider after ' +
-        'browser.refresh(). A blank window here usually means the refresh ran ' +
-        'from a deep path and the asset protocol 404ed it.',
+        'the conversation did not render with a usable provider after direct ' +
+        'browser.refresh(); startup classification may have failed.',
     })
 
-    await goto(`/threads/${threadId}`)
+    expect(await browser.execute(() => window.location.pathname)).toBe(
+      `/threads/${threadId}`
+    )
+    await expect($('body')).not.toHaveText(
+      expect.stringContaining("This conversation isn't ready yet")
+    )
 
     // The payoff. This process holds no in-memory copy of the conversation any
     // more, so two turns -- four messages -- rendering here means they were read

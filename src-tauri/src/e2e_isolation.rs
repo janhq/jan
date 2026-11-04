@@ -27,7 +27,7 @@ pub(crate) fn configure<R: tauri::Runtime>(context: &mut tauri::Context<R>) {
 mod tests {
     #[test]
     fn every_initial_webview_is_ephemeral() {
-        let mut context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+        let mut context: tauri::Context<tauri::Wry> = tauri::generate_context!(test = true);
         assert!(!context.config().app.windows.is_empty());
         let create = "plugin:webview|create_webview_window";
         // Prove the shipped allow exists before checking deny precedence.

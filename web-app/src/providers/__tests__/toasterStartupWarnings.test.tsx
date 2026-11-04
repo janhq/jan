@@ -44,4 +44,13 @@ describe('startup warnings against the real sonner', () => {
     // (React commits child effects first), so the flush lands post-subscribe.
     expect(flushSpy).toHaveBeenCalledTimes(1)
   })
+  it('does not force neutral foreground colours onto rich success toasts', async () => {
+    render(<ToasterProvider />)
+    toast.success('Saved successfully', { duration: Infinity })
+    await vi.waitFor(() => expect(screen.getByText('Saved successfully')).toBeTruthy())
+    // Rich colours inherit Sonner's semantic text colour. A forced black/white
+    // title class made success toasts unreadable on their green background.
+    expect(screen.getByText('Saved successfully').className).not.toContain('text-foreground')
+  })
+
 })

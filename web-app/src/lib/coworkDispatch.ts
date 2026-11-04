@@ -5,7 +5,7 @@ import {
   startAgentMonitor,
   stopAgentMonitor,
 } from '@/lib/agentTools'
-import { useCoworkConfig } from '@/hooks/useCoworkConfig'
+import { useChatPermissions } from '@/hooks/useChatPermissions'
 import {
   capabilityModeRefusal,
   PLAN_DENIED_MEMORY_OPS,
@@ -141,7 +141,7 @@ async function runMonitorOp(
       input,
       (update) => monitors.update(update),
       ctx.readOnlyFolder,
-      useCoworkConfig.getState().networkEnabled,
+      useChatPermissions.getState().shellNetwork,
       // Cowork mounts the attached folder writable (shared-folder mode).
       true
     )
@@ -219,7 +219,7 @@ export async function dispatchCoworkTool(
       ctx.sessionId,
       ctx.readOnlyFolder,
       'session',
-      useCoworkConfig.getState().networkEnabled,
+      useChatPermissions.getState().shellNetwork,
       true,
       ctx.readOnlyFolder
     )

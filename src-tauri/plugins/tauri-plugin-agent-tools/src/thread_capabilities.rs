@@ -84,6 +84,42 @@ pub async fn thread_kind(id: &str) -> ThreadKind {
     }
 }
 
+/// App-wide Chat permissions for shell network access and durable memory
+/// writes. They are settings, not per-conversation consent: the host owns the
+/// value (loaded from its data folder, changed only through its own command) and
+/// applies it to host authority, never to a caller's frozen effective ceiling.
+/// Both default to on, matching the old Cowork behaviour. The folder scope stays
+/// a per-conversation grant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalGrants {
+    pub shell_network: bool,
+    pub memory_write: bool,
+}
+
+impl Default for GlobalGrants {
+    fn default() -> Self {
+        Self {
+            shell_network: true,
+            memory_write: true,
+        }
+    }
+}
+
+fn global_grants() -> &'static Mutex<GlobalGrants> {
+    static GLOBAL: OnceLock<Mutex<GlobalGrants>> = OnceLock::new();
+    GLOBAL.get_or_init(|| Mutex::new(GlobalGrants::default()))
+}
+
+/// Installed by the host at startup and whenever the setting changes.
+pub fn set_global_grants(next: GlobalGrants) {
+    *global_grants().lock().unwrap_or_else(|e| e.into_inner()) = next;
+}
+
+pub fn get_global_grants() -> GlobalGrants {
+    *global_grants().lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// A grant with nothing elevated: what an unconfirmed thread resolves to, and
 /// what a narrowed entry holds.
 pub fn denied() -> ThreadCapabilities {
@@ -97,7 +133,7 @@ pub fn denied() -> ThreadCapabilities {
 
 /// Host-confirmed elevated consent for *this process*.
 ///
-/// This mirror only ever NARROWS: a monitor poll intersects it with a freshly
+/// For folder authority this mirror only ever NARROWS: a monitor poll intersects it with a freshly
 /// read disk snapshot ([`authorize`]), one-shot Chat dispatch intersects it
 /// with stored and caller-effective consent (`execute_thread_tool`), and
 /// [`ThreadCapabilities::intersect`]
@@ -212,8 +248,11 @@ pub fn generation(thread_id: &str) -> u64 {
 }
 
 /// The per-poll authority: a freshly read disk snapshot intersected with the
-/// current process confirmation. Both must independently allow, and the
-/// returned generation is the barrier token for the spawn that follows.
+/// current process confirmation for folders. Network/memory instead use the
+/// host's current app-wide settings for persistent Chat, and stay denied for
+/// temporary Chat. Callers must additionally intersect any
+/// frozen run/start-time ceiling, without applying `with_global` to that ceiling.
+/// The returned generation is the barrier token for the spawn that follows.
 pub async fn authorize(
     thread_id: &str,
 ) -> Result<(PathBuf, ThreadCapabilities, u64), String> {
@@ -221,7 +260,11 @@ pub async fn authorize(
     let stored: ThreadCapabilities = serde_json::from_value(stored)
         .map_err(|e| format!("Invalid stored conversation capabilities: {e}"))?;
     let (mirror, generation) = current(thread_id);
-    Ok((data_folder, stored.intersect(mirror)?, generation))
+    Ok((
+        data_folder,
+        stored.with_global(thread_id).intersect(mirror.with_global(thread_id))?,
+        generation,
+    ))
 }
 impl ThreadCapabilities {
     pub fn validate(&self) -> Result<(), String> {
@@ -234,6 +277,15 @@ impl ThreadCapabilities {
             return Err("Invalid conversation capabilities".into());
         }
         Ok(())
+    }
+    /// Replace the two app-wide fields with the host's current setting for
+    /// persistent Chat only. Temporary Chat has no elevated host authority,
+    /// irrespective of caller-effective permissions. Folder scope is untouched.
+    pub fn with_global(mut self, thread_id: &str) -> Self {
+        let global = get_global_grants();
+        self.shell_network = thread_id != "temporary-chat" && global.shell_network;
+        self.memory_write = thread_id != "temporary-chat" && global.memory_write;
+        self
     }
     /// An overlay may revoke/narrow consent, but never supply authority.
     pub fn intersect(mut self, overlay: Self) -> Result<Self, String> {
@@ -427,5 +479,93 @@ mod tests {
         assert!(is_denied(&mirror_revoked), "revoked mirror denies");
         let both = elevated().intersect(elevated()).unwrap();
         assert!(both.shell_network, "agreement still grants");
+    }
+
+    // The setting is process-wide, so every assertion about it lives in ONE
+    // test: parallel tests would race on the shared value.
+    #[test]
+    fn global_overlay_decides_network_and_memory_but_never_the_folder() {
+        let stored_off = grant(false, Some("/stored"), "read");
+
+        set_global_grants(GlobalGrants {
+            shell_network: true,
+            memory_write: true,
+        });
+        let on = stored_off.clone().with_global("persistent-chat");
+        assert!(
+            on.shell_network && on.memory_write,
+            "defaults give Chat network and memory"
+        );
+        assert_eq!(on.folder_scope.as_ref().unwrap().path, "/stored");
+
+        set_global_grants(GlobalGrants {
+            shell_network: false,
+            memory_write: true,
+        });
+        let split = grant(true, None, "read").with_global("persistent-chat");
+        assert!(!split.shell_network, "a global off beats a stored grant");
+        assert!(split.memory_write, "fields are independent");
+
+        // Global settings apply to host layers, never to a frozen effective
+        // ceiling. A forged effective true cannot beat global false.
+        let forged = grant(true, Some("/stored"), "write");
+        let result = grant(false, Some("/stored"), "write")
+            .with_global("persistent-chat")
+            .intersect(forged.with_global("persistent-chat"))
+            .unwrap();
+        assert!(!result.shell_network && result.memory_write);
+        assert_eq!(result.folder_scope.unwrap().access, "write");
+
+        // The folder still needs the layers to agree.
+        let result = grant(true, Some("/stored"), "write")
+            .with_global("persistent-chat")
+            .intersect(grant(true, None, "read").with_global("persistent-chat"))
+            .unwrap();
+        assert!(result.folder_scope.is_none());
+
+        set_global_grants(GlobalGrants::default());
+        for ceiling in [denied(), grant(false, Some("/stored"), "write")] {
+            let result = grant(true, Some("/stored"), "write")
+                .with_global("persistent-chat")
+                .intersect(ceiling)
+                .unwrap()
+                .intersect(denied().with_global("persistent-chat"))
+                .unwrap();
+            assert!(!result.shell_network && !result.memory_write,
+                "frozen false ceilings cannot be widened by global ON");
+        }
+        // Fully forged effective grants cannot supply temporary Chat authority,
+        // even with global ON or stale elevated host layers.
+        for stored in [denied(), elevated()] {
+            for mirror in [denied(), elevated()] {
+                let temporary = stored
+                    .clone()
+                    .with_global("temporary-chat")
+                    .intersect(elevated())
+                    .unwrap()
+                    .intersect(mirror.with_global("temporary-chat"))
+                    .unwrap();
+                assert!(!temporary.shell_network && !temporary.memory_write);
+            }
+        }
+        // Ordinary unconfirmed Chat can use app-wide grants; its folder stays
+        // denied. Confirmation/revocation is not network/memory authority.
+        let ordinary = denied()
+            .with_global("persistent-chat")
+            .intersect(grant(true, Some("/stored"), "write"))
+            .unwrap()
+            .intersect(denied().with_global("persistent-chat"))
+            .unwrap();
+        assert!(ordinary.shell_network && ordinary.memory_write);
+        assert!(ordinary.folder_scope.is_none());
+
+        set_global_grants(GlobalGrants::default());
+        assert_eq!(
+            get_global_grants(),
+            GlobalGrants {
+                shell_network: true,
+                memory_write: true
+            }
+        );
     }
 }

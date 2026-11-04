@@ -639,7 +639,8 @@ pub async fn start_monitor(
         hidden_root: workspace::hidden_root(true),
         read_roots,
         write_roots,
-        allow_network: allow_network.unwrap_or(false),
+        allow_network: allow_network.unwrap_or(false)
+            && crate::thread_capabilities::get_global_grants().shell_network,
         home_readonly: false,
         sandbox: true,
         workspace_readonly: false,
@@ -774,12 +775,14 @@ fn monitor_owner(thread_id: &str) -> String {
 /// rather than introducing a second policy path.
 async fn resolve_thread_monitor_ctx(
     thread_id: &str,
+    ceiling: &crate::thread_capabilities::ThreadCapabilities,
 ) -> Result<(crate::tools::monitor::MonitorCtx, u64), String> {
     if !jail::backend().enforces() {
         return Err("no OS sandbox could be established on this system".into());
     }
     let (data_folder, grant, generation) =
         crate::thread_capabilities::authorize(thread_id).await?;
+    let grant = grant.intersect(ceiling.clone())?;
     let Some(scope) = grant.folder_scope.clone() else {
         return Err("folder access for this conversation is no longer granted".into());
     };
@@ -817,14 +820,18 @@ async fn resolve_thread_monitor_ctx(
     ))
 }
 
-fn thread_authority(thread_id: &str) -> crate::tools::monitor::ThreadAuthority {
+fn thread_authority(
+    thread_id: &str,
+    ceiling: crate::thread_capabilities::ThreadCapabilities,
+) -> crate::tools::monitor::ThreadAuthority {
     let resolver_id = thread_id.to_string();
     crate::tools::monitor::ThreadAuthority {
         thread_id: thread_id.to_string(),
         owner: monitor_owner(thread_id),
         resolve: std::sync::Arc::new(move || {
             let id = resolver_id.clone();
-            Box::pin(async move { resolve_thread_monitor_ctx(&id).await })
+            let ceiling = ceiling.clone();
+            Box::pin(async move { resolve_thread_monitor_ctx(&id, &ceiling).await })
         }),
     }
 }
@@ -845,10 +852,13 @@ pub async fn start_thread_monitor(
         crate::tools::monitor::parse_start_args(&args).map_err(AgentToolsError::from)?;
     // Authorize once up front so an unauthorized start fails loudly, rather
     // than starting a monitor whose only possible output is a revoked notice.
-    let (ctx, _) = resolve_thread_monitor_ctx(&thread_id)
+    let (_, ceiling, _) = crate::thread_capabilities::authorize(&thread_id)
         .await
         .map_err(AgentToolsError::from)?;
-    let authority = thread_authority(&thread_id);
+    let (ctx, _) = resolve_thread_monitor_ctx(&thread_id, &ceiling)
+        .await
+        .map_err(AgentToolsError::from)?;
+    let authority = thread_authority(&thread_id, ceiling);
     // The map lock is held across `start_owned`, so a revoke or stop that
     // removes this thread's entry cannot interleave between publishing the set
     // and starting the monitor. Otherwise the monitor would belong to a set no
@@ -1179,22 +1189,18 @@ async fn execute_thread_tool_inner(
     }
     let stored: crate::thread_capabilities::ThreadCapabilities = serde_json::from_value(stored)
         .map_err(|e| AgentToolsError::from(format!("Invalid stored consent: {e}")))?;
-    // Defense in depth, same as every monitor poll: the host's process-local
-    // confirmation must ALSO allow. A stale on-disk grant after a restart, or
-    // an elevation whose revoke has narrowed but whose disk write is still in
-    // flight, therefore denies here too -- the mirror can only ever narrow
-    // (bootstrap and unknown threads read as denied), so the scratch baseline
-    // of an unconfirmed thread, temporary chat included, is untouched.
+    // Folder access requires process-local confirmation too: a stale disk
+    // grant or a revoke whose disk write is still in flight cannot restore it.
+    // Network/memory are instead host-owned app-wide settings (see below).
     let (mirror, _) = crate::thread_capabilities::current(&thread_id);
-    let grant = stored.intersect(effective)?.intersect(mirror)?;
-    if (name == "skill_write"
-        || (name == crate::tools::MEMORY_TOOL
-            && !matches!(
-                args.get("op").and_then(|v| v.as_str()),
-                Some("view" | "search")
-            )))
-        && !grant.memory_write
-    {
+    // Global settings supply persistent Chat authority, never temporary Chat
+    // authority or permission to widen a frozen run ceiling. A forged effective
+    // grant cannot elevate temporary Chat. Confirmation controls folders only.
+    let grant = stored
+        .with_global(&thread_id)
+        .intersect(effective)?
+        .intersect(mirror.with_global(&thread_id))?;
+    if is_durable_mutation(&name, &args) && !grant.memory_write {
         return Err(
             format!("tool '{name}' mutation is not authorized for this conversation").into(),
         );
@@ -1311,18 +1317,36 @@ fn requests_elevation(
     folder: Option<&str>,
     writable: Option<bool>,
 ) -> bool {
-    let mutation = name == "skill_write"
-        || (name == crate::tools::MEMORY_TOOL
-            && !matches!(
-                args.get("op").and_then(|v| v.as_str()),
-                Some("view" | "search")
-            ));
+    let mutation = is_durable_mutation(name, args);
     // Renderers may fetch remote subresources outside the shell jail. Native
     // web tools have their separate approved frontend path, not this legacy
     // thread executor. Neither can bypass scoped Chat via old IPC dispatch.
     let outbound = name == "screenshot"
         || lookup(name).is_some_and(|tool| matches!(tool.capability, crate::tools::Capability::Net));
     network == Some(true) || writable == Some(true) || folder.is_some() || mutation || outbound
+}
+
+fn is_durable_mutation(name: &str, args: &serde_json::Value) -> bool {
+    name == "skill_write"
+        || (name == crate::tools::MEMORY_TOOL
+            && !matches!(
+                args.get("op").and_then(|v| v.as_str()),
+                Some("view" | "search")
+            ))
+}
+
+/// Shared by both legacy IPC variants and scoped Chat dispatch. Management
+/// commands are intentionally separate: this gates model-dispatched tools.
+fn enforce_global_tool_policy(
+    name: &str,
+    args: &serde_json::Value,
+    requested_network: Option<bool>,
+    global: crate::thread_capabilities::GlobalGrants,
+) -> Result<bool, AgentToolsError> {
+    if is_durable_mutation(name, args) && !global.memory_write {
+        return Err(format!("tool '{name}' mutation is not authorized by global settings").into());
+    }
+    Ok(requested_network.unwrap_or(false) && global.shell_network)
 }
 
 /// Pure decision for a legacy call: `scope=Session` elevation depends on the
@@ -1407,6 +1431,12 @@ async fn execute_tool_inner(
     call_id: Option<String>,
     sink: Option<crate::tools::OutputSink>,
 ) -> Result<ToolResult, AgentToolsError> {
+    let allow_network = enforce_global_tool_policy(
+        &name,
+        &args,
+        allow_network,
+        crate::thread_capabilities::get_global_grants(),
+    )?;
     let data_folder = workspace::host_data_folder(&data_folder);
     // Created here rather than trusted to exist: `escapes_project` canonicalizes
     // the sandbox root and treats a missing one as an escape, so every tool call
@@ -1550,7 +1580,7 @@ async fn execute_tool_inner(
     let hooks = crate::tools::hooks::resolve_for(project_dir.as_deref());
     let mut ctx = ToolContext::new(&root, &store, &enabled)
         .with_hooks(&hooks, false, None)
-        .with_network(allow_network.unwrap_or(false))
+        .with_network(allow_network)
         .with_confined_writes(true)
         .with_mask_root(Path::new(&data_folder))
         .with_scratch_root(&scratch)
@@ -1775,6 +1805,30 @@ mod tests {
         }
     }
 
+    #[test]
+    fn legacy_global_policy_blocks_mutations_and_caps_requested_network() {
+        use crate::thread_capabilities::GlobalGrants;
+        let off = GlobalGrants {
+            shell_network: false,
+            memory_write: false,
+        };
+        for (name, args) in [
+            ("memory", json!({"op":"write"})),
+            ("memory", json!({"op":"delete"})),
+            ("memory", json!({"op":"rename"})),
+            ("memory", json!({})),
+            ("skill_write", json!({})),
+        ] {
+            assert!(enforce_global_tool_policy(name, &args, Some(true), off).is_err());
+            assert!(enforce_global_tool_policy(name, &args, Some(true), GlobalGrants::default()).unwrap());
+        }
+        for op in ["view", "search"] {
+            assert!(!enforce_global_tool_policy("memory", &json!({"op":op}), Some(true), off).unwrap());
+        }
+        assert!(!enforce_global_tool_policy("shell", &json!({}), Some(true), off).unwrap());
+        assert!(!enforce_global_tool_policy("shell", &json!({}), Some(false), GlobalGrants::default()).unwrap());
+    }
+
     #[tokio::test]
     async fn unconfirmed_session_elevation_fails_before_any_setup() {
         let data = unique_data_folder();
@@ -1901,7 +1955,7 @@ mod tests {
     }
 
     #[test]
-    fn shell_network_requires_both_stored_and_effective_consent() {
+    fn raw_network_intersection_requires_both_inputs() {
         use crate::thread_capabilities::ThreadCapabilities;
         for stored in [false, true] {
             for effective in [false, true] {
@@ -1974,7 +2028,8 @@ mod tests {
         let denied = consent(None, false, false, false);
         let forged = consent(Some(&folder), true, true, true);
         // Deliberately bypass chat_call's persistent ID: this is the exact
-        // temporary Chat dispatch, with denied native consent and forged UI consent.
+        // temporary Chat dispatch with every elevated permission forged by the UI.
+        // Global ON must not supply host authority to temporary Chat.
         let call = |name: &str, args| {
             execute_thread_tool_inner(
                 None,
@@ -2086,12 +2141,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(data);
     }
 
-    /// One-shot Chat dispatch requires the host's process confirmation, exactly
-    /// like every monitor poll: stored consent alone (a stale on-disk grant
-    /// after a restart, or a revoke whose disk write has not landed yet) must
-    /// not elevate, while the scratch baseline keeps working unconfirmed.
+    /// Folder access needs host confirmation; app-wide memory authority does
+    /// not. An ordinary unconfirmed Chat with effective true remains usable.
     #[tokio::test]
-    async fn one_shot_chat_elevation_requires_host_confirmation() {
+    async fn one_shot_chat_folder_requires_confirmation_but_app_grants_do_not() {
         let data = unique_data_folder();
         let id = "one-shot-mirror";
         let folder = repo_outside_tmp("one-shot-mirror-folder");
@@ -2120,10 +2173,10 @@ mod tests {
                 .is_err(),
             "an unconfirmed grant must not reach an attached folder"
         );
-        let err = call("memory", json!({"op":"write","name":"m","content":"x"}))
+        let memory = call("memory", json!({"op":"write","name":"m","content":"x"}))
             .await
-            .unwrap_err();
-        assert!(err.message.contains("not authorized"), "{}", err.message);
+            .unwrap();
+        assert!(!memory.is_error, "{}", memory.content);
         // The scratch baseline needs no confirmation (temporary chat).
         let baseline = call("write", json!({"path":"note.txt","content":"scratch"}))
             .await
@@ -2146,6 +2199,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn persistent_chat_global_on_allows_memory_with_stored_flags_off() {
+        let data = unique_data_folder();
+        let off = consent(None, false, false, false);
+        let on = consent(None, false, true, true);
+        let ordinary = chat_call(
+            &data,
+            "memory",
+            serde_json::json!({"op":"write","name":"global-on","content":"yes"}),
+            off.clone(),
+            on.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(!ordinary.is_error, "{}", ordinary.content);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[tokio::test]
     async fn chat_consent_intersection_blocks_forged_and_locally_revoked_memory() {
         let data = unique_data_folder();
         let off = consent(None, false, false, false);
@@ -2159,7 +2230,7 @@ mod tests {
         )
         .await
         .is_err());
-        for (stored, effective) in [(off.clone(), on.clone()), (on.clone(), off.clone())] {
+        for (stored, effective) in [(off.clone(), off.clone()), (on.clone(), off.clone())] {
             let err = chat_call(
                 &data,
                 "memory",
@@ -2191,8 +2262,8 @@ mod tests {
             &data,
             "skill_write",
             serde_json::json!({}),
-            off.clone(),
-            on.clone()
+            on.clone(),
+            off.clone()
         )
         .await
         .is_err());

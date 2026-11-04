@@ -69,8 +69,8 @@ vi.mock('@/hooks/useTools', () => ({
 }))
 
 vi.mock('@/containers/ChatInput', () => ({
-  default: ({ model, initialMessage, onSubmit, surfaceControls, leadingControls, menuWorkspace, menuControls, projectId, scopeKey, prepareThreadCreation }: any) => (
-    <div data-testid="chat-input" data-initial={String(initialMessage)} data-project-id={projectId} data-scope-key={scopeKey} data-has-prepare={prepareThreadCreation ? 'true' : undefined} data-has-onsubmit={onSubmit ? 'true' : undefined}>
+  default: ({ model, initialMessage, onSubmit, surfaceControls, leadingControls, menuWorkspace, menuControls, projectId, scopeKey, pendingSkillFolder, prepareThreadCreation }: any) => (
+    <div data-testid="chat-input" data-pending-skill-folder={pendingSkillFolder ?? "none"} data-initial={String(initialMessage)} data-project-id={projectId} data-scope-key={scopeKey} data-has-prepare={prepareThreadCreation ? 'true' : undefined} data-has-onsubmit={onSubmit ? 'true' : undefined}>
       {model ? model.id : 'no-model'}
       <div data-testid="menu-workspace">{menuWorkspace}</div>
       <div data-testid="menu-controls">{menuControls}</div>
@@ -114,6 +114,7 @@ vi.mock('@/containers/SetupScreen', () => ({
 
 vi.mock('@/lib/utils', () => ({
   cn: (...c: any[]) => c.filter(Boolean).join(' '),
+  truncateMiddle: (v: string) => v,
 }))
 
 vi.mock('@/lib/provider-api-keys', () => ({
@@ -243,6 +244,13 @@ describe('Index route', () => {
       h.providers = [{ provider: 'llamacpp', models: [{ id: 'x' }] }]
     })
 
+    // The draft is elevated by choosing a folder from the + menu, like users do.
+    const pickDraftFolder = async (path = '/synthetic/workspace') => {
+      h.pickFolder.mockResolvedValue(path)
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      await waitFor(() => expect(screen.getByTestId('draft-workspace-pill')).toBeInTheDocument())
+    }
+
     it('shows no mode selector and an ordinary submit never starts a legacy Cowork session', () => {
       // Even where Cowork is available: the home composer is one Chat flow.
       h.coworkEnabled = true
@@ -257,15 +265,16 @@ describe('Index route', () => {
       expect(h.navigate).not.toHaveBeenCalled()
     })
 
-    it('offers draft conversation permissions only for a tool-capable model', () => {
+    it('offers a draft folder only for a tool-capable model', async () => {
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
       const view = renderComponent()
-      expect(screen.getByTestId('home-scope-consent-trigger')).toBeInTheDocument()
+      expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
+      await pickDraftFolder()
       expect(screen.queryByTestId('home-scope-unsupported')).not.toBeInTheDocument()
       view.unmount()
       h.selectedModel = { id: 'model-b', capabilities: [] } as any
       renderComponent()
-      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
     })
 
     it('states a truthful unsupported reason without refusing ordinary direct chat', () => {
@@ -296,10 +305,7 @@ describe('Index route', () => {
       const view = renderComponent()
       const region = screen.getByTestId('home-scope-status')
       expect(region).toBeEmptyDOMElement()
-      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
-      fireEvent.click(
-        await screen.findByLabelText('Allow shell commands to access the network')
-      )
+      await pickDraftFolder()
       // Unsupported model: text appears INSIDE the same mounted region node.
       h.selectedModel = { id: 'model-b', capabilities: [] } as any
       view.rerender(<Component />)
@@ -320,17 +326,14 @@ describe('Index route', () => {
       h.prepareOutcome = undefined
       renderComponent()
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
-      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
-      fireEvent.click(
-        await screen.findByLabelText('Allow shell commands to access the network')
-      )
+      await pickDraftFolder()
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
       fireEvent.click(screen.getByTestId('invoke-prepare'))
       await waitFor(() =>
         expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
           version: 1,
-          folderScope: null,
-          shellNetwork: true,
+          folderScope: { path: '/synthetic/workspace', access: 'read' },
+          shellNetwork: false,
           memoryWrite: false,
         })
       )
@@ -341,17 +344,14 @@ describe('Index route', () => {
       const Component = Route.component as React.ComponentType
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
       const view = renderComponent()
-      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
-      fireEvent.click(
-        await screen.findByLabelText('Allow shell commands to access the network')
-      )
+      await pickDraftFolder()
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
       // Temporary mode: no consent control at all, not even a draft, and no
       // prepare path — an ordinary temporary scratch send cannot be refused
       // by a hidden stale grant.
       window.history.replaceState({}, '', '/?temporary-chat=true')
       view.rerender(<Component />)
-      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
       // The control disappears with a persistent explanation; the elevated draft
       // is stated as kept, and temporary tools are never enabled.
@@ -361,9 +361,7 @@ describe('Index route', () => {
       // Leaving temporary mode resurfaces the preserved draft, explicitly pending.
       window.history.replaceState({}, '', '/')
       view.rerender(<Component />)
-      expect(screen.getByTestId('home-scope-consent-trigger')).toHaveTextContent(
-        'Conversation permissions (pending)'
-      )
+      expect(screen.getByTestId('draft-workspace-pill')).toBeInTheDocument()
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     })
 
@@ -371,7 +369,7 @@ describe('Index route', () => {
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
       window.history.replaceState({}, '', '/?temporary-chat=true')
       renderComponent()
-      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
       expect(screen.getByTestId('home-scope-unsupported').textContent).toBe(
         'common:conversationScope.temporaryPermissions'
       )
@@ -382,22 +380,17 @@ describe('Index route', () => {
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
       const view = renderComponent()
       expect(screen.queryByTestId('home-scope-unsupported')).not.toBeInTheDocument()
-      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
-      fireEvent.click(
-        await screen.findByLabelText('Allow shell commands to access the network')
-      )
+      await pickDraftFolder()
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
       // No model selected yet: not a "model without tools", so no false notice.
       h.selectedModel = undefined
       view.rerender(<Component />)
       expect(screen.queryByTestId('home-scope-unsupported')).not.toBeInTheDocument()
-      expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
       view.rerender(<Component />)
-      expect(screen.getByTestId('home-scope-consent-trigger')).toHaveTextContent(
-        'Conversation permissions (pending)'
-      )
+      expect(screen.getByTestId('draft-workspace-pill')).toBeInTheDocument()
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
     })
 
@@ -405,10 +398,7 @@ describe('Index route', () => {
       const Component = Route.component as React.ComponentType
       h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
       const view = renderComponent()
-      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
-      fireEvent.click(
-        await screen.findByLabelText('Allow shell commands to access the network')
-      )
+      await pickDraftFolder()
       h.selectedModel = { id: 'model-b', capabilities: [] } as any
       view.rerender(<Component />)
       expect(screen.getByTestId('home-scope-unsupported')).toHaveTextContent(
@@ -422,11 +412,11 @@ describe('Index route', () => {
 
     it.each(['/?x-temporary-chat=true', '/?temporary-chat=truex', '/?temporary-chat=false', '/?temporary-chat=false&temporary-chat=false', '/?other=temporary-chat%3Dtrue'])(
       'does not treat %s as temporary mode',
-      (url) => {
+      async (url) => {
         h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
         window.history.replaceState({}, '', url)
         renderComponent()
-        expect(screen.getByTestId('home-scope-consent-trigger')).toBeInTheDocument()
+        await pickDraftFolder()
       }
     )
 
@@ -442,7 +432,7 @@ describe('Index route', () => {
         h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
         window.history.replaceState({}, '', url)
         renderComponent()
-        expect(screen.queryByTestId('home-scope-consent-trigger')).not.toBeInTheDocument()
+        expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
       }
     )
 
@@ -467,16 +457,15 @@ describe('Index route', () => {
       await waitFor(() =>
         expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
       )
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-pending-skill-folder', '/synthetic/workspace')
       // No legacy Session was started: the folder is a pending Chat grant.
       expect(useCoworkSessions.getState().sessions).toHaveLength(0)
-      expect(screen.getByTestId('home-scope-consent-trigger')).toHaveTextContent(
-        'Conversation permissions (pending)'
-      )
+      expect(screen.getByTestId('draft-workspace-pill')).toBeInTheDocument()
       expect(h.toastInfo).toHaveBeenCalledExactlyOnceWith(
         'common:conversationScope.folderSelected'
       )
-      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
-      expect(await screen.findByText('Read only: /synthetic/workspace')).toBeInTheDocument()
+      // The pill names the folder and states the access it really has.
+      expect(screen.getByRole('button', { name: /workspace\.a11yWithFolderReadOnly/ })).toBeInTheDocument()
       fireEvent.click(screen.getByTestId('invoke-prepare'))
       await waitFor(() =>
         expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
@@ -528,10 +517,7 @@ describe('Index route', () => {
       )
       renderComponent()
       fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
-      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
-      fireEvent.click(
-        await screen.findByLabelText('Allow shell commands to access the network')
-      )
+      await pickDraftFolder()
       release('/synthetic/late')
       await waitFor(() => expect(h.toastInfo).toHaveBeenCalledTimes(1))
       fireEvent.click(screen.getByTestId('invoke-prepare'))
@@ -539,7 +525,7 @@ describe('Index route', () => {
         expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
           version: 1,
           folderScope: { path: '/synthetic/late', access: 'read' },
-          shellNetwork: true,
+          shellNetwork: false,
           memoryWrite: false,
         })
       )
@@ -554,12 +540,7 @@ describe('Index route', () => {
         expect(h.toastError).toHaveBeenCalledWith('common:conversationScope.invalidFolder')
       )
       expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
-      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
-      fireEvent.click(await screen.findByRole('button', { name: 'Choose folder to read' }))
-      expect(await screen.findByRole('alert')).toHaveTextContent(
-        'This folder path is not supported. Choose another folder.'
-      )
-      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+      expect(screen.queryByTestId('draft-workspace-pill')).not.toBeInTheDocument()
       fireEvent.click(screen.getByTestId('invoke-prepare'))
       expect(h.setCaps).not.toHaveBeenCalled()
     })

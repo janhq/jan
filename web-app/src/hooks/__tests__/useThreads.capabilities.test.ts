@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useThreads } from '../useThreads'
 import { resolveConversationCapabilities } from '@/lib/conversationCapabilities'
+import { useChatPermissions } from '../useChatPermissions'
 
 const { persist, updateThread, deleteNative, toastError, revokeHost, stopAllMonitors, calls } =
   vi.hoisted(() => {
@@ -60,6 +61,10 @@ const granted = {
   memoryWrite: true,
 } as const
 
+// No grant of its own: no folder, with the app-wide network and memory setting
+// (on by default) overlaid.
+const noGrant = { ...resolveConversationCapabilities(undefined), shellNetwork: true, memoryWrite: true }
+
 const save = (value: unknown, id = 'chat') =>
   useThreads.getState().setConversationCapabilities(id, value)
 
@@ -68,6 +73,10 @@ const save = (value: unknown, id = 'chat') =>
 describe('useThreads conversation capabilities', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    // These tests are about the per-conversation grant (the folder). The
+    // app-wide network and memory setting is pinned on, its default, so a grant
+    // reads back as written; the overlay has its own test below.
+    useChatPermissions.setState({ shellNetwork: true, memoryWrite: true })
     deleteNative.mockResolvedValue(undefined)
     calls.length = 0
     revokeHost.mockImplementation(async (id: string) => {
@@ -94,6 +103,24 @@ describe('useThreads conversation capabilities', () => {
   // background polls may still hold the old grant. The write must reject with
   // the structured error (so the surface can say so truthfully), attempt a
   // plain stop, persist nothing, and keep the denied overlay -- never restore.
+  it('overlays the app-wide network and memory setting on the conversation grant, never the folder', async () => {
+    useChatPermissions.setState({ shellNetwork: true, memoryWrite: true })
+    // A conversation that granted nothing still gets the app-wide setting...
+    expect(useThreads.getState().getConversationCapabilities('chat')).toEqual({
+      version: 1,
+      folderScope: null,
+      shellNetwork: true,
+      memoryWrite: true,
+    })
+    // ...and switching it off removes the capability everywhere at once, while
+    // the folder remains a per-conversation matter.
+    useChatPermissions.setState({ shellNetwork: false, memoryWrite: true })
+    const caps = useThreads.getState().getConversationCapabilities('chat')
+    expect(caps.shellNetwork).toBe(false)
+    expect(caps.memoryWrite).toBe(true)
+    expect(caps.folderScope).toBeNull()
+  })
+
   it('a failed host ACK rejects structurally, attempts a stop, and persists nothing', async () => {
     revokeHost.mockRejectedValueOnce(new Error('ipc bridge down'))
     await expect(save(granted)).rejects.toMatchObject({
@@ -102,7 +129,7 @@ describe('useThreads conversation capabilities', () => {
       backgroundMayPersist: false,
     })
     expect(calls).toEqual(['stopAll:chat'])
-    expect(useThreads.getState().getConversationCapabilities('chat').shellNetwork).toBe(false)
+    expect(useThreads.getState().getConversationCapabilities('chat').folderScope).toBeNull()
     expect(
       useThreads.getState().threads.chat.metadata?.conversationCapabilities
     ).toEqual({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false })
@@ -369,7 +396,7 @@ describe('useThreads conversation capabilities', () => {
     })
     expect(persist).not.toHaveBeenCalled()
     expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(
-      resolveConversationCapabilities(undefined)
+      noGrant
     )
   })
 
@@ -377,7 +404,7 @@ describe('useThreads conversation capabilities', () => {
     const id = 'unconfirmed-bootstrap'
     useThreads.getState().setThreads([thread(id, { conversationCapabilities: granted })])
     expect(useThreads.getState().getConversationCapabilities(id))
-      .toEqual(resolveConversationCapabilities(undefined))
+      .toEqual(noGrant)
     await save(granted, id)
     expect(useThreads.getState().getConversationCapabilities(id)).toEqual(granted)
     useThreads.getState().setThreads([thread(id, { conversationCapabilities: granted })])
@@ -390,7 +417,7 @@ describe('useThreads conversation capabilities', () => {
     persist.mockRejectedValueOnce(new Error('disk failure'))
     await expect(save(granted, id)).rejects.toThrow('disk failure')
     expect(useThreads.getState().getConversationCapabilities(id))
-      .toEqual(resolveConversationCapabilities(undefined))
+      .toEqual(noGrant)
   })
 
   it('persists normalized capabilities while preserving unrelated metadata and thread fields', async () => {
@@ -600,7 +627,7 @@ describe('useThreads conversation capabilities', () => {
     await save(null)
     useThreads.getState().setThreads([thread('chat', { conversationCapabilities: granted })])
     expect(useThreads.getState().getConversationCapabilities('chat'))
-      .toEqual(resolveConversationCapabilities(undefined))
+      .toEqual(noGrant)
     expect(useThreads.getState().threads.chat.metadata?.conversationCapabilities)
       .toEqual(resolveConversationCapabilities(undefined))
   })
@@ -634,7 +661,7 @@ describe('useThreads conversation capabilities', () => {
     else if (kind === 'bulk') useThreads.getState().deleteAllThreads()
     else useThreads.getState().clearAllThreads()
     useThreads.getState().setThreads([thread('chat')])
-    expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(resolveConversationCapabilities(undefined))
+    expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(noGrant)
   })
 
   it('bulk deletion keeps authoritative grants for retained favorites', async () => {
@@ -645,7 +672,7 @@ describe('useThreads conversation capabilities', () => {
     expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(granted)
     useThreads.getState().setThreads([{ ...thread(), isFavorite: true }, thread('other')])
     expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(granted)
-    expect(useThreads.getState().getConversationCapabilities('other')).toEqual(resolveConversationCapabilities(undefined))
+    expect(useThreads.getState().getConversationCapabilities('other')).toEqual(noGrant)
   })
 
   it('revokes grant authority before the native delete during project deletion', async () => {
@@ -660,7 +687,7 @@ describe('useThreads conversation capabilities', () => {
       authorityDuringDelete = useThreads.getState().getConversationCapabilities('chat')
     })
     await useThreads.getState().deleteAllThreadsByProject('p')
-    expect(authorityDuringDelete).toEqual(resolveConversationCapabilities(undefined))
+    expect(authorityDuringDelete).toEqual(noGrant)
     expect(useThreads.getState().threads.chat).toBeUndefined()
   })
 
@@ -674,7 +701,7 @@ describe('useThreads conversation capabilities', () => {
     // The restored thread holds no authority until the user consents again,
     // even though its on-disk metadata may still carry the stale grant.
     expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(
-      resolveConversationCapabilities(undefined)
+      noGrant
     )
   })
 
