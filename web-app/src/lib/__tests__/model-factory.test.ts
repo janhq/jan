@@ -333,6 +333,31 @@ describe('createCustomFetch — named SSE event filtering scope', () => {
   })
 })
 
+describe('createCustomFetch — omits Tauri webview Origin', () => {
+  it('does not forward Origin: http://tauri.localhost', async () => {
+    const seen: { headers?: HeadersInit } = {}
+    const baseFetch: typeof globalThis.fetch = (async (
+      _input: RequestInfo | URL,
+      init?: RequestInit
+    ) => {
+      seen.headers = init?.headers
+      return new Response('{}', { status: 200 })
+    }) as typeof globalThis.fetch
+    const wrapped = createCustomFetch(baseFetch, {})
+    await wrapped('http://127.0.0.1:11434/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'http://tauri.localhost',
+      },
+      body: '{}',
+    })
+    const headers = seen.headers as Record<string, string>
+    expect(headers.Origin).toBe('')
+    expect(headers.Origin).not.toBe('http://tauri.localhost')
+  })
+})
+
 describe('createCustomFetch — max_tokens coercion', () => {
   async function captureSentBody(
     parameters: Record<string, unknown>,
