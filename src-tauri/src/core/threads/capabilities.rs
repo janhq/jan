@@ -67,6 +67,25 @@ pub fn patch_conversation_capabilities(
     thread_id: &str,
     value: Value,
 ) -> Result<(), String> {
+    patch_capabilities(data_folder, thread_id, value, false)
+}
+
+/// Marker failure permits only a subset of host-stored authority. The caller
+/// holds the thread lock across this read/check and the durable replacement.
+pub fn patch_narrowing_capabilities(
+    data_folder: &Path,
+    thread_id: &str,
+    value: Value,
+) -> Result<(), String> {
+    patch_capabilities(data_folder, thread_id, value, true)
+}
+
+fn patch_capabilities(
+    data_folder: &Path,
+    thread_id: &str,
+    mut value: Value,
+    narrowing_only: bool,
+) -> Result<(), String> {
     validate_conversation_capabilities(&value)?;
     let path = super::utils::get_thread_metadata_path(data_folder, thread_id)?;
     let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
@@ -76,6 +95,32 @@ pub fn patch_conversation_capabilities(
     }
     if thread_id == "temporary-chat" || thread["metadata"]["mode"].as_str() == Some("cowork") {
         return Err("Conversation capabilities require a persistent Chat thread".into());
+    }
+    if narrowing_only {
+        use tauri_plugin_agent_tools::thread_capabilities::{denied, ThreadCapabilities};
+        let stored = &thread["metadata"]["conversationCapabilities"];
+        let previous: ThreadCapabilities = if stored.is_null() {
+            denied()
+        } else {
+            validate_conversation_capabilities(stored)?;
+            serde_json::from_value(stored.clone()).map_err(|e| e.to_string())?
+        };
+        previous.validate()?;
+        // The frontend overlays app-wide network/memory settings on legacy
+        // per-thread flags. Those settings remain host-authoritative; do not
+        // mistake the overlay for a folder widening, or persist it as one.
+        // Preserve legacy false flags while still permitting explicit revokes.
+        value["shellNetwork"] =
+            Value::Bool(value["shellNetwork"].as_bool().unwrap() && previous.shell_network);
+        value["memoryWrite"] =
+            Value::Bool(value["memoryWrite"].as_bool().unwrap() && previous.memory_write);
+        let requested: ThreadCapabilities = serde_json::from_value(value.clone())
+            .map_err(|e| e.to_string())?;
+        requested.validate()?;
+        let subset = requested.intersect(previous)?;
+        if serde_json::to_value(subset).map_err(|e| e.to_string())? != value {
+            return Err("Requested permissions widen stored authority; metadata was not changed".into());
+        }
     }
     let object = thread.as_object_mut().ok_or("Invalid stored thread")?;
     let metadata = object.entry("metadata").or_insert(Value::Null);

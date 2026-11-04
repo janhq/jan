@@ -2065,3 +2065,143 @@ async fn delete_post_removal_marker_failure_does_not_restore_ghost() {
 async fn rollback_post_removal_marker_failure_does_not_restore_ghost() {
     marker_failure_after_removal_still_succeeds(true).await;
 }
+
+// Simulate failed marker creation with no readable marker on restart. The
+// metadata write remains available, so a narrowing request must still save it.
+#[tokio::test]
+async fn failed_marker_still_persists_narrowing_but_refuses_widening() {
+    for access in [None, Some("read"), Some("write")] {
+        let (app, data_dir) = mock_app_with_temp_data_dir();
+        let created = create_thread(app.handle().clone(), create_test_thread("marker-narrow"))
+            .await.unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+        let mut original = capability_grant(true);
+        original["folderScope"] = json!({"path":"/work/tree","access":"write"});
+        if access == Some("write") {
+            original["folderScope"]["access"] = json!("read");
+        }
+        set_thread_conversation_capabilities(app.handle().clone(), id.clone(), original.clone()).await.unwrap();
+        let markers = data_dir.join("conversation-denials");
+        fs::remove_dir_all(&markers).unwrap();
+        fs::write(&markers, b"blocked").unwrap();
+        let mut requested = capability_grant(false);
+        requested["folderScope"] = access.map(|a| json!({"path":"/work/tree","access":a})).unwrap_or(json!(null));
+        let result = set_thread_conversation_capabilities(app.handle().clone(), id.clone(), requested.clone()).await;
+        assert!(result.unwrap_err().contains("restart-safe revocation failed"));
+        let mut stored: serde_json::Value = serde_json::from_slice(
+            &fs::read(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap()).unwrap();
+        let expected = if access == Some("write") { original } else { requested };
+        assert_eq!(stored["metadata"]["conversationCapabilities"], expected);
+        // Fresh identity + no denial marker models restart, not the live mirror.
+        fs::remove_file(&markers).unwrap();
+        let restarted_id = uuid::Uuid::new_v4().to_string();
+        stored["id"] = json!(restarted_id);
+        ensure_thread_dir_exists(&data_dir, &restarted_id).unwrap();
+        update_thread_metadata(&data_dir, &restarted_id, &stored).unwrap();
+        let restored = super::capabilities::read_conversation_capabilities(&data_dir, &restarted_id).await.unwrap();
+        assert_eq!(restored, expected);
+    }
+}
+
+#[tokio::test]
+async fn failed_marker_narrowing_reports_metadata_sync_failure() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("marker-partial"))
+        .await.unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true)).await.unwrap();
+    let markers = data_dir.join("conversation-denials");
+    fs::remove_dir_all(&markers).unwrap();
+    fs::write(&markers, b"blocked").unwrap();
+    *super::capabilities::FAIL_CONSENT_DIR_SYNC.lock().unwrap() = Some(id.clone());
+    let result = set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(false)).await;
+    *super::capabilities::FAIL_CONSENT_DIR_SYNC.lock().unwrap() = None;
+    let error = result.unwrap_err();
+    assert!(error.contains("restart-safe revocation failed"), "{error}");
+    assert!(error.contains("narrowing persistence also failed"), "{error}");
+    assert!(error.contains("directory sync"), "{error}");
+    assert!(error.contains("durability is not assured"), "{error}");
+    let grant = tauri_plugin_agent_tools::thread_capabilities::current(&id).0;
+    assert!(grant.folder_scope.is_none() && !grant.shell_network && !grant.memory_write);
+}
+
+#[test]
+fn narrowing_fallback_validates_stored_identity_and_refuses_path_switch() {
+    let root = tempfile::tempdir().unwrap();
+    let id = "narrow-identity";
+    ensure_thread_dir_exists(root.path(), id).unwrap();
+    let mut original = capability_grant(true);
+    original["folderScope"] = json!({"path":"/work/tree","access":"write"});
+    let mut record = json!({"id":"wrong-id","metadata":{"conversationCapabilities":original}});
+    update_thread_metadata(root.path(), id, &record).unwrap();
+    let patch = super::capabilities::patch_narrowing_capabilities;
+    assert!(patch(root.path(), id, capability_grant(false)).unwrap_err().contains("id does not match"));
+    record["id"] = json!(id);
+    update_thread_metadata(root.path(), id, &record).unwrap();
+    let before = fs::read(get_thread_metadata_path(root.path(), id).unwrap()).unwrap();
+    let mut switched = capability_grant(false);
+    switched["folderScope"] = json!({"path":"/different/tree","access":"read"});
+    assert!(patch(root.path(), id, switched).unwrap_err().contains("widen"));
+    assert_eq!(fs::read(get_thread_metadata_path(root.path(), id).unwrap()).unwrap(), before);
+}
+
+// Global settings overlay these legacy flags in the UI; they must not block
+// folder revocation or become an unrelated persisted widening on fallback.
+#[tokio::test]
+async fn failed_marker_narrows_folder_with_global_flags_overlaid() {
+    for access in [None, Some("read")] {
+        let (app, data_dir) = mock_app_with_temp_data_dir();
+        let created = create_thread(app.handle().clone(), create_test_thread("marker-global-flags"))
+            .await.unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+        let mut original = capability_grant(false);
+        original["folderScope"] = json!({"path":"/work/tree","access":"write"});
+        set_thread_conversation_capabilities(app.handle().clone(), id.clone(), original).await.unwrap();
+        let markers = data_dir.join("conversation-denials");
+        fs::remove_dir_all(&markers).unwrap();
+        fs::write(&markers, b"blocked").unwrap();
+        let mut requested = capability_grant(true);
+        requested["folderScope"] = access.map(|a| json!({"path":"/work/tree","access":a})).unwrap_or(json!(null));
+        let error = set_thread_conversation_capabilities(app.handle().clone(), id.clone(), requested.clone())
+            .await.unwrap_err();
+        assert!(error.contains("requested narrowing was saved"), "{error}");
+        let mut expected = requested;
+        expected["shellNetwork"] = json!(false);
+        expected["memoryWrite"] = json!(false);
+        let mut stored: serde_json::Value = serde_json::from_slice(
+            &fs::read(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap()).unwrap();
+        assert_eq!(stored["metadata"]["conversationCapabilities"], expected);
+        let live = tauri_plugin_agent_tools::thread_capabilities::current(&id).0;
+        assert!(live.folder_scope.is_none() && !live.shell_network && !live.memory_write);
+        fs::remove_file(&markers).unwrap();
+        let restarted_id = uuid::Uuid::new_v4().to_string();
+        stored["id"] = json!(restarted_id);
+        ensure_thread_dir_exists(&data_dir, &restarted_id).unwrap();
+        update_thread_metadata(&data_dir, &restarted_id, &stored).unwrap();
+        assert_eq!(super::capabilities::read_conversation_capabilities(&data_dir, &restarted_id).await.unwrap(), expected);
+    }
+}
+
+#[test]
+fn narrowing_fallback_global_flags_never_allow_folder_widening() {
+    let root = tempfile::tempdir().unwrap();
+    let id = "narrow-global-folder";
+    ensure_thread_dir_exists(root.path(), id).unwrap();
+    for (previous, requested) in [
+        (json!(null), json!({"path":"/work/tree","access":"read"})),
+        (json!({"path":"/work/tree","access":"read"}), json!({"path":"/work/tree","access":"write"})),
+        (json!({"path":"/work/tree","access":"write"}), json!({"path":"/different/tree","access":"read"})),
+    ] {
+        let mut original = capability_grant(false);
+        original["folderScope"] = previous;
+        let record = json!({"id":id,"metadata":{"conversationCapabilities":original}});
+        update_thread_metadata(root.path(), id, &record).unwrap();
+        let path = get_thread_metadata_path(root.path(), id).unwrap();
+        let before = fs::read(&path).unwrap();
+        let mut next = capability_grant(true);
+        next["folderScope"] = requested;
+        let error = super::capabilities::patch_narrowing_capabilities(root.path(), id, next).unwrap_err();
+        assert!(error.contains("widen"), "{error}");
+        assert_eq!(fs::read(path).unwrap(), before);
+    }
+}

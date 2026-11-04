@@ -287,7 +287,15 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
             .map_err(|e| format!("Invalid version 1 conversation capabilities: {e}"))?;
     grant.validate()?;
     let token = tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
-    tauri_plugin_agent_tools::thread_capabilities::denial_persisted(&thread_id)?;
+    if let Err(marker_error) = tauri_plugin_agent_tools::thread_capabilities::denial_persisted(&thread_id) {
+        // Even without a marker, a durable metadata narrowing prevents restart
+        // from replaying the revoked part of the old grant. Never use this
+        // fallback to save a widening, and never confirm on a marker error.
+        return match super::capabilities::patch_narrowing_capabilities(&data_folder, &thread_id, value) {
+            Ok(()) => Err(format!("{marker_error}; requested narrowing was saved, but access stays off in this process")),
+            Err(patch_error) => Err(format!("{marker_error}; narrowing persistence also failed: {patch_error}; metadata durability is not assured")),
+        };
+    }
     super::capabilities::patch_conversation_capabilities(&data_folder, &thread_id, value)?;
     // Test seam for the reviewed interleaving: `stop_all_thread_monitors`
     // takes no per-thread lock, so its barrier bump can land between this

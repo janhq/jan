@@ -329,12 +329,13 @@ pub fn persist_denial(thread_id: &str, token: u64) {
 fn persist_denial_at(thread_id: &str, token: u64, marker_path: Result<Option<PathBuf>, String>) {
     let lock = marker_lock(thread_id);
     let _io = lock.lock().unwrap();
-    if confirmed()
-        .lock()
-        .unwrap()
-        .get(thread_id)
-        .and_then(|e| e.denial_token)
-        != Some(token)
+    // A denial has no authority to restore: an overtaken caller may safely
+    // persist the latest denial while holding this identity's I/O lock. A
+    // confirmation cannot remove the marker until we release that lock. Do
+    // not acknowledge by admission generation: stop/finalize may bump it.
+    let _ = token; // Only confirmations, never denial writes, consume tokens.
+    if confirmed().lock().unwrap().get(thread_id)
+        .and_then(|e| e.denial_token).is_none()
     {
         return;
     }
@@ -342,10 +343,7 @@ fn persist_denial_at(thread_id: &str, token: u64, marker_path: Result<Option<Pat
         .and_then(|path| write_denial_at(thread_id, path))
         .err();
     let mut map = confirmed().lock().unwrap();
-    if let Some(entry) = map
-        .get_mut(thread_id)
-        .filter(|e| e.denial_token == Some(token))
-    {
+    if let Some(entry) = map.get_mut(thread_id).filter(|e| e.denial_token.is_some()) {
         entry.durability_error = error;
     }
 }
@@ -455,7 +453,11 @@ pub async fn persist_denial_async(thread_id: String, token: u64) {
 }
 
 /// Finalize a deleted identity in memory, preserving the durable denial (and
-/// any durability error) already installed by the pre-removal revoke. No I/O
+/// any durability error) already installed by the pre-removal revoke. Markers
+/// deliberately have no age/count GC: deleted ids can be reused and stale
+/// backups can reintroduce old grants indefinitely. Safe bounded GC requires
+/// a durable identity epoch/tombstone outside restorable thread metadata;
+/// absent that, only explicit current consent may remove a marker. No I/O
 /// is allowed here: the record is gone, so failure could create a UI ghost.
 /// Advance the barrier even for an already denied entry, invalidating stale
 /// confirmations and monitor polls racing with finalization.
@@ -664,6 +666,55 @@ mod tests {
         denial_persisted(id).unwrap();
     }
 
+    #[test]
+    fn overtaken_denial_persists_latest_without_confirming_stale_token() {
+        let id = "overtaken-denial";
+        let root = std::env::temp_dir().join(format!("jan-overtaken-{}", std::process::id()));
+        let path = root.join("markers").join(id);
+        let first = deny_in_memory(id);
+        let newer = deny_in_memory(id);
+        persist_denial_at(id, first, Ok(Some(path.clone())));
+        denial_persisted(id).expect("overtaken caller must complete the latest denial");
+        assert!(path.exists());
+        assert_eq!(generation(id), newer);
+        assert!(!confirm_at(id, elevated(), first, Ok(Some(path.clone()))));
+        assert!(is_denied(&current(id).0));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn denial_published_during_marker_write_is_acknowledged() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let id = "pending-during-marker-write";
+        let root = std::env::temp_dir().join(format!("jan-pending-write-{}", std::process::id()));
+        let path = root.join("markers").join(id);
+        let first = deny_in_memory(id);
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        io_hooks().lock().unwrap().insert(id.into(), Arc::new(move |op| {
+            if op == "write" {
+                entered_tx.send(()).unwrap();
+                release_rx.lock().unwrap().recv().unwrap();
+            }
+        }));
+        let worker_path = path.clone();
+        let worker = std::thread::spawn(move || persist_denial_at(id, first, Ok(Some(worker_path))));
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let newer = deny_in_memory(id);
+        assert!(denial_persisted(id).unwrap_err().contains("pending"));
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        io_hooks().lock().unwrap().remove(id);
+        denial_persisted(id).expect("completed marker write acknowledges the newly published denial");
+        assert!(path.is_file());
+        assert_eq!(generation(id), newer);
+        assert!(is_denied(&current(id).0));
+        assert!(!confirm_at(id, elevated(), first, Ok(Some(path))));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// A fresh process has confirmed nothing, so every thread reads denied at
     /// the reserved generation 0.
     #[test]
@@ -832,6 +883,9 @@ mod tests {
                     marker(&id).unwrap().unwrap().exists(),
                     "stale removal repairs before releasing I/O"
                 );
+            }
+            if operation == "write" {
+                denial_persisted(&id).expect("write also acknowledges a denial published during I/O");
             }
             persist_denial(&id, newer);
             denial_persisted(&id).unwrap();
