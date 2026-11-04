@@ -639,6 +639,7 @@ pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
 /// parsed never falls back to "every skill": the user's restriction is unknown,
 /// so nothing real is enabled (an empty-name sentinel, as skill names are never
 /// empty). A project with no agent.toml at all is unrestricted, as everywhere.
+#[cfg(any(not(feature = "cli"), test))]
 pub(crate) fn enabled_skills_fail_closed(project_root: &Path) -> Vec<String> {
     let path = agent_toml_path(project_root);
     match std::fs::read_to_string(&path) {
