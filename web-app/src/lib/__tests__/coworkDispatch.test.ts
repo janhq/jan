@@ -134,7 +134,7 @@ describe('dispatchCoworkTool', () => {
   it.each(['skill_list', 'skill_read'])('dispatches advertised %s', async (name) => {
     const out = await dispatchCoworkTool(call(name), ctx())
     expect(out.isError).toBeFalsy()
-    expect(executeAgentTool).toHaveBeenCalledWith(name, {}, 's1', null, 'session', true, true, null, undefined, undefined, expect.any(Function))
+    expect(executeAgentTool).toHaveBeenCalledWith(name, {}, 's1', null, 'session', true, false, null, undefined, undefined, expect.any(Function))
   })
 
   describe('Plan callback handed to executeAgentTool', () => {
@@ -175,7 +175,7 @@ describe('dispatchCoworkTool', () => {
       null,
       'session',
       true,
-      true,
+      false,
       null,
       undefined,
       undefined,
@@ -194,7 +194,7 @@ describe('dispatchCoworkTool', () => {
       null,
       'session',
       true,
-      true,
+      false,
       null,
       undefined,
       undefined,
@@ -210,7 +210,7 @@ describe('dispatchCoworkTool', () => {
         null,
         'session',
         false,
-        true,
+        false,
         null,
         undefined,
         undefined,
@@ -285,7 +285,7 @@ describe('dispatchCoworkTool', () => {
   // as the skill-overlay project (last arg), so the folder's skills reach the
   // agent on top of the permanent store (#8879).
   it('passes the attached folder through as both read root and skill overlay', async () => {
-    await dispatchCoworkTool(call('grep'), ctx({ readOnlyFolder: '/repo' }))
+    await dispatchCoworkTool(call('grep'), ctx({ readOnlyFolder: '/repo', folderAccess: 'write' }))
     expect(executeAgentTool).toHaveBeenCalledWith(
       'grep',
       {},
@@ -299,6 +299,31 @@ describe('dispatchCoworkTool', () => {
       undefined,
       expect.any(Function)
     )
+  })
+
+  // Only an acknowledged 'write' mounts the folder writable (arg 7); read,
+  // a denied grant (null) and an omitted value can never write.
+  it.each([
+    ['write', true],
+    ['read', false],
+    [null, false],
+    [undefined, false],
+  ] as const)('passes folder access %s to the host as projectWritable=%s', async (access, writable) => {
+    await dispatchCoworkTool(call('write'), ctx({ readOnlyFolder: '/repo', folderAccess: access }))
+    expect(executeAgentTool).toHaveBeenCalledOnce()
+    expect(executeAgentTool.mock.calls[0][3]).toBe('/repo')
+    expect(executeAgentTool.mock.calls[0][6]).toBe(writable)
+  })
+
+  it('starts a monitor writable only for acknowledged write access', async () => {
+    native.startAgentMonitor.mockResolvedValue({ output: 'monitor-1' })
+    const monitors = { update: vi.fn(), started: vi.fn(), stopped: vi.fn() }
+    const input = { op: 'start', script: 'fixture', interval: 5 }
+    for (const [access, writable] of [['read', false], ['write', true]] as const) {
+      native.startAgentMonitor.mockClear()
+      await dispatchCoworkTool(call('monitor', input), ctx({ monitors, readOnlyFolder: '/repo', folderAccess: access }))
+      expect(native.startAgentMonitor).toHaveBeenCalledExactlyOnceWith('s1', input, expect.any(Function), '/repo', true, writable)
+    }
   })
 
   it('carries the display diff without putting it in the output', async () => {
@@ -437,7 +462,7 @@ describe('shared client dispatch integration', () => {
     native.startAgentMonitor.mockResolvedValue({ output: 'monitor-1' })
     const monitors = { update: vi.fn(), started: vi.fn(), stopped: vi.fn() }
     const input = { op: 'start', script: 'fixture', interval: 5 }
-    await dispatchCoworkTool(call('monitor', input), ctx({ monitors, readOnlyFolder: '/synthetic-scope' }))
+    await dispatchCoworkTool(call('monitor', input), ctx({ monitors, readOnlyFolder: '/synthetic-scope', folderAccess: 'write' }))
     expect(native.startAgentMonitor).toHaveBeenCalledExactlyOnceWith('s1', input, expect.any(Function), '/synthetic-scope', true, true)
     expect(monitors.started).toHaveBeenCalledOnce()
     expect(executeAgentTool).not.toHaveBeenCalled()

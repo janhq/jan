@@ -607,6 +607,8 @@ pub async fn start_monitor(
         project_writable,
     )
     .await?;
+    let SessionFolder { folder: read_only_project, writable: project_writable, .. } =
+        clamp_cowork_session(scope, &thread_id, None, read_only_project, project_writable).await?;
     let data_folder = workspace::host_data_folder(&data_folder);
     use crate::tools::monitor;
     if !jail::backend().enforces() {
@@ -629,10 +631,17 @@ pub async fn start_monitor(
         writable,
     )?;
     let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
+    // What this monitor may ever use: the clamped start-time values. Every poll
+    // re-derives its authority from the host and intersects it with this, so a
+    // later detach or read-only change takes effect without a restart.
+    let ceiling_folder = read_only_project.clone();
+    let ceiling_writable = writable;
+    let ceiling_network = allow_network.unwrap_or(false);
     let ctx = monitor::MonitorCtx {
-        // A Cowork session monitor keeps the ownerless process bucket it has
-        // always used; only thread-owned monitors register under an owner.
-        owner: None,
+        // Session monitors register under their own owner so a folder revoke can
+        // reap exactly their poll children (the ownerless bucket is only
+        // reachable by kill_all).
+        owner: Some(session_monitor_owner(&thread_id)),
         // And its polls keep bypassing PreToolUse hooks, as they always have:
         // the hook gate is thread-only. Gating Cowork too is a behavior change
         // that wants its own reviewed task.
@@ -651,7 +660,7 @@ pub async fn start_monitor(
     };
     let set = {
         let mut sets = session_monitors().lock().unwrap();
-        let entry = sets.entry(thread_id).or_insert_with(|| {
+        let entry = sets.entry(thread_id.clone()).or_insert_with(|| {
             let slot: MonitorChannelSlot = std::sync::Arc::new(std::sync::Mutex::new(None));
             let subscriber_slot = slot.clone();
             SessionMonitors {
@@ -668,7 +677,98 @@ pub async fn start_monitor(
         *entry.channel.lock().unwrap() = Some(on_update);
         entry.set.clone()
     };
-    set.start(spec, ctx).map_err(AgentToolsError::from)
+    let authority = session_authority(&thread_id, ceiling_folder, ceiling_writable, ceiling_network);
+    set.start_owned(spec, ctx, Some(authority))
+        .map_err(AgentToolsError::from)
+}
+
+/// Process-registry bucket for one Cowork session's monitor poll children.
+/// Distinct from the thread-monitor and raw buckets (`:` is not a legal id char).
+fn session_monitor_owner(thread_id: &str) -> String {
+    format!("session-monitor:{thread_id}")
+}
+
+/// Per-poll authority for a Cowork session monitor. Re-reads the host's folder
+/// record before every poll and intersects it with the start-time ceiling, so
+/// nothing captured at start authorizes a later poll. With no host record there
+/// is no folder authority (a folder is refused); a record that no longer grants
+/// the folder is terminal, reported as a revoked monitor.
+async fn resolve_session_monitor_ctx(
+    thread_id: &str,
+    folder: Option<&str>,
+    writable: bool,
+    network: bool,
+) -> Result<(crate::tools::monitor::MonitorCtx, u64), String> {
+    if !jail::backend().enforces() {
+        return Err("no OS sandbox could be established on this system".into());
+    }
+    let (data_folder, host, generation) =
+        crate::thread_capabilities::authorize_cowork(thread_id).await?;
+    let (folder, writable) = match host {
+        Some(host) => {
+            let (f, w) = crate::thread_capabilities::clamp_session_folder(
+                &host,
+                folder,
+                Some(writable),
+            )?;
+            (f, w.unwrap_or(false))
+        }
+        None => {
+            let (f, w) = crate::thread_capabilities::bind_legacy_session(
+                thread_id,
+                folder,
+                Some(writable),
+            )
+            .await?;
+            (f, w.unwrap_or(false))
+        }
+    };
+    let sandbox = WorkspaceScope::Session
+        .ensure(&data_folder, thread_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let scratch = workspace::ensure_scratch_dir(thread_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let attached = attach_folder(folder.as_deref(), &sandbox, &data_folder, writable)
+        .map_err(|e| e.to_string())?;
+    let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
+    Ok((
+        crate::tools::monitor::MonitorCtx {
+            owner: Some(session_monitor_owner(thread_id)),
+            hooks: None,
+            project_root: root,
+            scratch_root: Some(scratch),
+            mask_root: Some(data_folder),
+            hidden_root: workspace::hidden_root(true),
+            read_roots,
+            write_roots,
+            allow_network: network && crate::thread_capabilities::get_global_grants().shell_network,
+            home_readonly: false,
+            sandbox: true,
+            workspace_readonly: false,
+        },
+        generation,
+    ))
+}
+
+fn session_authority(
+    thread_id: &str,
+    folder: Option<String>,
+    writable: bool,
+    network: bool,
+) -> crate::tools::monitor::ThreadAuthority {
+    let id = thread_id.to_string();
+    crate::tools::monitor::ThreadAuthority {
+        thread_id: id.clone(),
+        owner: session_monitor_owner(thread_id),
+        resolve: std::sync::Arc::new(move || {
+            let (id, folder) = (id.clone(), folder.clone());
+            Box::pin(async move {
+                resolve_session_monitor_ctx(&id, folder.as_deref(), writable, network).await
+            })
+        }),
+    }
 }
 
 /// Stop one monitor. The result string is model-facing, so an unknown id comes
@@ -946,10 +1046,9 @@ async fn reap_thread_monitor_children(thread_id: &str, advance: fn(&str) -> u64)
     let (token, pids) = {
         let _admitted = crate::thread_capabilities::admission().lock().await;
         let token = advance(thread_id);
-        (
-            token,
-            crate::tools::proc::take_thread_pids(&monitor_owner(thread_id)),
-        )
+        let mut pids = crate::tools::proc::take_thread_pids(&monitor_owner(thread_id));
+        pids.extend(crate::tools::proc::take_thread_pids(&session_monitor_owner(thread_id)));
+        (token, pids)
     };
     for pid in pids {
         crate::tools::proc::kill_tree(pid);
@@ -1012,6 +1111,15 @@ async fn deny_thread_and_stop_monitors(thread_id: &str, advance: fn(&str) -> u64
         .remove(thread_id)
         .map(|entry| entry.set);
     if let Some(set) = set {
+        set.stop_all();
+    }
+    // A Cowork session id's monitors answer to the same folder authority.
+    let session = session_monitors()
+        .lock()
+        .unwrap()
+        .remove(thread_id)
+        .map(|entry| entry.set);
+    if let Some(set) = session {
         set.stop_all();
     }
     token
@@ -1136,6 +1244,9 @@ pub async fn execute_tool<R: tauri::Runtime>(
         project_writable,
     )
     .await?;
+    let SessionFolder { project, folder: read_only_project, writable: project_writable } =
+        clamp_cowork_session(scope, &thread_id, project, read_only_project, project_writable)
+            .await?;
     execute_tool_inner(
         screenshot_backend(&app),
         data_folder,
@@ -1322,6 +1433,9 @@ pub async fn execute_tool_streaming<R: tauri::Runtime>(
         project_writable,
     )
     .await?;
+    let SessionFolder { project, folder: read_only_project, writable: project_writable } =
+        clamp_cowork_session(scope, &thread_id, project, read_only_project, project_writable)
+            .await?;
     execute_tool_inner(
         screenshot_backend(&app),
         data_folder,
@@ -1481,6 +1595,65 @@ struct ToolRun {
     /// Derive skill roots and the enabled whitelist from the effective authorized
     /// folder (the validated `read_only_project`), never from a caller path.
     folder_skills: bool,
+}
+
+/// Host-owned folder authority for legacy `scope=Session` dispatch. A migrated
+/// Cowork conversation keeps its folder grant in its thread record, so the
+/// caller's folder, skill project and `project_writable` are clamped to it:
+/// they may narrow, never widen. With no host record (a legacy session, or one
+/// never confirmed) there is NO folder authority: a caller folder is refused
+/// until the user confirms it through the strict setter. A dropped or changed
+/// folder is an error rather than a silent drop.
+struct SessionFolder {
+    project: Option<String>,
+    folder: Option<String>,
+    writable: Option<bool>,
+}
+
+async fn clamp_cowork_session(
+    scope: Option<WorkspaceScope>,
+    thread_id: &str,
+    project: Option<String>,
+    folder: Option<String>,
+    writable: Option<bool>,
+) -> Result<SessionFolder, AgentToolsError> {
+    if !matches!(scope, Some(WorkspaceScope::Session)) {
+        // Legacy caller-supplied project paths must not inject skill roots or
+        // project hooks into Thread/default scope. Scoped Chat derives its
+        // overlay separately from the host-authorized effective grant.
+        if project.is_some() {
+            return Err("A project overlay requires an authorized Session folder grant".to_string().into());
+        }
+        return Ok(SessionFolder { project, folder, writable });
+    }
+    if folder.is_none() && project.is_none() {
+        return Ok(SessionFolder { project, folder, writable });
+    }
+    let (_, host, _) = crate::thread_capabilities::authorize_cowork(thread_id)
+        .await
+        .map_err(AgentToolsError::from)?;
+    let Some(host) = host else {
+        // No host grant record. `metadata.folder` and the legacy `code-sessions`
+        // blob are renderer-writable, so they are never folder authority: a
+        // folder is refused until the user confirms it through the strict
+        // setter (which creates the record). The id must still be host-verified
+        // Cowork. A skill-overlay project with no authority is dropped.
+        let (bound, writable) = crate::thread_capabilities::bind_legacy_session(
+            thread_id,
+            folder.as_deref(),
+            writable,
+        )
+        .await
+        .map_err(AgentToolsError::from)?;
+        return Ok(SessionFolder { project: None, folder: bound, writable });
+    };
+    let (folder, writable) =
+        crate::thread_capabilities::clamp_session_folder(&host, folder.as_deref(), writable)
+            .map_err(AgentToolsError::from)?;
+    // The skill overlay is keyed on the same folder: a detached or changed
+    // folder must not keep contributing its skills.
+    let project = project.filter(|p| folder.as_deref() == Some(p.as_str()));
+    Ok(SessionFolder { project, folder, writable })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3715,6 +3888,318 @@ mod tests {
         let _ = std::fs::remove_dir_all(&data);
         let _ = std::fs::remove_dir_all(&repo);
     }
+    // ---- migrated Cowork: host-owned folder authority ----------------------
+
+    type CoworkRecords = Mutex<std::collections::HashMap<String, serde_json::Value>>;
+    fn cowork_records() -> &'static CoworkRecords {
+        static RECORDS: std::sync::OnceLock<CoworkRecords> = std::sync::OnceLock::new();
+        RECORDS.get_or_init(|| {
+            crate::thread_capabilities::set_cowork_resolver(Arc::new(|id| {
+                let value = cowork_records()
+                    .lock()
+                    .unwrap()
+                    .get(&id)
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                Box::pin(async move { Ok((std::env::temp_dir(), value)) })
+            }));
+            Mutex::new(Default::default())
+        })
+    }
+    /// Models the strict setter: it persists the record, then confirms exactly
+    /// that grant in the process mirror (the resolver's restore does the same
+    /// after a restart). A record alone never authorizes anything.
+    fn set_cowork_record(id: &str, folder: Option<(&str, &str)>) {
+        let record = json!({"version":1,"shellNetwork":false,"memoryWrite":false,
+            "folderScope": folder.map(|(path, access)| json!({"path":path,"access":access}))});
+        cowork_records().lock().unwrap().insert(id.to_string(), record.clone());
+        let token = crate::thread_capabilities::narrow(id);
+        assert!(crate::thread_capabilities::confirm_if_current(
+            id,
+            serde_json::from_value(record).unwrap(),
+            token
+        ));
+    }
+    async fn clamp(
+        id: &str,
+        project: Option<&str>,
+        folder: Option<&str>,
+        writable: Option<bool>,
+    ) -> Result<SessionFolder, AgentToolsError> {
+        let _ = cowork_records();
+        clamp_cowork_session(
+            Some(WorkspaceScope::Session),
+            id,
+            project.map(str::to_string),
+            folder.map(str::to_string),
+            writable,
+        )
+        .await
+    }
+    fn abs(name: &str) -> String {
+        std::env::temp_dir().join(name).to_string_lossy().into_owned()
+    }
+    use crate::thread_capabilities::ThreadKind;
+    fn legacy_identity(id: &str, kind: ThreadKind) {
+        crate::thread_capabilities::test_set_kind(id, kind);
+    }
+
+    #[tokio::test]
+    async fn non_session_scope_refuses_caller_project_overlays() {
+        let folder = abs("forged-project-overlay");
+        for scope in [None, Some(WorkspaceScope::Thread)] {
+            let error = clamp_cowork_session(
+                scope,
+                "overlay-forged",
+                Some(folder.clone()),
+                None,
+                Some(false),
+            )
+            .await
+            .err()
+            .expect("caller project overlay must be refused");
+            assert!(error.message.contains("authorized Session folder grant"));
+        }
+        // An explicit host-owned Session grant remains the positive control.
+        set_cowork_record("overlay-authorized", Some((&folder, "read")));
+        let allowed = clamp("overlay-authorized", Some(&folder), Some(&folder), Some(false))
+            .await
+            .unwrap();
+        assert_eq!(allowed.project.as_deref(), Some(folder.as_str()));
+    }
+
+    /// An old session with no host record has NO folder authority, whatever the
+    /// renderer-writable metadata says. Scratch-only calls still work. The
+    /// positive control is an explicit host grant (the strict setter's record).
+    #[tokio::test]
+    async fn legacy_cowork_without_a_host_record_refuses_a_folder() {
+        let folder = abs("legacy-folder");
+        legacy_identity("cw-legacy", ThreadKind::LegacyCowork);
+        assert!(clamp("cw-legacy", Some(&folder), Some(&folder), Some(true)).await.is_err());
+        assert!(clamp("cw-legacy", None, Some(&folder), Some(false)).await.is_err());
+        let got = clamp("cw-legacy", None, None, Some(true)).await.unwrap();
+        assert!(got.folder.is_none());
+        // Positive control: an explicit host write grant authorizes exactly that folder.
+        set_cowork_record("cw-legacy", Some((&folder, "write")));
+        let got = clamp("cw-legacy", Some(&folder), Some(&folder), Some(true)).await.unwrap();
+        assert_eq!(got.folder.as_deref(), Some(folder.as_str()));
+        assert_eq!(got.writable, Some(true));
+        assert_eq!(got.project.as_deref(), Some(folder.as_str()));
+    }
+
+    /// The reported bug: a persisted read-only grant beats the caller's
+    /// unconditional `projectWritable=true`, for every Session entry point.
+    #[tokio::test]
+    async fn persisted_read_only_clamps_a_caller_that_asks_for_write() {
+        let folder = abs("ro-folder");
+        set_cowork_record("cw-ro", Some((&folder, "read")));
+        let got = clamp("cw-ro", Some(&folder), Some(&folder), Some(true)).await.unwrap();
+        assert_eq!(got.folder.as_deref(), Some(folder.as_str()));
+        assert_eq!(got.writable, Some(false), "host read must clamp caller write");
+        // Narrow only: a host write grant never widens a caller's read.
+        set_cowork_record("cw-ro", Some((&folder, "write")));
+        assert_eq!(clamp("cw-ro", None, Some(&folder), Some(false)).await.unwrap().writable, Some(false));
+        assert_eq!(clamp("cw-ro", None, Some(&folder), Some(true)).await.unwrap().writable, Some(true));
+    }
+
+    /// A detach or a different folder is an error, never a silent fall back to
+    /// the old read+write, and a record never resurrects `metadata.folder`.
+    #[tokio::test]
+    async fn detach_or_changed_folder_is_refused_and_not_resurrected() {
+        let (old, other) = (abs("old-folder"), abs("other-folder"));
+        set_cowork_record("cw-detach", None);
+        assert!(clamp("cw-detach", Some(&old), Some(&old), Some(true)).await.is_err());
+        set_cowork_record("cw-detach", Some((&other, "write")));
+        assert!(clamp("cw-detach", Some(&old), Some(&old), Some(true)).await.is_err());
+        // Scratch-only calls (no folder) still work after a detach.
+        set_cowork_record("cw-detach", None);
+        let got = clamp("cw-detach", None, None, None).await.unwrap();
+        assert!(got.folder.is_none());
+    }
+
+    /// A revoke whose record write never landed (no record, but the process
+    /// narrowed) must fail closed rather than fall back to the legacy default.
+    #[tokio::test]
+    async fn a_revoked_session_without_a_record_never_falls_back_to_legacy() {
+        let folder = abs("revoked-folder");
+        let _ = cowork_records();
+        crate::thread_capabilities::narrow("cw-revoked");
+        assert!(clamp("cw-revoked", Some(&folder), Some(&folder), Some(true)).await.is_err());
+    }
+
+    /// Only legacy Session calls consult the host; a Thread-scope call is
+    /// untouched (it has its own scoped executor).
+    #[tokio::test]
+    async fn non_session_scopes_are_not_clamped_here() {
+        let folder = abs("scope-folder");
+        let got = clamp_cowork_session(
+            Some(WorkspaceScope::Thread),
+            "cw-scope",
+            None,
+            Some(folder.clone()),
+            Some(true),
+        )
+        .await
+        .unwrap();
+        assert_eq!(got.writable, Some(true));
+    }
+
+    /// Background captured ceiling: a monitor started read+write re-reads the
+    /// host before every poll, so a later narrow applies to the NEXT poll, and a
+    /// detach ends it; the start-time values can never widen a narrower record.
+    #[tokio::test]
+    async fn session_monitor_poll_authority_tracks_the_host_record() {
+        if !jail::backend().enforces() {
+            return;
+        }
+        let repo = repo_outside_tmp("cw-monitor");
+        let folder = repo.to_string_lossy().to_string();
+        let _ = cowork_records();
+        legacy_identity("cw-mon", ThreadKind::Cowork);
+        // No record: no folder authority, the start-time ceiling cannot supply it.
+        assert!(resolve_session_monitor_ctx("cw-mon", Some(&folder), true, false).await.is_err());
+        // Explicit host write grant (positive control): the captured ceiling stands.
+        set_cowork_record("cw-mon", Some((&folder, "write")));
+        let (ctx, _) = resolve_session_monitor_ctx("cw-mon", Some(&folder), true, false)
+            .await
+            .unwrap();
+        assert_eq!(ctx.owner.as_deref(), Some("session-monitor:cw-mon"));
+        assert!(!ctx.write_roots.is_empty());
+        // Narrowed to read: next poll has no write roots.
+        set_cowork_record("cw-mon", Some((&folder, "read")));
+        let (ctx, _) = resolve_session_monitor_ctx("cw-mon", Some(&folder), true, false)
+            .await
+            .unwrap();
+        assert!(ctx.write_roots.is_empty(), "narrowing must reach the next poll");
+        // Widening the record never widens a read-only ceiling.
+        set_cowork_record("cw-mon", Some((&folder, "write")));
+        let (ctx, _) = resolve_session_monitor_ctx("cw-mon", Some(&folder), false, false)
+            .await
+            .unwrap();
+        assert!(ctx.write_roots.is_empty(), "start-time ceiling must stay a ceiling");
+        // Detached: the poll is refused (terminal revoked notice).
+        set_cowork_record("cw-mon", None);
+        assert!(resolve_session_monitor_ctx("cw-mon", Some(&folder), true, false).await.is_err());
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    // ---- legacy (no host record) binding, adversarial -----------------------
+
+    #[tokio::test]
+    async fn legacy_unknown_or_chat_id_never_gets_a_folder_or_project() {
+        let f = abs("adv-folder");
+        for (id, kind) in [("adv-unknown", ThreadKind::Unknown), ("adv-chat", ThreadKind::Chat)] {
+            legacy_identity(id, kind);
+            assert!(clamp(id, None, Some(&f), Some(true)).await.is_err(), "{id} folder");
+            // Forged project alone: not an elevation trigger upstream, so the clamp must refuse.
+            assert!(clamp(id, Some(&f), None, None).await.is_err(), "{id} project");
+        }
+    }
+
+    /// Forged mode/folder/settings state classifies the id as Cowork but never
+    /// authorizes a folder, however exactly the caller echoes it. Only the host
+    /// record's path does, byte for byte.
+    #[tokio::test]
+    async fn legacy_forged_folder_is_refused_and_a_grant_matches_byte_for_byte() {
+        let rec = abs("adv-rec");
+        for kind in [ThreadKind::LegacyCowork, ThreadKind::Cowork] {
+            legacy_identity("adv-bind", kind);
+            assert!(clamp("adv-bind", Some(&rec), Some(&rec), Some(true)).await.is_err(), "{kind:?} echoed");
+            // A project-only overlay has no authority: dropped, never a folder.
+            let got = clamp("adv-bind", Some(&rec), None, None).await.unwrap();
+            assert!(got.project.is_none() && got.folder.is_none(), "{kind:?} project only");
+        }
+        set_cowork_record("adv-bind", Some((&rec, "write")));
+        for bad in [
+            abs("adv-other"),
+            format!("{rec}/"),
+            format!("{rec}/sub"),
+            format!("{rec}/../adv-other"),
+            format!("{rec}x"),
+            rec.to_uppercase(),
+            "relative/dir".to_string(),
+            String::new(),
+        ] {
+            assert!(clamp("adv-bind", None, Some(&bad), Some(true)).await.is_err(), "accepted {bad:?}");
+        }
+        assert!(clamp("adv-bind", None, Some(&rec), Some(true)).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn legacy_forged_project_never_survives_without_a_grant() {
+        let (rec, other) = (abs("adv-prec"), abs("adv-pother"));
+        legacy_identity("adv-proj", ThreadKind::Cowork);
+        assert!(clamp("adv-proj", Some(&other), Some(&rec), Some(true)).await.is_err());
+        let got = clamp("adv-proj", Some(&rec), None, None).await.unwrap();
+        assert!(got.project.is_none() && got.folder.is_none(), "no grant: overlay dropped");
+        // Positive control: with a host grant, only the granted folder's overlay survives.
+        set_cowork_record("adv-proj", Some((&rec, "write")));
+        let got = clamp("adv-proj", Some(&other), Some(&rec), Some(true)).await.unwrap();
+        assert_eq!(got.folder.as_deref(), Some(rec.as_str()));
+        assert!(got.project.is_none(), "foreign skill overlay must not survive");
+        assert_eq!(
+            clamp("adv-proj", Some(&rec), Some(&rec), None).await.unwrap().project.as_deref(),
+            Some(rec.as_str())
+        );
+    }
+
+    /// Whatever the legacy record is (missing, relative, or a read error), no
+    /// folder is authorized and scratch-only calls keep working.
+    #[tokio::test]
+    async fn legacy_unrecorded_or_odd_records_never_authorize() {
+        let f = abs("adv-f");
+        for id in ["adv-err", "adv-none", "adv-rel"] {
+            legacy_identity(id, ThreadKind::LegacyCowork);
+            assert!(clamp(id, None, Some(&f), Some(true)).await.is_err(), "{id}");
+            assert!(clamp(id, Some(&f), None, None).await.unwrap().project.is_none(), "{id} project");
+            assert!(clamp(id, None, Some("rel/dir"), Some(true)).await.is_err(), "{id} rel");
+            assert!(clamp(id, None, None, None).await.unwrap().folder.is_none(), "{id} scratch");
+        }
+    }
+
+    /// No resolver installed at all (ids with no test identity): fail closed.
+    #[tokio::test]
+    async fn legacy_without_any_resolver_fails_closed() {
+        let f = abs("adv-noresolver");
+        assert!(clamp("adv-no-resolver-id", None, Some(&f), Some(true)).await.is_err());
+        assert!(clamp("adv-no-resolver-id", Some(&f), None, None).await.is_err());
+        // Scratch-only still works.
+        assert!(clamp("adv-no-resolver-id", None, None, None).await.unwrap().folder.is_none());
+    }
+
+    #[tokio::test]
+    async fn legacy_monitor_poll_refuses_forged_or_detached_folder() {
+        if !jail::backend().enforces() {
+            return;
+        }
+        let repo = repo_outside_tmp("adv-mon");
+        let folder = repo.to_string_lossy().to_string();
+        let _ = cowork_records();
+        legacy_identity("adv-mon", ThreadKind::LegacyCowork);
+        // No host record: refused even for the exact "recorded" folder.
+        assert!(resolve_session_monitor_ctx("adv-mon", Some(&folder), true, false).await.is_err());
+        // Positive control: an explicit grant admits exactly that folder.
+        set_cowork_record("adv-mon", Some((&folder, "write")));
+        assert!(resolve_session_monitor_ctx("adv-mon", Some(&folder), true, false).await.is_ok());
+        assert!(resolve_session_monitor_ctx("adv-mon", Some(&abs("adv-elsewhere")), true, false).await.is_err());
+        // Detached by the host: next poll ends.
+        set_cowork_record("adv-mon", None);
+        assert!(resolve_session_monitor_ctx("adv-mon", Some(&folder), true, false).await.is_err());
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// The host grant record is the only authority; a stale kind or metadata
+    /// folder is irrelevant.
+    #[tokio::test]
+    async fn host_record_is_the_only_folder_authority() {
+        let (grant, stale) = (abs("adv-grant"), abs("adv-stale"));
+        set_cowork_record("adv-rec-wins", Some((&grant, "read")));
+        legacy_identity("adv-rec-wins", ThreadKind::Cowork);
+        assert!(clamp("adv-rec-wins", None, Some(&stale), Some(true)).await.is_err());
+        let got = clamp("adv-rec-wins", None, Some(&grant), Some(true)).await.unwrap();
+        assert_eq!(got.writable, Some(false));
+    }
+
     // ---- read-only attached folder, end to end ------------------------------
 
     /// The contract the workspace UI promises: the agent reads your folder and

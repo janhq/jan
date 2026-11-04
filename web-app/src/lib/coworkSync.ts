@@ -67,7 +67,14 @@ function upsertThread(thread: Json) {
         ? { id: model.id, provider: model.engine ?? 'llamacpp' }
         : existing?.model,
     updated: thread.updated,
-    metadata: { ...(thread.metadata ?? {}) },
+    // Persisted records never carry the host-owned authority overlay; keep the
+    // one already in the store (from the strict setter / list_threads).
+    metadata: {
+      ...(thread.metadata ?? {}),
+      ...(existing?.metadata && 'conversationCapabilities' in existing.metadata
+        ? { conversationCapabilities: existing.metadata.conversationCapabilities }
+        : {}),
+    },
   } as Thread
   const all = { ...useThreads.getState().threads, [next.id]: next }
   useThreads.getState().setThreads(Object.values(all))

@@ -416,6 +416,20 @@ pub fn run() {
                     })
                 }));
                 let handle = app.handle().clone();
+                tauri_plugin_agent_tools::thread_capabilities::set_cowork_resolver(Arc::new(
+                    move |id| {
+                        let data_folder = get_jan_data_folder_path(handle.clone());
+                        Box::pin(async move {
+                            let value = core::threads::capabilities::read_cowork_capabilities(
+                                &data_folder,
+                                &id,
+                            )
+                            .await?;
+                            Ok((data_folder, value))
+                        })
+                    },
+                ));
+                let handle = app.handle().clone();
                 tauri_plugin_agent_tools::thread_capabilities::set_kind_resolver(Arc::new(
                     move |id| {
                         let data_folder = get_jan_data_folder_path(handle.clone());

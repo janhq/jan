@@ -31,6 +31,9 @@ export type DispatchContext = {
   signal?: AbortSignal
   sessionId: string
   readOnlyFolder: string | null
+  /** The access the host acknowledged for `readOnlyFolder`. Only `'write'`
+   * mounts it writable; omitted or `'read'` can never write. */
+  folderAccess?: 'read' | 'write' | null
   planMode: boolean
   /** Request-owned failure history. Omitted by children, which cannot plan. */
   failedReadPaths?: Set<string>
@@ -143,8 +146,8 @@ async function runMonitorOp(
       (update) => monitors.update(update),
       ctx.readOnlyFolder,
       useChatPermissions.getState().shellNetwork,
-      // Cowork mounts the attached folder writable (shared-folder mode).
-      true
+      // Writable only when the host acknowledged write access to the folder.
+      ctx.folderAccess === 'write'
     )
     if (!started.isError)
       monitors.started(started.output, monitorSpecFromArgs(input))
@@ -210,8 +213,9 @@ export async function dispatchCoworkTool(
     // because no chat thread claims it. The network flag follows Cowork's own
     // setting (on by default), read per call so a toggle in Settings applies to
     // the next command; chat's shell stays network-closed regardless.
-    // The attached folder is writable on this surface: Cowork's shared folder
-    // takes writes and edits in place, unlike chat's read-only attachment.
+    // The attached folder takes writes and edits in place only when the host
+    // acknowledged write access; a read-only grant mounts it read-only. The
+    // host clamps this again, so the flag can only narrow.
     // The attached folder is also the skill-overlay project, so the folder's
     // own skills reach the agent on top of the permanent store (#8879).
     const result = await executeAgentTool(
@@ -221,7 +225,7 @@ export async function dispatchCoworkTool(
       ctx.readOnlyFolder,
       'session',
       useChatPermissions.getState().shellNetwork,
-      true,
+      ctx.folderAccess === 'write',
       ctx.readOnlyFolder,
       undefined,
       ctx.signal,

@@ -727,6 +727,46 @@ describe('coworkPersistence write protocol', () => {
     expect(b.threads.has('a')).toBe(false)
   })
 
+  it('a late flush after delete never recreates the sidecar or thread', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50 })
+    p.schedule(session('a'))
+    await p.flush()
+    p.schedule(session('a', { title: 'late' }))
+    await p.remove('a')
+    b.log.length = 0
+    await p.flush()
+    await vi.advanceTimersByTimeAsync(1000)
+    p.schedule(session('a', { title: 'later' }), { allowEmpty: true })
+    await p.flush()
+    expect(b.log.filter((l) => l.startsWith('write_thread_extra'))).toEqual([])
+    expect(b.extras.has('a')).toBe(false)
+    expect(b.threads.has('a')).toBe(false)
+  })
+
+  it('a first write queued behind the tombstone does not create the sidecar (create: true)', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50 })
+    p.schedule(session('n'))
+    await vi.advanceTimersByTimeAsync(10) // write dispatched, never persisted before remove
+    await p.remove('n')
+    await p.flush()
+    expect(b.extras.has('n')).toBe(false)
+    expect(b.threads.has('n')).toBe(false)
+  })
+
+  it('never writes host-owned conversationCapabilities back from stale metadata', async () => {
+    const stale = { version: 1, folderScope: { path: '/proj', access: 'write' }, shellNetwork: true, memoryWrite: true }
+    const existing = { id: 'a', created: 1, metadata: { mode: 'cowork', conversationCapabilities: stale } }
+    expect(sessionToThreadRecord(session('a'), existing).metadata.conversationCapabilities).toBeUndefined()
+
+    b.threads.set('a', { ...existing, assistants: [], metadata: { mode: 'cowork', folder: '/proj' } })
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50 })
+    p.adopt([existing])
+    p.schedule(session('a', { title: 'edit' }))
+    await p.flush()
+    expect(b.threads.get('a')!.metadata.conversationCapabilities).toBeUndefined()
+    expect(b.threads.get('a')!.title).toBe('edit')
+  })
+
   it('isMissingThreadError accepts only the host code, as a string, Error or {message}', () => {
     expect(isMissingThreadError('thread_missing: x')).toBe(true)
     expect(isMissingThreadError(new Error('thread_missing: x'))).toBe(true)
@@ -861,6 +901,45 @@ describe('thread record mapping', () => {
     expect(back.folder).toBe('/proj')
     expect(back.planMode).toBe(true)
     expect(back.updated).toBe(1_700_000_000_000)
+  })
+
+  describe('host-acknowledged folder access', () => {
+    const restore = (meta: Json) =>
+      sessionFromThread(
+        { id: 'a', title: 'T', updated: 1, metadata: { mode: 'cowork', folder: '/proj', ...meta }, assistants: [] },
+        { version: 1, turns: [], messages: [] }
+      )
+    const caps = (folderScope: Json | null) => ({
+      version: 1, folderScope, shellNetwork: true, memoryWrite: true,
+    })
+
+    it('leaves access absent when the host holds no record (legacy read+write default)', () => {
+      expect('folderAccess' in restore({})).toBe(false)
+    })
+
+    it('restores a stored read-only grant as read, never write', () => {
+      const s = restore({ conversationCapabilities: caps({ path: '/proj', access: 'read' }) })
+      expect(s.folderAccess).toBe('read')
+    })
+
+    it('restores a stored write grant as write', () => {
+      expect(restore({ conversationCapabilities: caps({ path: '/proj', access: 'write' }) }).folderAccess).toBe('write')
+    })
+
+    it.each([
+      ['no folder grant', caps(null)],
+      ['a grant for a different folder', caps({ path: '/other', access: 'write' })],
+      ['a malformed record', { version: 1, folderScope: { path: '/proj', access: 'admin' } }],
+    ])('is denied (null), not the legacy default, for %s', (_name, stored) => {
+      expect(restore({ conversationCapabilities: stored }).folderAccess).toBeNull()
+    })
+    it('hydrates a host read error (explicit null record) as denied, never the legacy default', () => {
+      expect(restore({ conversationCapabilities: null }).folderAccess).toBeNull()
+    })
+
+    it('an absent or undefined record is still the legacy default', () => {
+      expect('folderAccess' in restore({ conversationCapabilities: undefined })).toBe(false)
+    })
   })
 
   it('does not rewrite created and drops cleared plan mode / goal', () => {

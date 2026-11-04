@@ -262,6 +262,34 @@ describe('useCoworkSessions', () => {
   })
 })
 
+describe('useCoworkSessions setFolder (unacknowledged)', () => {
+  beforeEach(reset)
+
+  it('drops any previous or legacy-default access when the folder changes', () => {
+    const st = useCoworkSessions.getState()
+    const id = st.createSession()
+    st.setFolderGrant(id, { path: '/a', access: 'write' })
+    st.setFolder(id, '/b')
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    expect(s.folder).toBe('/b')
+    expect(s.folderAccess).toBeNull()
+  })
+
+  it('a fresh local attach does not fall back to the undefined (write) default', () => {
+    const id = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().setFolder(id, '/b')
+    expect(useCoworkSessions.getState().sessions.find((x) => x.id === id)!.folderAccess).toBeNull()
+  })
+
+  it('re-setting the same folder keeps the host-acknowledged access', () => {
+    const st = useCoworkSessions.getState()
+    const id = st.createSession()
+    st.setFolderGrant(id, { path: '/a', access: 'read' })
+    st.setFolder(id, '/a')
+    expect(useCoworkSessions.getState().sessions.find((x) => x.id === id)!.folderAccess).toBe('read')
+  })
+})
+
 describe('useCoworkSessions createSession reuse', () => {
   beforeEach(reset)
 

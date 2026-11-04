@@ -25,6 +25,8 @@ type Props = {
   saving?: boolean
   /** When set, the popover offers an "Allow changes" switch for the folder. */
   onAccessChange?: (access: 'read' | 'write') => void
+  /** Offered only while the folder has no host grant (access is null). */
+  onAllowAccess?: () => void
   onAttach: () => void
   onDetach: () => void
 }
@@ -47,6 +49,7 @@ export function CoworkWorkspacePill({
   access = 'write',
   saving = false,
   onAccessChange,
+  onAllowAccess,
   onAttach,
   onDetach,
 }: Props) {
@@ -176,6 +179,17 @@ export function CoworkWorkspacePill({
             <Separator className="my-3" />
           </>
         ) : null}
+
+        {folder && access === null && onAllowAccess && (
+          <div className="mb-2 flex items-center gap-2 text-sm">
+            <span className="flex-1 text-xs text-muted-foreground">
+              {t('common:conversationScope.folderNeedsConfirmation')}
+            </span>
+            <Button variant="outline" size="sm" className="h-7" disabled={saving} onClick={onAllowAccess}>
+              {t('common:conversationScope.confirmFolder')}
+            </Button>
+          </div>
+        )}
 
         {folder && onAccessChange && (
           <label className="mb-2 flex items-center gap-2 text-sm">
