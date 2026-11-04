@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
-import type { UIMessage } from 'ai'
+import type { Tool, UIMessage } from 'ai'
 import type * as CoworkRunner from '@/lib/coworkRunner'
 
 const backend = vi.hoisted(() => ({
@@ -16,6 +16,7 @@ const backend = vi.hoisted(() => ({
     | null
     | ((deps: CoworkRunner.RunDeps, signal: AbortSignal) => Promise<void>),
   files: new Map<string, string>(),
+  transports: new Map<string, { refreshTools: () => Promise<void> }>(),
   runs: [] as {
     signal: AbortSignal
     sink: CoworkRunner.StreamSink
@@ -60,15 +61,50 @@ vi.mock('@/lib/backendStorage', () => ({
     },
   },
 }))
-vi.mock('@/lib/coworkTransport', () => ({
-  CoworkChatTransport: class {
-    setConfig() {}
-    unfreezeTools() {}
-    async refreshTools() {
-      if (backend.preparationError) throw new Error('Tool preparation failed')
-    }
-  },
-}))
+vi.mock('@/lib/coworkTransport', async () => {
+  const { PLAN_DENIED_TOOLS } = await vi.importActual<
+    typeof import('@/lib/coworkTools')
+  >('@/lib/coworkTools')
+  // Mirrors the real freeze: `refreshTools` snapshots the record for the
+  // current config, `unfreezeTools` drops it at a run boundary, and dispatch
+  // checks calls against `advertisedTools`. Plan mode withholds mutating tools.
+  // Only the tools these tests dispatch are listed: a test that dispatches any
+  // other tool must add it here, or the call is refused as unadvertised.
+  const build = (planMode: boolean) =>
+    Object.fromEntries(
+      ['read', 'write', 'ask', 'todo']
+        .filter((name) => !(planMode && PLAN_DENIED_TOOLS.has(name)))
+        .map((name) => [name, {}])
+    ) as Record<string, Tool>
+  return {
+    CoworkChatTransport: class {
+      private frozen: Record<string, Tool> | null = null
+      private tools: Record<string, Tool> = {}
+      constructor(
+        sid: string,
+        private config: { planMode: boolean }
+      ) {
+        backend.transports.set(sid, this)
+      }
+      setConfig(config: { planMode: boolean }) {
+        this.config = config
+      }
+      unfreezeTools() {
+        this.frozen = null
+      }
+      get advertisedTools() {
+        return this.frozen ?? this.tools
+      }
+      async refreshTools() {
+        if (backend.preparationError) throw new Error('Tool preparation failed')
+        this.frozen ??= build(this.config.planMode)
+        this.tools = this.frozen
+      }
+    },
+  }
+})
+// This mounted skills suite isolates storage; durability is covered by CoworkPage/coworkSync integration tests.
+vi.mock('@/lib/coworkSync', () => ({ ensureCoworkRecorded: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/coworkEnv', () => ({ getCoworkEnvironment: async () => ({}) }))
 vi.mock('@/lib/coworkRunner', async (original) => ({
   ...(await original<typeof CoworkRunner>()),
@@ -120,13 +156,21 @@ vi.mock('@/containers/ChatInput', () => ({
     onStop,
     chatStatus,
     scopeKey,
+    model,
+    onModelChange,
   }: {
     onSubmit: (text: string) => void
     onStop: () => void
     chatStatus: string
     scopeKey: string
+    model?: ThreadModel
+    onModelChange?: (model: ThreadModel) => void
   }) => (
     <>
+      <div data-testid="composer-model">{model?.id}
+        <button onClick={() => onModelChange?.({ id: 'second-model', provider: 'test' })}>second-model</button>
+        <button onClick={() => onModelChange?.({ id: 'test-model', provider: 'test' })}>test-model</button>
+      </div>
       <output aria-label="Composer status">{chatStatus}</output>
       <button
         onClick={() => {
@@ -231,7 +275,7 @@ vi.mock('@/containers/CoworkParkedNotice', () => ({
   CoworkParkedNotice: () => null,
 }))
 
-import { Route } from '../cowork'
+import { CoworkPage } from '@/containers/CoworkPage'
 import { useSkills } from '@/hooks/useSkills'
 import { usePrompt } from '@/hooks/usePrompt'
 import { startNewSession, useCoworkSessions } from '@/hooks/useCoworkSessions'
@@ -240,9 +284,9 @@ import { useMessageQueue } from '@/stores/message-queue-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { answerAsk } from '@/lib/coworkRunner'
 import { localStorageKey } from '@/constants/localStorage'
+import { sessionFromThread, sessionToThreadRecord } from '@/lib/coworkPersistence'
+import { sessionToSidecar } from '@/lib/migrateCoworkSessions'
 // The router mock returns the supplied component options directly.
-const routeOptions = Route as unknown as { component: () => ReactNode }
-const CoworkPage = routeOptions.component
 function Manager() {
   const { write } = useSkills(null)
   return (
@@ -264,6 +308,7 @@ beforeEach(() => {
   backend.runs = []
   backend.exercise = null
   backend.files.clear()
+  backend.transports.clear()
   const browserStorage = new Map<string, string>()
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => browserStorage.get(key) ?? null,
@@ -461,7 +506,7 @@ it('retries the original question after request preparation fails', async () => 
   ])
 })
 
-it('restores each session model after switching and persisted-store rehydration', async () => {
+it('restores each session model after switching and a reload from thread storage', async () => {
   const a = useCoworkSessions.getState().createSession()
   useCoworkSessions
     .getState()
@@ -473,28 +518,30 @@ it('restores each session model after switching and persisted-store rehydration'
   useCoworkSessions.getState().selectSession(a)
   const view = render(<CoworkPage />)
   const choose = async (name: string) => {
-    fireEvent.click(document.querySelector('header button')!)
-    fireEvent.click(await screen.findByText(name))
+    fireEvent.click(screen.getByRole('button', { name }))
   }
   await choose('second-model')
   act(() => useCoworkSessions.getState().selectSession(b))
   await choose('test-model')
   act(() => useCoworkSessions.getState().selectSession(a))
   await waitFor(() =>
-    expect(document.querySelector('header')).toHaveTextContent('second-model')
+    expect(screen.getByTestId('composer-model')).toHaveTextContent('second-model')
   )
   view.unmount()
-  const savedSessions = backend.storage.get(localStorageKey.coworkSessions)!
+  // A reload: every session goes to its thread record + sidecar and comes back.
+  const reloaded = useCoworkSessions.getState().sessions.map((x) =>
+    sessionFromThread(sessionToThreadRecord(x), sessionToSidecar(x))
+  )
+  const currentId = useCoworkSessions.getState().currentId
   useCoworkSessions.setState({ sessions: [], currentId: null })
-  backend.storage.set(localStorageKey.coworkSessions, savedSessions)
-  await useCoworkSessions.persist.rehydrate()
+  useCoworkSessions.setState({ sessions: reloaded, currentId })
   render(<CoworkPage />)
   await waitFor(() =>
-    expect(document.querySelector('header')).toHaveTextContent('second-model')
+    expect(screen.getByTestId('composer-model')).toHaveTextContent('second-model')
   )
   act(() => useCoworkSessions.getState().selectSession(b))
   await waitFor(() =>
-    expect(document.querySelector('header')).toHaveTextContent('test-model')
+    expect(screen.getByTestId('composer-model')).toHaveTextContent('test-model')
   )
 })
 
@@ -511,6 +558,9 @@ it('requires plan approval before a failed-read loop can create the requested fi
       { toolCallId: 'r2', toolName: 'read', input: { path: 'cat.html' } },
       signal
     )
+    // The next model step: the real transport refreshes the record here, so
+    // the approved run now advertises `write`.
+    await backend.transports.get(sid)?.refreshTools()
     writeResult = await deps.dispatch(
       {
         toolCallId: 'w1',

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { useMessageQueue } from '../message-queue-store'
 
 function resetStore() {
-  useMessageQueue.setState({ queues: {} })
+  useMessageQueue.setState({ queues: {}, paused: {}, generations: {} })
 }
 
 function makeMessage(id: string, text: string) {
@@ -155,6 +155,79 @@ describe('useMessageQueue', () => {
       }
 
       expect(results).toEqual(['first', 'second', 'third'])
+    })
+  })
+
+  describe('held queue after an error', () => {
+    it('holds A/B, keeps C behind them, and resume releases an ordered drain', () => {
+      const q = useMessageQueue.getState()
+      q.enqueue('t1', makeMessage('a', 'A'))
+      q.enqueue('t1', makeMessage('b', 'B'))
+      q.pause('t1')
+      expect(useMessageQueue.getState().isPaused('t1')).toBe(true)
+      useMessageQueue.getState().enqueue('t1', makeMessage('c', 'C'))
+      expect(useMessageQueue.getState().getQueue('t1').map((m) => m.text)).toEqual(['A', 'B', 'C'])
+
+      useMessageQueue.getState().resume('t1')
+      expect(useMessageQueue.getState().isPaused('t1')).toBe(false)
+      const drained = [1, 2, 3].map(() => useMessageQueue.getState().dequeue('t1')?.text)
+      expect(drained).toEqual(['A', 'B', 'C'])
+    })
+
+    it('does not hold an empty queue', () => {
+      useMessageQueue.getState().pause('t1')
+      expect(useMessageQueue.getState().isPaused('t1')).toBe(false)
+    })
+
+    it('clearQueue discards the messages and the hold', () => {
+      const q = useMessageQueue.getState()
+      q.enqueue('t1', makeMessage('a', 'A'))
+      q.pause('t1')
+      useMessageQueue.getState().clearQueue('t1')
+      expect(useMessageQueue.getState().getQueue('t1')).toEqual([])
+      expect(useMessageQueue.getState().isPaused('t1')).toBe(false)
+    })
+
+    it('removing the last held message releases the hold', () => {
+      const q = useMessageQueue.getState()
+      q.enqueue('t1', makeMessage('a', 'A'))
+      q.pause('t1')
+      useMessageQueue.getState().removeMessage('t1', 'a')
+      expect(useMessageQueue.getState().isPaused('t1')).toBe(false)
+    })
+
+    it('isolates holds per thread', () => {
+      const q = useMessageQueue.getState()
+      q.enqueue('t1', makeMessage('a', 'A'))
+      q.enqueue('t2', makeMessage('x', 'X'))
+      q.pause('t1')
+      expect(useMessageQueue.getState().isPaused('t2')).toBe(false)
+      useMessageQueue.getState().clearQueue('t2')
+      expect(useMessageQueue.getState().isPaused('t1')).toBe(true)
+      useMessageQueue.getState().resume('t2')
+      expect(useMessageQueue.getState().isPaused('t1')).toBe(true)
+    })
+  })
+
+  describe('clear generation', () => {
+    it('bumps on every clearQueue, even of an empty or missing queue', () => {
+      expect(useMessageQueue.getState().getToken('t1')).toBe(0)
+      useMessageQueue.getState().clearQueue('t1')
+      expect(useMessageQueue.getState().getToken('t1')).toBe(1)
+      useMessageQueue.getState().enqueue('t1', makeMessage('a', 'A'))
+      useMessageQueue.getState().clearQueue('t1')
+      expect(useMessageQueue.getState().getToken('t1')).toBe(2)
+    })
+
+    it('is per thread and unaffected by dequeue, pause or resume', () => {
+      const q = useMessageQueue.getState()
+      q.enqueue('t1', makeMessage('a', 'A'))
+      q.dequeue('t1')
+      q.pause('t1')
+      useMessageQueue.getState().resume('t1')
+      useMessageQueue.getState().clearQueue('t2')
+      expect(useMessageQueue.getState().getToken('t1')).toBe(0)
+      expect(useMessageQueue.getState().getToken('t2')).toBe(1)
     })
   })
 })

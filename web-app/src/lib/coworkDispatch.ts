@@ -1,23 +1,22 @@
+import type { Tool } from 'ai'
 import {
   executeAgentTool,
   listAgentMonitors,
   startAgentMonitor,
   stopAgentMonitor,
 } from '@/lib/agentTools'
-import { useCoworkConfig } from '@/hooks/useCoworkConfig'
+import { useChatPermissions } from '@/hooks/useChatPermissions'
 import {
-  ASK_TOOL_NAME,
+  capabilityModeRefusal,
   PLAN_DENIED_MEMORY_OPS,
-  PLAN_DENIED_TOOLS,
-  TASK_TOOL_NAME,
-  TODO_TOOL_NAME,
+  unadvertisedToolRefusal,
 } from '@/lib/coworkTools'
+import { monitorSpecFromArgs, type MonitorLane } from '@/lib/coworkMonitor'
 import {
-  MONITOR_TOOL_NAME,
-  monitorSpecFromArgs,
-  type MonitorLane,
-} from '@/lib/coworkMonitor'
-import type { PendingToolCall, ToolOutcome } from '@/lib/coworkRunner'
+  dispatchClientTool,
+  type PendingToolCall,
+  type ToolOutcome,
+} from '@/lib/clientToolDispatch'
 import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
 import {
   EXECUTE_PLAN_LABEL,
@@ -27,6 +26,9 @@ import {
 } from '@/lib/coworkPrompt'
 
 export type DispatchContext = {
+  /** The effective frozen record actually advertised to this caller. */
+  advertisedTools: Record<string, Tool>
+  signal?: AbortSignal
   sessionId: string
   readOnlyFolder: string | null
   planMode: boolean
@@ -36,7 +38,7 @@ export type DispatchContext = {
    * never advertised cannot reach the network the user switched off. */
   webSearch: boolean
   /** Applies one `todo` operation and persists the result. */
-  onTodo: (input: unknown) => Promise<ToolOutcome>
+  onTodo: (input: unknown, toolCallId?: string) => Promise<ToolOutcome>
   /** Suspends until the user answers, or the run is aborted. */
   onAsk: (toolCallId: string, input: unknown) => Promise<ToolOutcome>
   /** Runs a nested subagent to completion. */
@@ -44,24 +46,6 @@ export type DispatchContext = {
   /** The session's monitor lane; `null` for a subagent's dispatch, which
    * refuses the tool (a child has no turn of its own for a match to start). */
   monitors: MonitorLane | null
-}
-
-/**
- * Refusal text for a tool plan mode withholds.
- *
- * Withholding alone is not authoritative — a model can emit a call to a tool
- * that was never advertised, and the SDK still surfaces it — so the dispatcher
- * refuses by name too. The wording tells the model what to do instead, or it
- * simply retries.
- */
-function planRefusal(toolName: string): ToolOutcome {
-  return {
-    output:
-      `The \`${toolName}\` tool is disabled in plan mode, which is read-only. ` +
-      'Finish investigating, stage the plan with the `todo` tool, then call ' +
-      '`ask` for plan review.',
-    isError: true,
-  }
 }
 
 /** Refusal text for a `memory` op that changes the store in plan mode. */
@@ -158,7 +142,7 @@ async function runMonitorOp(
       input,
       (update) => monitors.update(update),
       ctx.readOnlyFolder,
-      useCoworkConfig.getState().networkEnabled,
+      useChatPermissions.getState().shellNetwork,
       // Cowork mounts the attached folder writable (shared-folder mode).
       true
     )
@@ -188,35 +172,29 @@ export async function dispatchCoworkTool(
 ): Promise<ToolOutcome> {
   const { toolName } = call
 
-  if (ctx.planMode && PLAN_DENIED_TOOLS.has(toolName)) {
-    return planRefusal(toolName)
-  }
+  const modeRefusal = capabilityModeRefusal(toolName, ctx)
+  if (modeRefusal) return modeRefusal
   if (ctx.planMode && toolName === 'memory') {
     const op = memoryOp(call.input)
     if (PLAN_DENIED_MEMORY_OPS.has(op)) return planMemoryRefusal(op)
   }
 
+  // After the reasons above, which the real records also withhold (plan mode,
+  // web off), so the model learns why rather than just that.
+  const refusal = unadvertisedToolRefusal(toolName, ctx.advertisedTools)
+  if (refusal) return refusal
+
   try {
-    if (toolName === TODO_TOOL_NAME) return await ctx.onTodo(call.input)
-    if (toolName === ASK_TOOL_NAME) {
-      return await ctx.onAsk(call.toolCallId, call.input)
-    }
-    if (toolName === TASK_TOOL_NAME) {
-      return await ctx.onTask(call.toolCallId, call.input)
-    }
-    if (toolName === MONITOR_TOOL_NAME) {
-      return await runMonitorOp(call.input, ctx)
-    }
+    // Policy gates above remain authoritative; this seam grants nothing.
+    const client = await dispatchClientTool(call, {
+      onTodo: ctx.onTodo,
+      onAsk: ctx.onAsk,
+      onTask: ctx.onTask,
+      onMonitor: (input) => runMonitorOp(input, ctx),
+    })
+    if (client !== undefined) return client
 
     if (WEB_TOOL_NAMES.has(toolName)) {
-      if (!ctx.webSearch) {
-        return {
-          output:
-            `The \`${toolName}\` tool is off: web access is disabled in ` +
-            'Settings. Work from what you can read locally.',
-          isError: true,
-        }
-      }
       const web = await executeWebTool(toolName, call.input ?? {})
       if (web.error) return { output: web.error, isError: true }
       return {
@@ -242,9 +220,11 @@ export async function dispatchCoworkTool(
       ctx.sessionId,
       ctx.readOnlyFolder,
       'session',
-      useCoworkConfig.getState().networkEnabled,
+      useChatPermissions.getState().shellNetwork,
       true,
-      ctx.readOnlyFolder
+      ctx.readOnlyFolder,
+      undefined,
+      ctx.signal
     )
     if (result.error) return await toolFailure(call, result.error, ctx)
     if (toolName === 'read') {

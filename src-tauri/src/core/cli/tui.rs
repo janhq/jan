@@ -48972,6 +48972,10 @@ fn a() {}
         root: &std::path::Path,
     ) -> tauri_plugin_agent_tools::tools::monitor::MonitorCtx {
         tauri_plugin_agent_tools::tools::monitor::MonitorCtx {
+            // Session wiring: no owner bucket and no PreToolUse gate, as in
+            // Cowork; only thread-owned monitors set either.
+            owner: None,
+            hooks: None,
             project_root: root.to_path_buf(),
             scratch_root: None,
             mask_root: None,

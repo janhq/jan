@@ -102,7 +102,10 @@ async fn capture<R: Runtime>(
     let build_app = app.clone();
     let build = move || {
         let signal = load_signal.clone();
-        let res = WebviewWindowBuilder::new(&build_app, &label, WebviewUrl::External(first_url))
+        let builder = WebviewWindowBuilder::new(&build_app, &label, WebviewUrl::External(first_url));
+        #[cfg(feature = "e2e")]
+        let builder = builder.incognito(true);
+        let res = builder
             .title("")
             .inner_size(width as f64, height as f64)
             .position(-10000.0, -10000.0)

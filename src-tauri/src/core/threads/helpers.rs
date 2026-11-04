@@ -46,6 +46,14 @@ pub fn write_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
         let _ = fs::remove_file(&tmp);
         return Err(e.to_string());
     }
+    // Best-effort directory sync narrows the rename power-loss window on Unix;
+    // it is not a full durability guarantee across platforms and filesystems.
+    #[cfg(unix)]
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
     Ok(())
 }
 
@@ -134,5 +142,102 @@ mod atomic_tests {
         fs::write(path.join("inside"), "x").unwrap();
         assert!(write_atomic(&path, b"body").is_err());
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+}
+
+/// Compatibility entry point for sidecar writes; shares the durable atomic writer.
+pub fn write_file_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
+    write_atomic(path, data)
+}
+
+#[cfg(test)]
+mod write_file_atomic_tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "jan-write-file-atomic-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn writes_new_file_and_overwrites_existing_leaving_no_temp_files() {
+        let dir = temp_dir("roundtrip");
+        let target = dir.join("thread.json");
+        write_file_atomic(&target, b"first").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"first");
+        write_file_atomic(&target, b"second").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"second");
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path() != target)
+            .collect();
+        assert!(leftovers.is_empty(), "stray files: {leftovers:?}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn failure_on_missing_parent_creates_nothing() {
+        let dir = temp_dir("failure");
+        let target = dir.join("missing-subdir").join("thread.json");
+        assert!(write_file_atomic(&target, b"data").is_err());
+        // A failed write to a bad path must not create or truncate anything.
+        assert!(!target.exists());
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name() != "missing-subdir")
+            .collect();
+        assert!(leftovers.is_empty(), "stray files: {leftovers:?}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Seeds a real target, then injects a write failure (read-only parent
+    /// blocks the sibling temp file) and proves the previous bytes survive.
+    #[cfg(unix)]
+    #[test]
+    fn failed_write_preserves_existing_target_bytes() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir("preserve");
+        let target = dir.join("thread.json");
+        write_file_atomic(&target, b"original contents").unwrap();
+
+        let mut read_only = fs::metadata(&dir).unwrap().permissions();
+        read_only.set_mode(0o555);
+        fs::set_permissions(&dir, read_only).unwrap();
+        // Probe whether the read-only bit is actually enforced (root ignores
+        // it). Deciding from the probe, not from the result under test, keeps
+        // a regression to in-place writes from hiding behind the skip.
+        let enforced = File::create(dir.join("probe")).is_err();
+        let result = write_file_atomic(&target, b"replacement");
+        let mut writable = fs::metadata(&dir).unwrap().permissions();
+        writable.set_mode(0o755);
+        fs::set_permissions(&dir, writable).unwrap();
+
+        if !enforced {
+            eprintln!("skipping: permissions not enforced (running as root?)");
+            fs::remove_dir_all(&dir).unwrap();
+            return;
+        }
+        assert!(
+            result.is_err(),
+            "write must fail when the sibling temp file cannot be created"
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"original contents");
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path() != target)
+            .collect();
+        assert!(leftovers.is_empty(), "stray files: {leftovers:?}");
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

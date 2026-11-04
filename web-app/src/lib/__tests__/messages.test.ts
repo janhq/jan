@@ -333,4 +333,17 @@ describe('extractContentPartsFromUIMessage', () => {
     expect(content).toHaveLength(1)
     expect(content[0].text!.value).toBe('actual')
   })
+
+  it('skips chat-run notice text parts: content is model history, notices are UI-only', () => {
+    const msg = {
+      id: '1', role: 'assistant',
+      parts: [
+        { type: 'text', text: 'partial answer' },
+        { type: 'text', text: 'Stopped at the step limit', providerMetadata: { jan: { chatRunNotice: true } } },
+      ],
+    } as unknown as UIMessage
+    const content = extractContentPartsFromUIMessage(msg)
+    expect(content).toHaveLength(1)
+    expect(content[0].text!.value).toBe('partial answer')
+  })
 })

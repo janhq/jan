@@ -12,6 +12,39 @@ type MessageState = {
   clearAllMessages: () => void
 }
 
+// A failed head stays queued. Later edits/deletes must never overtake it.
+type WriteQueue = { jobs: Array<() => Promise<unknown>>; running?: Promise<void>; error?: unknown }
+const writes = new Map<string, WriteQueue>()
+function drain(queue: WriteQueue): Promise<void> {
+  if (queue.running) return queue.running
+  queue.running = (async () => {
+    while (queue.jobs.length) {
+      try { await queue.jobs[0](); queue.jobs.shift(); queue.error = undefined }
+      catch (error) { queue.error = error; throw error }
+    }
+  })().finally(() => { queue.running = undefined })
+  void queue.running.catch(() => {})
+  return queue.running
+}
+function enqueue(threadId: string, job: () => Promise<unknown>) {
+  const queue = writes.get(threadId) ?? { jobs: [] }
+  writes.set(threadId, queue)
+  queue.jobs.push(job)
+  if (!queue.error) void drain(queue).catch((error) => console.error('Failed to persist message:', error))
+}
+/**
+ * Explicit close retry: drain FIRST, retrying failed heads in order, and throw
+ * only what still fails now. A past background failure whose storage has since
+ * recovered must not fail the close that would have drained it.
+ */
+export async function flushMessageWrites(): Promise<void> {
+  const results = await Promise.allSettled([...writes.values()].map((queue) => drain(queue)))
+  const failed = results.find((result) => result.status === 'rejected')
+  if (failed?.status === 'rejected') throw failed.reason
+  if ([...writes.values()].some((queue) => queue.jobs.length || queue.running)) await flushMessageWrites()
+}
+export function __resetMessageWritesForTests() { writes.clear() }
+
 export const useMessages = create<MessageState>()((set, get) => ({
   messages: {},
   getMessages: (threadId) => {
@@ -42,20 +75,7 @@ export const useMessages = create<MessageState>()((set, get) => ({
       },
     }))
 
-    // Persist to storage asynchronously
-    getServiceHub().messages().createMessage(newMessage).then((createdMessage) => {
-      set((state) => ({
-        messages: {
-          ...state.messages,
-          [message.thread_id]:
-            state.messages[message.thread_id]?.map((existing) =>
-              existing.id === newMessage.id ? createdMessage : existing
-            ) ?? [createdMessage],
-        },
-      }))
-    }).catch((error) => {
-      console.error('Failed to persist message:', error)
-    })
+    enqueue(message.thread_id, () => getServiceHub().messages().createMessage(newMessage))
   },
   updateMessage: (message) => {
     const updatedMessage = {
@@ -72,14 +92,10 @@ export const useMessages = create<MessageState>()((set, get) => ({
       },
     }))
 
-    // Persist to storage asynchronously using modifyMessage instead of createMessage
-    // to prevent duplicates when updating existing messages
-    getServiceHub().messages().modifyMessage(updatedMessage).catch((error) => {
-      console.error('Failed to persist message update:', error)
-    })
+    enqueue(message.thread_id, () => getServiceHub().messages().modifyMessage(updatedMessage))
   },
   deleteMessage: (threadId, messageId) => {
-    getServiceHub().messages().deleteMessage(threadId, messageId)
+    enqueue(threadId, () => getServiceHub().messages().deleteMessage(threadId, messageId))
     set((state) => ({
       messages: {
         ...state.messages,

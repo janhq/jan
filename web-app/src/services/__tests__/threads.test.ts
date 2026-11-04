@@ -121,12 +121,11 @@ describe('DefaultThreadsService', () => {
       expect(result).toEqual([])
     })
 
-    it('should handle null/undefined response', async () => {
+    it('rejects a null/undefined response (not-ready), never an empty listing', async () => {
       api.listThreads.mockResolvedValue(null)
-
-      const result = await threadsService.fetchThreads()
-
-      expect(result).toEqual([])
+      await expect(threadsService.fetchThreads()).rejects.toThrow(/non-array/)
+      api.listThreads.mockResolvedValue(undefined)
+      await expect(threadsService.fetchThreads()).rejects.toThrow(/non-array/)
     })
   })
 
@@ -478,12 +477,10 @@ describe('DefaultThreadsService', () => {
       )
     })
 
-    it('should handle fetchThreads with non-array response', async () => {
+    it('throws on a non-array response instead of coercing it to an empty listing', async () => {
       api.listThreads.mockResolvedValue('not-an-array')
 
-      const result = await threadsService.fetchThreads()
-
-      expect(result).toEqual([])
+      await expect(threadsService.fetchThreads()).rejects.toThrow(/non-array/)
     })
 
     it('should handle createThread with missing metadata in response', async () => {
@@ -518,4 +515,103 @@ describe('DefaultThreadsService', () => {
       })
     })
   })
+})
+
+describe('conversation capability persistence', () => {
+  const invoke = vi.hoisted(() => vi.fn())
+  vi.mock('@/hooks/useServiceHub', () => ({
+    getServiceHub: () => ({ core: () => ({ invoke }) }),
+  }))
+  const grants = { version: 1 as const, folderScope: null, shellNetwork: true, memoryWrite: false }
+
+  // Backend routes the service reaches on window.core.api.
+  const setBackend = (createThread?: unknown) => {
+    window.core = {
+      api: createThread ? { createThread } : {},
+    } as unknown as typeof window.core
+  }
+  const originalCore = window.core
+  beforeEach(() => {
+    invoke.mockReset()
+    setBackend()
+  })
+  afterEach(() => {
+    window.core = originalCore
+  })
+
+  it('uses only the dedicated native patch, not the extension', async () => {
+    await new DefaultThreadsService().setConversationCapabilities('thread-1', grants)
+    expect(invoke).toHaveBeenCalledWith('set_thread_conversation_capabilities', {
+      threadId: 'thread-1', value: grants,
+    })
+  })
+  it('resolves malformed and unknown-version input fail closed', async () => {
+    await new DefaultThreadsService().setConversationCapabilities('thread-1', { ...grants, version: 2 } as never)
+    expect(invoke).toHaveBeenCalledWith('set_thread_conversation_capabilities', {
+      threadId: 'thread-1', value: { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false },
+    })
+  })
+  it('propagates native errors', async () => {
+    invoke.mockRejectedValueOnce(new Error('deleted thread'))
+    await expect(new DefaultThreadsService().setConversationCapabilities('thread-1', grants)).rejects.toThrow('deleted thread')
+  })
+  it('does not persist temporary conversation consent', async () => {
+    await expect(new DefaultThreadsService().setConversationCapabilities('temporary-chat', grants)).rejects.toThrow('regular chat')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+  it('rolls back using the raw successful creation response, not UI-transformed metadata', async () => {
+    const raw = { id: 'new-chat', title: 'Draft', created: 7, updated: 8, assistants: [{ id: 'model-only', model: { id: 'm', engine: 'provider' } }], metadata: { order: 3, project: { id: 'p' } } }
+    const createThread = vi.fn().mockResolvedValue(raw)
+    setBackend(createThread)
+    const service = new DefaultThreadsService()
+    const created = await service.createThread({ id: 'new-chat', title: 'Draft', updated: 8, model: { id: 'm', provider: 'provider' } })
+    expect(created.model).toEqual({ id: 'm', provider: 'provider' })
+    await service.rollbackCreatedThread('new-chat', created)
+    expect(invoke).toHaveBeenCalledWith('rollback_created_thread', { threadId: 'new-chat', expected: raw })
+    await expect(service.rollbackCreatedThread('new-chat', created)).rejects.toThrow('receipt')
+  })
+
+  it('rejects missing/failed creation receipts without invoking delete', async () => {
+    const service = new DefaultThreadsService()
+    const input = { id: 'uncreated', updated: 1 }
+    setBackend()
+    const created = await service.createThread(input)
+    await expect(service.rollbackCreatedThread('uncreated', created)).rejects.toThrow('receipt')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('propagates guarded rollback errors and retains receipt for retry', async () => {
+    const raw = { id: 'retry-chat', title: 'Draft', updated: 8 }
+    setBackend(vi.fn().mockResolvedValue(raw))
+    const service = new DefaultThreadsService()
+    const created = await service.createThread(raw)
+    invoke.mockRejectedValueOnce(new Error('changed on disk'))
+    await expect(service.rollbackCreatedThread('retry-chat', created)).rejects.toThrow('changed on disk')
+    await service.rollbackCreatedThread('retry-chat', created)
+    expect(invoke).toHaveBeenCalledTimes(2)
+  })
+
+  it('acceptance releases raw creation rollback receipt', async () => {
+    const raw = { id: 'accepted-chat', updated: 1 }
+    setBackend(vi.fn().mockResolvedValue(raw))
+    const service = new DefaultThreadsService()
+    const created = await service.createThread(raw)
+    service.releaseCreatedThread(created)
+    await expect(service.rollbackCreatedThread(created.id, created)).rejects.toThrow('receipt')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('strict creation rejects actual unavailable or failing persistence while legacy fallback remains', async () => {
+    const service = new DefaultThreadsService()
+    const input = { id: 'strict-create', title: 'Draft', updated: 1 }
+    setBackend()
+    await expect(service.createThread(input, { strict: true })).rejects.toThrow('unavailable')
+    await expect(service.createThread(input)).resolves.toBe(input)
+    setBackend(vi.fn().mockRejectedValue(new Error('disk error')))
+    await expect(service.createThread(input, { strict: true })).rejects.toThrow('disk error')
+    await expect(service.createThread(input)).resolves.toBe(input)
+    await expect(service.rollbackCreatedThread(input.id, input)).rejects.toThrow('receipt')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
 })

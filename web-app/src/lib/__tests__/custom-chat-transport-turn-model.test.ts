@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
     selectedProvider: 'llamacpp',
     selectedModel: { id: 'local-model', capabilities: [] as string[] },
   },
+  requests: [] as Array<{ system?: string }>,
   createModelMock: vi.fn(async (modelId: string) => ({ modelId })),
 }))
 
@@ -87,9 +88,10 @@ vi.mock('ai', async () => {
   const actual = await vi.importActual<typeof import('ai')>('ai')
   return {
     ...actual,
-    streamText: () => ({
-      toUIMessageStream: () => new ReadableStream({ start: (c) => c.close() }),
-    }),
+    streamText: (options: { system?: string }) => {
+      h.requests.push(options)
+      return { toUIMessageStream: () => new ReadableStream({ start: (c) => c.close() }) }
+    },
   }
 })
 
@@ -139,6 +141,7 @@ const openOtherThreadOnRemoteModel = () => {
 describe('CustomChatTransport: a turn keeps its model', () => {
   beforeEach(() => {
     h.createModelMock.mockClear()
+    h.requests = []
     h.selection = {
       selectedProvider: 'llamacpp',
       selectedModel: { id: 'local-model', capabilities: [] },
@@ -161,6 +164,23 @@ describe('CustomChatTransport: a turn keeps its model', () => {
       selectedProvider: 'llamacpp',
       selectedModel: { id: 'local-model' },
     })
+  })
+
+  it('freezes regenerated run model and prompt across all steps, then releases for next turn', async () => {
+    const transport = new CustomChatTransport('original system', 'thread-a')
+    const release = transport.beginChatRun()
+    await send(transport, [user('u1', 'fixture')], 'regenerate-message')
+    transport.updateSystemMessage('changed mid-turn')
+    openOtherThreadOnRemoteModel()
+    await send(transport, [user('u1', 'fixture'), toolTurn('a1')], 'regenerate-message')
+    expect(transport.getTurnModelSelection()).toMatchObject({ selectedProvider: 'llamacpp' })
+    expect(h.requests[0].system).toContain('original system')
+    expect(h.requests[1].system).toBe(h.requests[0].system)
+    release()
+    await send(transport, [user('u2', 'next')])
+    expect(transport.getTurnModelSelection()).toMatchObject({ selectedProvider: 'openai' })
+    expect(h.requests[2].system).toContain('changed mid-turn')
+    expect(h.requests[2].system).not.toBe(h.requests[0].system)
   })
 
   it('starts a new turn on the current selection', async () => {

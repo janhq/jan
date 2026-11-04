@@ -1,0 +1,1075 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Tool, UIMessageChunk } from 'ai'
+
+const hoisted = vi.hoisted(() => ({
+  childStep: vi.fn(),
+  start: vi.fn(),
+  stop: vi.fn(),
+  stopAll: vi.fn(),
+  list: vi.fn(),
+}))
+
+import { useMonitorNotices } from '@/stores/monitor-notice-store'
+
+vi.mock('../coworkSubagent', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../coworkSubagent')>()),
+  childStep: hoisted.childStep,
+}))
+vi.mock('../agentTools', () => ({
+  startThreadAgentMonitor: hoisted.start,
+  stopThreadAgentMonitor: hoisted.stop,
+  stopAllThreadAgentMonitors: hoisted.stopAll,
+  listThreadAgentMonitors: hoisted.list,
+}))
+
+import {
+  CHAT_MAX_CHILDREN_PER_CALL,
+  CHAT_MAX_CONCURRENT_CHILDREN,
+  __testing,
+  acquire,
+  cancelChatOrchestration,
+  chatRunInbox,
+  childEffectiveGrant,
+  runChatMonitor,
+  runChatTask,
+  finalizeChatRun,
+  takeTaskStatus,
+  TASK_STATUS_TEXT_LIMIT,
+  TASK_STATUS_TRUNCATION_MARKER,
+  truncateUtf16,
+  CHAT_CHILD_AGGREGATE_SPEND_TOKENS,
+  CHAT_CHILD_MAX_SPEND_TOKENS,
+  CHAT_CHILD_MAX_COMPLETION_TOKENS,
+  type ChildBinding,
+  type ChatOrchestrationContext,
+} from '../chatOrchestration'
+import { dropConversationClientThread } from '../conversationClientTools'
+import { defaultConversationCapabilities } from '../conversationCapabilities'
+import { canContinueStoppedTurn, createChatRunStream, taskStatusRows } from '../chatRunTransport'
+import { expandChatRunContext, RUN_CONTEXT_PART } from '../chatRunContext'
+import { PING_OPEN } from '../coworkPing'
+import { readUIMessageStream } from 'ai'
+import { resolveScopedChatToolPolicy } from '../scopedChatToolPolicy'
+
+const tool = {} as Tool
+const grant = (over: Record<string, unknown>) => ({ ...defaultConversationCapabilities(), ...over })
+const streamOf = (chunks: unknown[]) =>
+  new ReadableStream<UIMessageChunk>({
+    start(c) {
+      for (const x of chunks) c.enqueue(x as UIMessageChunk)
+      c.close()
+    },
+  })
+const textStep = (t: string) => streamOf([{ type: 'text-delta', id: 't', delta: t }])
+const callStep = (name: string, id = 'k1', input: unknown = {}) =>
+  streamOf([
+    { type: 'tool-input-start', toolCallId: id, toolName: name },
+    { type: 'tool-input-available', toolCallId: id, toolName: name, input },
+  ])
+
+const PARENT: Record<string, Tool> = Object.fromEntries(
+  ['read', 'ls', 'shell', 'write', 'memory', 'skill_write', 'task', 'todo', 'ask', 'monitor'].map((n) => [n, tool])
+)
+
+let seq = 0
+const ctxFor = (over: Partial<ChatOrchestrationContext> = {}) => {
+  const controller = new AbortController()
+  const dispatch = vi.fn(async () => ({ output: 'done' }))
+  const ctx: ChatOrchestrationContext = {
+    threadId: `t${++seq}`,
+    signal: controller.signal,
+    getParentTools: () => PARENT,
+    getModel: () => ({}) as never,
+    readGrant: () => grant({}),
+    serverFor: () => undefined,
+    dispatch,
+    ...over,
+  }
+  return { ctx, controller, dispatch }
+}
+const settle = async (n = 20) => {
+  for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0))
+}
+const oneChild = (extra: Record<string, unknown> = {}) => ({
+  subagents: [{ name: 'a', task: 'go', ...extra }],
+})
+
+beforeEach(() => {
+  hoisted.childStep.mockReset()
+  hoisted.start.mockReset()
+  hoisted.stop.mockReset().mockResolvedValue('Stopped monitor')
+  hoisted.stopAll.mockReset().mockResolvedValue(undefined)
+  hoisted.list.mockReset()
+})
+
+describe('bounded child tools', () => {
+  it('advertises only the narrowed set; withheld recursive tools are refused before dispatch', async () => {
+    const { ctx, dispatch } = ctxFor()
+    const offered: string[][] = []
+    let step = 0
+    hoisted.childStep.mockImplementation(async (o: { tools: Record<string, Tool> }) => {
+      offered.push(Object.keys(o.tools).sort())
+      step++
+      if (step === 1) return callStep('memory', 'm1')
+      if (step === 2) return callStep('task', 't1')
+      if (step === 3) return callStep('todo', 'd1')
+      if (step === 4) return callStep('ask', 'a1')
+      if (step === 5) return callStep('monitor', 'n1')
+      if (step === 6) return callStep('read', 'r1')
+      return textStep('finished')
+    })
+    const out = await runChatTask(oneChild(), 'call', ctx)
+    expect(out.isError).toBeUndefined()
+    await settle(60)
+    expect(offered[0]).toEqual(['ls', 'read', 'shell', 'skill_write', 'write'])
+    // Only the one allowed native call reached the route dispatch.
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect((dispatch.mock.calls[0] as unknown[])[0]).toMatchObject({ toolName: 'read' })
+  })
+
+  it('an allowlist cannot widen past the parent record: a withheld name yields no tool', async () => {
+    const { ctx } = ctxFor()
+    hoisted.childStep.mockImplementation(async () => textStep('ok'))
+    await runChatTask(oneChild({ allowed_tools: ['memory', 'task'] }), 'c', ctx)
+    await settle()
+    expect(Object.keys((hoisted.childStep.mock.calls[0][0] as { tools: object }).tools)).toEqual([])
+  })
+
+  it('caps children per call', async () => {
+    const { ctx } = ctxFor()
+    const subagents = Array.from({ length: CHAT_MAX_CHILDREN_PER_CALL + 1 }, (_, i) => ({ name: `c${i}`, task: 'x' }))
+    expect((await runChatTask({ subagents }, 'c', ctx)).isError).toBe(true)
+  })
+})
+
+describe('child tool-call identity', () => {
+  const twoCalls = (a: [string, string], b: [string, string]) =>
+    streamOf([a, b].flatMap(([name, id]) => [
+      { type: 'tool-input-start', toolCallId: id, toolName: name },
+      { type: 'tool-input-available', toolCallId: id, toolName: name, input: {} },
+    ]))
+
+  it('a child that reuses one toolCallId for a different tool in the same step never reaches dispatch twice with that id', async () => {
+    const { ctx, dispatch } = ctxFor()
+    let step = 0
+    hoisted.childStep.mockImplementation(async () => (step++ === 0 ? twoCalls(['read', 'dup'], ['write', 'dup']) : textStep('ok')))
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle(60)
+    const ids = (dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolCallId: string }).toolCallId)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect((dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolName: string }).toolName)).not.toContain('write')
+  })
+
+  it('a step that repeats an id fails closed before ANY dispatch: the first call is not run', async () => {
+    const { ctx, dispatch } = ctxFor()
+    let step = 0
+    hoisted.childStep.mockImplementation(async () => (step++ === 0 ? twoCalls(['write', 'dup'], ['write', 'dup']) : textStep('ok')))
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle(60)
+    expect(dispatch).not.toHaveBeenCalled()
+    // The malformed step ended the child run; the model was not asked again.
+    expect(step).toBe(1)
+  })
+
+  it('a child that reuses a toolCallId in a later step is refused, not re-dispatched under the same id', async () => {
+    const { ctx, dispatch } = ctxFor()
+    let step = 0
+    hoisted.childStep.mockImplementation(async () => (step++ === 0 ? callStep('read', 'dup') : step === 2 ? callStep('write', 'dup') : textStep('ok')))
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle(60)
+    const ids = (dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolCallId: string }).toolCallId)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect((dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolName: string }).toolName)).toEqual(['read'])
+  })
+
+  it('a later step that mixes a fresh write with a reused id is refused whole: the fresh call never dispatches and the first outcome stands', async () => {
+    const { ctx, dispatch } = ctxFor()
+    const call = (name: string, id: string, input: unknown) => [
+      { type: 'tool-input-start', toolCallId: id, toolName: name },
+      { type: 'tool-input-available', toolCallId: id, toolName: name, input },
+    ]
+    let step = 0
+    hoisted.childStep.mockImplementation(async () => {
+      step++
+      if (step === 1) return streamOf(call('write', 'X', { path: 'x' }))
+      // Fresh Y first, then the id step 1 already used. Only the child's own
+      // cross-step id set can refuse this before Y runs; the per-call dispatch
+      // check would run Y and only then reject X.
+      if (step === 2) return streamOf([...call('write', 'Y', { path: 'y' }), ...call('write', 'X', { path: 'x2' })])
+      return textStep('ok')
+    })
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle(80)
+    const calls = (dispatch.mock.calls as unknown[][]).map((c) => c[0] as { toolName: string; input: unknown })
+    // Only step 1's X ran; Y was never dispatched and X was not run again.
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ toolName: 'write', input: { path: 'x' } })
+    // The refused step ended the child run; the model was not asked a third time.
+    expect(step).toBe(2)
+  })
+
+  it('crafted task call ids and names whose `${callId}-${name}` joins collide still get distinct child tool ids', async () => {
+    const { ctx, dispatch } = ctxFor()
+    hoisted.childStep.mockImplementation(async (o: { messages: unknown[] }) => (o.messages.length === 1 ? callStep('read', 'k') : textStep('ok')))
+    // ('a','n-m') and ('a-n','m') both join to 'a-n-m'.
+    await runChatTask({ subagents: [{ name: 'n-m', task: 'go' }] }, 'a', ctx)
+    await runChatTask({ subagents: [{ name: 'm', task: 'go' }] }, 'a-n', ctx)
+    await settle(80)
+    const ids = (dispatch.mock.calls as unknown[][]).map((c) => (c[0] as { toolCallId: string }).toolCallId)
+    expect(ids).toHaveLength(2)
+    expect(new Set(ids).size).toBe(2)
+  })
+
+  it('a repeated task run with the same parent call id, child name and child call id still gets a distinct execution id', async () => {
+    const { ctx, dispatch } = ctxFor()
+    hoisted.childStep.mockImplementation(async (o: { messages: unknown[] }) => (o.messages.length === 1 ? callStep('read', 'k', { path: 'a' }) : textStep('ok')))
+    // Every part of the tuple is model-chosen; the root may reuse a task call id.
+    await runChatTask(oneChild(), 'same-task-call', ctx)
+    await settle(80)
+    await runChatTask(oneChild(), 'same-task-call', ctx)
+    await settle(80)
+    const calls = (dispatch.mock.calls as unknown[][]).map((c) => c[0] as { toolCallId: string; toolName: string; input: unknown })
+    expect(calls).toHaveLength(2)
+    expect(calls.map((c) => [c.toolName, c.input])).toEqual([['read', { path: 'a' }], ['read', { path: 'a' }]])
+    expect(calls[0].toolCallId).not.toBe(calls[1].toolCallId)
+  })
+})
+
+describe('parent grant frozen at dispatch', () => {
+  it('passes the grant frozen at task time (and frozen MCP identity) to every child dispatch', async () => {
+    let live: unknown = grant({ folderScope: { path: '/p', access: 'read' } })
+    let server: string | undefined = 'srvA'
+    const { ctx, dispatch } = ctxFor({ readGrant: () => live, serverFor: () => server })
+    let step = 0
+    hoisted.childStep.mockImplementation(async () => (step++ === 0 ? callStep('read', 'r1') : textStep('ok')))
+    await runChatTask(oneChild(), 'call', ctx)
+    // Widen + rebind AFTER dispatch, before the child's tool call lands.
+    live = grant({ folderScope: { path: '/p', access: 'write' }, shellNetwork: true, memoryWrite: true })
+    server = 'evil'
+    await settle(40)
+    const binding = (dispatch.mock.calls[0] as unknown[])[2] as ChildBinding
+    expect(binding.mcpServers.get('read')).toBe('srvA')
+    // Widened current grant is cut back to the frozen ceiling.
+    expect(childEffectiveGrant(live, binding)).toMatchObject({
+      folderScope: { path: '/p', access: 'read' },
+      shellNetwork: false,
+      memoryWrite: false,
+    })
+  })
+
+  it('revoke after dispatch still narrows, widening never expands', () => {
+    const binding = { ceiling: grant({ folderScope: { path: '/p', access: 'write' }, shellNetwork: true }), mcpServers: new Map() }
+    expect(childEffectiveGrant(grant({}), binding)).toMatchObject({ folderScope: null, shellNetwork: false })
+    expect(childEffectiveGrant(grant({ folderScope: { path: '/other', access: 'write' } }), binding)).toMatchObject({ folderScope: null })
+    const narrow = { ceiling: grant({}), mcpServers: new Map() }
+    expect(childEffectiveGrant(grant({ folderScope: { path: '/p', access: 'write' }, memoryWrite: true }), narrow))
+      .toMatchObject({ folderScope: null, memoryWrite: false, shellNetwork: false })
+  })
+})
+
+describe('semaphore waiters', () => {
+  it('an aborted queued waiter leaves the queue and never takes a slot', async () => {
+    const state = { active: 0, waiters: [] as Array<() => void> }
+    const live = new AbortController()
+    const releases = []
+    for (let i = 0; i < CHAT_MAX_CONCURRENT_CHILDREN; i++) releases.push((await acquire(state, live.signal))!)
+    const queued = new AbortController()
+    const waiting = acquire(state, queued.signal)
+    expect(state.waiters).toHaveLength(1)
+    queued.abort()
+    expect(await waiting).toBeNull()
+    expect(state.waiters).toHaveLength(0)
+    releases.forEach((r) => r())
+    expect(state.active).toBe(0)
+  })
+
+  it('a released slot is handed to the next live waiter exactly once', async () => {
+    const state = { active: 0, waiters: [] as Array<() => void> }
+    const s = new AbortController().signal
+    const r1 = (await acquire(state, s))!
+    await acquire(state, s)
+    const next = acquire(state, s)
+    r1(); r1()
+    const r3 = (await next)!
+    expect(state.active).toBe(CHAT_MAX_CONCURRENT_CHILDREN)
+    r3()
+    expect(state.active).toBe(CHAT_MAX_CONCURRENT_CHILDREN - 1)
+  })
+
+  it('a stopped parent leaks no queued child and no inbox hold', async () => {
+    const { ctx, controller, dispatch } = ctxFor()
+    const gates: Array<() => void> = []
+    hoisted.childStep.mockImplementation(
+      (o: { signal: AbortSignal }) =>
+        new Promise((resolve, reject) => {
+          gates.push(() => resolve(textStep('late')))
+          o.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+        })
+    )
+    await runChatTask({ subagents: [1, 2, 3].map((i) => ({ name: `c${i}`, task: 'x' })) }, 'call', ctx)
+    await settle()
+    const state = __testing.stateOf(ctx.threadId)
+    expect(state.active).toBe(CHAT_MAX_CONCURRENT_CHILDREN)
+    expect(state.waiters).toHaveLength(1)
+    controller.abort()
+    await settle(40)
+    expect(state.waiters).toHaveLength(0)
+    expect(state.active).toBe(0)
+    expect(state.children.size).toBe(0)
+    expect(chatRunInbox(ctx.threadId, ctx.signal).pending()).toBe(false)
+    expect(chatRunInbox(ctx.threadId, ctx.signal).take()).toEqual([])
+    expect(dispatch).not.toHaveBeenCalled()
+  })
+
+  it('a deleted thread drops its state and queued children never run', async () => {
+    const { ctx } = ctxFor()
+    hoisted.childStep.mockImplementation(() => new Promise(() => {}))
+    await runChatTask({ subagents: [1, 2, 3].map((i) => ({ name: `c${i}`, task: 'x' })) }, 'call', ctx)
+    await settle()
+    const state = __testing.stateOf(ctx.threadId)
+    dropConversationClientThread(ctx.threadId)
+    await settle()
+    expect(__testing.threads.has(ctx.threadId)).toBe(false)
+    expect(state.waiters).toHaveLength(0)
+    expect(hoisted.stopAll).toHaveBeenCalledWith(ctx.threadId)
+  })
+})
+
+describe('task result + inbox', () => {
+  it('returns a dispatch receipt and delivers the completion through the single inbox lane', async () => {
+    const { ctx } = ctxFor()
+    hoisted.childStep.mockImplementation(async () => textStep('the answer'))
+    const out = await runChatTask(oneChild(), 'call', ctx)
+    expect(out.isError).toBeUndefined()
+    expect(out.output).toMatch(/a/)
+    expect(out.output).not.toContain('the answer')
+    const inbox = chatRunInbox(ctx.threadId, ctx.signal)
+    expect(inbox.pending()).toBe(true)
+    await inbox.wait(new AbortController().signal)
+    const taken = inbox.take()
+    expect(taken).toHaveLength(1)
+    expect(taken[0]).toContain('the answer')
+    expect(inbox.take()).toEqual([])
+    await settle()
+    expect(inbox.pending()).toBe(false)
+  })
+})
+
+describe('monitor host boundary', () => {
+  const started = (id = 'mon-1') => ({ output: `Started. monitor_id=${id}` })
+
+  it('start/list/stop call the host with only threadId, args, onUpdate', async () => {
+    const { ctx } = ctxFor()
+    hoisted.start.mockResolvedValue(started())
+    hoisted.list.mockResolvedValue('mon-1 running')
+    const args = { op: 'start', name: 'w', script: 'x' }
+    expect((await runChatMonitor(args, ctx)).output).toContain('mon-1')
+    expect(hoisted.start).toHaveBeenCalledWith(ctx.threadId, args, expect.any(Function))
+    expect(hoisted.start.mock.calls[0]).toHaveLength(3)
+    expect((await runChatMonitor({ op: 'list' }, ctx)).output).toBe('mon-1 running')
+    expect(hoisted.list).toHaveBeenCalledWith(ctx.threadId)
+    expect((await runChatMonitor({ op: 'stop', monitor_id: 'mon-1' }, ctx)).isError).toBe(false)
+    expect(hoisted.stop).toHaveBeenCalledWith(ctx.threadId, 'mon-1')
+    expect(__testing.stateOf(ctx.threadId).monitorIds.size).toBe(0)
+  })
+
+  it('a ping queues once on the shared inbox without starting a second loop', async () => {
+    const { ctx } = ctxFor()
+    let push: (u: unknown) => void = () => {}
+    hoisted.start.mockImplementation(async (_t: string, _a: unknown, cb: (u: unknown) => void) => {
+      push = cb
+      return started()
+    })
+    await runChatMonitor({ op: 'start' }, ctx)
+    const inbox = chatRunInbox(ctx.threadId, ctx.signal)
+    // A running monitor never parks the run.
+    expect(inbox.pending()).toBe(false)
+    expect(__testing.stateOf(ctx.threadId).lane.onPing).toBeNull()
+    push({ monitorId: 'mon-1', headline: 'hit', text: 'file changed' })
+    expect(inbox.pending()).toBe(true)
+    expect(inbox.take()).toEqual(['file changed'])
+    expect(inbox.take()).toEqual([])
+    expect(hoisted.childStep).not.toHaveBeenCalled()
+    expect(__testing.stateOf(ctx.threadId).monitorIds.size).toBe(0)
+  })
+
+  it('Stop cancels only owned monitors and later callbacks never ping', async () => {
+    const { ctx } = ctxFor()
+    let push: (u: unknown) => void = () => {}
+    hoisted.start.mockImplementation(async (_t: string, _a: unknown, cb: (u: unknown) => void) => {
+      push = cb
+      return started('mon-9')
+    })
+    await runChatMonitor({ op: 'start' }, ctx)
+    await cancelChatOrchestration(ctx.threadId, ctx.signal)
+    expect(hoisted.stop).toHaveBeenCalledWith(ctx.threadId, 'mon-9')
+    push({ monitorId: 'mon-9', headline: 'late', text: 'stale' })
+    expect(chatRunInbox(ctx.threadId, ctx.signal).pending()).toBe(false)
+    expect(chatRunInbox(ctx.threadId, ctx.signal).take()).toEqual([])
+    // Another thread's monitors are untouched.
+    expect(hoisted.stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('a start that resolves after Stop is stopped on the host and reported refused', async () => {
+    const { ctx } = ctxFor()
+    let resolveStart: (v: unknown) => void = () => {}
+    hoisted.start.mockImplementation(() => new Promise((r) => (resolveStart = r)))
+    const pending = runChatMonitor({ op: 'start' }, ctx)
+    await settle(2)
+    await cancelChatOrchestration(ctx.threadId, ctx.signal)
+    resolveStart(started('mon-3'))
+    expect((await pending).isError).toBe(true)
+    expect(hoisted.stop).toHaveBeenCalledWith(ctx.threadId, 'mon-3')
+  })
+
+  it('thread deletion stops all host monitors and drops callbacks', async () => {
+    const { ctx } = ctxFor()
+    let push: (u: unknown) => void = () => {}
+    hoisted.start.mockImplementation(async (_t: string, _a: unknown, cb: (u: unknown) => void) => {
+      push = cb
+      return started()
+    })
+    await runChatMonitor({ op: 'start' }, ctx)
+    dropConversationClientThread(ctx.threadId)
+    expect(hoisted.stopAll).toHaveBeenCalledWith(ctx.threadId)
+    push({ monitorId: 'mon-1', headline: 'x', text: 'stale' })
+    expect(__testing.threads.has(ctx.threadId)).toBe(false)
+  })
+})
+
+describe('monitor completion notice (display only)', () => {
+  const started = (id = 'mon-1') => ({ output: `Started. monitor_id=${id}` })
+  const notices = (t: string) => useMonitorNotices.getState().byThread[t] ?? []
+  const arm = async (ctx: ReturnType<typeof ctxFor>['ctx'], id = 'mon-1') => {
+    let push: (u: unknown) => void = () => {}
+    hoisted.start.mockImplementation(async (_t: string, _a: unknown, cb: (u: unknown) => void) => {
+      push = cb
+      return started(id)
+    })
+    await runChatMonitor({ op: 'start' }, ctx)
+    return (u: unknown) => push(u)
+  }
+  beforeEach(() => useMonitorNotices.setState({ byThread: {} }))
+
+  it('callback after the run is idle publishes a bounded notice with no model request', async () => {
+    const { ctx } = ctxFor()
+    const push = await arm(ctx)
+    push({ monitorId: 'mon-1', headline: 'hit', text: 'x'.repeat(5000) })
+    expect(notices(ctx.threadId)).toHaveLength(1)
+    expect(notices(ctx.threadId)[0].headline).toBe('hit')
+    expect(notices(ctx.threadId)[0].detail.length).toBeLessThanOrEqual(600)
+    expect(hoisted.childStep).not.toHaveBeenCalled()
+    expect(__testing.stateOf(ctx.threadId).lane.onPing).toBeNull()
+  })
+
+  it('is scoped to the owning thread only', async () => {
+    const a = ctxFor().ctx
+    const b = { ...ctxFor().ctx, threadId: `${a.threadId}-other` }
+    const push = await arm(a)
+    push({ monitorId: 'mon-1', headline: 'hit', text: 'done' })
+    expect(notices(a.threadId)).toHaveLength(1)
+    expect(notices(b.threadId)).toHaveLength(0)
+  })
+
+  it('Stop makes late callbacks publish nothing', async () => {
+    const { ctx } = ctxFor()
+    const push = await arm(ctx, 'mon-9')
+    await cancelChatOrchestration(ctx.threadId, ctx.signal)
+    push({ monitorId: 'mon-9', headline: 'late', text: 'stale' })
+    expect(notices(ctx.threadId)).toHaveLength(0)
+  })
+
+  it('thread deletion clears notices and drops late callbacks', async () => {
+    const { ctx } = ctxFor()
+    const push = await arm(ctx)
+    push({ monitorId: 'mon-1', headline: 'hit', text: 'done' })
+    dropConversationClientThread(ctx.threadId)
+    expect(notices(ctx.threadId)).toHaveLength(0)
+    push({ monitorId: 'mon-1', headline: 'x', text: 'stale' })
+    expect(notices(ctx.threadId)).toHaveLength(0)
+  })
+
+  it('dismiss does not consume the inbox; the next turn still gets the ping once', async () => {
+    const { ctx } = ctxFor()
+    const push = await arm(ctx)
+    push({ monitorId: 'mon-1', headline: 'hit', text: 'file changed' })
+    const [n] = notices(ctx.threadId)
+    useMonitorNotices.getState().dismiss(ctx.threadId, n.id)
+    expect(notices(ctx.threadId)).toHaveLength(0)
+    const inbox = chatRunInbox(ctx.threadId, ctx.signal)
+    expect(inbox.pending()).toBe(true)
+    expect(inbox.take()).toEqual(['file changed'])
+    expect(inbox.take()).toEqual([])
+    expect(hoisted.childStep).not.toHaveBeenCalled()
+  })
+})
+
+describe('advertisement', () => {
+  const on = { modelSupportsTools: true, sandboxAvailable: true }
+  it('task needs the gate; monitor needs folder consent', () => {
+    expect(resolveScopedChatToolPolicy(on, grant({})).advertisedOrchestrationTools).toEqual(['task'])
+    expect(resolveScopedChatToolPolicy(on, grant({ folderScope: { path: '/p', access: 'read' } })).advertisedOrchestrationTools)
+      .toEqual(['task', 'monitor'])
+    expect(resolveScopedChatToolPolicy({ ...on, sandboxAvailable: false }, grant({})).advertisedOrchestrationTools).toEqual([])
+  })
+})
+
+const hang = () =>
+  hoisted.childStep.mockImplementation(
+    (o: { signal: AbortSignal }) =>
+      new Promise((_resolve, reject) => {
+        o.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+      })
+  )
+const lastStatus = (rows: Array<{ runId: string; status: string }>) =>
+  Object.fromEntries(rows.map((r) => [r.runId, r.status]))
+
+describe('task status lifecycle', () => {
+  it('run abort makes running rows terminal synchronously, before any async child cleanup', async () => {
+    const { ctx, controller } = ctxFor()
+    hang()
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle()
+    expect(Object.values(lastStatus(takeTaskStatus(ctx.threadId)))).toEqual(['running'])
+    controller.abort()
+    // No await: the abort listener alone must have settled the row.
+    const rows = takeTaskStatus(ctx.threadId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ status: 'error', error: '(the subagent was cancelled)' })
+    await settle(40)
+    expect(takeTaskStatus(ctx.threadId)).toEqual([])
+  })
+
+  it('Stop (cancelChatOrchestration) settles running rows before aborting children', async () => {
+    const { ctx } = ctxFor()
+    hang()
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle()
+    takeTaskStatus(ctx.threadId)
+    await cancelChatOrchestration(ctx.threadId, ctx.signal)
+    const rows = takeTaskStatus(ctx.threadId)
+    expect(rows.map((r) => r.status)).toEqual(['error'])
+    await settle(40)
+    expect(takeTaskStatus(ctx.threadId)).toEqual([])
+  })
+
+  it('finalizeChatRun aborts this run\'s held children and purges its rows without bumping epoch or stopping monitors', async () => {
+    const { ctx } = ctxFor()
+    hang()
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle()
+    const state = __testing.stateOf(ctx.threadId)
+    const epoch = state.epoch
+    finalizeChatRun(ctx.threadId, ctx.signal)
+    expect(state.statusRows.size).toBe(0)
+    expect(state.statusQueue).toHaveLength(0)
+    expect(state.runRows.has(ctx.signal)).toBe(false)
+    expect(state.epoch).toBe(epoch)
+    expect(hoisted.stop).not.toHaveBeenCalled()
+    expect(hoisted.stopAll).not.toHaveBeenCalled()
+    await settle(40)
+    expect(state.children.size).toBe(0)
+    expect(state.active).toBe(0)
+    // A late child completion after finalize never requeues a row.
+    expect(state.statusQueue).toHaveLength(0)
+    expect(state.statusRows.size).toBe(0)
+  })
+
+  it('per-run settle leaves another run\'s running rows alone', async () => {
+    const a = ctxFor()
+    const b = ctxFor({ threadId: a.ctx.threadId })
+    hang()
+    await runChatTask(oneChild(), 'a', a.ctx)
+    await runChatTask(oneChild({ name: 'b' }), 'b', b.ctx)
+    await settle()
+    takeTaskStatus(a.ctx.threadId)
+    a.controller.abort()
+    const rows = takeTaskStatus(a.ctx.threadId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].status).toBe('error')
+    expect(rows[0].runId).toContain('a')
+    b.controller.abort()
+  })
+
+  it('bounds persisted child output and error text', async () => {
+    const { ctx } = ctxFor()
+    hoisted.childStep.mockImplementation(async () => textStep('x'.repeat(TASK_STATUS_TEXT_LIMIT + 5000)))
+    await runChatTask(oneChild(), 'call', ctx)
+    await settle()
+    const done = takeTaskStatus(ctx.threadId).find((r) => r.status === 'done')
+    expect(done?.finalOutput?.length).toBe(TASK_STATUS_TEXT_LIMIT)
+    expect(done?.finalOutput?.endsWith(TASK_STATUS_TRUNCATION_MARKER)).toBe(true)
+  })
+
+  it('truncation never splits a surrogate pair at the boundary and stays within the limit', () => {
+    const keep = TASK_STATUS_TEXT_LIMIT - TASK_STATUS_TRUNCATION_MARKER.length
+    // The emoji (2 units) straddles the cut: its high half is the last kept unit.
+    const straddle = 'a'.repeat(keep - 1) + '😀' + 'b'.repeat(50)
+    const cut = truncateUtf16(straddle, TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER)
+    expect(cut.length).toBeLessThanOrEqual(TASK_STATUS_TEXT_LIMIT)
+    expect(cut).toBe('a'.repeat(keep - 1) + TASK_STATUS_TRUNCATION_MARKER)
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(cut)).toBe(false)
+    // Emoji wholly inside the kept prefix survives intact.
+    const inside = 'a'.repeat(keep - 2) + '😀' + 'b'.repeat(50)
+    expect(truncateUtf16(inside, TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER)).toBe(
+      'a'.repeat(keep - 2) + '😀' + TASK_STATUS_TRUNCATION_MARKER
+    )
+    // At or under the limit: untouched, no marker.
+    const exact = '😀'.repeat(TASK_STATUS_TEXT_LIMIT / 2)
+    expect(truncateUtf16(exact, TASK_STATUS_TEXT_LIMIT, TASK_STATUS_TRUNCATION_MARKER)).toBe(exact)
+  })
+})
+
+describe('aggregate child spend ceiling', () => {
+  // One step: optional tool call, plus finish usage in the units recordSpend charges.
+  const spendStep = (tokens: number, call?: string) =>
+    streamOf([
+      ...(call
+        ? [
+            { type: 'tool-input-start', toolCallId: `k${Math.random()}`, toolName: call },
+            { type: 'tool-input-available', toolCallId: `k${Math.random()}`, toolName: call, input: {} },
+          ]
+        : [{ type: 'text-delta', id: 't', delta: 'ok' }]),
+      { type: 'finish', messageMetadata: { usage: { inputTokens: 0, outputTokens: tokens, totalTokens: tokens } } },
+    ])
+  const outputs = (threadId: string) =>
+    takeTaskStatus(threadId).filter((r) => r.status === 'error' || r.status === 'done')
+
+  it('keeps the old constant as an alias of the renamed spend cap, and the aggregate is finite and larger', () => {
+    expect(CHAT_CHILD_MAX_COMPLETION_TOKENS).toBe(CHAT_CHILD_MAX_SPEND_TOKENS)
+    expect(CHAT_CHILD_AGGREGATE_SPEND_TOKENS).toBeGreaterThan(CHAT_CHILD_MAX_SPEND_TOKENS)
+    expect(CHAT_CHILD_AGGREGATE_SPEND_TOKENS).toBeLessThan(6 * CHAT_CHILD_MAX_SPEND_TOKENS)
+  })
+
+  it('two children share one ceiling: the sibling is stopped by the aggregate, not its own cap', async () => {
+    const { ctx } = ctxFor()
+    let calls = 0
+    hoisted.childStep.mockImplementation(async (o: { messages: Array<{ parts: Array<{ text?: string }> }> }) => {
+      calls++
+      const task = o.messages[0].parts[0].text
+      // 'big' overshoots its own cap in one step (no hard per-request cap exists).
+      if (task === 'big') return spendStep(CHAT_CHILD_AGGREGATE_SPEND_TOKENS - 5_000)
+      return spendStep(4_000, 'read')
+    })
+    await runChatTask({ subagents: [{ name: 'big', task: 'big' }, { name: 'small', task: 'small' }] }, 'call', ctx)
+    await settle(120)
+    const rows = outputs(ctx.threadId)
+    const small = rows.find((r) => r.name === 'small')
+    expect(small?.status).toBe('error')
+    expect(small?.error).toContain("shared token budget")
+    // Bounded: far fewer steps than the 12-step child limit would allow for `small`.
+    expect(calls).toBeLessThanOrEqual(1 + 4)
+  })
+
+  it('no new task spend after the cap: a later task call in the same run is refused and starts nothing', async () => {
+    const { ctx } = ctxFor()
+    hoisted.childStep.mockImplementation(async () => spendStep(CHAT_CHILD_AGGREGATE_SPEND_TOKENS + 1))
+    await runChatTask({ subagents: [{ name: 'a', task: 'x' }, { name: 'b', task: 'y' }] }, 'c1', ctx)
+    await settle(120)
+    const before = hoisted.childStep.mock.calls.length
+    const again = await runChatTask(oneChild(), 'c2', ctx)
+    expect(again.isError).toBe(true)
+    expect(again.output).toContain('shared token budget')
+    await settle(40)
+    expect(hoisted.childStep.mock.calls.length).toBe(before)
+  })
+
+  it('a queued child that gets its slot after the aggregate is spent never starts', async () => {
+    const { ctx } = ctxFor()
+    hoisted.childStep.mockImplementation(async () => spendStep(CHAT_CHILD_AGGREGATE_SPEND_TOKENS))
+    const subagents = Array.from({ length: CHAT_MAX_CONCURRENT_CHILDREN + 1 }, (_, i) => ({ name: `c${i}`, task: 'x' }))
+    await runChatTask({ subagents }, 'c1', ctx)
+    await settle(120)
+    // Only the children that held a slot at once ever sent a step.
+    expect(hoisted.childStep.mock.calls.length).toBe(CHAT_MAX_CONCURRENT_CHILDREN)
+  })
+
+  it('Stop is bounded and leaves another thread\'s run untouched', async () => {
+    const a = ctxFor()
+    const b = ctxFor()
+    hang()
+    await runChatTask(oneChild(), 'a', a.ctx)
+    await settle()
+    a.controller.abort()
+    await settle(40)
+    const aRows = takeTaskStatus(a.ctx.threadId)
+    const latest = new Map(aRows.map((row) => [row.runId, row]))
+    expect(latest.size).toBeGreaterThan(0)
+    expect([...latest.values()].every((row) => row.status === 'error')).toBe(true)
+    // Another thread's run still has its own full, unspent ledger.
+    hoisted.childStep.mockReset()
+    hoisted.childStep.mockImplementation(async () => spendStep(1_000))
+    const out = await runChatTask(oneChild(), 'b', b.ctx)
+    expect(out.isError).toBeUndefined()
+    await settle(60)
+    expect(outputs(b.ctx.threadId).map((r) => r.status)).toEqual(['done'])
+  })
+})
+
+describe('run-scoped status and Stop (two runs on one thread)', () => {
+  const started = (id: string) => ({ output: `Started. monitor_id=${id}` })
+  const twoRuns = () => {
+    const a = ctxFor()
+    const b = ctxFor({ threadId: a.ctx.threadId })
+    return { a, b }
+  }
+
+  it('an inbox bound to one run signal drains only that run\'s status rows; the other run keeps its own', async () => {
+    const { a, b } = twoRuns()
+    hang()
+    await runChatTask(oneChild({ name: 'a' }), 'a', a.ctx)
+    await runChatTask(oneChild({ name: 'b' }), 'b', b.ctx)
+    await settle()
+    const t = a.ctx.threadId
+    const aRows = chatRunInbox(t, a.ctx.signal).takeStatus!() as Array<{ runId: string }>
+    expect(aRows.map((r) => r.runId)).toEqual(['a-a'])
+    // A second drain of A finds nothing, and never steals B's queued row.
+    expect(chatRunInbox(t, a.ctx.signal).takeStatus!()).toEqual([])
+    const bRows = chatRunInbox(t, b.ctx.signal).takeStatus!() as Array<{ runId: string }>
+    expect(bRows.map((r) => r.runId)).toEqual(['b-b'])
+    // A signal that never dispatched owns nothing.
+    expect(chatRunInbox(t, new AbortController().signal).takeStatus!()).toEqual([])
+    a.controller.abort()
+    b.controller.abort()
+  })
+
+  it('settled rows stay with their run and monitor notices stay thread-owned', async () => {
+    const { a, b } = twoRuns()
+    hang()
+    let push: (u: unknown) => void = () => {}
+    hoisted.start.mockImplementation(async (_t: string, _a: unknown, cb: (u: unknown) => void) => {
+      push = cb
+      return started('mon-x')
+    })
+    await runChatTask(oneChild({ name: 'a' }), 'a', a.ctx)
+    await runChatTask(oneChild({ name: 'b' }), 'b', b.ctx)
+    await runChatMonitor({ op: 'start' }, a.ctx)
+    await settle()
+    a.controller.abort()
+    const t = a.ctx.threadId
+    const bInbox = chatRunInbox(t, b.ctx.signal)
+    expect((bInbox.takeStatus!() as Array<{ runId: string }>).map((r) => r.runId)).toEqual(['b-b'])
+    expect(bInbox.takeStatus!()).toEqual([])
+    // A's terminal row is still A's.
+    const aRows = chatRunInbox(t, a.ctx.signal).takeStatus!() as Array<{ runId: string; status: string }>
+    expect(aRows.map((r) => [r.runId, r.status])).toEqual([['a-a', 'running'], ['a-a', 'error']])
+    // Monitor pings reach whichever run's inbox drains next (thread-owned lane).
+    push({ monitorId: 'mon-x', headline: 'h', text: 'ping' })
+    expect(bInbox.take()).toEqual(['ping'])
+    b.controller.abort()
+  })
+
+  it('Stop of a later run cancels its children but not an earlier finished run\'s monitor', async () => {
+    const { a, b } = twoRuns()
+    const t = a.ctx.threadId
+    const pushes: Record<string, (u: unknown) => void> = {}
+    let n = 0
+    hoisted.start.mockImplementation(async (_t: string, _a: unknown, cb: (u: unknown) => void) => {
+      const id = `mon-${++n}`
+      pushes[id] = cb
+      return started(id)
+    })
+    await runChatMonitor({ op: 'start' }, a.ctx) // earlier turn's monitor
+    a.controller.abort() // earlier turn finished
+    await runChatMonitor({ op: 'start' }, b.ctx) // later turn
+    hang()
+    await runChatTask(oneChild({ name: 'b' }), 'b', b.ctx)
+    await settle()
+    const state = __testing.stateOf(t)
+    expect(state.children.size).toBe(1)
+    b.controller.abort() // production: the run signal aborts, then Stop scopes to it
+    await cancelChatOrchestration(t, b.ctx.signal)
+    await settle()
+    expect(state.children.size).toBe(0)
+    // Only the later run's monitor was stopped.
+    expect(hoisted.stop.mock.calls).toEqual([[t, 'mon-2']])
+    expect([...state.monitorIds]).toEqual(['mon-1'])
+    // The earlier monitor still pings; the stopped one is silent.
+    pushes['mon-2']({ monitorId: 'mon-2', headline: 'late', text: 'stale' })
+    expect(chatRunInbox(t, b.ctx.signal).pending()).toBe(false)
+    pushes['mon-1']({ monitorId: 'mon-1', headline: 'live', text: 'still here' })
+    expect(chatRunInbox(t, b.ctx.signal).take()).toEqual(['still here'])
+  })
+
+  it('Stop of one run leaves another running run\'s child and rows alone', async () => {
+    const { a, b } = twoRuns()
+    hang()
+    await runChatTask(oneChild({ name: 'a' }), 'a', a.ctx)
+    await runChatTask(oneChild({ name: 'b' }), 'b', b.ctx)
+    await settle()
+    const t = a.ctx.threadId
+    const state = __testing.stateOf(t)
+    expect(state.children.size).toBe(2)
+    await cancelChatOrchestration(t, b.ctx.signal)
+    await settle()
+    expect(state.children.size).toBe(1)
+    expect(state.statusRows.get('a-a')?.status).toBe('running')
+    expect(state.statusRows.get('b-b')?.status).toBe('error')
+    a.controller.abort()
+  })
+
+  it('a start still resolving when ITS run is stopped is stopped on the host', async () => {
+    const { a, b } = twoRuns()
+    let resolveStart: (v: unknown) => void = () => {}
+    hoisted.start.mockImplementation(() => new Promise((r) => (resolveStart = r)))
+    const pending = runChatMonitor({ op: 'start' }, b.ctx)
+    await settle(2)
+    await cancelChatOrchestration(a.ctx.threadId, a.ctx.signal) // unrelated run: no effect
+    await cancelChatOrchestration(b.ctx.threadId, b.ctx.signal)
+    resolveStart(started('mon-7'))
+    expect((await pending).isError).toBe(true)
+    expect(hoisted.stop).toHaveBeenCalledWith(b.ctx.threadId, 'mon-7')
+  })
+
+  it('an unrelated run\'s Stop does not cancel a monitor that is still starting', async () => {
+    const { a, b } = twoRuns()
+    let resolveStart: (v: unknown) => void = () => {}
+    hoisted.start.mockImplementation(() => new Promise((r) => (resolveStart = r)))
+    const pending = runChatMonitor({ op: 'start' }, a.ctx)
+    await settle(2)
+    await cancelChatOrchestration(b.ctx.threadId, b.ctx.signal)
+    resolveStart(started('mon-8'))
+    expect((await pending).isError).toBeUndefined()
+    expect(hoisted.stop).not.toHaveBeenCalled()
+    expect([...__testing.stateOf(a.ctx.threadId).monitorIds]).toEqual(['mon-8'])
+  })
+
+  it("'all' (thread teardown) stops every run's children and monitors", async () => {
+    const { a, b } = twoRuns()
+    const t = a.ctx.threadId
+    let n = 0
+    hoisted.start.mockImplementation(async () => started(`mon-${++n}`))
+    await runChatMonitor({ op: 'start' }, a.ctx)
+    await runChatMonitor({ op: 'start' }, b.ctx)
+    hang()
+    await runChatTask(oneChild({ name: 'a' }), 'a', a.ctx)
+    await runChatTask(oneChild({ name: 'b' }), 'b', b.ctx)
+    await settle()
+    await cancelChatOrchestration(t, 'all')
+    await settle()
+    expect(__testing.stateOf(t).children.size).toBe(0)
+    expect(hoisted.stop.mock.calls.map((c) => c[1]).sort()).toEqual(['mon-1', 'mon-2'])
+    expect(__testing.stateOf(t).monitorIds.size).toBe(0)
+  })
+
+  it('thread deletion stops every tracked and untracked monitor', async () => {
+    const { a, b } = twoRuns()
+    let n = 0
+    hoisted.start.mockImplementation(async () => started(`mon-${++n}`))
+    await runChatMonitor({ op: 'start' }, a.ctx)
+    await runChatMonitor({ op: 'start' }, b.ctx)
+    dropConversationClientThread(a.ctx.threadId)
+    expect(hoisted.stopAll).toHaveBeenCalledWith(a.ctx.threadId)
+    expect(hoisted.stop.mock.calls.map((c) => c[1]).sort()).toEqual(['mon-1', 'mon-2'])
+  })
+
+  it('createChatRunStream binds an inbox factory to the same signal it dispatches children with', async () => {
+    const outer = new AbortController()
+    let boundTo: AbortSignal | undefined
+    let dispatchedWith: AbortSignal | undefined
+    let step = 0
+    const stream = createChatRunStream({
+      messages: [{ id: 'u', role: 'user', parts: [{ type: 'text', text: 'go' }] }],
+      messageId: 'a',
+      signal: outer.signal,
+      sendStep: async () =>
+        ++step === 1
+          ? streamOf([
+              { type: 'start-step' },
+              { type: 'tool-input-available', toolCallId: 'tk', toolName: 'task', input: {} },
+              { type: 'finish-step' },
+              { type: 'finish' },
+            ])
+          : textStep('ok'),
+      inbox: (signal) => {
+        boundTo = signal
+        return { take: () => [], pending: () => false, wait: async () => {} }
+      },
+      dispatch: async (_call, signal) => {
+        dispatchedWith = signal
+        return { output: 'ok' }
+      },
+    })
+    for await (const _ of readUIMessageStream({ stream })) void _
+    expect(boundTo).toBeDefined()
+    expect(boundTo).toBe(dispatchedWith)
+    expect(boundTo).not.toBe(outer.signal)
+  })
+})
+
+describe('terminal flush ordering through the real run stream', () => {
+  const taskCall = () =>
+    streamOf([
+      { type: 'start-step' },
+      { type: 'tool-input-available', toolCallId: 'tk', toolName: 'task', input: {} },
+      { type: 'finish-step' },
+      { type: 'finish' },
+    ])
+  const user = { id: 'u', role: 'user' as const, parts: [{ type: 'text' as const, text: 'go' }] }
+  async function run(opts: {
+    sendSecond: () => Promise<ReadableStream<UIMessageChunk>>
+    maxSteps?: number
+    abortAfterDispatch?: boolean
+  }) {
+    const { ctx, controller } = ctxFor()
+    const outer = new AbortController()
+    hang()
+    let step = 0
+    const sendStep = vi.fn(async () => (++step === 1 ? taskCall() : opts.sendSecond()))
+    const order: string[] = []
+    const stream = createChatRunStream({
+      messages: [user],
+      messageId: 'a',
+      signal: outer.signal,
+      maxSteps: opts.maxSteps,
+      sendStep,
+      inbox: (runSignal) => chatRunInbox(ctx.threadId, runSignal),
+      dispatch: async (_call, signal) => {
+        const out = await runChatTask(oneChild(), 'tk', { ...ctx, signal })
+        await settle(5)
+        if (opts.abortAfterDispatch) outer.abort('fixture Stop')
+        return out
+      },
+      onFinally: () => {
+        order.push('finally')
+      },
+    })
+    let message
+    for await (const m of readUIMessageStream({ stream })) message = m
+    controller.abort()
+    return { message: message!, order, ctx }
+  }
+  const finalStatuses = (m: Parameters<typeof taskStatusRows>[0][number]) =>
+    taskStatusRows([m]).map((r) => r.status)
+
+  it('error terminal: the persisted row is error, never running', async () => {
+    const { message } = await run({ sendSecond: async () => { throw new Error('provider failed') } })
+    expect(finalStatuses(message)).toEqual(['error'])
+  })
+
+  it('budget cap terminal: stopped turn persists the child as error', async () => {
+    const { message } = await run({ maxSteps: 1, sendSecond: async () => streamOf([]) })
+    expect(message.metadata).toMatchObject({ stopped: true, runStopReason: 'steps' })
+    expect(finalStatuses(message)).toEqual(['error'])
+  })
+
+  it('budget cap with an owed child persists a cancellation context that a later Continue reloads', async () => {
+    const { message } = await run({ maxSteps: 1, sendSecond: async () => streamOf([]) })
+    expect(canContinueStoppedTurn(message.metadata, message.parts)).toBe(true)
+    const stored = message.parts.filter((p) => p.type === RUN_CONTEXT_PART) as Array<{ data: { text: string } }>
+    expect(stored).toHaveLength(1)
+    expect(stored[0].data.text).toMatch(/cancelled before it finished because this run ended/)
+    const reloaded = expandChatRunContext([JSON.parse(JSON.stringify(message))])
+    expect(reloaded.some((m) => m.role === 'user' && JSON.stringify(m.parts).includes(PING_OPEN) && JSON.stringify(m.parts).includes('do not wait for it'))).toBe(true)
+  })
+
+  it('abort terminal: Stop mid-child persists the child as error', async () => {
+    const { message } = await run({ abortAfterDispatch: true, sendSecond: async () => streamOf([]) })
+    expect(finalStatuses(message)).toEqual(['error'])
+  })
+
+  it('the run finalizer purges owned rows before onFinally, after the terminal flush', async () => {
+    const { ctx, order, message } = await run({ sendSecond: async () => { throw new Error('boom') } })
+    expect(finalStatuses(message)).toEqual(['error'])
+    const state = __testing.stateOf(ctx.threadId)
+    expect(state.statusRows.size).toBe(0)
+    expect(state.statusQueue).toHaveLength(0)
+    expect(order).toEqual(['finally'])
+  })
+})
+
+describe('run-owned child notices', () => {
+  it('ending one run never delivers its child notice to another run of the same thread', async () => {
+    const a = ctxFor()
+    const bController = new AbortController()
+    const b = { ...a.ctx, signal: bController.signal }
+    const gates: Array<() => void> = []
+    let n = 0
+    hoisted.childStep.mockImplementation((o: { signal: AbortSignal }) => {
+      if (++n === 1) {
+        return new Promise((_r, reject) => o.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }))
+      }
+      return new Promise((resolve) => gates.push(() => resolve(textStep('beta answer'))))
+    })
+    await runChatTask({ subagents: [{ name: 'alpha', task: 'x' }] }, 'ka', a.ctx)
+    await runChatTask({ subagents: [{ name: 'beta', task: 'x' }] }, 'kb', b)
+    await settle()
+    const inboxA = chatRunInbox(a.ctx.threadId, a.ctx.signal)
+    const inboxB = chatRunInbox(a.ctx.threadId, b.signal)
+    const owedA = inboxA.closeRun!()
+    expect(owedA).toHaveLength(1)
+    expect(owedA[0]).toContain('alpha')
+    finalizeChatRun(a.ctx.threadId, a.ctx.signal)
+    await settle(40)
+    expect(inboxB.take()).toEqual([])
+    gates.forEach((g) => g())
+    await settle()
+    const taken = inboxB.take()
+    expect(taken).toHaveLength(1)
+    expect(taken[0]).toContain('beta answer')
+    expect(taken.join('\n')).not.toContain('alpha')
+    expect(inboxA.take()).toEqual([])
+    expect(chatRunInbox(a.ctx.threadId, a.ctx.signal).closeRun!()).toEqual([])
+  })
+})
+
+describe('run finalizer retention', () => {
+  const callOnce = () =>
+    streamOf([
+      { type: 'start-step' },
+      { type: 'tool-input-available', toolCallId: 'tk', toolName: 'task', input: {} },
+      { type: 'finish-step' },
+      { type: 'finish' },
+    ])
+  const user = { id: 'u', role: 'user' as const, parts: [{ type: 'text' as const, text: 'go' }] }
+  const startRun = (threadId: string, ctx: ChatOrchestrationContext, onFinally?: () => void) => {
+    let step = 0
+    return createChatRunStream({
+      messages: [user],
+      messageId: 'a',
+      signal: new AbortController().signal,
+      sendStep: async () => (++step === 1 ? callOnce() : textStep('ok')),
+      inbox: (runSignal) => chatRunInbox(threadId, runSignal),
+      dispatch: async (_c, signal) => runChatTask(oneChild(), 'tk', { ...ctx, signal }),
+      onFinally,
+    })
+  }
+
+  it('many sequential runs retain zero rows', async () => {
+    const { ctx } = ctxFor()
+    hoisted.childStep.mockImplementation(async () => textStep('fine'))
+    for (let i = 0; i < 25; i++) {
+      for await (const _ of readUIMessageStream({ stream: startRun(ctx.threadId, ctx) })) void _
+      await settle(5)
+    }
+    await settle(20)
+    const state = __testing.stateOf(ctx.threadId)
+    expect(state.statusRows.size).toBe(0)
+    expect(state.statusQueue).toHaveLength(0)
+  })
+
+  it('consumer cancel purges its own queued rows only; another live run is unaffected', async () => {
+    const other = ctxFor()
+    const mine = ctxFor({ threadId: other.ctx.threadId })
+    const t = other.ctx.threadId
+    hang()
+    await runChatTask(oneChild({ name: 'other' }), 'o', other.ctx)
+    const stream = startRun(t, mine.ctx)
+    const reader = stream.getReader()
+    // Read until the child's dispatch row has been produced, then walk away.
+    for (let i = 0; i < 50 && __testing.stateOf(t).children.size < 2; i++) {
+      await Promise.race([reader.read(), settle(2)])
+    }
+    // Prove this run actually dispatched before cancellation; otherwise cleanup is vacuous.
+    expect(__testing.stateOf(t).children.size).toBe(2)
+    expect(__testing.stateOf(t).statusRows.has('tk-a')).toBe(true)
+    await reader.cancel('consumer closed')
+    await settle(40)
+    const state = __testing.stateOf(t)
+    expect(state.children.size).toBe(1)
+    expect(state.statusRows.get('o-other')?.status).toBe('running')
+    expect([...state.statusRows.keys()]).toEqual(['o-other'])
+    expect(state.statusQueue.map((r) => r.runId)).toEqual(['o-other'])
+    other.controller.abort()
+  })
+})

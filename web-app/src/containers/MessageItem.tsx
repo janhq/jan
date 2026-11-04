@@ -3,6 +3,11 @@ import { memo, useState, useCallback, useEffect, useMemo } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
+import { canContinueStoppedTurn, isCappedTurn } from '@/lib/chatRunTransport'
+import { CoworkRunNotice } from '@/containers/CoworkRunNotice'
+import { isChatRunNotice } from '@/lib/chatRunNotice'
+import { CoworkBudgetNotice } from '@/containers/CoworkBudgetNotice'
+import { MAX_AGENT_STEPS } from '@/lib/coworkBudget'
 import { usedSkillNames } from '@/lib/agentActivity'
 
 import { ChainOfThoughtGroup } from './message/ChainOfThoughtGroup'
@@ -38,9 +43,10 @@ import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { approvalKey, useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { parseCitationsFromToolOutput } from '@/lib/citation-parser'
 import type { RagCitation, WebCitation } from '@/components/Citations'
 import { useGroundingStore } from '@/stores/grounding-store'
@@ -51,6 +57,7 @@ import { ContributedOverflowMenu } from '@/containers/extensions/ContributedMenu
 
 export type MessageItemProps = {
   message: UIMessage
+  threadId?: string
   isFirstMessage: boolean
   isLastMessage: boolean
   status: ChatStatus
@@ -60,6 +67,8 @@ export type MessageItemProps = {
   onReasoningScrollToBottom?: () => void
   onRegenerate?: (messageId: string) => void
   onContinue?: (messageId: string) => void
+  /** Leave a conversation that hit its token budget for a fresh one. */
+  onNewConversation?: () => void
   onEdit?: (messageId: string, newText: string) => void
   onDelete?: (messageId: string) => void
   /** Ask this question again, unchanged, dropping whatever it produced. Only
@@ -73,6 +82,8 @@ export type MessageItemProps = {
   /** Suppress the per-message action buttons (regenerate/continue/edit/...),
    * e.g. while a continue is pending and re-running would be ambiguous. */
   hideActions?: boolean
+  /** Surface-specific content (e.g. produced files), above message actions. */
+  beforeFooter?: React.ReactNode
   highlightedPrefix?: string | null
   /** The thread the message belongs to; extension message actions need it. */
   threadId?: string
@@ -90,17 +101,20 @@ const FOOTER_ICON_BUTTONS =
 export const MessageItem = memo(
   ({
     message,
+    threadId,
     isFirstMessage,
     isLastMessage,
     status,
     isAnimating,
     hideActions,
+    beforeFooter,
     reasoningContainerRef,
     isReasoningAtBottom,
     onReasoningScroll,
     onReasoningScrollToBottom,
     onRegenerate,
     onContinue,
+    onNewConversation,
     onEdit,
     onDelete,
     onRetry,
@@ -147,16 +161,11 @@ export const MessageItem = memo(
       onContinue?.(message.id)
     }, [onContinue, message.id])
 
-    const isStopped = metadata?.stopped === true
-    // Continue extends partial text; a turn stopped before it wrote any (a tool
-    // call was all it had) has nothing to resume, so offering it would do
-    // nothing.
-    const canContinue =
-      isStopped &&
-      message.parts.some(
-        (p) =>
-          (p.type === 'text' || p.type === 'reasoning') && !!p.text?.trim()
-      )
+    // The button renders only where the route has a working path: a capped
+    // turn or one with settled tool waves resumes from kept history; a pure
+    // text/reasoning stop resumes from its partial. The cap notice itself
+    // never qualifies.
+    const canContinue = canContinueStoppedTurn(metadata, message.parts)
 
     const handleEdit = useCallback(
       (newText: string) => {
@@ -207,9 +216,9 @@ export const MessageItem = memo(
       if (!hasPendingToolCall) return false
       return message.parts.some((part) => {
         const toolCallId = (part as { toolCallId?: string }).toolCallId
-        return Boolean(toolCallId && pendingApprovals[toolCallId])
+        return Boolean(toolCallId && pendingApprovals[approvalKey(threadId ?? '', toolCallId)])
       })
-    }, [hasPendingToolCall, message.parts, pendingApprovals])
+    }, [hasPendingToolCall, message.parts, pendingApprovals, threadId])
 
     const usedSkills = useMemo(
       () => usedSkillNames(message.parts as never),
@@ -522,6 +531,7 @@ export const MessageItem = memo(
             key={`${message.id}-cot-${groupSeq++}`}
             entries={cotEntries}
             messageId={message.id}
+            threadId={threadId}
             totalParts={parts.length}
             isStreaming={isStreaming}
             hasFollowingContent={hasFollowing}
@@ -557,6 +567,27 @@ export const MessageItem = memo(
         }
         if (t === CONTENT_TYPE.TEXT) {
           if (!part.text || part.text.trim() === '') continue
+          // The runner's cap line is a UI notice, not an answer: show the same
+          // budget notice Cowork did (Keep going / Compact / New conversation)
+          // and keep the stored text out of the transcript body.
+          if (isChatRunNotice(part as never)) {
+            flushCot(true)
+            const reason = (metadata as { runStopReason?: unknown } | undefined)?.runStopReason
+            if (reason === 'steps' || reason === 'tokens') {
+              elements.push(
+                <CoworkBudgetNotice
+                  key={`${message.id}-budget-${i}`}
+                  {...(reason === 'steps'
+                    ? { kind: 'steps' as const, max: MAX_AGENT_STEPS, onContinue: () => onContinue?.(message.id) }
+                    : {
+                        kind: 'tokens' as const,
+                        onNewConversation: () => onNewConversation?.(),
+                      })}
+                />
+              )
+            }
+            continue
+          }
           flushCot(true)
           elements.push(
             renderTextPart(part as { type: 'text'; text: string }, i)
@@ -569,9 +600,21 @@ export const MessageItem = memo(
         }
       }
       flushCot(false)
+      // A user Stop leaves the same quiet marker Cowork showed. A cap has its
+      // own notice above, so it is not marked twice.
+      if (
+        message.role === 'assistant' &&
+        (metadata as { stopped?: unknown } | undefined)?.stopped === true &&
+        !isCappedTurn(metadata) &&
+        !isStreaming
+      ) {
+        elements.push(<CoworkRunNotice key={`${message.id}-stopped`} kind="stopped" />)
+      }
       return elements
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
+      onContinue,
+      onNewConversation,
       message.parts,
       isStreaming,
       isReasoningAtBottom,
@@ -706,8 +749,10 @@ export const MessageItem = memo(
             actions on the right, with copy last so it stays at the bubble's edge.
             Only copy on the last message is always visible; the rest appear on
             hover or focus. */}
+        {beforeFooter}
+
         {message.role === 'user' && !hideActions && (
-          <div className="-mr-1.5 mt-0.5 flex items-center justify-end gap-2.5 text-muted-foreground text-xs">
+          <div className="-mr-1.5 mt-0.5 flex items-center justify-end gap-2.5 text-muted-foreground text-sm">
             <time
               className={cn('text-muted-foreground', hoverReveal)}
               dateTime={createdAtIso}
@@ -779,7 +824,7 @@ export const MessageItem = memo(
             The hidden controls keep their space (opacity, not display) so the
             row never shifts as the pointer moves in and out. */}
         {message.role === 'assistant' && !hideActions && (
-          <div className="@container -ml-1.5 mt-1.5 flex items-center gap-2.5 text-muted-foreground text-xs">
+          <div className="@container -ml-1.5 mt-1.5 flex items-center gap-2.5 text-muted-foreground text-sm">
             <div
               className={cn(
                 'flex items-center',
@@ -872,20 +917,19 @@ export const MessageItem = memo(
           </div>
         )}
 
-        {/* Image Preview Dialog */}
-        {previewImage && (
-          <div
-            className="fixed inset-0 z-100 bg-black/50 backdrop-blur-md flex items-center justify-center cursor-pointer"
-            onClick={() => setPreviewImage(null)}
-          >
-            <img
-              src={previewImage.url}
-              alt={previewImage.filename || 'Preview'}
-              className="max-h-[90vh] max-w-[90vw] object-contain"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        )}
+        {/* Escape the transcript's scroll/animation stacking contexts. */}
+        <Dialog open={!!previewImage} onOpenChange={(open) => { if (!open) setPreviewImage(null) }}>
+          {previewImage && (
+            <DialogContent className="w-auto max-w-[90vw] border-0 bg-transparent p-0 shadow-none sm:max-w-[90vw] lg:max-w-[90vw] xl:max-w-[90vw]">
+              <DialogTitle className="sr-only">{previewImage.filename || 'Image preview'}</DialogTitle>
+              <img
+                src={previewImage.url}
+                alt={previewImage.filename || 'Preview'}
+                className="max-h-[80vh] max-w-full object-contain"
+              />
+            </DialogContent>
+          )}
+        </Dialog>
       </div>
     )
   },
@@ -906,6 +950,7 @@ export const MessageItem = memo(
       prevProps.status === nextProps.status &&
       prevProps.hideActions === nextProps.hideActions &&
       prevProps.threadId === nextProps.threadId &&
+      prevProps.beforeFooter === nextProps.beforeFooter &&
       prevProps.versionInfo?.index === nextProps.versionInfo?.index &&
       prevProps.versionInfo?.count === nextProps.versionInfo?.count
     )

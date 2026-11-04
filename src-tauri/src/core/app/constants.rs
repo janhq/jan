@@ -11,7 +11,7 @@ pub const TAURI_BUNDLE_IDENTIFIER: &str = "jan.ai.app";
 
 /// Conversations & user data — chat threads and assistant profiles.
 /// Gated by the `keep_app_data` flag during factory reset.
-pub const JAN_DATA_DIRS_CONVERSATIONS: &[&str] = &["threads", "assistants"];
+pub const JAN_DATA_DIRS_CONVERSATIONS: &[&str] = &["threads", "assistants", "conversation-denials"];
 
 /// Downloaded models and engine binaries.
 /// Gated by the `keep_models_and_configs` flag during factory reset.
@@ -31,12 +31,18 @@ pub const JAN_DATA_DIRS_COMMON: &[&str] = &["extensions", "logs", ".npx", ".uvx"
 /// persists webview zustand blobs here keyed by store namespace.
 /// `provider_secrets.enc` is the encrypted OS-keyring fallback for provider API
 /// keys (`core::server::provider_secrets`); it must also be wiped on a full reset.
-pub const JAN_DATA_FILES_SETTINGS: &[&str] = &["settings.json", "provider_secrets.enc"];
+/// `chat-permissions.json` holds app-wide network and memory-write preferences.
+pub const JAN_DATA_FILES_SETTINGS: &[&str] = &[
+    "settings.json",
+    "provider_secrets.enc",
+    "chat-permissions.json",
+];
 
 /// All known data subdirectories (union of every category above).
 pub const JAN_DATA_SUBDIRS: &[&str] = &[
     "threads",
     "assistants",
+    "conversation-denials",
     "extensions",
     "logs",
     "models",
@@ -48,7 +54,12 @@ pub const JAN_DATA_SUBDIRS: &[&str] = &[
 ];
 
 /// All known data files (union of every file category above).
-pub const JAN_DATA_FILES: &[&str] = &["mcp_config.json", "settings.json", "provider_secrets.enc"];
+pub const JAN_DATA_FILES: &[&str] = &[
+    "mcp_config.json",
+    "settings.json",
+    "provider_secrets.enc",
+    "chat-permissions.json",
+];
 
 #[cfg(test)]
 mod tests {
@@ -112,6 +123,8 @@ mod tests {
         assert!(JAN_DATA_DIRS_MODELS.contains(&"models"));
         assert!(JAN_DATA_DIRS_COMMON.contains(&"logs"));
         assert!(JAN_DATA_FILES_CONFIGS.contains(&"mcp_config.json"));
+        assert!(JAN_DATA_FILES_SETTINGS.contains(&"chat-permissions.json"));
+        assert!(JAN_DATA_FILES.contains(&"chat-permissions.json"));
     }
 }
 

@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   providerId: 'openai',
   serviceHub: null as unknown,
   predefinedRemote: false,
+  ragTools: [] as Array<{ name: string; description: string; inputSchema: object; server: string }>,
 }))
 
 const mcpService = {
@@ -27,7 +28,7 @@ const mcpService = {
 
 h.serviceHub = {
   mcp: () => mcpService,
-  rag: () => ({ getTools: async () => [] }),
+  rag: () => ({ getTools: async () => h.ragTools }),
 }
 
 vi.mock('ai', async () => {
@@ -134,6 +135,7 @@ vi.mock('../model-factory', () => ({
   ModelFactory: { createModel: vi.fn(async () => ({ modelId: 'gpt' })) },
 }))
 
+import { useChatPlan } from '@/hooks/useChatPlan'
 import { CustomChatTransport } from '../custom-chat-transport'
 import { CoworkChatTransport } from '../coworkTransport'
 import { ModelFactory } from '../model-factory'
@@ -163,8 +165,10 @@ const send = (transport: CustomChatTransport, messages: UIMessage[]) =>
 
 describe('CustomChatTransport prompt-prefix stability across turns', () => {
   beforeEach(() => {
+    useChatPlan.setState({ drafts: {} })
     streamTextCalls.length = 0
     h.disabledTools = []
+    h.ragTools = []
     h.servers = ['srv']
     h.providerId = 'openai'
     h.assistantParameters = null
@@ -177,6 +181,77 @@ describe('CustomChatTransport prompt-prefix stability across turns', () => {
     h.getRelevantTools.mockResolvedValue([
       { name: 'tool_a', description: 'a', inputSchema: {}, server: 'srv' },
     ])
+  })
+
+  it('freezes Plan prompt and advertisement until a validated review transition', async () => {
+    useChatPlan.getState().setDraft('thread-1', true)
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    const finish = transport.beginChatRun()
+    try {
+      await drain(await send(transport, [user('u1', 'investigate')]))
+      expect(String(streamTextCalls.at(-1)?.system)).toContain('PLAN MODE (read only)')
+      expect(Object.keys(streamTextCalls.at(-1)?.tools as object)).not.toContain('tool_a')
+      expect(transport.planToolRefusal('shell')).toContain('read-only')
+      useChatPlan.getState().setDraft('thread-1', false)
+      expect(transport.planToolRefusal('shell')).toContain('read-only')
+      transport.executeReviewedPlan()
+      await drain(await send(transport, [user('u1', 'investigate')]))
+      expect(String(streamTextCalls.at(-1)?.system)).not.toContain('PLAN MODE (read only)')
+      expect(transport.planToolRefusal('shell')).toBeUndefined()
+      useChatPlan.getState().setDraft('thread-1', true)
+      expect(transport.planToolRefusal('shell')).toContain('read-only')
+    } finally { finish() }
+  })
+
+  it.each([false, true])('Plan advertises trusted attachment reads but rejects MCP collisions (spoof=%s)', async (spoof) => {
+    useChatPlan.getState().setDraft('thread-1', true)
+    h.ragTools = ['retrieve', 'list_attachments', 'get_chunks'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, server: 'rag' }))
+    if (spoof) {
+      const external = h.ragTools.map(tool => ({ ...tool, server: 'external' }))
+      h.getRelevantTools.mockResolvedValue(external)
+      mcpService.getTools.mockResolvedValueOnce(external as never).mockResolvedValueOnce(external as never)
+    }
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await transport.updateRagToolsAvailability(!spoof, true, true)
+    const finish = transport.beginChatRun()
+    try {
+      await drain(await send(transport, [user('u1', 'read attachments')]))
+      const tools = Object.keys(streamTextCalls.at(-1)?.tools as object)
+      for (const { name } of h.ragTools) {
+        if (spoof) {
+          expect(tools).not.toContain(name)
+        } else {
+          expect(tools).toContain(name)
+          expect(transport.planToolRefusal(name)).toBeUndefined()
+        }
+      }
+    } finally { finish() }
+  })
+
+  it('latches Plan activated during an initially normal run even between dispatches', async () => {
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    const finish = transport.beginChatRun()
+    try {
+      await drain(await send(transport, [user('u1', 'investigate')]))
+      useChatPlan.getState().setDraft('thread-1', true)
+      useChatPlan.getState().setDraft('thread-1', false)
+      expect(transport.isPlanActive()).toBe(true)
+      expect(transport.planToolRefusal('shell')).toContain('read-only')
+      await drain(await send(transport, [user('u1', 'investigate')]))
+      expect(String(streamTextCalls.at(-1)?.system)).toContain('PLAN MODE (read only)')
+      transport.executeReviewedPlan()
+      expect(transport.isPlanActive()).toBe(false)
+      expect(transport.planToolRefusal('shell')).toBeUndefined()
+    } finally { finish() }
+  })
+
+  it('never reinterprets slash paths or removed skills from reloaded history', async () => {
+    const messages = [user('u1', '/tmp/logs'), assistant('a1', 'ok'), user('u2', '/skill:deleted'), assistant('a2', 'done'), user('u3', 'continue')]
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(await send(transport, messages))
+    const sent = JSON.stringify(streamTextCalls.at(-1)?.messages)
+    expect(sent).toContain('/tmp/logs')
+    expect(sent).toContain('/skill:deleted')
   })
 
   it('sends a byte-identical prefix (system + tools + prior turns) on the next turn', async () => {
@@ -289,6 +364,7 @@ describe('CustomChatTransport prompt-prefix stability across turns', () => {
 
 describe('CustomChatTransport assistant completion (continuation prefill)', () => {
   beforeEach(() => {
+    useChatPlan.setState({ drafts: {} })
     streamTextCalls.length = 0
     h.disabledTools = []
     h.servers = ['srv']
@@ -386,6 +462,7 @@ describe('CustomChatTransport assistant completion (continuation prefill)', () =
 // the SDK, and counts it against the context window (janhq/jan#9227).
 describe('CustomChatTransport output-token cap', () => {
   beforeEach(() => {
+    useChatPlan.setState({ drafts: {} })
     streamTextCalls.length = 0
     h.providerId = 'anthropic'
     h.predefinedRemote = true
@@ -478,6 +555,7 @@ it('sends an MCP image result to an OpenAI-compatible provider as a sentinel', a
 it.each(['anthropic', 'google', 'openai'])(
   'sends an MCP image result to %s as an image-data tool output',
   async (name) => {
+    useChatPlan.setState({ drafts: {} })
     streamTextCalls.length = 0
     provider.provider = name
     h.providerId = name
@@ -492,3 +570,128 @@ it.each(['anthropic', 'google', 'openai'])(
     expect(sent).not.toContain('__JAN_TOOL_IMAGE__')
   }
 )
+
+// Exercise the new adapter's actual canonical output through the production
+// transport media/tool-wave pipeline, not SDK conversion alone.
+it.each(['groq', 'anthropic', 'google', 'openai'])(
+  'Chat runner typed MCP/RAG/media live and reload requests match for %s',
+  async (name) => {
+    const { createChatRunStream } = await import('../chatRunTransport')
+    const { readUIMessageStream } = await import('ai')
+    const { assistantRecordFields, convertThreadMessageToUIMessage } = await import('../messages')
+    const chunks = (values: unknown[]) => new ReadableStream({ start(c) { values.forEach(v => c.enqueue(v)); c.close() } })
+    const initial = user('u-fixture', 'controlled media fixture')
+    let n = 0
+    const responses = [
+      chunks([{ type: 'start-step' }, ...['image', 'empty', 'zero', 'false', 'rag'].map(toolCallId => ({ type: 'tool-input-available', toolCallId, toolName: `fixture_${toolCallId}`, input: {} })), { type: 'finish-step' }, { type: 'finish' }]),
+      chunks([{ type: 'start-step' }, { type: 'text-start', id: 't' }, { type: 'text-delta', id: 't', delta: 'fixture done' }, { type: 'text-end', id: 't' }, { type: 'finish-step' }, { type: 'finish' }]),
+    ]
+    const outputs: Record<string, unknown> = {
+      image: [{ type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' }],
+      empty: '', zero: 0, false: false, rag: [{ type: 'text', text: 'retrieved fixture' }],
+    }
+    let live: UIMessage | undefined
+    for await (const message of readUIMessageStream({ stream: createChatRunStream({
+      messages: [initial], messageId: 'a-fixture', signal: new AbortController().signal,
+      sendStep: async () => responses[n++], dispatch: async call => ({ output: outputs[call.toolCallId] }),
+    }) })) live = message
+    const record = JSON.parse(JSON.stringify({ id: live!.id, thread_id: 'thread-1', role: 'assistant', status: 'ready', created_at: 1, completed_at: 1, ...assistantRecordFields(live!, {}, {}) }))
+    const reloaded = convertThreadMessageToUIMessage(record)
+    provider.provider = name
+    h.providerId = name
+    selectedModel.id = 'gpt'
+    selectedModel.capabilities = ['tools', 'vision']
+    useChatPlan.setState({ drafts: {} })
+    streamTextCalls.length = 0
+    const transport = new CustomChatTransport('fixture system', 'thread-1')
+    await drain(await send(transport, [initial, live!]))
+    await drain(await send(transport, [initial, reloaded]))
+    expect(streamTextCalls[1].messages).toEqual(streamTextCalls[0].messages)
+    const wire = JSON.stringify(streamTextCalls[0].messages)
+    expect(wire).toContain(name === 'groq' ? '__JAN_TOOL_IMAGE__data:image/png;base64,iVBORw0KGgo=' : 'image-data')
+    expect(wire).toContain('retrieved fixture')
+    // Losing uiParts would corrupt falsy tool outcomes/wave boundaries.
+    const legacy = convertThreadMessageToUIMessage({ ...record, metadata: {} })
+    await drain(await send(transport, [initial, legacy]))
+    expect(streamTextCalls[2].messages).not.toEqual(streamTextCalls[0].messages)
+  }
+)
+
+it('does not send persisted Chat cap notices back through the production model conversion', async () => {
+  const { CHAT_RUN_NOTICE_METADATA } = await import('../chatRunNotice')
+  const transport = new CustomChatTransport('fixture system', 'thread-1')
+  const message: UIMessage = { id: 'stopped', role: 'assistant', parts: [
+    { type: 'text', text: 'Actual partial answer', state: 'done' },
+    { type: 'text', text: 'DISPLAY_ONLY_CAP_NOTICE', state: 'done', providerMetadata: CHAT_RUN_NOTICE_METADATA },
+  ] }
+  streamTextCalls.length = 0
+  await drain(await send(transport, [user('u-notice', 'fixture'), message]))
+  const wire = JSON.stringify(streamTextCalls[0].messages)
+  expect(wire).toContain('Actual partial answer')
+  expect(wire).not.toContain('DISPLAY_ONLY_CAP_NOTICE')
+  expect(wire).not.toContain('chatRunNotice')
+})
+
+// Real production path: a stored Chat assistant turn carrying `data-run-context`
+// (assistantRecordFields -> JSON -> converter) goes through the actual
+// CustomChatTransport.sendMessages. The captured provider request must carry the
+// ping answer exactly once, as a marked USER turn, never as assistant prefill.
+// Removing the production `expandChatRunContext` call in custom-chat-transport.ts
+// must fail this test.
+it('reloaded data-run-context reaches the provider request once, as a user turn', async () => {
+  // This standalone case must not inherit provider/context settings from earlier suites.
+  h.providerId = 'openai'
+  h.assistantParameters = { ctx_len: 32768, max_tokens: 1024 }
+  h.predefinedRemote = false
+  provider.provider = 'openai'
+  provider.settings = []
+  selectedModel.id = 'gpt'
+  selectedModel.capabilities = ['tools']
+  h.getModelProps.mockReset()
+
+  const { assistantRecordFields, convertThreadMessageToUIMessage } = await import('../messages')
+  const { RUN_CONTEXT_PART } = await import('../chatRunContext')
+  const ANSWER = 'UNIQUE-RUN-CONTEXT-ANSWER-5803'
+  const stored: UIMessage = {
+    id: 'a-ctx',
+    role: 'assistant',
+    parts: [
+      { type: 'step-start' },
+      { type: 'tool-task', toolCallId: 'tc1', state: 'output-available', input: { name: 'a' }, output: 'Dispatched 1 subagent(s)' },
+      { type: 'data-task-status', id: 'task-status:tk:a', data: { subagents: [{ runId: 'tk:a', name: 'a', status: 'done', startedAt: 1, endedAt: 2, finalOutput: 'STATUS-ONLY-ROW' }] } },
+      { type: 'data-tool-diff', id: 'diff-1', data: { toolCallId: 'tc1', diff: 'DISPLAY-ONLY-DIFF' } },
+      { type: 'text', text: 'dispatched, waiting', state: 'done' },
+      { type: RUN_CONTEXT_PART, data: { text: `Subagent 'a' (tk:a) finished. Its answer:\n\n${ANSWER}` } },
+      { type: 'text', text: 'the child said so', state: 'done' },
+    ],
+  } as UIMessage
+  const fields = assistantRecordFields(stored, {}, { stopped: false })
+  expect(fields.metadata).not.toHaveProperty('uiPartsSkipped')
+  const record = JSON.parse(JSON.stringify({
+    id: stored.id, thread_id: 'thread-1', role: 'assistant', status: 'ready', object: 'thread.message',
+    created_at: 1, completed_at: 1, ...fields,
+  }))
+  const reloaded = convertThreadMessageToUIMessage(record)
+  expect(reloaded.parts.filter((p) => p.type === RUN_CONTEXT_PART)).toHaveLength(1)
+
+  const transport = new CustomChatTransport('fixture system', 'thread-1')
+  streamTextCalls.length = 0
+  await drain(await send(transport, [user('u-ctx', 'delegate it'), reloaded, user('u-next', 'and now?')]))
+
+  expect(streamTextCalls).toHaveLength(1) // one request, no child re-execution
+  const messages = streamTextCalls[0].messages as Array<{ role: string; content: unknown }>
+  const holders = messages.filter((m) => JSON.stringify(m).includes(ANSWER))
+  expect(holders).toHaveLength(1)
+  expect(holders[0].role).toBe('user')
+  expect(JSON.stringify(holders[0])).toContain('<SYSTEM>')
+  expect(JSON.stringify(holders[0])).toContain('</SYSTEM>')
+  const wire = JSON.stringify(streamTextCalls[0].messages)
+  expect(wire.split(ANSWER)).toHaveLength(2)
+  // Not assistant prefill: the request ends on the user's next turn.
+  expect(messages[messages.length - 1].role).toBe('user')
+  expect(JSON.stringify(messages[messages.length - 1])).not.toContain(ANSWER)
+  for (const m of messages.filter((x) => x.role === 'assistant')) expect(JSON.stringify(m)).not.toContain(ANSWER)
+  // Display-only parts never reach the model.
+  for (const banned of ['task-status', 'STATUS-ONLY-ROW', 'DISPLAY-ONLY-DIFF', 'data-tool-diff', RUN_CONTEXT_PART])
+    expect(wire).not.toContain(banned)
+})
