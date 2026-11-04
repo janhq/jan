@@ -614,15 +614,15 @@ describe('CoworkPage folder access', () => {
     expect(skillsFolder).toHaveBeenLastCalledWith('/proj')
   })
 
-  it('Allow access saves write through the strict setter and then restores the folder', async () => {
+  it('Confirm restores only read access so a denied read-only grant cannot silently widen', async () => {
     seedFolder()
     mocks.setGrant.mockImplementationOnce(async (sid: string, scope: { path: string; access: 'read' | 'write' }) => {
       useCoworkSessions.getState().setFolderGrant(sid, scope)
     })
     render(<CoworkPage />)
     await act(async () => { fireEvent.click(screen.getByText('allow-access')) })
-    expect(mocks.setGrant).toHaveBeenCalledExactlyOnceWith('test', { path: '/proj', access: 'write' })
-    expect(screen.getByTestId('pill').dataset.access).toBe('write')
+    expect(mocks.setGrant).toHaveBeenCalledExactlyOnceWith('test', { path: '/proj', access: 'read' })
+    expect(screen.getByTestId('pill').dataset.access).toBe('read')
     expect(skillsFolder).toHaveBeenLastCalledWith('/proj')
   })
 
