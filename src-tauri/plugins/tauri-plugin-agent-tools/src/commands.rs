@@ -2326,7 +2326,15 @@ mod tests {
             let out = chat_call_in(&data, name, args, write.clone(), write.clone(), true)
                 .await
                 .unwrap();
-            assert!(!out.is_error || name == "memory", "{name}: {}", out.content);
+            if name == "memory" {
+                assert!(
+                    !out.content.contains("plan_mode_read_only"),
+                    "Plan must not refuse memory view: {}",
+                    out.content
+                );
+            } else {
+                assert!(!out.is_error, "{name}: {}", out.content);
+            }
         }
         let _ = std::fs::remove_dir_all(folder);
         let _ = std::fs::remove_dir_all(data);
