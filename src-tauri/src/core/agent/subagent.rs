@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use tauri_plugin_agent_tools::permissions::ToolPermissions;
-use tauri_plugin_agent_tools::tools::sandbox::scratch_display_path;
 use tauri_plugin_agent_tools::tools::spill::{
     compose_subagent_result, fill_subagent_result, reserve_blackboard_result,
     SUBAGENT_INLINE_MAX_BYTES,
@@ -2459,7 +2458,7 @@ pub(crate) async fn spawn_subagent(
     scratch: Option<&Path>,
     notify_on_finish: bool,
 ) -> Result<Dispatched, SubagentError> {
-    let prepared = prepare_dispatch(scope, parent_args, req, parent).await?;
+    let prepared = prepare_dispatch(scope, parent_args, req, parent, scratch).await?;
     start_dispatch(scope, parent_args, prepared, events, scratch, notify_on_finish)
 }
 
@@ -2482,12 +2481,15 @@ struct PreparedDispatch {
 }
 
 /// The half of [`spawn_subagent`] that can fail on the request: resolve it,
-/// price it, and assign the child its workspace.
+/// price it, and assign the child its workspace. `scratch` is the parent's own
+/// scratch root (`None` when it runs unconfined), passed down rather than
+/// recomputed so the child's caches land where the parent's sandbox binds.
 async fn prepare_dispatch(
     scope: &DispatchScope,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     req: SubagentRequest,
     parent: &ParentRun,
+    scratch: Option<&Path>,
 ) -> Result<PreparedDispatch, SubagentError> {
     if !parent_args.subagents_enabled {
         return Err(SubagentError::PermissionDenied(
@@ -2519,18 +2521,20 @@ async fn prepare_dispatch(
         )?,
         ..resolved
     };
-    assign_dispatch(scope, parent_args, resolved, req, parent).await
+    assign_dispatch(scope, parent_args, resolved, req, parent, scratch).await
 }
 
 /// Give an already-resolved child its workspace: the part of
 /// [`prepare_dispatch`] after its definition and tools are settled, shared
-/// with Jan's internal subagents, which are not in the registry.
+/// with Jan's internal subagents, which are not in the registry. `scratch` is
+/// the parent's (see [`prepare_dispatch`]).
 async fn assign_dispatch(
     scope: &DispatchScope,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     resolved: ResolvedDispatch,
     req: SubagentRequest,
     parent: &ParentRun,
+    scratch: Option<&Path>,
 ) -> Result<PreparedDispatch, SubagentError> {
     let project_root = parent_args
         .project_root
@@ -2553,10 +2557,7 @@ async fn assign_dispatch(
     // a ref possibly a network fetch, and placing the child reads its branch,
     // which would otherwise stall every other task on this runtime worker
     // until git returns.
-    let scratch = parent_args
-        .session_id
-        .as_deref()
-        .map(tauri_plugin_agent_tools::workspace::scratch_dir);
+    let scratch = scratch.map(Path::to_path_buf);
     let (workspace, placement, lease) = {
         let scope = scope.clone();
         let root = project_root.clone();
@@ -2627,7 +2628,7 @@ fn start_dispatch(
     let run_id = next_subagent_run_id(&name);
     let (tx, rx) = tokio::sync::oneshot::channel();
     let result_file = scratch.and_then(|s| {
-        reserve_blackboard_result(s, &name).map(|path| (scratch_display_path(Some(s), &path), path))
+        reserve_blackboard_result(s, &name).map(|path| (path.to_string_lossy().into_owned(), path))
     });
     let display_path = result_file.as_ref().map(|(display, _)| display.clone());
 
@@ -2697,12 +2698,11 @@ fn start_dispatch(
             tauri_plugin_agent_tools::tools::spill::SUBAGENT_DIR,
         )
     });
-    // The session file the blackboard entry links to, in the model's spelling.
+    // The session file the blackboard entry links to, by its real path.
     let session_display = transcript_dir.as_ref().map(|dir| {
-        scratch_display_path(
-            scratch,
-            &crate::core::agent::subagent_session::session_file(dir, &name),
-        )
+        crate::core::agent::subagent_session::session_file(dir, &name)
+            .to_string_lossy()
+            .into_owned()
     });
     let slot = ChildSlot::new();
     let slot_task = slot.clone();
@@ -2902,7 +2902,9 @@ pub(crate) async fn spawn_memory_tidy(
         ..parent.clone()
     };
     let args = memory_tidy_args(parent_args, budget);
-    let prepared = assign_dispatch(scope, &args, resolved, req, parent).await?;
+    // No scratch: the tidy has no shell, so it needs no package caches, and
+    // its answer comes back through `await_subagent`, not the blackboard.
+    let prepared = assign_dispatch(scope, &args, resolved, req, parent, None).await?;
     start_dispatch(scope, &args, prepared, events, None, false)
 }
 
@@ -3143,7 +3145,7 @@ pub(crate) async fn spawn_dispatch_plan(
     let phase_count = plan.phases.len();
     let total_subagents = plan.phases.iter().map(|p| p.subagents.len()).sum();
     let names = plan.names.clone();
-    let blackboard_dir = scratch.map(|s| scratch_display_path(Some(s), &blackboard_dir_path(s)));
+    let blackboard_dir = scratch.map(|s| blackboard_dir_path(s).to_string_lossy().into_owned());
 
     let multi = phase_count > 1;
     if multi {
@@ -3328,7 +3330,7 @@ async fn run_phase_plan(
         // Only read when there is a scratch, which `inputs` being non-empty implies.
         let dir = scratch
             .as_deref()
-            .map(|s| scratch_display_path(Some(s), &blackboard_dir_path(s)))
+            .map(|s| blackboard_dir_path(s).to_string_lossy().into_owned())
             .unwrap_or_default();
         let mut ids = Vec::with_capacity(phase.subagents.len());
         let mut names = Vec::with_capacity(phase.subagents.len());
@@ -5586,10 +5588,9 @@ pub(crate) mod tests {
 
         let entry = tauri_plugin_agent_tools::tools::spill::read_blackboard_result(&scratch, "reviewer")
             .expect("blackboard entry");
-        let session = scratch_display_path(
-            Some(&scratch),
-            &crate::core::agent::subagent_session::session_path(&scratch, "reviewer"),
-        );
+        let session = crate::core::agent::subagent_session::session_path(&scratch, "reviewer")
+            .to_string_lossy()
+            .into_owned();
         assert!(entry.starts_with("ERROR: "), "the result leads: {entry}");
         assert!(entry.ends_with(&session_link(&session)), "{entry}");
         let _ = std::fs::remove_dir_all(&root);
@@ -5889,7 +5890,7 @@ pub(crate) mod tests {
             agent: "writer".to_string(),
             ..req("late", None)
         };
-        let late = prepare_dispatch(&scope, &args, late, &parent_run()).await.unwrap();
+        let late = prepare_dispatch(&scope, &args, late, &parent_run(), None).await.unwrap();
         let late_wt = late.workspace.worktree.clone().expect("a writer gets a worktree");
         bg.abort_all(); // Esc: the session's registry lives on
         let refused = start_dispatch(&scope, &args, late, &events_tx, None, false);

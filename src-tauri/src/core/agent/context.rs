@@ -339,15 +339,14 @@ fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> Str
         .map(|note| format!("\n{note}"))
         .unwrap_or_default();
 
-    // Where to do temporary work. Named by the one spelling that resolves from
-    // both `bash` and the filesystem tools on this platform: `/tmp` where the
-    // sandbox binds the scratch over it, the real path where nothing is mounted
-    // there. Same directory either way, and the shell's `TMPDIR`/`TMP`/`TEMP`
-    // point at it too.
+    // Where to do temporary work, by its real path: every sandbox backend
+    // exposes it there, so the same name works from `bash`, the filesystem
+    // tools and an escalated command, and the shell's `TMPDIR`/`TMP`/`TEMP`
+    // name it too.
     let scratch_line = match scratch {
         Some(scratch) => format!(
             "\nScratch: `{}` is a writable scratch space for temporary work; it persists for this session.",
-            tauri_plugin_agent_tools::tools::sandbox::scratch_display_path(Some(scratch), scratch)
+            display_path(scratch)
         ),
         None => String::new(),
     };
@@ -1491,22 +1490,17 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// The scratch must be advertised under the name that resolves from both
-    /// `bash` and the filesystem tools: `/tmp` where the sandbox binds it there,
-    /// the real path where nothing is mounted over `/tmp`. Naming the host path
-    /// on Linux (or `/tmp` anywhere else) would send the model to a directory
-    /// one of the two surfaces cannot reach.
+    /// The scratch is advertised by its real path on every platform: the one
+    /// name that resolves from `bash`, the filesystem tools and an escalated
+    /// command alike. `/tmp` would name the host's temp dir to the latter.
     #[test]
     fn runtime_environment_block_advertises_the_scratch_the_tools_share() {
         let root = scratch_project("scratch");
         std::fs::create_dir_all(&root).unwrap();
         let scratch = root.join("agent-scratch");
         let block = runtime_environment_block(&root, Some(&scratch));
-        let expected = if cfg!(target_os = "linux") {
-            "/tmp".to_string()
-        } else {
-            scratch.to_string_lossy().into_owned()
-        };
+        let expected = display_path(&scratch);
+        assert!(!block.contains("Scratch: `/tmp`"), "{block}");
         assert!(
             block.contains(&format!("Scratch: `{expected}`")),
             "want {expected}: {block}"

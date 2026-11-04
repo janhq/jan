@@ -45,6 +45,9 @@ tauri = [
 
 [dependencies]
 base64 = "0.22"
+# The OS cache dir (XDG / ~/Library/Caches / %LOCALAPPDATA%) the session
+# scratch lives under; same version the app crate already resolves.
+dirs = "6.0.0"
 # Advisory file locks (flock / LockFileEx) that serialize memory store changes
 # across processes: the desktop app and the jan CLI share one store.
 fs4 = "1"

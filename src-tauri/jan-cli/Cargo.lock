@@ -5361,6 +5361,7 @@ name = "tauri-plugin-agent-tools"
 version = "0.8.3"
 dependencies = [
  "base64 0.22.1",
+ "dirs",
  "fs4",
  "glob",
  "ignore",

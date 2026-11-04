@@ -662,8 +662,8 @@ pub async fn spawn_with_stdin(
     // values the allowlist just copied in. Without this a command that writes
     // through `mktemp`/`$TMPDIR` lands in the host temp dir -- unreachable to
     // the filesystem tools, and on the backends that confine by path, not
-    // writable at all. `scratch` is what the sandbox exposes, which is not
-    // always the host path (see `jail::scratch_env_path`).
+    // writable at all. Every backend exposes the scratch at its real path, so
+    // that is the value.
     if let Some(scratch) = scratch {
         for key in TEMP_ENV_KEYS {
             cmd.env(key, scratch);

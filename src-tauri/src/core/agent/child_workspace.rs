@@ -23,7 +23,7 @@
 //! checkout at that ref (fetched from `origin` when it is not local).
 //!
 //! Checkouts live under `~/.jan/worktrees/<project-slug>/`, never under `/tmp`
-//! (the sandbox binds the session scratch over `/tmp`). The ledger here
+//! (the sandbox gives the shell a private, throwaway `/tmp`). The ledger here
 //! remembers every child's workspace for the session, so a later dispatch can
 //! name it, and at the session's end removes the checkouts that hold nothing:
 //! no commit past their base and no uncommitted change, `ref` ones included
@@ -296,11 +296,7 @@ pub(crate) fn scope_for(
         ..ChildScope::default()
     };
     if let Some(scratch) = scratch.filter(|_| ws.read_only) {
-        let shown = tauri_plugin_agent_tools::tools::sandbox::scratch_display_path(
-            Some(scratch),
-            scratch,
-        );
-        scope.env_set.extend(reader_env(&shown));
+        scope.env_set.extend(reader_env(scratch));
     }
     if ws.worktree.is_some() || ws.read_only {
         if let Some(target) = project_worktrees_dir(parent_root).map(|d| d.join(CARGO_TARGET)) {
@@ -356,13 +352,13 @@ pub(crate) fn apply(
 }
 
 /// Package-manager caches a read-only child keeps in its scratch, since it
-/// cannot write them into the project. `scratch_shell` is the scratch as the
-/// shell names it.
-fn reader_env(scratch_shell: &str) -> Vec<(String, String)> {
-    let scratch = scratch_shell.trim_end_matches('/');
+/// cannot write them into the project. By the scratch's real path, which is
+/// where the sandbox exposes it.
+fn reader_env(scratch: &Path) -> Vec<(String, String)> {
+    let at = |dir: &str| scratch.join(dir).to_string_lossy().into_owned();
     vec![
-        ("YARN_CACHE_FOLDER".to_string(), format!("{scratch}/yarn-cache")),
-        ("COREPACK_HOME".to_string(), format!("{scratch}/corepack")),
+        ("YARN_CACHE_FOLDER".to_string(), at("yarn-cache")),
+        ("COREPACK_HOME".to_string(), at("corepack")),
     ]
 }
 
@@ -1245,9 +1241,10 @@ pub(crate) fn sweep_orphans(root: &Path) -> Settled {
 }
 
 /// What a session start sweeps, without holding the start up: the stale and
-/// trashed session scratches, `root`'s project's worktree trash, and the
-/// worktrees crashed sessions left there. `report` gets each notice and says
-/// whether it was taken (a run that already ended cannot show it).
+/// trashed session scratches (every project's, a week stale, never `session`'s
+/// own), `root`'s project's worktree trash, and the worktrees crashed sessions
+/// left there. `report` gets each notice and says whether it was taken (a run
+/// that already ended cannot show it).
 ///
 /// A plain thread, not the runtime's: dropping a tokio runtime (which `main`
 /// returning does) waits for its blocking tasks, so a sweep there would hold
@@ -1257,11 +1254,16 @@ pub(crate) fn sweep_orphans(root: &Path) -> Settled {
 #[cfg(feature = "cli")]
 pub(crate) fn spawn_startup_sweep(
     root: PathBuf,
+    session: Option<String>,
     mut report: impl FnMut(String) -> bool + Send + 'static,
 ) {
     std::thread::spawn(move || {
         if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
-            rt.block_on(tauri_plugin_agent_tools::workspace::sweep_stale_scratch_dirs());
+            let keep: Vec<String> = session.into_iter().collect();
+            rt.block_on(tauri_plugin_agent_tools::workspace::sweep_stale_scratch_dirs_in(
+                &crate::core::agent::project::jan_cache_root(),
+                &keep,
+            ));
         }
         empty_trash(&root);
         sweep_and_report(&root, &mut report);
@@ -2018,8 +2020,9 @@ mod git_tests {
         assert!(scope.read_only);
         assert_eq!(scope.write_roots, vec![target], "a reader never gets the git dir");
         assert!(scope.read_roots.is_empty(), "{scope:?}");
+        // By the scratch's real path, which the sandbox exposes as is.
         let yarn = scope.env_set.iter().find(|(k, _)| k == "YARN_CACHE_FOLDER");
-        assert!(yarn.is_some_and(|(_, v)| v.ends_with("/yarn-cache")), "{scope:?}");
+        assert!(yarn.is_some_and(|(_, v)| Path::new(v) == scratch.join("yarn-cache")), "{scope:?}");
         assert!(scope.env_set.iter().any(|(k, _)| k == "COREPACK_HOME"), "{scope:?}");
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
@@ -2677,7 +2680,7 @@ mod git_tests {
             return;
         }
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async { spawn_startup_sweep(root.clone(), |_| true) });
+        rt.block_on(async { spawn_startup_sweep(root.clone(), None, |_| true) });
         // Long enough for the sweep to be blocked in that status.
         std::thread::sleep(Duration::from_millis(500));
         let started = Instant::now();

@@ -1572,7 +1572,7 @@ fn build_cli_orchestration_args(
         } else {
             crate::core::agent::plan::RunMode::Normal
         },
-        // Key the persistent bash `/tmp` scratch to this session. Generated per
+        // Key the persistent bash scratch to this session. Generated per
         // run/session: a one-shot CLI wipes it after its single run; the TUI
         // reuses `args` across turns and wipes it when the interactive session
         // ends.
@@ -2565,12 +2565,16 @@ async fn run_agent_loop(
     // start to report.
     if let Some(root) = args.project_root.clone() {
         let sweep_tx = tx.downgrade();
-        crate::core::agent::child_workspace::spawn_startup_sweep(root, move |text| {
-            sweep_tx
-                .upgrade()
-                .is_some_and(|tx| tx.send(StreamEvent::Notice { text }).is_ok())
-                && format.shows_notices()
-        });
+        crate::core::agent::child_workspace::spawn_startup_sweep(
+            root,
+            args.session_id.clone(),
+            move |text| {
+                sweep_tx
+                    .upgrade()
+                    .is_some_and(|tx| tx.send(StreamEvent::Notice { text }).is_ok())
+                    && format.shows_notices()
+            },
+        );
     }
     let reader = input.as_ref().map(|input| {
         spawn_input_reader(
@@ -2714,9 +2718,10 @@ async fn run_agent_loop(
         );
     }
     // The one-shot CLI runs exactly one turn, so its session ends here: wipe
-    // the persistent bash `/tmp` scratch this run used.
-    if let Some(session) = args.session_id.as_deref() {
-        let _ = workspace::trash_scratch_dir(session).await;
+    // the persistent bash scratch this run used, in its project's cache folder.
+    if let (Some(session), Some(root)) = (args.session_id.as_deref(), args.project_root.as_deref()) {
+        let cache = crate::core::agent::project::project_cache_dir(root);
+        let _ = workspace::trash_scratch_dir_in(&cache, session).await;
     }
     if aborted {
         return Ok(());

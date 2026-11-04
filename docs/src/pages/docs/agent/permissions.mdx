@@ -108,6 +108,12 @@ directory, and reaches the network only if allowed. Reads are looser: the CLI ke
 so `git` and `ssh` credential helpers work (`[tools].allow_home_read`, set it to `false` to close
 that), while the desktop masks it entirely.
 
+The scratch directory is per session, in your OS cache dir: `<cache>/jan/<project>/scratch/<session>`
+(`<cache>` is `~/.cache` on Linux, `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows; desktop
+chats use `<cache>/jan/chat`). The shell, the file tools and an approved escalated command all see it
+at that same path. It is removed when the session ends; one a crash left behind is removed at a later
+start once it is a week old.
+
 While the sandbox is on, Jan's own home, `~/.jan`, is hidden from every tool and from the shell,
 even when you run `jan` from your home directory. It holds `config.toml` (provider keys and hooks)
 and each project's `agent.toml`, memory and threads, so no approval can open it: file tools refuse

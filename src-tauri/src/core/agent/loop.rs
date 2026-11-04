@@ -148,7 +148,7 @@ pub(crate) struct OrchestrationArgs {
     /// stronger than auto-approval's prompt suppression (it cannot override this).
     pub run_mode: crate::core::agent::plan::RunMode,
     /// Stable identity for this run's session, used to key the persistent
-    /// `bash` `/tmp` scratch directory (`<temp>/jan-agent-<session_id>`) and
+    /// `bash` scratch directory (`<cache>/jan/<project slug>/scratch/<session_id>`),
     /// wiped at the session boundary specific to each surface. `None` on
     /// code paths with no session (server proxy runs) keeps the default
     /// throwaway per-command tmpfs.
@@ -812,7 +812,7 @@ struct CompositeToolInvoker {
     /// with it, so the two cannot disagree.
     hidden_root: Option<std::path::PathBuf>,
     /// Session-scoped scratch directory the shell and the filesystem tools share
-    /// (see `workspace::scratch_dir`), so `bash` scratch files persist across
+    /// (see [`scratch_root_for`]), so `bash` scratch files persist across
     /// calls for the whole run. Created at run start and wiped at run end.
     scratch_root: std::path::PathBuf,
     /// Host env-var names/globs the shell may inherit beyond the base allowlist,
@@ -3535,9 +3535,9 @@ fn build_run_system_prompt(
     let base = override_prompt.or(assistant_instructions);
     match project_root {
         Some(root) => {
-            // No sandbox, no scratch: unconfined, the shell already has the
-            // real `/tmp`, and advertising a scratch nothing binds would send
-            // the model to a directory only the filesystem tools can see.
+            // No sandbox, no scratch: unconfined, the shell already writes
+            // wherever the user can with the host's own temp dir, and nothing
+            // would create or clean up a scratch the prompt advertised.
             let scratch = sandbox.then(|| scratch_root_for(session_id, root));
             // A subagent (the run with an override prompt) has no memory, so
             // its prompt carries no memory index or memory instructions.
@@ -3669,30 +3669,35 @@ pub(crate) async fn context_advertised_tools(
     tools
 }
 
-/// Where this run's scratch lives. Session-keyed so it persists across turns in
-/// the interactive TUI (and across calls in a one-shot run), then is wiped at the
-/// session boundary. Pure path math -- [`ensure_scratch_dir`] is what creates it
-/// -- so the system prompt can name the scratch before the tools are built.
+/// Where this run's scratch lives: `<cache>/jan/<project slug>/scratch/<session>`
+/// (see [`crate::core::agent::project::scratch_dir`]). Session-keyed so it
+/// persists across turns in the interactive TUI (and across calls in a
+/// one-shot run), then is wiped at the session boundary. Pure path math --
+/// [`ensure_scratch_dir_path`] is what creates it -- so the system prompt can
+/// name the scratch before the tools are built.
 ///
-/// A session-less run gets a throwaway in the host temp dir, never a directory
+/// A session-less run gets a throwaway beside the sessions', never a directory
 /// inside the project: a project-level scratch is shared by every session
 /// working that checkout, accumulates spill files with no owner to remove them,
 /// and fails outright on a read-only checkout. Nothing wipes a throwaway at run
 /// end (there is no session boundary to hang it on), so it is left to the
 /// startup sweep -- which is why it must live where that sweep looks.
+///
+/// [`ensure_scratch_dir_path`]: tauri_plugin_agent_tools::workspace::ensure_scratch_dir_path
 fn scratch_root_for(
     session_id: Option<&str>,
-    _project_root: &std::path::Path,
+    project_root: &std::path::Path,
 ) -> std::path::PathBuf {
     static ANONYMOUS_RUN: AtomicUsize = AtomicUsize::new(0);
-    match session_id {
-        Some(session) => tauri_plugin_agent_tools::workspace::scratch_dir(session),
-        None => tauri_plugin_agent_tools::workspace::scratch_dir(&format!(
+    let session = match session_id {
+        Some(session) => session.to_string(),
+        None => format!(
             "anon-{}-{}",
             std::process::id(),
             ANONYMOUS_RUN.fetch_add(1, Ordering::Relaxed)
-        )),
-    }
+        ),
+    };
+    crate::core::agent::project::scratch_dir(project_root, &session)
 }
 
 /// Which todo addendum this turn needs, if any: the init guidance on a `/goal`
@@ -6647,21 +6652,21 @@ mod tests {
     #[test]
     fn scratch_root_is_session_keyed_and_never_lands_in_the_project() {
         let root = unique_project_root();
-        assert_eq!(
-            scratch_root_for(Some("sess-1"), &root),
-            tauri_plugin_agent_tools::workspace::scratch_dir("sess-1")
-        );
+        // Under the project's own cache folder, whose slug is its store's.
+        let store = tauri_plugin_agent_tools::workspace::project_store_in(std::path::Path::new("/h"), &root);
+        let cache = crate::core::agent::project::jan_cache_root().join(store.file_name().unwrap());
+        assert_eq!(scratch_root_for(Some("sess-1"), &root), cache.join("scratch/sess-1"));
         // Two sessions never share one scratch.
         assert_ne!(
             scratch_root_for(Some("sess-1"), &root),
             scratch_root_for(Some("sess-2"), &root)
         );
-        // A session-less run still needs a scratch to bind, but it belongs in
-        // the host temp dir: a directory inside the project would be shared by
-        // every session on that checkout and never collected.
+        // A session-less run still needs a scratch to bind, but it belongs
+        // where the startup sweep looks: a directory inside the project would
+        // be shared by every session on that checkout and never collected.
         let anon = scratch_root_for(None, &root);
         assert!(!anon.starts_with(&root), "scratch leaked into the project");
-        assert!(anon.starts_with(std::env::temp_dir()));
+        assert!(anon.starts_with(cache.join("scratch")), "{anon:?}");
         assert_ne!(
             anon,
             scratch_root_for(None, &root),
@@ -10093,7 +10098,7 @@ mod tests {
             enabled_skills: Vec::new(),
             allow_network: DEFAULT_ALLOW_NETWORK,
             allow_home_read: DEFAULT_ALLOW_HOME_READ,
-            scratch_root: tauri_plugin_agent_tools::workspace::scratch_dir("test-session"),
+            scratch_root: std::env::temp_dir().join("jan-loop-test-scratch"),
             env_passthrough: Vec::new(),
             env_set: Vec::new(),
             web_search: None,
@@ -11468,9 +11473,10 @@ mod tests {
         assert_eq!(run_session_start(None, None), SessionStart::capture(None));
     }
 
-    /// An unconfined run has no scratch, so the prompt must not name one: the
-    /// shell sees the real `/tmp` and would never find the directory the
-    /// scratch line points at.
+    /// An unconfined run has no scratch, so the prompt must not name one:
+    /// nothing would create or clean up the directory the line points at. A
+    /// confined run names the real path, the same one an escalated command
+    /// would find.
     #[test]
     fn unsandboxed_prompt_does_not_advertise_a_scratch() {
         let root = unique_project_root();
@@ -11488,6 +11494,11 @@ mod tests {
         .expect("project prompt")
         .as_prompt();
         assert!(confined.contains("Scratch:"), "{confined}");
+        let scratch = scratch_root_for(Some("s1"), &root);
+        assert!(
+            confined.contains(&format!("Scratch: `{}`", scratch.display())),
+            "{confined}"
+        );
         let bare = build_run_system_prompt(
             None,
             Some("do things"),
