@@ -424,5 +424,10 @@
     "removeFolder": "移除",
     "hostRevokeUnconfirmed": "Jan 无法确认此权限更改。后台任务可能仍拥有之前的访问权限。请重试，或退出 Jan 以停止这些任务。",
     "saveFailed": "无法保存权限更改。在成功保存前，额外的访问权限将保持关闭。"
+  },
+  "memoryFeedback": {
+    "saved": "记忆已保存",
+    "inspect": "查看",
+    "inspectLabel": "查看已保存的记忆"
   }
 }

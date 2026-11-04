@@ -24,7 +24,7 @@ export function DraftWorkspacePill({
     <div className="pt-2" data-testid="draft-workspace-pill">
       <CoworkWorkspacePill
         folder={folder?.path ?? null}
-        access={folder?.access ?? 'read'}
+        access={folder?.access ?? 'write'}
         onAccessChange={(access) =>
           folder && onChange({ ...value, folderScope: { path: folder.path, access } })
         }

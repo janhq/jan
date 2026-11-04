@@ -304,9 +304,10 @@ In `Settings -> General`:
 
 ### Folder access
 - [ ] Choose a folder from +; a folder pill appears. Opening it shows the selected path and honest read-only/read-write status.
-- [ ] Newly selected folders start read-only. **Allow changes to files** enables writes only for that folder; turning it off blocks the next write.
+- [ ] Newly selected folders allow read and write. **Allow changes to files** can narrow that access; turning it off blocks the next write.
 - [ ] Change folder, cancel the picker and detach all behave correctly. Long and non-ASCII paths wrap or truncate without pushing actions out of view.
-- [ ] Restart with a saved folder grant: show that access needs confirmation, and provide a working way to confirm or remove it. Never silently activate saved authority.
+- [ ] Restart with a saved folder grant: restore the saved access without a confirmation prompt. A revoked or failed-save grant must not return from stale disk data; verify durable denial survives restart.
+- [ ] Successful memory changes show one quiet **Memory saved** notice; **Inspect** opens memory management. Failed, denied and stopped calls do not claim success.
 - [ ] Check native file/folder pickers manually: WebDriver screenshots and synthetic input events do not prove the OS picker works.
 
 ### Agent settings and permissions

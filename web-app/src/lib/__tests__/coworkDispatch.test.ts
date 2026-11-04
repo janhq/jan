@@ -127,7 +127,7 @@ describe('dispatchCoworkTool', () => {
   it.each(['skill_list', 'skill_read'])('dispatches advertised %s', async (name) => {
     const out = await dispatchCoworkTool(call(name), ctx())
     expect(out.isError).toBeFalsy()
-    expect(executeAgentTool).toHaveBeenCalledWith(name, {}, 's1', null, 'session', true, true, null)
+    expect(executeAgentTool).toHaveBeenCalledWith(name, {}, 's1', null, 'session', true, true, null, undefined, undefined)
   })
 
   // The trailing 'session' is load-bearing: under the default 'thread' scope a
@@ -144,7 +144,9 @@ describe('dispatchCoworkTool', () => {
       'session',
       true,
       true,
-      null
+      null,
+      undefined,
+      undefined
     )
   })
 
@@ -160,7 +162,9 @@ describe('dispatchCoworkTool', () => {
       'session',
       true,
       true,
-      null
+      null,
+      undefined,
+      undefined
     )
     chatPermissions.shellNetwork = false
     try {
@@ -173,11 +177,19 @@ describe('dispatchCoworkTool', () => {
         'session',
         false,
         true,
-        null
+        null,
+        undefined,
+        undefined
       )
     } finally {
       chatPermissions.shellNetwork = true
     }
+  })
+
+  it('passes the owning run signal through for late-result feedback suppression', async () => {
+    const signal = new AbortController().signal
+    await dispatchCoworkTool(call('memory', { op: 'write' }), ctx({ signal }))
+    expect(executeAgentTool.mock.calls[0][9]).toBe(signal)
   })
 
   it('routes the client-only tools to their handlers', async () => {
@@ -247,7 +259,9 @@ describe('dispatchCoworkTool', () => {
       'session',
       true,
       true,
-      '/repo'
+      '/repo',
+      undefined,
+      undefined
     )
   })
 

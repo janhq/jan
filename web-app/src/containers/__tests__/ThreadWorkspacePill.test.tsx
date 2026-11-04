@@ -50,69 +50,44 @@ describe('ThreadWorkspacePill', () => {
     }
   }
 
-  it('shows a saved folder as inactive without restoring any grants', () => {
+  it('does not show an inactive confirmation UI for denied saved metadata', () => {
     persistFolder()
     render(<ThreadWorkspacePill threadId="t1" />)
-    expect(screen.getByText('saved')).toBeInTheDocument()
-    expect(screen.getByText('common:conversationScope.folderNeedsConfirmation')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'common:conversationScope.confirmFolder' })).toBeEnabled()
-    expect(screen.queryByRole('button', { name: 'common:workspace.a11yWithFolder' })).toBeNull()
+    expect(screen.queryByText('common:conversationScope.folderNeedsConfirmation')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'common:conversationScope.confirmFolder' })).toBeNull()
     expect(h.state.setConversationCapabilities).not.toHaveBeenCalled()
   })
 
-  it('confirms only the saved folder through the strict setter, preserving effective global grants', async () => {
-    persistFolder()
-    h.state.caps.shellNetwork = true
-    h.state.setConversationCapabilities.mockImplementationOnce(async (_id, next) => {
-      h.state.caps = next
-      h.state.threads.t1.metadata.conversationCapabilities = next
-    })
-    render(<ThreadWorkspacePill threadId="t1" />)
-    fireEvent.click(screen.getByRole('button', { name: 'common:conversationScope.confirmFolder' }))
-    await waitFor(() => expect(h.state.setConversationCapabilities).toHaveBeenCalledWith('t1', {
-      version: 1, folderScope: saved, shellNetwork: true, memoryWrite: false,
-    }))
-    expect(await screen.findByRole('button', { name: 'common:workspace.a11yWithFolder' })).toBeInTheDocument()
-    expect(screen.queryByText('common:conversationScope.folderNeedsConfirmation')).toBeNull()
-  })
-
-  it('keeps the inactive folder available for retry if confirmation fails after metadata was denied', async () => {
-    persistFolder()
-    h.state.setConversationCapabilities.mockImplementationOnce(async () => {
-      h.state.threads.t1.metadata = {}
-      throw new Error('save failed')
-    })
-    render(<ThreadWorkspacePill threadId="t1" />)
-    fireEvent.click(screen.getByRole('button', { name: 'common:conversationScope.confirmFolder' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('common:conversationScope.saveFailed')
-    expect(screen.getByText('saved')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'common:conversationScope.confirmFolder' })).toBeEnabled()
-    expect(screen.queryByRole('button', { name: 'common:workspace.a11yWithFolder' })).toBeNull()
-  })
-
-  it('removes a saved folder without confirming it', async () => {
-    persistFolder()
-    h.state.setConversationCapabilities.mockImplementationOnce(async () => {
-      h.state.threads.t1.metadata = {}
-    })
-    const { container } = render(<ThreadWorkspacePill threadId="t1" />)
-    fireEvent.click(screen.getByRole('button', { name: 'common:conversationScope.removeFolder' }))
-    await waitFor(() => expect(h.state.setConversationCapabilities).toHaveBeenCalledWith('t1', expect.objectContaining({ folderScope: null })))
-    await waitFor(() => expect(container).toBeEmptyDOMElement())
-  })
-
-  it('retains the host uncertainty warning and retry actions after an unacknowledged remove', async () => {
-    persistFolder()
+  it('keeps retry actions and honest uncertainty after a failed detach', async () => {
+    h.state.caps = { ...h.state.caps, folderScope: saved }
     h.state.setConversationCapabilities.mockImplementation(async () => {
-      h.state.threads.t1.metadata = {}
+      h.state.caps = { ...h.state.caps, folderScope: null }
       throw new HostRevokeUnconfirmedError('t1', true)
     })
     render(<ThreadWorkspacePill threadId="t1" />)
-    for (let retry = 0; retry < 2; retry++) {
-      fireEvent.click(screen.getByRole('button', { name: 'common:conversationScope.removeFolder' }))
-      expect(await screen.findByRole('alert')).toHaveTextContent('common:conversationScope.hostRevokeUnconfirmed')
-      expect(screen.getByRole('button', { name: 'common:conversationScope.removeFolder' })).toBeEnabled()
-    }
+    fireEvent.click(screen.getByRole('button', { name: 'common:workspace.a11yWithFolder' }))
+    fireEvent.click(await screen.findByText('common:workspace.detach'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('common:conversationScope.hostRevokeUnconfirmed')
+    fireEvent.click(screen.getByRole('button', { name: 'common:conversationScope.removeFolder' }))
+    await waitFor(() => expect(h.state.setConversationCapabilities).toHaveBeenCalledTimes(2))
+  })
+
+  it('retries the exact failed detach instead of regranting the saved write folder', async () => {
+    h.state.caps = { ...h.state.caps, folderScope: saved }
+    persistFolder()
+    h.state.setConversationCapabilities.mockImplementationOnce(async () => {
+      h.state.caps = { ...h.state.caps, folderScope: null }
+      h.state.threads.t1.metadata = { conversationCapabilities: h.state.caps }
+      throw new Error('save failed')
+    })
+    render(<ThreadWorkspacePill threadId="t1" />)
+    fireEvent.click(screen.getByRole('button', { name: 'common:workspace.a11yWithFolder' }))
+    fireEvent.click(await screen.findByText('common:workspace.detach'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('common:conversationScope.saveFailed')
+    fireEvent.click(screen.getByRole('button', { name: 'common:run.tryAgain' }))
+    await waitFor(() => expect(h.state.setConversationCapabilities).toHaveBeenCalledTimes(2))
+    expect(h.state.setConversationCapabilities).toHaveBeenNthCalledWith(2, 't1',
+      expect.objectContaining({ folderScope: null }))
   })
 
   it('shows the folder and says read only when the grant is read', () => {
@@ -136,13 +111,13 @@ describe('ThreadWorkspacePill', () => {
     await waitFor(() => expect(h.state.setConversationCapabilities).toHaveBeenCalledWith('t1', expect.objectContaining({ folderScope: null, shellNetwork: true })))
   })
 
-  it('changing the folder starts read-only, never inheriting write', async () => {
+  it('changing the folder grants read and write by default', async () => {
     h.state.caps = { ...h.state.caps, folderScope: { path: '/work/proj', access: 'write' } }
     h.picked = '/work/other'
     render(<ThreadWorkspacePill threadId="t1" />)
     fireEvent.click(screen.getByRole('button', { name: 'common:workspace.a11yWithFolder' }))
     fireEvent.click(await screen.findByText('common:workspace.change'))
-    await waitFor(() => expect(h.state.setConversationCapabilities).toHaveBeenCalledWith('t1', expect.objectContaining({ folderScope: { path: '/work/other', access: 'read' } })))
+    await waitFor(() => expect(h.state.setConversationCapabilities).toHaveBeenCalledWith('t1', expect.objectContaining({ folderScope: { path: '/work/other', access: 'write' } })))
   })
 
   it('never renders for a temporary chat or a legacy Cowork thread', () => {
@@ -168,13 +143,13 @@ describe('ThreadAddFolderItem', () => {
 
   // With the shield gone, a conversation that already started needs this row to
   // get its first folder at all: the pill above the composer hides until one exists.
-  it('attaches a picked folder read-only from the + menu', async () => {
+  it('attaches a picked folder read/write from the + menu', async () => {
     open('t1')
     fireEvent.click(await screen.findByRole('menuitem', { name: 'common:homeMode.addFolderAction' }))
     await waitFor(() =>
       expect(h.state.setConversationCapabilities).toHaveBeenCalledWith('t1', {
         version: 1,
-        folderScope: { path: '/work/proj', access: 'read' },
+        folderScope: { path: '/work/proj', access: 'write' },
         shellNetwork: false,
         memoryWrite: false,
       })

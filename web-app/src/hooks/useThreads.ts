@@ -82,9 +82,9 @@ function creationSnapshot(thread: Thread): string {
 // older grants. Rejected writes must not block subsequent attempts.
 const capabilityWrites = new Map<string, Promise<void>>()
 const capabilityRequests = new Map<string, symbol>()
-// Process-local authority only after explicit setter success. Persisted grants
-// require reconfirmation each process: a failed revoke can leave older consent
-// on disk. Background fetches must never confirm or restore that authority.
+// The native listing sanitizes saved grants against host-owned durable denial
+// markers. Load once per process; an explicit denied overlay always wins over
+// subsequent listings, including stale in-flight responses.
 const effectiveCapabilities = new Map<string, ConversationCapabilitiesV1>()
 
 /** Threads whose last revoke the host never acknowledged while a grant may
@@ -222,6 +222,12 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     for (const id of capabilityRequests.keys()) {
       if (!ids.has(id)) capabilityRequests.delete(id)
     }
+    for (const thread of threads) {
+      if (!effectiveCapabilities.has(thread.id) && thread.id !== TEMPORARY_CHAT_ID && !isCoworkThread(thread)
+        && Object.prototype.hasOwnProperty.call(thread.metadata ?? {}, 'conversationCapabilities')) {
+        effectiveCapabilities.set(thread.id, resolveConversationCapabilities(thread.metadata?.conversationCapabilities))
+      }
+    }
     const threadMap = threads.reduce(
       (acc: Record<string, Thread>, thread) => {
         acc[thread.id] = {
@@ -350,7 +356,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     // another conversation while consent/deletion awaited belongs to the user.
     createdThreadSnapshots.delete(threadId)
     capabilityRequests.delete(threadId)
-    effectiveCapabilities.delete(threadId)
+    effectiveCapabilities.set(threadId, defaultConversationCapabilities())
     set((state) => {
       const remainingThreads = { ...state.threads }
       delete remainingThreads[threadId]
@@ -368,7 +374,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   deleteThread: (threadId) => {
     createdThreadSnapshots.delete(threadId)
     capabilityRequests.delete(threadId)
-    effectiveCapabilities.delete(threadId)
+    effectiveCapabilities.set(threadId, defaultConversationCapabilities())
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [threadId]: _, ...remainingThreads } = state.threads
@@ -417,7 +423,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       // still has running in the background.
       threadsToDeleteIds.forEach((threadId) => {
         createdThreadSnapshots.delete(threadId)
-        effectiveCapabilities.delete(threadId)
+        effectiveCapabilities.set(threadId, defaultConversationCapabilities())
         capabilityRequests.delete(threadId)
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
@@ -451,7 +457,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   clearAllThreads: () => {
     createdThreadSnapshots.clear()
     capabilityRequests.clear()
-    effectiveCapabilities.clear()
+    for (const id of effectiveCapabilities.keys()) effectiveCapabilities.set(id, defaultConversationCapabilities())
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
 
@@ -496,7 +502,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     // Reconcile each durable success immediately, even if a later delete fails.
     const reconcile = (id: string, cowork: boolean) => {
       capabilityRequests.delete(id)
-      effectiveCapabilities.delete(id)
+      effectiveCapabilities.set(id, defaultConversationCapabilities())
       const thread = get().threads[id]
       useAgentMode.getState().removeThread(id)
       useChatSessions.getState().removeSession(id)

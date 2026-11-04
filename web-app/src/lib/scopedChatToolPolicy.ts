@@ -28,11 +28,8 @@ export const SCOPED_CHAT_SCRATCH_TOOLS = Object.freeze([
   'skill_read',
 ] as const)
 
-/** This policy emits only the NAME 'memory'; it builds no schema and filters
- * none. Shaping the advertised schema to read-only ops (view/search) is the
- * integrator's job when it attaches schemas. Chat dispatch refuses every
- * mutation op regardless of memoryWrite; that grant controls skill_write,
- * not mutation through this read-only memory tool. */
+/** Emits the memory name; schema attachment uses memoryMutationAdvertised to
+ * retain Rust's mutation operations only under the frozen turn grant. */
 export const SCOPED_CHAT_MEMORY_TOOL = 'memory'
 
 /** Durable-mutation-only tools: advertised only when the turn snapshot already
@@ -74,9 +71,7 @@ export type ScopedChatToolPolicy = {
   advertisedNativeTools: readonly string[]
   advertisesNativeTool: (name: string) => boolean
   /** Snapshot view only; dispatch re-reads the effective grant per call.
-   * Equivalent to advertisesNativeTool('skill_write') today; kept as explicit
-   * API until the integration consumes it, so callers name the intent rather
-   * than a tool string. */
+   * Controls both memory schema shaping and skill_write advertisement. */
   memoryMutationAdvertised: boolean
   /** Frozen per-turn orchestration advertisement (task; monitor only when consented). */
   advertisedOrchestrationTools: readonly string[]
@@ -117,8 +112,8 @@ const MEMORY_READ_OPS = ['view', 'search'] as const
 /** Read-only view of the Rust-owned `memory` parameter schema: `op` is narrowed
  * to view/search and the move-only `to` argument is dropped. Returns null (so
  * the caller withholds the tool) when the schema is not the expected shape,
- * rather than guessing. Chat dispatch independently refuses mutation ops,
- * regardless of the memoryWrite grant. Never mutates the cached input. */
+ * rather than guessing. Dispatch checks the frozen advertised operations and
+ * the current memoryWrite grant independently. Never mutates the cached input. */
 export function memoryReadOnlyParameters(
   parameters: unknown
 ): Record<string, unknown> | null {

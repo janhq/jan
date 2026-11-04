@@ -427,5 +427,10 @@
     "removeFolder": "Retirer",
     "hostRevokeUnconfirmed": "Jan n’a pas pu confirmer ce changement d’autorisation. Les tâches en arrière-plan peuvent encore disposer de l’accès précédent. Réessayez ou quittez Jan pour les arrêter.",
     "saveFailed": "Le changement d’autorisation n’a pas pu être enregistré. L’accès étendu reste désactivé jusqu’à la réussite de l’enregistrement."
+  },
+  "memoryFeedback": {
+    "saved": "Mémoire enregistrée",
+    "inspect": "Voir",
+    "inspectLabel": "Voir la mémoire enregistrée"
   }
 }

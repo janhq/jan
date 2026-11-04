@@ -109,8 +109,8 @@ function Index() {
     const picked = await serviceHub.dialog().open({ directory: true })
     return typeof picked === 'string' ? picked : null
   }, [serviceHub])
-  // The workspace menu's folder action feeds the SAME consent draft (read-only
-  // narrow grant) instead of a legacy Session folder. Unsupported states get a
+  // The workspace menu's folder action feeds the SAME consent draft (read/write
+  // folder grant) instead of a legacy Session folder. Unsupported states get a
   // truthful reason; unsupported paths are denied with the consent wording.
   const attachScopeFolder = useCallback(async () => {
     if (isTemporaryChat) {
@@ -135,10 +135,10 @@ function Index() {
     }
     // Functional write: the draft is read at commit time, never from a closure
     // captured before the picker opened. The note describes only the selected
-    // path (always read-only) and makes no claim about what it replaced.
+    // path (read/write by default) and makes no claim about what it replaced.
     setScopeDraft((draft) => ({
       ...draft,
-      folderScope: { path: picked, access: 'read' },
+      folderScope: { path: picked, access: 'write' },
     }))
     toast.info(t('common:conversationScope.folderSelected', { path: picked }))
   }, [isTemporaryChat, selectedModel, modelSupportsTools, pickScopeFolder, t])

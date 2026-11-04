@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const notifyMemoryMutation = vi.fn()
+vi.mock('@/lib/memorySaveFeedback', () => ({
+  notifyMemoryMutation: (...args: unknown[]) => notifyMemoryMutation(...args),
+}))
+
 const toolSchemas = vi.fn()
 const executeTool = vi.fn()
 const executeThreadTool = vi.fn()
@@ -43,6 +48,7 @@ const schemaFor = (name: string) => ({
 describe('agentTools', () => {
   beforeEach(() => {
     vi.resetModules()
+    notifyMemoryMutation.mockReset()
     toolSchemas.mockReset()
     executeTool.mockReset()
     executeThreadTool.mockReset()
@@ -437,6 +443,31 @@ describe('agentTools', () => {
     await executeAgentTool('memory', { op: 'write', name: 'a', content: 'b' }, 't1', undefined, 'session')
     await getMemoryCatalog()
     expect(memoryCatalog).toHaveBeenCalledTimes(2)
+  })
+
+  it('never announces a denied thread memory mutation', async () => {
+    const { executeAgentTool } = await import('../agentTools')
+    const result = await executeAgentTool('memory', { op: 'write', name: 'x', content: 'y' }, 't1')
+    expect(result.error).toContain('durable memory')
+    expect(executeThreadTool).not.toHaveBeenCalled()
+    expect(notifyMemoryMutation).not.toHaveBeenCalled()
+  })
+
+  it('only forwards successful memory mutation results to feedback', async () => {
+    const { executeAgentTool } = await import('../agentTools')
+    const signal = new AbortController().signal
+    const run = () => executeAgentTool('memory', { op: 'write' }, 's1', null, 'session', false, false, null, undefined, signal)
+    executeTool.mockResolvedValue({ content: 'Wrote 2 bytes to memory/a.md', isError: false })
+    await run()
+    expect(notifyMemoryMutation).toHaveBeenCalledWith({ op: 'write' }, 'Wrote 2 bytes to memory/a.md', signal)
+    notifyMemoryMutation.mockClear()
+    executeTool.mockResolvedValue({ content: 'Wrote 2 bytes to memory/a.md', isError: true })
+    await run()
+    executeTool.mockRejectedValue(new Error('permission denied'))
+    await run()
+    executeTool.mockResolvedValue({ content: 'some note', isError: false })
+    await executeAgentTool('memory', { op: 'view' }, 's1', null, 'session')
+    expect(notifyMemoryMutation).not.toHaveBeenCalled()
   })
 
   it('keeps the snapshot across a memory view', async () => {

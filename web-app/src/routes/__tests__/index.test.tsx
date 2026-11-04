@@ -332,7 +332,7 @@ describe('Index route', () => {
       await waitFor(() =>
         expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
           version: 1,
-          folderScope: { path: '/synthetic/workspace', access: 'read' },
+          folderScope: { path: '/synthetic/workspace', access: 'write' },
           shellNetwork: false,
           memoryWrite: false,
         })
@@ -465,12 +465,12 @@ describe('Index route', () => {
         'common:conversationScope.folderSelected'
       )
       // The pill names the folder and states the access it really has.
-      expect(screen.getByRole('button', { name: /workspace\.a11yWithFolderReadOnly/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /workspace\.a11yWithFolder/ })).toBeInTheDocument()
       fireEvent.click(screen.getByTestId('invoke-prepare'))
       await waitFor(() =>
         expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
           version: 1,
-          folderScope: { path: '/synthetic/workspace', access: 'read' },
+          folderScope: { path: '/synthetic/workspace', access: 'write' },
           shellNetwork: false,
           memoryWrite: false,
         })
@@ -502,7 +502,7 @@ describe('Index route', () => {
       await waitFor(() =>
         expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
           version: 1,
-          folderScope: { path: '/synthetic/two', access: 'read' },
+          folderScope: { path: '/synthetic/two', access: 'write' },
           shellNetwork: false,
           memoryWrite: false,
         })
@@ -524,7 +524,7 @@ describe('Index route', () => {
       await waitFor(() =>
         expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
           version: 1,
-          folderScope: { path: '/synthetic/late', access: 'read' },
+          folderScope: { path: '/synthetic/late', access: 'write' },
           shellNetwork: false,
           memoryWrite: false,
         })

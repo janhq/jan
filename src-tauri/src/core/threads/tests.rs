@@ -36,6 +36,10 @@ fn mock_app_with_temp_data_dir() -> (tauri::App<MockRuntime>, DataDirGuard) {
     let app = mock_app();
     // Get the actual data dir that will be used by storage code
     let data_dir = get_jan_data_folder_path(app.handle().clone());
+    // Like production, resolve on each call: mock data roots are thread-local.
+    tauri_plugin_agent_tools::thread_capabilities::set_consent_root_resolver(
+        std::sync::Arc::new(|| get_jan_data_folder_path(mock_app().handle().clone())),
+    );
     println!("Mock app data dir: {}", data_dir.display());
     (app, DataDirGuard(data_dir))
 }
@@ -1120,11 +1124,7 @@ async fn revoking_capabilities_narrows_the_host_mirror() {
     assert!(!grant.shell_network && !grant.memory_write, "revoked");
 
     tauri_plugin_agent_tools::forget_thread_consent(&id).await;
-    assert_eq!(
-        current(&id).1,
-        0,
-        "the delete boundary forgets, so a recreated id starts unconfirmed"
-    );
+    assert!(current(&id).0.folder_scope.is_none(), "a recreated id starts denied");
 }
 
 /// Deleting a thread must narrow on the ATTEMPT, so a delete that fails
@@ -1173,7 +1173,7 @@ async fn a_recreated_thread_id_cannot_inherit_consent() {
     assert!(current(&id).0.shell_network);
 
     delete_thread(app.handle().clone(), id.clone()).await.unwrap();
-    assert_eq!(current(&id).1, 0, "a deleted thread is forgotten entirely");
+    assert_ne!(current(&id).1, 0, "a deleted identity retains a denial barrier");
 
     // Recreate with the SAME id. Creation strips capabilities, and the mirror
     // has no entry, so both halves of the intersection deny.
@@ -1185,11 +1185,11 @@ async fn a_recreated_thread_id_cannot_inherit_consent() {
         !grant.shell_network && !grant.memory_write && grant.folder_scope.is_none(),
         "a recreated id must start denied"
     );
-    assert_eq!(generation, 0, "and unconfirmed");
+    assert_ne!(generation, 0, "and explicitly denied");
 }
 
 /// Rolling back a created thread is a delete: the attempt revokes, success
-/// forgets, and the shells the thread started are cancelled, so a grant saved
+/// retains a denial barrier, and its shells are cancelled, so a grant saved
 /// between creation and refusal cannot outlive the conversation.
 #[tokio::test]
 async fn a_rolled_back_thread_loses_consent_and_its_shells() {
@@ -1222,7 +1222,7 @@ async fn a_rolled_back_thread_loses_consent_and_its_shells() {
     assert!(!get_thread_dir(&data_dir, &id).unwrap().exists());
     let (grant, generation) = current(&id);
     assert!(!grant.shell_network && !grant.memory_write, "rollback revokes");
-    assert_eq!(generation, 0, "and forgets, exactly like delete");
+    assert_ne!(generation, 0, "retains a denial barrier, exactly like delete");
     #[cfg(unix)]
     {
         let status = tokio::time::timeout(std::time::Duration::from_secs(10), child.wait())
@@ -1238,7 +1238,11 @@ async fn a_rolled_back_thread_loses_consent_and_its_shells() {
     create_thread(app.handle().clone(), seed).await.unwrap();
     let (grant, generation) = current(&id);
     assert!(!grant.shell_network && grant.folder_scope.is_none());
-    assert_eq!(generation, 0);
+    assert_ne!(generation, 0, "reusing an id must not erase its denial barrier");
+    tauri_plugin_agent_tools::thread_capabilities::restore_if_absent(
+        &id, serde_json::from_value(capability_grant(true)).unwrap(),
+    ).unwrap();
+    assert!(!current(&id).0.shell_network, "stale disk grant cannot restore a reused id");
 }
 
 /// A rollback REFUSED by the receipt check keeps the conversation, so it must
@@ -1957,4 +1961,107 @@ async fn test_modify_thread_missing_thread_uses_stable_error_code() {
         .await
         .unwrap_err();
     assert!(err.starts_with("thread_missing:"), "{err}");
+}
+
+#[tokio::test]
+async fn consent_directory_sync_failure_cannot_confirm_replacement() {
+    use tauri_plugin_agent_tools::thread_capabilities::current;
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("consent-dir-sync"))
+        .await.unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await.unwrap();
+    *super::capabilities::FAIL_CONSENT_DIR_SYNC.lock().unwrap() = Some(id.clone());
+    let result = set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true)).await;
+    *super::capabilities::FAIL_CONSENT_DIR_SYNC.lock().unwrap() = None;
+    assert!(result.unwrap_err().contains("directory sync"));
+    let denied = current(&id).0;
+    assert!(denied.folder_scope.is_none() && !denied.shell_network && !denied.memory_write);
+    // No mirror entry exists for this identity: copy precisely the disk state
+    // a new host would see, without exposing a production mirror-reset API.
+    let restarted_id = uuid::Uuid::new_v4().to_string();
+    let mut stored: serde_json::Value = serde_json::from_slice(
+        &fs::read(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap(),
+    ).unwrap();
+    assert_eq!(stored["metadata"]["conversationCapabilities"], capability_grant(true));
+    stored["id"] = json!(restarted_id);
+    ensure_thread_dir_exists(&data_dir, &restarted_id).unwrap();
+    update_thread_metadata(&data_dir, &restarted_id, &stored).unwrap();
+    fs::copy(data_dir.join("conversation-denials").join(&id),
+        data_dir.join("conversation-denials").join(&restarted_id)).unwrap();
+    assert_eq!(current(&restarted_id).1, 0, "simulated fresh host has no mirror entry");
+    let restored = super::capabilities::read_conversation_capabilities(&data_dir, &restarted_id).await.unwrap();
+    assert_eq!(restored, capability_grant(false), "durable denial survives host restart");
+}
+
+// A durable-denial failure must abort each removal path independently, before
+// any conversation data is removed, while still narrowing the live mirror.
+async fn marker_failure_aborts_removal(rollback: bool) {
+    use tauri_plugin_agent_tools::thread_capabilities::{current, denial_persisted};
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("marker-failure")).await.unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true)).await.unwrap();
+    let metadata = get_thread_metadata_path(&data_dir, &id).unwrap();
+    let before = fs::read(&metadata).unwrap();
+    // A directory at the marker path deterministically prevents File::create.
+    let marker = data_dir.join("conversation-denials").join(&id);
+    fs::create_dir_all(&marker).unwrap();
+    let result = if rollback {
+        rollback_created_thread(app.handle().clone(), id.clone(), created).await
+    } else {
+        delete_thread(app.handle().clone(), id.clone()).await
+    };
+    assert!(result.unwrap_err().contains("restart-safe revocation failed"));
+    assert_eq!(fs::read(metadata).unwrap(), before, "abort before removal");
+    assert!(denial_persisted(&id).is_err());
+    let grant = current(&id).0;
+    assert!(!grant.shell_network && !grant.memory_write && grant.folder_scope.is_none());
+}
+
+#[tokio::test]
+async fn delete_marker_persistence_failure_preserves_conversation() {
+    marker_failure_aborts_removal(false).await;
+}
+
+#[tokio::test]
+async fn rollback_marker_persistence_failure_preserves_conversation() {
+    marker_failure_aborts_removal(true).await;
+}
+
+// Finalization must not turn a successful removal into an error that makes the
+// renderer restore a conversation whose directory is already gone.
+async fn marker_failure_after_removal_still_succeeds(rollback: bool) {
+    use tauri_plugin_agent_tools::thread_capabilities::{current, denial_persisted};
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("post-removal-marker"))
+        .await.unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await.unwrap();
+    super::commands::FAIL_MARKER_AFTER_REMOVAL.lock().unwrap().push(id.clone());
+    let result = if rollback {
+        rollback_created_thread(app.handle().clone(), id.clone(), created).await
+    } else {
+        delete_thread(app.handle().clone(), id.clone()).await
+    };
+    assert!(!get_thread_dir(&data_dir, &id).unwrap().exists(), "removal succeeded");
+    assert!(data_dir.join("conversation-denials").join(&id).is_dir(), "post-removal fault was injected");
+    assert!(result.is_ok(), "successful removal must not restore a frontend ghost: {result:?}");
+    denial_persisted(&id).expect("the pre-removal denial remains acknowledged");
+    let (grant, barrier) = current(&id);
+    assert!(barrier != 0, "retain an explicit barrier against stale work");
+    assert!(grant.folder_scope.is_none() && !grant.shell_network && !grant.memory_write);
+    assert!(list_threads(app.handle().clone()).await.unwrap().iter().all(|thread| thread["id"] != id));
+}
+
+#[tokio::test]
+async fn delete_post_removal_marker_failure_does_not_restore_ghost() {
+    marker_failure_after_removal_still_succeeds(false).await;
+}
+
+#[tokio::test]
+async fn rollback_post_removal_marker_failure_does_not_restore_ghost() {
+    marker_failure_after_removal_still_succeeds(true).await;
 }

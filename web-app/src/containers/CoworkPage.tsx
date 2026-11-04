@@ -815,12 +815,13 @@ export function CoworkPage() {
                 trigger: 'submit-message',
                 messageId: undefined,
               } as any),
-            dispatch: (call) =>
+            dispatch: (call, signal) =>
               // Timed through the shared runtime store, which is what puts a
               // ticking duration on the tool's own card. Calls run one at a time
               // here, so each is its own queue of one.
               withToolTiming(call.toolCallId, () =>
                 dispatchCoworkTool(call, {
+                  signal,
                   advertisedTools: transport.advertisedTools,
                   sessionId: sid,
                   readOnlyFolder: current?.folder ?? null,
@@ -938,8 +939,9 @@ export function CoworkPage() {
                           // A child never gets `todo`/`ask`/`task`, so these refuse
                           // rather than execute: a model can still emit a call to a
                           // tool that was never advertised.
-                          dispatch: (call) =>
+                          dispatch: (call, signal) =>
                             dispatchCoworkTool(call, {
+                              signal,
                               advertisedTools: transport.advertisedTools,
                               sessionId: sid,
                               readOnlyFolder: current?.folder ?? null,

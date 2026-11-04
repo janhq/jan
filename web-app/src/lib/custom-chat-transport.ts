@@ -896,6 +896,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return isScopedThreadTool(name) && Object.prototype.hasOwnProperty.call(tools, name) && !this.getMcpServerForTool(name)
   }
 
+  /** Operation authority never widens beyond the schema shown to this run. */
+  hasAdvertisedMemoryOperation(input: unknown): boolean {
+    if (!this.hasAdvertisedNativeTool('memory')) return false
+    const op = input && typeof input === 'object' ? (input as { op?: unknown }).op : undefined
+    const tools = this.chatRunSnapshot?.tools ?? this.tools
+    const schema = tools.memory?.inputSchema as { jsonSchema?: { properties?: { op?: { enum?: unknown[] } } } } | undefined
+    return typeof op === 'string' && schema?.jsonSchema?.properties?.op?.enum?.includes(op) === true
+  }
+
   /** The run's frozen advertised record (a copy). Children narrow from this,
    * never from a live refresh. */
   getAdvertisedTools(): Record<string, Tool> {
@@ -1392,7 +1401,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           if (name !== 'shell' && mcpIdentities.has(name)) continue
           let parameters: unknown = schema.function.parameters
           let description: string = schema.function.description
-          if (name === 'memory') {
+          if (name === 'memory' && (!scoped.memoryMutationAdvertised || this.isPlanActive())) {
             parameters = memoryReadOnlyParameters(parameters)
             if (!parameters) continue
             description = MEMORY_READ_DESCRIPTION
@@ -1438,7 +1447,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     if (this.isPlanActive()) {
       for (const name of Object.keys(toolsRecord)) {
-        // Memory has a separately narrowed read-only schema.
+        // Plan can be enabled while discovery awaits; narrow again at commit.
+        if (name === 'memory' && !mcpIdentities.has(name)) {
+          const tool = toolsRecord[name]
+          const parameters = memoryReadOnlyParameters((tool.inputSchema as { jsonSchema?: unknown }).jsonSchema)
+          if (!parameters) { delete toolsRecord[name]; continue }
+          toolsRecord[name] = { ...tool, description: MEMORY_READ_DESCRIPTION, inputSchema: jsonSchema(parameters) } as Tool
+        }
         if (chatPlanToolRefusal(true, name, { op: 'view' }, mcpIdentities.has(name), ragIdentities.has(name))) {
           delete toolsRecord[name]
           mcpIdentities.delete(name)
@@ -2172,7 +2187,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     if (offered('memory')) {
       lines.push(
         '# Memory',
-        'memory can only view and search your saved notes in the shared persistent memory store; it cannot change them.'
+        this.hasAdvertisedMemoryOperation({ op: 'write' })
+          ? 'memory can view, search and update saved notes in the shared persistent memory store. Mutations require the memory write permission and normal tool approval.'
+          : 'memory can only view and search your saved notes in the shared persistent memory store; it cannot change them.'
       )
     }
     return lines.join(' ')

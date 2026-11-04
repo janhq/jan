@@ -86,8 +86,22 @@ pub fn patch_conversation_capabilities(
         .as_object_mut()
         .ok_or("Invalid stored thread metadata")?
         .insert("conversationCapabilities".into(), value);
-    super::helpers::update_thread_metadata(data_folder, thread_id, &thread)
+    super::helpers::update_thread_metadata(data_folder, thread_id, &thread)?;
+    // The general metadata writer treats directory sync as best-effort. Consent
+    // cannot: removing the durable denial before this rename is durable could
+    // resurrect an older grant after a crash. Fail with the marker still present.
+    #[cfg(test)]
+    if FAIL_CONSENT_DIR_SYNC.lock().unwrap().as_deref() == Some(thread_id) {
+        return Err("Injected consent directory sync failure".into());
+    }
+    #[cfg(unix)]
+    std::fs::File::open(path.parent().ok_or("Missing thread directory")?)
+        .and_then(|directory| directory.sync_all()).map_err(|e| e.to_string())?;
+    Ok(())
 }
+
+#[cfg(test)]
+pub(super) static FAIL_CONSENT_DIR_SYNC: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 /// A consistent snapshot for scoped Chat tool dispatch. The host supplies the
 /// configured data root, never a root supplied by the webview.
@@ -124,7 +138,12 @@ pub async fn read_conversation_capabilities(
         );
     }
     validate_conversation_capabilities(&value)?;
-    Ok(value)
+    let grant = serde_json::from_value(value.clone()).map_err(|e| format!("Invalid consent: {e}"))?;
+    tauri_plugin_agent_tools::thread_capabilities::restore_if_absent(thread_id, grant)?;
+    let (mirror, _) = tauri_plugin_agent_tools::thread_capabilities::current(thread_id);
+    let stored: tauri_plugin_agent_tools::thread_capabilities::ThreadCapabilities =
+        serde_json::from_value(value).map_err(|e| e.to_string())?;
+    serde_json::to_value(stored.intersect(mirror)?).map_err(|e| e.to_string())
 }
 
 /// Pure classification of a conversation id from what the host read.

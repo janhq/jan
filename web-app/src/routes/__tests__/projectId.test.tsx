@@ -363,7 +363,7 @@ describe('Project route single Chat flow', () => {
     await waitFor(() =>
       expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
         version: 1,
-        folderScope: { path: '/synthetic/workspace', access: 'read' },
+        folderScope: { path: '/synthetic/workspace', access: 'write' },
         shellNetwork: false,
         memoryWrite: false,
       })

@@ -71,6 +71,14 @@ const save = (value: unknown, id = 'chat') =>
 // These tests exercise the real fail-closed resolver rather than duplicating
 // its validation rules in a mock. Its detailed input matrix lives with the lib.
 describe('useThreads conversation capabilities', () => {
+  it('preserves untouched metadata shape while the getter supplies default permissions', () => {
+    const store = useThreads.getState()
+    const untouched = thread('untouched-no-capabilities', { unrelated: 'keep' })
+    store.setThreads([untouched])
+    expect(useThreads.getState().threads[untouched.id].metadata).toEqual({ unrelated: 'keep' })
+    expect(useThreads.getState().getConversationCapabilities(untouched.id)).toEqual(noGrant)
+  })
+
   beforeEach(() => {
     vi.resetAllMocks()
     // These tests are about the per-conversation grant (the folder). The
@@ -400,11 +408,10 @@ describe('useThreads conversation capabilities', () => {
     )
   })
 
-  it('does not confirm persisted elevations on bootstrap or reload', async () => {
+  it('restores host-sanitized persisted read/write access on bootstrap or reload', async () => {
     const id = 'unconfirmed-bootstrap'
     useThreads.getState().setThreads([thread(id, { conversationCapabilities: granted })])
-    expect(useThreads.getState().getConversationCapabilities(id))
-      .toEqual(noGrant)
+    expect(useThreads.getState().getConversationCapabilities(id)).toEqual(granted)
     await save(granted, id)
     expect(useThreads.getState().getConversationCapabilities(id)).toEqual(granted)
     useThreads.getState().setThreads([thread(id, { conversationCapabilities: granted })])
@@ -416,8 +423,16 @@ describe('useThreads conversation capabilities', () => {
     useThreads.getState().setThreads([thread(id, { conversationCapabilities: granted })])
     persist.mockRejectedValueOnce(new Error('disk failure'))
     await expect(save(granted, id)).rejects.toThrow('disk failure')
-    expect(useThreads.getState().getConversationCapabilities(id))
-      .toEqual(noGrant)
+    expect(useThreads.getState().getConversationCapabilities(id)).toEqual(noGrant)
+    useThreads.getState().setThreads([thread(id, { conversationCapabilities: granted })])
+    expect(useThreads.getState().getConversationCapabilities(id)).toEqual(noGrant)
+  })
+
+  it('restores saved read-only access without widening to write', () => {
+    const id = 'saved-read-bootstrap'
+    const read = { ...granted, folderScope: { ...granted.folderScope, access: 'read' } }
+    useThreads.getState().setThreads([thread(id, { conversationCapabilities: read })])
+    expect(useThreads.getState().getConversationCapabilities(id)).toEqual(read)
   })
 
   it('persists normalized capabilities while preserving unrelated metadata and thread fields', async () => {

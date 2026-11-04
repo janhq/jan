@@ -47,8 +47,25 @@ pub async fn list_threads<R: Runtime>(
             let thread_metadata_path = path.join(THREADS_FILE);
             if thread_metadata_path.exists() {
                 let data = fs::read_to_string(&thread_metadata_path).map_err(|e| e.to_string())?;
-                match serde_json::from_str(&data) {
-                    Ok(thread) => threads.push(thread),
+                match serde_json::from_str::<serde_json::Value>(&data) {
+                    Ok(mut thread) => {
+                        // Never expose stale disk consent as restorable authority.
+                        if let Some(id) = thread.get("id").and_then(serde_json::Value::as_str).map(str::to_owned) {
+                            if path.file_name().and_then(|name| name.to_str()) != Some(id.as_str()) {
+                                if let Some(metadata) = thread["metadata"].as_object_mut() {
+                                    metadata.remove("conversationCapabilities");
+                                }
+                                threads.push(thread);
+                                continue;
+                            }
+                            if let Ok(value) = super::capabilities::read_conversation_capabilities(&data_folder, &id).await {
+                                thread["metadata"]["conversationCapabilities"] = value;
+                            } else if thread["metadata"].is_object() {
+                                thread["metadata"].as_object_mut().unwrap().remove("conversationCapabilities");
+                            }
+                        }
+                        threads.push(thread)
+                    },
                     Err(e) => {
                         println!("Failed to parse thread file: {e}");
                         continue; // skip invalid thread files
@@ -270,6 +287,7 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
             .map_err(|e| format!("Invalid version 1 conversation capabilities: {e}"))?;
     grant.validate()?;
     let token = tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
+    tauri_plugin_agent_tools::thread_capabilities::denial_persisted(&thread_id)?;
     super::capabilities::patch_conversation_capabilities(&data_folder, &thread_id, value)?;
     // Test seam for the reviewed interleaving: `stop_all_thread_monitors`
     // takes no per-thread lock, so its barrier bump can land between this
@@ -361,6 +379,7 @@ pub async fn rollback_created_thread<R: Runtime>(
     // really gone so the id cannot be recreated into the old confirmation.
     // A rollback refused above keeps the conversation -- and its consent.
     tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
+    tauri_plugin_agent_tools::thread_capabilities::denial_persisted(&thread_id)?;
     tauri_plugin_agent_tools::cancel_thread_shells(&thread_id);
     // Test seam below: proving "a failed removal leaves the thread denied"
     // needs the removal to fail on demand, and a permissions-based failure is
@@ -370,6 +389,8 @@ pub async fn rollback_created_thread<R: Runtime>(
         return Err("forced removal failure (test seam)".into());
     }
     fs::remove_dir_all(directory).map_err(|e| e.to_string())?;
+    #[cfg(test)]
+    fail_marker_writes_after_removal(&data_folder, &thread_id);
     tauri_plugin_agent_tools::forget_thread_consent(&thread_id).await;
     Ok(())
 }
@@ -379,6 +400,23 @@ pub async fn rollback_created_thread<R: Runtime>(
 #[cfg(test)]
 pub(super) static ROLLBACK_REMOVAL_FAILS_FOR: std::sync::Mutex<Option<String>> =
     std::sync::Mutex::new(None);
+
+// Fault injection is identity-scoped and consumed only after successful removal.
+#[cfg(test)]
+pub(super) static FAIL_MARKER_AFTER_REMOVAL: std::sync::Mutex<Vec<String>> =
+    std::sync::Mutex::new(Vec::new());
+
+#[cfg(test)]
+fn fail_marker_writes_after_removal(data_folder: &std::path::Path, thread_id: &str) {
+    let mut ids = FAIL_MARKER_AFTER_REMOVAL.lock().unwrap();
+    if let Some(index) = ids.iter().position(|id| id == thread_id) {
+        ids.remove(index);
+        let marker = data_folder.join("conversation-denials").join(thread_id);
+        fs::remove_file(&marker).unwrap();
+        // Still a denial on restart, but any redundant File::create now fails.
+        fs::create_dir(&marker).unwrap();
+    }
+}
 
 /// Deletes a thread and all its associated files by removing its directory.
 #[tauri::command]
@@ -403,17 +441,18 @@ pub async fn delete_thread<R: Runtime>(
     // must not leave this thread confirmed with its monitors still polling.
     // Scoped to this thread id alone; no other thread is touched.
     tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
+    tauri_plugin_agent_tools::thread_capabilities::denial_persisted(&thread_id)?;
     // The conversation itself is going away, so the shells it started go with
     // it: the raw bucket is disjoint from the monitor bucket the revoke reaps.
     tauri_plugin_agent_tools::cancel_thread_shells(&thread_id);
     if thread_dir.exists() {
         fs::remove_dir_all(thread_dir).map_err(|error| error.to_string())?;
     }
-    // Only once the thread is really gone, forget it entirely, so an id
-    // supplied again at creation starts with no entry at all rather than a
-    // narrowed one. Deleting removes the stored half of the consent, so a
-    // confirmation left behind could pair with an out-of-band restore of the
-    // directory (backup, folder sync) and need no fresh user consent.
+    // Finalize without more persistence: retain the acknowledged denial and
+    // invalidate stale work, so an out-of-band restore or reused id cannot
+    // inherit the old confirmation. No fallible step may follow removal.
+    #[cfg(test)]
+    fail_marker_writes_after_removal(&data_folder, &thread_id);
     tauri_plugin_agent_tools::forget_thread_consent(&thread_id).await;
     Ok(())
 }

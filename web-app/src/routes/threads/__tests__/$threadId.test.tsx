@@ -453,6 +453,7 @@ vi.mock('@/hooks/use-chat', () => ({
     session.transport.cancelChatRun ??= vi.fn().mockResolvedValue(undefined)
     session.transport.setContinueFromContent ??= h.mockSetContinueFromContent
     session.transport.planToolRefusal ??= () => undefined
+    session.transport.hasAdvertisedMemoryOperation ??= () => false
     session.transport.hasAdvertisedNativeTool ??= () => true
     session.transport.getMcpServerForTool ??= (name: string) =>
       h.appStateState.mcpToolNames.has(name)
@@ -2720,7 +2721,7 @@ describe('ThreadDetail route', () => {
           const result = await childDispatch(call('task-n:ctl', 'skill_write', skillWrite), nativeBinding(grant({ memoryWrite: true }), 'skill_write'))
           expect(result).not.toMatchObject({ isError: true })
           expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_write', skillWrite, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }))
+          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_write', skillWrite, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }), expect.any(AbortSignal))
         })
 
         it('a later widen cannot enlarge a child: skill_write is denied before approval or execution', async () => {
@@ -2759,7 +2760,7 @@ describe('ThreadDetail route', () => {
           const result = await childDispatch(call(`task-n:read-${_label}`, 'skill_read', { name: 'x' }), nativeBinding(ceiling, 'skill_read'))
           expect(result).not.toMatchObject({ isError: true })
           expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
-          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_read', { name: 'x' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining(expected))
+          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_read', { name: 'x' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining(expected), expect.any(AbortSignal))
         })
       })
 
@@ -2780,7 +2781,7 @@ describe('ThreadDetail route', () => {
           expect(getMcpTools).not.toHaveBeenCalled()
           expect(run).not.toHaveBeenCalled()
           expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
-          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }))
+          expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }), expect.any(AbortSignal))
         })
 
         it('an unmapped child tool name is refused before binding, validation, approval or execution', async () => {
@@ -3009,7 +3010,7 @@ describe('ThreadDetail route', () => {
       approve(true)
       await pending
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('shell', { command: 'echo safe' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: true }))
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('shell', { command: 'echo safe' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: true }), expect.any(AbortSignal))
       h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }))
     })
 
@@ -3072,7 +3073,7 @@ describe('ThreadDetail route', () => {
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
     })
 
-    it.each([false, true])('refuses memory mutation before approval even with memoryWrite=%s', async (memoryWrite) => {
+    it.each([false, true])('refuses frozen OFF memory mutation before approval even with current memoryWrite=%s', async (memoryWrite) => {
       h.appStateState.mcpToolNames = new Set()
       h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedNativeTool = () => true
       h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }))
@@ -3081,6 +3082,45 @@ describe('ThreadDetail route', () => {
       const toolCall = call('denied-memory-write', 'memory', { op: 'write', name: 'note', content: 'value' })
       await arrive(toolCall)
       expect(await dispatch(toolCall)).toMatchObject({ isError: true, output: expect.stringContaining('durable memory writes') })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).not.toHaveBeenCalled()
+    })
+
+    it('approves and executes advertised memory writes under global memoryWrite ON', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      const transport = h.chatSessionsState.sessions['thread-1'].transport
+      transport.hasAdvertisedMemoryOperation = () => true
+      h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: true }))
+      renderComponent()
+      const toolCall = call('approved-memory-write', 'memory', { op: 'write', name: 'note', content: 'value' })
+      await arrive(toolCall)
+      await dispatch(toolCall)
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('memory', toolCall.input, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }), expect.any(AbortSignal))
+    })
+
+    it('denies advertised memory mutations when the current global grant is OFF', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      h.chatSessionsState.sessions['thread-1'].transport.hasAdvertisedMemoryOperation = () => true
+      h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }))
+      renderComponent()
+      const toolCall = call('revoked-memory-write', 'memory', { op: 'write', name: 'note', content: 'value' })
+      await arrive(toolCall)
+      expect(await dispatch(toolCall)).toMatchObject({ isError: true, output: expect.stringContaining('durable memory writes') })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).not.toHaveBeenCalled()
+    })
+
+    it('Plan refuses memory mutation even when advertised and globally enabled', async () => {
+      h.appStateState.mcpToolNames = new Set()
+      const transport = h.chatSessionsState.sessions['thread-1'].transport
+      transport.hasAdvertisedMemoryOperation = () => true
+      transport.planToolRefusal = () => 'Plan mode only permits memory view and search.'
+      h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: true }))
+      renderComponent()
+      const toolCall = call('plan-memory-write', 'memory', { op: 'write', name: 'note', content: 'value' })
+      await arrive(toolCall)
+      expect(await dispatch(toolCall)).toMatchObject({ isError: true, output: expect.stringContaining('Plan mode') })
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
       expect(shell.execute).not.toHaveBeenCalled()
     })
@@ -3130,7 +3170,7 @@ describe('ThreadDetail route', () => {
       await dispatch(toolCall)
       // dispatch reused the arrival grant: one prompt, one execution under it
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_write', { name: 'x', content: 'y' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }))
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('skill_write', { name: 'x', content: 'y' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ memoryWrite: true }), expect.any(AbortSignal))
       expect(reads).toBe(1)
     })
 
@@ -3141,7 +3181,7 @@ describe('ThreadDetail route', () => {
       const toolCall = call('native-read', 'read', { path: 'scratch.txt' })
       await arrive(toolCall)
       await dispatch(toolCall)
-      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }))
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }), expect.any(AbortSignal))
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
     })
 
@@ -3688,7 +3728,7 @@ describe('ThreadDetail route', () => {
       ] : textStep))
       await act(async () => { await chat.sendMessage({ text: 'read the scratch file' }) })
       expect(steps).toHaveBeenCalledTimes(2)
-      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }))
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }), expect.any(AbortSignal))
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
       expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ toolCallId: 'native-read-sdk', state: 'output-available' }))
       expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ type: 'text', text: 'continued' }))

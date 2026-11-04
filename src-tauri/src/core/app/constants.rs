@@ -11,7 +11,7 @@ pub const TAURI_BUNDLE_IDENTIFIER: &str = "jan.ai.app";
 
 /// Conversations & user data — chat threads and assistant profiles.
 /// Gated by the `keep_app_data` flag during factory reset.
-pub const JAN_DATA_DIRS_CONVERSATIONS: &[&str] = &["threads", "assistants"];
+pub const JAN_DATA_DIRS_CONVERSATIONS: &[&str] = &["threads", "assistants", "conversation-denials"];
 
 /// Downloaded models and engine binaries.
 /// Gated by the `keep_models_and_configs` flag during factory reset.
@@ -42,6 +42,7 @@ pub const JAN_DATA_FILES_SETTINGS: &[&str] = &[
 pub const JAN_DATA_SUBDIRS: &[&str] = &[
     "threads",
     "assistants",
+    "conversation-denials",
     "extensions",
     "logs",
     "models",

@@ -980,6 +980,7 @@ async fn stop_thread_monitors_and_children(thread_id: &str) {
 #[tauri::command]
 pub async fn revoke_thread_capabilities(thread_id: String) -> Result<(), AgentToolsError> {
     revoke_thread_consent(&thread_id).await;
+    crate::thread_capabilities::denial_persisted(&thread_id).map_err(AgentToolsError::from)?;
     Ok(())
 }
 
@@ -992,7 +993,11 @@ pub async fn revoke_thread_capabilities(thread_id: String) -> Result<(), AgentTo
 /// rejected request writes nothing and narrows nothing.) The mirror is never
 /// restored on failure; it is re-confirmed only by a successful write.
 pub async fn revoke_thread_consent(thread_id: &str) -> u64 {
-    let token = reap_thread_monitor_children(thread_id, crate::thread_capabilities::narrow).await;
+    deny_thread_and_stop_monitors(thread_id, crate::thread_capabilities::narrow).await
+}
+
+async fn deny_thread_and_stop_monitors(thread_id: &str, advance: fn(&str) -> u64) -> u64 {
+    let token = reap_thread_monitor_children(thread_id, advance).await;
     let set = thread_monitors()
         .lock()
         .unwrap()
@@ -1016,11 +1021,11 @@ pub fn cancel_thread_shells(thread_id: &str) {
     crate::tools::proc::kill_thread(thread_id);
 }
 
-/// Forget a thread entirely at the native delete boundary, so an id supplied
-/// again at creation cannot inherit an earlier confirmation.
+/// Finalize deletion after the host acknowledged a durable revoke and removed
+/// the record. Preserve that denial without any further fallible marker I/O;
+/// invalidate stale polls and drain monitors under the same admission barrier.
 pub async fn forget_thread_consent(thread_id: &str) {
-    revoke_thread_consent(thread_id).await;
-    crate::thread_capabilities::clear(thread_id);
+    deny_thread_and_stop_monitors(thread_id, crate::thread_capabilities::clear).await;
 }
 
 /// Confirm elevations after the strict setter actually wrote them. Returns
@@ -1952,6 +1957,24 @@ mod tests {
         );
         assert_ne!(generation, confirmed_at, "but the barrier must advance");
         assert_ne!(generation, 0);
+    }
+
+    #[tokio::test]
+    async fn forget_thread_consent_serializes_final_barrier_with_monitor_admission() {
+        let id = "forget-final-admission";
+        let revoked_at = revoke_thread_consent(id).await;
+        let admission = crate::thread_capabilities::admission().lock().await;
+        let finalize = tokio::spawn(forget_thread_consent(id));
+        tokio::task::yield_now().await;
+        assert!(!finalize.is_finished(), "finalization must wait for admitted spawns");
+        assert_eq!(crate::thread_capabilities::generation(id), revoked_at);
+        drop(admission);
+        finalize.await.unwrap();
+        let (grant, finalized_at) = crate::thread_capabilities::current(id);
+        assert_ne!(finalized_at, revoked_at, "invalidate pre-finalization polls");
+        assert!(!grant.shell_network && !grant.memory_write && grant.folder_scope.is_none());
+        assert!(!confirm_thread_consent(id, crate::thread_capabilities::denied(), revoked_at));
+        assert!(!thread_monitors().lock().unwrap().contains_key(id));
     }
 
     #[test]

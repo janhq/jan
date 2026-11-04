@@ -131,23 +131,88 @@ pub fn denied() -> ThreadCapabilities {
     }
 }
 
-/// Host-confirmed elevated consent for *this process*.
-///
-/// For folder authority this mirror only ever NARROWS: a monitor poll intersects it with a freshly
-/// read disk snapshot ([`authorize`]), one-shot Chat dispatch intersects it
-/// with stored and caller-effective consent (`execute_thread_tool`), and
-/// [`ThreadCapabilities::intersect`]
-/// is a pure AND, so the result is a subset of both sides. It is therefore
-/// never a source of authority -- a lost disk write, a revocation, or a
-/// restart each deny on their own, whatever the other side holds. That is why
-/// confirming on the strict setter's contractual success is sound without an
-/// absolute durability guarantee.
-///
-/// It starts empty and is NEVER populated from disk, so an on-disk grant
-/// cannot survive a restart unconfirmed.
+/// Process entries distinguish never-loaded from explicitly denied. A durable
+/// marker blocks restart restoration after a failed metadata write. Marker I/O
+/// and mirror transitions share the mirror mutex, so no stale loader or
+/// confirmation can erase a newer revoke.
+static CONSENT_ROOT: OnceLock<Arc<dyn Fn() -> PathBuf + Send + Sync>> = OnceLock::new();
+pub fn set_consent_root_resolver(resolve: Arc<dyn Fn() -> PathBuf + Send + Sync>) {
+    let _ = CONSENT_ROOT.set(resolve);
+}
+fn marker(thread_id: &str) -> Result<Option<PathBuf>, String> {
+    let segment = crate::workspace::thread_segment(thread_id)?;
+    Ok(CONSENT_ROOT.get().map(|root| root().join("conversation-denials").join(segment)))
+}
+fn write_denial(thread_id: &str) -> Result<(), String> {
+    if let Some(path) = marker(thread_id)? {
+        let parent = path.parent().unwrap();
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        // Contents are deliberately irrelevant: even a corrupt/empty marker denies.
+        let file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        sync_directory(parent)?;
+        sync_directory(parent.parent().unwrap())?;
+    }
+    Ok(())
+}
+fn sync_directory(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(unix)]
+    std::fs::File::open(path).and_then(|f| f.sync_all()).map_err(|e| e.to_string())?;
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+fn remove_denial(thread_id: &str) -> Result<(), String> {
+    if let Some(path) = marker(thread_id)? {
+        match std::fs::remove_file(&path) {
+            Ok(()) => {
+                if let Err(error) = sync_directory(path.parent().unwrap()) {
+                    let _ = write_denial(thread_id);
+                    return Err(error);
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Ok(())
+}
+/// Called only with a host-validated disk snapshot. Never overwrite an entry,
+/// including explicit denial, even if disk still contains an older grant.
+pub fn restore_if_absent(thread_id: &str, grant: ThreadCapabilities) -> Result<(), String> {
+    grant.validate()?;
+    let mut map = confirmed().lock().unwrap();
+    if map.contains_key(thread_id) { return Ok(()); }
+    // Platforms without a directory durability primitive cannot safely replay
+    // saved authority: an acknowledged marker could disappear after a crash.
+    // Explicit grants still work in-process; never auto-restore them there.
+    let blocked = !cfg!(unix) || match marker(thread_id)? {
+        Some(path) => match std::fs::symlink_metadata(path) {
+            Ok(_) => true,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(_) => true,
+        },
+        None => false,
+    };
+    map.insert(thread_id.to_string(), Confirmed {
+        grant: if blocked { denied() } else { grant },
+        generation: next_generation(),
+        durability_error: None,
+    });
+    Ok(())
+}
+pub fn denial_persisted(thread_id: &str) -> Result<(), String> {
+    let map = confirmed().lock().unwrap();
+    match map.get(thread_id).and_then(|e| e.durability_error.clone()) {
+        Some(error) => Err(format!("Access denied in this process, but restart-safe revocation failed: {error}")),
+        None => Ok(()),
+    }
+}
+
 struct Confirmed {
     grant: ThreadCapabilities,
     generation: u64,
+    durability_error: Option<String>,
 }
 
 fn confirmed() -> &'static Mutex<HashMap<String, Confirmed>> {
@@ -177,13 +242,9 @@ pub fn admission() -> &'static tokio::sync::Mutex<()> {
 /// leave an earlier confirmation live.
 pub fn narrow(thread_id: &str) -> u64 {
     let generation = next_generation();
-    confirmed().lock().unwrap().insert(
-        thread_id.to_string(),
-        Confirmed {
-            grant: denied(),
-            generation,
-        },
-    );
+    let mut map = confirmed().lock().unwrap();
+    let durability_error = write_denial(thread_id).err();
+    map.insert(thread_id.to_string(), Confirmed { grant: denied(), generation, durability_error });
     generation
 }
 
@@ -216,20 +277,26 @@ pub fn confirm_if_current(thread_id: &str, grant: ThreadCapabilities, token: u64
     if map.get(thread_id).map(|e| e.generation) != Some(token) {
         return false;
     }
-    map.insert(
-        thread_id.to_string(),
-        Confirmed {
-            grant,
-            generation: next_generation(),
-        },
-    );
+    if remove_denial(thread_id).is_err() { return false; }
+    map.insert(thread_id.to_string(), Confirmed {
+        grant, generation: next_generation(), durability_error: None,
+    });
     true
 }
 
-/// Forget a thread at the native delete boundary, so a recreated id cannot
-/// inherit a confirmation.
-pub fn clear(thread_id: &str) {
-    confirmed().lock().unwrap().remove(thread_id);
+/// Finalize a deleted identity in memory, preserving the durable denial (and
+/// any durability error) already installed by the pre-removal revoke. No I/O
+/// is allowed here: the record is gone, so failure could create a UI ghost.
+/// Advance the barrier even for an already denied entry, invalidating stale
+/// confirmations and monitor polls racing with finalization.
+pub fn clear(thread_id: &str) -> u64 {
+    let mut map = confirmed().lock().unwrap();
+    let entry = map.entry(thread_id.to_string()).or_insert_with(|| Confirmed {
+        grant: denied(), generation: 0, durability_error: None,
+    });
+    entry.grant = denied();
+    entry.generation = next_generation();
+    entry.generation
 }
 
 /// The current confirmation and its generation; an unknown thread is denied.
@@ -447,9 +514,81 @@ mod tests {
         clear(id);
         let (caps, generation) = current(id);
         assert!(is_denied(&caps));
-        assert_eq!(generation, 0, "a cleared entry reads as never-confirmed");
+        assert_ne!(generation, 0, "a deleted identity retains an explicit denial barrier");
         assert!(!confirm_if_current(id, elevated(), token));
         assert!(is_denied(&current(id).0));
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn saved_grants_require_explicit_confirmation_without_directory_durability() {
+        let id = "unsupported-directory-durability";
+        restore_if_absent(id, elevated()).unwrap();
+        assert!(is_denied(&current(id).0), "saved authority cannot auto-restore");
+        let token = narrow(id);
+        assert!(confirm_if_current(id, elevated(), token), "explicit current-process consent still works");
+        assert!(!is_denied(&current(id).0));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn durable_denials_block_restart_stale_fetch_corruption_and_reused_ids() {
+        struct TestDirectory(PathBuf);
+        impl Drop for TestDirectory {
+            fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        }
+        let path = std::env::temp_dir().join(format!("jan-consent-test-{}-{}",
+            std::process::id(), std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir(&path).unwrap();
+        let _directory = TestDirectory(path.clone());
+        let configured = path.clone();
+        set_consent_root_resolver(Arc::new(move || configured.clone()));
+        let id = "durable-restart";
+        restore_if_absent(id, elevated()).unwrap();
+        assert!(!is_denied(&current(id).0));
+        // A failed save leaves the narrow and marker, not a stale grant.
+        narrow(id);
+        denial_persisted(id).unwrap();
+        restore_if_absent(id, elevated()).unwrap();
+        assert!(is_denied(&current(id).0));
+        confirmed().lock().unwrap().remove(id); // simulated process restart
+        restore_if_absent(id, elevated()).unwrap();
+        assert!(is_denied(&current(id).0));
+        // Corrupt/empty markers are denial too, never interpreted as consent.
+        std::fs::write(marker(id).unwrap().unwrap(), b"{broken").unwrap();
+        confirmed().lock().unwrap().remove(id);
+        restore_if_absent(id, elevated()).unwrap();
+        assert!(is_denied(&current(id).0));
+        // Only a strict successful write/confirmation removes the marker.
+        let token = narrow(id);
+        assert!(confirm_if_current(id, elevated(), token));
+        assert!(!marker(id).unwrap().unwrap().exists());
+        confirmed().lock().unwrap().remove(id);
+        restore_if_absent(id, elevated()).unwrap();
+        assert!(!is_denied(&current(id).0));
+        // The host must acknowledge durable denial BEFORE removing the record.
+        let revoked_at = narrow(id);
+        denial_persisted(id).unwrap();
+        let marker_path = marker(id).unwrap().unwrap();
+        std::fs::remove_file(&marker_path).unwrap();
+        std::fs::create_dir(&marker_path).unwrap(); // redundant marker write would fail
+        let finalized_at = clear(id);
+        assert_ne!(finalized_at, revoked_at);
+        denial_persisted(id).expect("finalize preserves the acknowledged denial");
+        assert!(!confirm_if_current(id, elevated(), revoked_at));
+        confirmed().lock().unwrap().remove(id);
+        restore_if_absent(id, elevated()).unwrap();
+        assert!(is_denied(&current(id).0), "deleted/reused id cannot inherit disk consent");
+        // Failed marker writes still deny in-process and surface durability failure.
+        let bad = "durable-marker-failure";
+        std::fs::create_dir(marker(bad).unwrap().unwrap()).unwrap();
+        narrow(bad);
+        assert!(denial_persisted(bad).is_err());
+        restore_if_absent(bad, elevated()).unwrap();
+        assert!(is_denied(&current(bad).0));
+        clear(bad);
+        assert!(denial_persisted(bad).is_err(), "delete cannot hide failed durable denial");
     }
 
     /// Generations are process-monotonic, so a barrier token captured at

@@ -28,6 +28,7 @@ import {
 export type DispatchContext = {
   /** The effective frozen record actually advertised to this caller. */
   advertisedTools: Record<string, Tool>
+  signal?: AbortSignal
   sessionId: string
   readOnlyFolder: string | null
   planMode: boolean
@@ -221,7 +222,9 @@ export async function dispatchCoworkTool(
       'session',
       useChatPermissions.getState().shellNetwork,
       true,
-      ctx.readOnlyFolder
+      ctx.readOnlyFolder,
+      undefined,
+      ctx.signal
     )
     if (result.error) return await toolFailure(call, result.error, ctx)
     if (toolName === 'read') {

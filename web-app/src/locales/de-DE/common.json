@@ -424,5 +424,10 @@
     "removeFolder": "Entfernen",
     "hostRevokeUnconfirmed": "Jan konnte diese Berechtigungsänderung nicht bestätigen. Hintergrundaufgaben haben möglicherweise noch den bisherigen Zugriff. Versuche es erneut oder beende Jan, um sie zu stoppen.",
     "saveFailed": "Die Berechtigungsänderung konnte nicht gespeichert werden. Erweiterter Zugriff bleibt bis zum erfolgreichen Speichern deaktiviert."
+  },
+  "memoryFeedback": {
+    "saved": "Erinnerung gespeichert",
+    "inspect": "Ansehen",
+    "inspectLabel": "Gespeicherte Erinnerung ansehen"
   }
 }

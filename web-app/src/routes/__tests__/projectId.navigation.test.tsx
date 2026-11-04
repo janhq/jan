@@ -152,7 +152,7 @@ describe('project draft isolation under real router navigation', () => {
     await waitFor(() =>
       expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
         version: 1,
-        folderScope: { path: '/synthetic/workspace', access: 'read' },
+        folderScope: { path: '/synthetic/workspace', access: 'write' },
         shellNetwork: false,
         memoryWrite: false,
       })

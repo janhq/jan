@@ -828,7 +828,7 @@
   "planMode": {
     "label": "Plan",
     "tooltipOff": "Plan first — the agent reads and proposes, without writing.",
-    "tooltipOn": "Planning. Turn this off to let the agent write files.",
+    "tooltipOn": "Plan mode",
     "onAnnounce": "Plan mode on",
     "placeholder": "Ask for a plan. The agent won't change any files."
   },
@@ -858,5 +858,10 @@
   "skillsDestination": "New skills and hub imports are saved to: {{destination}}",
   "skillsDiscardTitle": "Discard unsaved changes?",
   "skillsDiscardDescription": "Your unsaved skill changes will be lost.",
-  "skillsDiscard": "Discard changes"
+  "skillsDiscard": "Discard changes",
+  "memoryFeedback": {
+    "saved": "Memory saved",
+    "inspect": "Inspect",
+    "inspectLabel": "Inspect saved memory"
+  }
 }

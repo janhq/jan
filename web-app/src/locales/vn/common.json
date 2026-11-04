@@ -424,5 +424,10 @@
     "removeFolder": "Gỡ bỏ",
     "hostRevokeUnconfirmed": "Jan không thể xác nhận thay đổi quyền này. Các tác vụ nền có thể vẫn giữ quyền truy cập trước đó. Hãy thử lại hoặc thoát Jan để dừng chúng.",
     "saveFailed": "Không thể lưu thay đổi quyền. Quyền truy cập nâng cao vẫn tắt cho đến khi lưu thành công."
+  },
+  "memoryFeedback": {
+    "saved": "Đã lưu bộ nhớ",
+    "inspect": "Xem",
+    "inspectLabel": "Xem bộ nhớ đã lưu"
   }
 }

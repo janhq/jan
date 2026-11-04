@@ -385,6 +385,10 @@ pub fn run() {
                 ));
                 let handle = app.handle().clone();
                 core::threads::global_grants::install(&get_jan_data_folder_path(handle.clone()));
+                let consent_handle = handle.clone();
+                tauri_plugin_agent_tools::thread_capabilities::set_consent_root_resolver(Arc::new(
+                    move || get_jan_data_folder_path(consent_handle.clone()),
+                ));
                 let handle = app.handle().clone();
                 tauri_plugin_agent_tools::thread_capabilities::set_resolver(Arc::new(move |id| {
                     let data_folder = get_jan_data_folder_path(handle.clone());

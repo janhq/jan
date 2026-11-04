@@ -504,6 +504,21 @@ describe('ChatInput', () => {
     }
   })
 
+  it.each(['/a', '/an', '/n'])('does not replace %s with a substring-matching installed skill', async (text) => {
+    skillMocks.useSkills.mockReturnValue({ skills: [{ name: 'data-analysis', description: 'Analyze data' }], enabled: [] })
+    try {
+      promptState = text
+      const onSubmit = vi.fn(async (..._args: any[]) => true)
+      renderInput({ initialMessage: true, onSubmit })
+      expect(screen.queryByRole('option', { name: /data-analysis/ })).not.toBeInTheDocument()
+      fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+      expect(onSubmit.mock.calls[0][0]).toBe(text)
+    } finally {
+      skillMocks.useSkills.mockReturnValue({ skills: [{ name: 'review', description: 'Review' }], enabled: [] })
+    }
+  })
+
   it('expands a resolved installed bare command in the pending submission folder', async () => {
     promptState = '/review source'
     const onSubmit = vi.fn(async (..._args: any[]) => true)

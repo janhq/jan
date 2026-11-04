@@ -88,6 +88,7 @@ vi.mock('../model-factory', () => ({
   ModelFactory: { createModel: vi.fn() },
 }))
 
+import { useChatPlan } from '@/hooks/useChatPlan'
 import { CustomChatTransport } from '../custom-chat-transport'
 
 const fn = (name: string, parameters: Record<string, unknown> = { type: 'object' }) => ({
@@ -117,6 +118,7 @@ describe('scoped native schema advertisement', () => {
   const names = () => Object.keys(transport.getTools()).sort()
 
   beforeEach(() => {
+    useChatPlan.setState({ drafts: {} })
     h.shellEnabled = true
     h.sandbox = true
     h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
@@ -184,6 +186,47 @@ describe('scoped native schema advertisement', () => {
     h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
     await transport.refreshTools()
     expect(names()).not.toContain('skill_write')
+  })
+
+  it('advertises memory writes when the turn has the global memoryWrite grant', async () => {
+    h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: true }
+    await transport.refreshTools()
+    const tool = transport.getTools().memory as { inputSchema: { jsonSchema: any } }
+    expect(tool.inputSchema.jsonSchema.properties.op.enum).toContain('write')
+    expect(tool.inputSchema.jsonSchema.properties.title).toBeDefined()
+  })
+
+  it.each([false, true])('freezes memory operations with initial memoryWrite=%s', async (memoryWrite) => {
+    h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite }
+    const release = transport.beginChatRun()
+    await transport.refreshTools(undefined, undefined, true)
+    expect(transport.hasAdvertisedMemoryOperation({ op: 'write' })).toBe(memoryWrite)
+    h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: !memoryWrite }
+    await transport.refreshTools()
+    expect(transport.hasAdvertisedMemoryOperation({ op: 'write' })).toBe(memoryWrite)
+    expect(transport.hasAdvertisedMemoryOperation({ op: 'view' })).toBe(true)
+    expect(transport.hasAdvertisedMemoryOperation({ op: 'unknown' })).toBe(false)
+    release()
+    await transport.refreshTools()
+    expect(transport.hasAdvertisedMemoryOperation({ op: 'write' })).toBe(!memoryWrite)
+  })
+
+  it('keeps Plan memory readonly even with the global grant', async () => {
+    h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: true }
+    useChatPlan.getState().setDraft('thread-1', true)
+    await transport.refreshTools()
+    expect(transport.hasAdvertisedMemoryOperation({ op: 'write' })).toBe(false)
+    expect(transport.hasAdvertisedMemoryOperation({ op: 'view' })).toBe(true)
+    expect(transport.planToolRefusal('memory', { op: 'write' })).toMatch(/only permits memory view and search/)
+  })
+
+  it('preserves MCP memory identity and schema with the global grant on', async () => {
+    h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: true }
+    h.mcpTools = [{ name: 'memory', server: 'user-srv', description: 'mcp memory', inputSchema: memory.function.parameters }]
+    await transport.refreshTools()
+    expect(transport.getMcpServerForTool('memory')).toBe('user-srv')
+    expect(transport.getTools().memory.description).toBe('mcp memory')
+    expect(transport.hasAdvertisedMemoryOperation({ op: 'write' })).toBe(false)
   })
 
   it('fails closed on a malformed grant, a throwing getter, or a missing API', async () => {

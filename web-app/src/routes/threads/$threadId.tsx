@@ -1098,7 +1098,7 @@ function ThreadDetail() {
         return
       }
       const nativeGrant = isNative ? nativeGrantOf(threadId, toolCall.toolCallId) : undefined
-      if (isNative && toolCall.toolName === 'memory' && !['view', 'search'].includes((toolCall.input as { op?: string } | null)?.op ?? '')) return
+      if (isNative && toolCall.toolName === 'memory' && !useChatSessions.getState().sessions[threadId]?.transport.hasAdvertisedMemoryOperation(toolCall.input)) return
       if (isNative) {
         try { authorizeThreadTool(toolCall.toolName, toolCall.input && typeof toolCall.input === 'object' ? toolCall.input as Record<string, unknown> : {}, nativeGrant) }
         catch { return } // Dispatch returns the capability refusal without an approval.
@@ -1219,8 +1219,8 @@ function ThreadDetail() {
               : nativeGrantOf(threadId, toolCall.toolCallId))
             : undefined
 
-        if (!serverName && toolName === 'memory' && !['view', 'search'].includes((toolCall.input as { op?: string } | null)?.op ?? '')) {
-          return { output: 'The memory tool is read-only in Chat; use view or search. This conversation has not granted durable memory writes through this advertised tool.', isError: true }
+        if (!serverName && toolName === 'memory' && !useChatSessions.getState().sessions[threadId]?.transport.hasAdvertisedMemoryOperation(toolCall.input)) {
+          return { output: 'This memory operation was not advertised for this turn; durable memory writes require the memory write permission before starting the turn.', isError: true }
         }
         if (!serverName && isScopedThreadTool(toolName)) {
           authorizeThreadTool(toolName, toolCall.input && typeof toolCall.input === 'object' ? toolCall.input as Record<string, unknown> : {}, classifiedGrant)
@@ -1338,7 +1338,8 @@ function ThreadDetail() {
                 undefined,
                 undefined,
                 undefined,
-                classifiedGrant
+                classifiedGrant,
+                stopSignal
               )
               // The diff is display-only. It is returned as a separate
               // outcome field (see `record`), never as part of `output`, so

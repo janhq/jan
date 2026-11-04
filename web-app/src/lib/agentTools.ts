@@ -32,6 +32,7 @@ import {
   type WorkspaceScope,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { notifyMemoryMutation } from '@/lib/memorySaveFeedback'
 import {
   dispatchThreadTool,
   intersectConversationCapabilities,
@@ -295,7 +296,9 @@ export async function executeAgentTool(
    * a grant widened after classification cannot expand the call; a revoke
    * still narrows. Undefined keeps the current-grant-only behaviour.
    */
-  effectiveGrantCeiling?: unknown
+  effectiveGrantCeiling?: unknown,
+  /** Suppresses UI feedback for a result discarded after Stop. */
+  signal?: AbortSignal
 ): Promise<AgentToolResult> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -340,7 +343,10 @@ export async function executeAgentTool(
     if (result.isError) return { error: result.content }
     // The store changed, so the recall injections must not keep serving the
     // snapshot taken before this note existed.
-    if (toolName === 'memory' && isMemoryChange(args)) invalidateMemory()
+    if (toolName === 'memory' && isMemoryChange(args)) {
+      invalidateMemory()
+      notifyMemoryMutation(args, result.content, signal)
+    }
     return {
       content: result.content,
       diff: result.diff ?? undefined,

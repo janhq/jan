@@ -125,8 +125,8 @@ function ProjectPageContent() {
       toast.error(t('common:conversationScope.invalidFolder'))
       return
     }
-    // A newly chosen folder starts read-only; writing is a separate switch.
-    setScopeDraft({ ...scopeDraft, folderScope: { path: picked, access: 'read' } })
+    // Selecting a workspace authorizes reading and writing within that folder.
+    setScopeDraft({ ...scopeDraft, folderScope: { path: picked, access: 'write' } })
   }, [pickScopeFolder, scopeDraft, setScopeDraft, t])
   const prepareThreadCreation = useCallback(() => {
     const snapshot = scopeDraft

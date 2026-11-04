@@ -1,8 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
-import { Folder, FolderPlus } from 'lucide-react'
+import { FolderPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { basenameOf } from '@/lib/coworkPreview'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { CoworkWorkspacePill } from '@/containers/CoworkWorkspacePill'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -25,12 +24,14 @@ function useThreadFolder(threadId: string) {
   const persistedFolder = resolveConversationCapabilities(thread?.metadata?.conversationCapabilities).folderScope
   // The strict setter denies synchronously, including clearing persisted metadata.
   // Keep a retry affordance if its subsequent host/persistence operation fails.
-  const [recovery, setRecovery] = useState<{ threadId: string; folder: typeof persistedFolder; error: string } | null>(null)
+  const [recovery, setRecovery] = useState<{ threadId: string; folder: typeof persistedFolder; requestedScope: typeof persistedFolder; error: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const sequence = useRef(0)
   const savedFolder = persistedFolder ?? (recovery?.threadId === threadId ? recovery.folder : null)
+  // Keep removal intent (null) distinct from the saved folder used for display.
+  const retryScope = recovery?.threadId === threadId ? recovery.requestedScope : null
   const error = recovery?.threadId === threadId ? recovery.error : ''
-  const access = useThreads((s) => s.getConversationCapabilities(threadId).folderScope?.access ?? 'read')
+  const access = useThreads((s) => s.getConversationCapabilities(threadId).folderScope?.access ?? 'write')
 
   const apply = useCallback(
     async (folderScope: { path: string; access: 'read' | 'write' } | null) => {
@@ -39,7 +40,7 @@ function useThreadFolder(threadId: string) {
       )
       const seq = ++sequence.current
       setSaving(true)
-      setRecovery({ threadId, folder: folderScope ?? savedFolder, error: '' })
+      setRecovery({ threadId, folder: folderScope ?? savedFolder, requestedScope: folderScope, error: '' })
       try {
         await useThreads.getState().setConversationCapabilities(threadId, { ...current, folderScope })
         if (sequence.current === seq) setRecovery(null)
@@ -48,7 +49,7 @@ function useThreadFolder(threadId: string) {
           const message = t(error instanceof HostRevokeUnconfirmedError && error.backgroundMayPersist
             ? 'common:conversationScope.hostRevokeUnconfirmed'
             : 'common:conversationScope.saveFailed')
-          setRecovery({ threadId, folder: folderScope ?? savedFolder, error: message })
+          setRecovery({ threadId, folder: folderScope ?? savedFolder, requestedScope: folderScope, error: message })
           toast.error(message)
         }
       } finally {
@@ -65,16 +66,15 @@ function useThreadFolder(threadId: string) {
       toast.error(t('common:conversationScope.invalidFolder'))
       return
     }
-    // A changed folder starts read-only: write access is a separate, explicit grant.
-    await apply({ path: picked, access: 'read' })
+    await apply({ path: picked, access: 'write' })
   }, [serviceHub, apply, t])
-  return { thread, folder, access, savedFolder, saving, error, apply, attach }
+  return { thread, folder, access, retryScope, saving, error, apply, attach }
 }
 
 export function ThreadWorkspacePill({ threadId }: { threadId: string }) {
   const { t } = useTranslation()
-  const { thread, folder, access, savedFolder, saving, error, apply, attach } = useThreadFolder(threadId)
-  if (!thread || threadId === TEMPORARY_CHAT_ID || isCoworkThread(thread) || (!folder && !savedFolder && !error)) return null
+  const { thread, folder, access, retryScope, saving, error, apply, attach } = useThreadFolder(threadId)
+  if (!thread || threadId === TEMPORARY_CHAT_ID || isCoworkThread(thread) || (!folder && !error)) return null
   return (
     <div className="mb-2 space-y-1">
       {folder ? <CoworkWorkspacePill
@@ -83,21 +83,15 @@ export function ThreadWorkspacePill({ threadId }: { threadId: string }) {
         onAccessChange={(next) => folder && void apply({ path: folder, access: next })}
         onAttach={() => void attach()}
         onDetach={() => void apply(null)}
-      /> : savedFolder ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-dashed border-border px-3 py-1.5" title={savedFolder.path}>
-            <Folder className="size-3.5 shrink-0" />
-            <span className="max-w-32 truncate">{basenameOf(savedFolder.path)}</span>
-            <span>{t('common:conversationScope.folderNeedsConfirmation')}</span>
-          </span>
-          <Button variant="outline" size="sm" className="h-7" disabled={saving} onClick={() => void apply(savedFolder)}>
-            {t('common:conversationScope.confirmFolder')}
-          </Button>
-          <Button variant="ghost" size="sm" className="h-7" disabled={saving} onClick={() => void apply(null)}>
-            {t('common:conversationScope.removeFolder')}
-          </Button>
-        </div>
-      ) : null}
+      /> : null}
+      {error && <div className="flex gap-2">
+        <Button variant="outline" size="sm" className="h-7" disabled={saving} onClick={() => void apply(retryScope)}>
+          {t('common:run.tryAgain')}
+        </Button>
+        <Button variant="ghost" size="sm" className="h-7" disabled={saving} onClick={() => void apply(null)}>
+          {t('common:conversationScope.removeFolder')}
+        </Button>
+      </div>}
       {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
     </div>
   )
