@@ -2352,6 +2352,7 @@ impl ToolInvoker for CompositeToolInvoker {
         }
         out.push("Workspace", workspace);
         if let Some(link) = &self.parent_link {
+            out.task_source = link.session().map(str::to_string);
             let mut who = format!("You are the subagent {}.", link.identity());
             if let Some(allowed) = &self.allowed_names {
                 let mut names: Vec<&str> = allowed.iter().map(String::as_str).collect();
@@ -4962,10 +4963,10 @@ fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Valu
 /// the request it may extend from cache, and where the harness context comes
 /// from.
 struct CompactionScope<'a> {
-    /// The window to size the tail and the user-message cap against: the
-    /// route's, or on a route with none an estimate taken from the request it
-    /// just rejected.
-    window: u64,
+    /// What to size the tail and the state against: the route's window and
+    /// trigger, or on a route with no window an estimate taken from the
+    /// request it just rejected.
+    sizing: crate::core::agent::compaction::Sizing,
     /// The exact request the run was about to send, when the cached path may
     /// extend it. Only the preflight has one: after a rejection that request
     /// no longer fits, and extending it could only fail too.
@@ -5048,8 +5049,9 @@ async fn compact(
     reason: CompactionReason,
     scope: &CompactionScope<'_>,
 ) -> Option<usize> {
-    let plan =
-        transcript.compaction_plan(crate::core::agent::compaction::tail_tokens(scope.window))?;
+    let harness = scope.harness(budget).await;
+    let fitted = crate::core::agent::compaction::fit(transcript, scope.sizing, &harness)?;
+    let plan = fitted.plan;
     let summarized = plan.summarize.len();
     let announce = |phase, messages, report| {
         let _ = events.send(StreamEvent::Compaction {
@@ -5060,14 +5062,14 @@ async fn compact(
         });
     };
     announce(CompactionPhase::Started, None, None);
-    let gathered = crate::core::agent::continuation::gather(&plan.summarize);
-    let harness = scope.harness(budget).await;
     let (state, report) = crate::core::agent::compaction::continuation_state(
-        &gathered,
+        &fitted.gathered,
         &plan.summarize,
-        scope.cached,
+        // A forced tool choice can only be answered with that tool call.
+        scope.cached.filter(|r| crate::core::agent::compaction::cacheable(r)),
         &harness,
-        scope.window,
+        scope.sizing,
+        fitted.caps,
         model_id,
         model,
     )
@@ -5251,7 +5253,14 @@ async fn run_turn_cycle(
                             // preflight; `preflighted` already holds for the
                             // retry below.
                             let scope = CompactionScope {
-                                window: window.context_window,
+                                sizing: crate::core::agent::compaction::Sizing {
+                                    window: window.context_window,
+                                    trigger: window.trigger_tokens(),
+                                    overhead: crate::core::agent::compaction::request_overhead(
+                                        &request_value,
+                                        volatile_system.as_deref(),
+                                    ),
+                                },
                                 cached: Some(&request_value),
                                 tools,
                                 todo_registry,
@@ -5316,8 +5325,18 @@ async fn run_turn_cycle(
                             },
                             |b| b.context_window,
                         ) >> attempts;
+                        let ratio = compaction.map_or(
+                            crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+                            |b| b.ratio,
+                        );
                         let scope = CompactionScope {
-                            window,
+                            sizing: crate::core::agent::compaction::Sizing {
+                                overhead: crate::core::agent::compaction::request_overhead(
+                                    &request_value,
+                                    volatile_system.as_deref(),
+                                ),
+                                ..crate::core::agent::compaction::Sizing::new(window, ratio)
+                            },
                             cached: None,
                             tools,
                             todo_registry,
@@ -8454,32 +8473,43 @@ mod tests {
         let turns = model.turns.lock().unwrap();
         assert!(!side.is_empty(), "the preflight took the cached path");
         // The side request extends the request the turn was about to send:
-        // the same messages, then the instruction.
-        let first_side = &side[0];
-        let messages = first_side["messages"].as_array().unwrap();
-        // Byte for byte: the side request is the turn request the preflight
-        // held back, plus the instruction.
-        let held_back = turns
-            .iter()
-            .filter(|t| t["messages"].as_array().unwrap().len() == messages.len() - 1)
-            .any(|t| t["messages"].as_array().unwrap()[..] == messages[..messages.len() - 1]);
-        let unsent = turns.iter().all(|t| {
-            t["messages"].as_array().unwrap().len() != messages.len() - 1
-                || t["messages"].as_array().unwrap()[..] != messages[..messages.len() - 1]
-        });
-        // The held-back request is never sent (it is what got compacted), so
-        // it matches no recorded turn; what the side request carries before
-        // the instruction must still be a complete, valid turn request.
-        assert!(unsent && !held_back, "the over-trigger request was sent anyway");
-        assert_eq!(messages.last().unwrap()["role"], "user");
+        // the same messages, the last one -- the volatile tail -- with the
+        // instruction appended to its text so roles keep alternating.
+        let messages = side[0]["messages"].as_array().unwrap();
+        let last = messages.last().unwrap();
+        assert_eq!(last["role"], "user");
         assert!(
-            crate::core::agent::reminder::is_reminder_only(&messages.last().unwrap()["content"]),
+            crate::core::agent::reminder::is_reminder_only(&last["content"]),
             "the instruction is a harness notice, not a user turn"
+        );
+        assert_ne!(messages[messages.len() - 2]["role"], "user", "no two user messages in a row");
+        // The held-back request is never sent: it is what got compacted.
+        let instruction = format!(
+            "\n\n{}",
+            crate::core::agent::reminder::wrap(
+                &crate::core::agent::compaction::compaction_instruction(
+                    crate::core::agent::continuation::Role::Parent
+                )
+            )
+        );
+        let mut held_back = messages.to_vec();
+        let last_text = last["content"].as_str().unwrap();
+        match last_text.strip_suffix(&instruction) {
+            // Folded into the volatile tail the turn was about to send.
+            Some(tail) => *held_back.last_mut().unwrap() = json!({ "role": "user", "content": tail }),
+            // A message of its own after a tool result, which it may not join.
+            None => {
+                held_back.pop();
+            }
+        }
+        assert!(
+            turns.iter().all(|t| t["messages"].as_array().unwrap()[..] != held_back[..]),
+            "the over-trigger request was sent anyway"
         );
         let trigger = small_window().unwrap().trigger_tokens();
         for request in turns.iter() {
             let estimate = crate::core::agent::compaction::estimate_request_tokens(request);
-            assert!(estimate <= trigger + 3_500, "a request re-overflowed: {estimate} > {trigger}");
+            assert!(estimate <= trigger, "a request re-overflowed: {estimate} > {trigger}");
             let body = serde_json::to_string(request).unwrap();
             assert!(!body.contains("[Compaction request from the harness]"), "the instruction leaked");
         }
@@ -8507,6 +8537,191 @@ mod tests {
         }
     }
 
+    /// A cycle of `results` large reads, on a 40K window at `ratio`, starting
+    /// from `task`. Returns the model, so the requests it saw can be checked.
+    async fn run_large_reads(task: &str, ratio: f64, results: usize) -> CompactingModel {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut answers: Vec<serde_json::Value> =
+            (0..results).map(|i| read_call(&format!("c{i}"))).collect();
+        answers.push(final_answer("done"));
+        let model = CompactingModel::new(answers);
+        let tool = BigResultTool(12_000);
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": task })]),
+            Some("Today's date is 2026-11-04.".to_string()),
+            true,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            Some(crate::core::agent::compaction::CompactionBudget {
+                ratio,
+                ..small_window().unwrap()
+            }),
+        )
+        .await
+        .expect("run completes");
+        model
+    }
+
+    /// (#2) At ratio 0.3 with a task larger than the trigger itself, every
+    /// request after a compaction is under the trigger, and the run does not
+    /// compact on every turn: the shares come from the trigger, and the task
+    /// is clipped with its head and tail kept.
+    #[tokio::test]
+    async fn a_low_ratio_and_a_large_task_do_not_compact_every_turn() {
+        let task = format!("TASK-HEAD {} TASK-TAIL", "pasted ".repeat(8_000));
+        let model = run_large_reads(&task, 0.3, 24).await;
+        let trigger = crate::core::agent::compaction::trigger_tokens(40_000, 0.3, None);
+        let side = model.side.lock().unwrap();
+        let turns = model.turns.lock().unwrap();
+        let mut compacted = false;
+        for request in turns.iter() {
+            let messages = request["messages"].as_array().unwrap();
+            let Some(state) = messages.iter().find(|m| crate::core::agent::continuation::is_state(m))
+            else {
+                continue;
+            };
+            compacted = true;
+            let estimate = crate::core::agent::compaction::estimate_request_tokens(request);
+            assert!(estimate <= trigger, "a compacted request is over the trigger: {estimate} > {trigger}");
+            let text = state["content"].as_str().unwrap();
+            assert!(text.contains("TASK-HEAD") && text.contains("TASK-TAIL"), "the task's ends are kept");
+            assert!(text.contains("clipped to fit the context budget"));
+        }
+        assert!(compacted, "the run compacted");
+        // 24 results of ~3K tokens against a 12K trigger: each compaction
+        // keeps a tail, so the run goes several turns between them.
+        assert!(
+            side.len() * 2 <= turns.len(),
+            "{} compactions over {} turns",
+            side.len(),
+            turns.len()
+        );
+    }
+
+    /// The cached path's side request is a paid request: inside
+    /// `run_turn_cycle`, its usage reaches the run's budget.
+    #[tokio::test]
+    async fn the_cached_path_is_charged_to_the_run() {
+        struct Billed(CompactingModel);
+        #[async_trait]
+        impl ModelInvoker for Billed {
+            async fn invoke(
+                &self,
+                request: &serde_json::Value,
+                events: &mpsc::UnboundedSender<StreamEvent>,
+            ) -> Result<serde_json::Value, String> {
+                let mut completion = self.0.invoke(request, events).await?;
+                let side = serde_json::to_string(request)
+                    .unwrap()
+                    .contains("[Compaction request from the harness]");
+                // Only the side request reports usage, so whatever the budget
+                // holds came from it.
+                if side {
+                    completion["usage"] = json!({
+                        "prompt_tokens": 30_000,
+                        "completion_tokens": 777,
+                        "total_tokens": 30_777,
+                    });
+                }
+                Ok(completion)
+            }
+        }
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut answers: Vec<serde_json::Value> =
+            (0..12).map(|i| read_call(&format!("c{i}"))).collect();
+        answers.push(final_answer("done"));
+        let model = Billed(CompactingModel::new(answers));
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "the task" })]),
+            None,
+            true,
+            0,
+            &mut budget,
+            &model,
+            &BigResultTool(12_000),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            small_window(),
+        )
+        .await
+        .expect("run completes");
+        let compactions = model.0.side.lock().unwrap().len() as u64;
+        assert!(compactions > 0, "the preflight took the cached path");
+        assert_eq!(budget.spent(), 777 * compactions, "each side request is charged");
+    }
+
+    /// (#7) On a turn whose request forces a tool (the eager todo plan), the
+    /// cached path is skipped: the model would have to call that tool, so the
+    /// side request could never return the sections.
+    #[tokio::test]
+    async fn a_forced_tool_choice_skips_the_cached_path() {
+        // A history already over the trigger compacts on the first, forced
+        // turn.
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut history = Vec::new();
+        for i in 0..12 {
+            history.push(json!({ "role": "user", "content": format!("q{i} {}", "x".repeat(12_000)) }));
+            history.push(json!({ "role": "assistant", "content": format!("a{i}") }));
+        }
+        history.push(json!({ "role": "user", "content": "now plan it" }));
+        let model = CompactingModel::new(vec![final_answer("done")]);
+        let todo = [json!({ "type": "function", "function": { "name": "todo" } })];
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &todo,
+            Transcript::from_history(history),
+            None,
+            true,
+            0,
+            &mut SessionBudget::new(None),
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            Some("todo"),
+            None,
+            small_window(),
+        )
+        .await
+        .expect("run completes");
+        let turns = model.turns.lock().unwrap();
+        let side = model.side.lock().unwrap();
+        assert!(
+            turns[0]["tool_choice"]["function"]["name"] == "todo",
+            "the first turn forced the tool: {}",
+            turns[0]["tool_choice"]
+        );
+        assert!(
+            turns[0]["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(crate::core::agent::continuation::is_state),
+            "the first turn compacted"
+        );
+        assert!(side.is_empty(), "no side request under a forced tool choice");
+    }
+
     /// (c) A child's task -- phase handoff included -- and its parent's
     /// steering messages survive two compactions word for word.
     #[tokio::test]
@@ -8529,7 +8744,10 @@ mod tests {
         ]);
         let tool = MockTool::default();
         let scope = CompactionScope {
-            window: 20_000,
+            sizing: crate::core::agent::compaction::Sizing::new(
+                20_000,
+                crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            ),
             cached: None,
             tools: &tool,
             todo_registry: None,
@@ -8591,7 +8809,10 @@ mod tests {
         let model = MockModel::new(vec![final_answer("## Current step\na\n## Next actions\nb")]);
         let tool = MockTool::default();
         let scope = CompactionScope {
-            window: 10_000,
+            sizing: crate::core::agent::compaction::Sizing::new(
+                10_000,
+                crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            ),
             cached: None,
             tools: &tool,
             todo_registry: Some(&registry),
@@ -8631,7 +8852,10 @@ mod tests {
         let model = MockModel::new(vec![final_answer("## Current step\na\n## Next actions\nb")]);
         let tool = MockTool::default();
         let scope = CompactionScope {
-            window: 10_000,
+            sizing: crate::core::agent::compaction::Sizing::new(
+                10_000,
+                crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            ),
             cached: None,
             tools: &tool,
             todo_registry: None,
@@ -8699,7 +8923,10 @@ mod tests {
         let tool = MockTool::default();
         let scope = CompactionScope {
             // A tail of a few short messages: the rest is compacted.
-            window: 200,
+            sizing: crate::core::agent::compaction::Sizing::new(
+                200,
+                crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            ),
             cached: None,
             tools: &tool,
             todo_registry: None,

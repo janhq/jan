@@ -4841,7 +4841,7 @@ mod tests {
         let state = crate::core::agent::continuation::build(
             &gathered,
             &crate::core::agent::continuation::HarnessContext::default(),
-            1_000,
+            crate::core::agent::continuation::Caps::user_only(1_000),
             Some("## Progress\nwrote a.txt"),
         );
         let history = vec![
