@@ -13,6 +13,7 @@ import os
 import queue
 import subprocess
 import threading
+import time
 from collections import deque
 from typing import Any, Callable, Deque, Dict, List, Optional, Sequence, Union
 
@@ -31,6 +32,20 @@ except ImportError:  # pragma: no cover - Python < 3.8 has no importlib.metadata
     CLIENT_VERSION = "0.0.0+source"
 
 CLIENT_NAME = "jan-adk"
+
+
+# How long a forced close waits for the pipe readers once the child is killed. A
+# killed child's pipes hit EOF at once unless a descendant inherited them, so a
+# longer wait would only ever be spent on that case.
+_FORCED_JOIN = 0.25
+
+
+def _close_stream(stream: Any) -> None:
+    """Close a pipe from the thread that read it, never from another one."""
+    try:
+        stream.close()
+    except (OSError, ValueError):
+        pass
 
 
 class _Pending:
@@ -100,6 +115,7 @@ class JanRuntime:
         self._listeners: Dict[str, List[Callable[[Any], None]]] = {}
         self._failure: Optional[JanRuntimeError] = None
         self._closing = False
+        self._stdin_closer: Optional[threading.Thread] = None
         self._protocol_version: Optional[int] = None
         self._server_info: Optional[Dict[str, str]] = None
         self._capabilities: Optional[Dict[str, Any]] = None
@@ -145,7 +161,12 @@ class JanRuntime:
         try:
             runtime._handshake()
         except BaseException:
-            runtime._kill()
+            # Reap and release the pipes, not just signal the process: a bare
+            # kill leaves a zombie and pipes nobody closes.
+            try:
+                runtime.close(force=True)
+            except Exception:  # noqa: BLE001 - the handshake's error is the one to surface
+                pass
             raise
         return runtime
 
@@ -331,26 +352,46 @@ class JanRuntime:
 
         Closing stdin is the runtime's own shutdown signal, and a turn still
         running when it arrives is closed with ``stopReason: interrupted``
-        before the process exits. ``force`` skips the grace period and kills.
+        before the process exits.
+
+        The child gets ``shutdown_grace`` seconds to exit after that, then is
+        killed. ``force`` skips that grace and kills at once. Either way the pipe
+        readers then get a bounded moment to reach EOF: ``shutdown_grace`` after
+        a graceful close, a fixed 0.25s after a forced one. A descendant that
+        inherited the pipes can keep them open past that; the readers are daemon
+        threads and release the pipes whenever it lets go.
+
+        The bound is about ``2 * shutdown_grace`` (graceful; ``+ 0.25s`` when a
+        blocked write to a child that stopped reading had to be broken by a
+        kill) or about 0.5s (forced), plus the OS's time to reap a killed child.
+        A child that cannot be reaped (uninterruptible sleep) is not covered.
         """
         if self._closing:
+            if force:
+                self._kill()
+                return self._process.wait()
             return self._wait_or_kill()
         self._closing = True
         gone = JanRuntimeError("the runtime was closed")
         for session in list(self._sessions.values()):
             session._fail(gone)
         self._sessions.clear()
-        if self._process.stdin is not None and not self._process.stdin.closed:
-            try:
-                self._process.stdin.close()
-            except OSError:
-                pass
         if force:
             self._kill()
+            self._close_stdin(_FORCED_JOIN)
             self._dispatch_queue.put(None)
-            return self._process.wait()
-        code = self._wait_or_kill()
-        self._dispatch_queue.put(None)
+            code = self._process.wait()
+            self._join_readers(min(_FORCED_JOIN, self._shutdown_grace))
+        else:
+            if not self._close_stdin(self._shutdown_grace):
+                # A request is blocked writing to a child that stopped reading, so
+                # the shutdown signal cannot be delivered: killing it is the only
+                # thing that breaks the pipe and lets that write fail.
+                self._kill()
+                self._close_stdin(_FORCED_JOIN)
+            code = self._wait_or_kill()
+            self._dispatch_queue.put(None)
+            self._join_readers(self._shutdown_grace)
         return code
 
     # -- internals ---------------------------------------------------------
@@ -393,6 +434,42 @@ class JanRuntime:
             self._kill()
             return self._process.wait()
 
+    def _close_stdin(self, timeout: float) -> bool:
+        """Close stdin on a helper thread; whether it finished within ``timeout``.
+
+        ``request`` holds the stream's buffer lock while it writes. When the
+        child has stopped reading and the pipe is full that write blocks, and so
+        would a ``close`` made here. Handing the close to a daemon thread keeps
+        ``close`` bounded; the helper completes once the write fails, which is
+        what killing the child does - unless a descendant also holds the pipe.
+        """
+        stdin = self._process.stdin
+        if stdin is None:
+            return True
+        closer = self._stdin_closer
+        if closer is None:
+            closer = threading.Thread(target=_close_stream, args=(stdin,), name="jan-adk-stdin-close", daemon=True)
+            self._stdin_closer = closer
+            closer.start()
+        closer.join(timeout)
+        return not closer.is_alive()
+
+    def _join_readers(self, budget: float) -> None:
+        """Give the pipe readers up to ``budget`` seconds in all to reach EOF and release their pipes.
+
+        Each reader closes the stream it reads, on its own thread, when it
+        ends: closing a buffered stream from another thread while one blocks
+        reading it can deadlock. Reaping the child does not guarantee EOF - a
+        descendant that inherited the pipe keeps it open - so the wait is
+        bounded. A reader still blocked after that is a daemon and closes its
+        stream whenever the pipe finally does.
+        """
+        deadline = time.monotonic() + budget
+        for thread in (self._reader, self._stderr_reader):
+            if thread is threading.current_thread():
+                continue
+            thread.join(max(0.0, deadline - time.monotonic()))
+
     def _kill(self) -> None:
         self._closing = True
         try:
@@ -409,8 +486,22 @@ class JanRuntime:
         self._sessions.pop(session.id, None)
 
     def _read_stdout(self) -> None:
-        assert self._process.stdout is not None
-        for line in self._process.stdout:
+        stream = self._process.stdout
+        assert stream is not None
+        try:
+            self._read_frames(stream)
+        finally:
+            _close_stream(stream)
+
+    def _read_frames(self, stream: Any) -> None:
+        broken = False
+        for line in stream:
+            # After a malformed or unroutable frame nothing more is routed, but the
+            # pipe is still drained to EOF: a child whose stdout has no reader blocks
+            # on a full pipe, and one whose read end is closed dies of EPIPE. Either
+            # way it could no longer shut down by itself when `close` asks.
+            if broken:
+                continue
             line = line.strip()
             if not line:
                 continue
@@ -418,12 +509,17 @@ class JanRuntime:
                 frame = json.loads(line)
             except ValueError:
                 self._fail(JanRuntimeError(f"the runtime wrote a line that is not JSON: {line[:200]}", stderr=self.stderr))
-                return
+                broken = True
+                continue
             try:
                 self._dispatch(frame)
             except Exception as error:  # noqa: BLE001 - one bad frame must not stop the reader
                 self._fail(JanRuntimeError(f"the ADK could not route a frame: {error}", stderr=self.stderr))
-                return
+                broken = True
+                continue
+        if broken:
+            # Already failed, and as before nothing more is said about the exit.
+            return
         # EOF: the process is gone or going. Anything still parked has no answer
         # coming, which is exactly what the failure below says.
         code = self._process.wait()
@@ -437,11 +533,27 @@ class JanRuntime:
         )
 
     def _read_stderr(self) -> None:
-        assert self._process.stderr is not None
-        for line in self._process.stderr:
-            self._stderr_tail.append(line)
-            if self._on_stderr is not None:
-                self._on_stderr(line)
+        stream = self._process.stderr
+        assert stream is not None
+        try:
+            for line in stream:
+                self._stderr_tail.append(line)
+                callback = self._on_stderr
+                if callback is None:
+                    continue
+                try:
+                    callback(line)
+                except Exception as error:  # noqa: BLE001 - a callback chose to raise
+                    # Not a runtime failure: the callback only observes stderr, and
+                    # before this it merely ended the reader. Stop calling it, say
+                    # so in the stderr tail (what `runtime.stderr` and later errors
+                    # show), and keep draining: a dead reader would leave the child
+                    # blocked on a full stderr pipe, or dying of EPIPE once the pipe
+                    # is closed under it.
+                    self._on_stderr = None
+                    self._stderr_tail.append(f"[jan-adk] the on_stderr callback raised and was disabled: {describe_error(error)}\n")
+        finally:
+            _close_stream(stream)
 
     def _dispatch(self, frame: Dict[str, Any]) -> None:
         if "method" not in frame:
