@@ -156,20 +156,13 @@ fn read_zip_entry_capped(
     String::from_utf8(bytes).map_err(|e| RagError::ParseError(e.to_string()))
 }
 
-/// Parts of an xlsx/ods zip that `calamine` never reads, however large:
-/// pictures, embedded objects and thumbnails. Everything else may be inflated
-/// and parsed (sheet parts are found through relationship targets, which can
-/// have any name), so it counts toward the caps.
-fn is_unread_spreadsheet_part(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    ["xl/media/", "xl/embeddings/", "pictures/", "thumbnails/"]
-        .iter()
-        .any(|dir| name.starts_with(dir))
-}
-
 /// For formats `calamine` unpacks itself (xlsx, ods): refuse a zip whose parts
-/// declare more than the caps before handing it over. A file that is not a zip
-/// (xls) passes through; `calamine` reports its own errors.
+/// declare more than the caps before handing it over. Every part counts, under
+/// any name or path: the workbook's relationship targets decide which part is
+/// a sheet, so no directory can be assumed unread. Pictures and other parts
+/// that are already compressed declare about what they take on disk, which the
+/// file size limit bounds. A file that is not a zip (xls) passes through;
+/// `calamine` reports its own errors.
 fn check_zip_declared_sizes(file_path: &str) -> Result<(), RagError> {
     let Ok(mut zip) = ZipArchive::new(std::fs::File::open(file_path)?) else {
         return Ok(());
@@ -179,9 +172,6 @@ fn check_zip_declared_sizes(file_path: &str) -> Result<(), RagError> {
         let Ok(entry) = zip.by_index_raw(i) else {
             continue;
         };
-        if entry.name().is_ok_and(|n| is_unread_spreadsheet_part(&n)) {
-            continue;
-        }
         if entry.size() > MAX_ZIP_ENTRY_SIZE {
             return Err(too_large_unpacked(MAX_ZIP_ENTRY_SIZE));
         }
@@ -796,13 +786,72 @@ mod tests {
         }
     }
 
+    /// A minimal xlsx whose only worksheet is stored at `sheet_path` (reached
+    /// through the workbook's relationship target) and holds one cell, "found",
+    /// after `padding` bytes of whitespace.
+    fn crafted_xlsx(name: &str, sheet_path: &str, padding: u64) -> std::path::PathBuf {
+        const NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006";
+        let path = std::env::temp_dir().join(format!("jan-rag-{}-{name}", std::process::id()));
+        let mut zw = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+        let opts = zip::write::SimpleFileOptions::default();
+        let small = [
+            (
+                "_rels/.rels",
+                format!(
+                    r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{NS}/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#
+                ),
+            ),
+            (
+                "xl/workbook.xml",
+                format!(
+                    r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="{NS}/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#
+                ),
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                format!(
+                    r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{NS}/relationships/worksheet" Target="{}"/></Relationships>"#,
+                    sheet_path.trim_start_matches("xl/")
+                ),
+            ),
+        ];
+        for (entry, body) in small {
+            zw.start_file(entry, opts).unwrap();
+            zw.write_all(body.as_bytes()).unwrap();
+        }
+        zw.start_file(sheet_path, opts).unwrap();
+        zw.write_all(
+            br#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>"#,
+        )
+        .unwrap();
+        let chunk = vec![b' '; 1024 * 1024];
+        let mut left = padding;
+        while left > 0 {
+            let n = left.min(chunk.len() as u64) as usize;
+            zw.write_all(&chunk[..n]).unwrap();
+            left -= n as u64;
+        }
+        zw.write_all(
+            br#"<row r="1"><c r="A1" t="inlineStr"><is><t>found</t></is></c></row></sheetData></worksheet>"#,
+        )
+        .unwrap();
+        zw.finish().unwrap();
+        path
+    }
+
     #[test]
-    fn spreadsheet_media_that_inflates_past_the_cap_is_not_counted() {
-        // calamine never reads media, so a large one is no reason to refuse.
-        let path = bomb_zip("media.xlsx", "xl/media/image1.png", MAX_ZIP_ENTRY_SIZE + 1);
-        let out = parse_spreadsheet(path.to_str().unwrap());
-        let _ = fs::remove_file(&path);
-        assert!(!refused_as_too_large(out));
+    fn a_worksheet_stored_under_a_media_path_still_counts() {
+        // The workbook's relationship target decides which part is a sheet, so
+        // calamine inflates `xl/media/sheet1.xml` as readily as a normal path.
+        let small = crafted_xlsx("media-small.xlsx", "xl/media/sheet1.xml", 0);
+        let read = parse_spreadsheet(small.to_str().unwrap());
+        let _ = fs::remove_file(&small);
+        assert!(read.is_ok_and(|text| text.contains("found")));
+
+        let big = crafted_xlsx("media-big.xlsx", "xl/media/sheet1.xml", MAX_ZIP_ENTRY_SIZE);
+        let out = parse_spreadsheet(big.to_str().unwrap());
+        let _ = fs::remove_file(&big);
+        assert!(refused_as_too_large(out));
     }
 
     #[test]
