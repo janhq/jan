@@ -6797,6 +6797,9 @@ impl App {
     /// worktree), and not from it: Esc stops the children but keeps the
     /// conversation, whose worktrees later dispatches may still name.
     fn end_conversation_worktrees(&mut self) {
+        // The roster is the conversation's too: cleared here rather than in
+        // `stop_subagents`, for the same reason the worktrees are.
+        self.subagent_set.clear_roster();
         let batch = self.subagent_set.workspaces.end_conversation();
         if batch.is_empty() {
             return;
@@ -41370,6 +41373,41 @@ fn a() {}
             .iter()
             .map(row_text)
             .any(|t| t.contains("last worked in")));
+    }
+
+    /// The subagent registry is the app's, but its roster is the
+    /// conversation's: `/new` must not hand the next conversation's
+    /// continuation state the previous one's children and blackboard paths.
+    /// Esc stops the children but keeps the conversation, and its roster.
+    #[test]
+    fn a_new_session_starts_with_no_subagent_roster() {
+        let mut app = test_app();
+        app.subagent_set
+            .roster_add("explore", "sub-explore-1", "map the repo", false, None);
+        app.stop_subagents();
+        assert_eq!(app.subagent_set.roster_lines().len(), 1, "Esc keeps the roster");
+        app.reset_session();
+        assert!(
+            app.subagent_set.roster_lines().is_empty(),
+            "{:?}",
+            app.subagent_set.roster_lines()
+        );
+    }
+
+    /// `/resume` replaces the conversation too, so the roster goes with it.
+    #[tokio::test]
+    async fn a_resumed_thread_starts_with_no_subagent_roster() {
+        let mut app = test_app();
+        app.subagent_set
+            .roster_add("explore", "sub-explore-1", "map the repo", false, None);
+        let history = vec![json!({ "role": "user", "content": "first" })];
+        let id = super::super::cli_save_thread(&app.agent_dir, None, "m", &history, None).unwrap();
+        super::load_thread(&mut app, &json!({ "id": id }), "resumed").await;
+        assert!(
+            app.subagent_set.roster_lines().is_empty(),
+            "{:?}",
+            app.subagent_set.roster_lines()
+        );
     }
 
     /// `/new` keeps the checkout: it belongs to the invocation, not the thread.

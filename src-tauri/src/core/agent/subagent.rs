@@ -1466,6 +1466,16 @@ impl BackgroundSubagents {
             .collect()
     }
 
+    /// Forget the roster: the conversation it belongs to has ended. A
+    /// session-owned registry outlives conversations (`/new`, `/resume`), and
+    /// the next one's continuation state must not name children it never
+    /// dispatched. Only the session owner ends a conversation under a live
+    /// registry; a run-owned one is dropped with its run.
+    #[cfg(feature = "cli")]
+    pub(crate) fn clear_roster(&self) {
+        self.roster.lock().unwrap().clear();
+    }
+
     /// Install the durable channel a session's children report into. Called
     /// once at session start; see [`Self::session_events`].
     ///
