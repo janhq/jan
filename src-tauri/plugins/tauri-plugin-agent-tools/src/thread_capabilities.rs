@@ -78,10 +78,48 @@ pub fn set_kind_resolver(resolver: KindResolver) {
 /// The host's classification of `id`; [`ThreadKind::Unknown`] when the host
 /// has not installed a resolver.
 pub async fn thread_kind(id: &str) -> ThreadKind {
+    #[cfg(test)]
+    if let Some(kind) = test_identities().lock().unwrap().get(id).copied() {
+        return kind;
+    }
     match KIND_RESOLVER.get() {
         Some(resolve) => resolve(id.to_string()).await,
         None => ThreadKind::Unknown,
     }
+}
+
+/// Test-only per-id host kind, consulted before the installed resolver so
+/// tests that rely on "no resolver installed" keep their meaning for other ids.
+#[cfg(test)]
+fn test_identities() -> &'static Mutex<HashMap<String, ThreadKind>> {
+    static IDS: OnceLock<Mutex<HashMap<String, ThreadKind>>> = OnceLock::new();
+    IDS.get_or_init(Default::default)
+}
+#[cfg(test)]
+pub(crate) fn test_set_kind(id: &str, kind: ThreadKind) {
+    test_identities().lock().unwrap().insert(id.to_string(), kind);
+}
+
+/// Legacy (no host grant record) binding. A folder is NEVER authorized here:
+/// `metadata.folder` and the `code-sessions` blob are renderer-writable, so they
+/// cannot stand in for a host grant. The caller must confirm the folder through
+/// the strict setter first. The host must still positively identify the id as
+/// Cowork; scratch-only calls (no folder) keep working and never get write.
+pub async fn bind_legacy_session(
+    id: &str,
+    folder: Option<&str>,
+    writable: Option<bool>,
+) -> Result<(Option<String>, Option<bool>), String> {
+    if !thread_kind(id).await.allows_elevated_session() {
+        return Err("Folder access requires a host-verified Cowork session".into());
+    }
+    if folder.is_some() {
+        return Err(
+            "This conversation's folder has not been confirmed. Confirm or re-select the folder to grant access"
+                .into(),
+        );
+    }
+    Ok((None, writable.map(|_| false)))
 }
 
 /// App-wide Chat permissions for shell network access and durable memory
@@ -154,9 +192,22 @@ fn marker_lock(thread_id: &str) -> Arc<Mutex<()>> {
 }
 fn marker(thread_id: &str) -> Result<Option<PathBuf>, String> {
     let segment = crate::workspace::thread_segment(thread_id)?;
+    // Thread ids cannot contain '.', so the ledger name never collides with a
+    // marker and a path always identifies its own on-disk format.
+    let name = if cfg!(unix) {
+        segment
+    } else {
+        format!("{segment}{LEDGER_SUFFIX}")
+    };
     Ok(CONSENT_ROOT
         .get()
-        .map(|root| root().join("conversation-denials").join(segment)))
+        .map(|root| root().join("conversation-denials").join(name)))
+}
+/// The durable denial store entry for one identity on this platform: a marker
+/// file on Unix, the per-identity ledger elsewhere. Host fault-injection tests
+/// target this so they exercise the real backend instead of a hardcoded name.
+pub fn denial_store_path(thread_id: &str) -> Result<Option<PathBuf>, String> {
+    marker(thread_id)
 }
 #[cfg(test)]
 type IoHook = Arc<dyn Fn(&str) + Send + Sync>;
@@ -178,6 +229,9 @@ fn write_denial_at(thread_id: &str, path: Option<PathBuf>) -> Result<(), String>
     #[cfg(not(test))]
     let _ = thread_id;
     if let Some(path) = path {
+        if is_ledger(&path) {
+            return ledger_append(&path, thread_id, LedgerOp::Deny, None);
+        }
         let parent = path.parent().unwrap();
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         // Contents are deliberately irrelevant: even a corrupt/empty marker denies.
@@ -197,17 +251,21 @@ fn sync_directory(path: &std::path::Path) -> Result<(), String> {
     let _ = path;
     Ok(())
 }
-fn remove_denial_at(thread_id: &str, marker_path: Option<PathBuf>) -> Result<(), String> {
+fn remove_denial_at(thread_id: &str, marker_path: Option<PathBuf>) -> Result<(), Fault> {
     if let Some(path) = marker_path {
         match std::fs::remove_file(&path) {
             Ok(()) => {
                 if let Err(error) = sync_directory(path.parent().unwrap()) {
-                    let _ = write_denial_at(thread_id, Some(path.clone()));
-                    return Err(error);
+                    // The unlink may or may not persist; only a recreated marker
+                    // proves the denial survives. Report whether it does.
+                    return Err(match write_denial_at(thread_id, Some(path.clone())) {
+                        Ok(()) => Fault::ConfirmFailed(error),
+                        Err(rollback) => Fault::ConfirmRollbackFailed { confirm: error, rollback },
+                    });
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(Fault::ConfirmFailed(e.to_string())),
         }
     }
     Ok(())
@@ -230,43 +288,305 @@ fn restore_at(
     let _io = lock.lock().unwrap();
     #[cfg(test)]
     before_io(thread_id, "restore");
-    // Platforms without a directory durability primitive cannot safely replay
-    // saved authority: an acknowledged marker could disappear after a crash.
-    // Explicit grants still work in-process; never auto-restore them there.
-    let blocked = !cfg!(unix)
-        || match marker_path {
-            Some(path) => match std::fs::symlink_metadata(path) {
-                Ok(_) => true,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-                Err(_) => true,
-            },
-            None => false,
-        };
+    // Unix: any marker (even corrupt, or a directory) denies. Elsewhere there is
+    // no directory-sync primitive, so denial cannot rest on a marker's existence;
+    // the per-identity ledger needs a durable, positive CONFIRM to restore.
+    let restored = match marker_path {
+        Some(path) if is_ledger(&path) => match ledger_state(&path, thread_id) {
+            // Builds before the ledger wrote bare `<id>` markers on Windows too;
+            // one that still exists keeps denying until fresh consent clears it.
+            _ if legacy_marker_blocks(&path) => denied(),
+            LedgerState::Confirmed(confirmed_grant) => {
+                confirmed_grant.intersect(grant).unwrap_or_else(|_| denied())
+            }
+            LedgerState::Denied => denied(),
+        },
+        Some(path) => match std::fs::symlink_metadata(path) {
+            Ok(_) => denied(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => grant,
+            Err(_) => denied(),
+        },
+        // No consent root installed: nothing durable can vouch for the grant.
+        None if cfg!(unix) => grant,
+        None => denied(),
+    };
     // A revoke/clear can publish while the marker lookup is blocked.
     let mut map = confirmed().lock().unwrap();
     map.entry(thread_id.to_string())
         .or_insert_with(|| Confirmed {
-            grant: if blocked { denied() } else { grant },
+            grant: restored,
             generation: next_generation(),
             durability_error: None,
             denial_token: None,
         });
     Ok(())
 }
+const LEDGER_SUFFIX: &str = ".ledger";
+/// Compact in place beyond this size. Safe without rename/dir-sync: an empty or
+/// torn ledger is a denial, and the lone record written is flushed.
+const LEDGER_COMPACT_BYTES: u64 = 64 * 1024;
+/// Restore never reads more than this. Jan's own appends keep a ledger under
+/// `LEDGER_COMPACT_BYTES` plus one record, so anything larger is foreign or
+/// corrupt: deny, and the next append compacts it away without reading it.
+const LEDGER_READ_MAX: u64 = 1024 * 1024;
+
+/// Test-only per-path fault injection for the ledger: `(op, stage)` where
+/// stage is "write" (nothing written) or "sync" (record written, flush failed,
+/// i.e. the record may still persist late).
+#[cfg(test)]
+type LedgerFault = Arc<dyn Fn(LedgerOp, &str) -> bool + Send + Sync>;
+#[cfg(test)]
+fn ledger_faults() -> &'static Mutex<HashMap<PathBuf, LedgerFault>> {
+    static FAULTS: OnceLock<Mutex<HashMap<PathBuf, LedgerFault>>> = OnceLock::new();
+    FAULTS.get_or_init(Default::default)
+}
+#[cfg(test)]
+fn ledger_fault(path: &std::path::Path, op: LedgerOp, stage: &str) -> Result<(), String> {
+    let fault = ledger_faults().lock().unwrap().get(path).cloned();
+    match fault {
+        Some(f) if f(op, stage) => Err(format!("injected {stage} failure")),
+        _ => Ok(()),
+    }
+}
+
+fn is_ledger(path: &std::path::Path) -> bool {
+    path.extension().is_some_and(|e| e == "ledger")
+}
+
+fn legacy_marker(ledger: &std::path::Path) -> PathBuf {
+    ledger.with_extension("")
+}
+fn legacy_marker_blocks(ledger: &std::path::Path) -> bool {
+    match std::fs::symlink_metadata(legacy_marker(ledger)) {
+        Ok(_) => true,
+        Err(e) => e.kind() != std::io::ErrorKind::NotFound,
+    }
+}
+/// Called only after a flushed CONFIRM. Removal need not be durable: a marker
+/// resurrected by a crash merely denies, which is the safe direction.
+fn remove_legacy_marker(ledger: &std::path::Path) -> Result<(), String> {
+    match std::fs::remove_file(legacy_marker(ledger)) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+        _ => Ok(()),
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "lowercase")]
+enum LedgerOp {
+    Confirm,
+    Deny,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LedgerRecord {
+    v: u8,
+    op: LedgerOp,
+    id: String,
+    grant: Option<ThreadCapabilities>,
+}
+
+enum LedgerState {
+    Confirmed(ThreadCapabilities),
+    Denied,
+}
+
+/// FNV-1a 64: detects torn/zero-filled/garbled records; not an authenticator.
+fn checksum(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf29ce484222325, |h, b| {
+        (h ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+    })
+}
+
+fn encode_record(id: &str, op: LedgerOp, grant: Option<&ThreadCapabilities>) -> Result<Vec<u8>, String> {
+    let json = serde_json::to_string(&LedgerRecord {
+        v: 1,
+        op,
+        id: id.to_string(),
+        grant: grant.cloned(),
+    })
+    .map_err(|e| e.to_string())?;
+    Ok(format!("{:016x} {json}\n", checksum(json.as_bytes())).into_bytes())
+}
+
+fn decode_record(line: &[u8], id: &str) -> Option<LedgerRecord> {
+    let line = std::str::from_utf8(line).ok()?;
+    let (sum, json) = line.split_once(' ')?;
+    if sum.len() != 16 || u64::from_str_radix(sum, 16).ok()? != checksum(json.as_bytes()) {
+        return None;
+    }
+    let record: LedgerRecord = serde_json::from_str(json).ok()?;
+    let well_formed = record.v == 1
+        && record.id == id
+        && match (&record.op, &record.grant) {
+            (LedgerOp::Confirm, Some(grant)) => grant.validate().is_ok(),
+            (LedgerOp::Deny, None) => true,
+            _ => false,
+        };
+    well_formed.then_some(record)
+}
+
+/// Restore needs a positive answer: the last valid record is a CONFIRM for this
+/// identity and nothing invalid (torn, zero-filled, foreign) follows it. Missing,
+/// unreadable, empty, or a non-file ledger all deny.
+fn ledger_state(path: &std::path::Path, id: &str) -> LedgerState {
+    use std::io::Read;
+    let Ok(file) = std::fs::File::open(path) else {
+        return LedgerState::Denied;
+    };
+    // Bounded: never read more than the cap, and an over-cap ledger denies.
+    let mut bytes = Vec::new();
+    if file.take(LEDGER_READ_MAX + 1).read_to_end(&mut bytes).is_err()
+        || bytes.len() as u64 > LEDGER_READ_MAX
+    {
+        return LedgerState::Denied;
+    }
+    let mut last = None;
+    let mut invalid_after = false;
+    for line in bytes.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
+        match decode_record(line, id) {
+            Some(record) => {
+                last = Some(record);
+                invalid_after = false;
+            }
+            None => invalid_after = true,
+        }
+    }
+    match last {
+        Some(LedgerRecord { op: LedgerOp::Confirm, grant: Some(grant), .. }) if !invalid_after => {
+            LedgerState::Confirmed(grant)
+        }
+        _ => LedgerState::Denied,
+    }
+}
+
+/// Append one record and flush that file (FlushFileBuffers on Windows). No
+/// directory sync is assumed: if a newly created ledger vanishes after power
+/// loss, absence is a denial, which is the safe direction.
+fn ledger_append(
+    path: &std::path::Path,
+    id: &str,
+    op: LedgerOp,
+    grant: Option<&ThreadCapabilities>,
+) -> Result<(), String> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    let mut record = encode_record(id, op, grant)?;
+    // Plain write access (not `append`): on Windows `append(true)` alone
+    // requests FILE_GENERIC_WRITE without FILE_WRITE_DATA, while
+    // FlushFileBuffers documents GENERIC_WRITE. We seek to the end ourselves,
+    // which is race-free only because every caller holds this identity's I/O
+    // lock; a second process could at worst damage a record, which denies.
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    let len = file.metadata().map_err(|e| e.to_string())?.len();
+    if len > LEDGER_COMPACT_BYTES {
+        // Compact without reading: only the last word counts, and an empty or
+        // torn ledger denies until the lone record below is flushed.
+        file.set_len(0).map_err(|e| e.to_string())?;
+        file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+    } else if len > 0 {
+        // Never glue a record onto a torn tail: peek at the last byte only.
+        let mut last = [0u8; 1];
+        file.seek(SeekFrom::End(-1)).map_err(|e| e.to_string())?;
+        file.read_exact(&mut last).map_err(|e| e.to_string())?;
+        if last[0] != b'\n' {
+            record.insert(0, b'\n');
+        }
+    }
+    file.seek(SeekFrom::End(0)).map_err(|e| e.to_string())?;
+    #[cfg(test)]
+    ledger_fault(path, op, "write")?;
+    file.write_all(&record).map_err(|e| e.to_string())?;
+    #[cfg(test)]
+    ledger_fault(path, op, "sync")?;
+    file.sync_all().map_err(|e| e.to_string())
+}
+/// Why a denial is not (known to be) durable. All variants are sticky: only a
+/// successful denial append (`persist_denial_at`) or a flushed fresh CONFIRM
+/// clears them, and none of them ever loosens the in-process denial.
+#[derive(Clone, Debug)]
+enum Fault {
+    Pending,
+    /// A revocation's DENY could not be written or flushed.
+    RevocationFailed(String),
+    /// A grant confirmation failed but the compensating DENY was durable: the
+    /// user's grant was not activated and the last word on disk is a denial.
+    ConfirmFailed(String),
+    /// A grant confirmation failed AND the compensating DENY failed: the
+    /// CONFIRM may persist late, so the grant may return after a crash.
+    ConfirmRollbackFailed { confirm: String, rollback: String },
+}
+
+impl Fault {
+    fn message(&self) -> String {
+        let revocation = "Access denied in this process, but restart-safe revocation failed";
+        match self {
+            Fault::Pending => format!("{revocation}: Denial persistence is pending"),
+            Fault::RevocationFailed(e) => format!("{revocation}: {e}"),
+            Fault::ConfirmFailed(e) => format!(
+                "Access stays denied: the grant confirmation failed ({e}) and a durable denial was recorded"
+            ),
+            Fault::ConfirmRollbackFailed { confirm, rollback } => format!(
+                "{revocation}: the grant confirmation failed ({confirm}) and its compensating denial also failed ({rollback}); \
+                 access is off now, but the confirmation may persist and the grant may return after a crash"
+            ),
+        }
+    }
+}
+
+/// Err for EVERY sticky fault, including a failed grant confirmation whose
+/// compensating DENY was durable: the barrier is deliberately not relaxed
+/// (delete and the setter still refuse until a fresh denial or confirm clears
+/// it). The message differs by kind; `confirm_failure` exposes the grant-side
+/// kinds so hosts can word them as "grant not activated", not "revocation failed".
 pub fn denial_persisted(thread_id: &str) -> Result<(), String> {
     let map = confirmed().lock().unwrap();
-    match map.get(thread_id).and_then(|e| e.durability_error.clone()) {
-        Some(error) => Err(format!(
-            "Access denied in this process, but restart-safe revocation failed: {error}"
-        )),
+    match map.get(thread_id).and_then(|e| e.durability_error.as_ref()) {
+        Some(fault) => Err(fault.message()),
         None => Ok(()),
     }
+}
+
+/// Why the last grant confirmation failed, while the entry still shows it.
+pub fn confirm_failure(thread_id: &str) -> Option<String> {
+    match confirmed().lock().unwrap().get(thread_id)?.durability_error.as_ref()? {
+        fault @ (Fault::ConfirmFailed(_) | Fault::ConfirmRollbackFailed { .. }) => Some(fault.message()),
+        _ => None,
+    }
+}
+
+/// The failed-confirmation message and the rollback flag from ONE lock
+/// acquisition, so a concurrent stop-all or revoke that replaces the entry can
+/// never pair a message from one entry with a flag from another.
+pub fn confirm_failure_snapshot(thread_id: &str) -> (Option<String>, bool) {
+    let map = confirmed().lock().unwrap();
+    match map.get(thread_id).and_then(|e| e.durability_error.as_ref()) {
+        Some(fault @ Fault::ConfirmFailed(_)) => (Some(fault.message()), false),
+        Some(fault @ Fault::ConfirmRollbackFailed { .. }) => (Some(fault.message()), true),
+        _ => (None, false),
+    }
+}
+
+/// True when a failed grant confirmation could not be rolled back with a
+/// durable denial. The host's second durable channel (narrowing metadata)
+/// should be used, and the user told the outcome is unknown, not "not granted".
+pub fn confirm_rollback_failed(thread_id: &str) -> bool {
+    matches!(
+        confirmed().lock().unwrap().get(thread_id).and_then(|e| e.durability_error.as_ref()),
+        Some(Fault::ConfirmRollbackFailed { .. })
+    )
 }
 
 struct Confirmed {
     grant: ThreadCapabilities,
     generation: u64,
-    durability_error: Option<String>,
+    durability_error: Option<Fault>,
     // Unlike the admission generation, survives stop/finalize barrier bumps.
     denial_token: Option<u64>,
 }
@@ -314,7 +634,7 @@ pub fn deny_in_memory(thread_id: &str) -> u64 {
         Confirmed {
             grant: denied(),
             generation,
-            durability_error: Some("Denial persistence is pending".into()),
+            durability_error: Some(Fault::Pending),
             denial_token: Some(generation),
         },
     );
@@ -344,7 +664,13 @@ fn persist_denial_at(thread_id: &str, token: u64, marker_path: Result<Option<Pat
         .err();
     let mut map = confirmed().lock().unwrap();
     if let Some(entry) = map.get_mut(thread_id).filter(|e| e.denial_token.is_some()) {
-        entry.durability_error = error;
+        // A failed retry does not resolve an earlier ambiguous confirmation.
+        // Keep its stronger diagnostic until a DENY actually persists.
+        if error.is_none()
+            || !matches!(entry.durability_error, Some(Fault::ConfirmRollbackFailed { .. }))
+        {
+            entry.durability_error = error.map(Fault::RevocationFailed);
+        }
     }
 }
 
@@ -397,11 +723,28 @@ fn confirm_at(
     }
     #[cfg(test)]
     before_io(thread_id, "remove");
-    if let Err(error) = remove_denial_at(thread_id, marker_path.clone()) {
+    let acknowledged = match marker_path.as_deref() {
+        // Append a flushed CONFIRM; on failure re-append a DENY so a record the
+        // OS persists late can never be the last word. If that compensating
+        // DENY fails too the outcome is unknown: report it, stickily.
+        Some(path) if is_ledger(path) => {
+            match ledger_append(path, thread_id, LedgerOp::Confirm, Some(&grant))
+                .and_then(|()| remove_legacy_marker(path))
+            {
+                Ok(()) => Ok(()),
+                Err(confirm) => Err(match write_denial_at(thread_id, marker_path.clone()) {
+                    Ok(()) => Fault::ConfirmFailed(confirm),
+                    Err(rollback) => Fault::ConfirmRollbackFailed { confirm, rollback },
+                }),
+            }
+        }
+        _ => remove_denial_at(thread_id, marker_path.clone()),
+    };
+    if let Err(fault) = acknowledged {
         // Directory-sync failure may also have failed to recreate the marker.
         // Do not let deletion acknowledge an earlier, now-removed denial.
         if let Some(entry) = confirmed().lock().unwrap().get_mut(thread_id) {
-            entry.durability_error = Some(error);
+            entry.durability_error = Some(fault);
         }
         return false;
     }
@@ -426,7 +769,7 @@ fn confirm_at(
     let error = write_denial_at(thread_id, marker_path).err();
     let mut map = confirmed().lock().unwrap();
     if let Some(entry) = map.get_mut(thread_id) {
-        entry.durability_error = error;
+        entry.durability_error = error.map(Fault::RevocationFailed);
     }
     false
 }
@@ -498,7 +841,65 @@ pub fn generation(thread_id: &str) -> u64 {
 /// frozen run/start-time ceiling, without applying `with_global` to that ceiling.
 /// The returned generation is the barrier token for the spawn that follows.
 pub async fn authorize(thread_id: &str) -> Result<(PathBuf, ThreadCapabilities, u64), String> {
-    let (data_folder, stored) = snapshot(thread_id.to_string()).await?;
+    let snapshot = snapshot(thread_id.to_string()).await?;
+    combine_snapshot(thread_id, snapshot)
+}
+
+/// Host-owned folder authority of a migrated Cowork conversation. A separate
+/// resolver from [`set_resolver`] so the Chat-only surface can never be handed
+/// a Cowork record by mistake.
+static COWORK_RESOLVER: OnceLock<SnapshotResolver> = OnceLock::new();
+pub fn set_cowork_resolver(resolver: SnapshotResolver) {
+    let _ = COWORK_RESOLVER.set(resolver);
+}
+
+/// [`authorize`] for a host-verified Cowork thread. `None` means the host
+/// holds NO folder record for it (a legacy or never-narrowed conversation):
+/// the old read+write behaviour of the caller's attached folder stands. Once a
+/// record exists -- including `folderScope: null` after a detach -- it is the
+/// ceiling, intersected with the same process confirmation, so a revoke or
+/// detach narrows immediately and nothing resurrects the old folder.
+pub async fn authorize_cowork(
+    thread_id: &str,
+) -> Result<(PathBuf, Option<ThreadCapabilities>, u64), String> {
+    let (data_folder, stored) = COWORK_RESOLVER
+        .get()
+        .ok_or("Cowork consent resolver is unavailable")?(thread_id.to_string())
+    .await?;
+    if stored.is_null() {
+        // No record is only the legacy default while nothing says otherwise. A
+        // revoke whose record write failed leaves a process entry and/or a
+        // durable denial; either keeps the folder off (fail closed), never
+        // falling back to the old read+write.
+        if confirmed().lock().unwrap().contains_key(thread_id) || denial_evidence(thread_id) {
+            let (mirror, generation) = current(thread_id);
+            return Ok((data_folder, Some(mirror), generation));
+        }
+        return Ok((data_folder, None, generation(thread_id)));
+    }
+    let (data_folder, grant, generation) = combine_snapshot(thread_id, (data_folder, stored))?;
+    Ok((data_folder, Some(grant), generation))
+}
+
+/// Whether the durable denial store holds anything for this identity (a Unix
+/// marker or a Windows ledger / legacy marker). Unreadable counts as present.
+fn denial_evidence(thread_id: &str) -> bool {
+    let Ok(Some(path)) = marker(thread_id) else {
+        return false;
+    };
+    let present = |p: &std::path::Path| match std::fs::symlink_metadata(p) {
+        Ok(_) => true,
+        Err(e) => e.kind() != std::io::ErrorKind::NotFound,
+    };
+    present(&path)
+        || present(&path.with_extension("ledger"))
+        || present(&path.with_extension(""))
+}
+
+fn combine_snapshot(
+    thread_id: &str,
+    (data_folder, stored): (PathBuf, serde_json::Value),
+) -> Result<(PathBuf, ThreadCapabilities, u64), String> {
     let stored: ThreadCapabilities = serde_json::from_value(stored)
         .map_err(|e| format!("Invalid stored conversation capabilities: {e}"))?;
     let (mirror, generation) = current(thread_id);
@@ -510,6 +911,47 @@ pub async fn authorize(thread_id: &str) -> Result<(PathBuf, ThreadCapabilities, 
         generation,
     ))
 }
+/// Clamp what a legacy Session caller asked for to the host's authority for a
+/// Cowork conversation. The caller's values may only narrow: a different or
+/// revoked folder is an error (never a silent drop, or the agent would work
+/// against a folder it believes is attached), and writes need both the caller
+/// and the host to say `write`.
+pub fn clamp_session_folder(
+    host: &ThreadCapabilities,
+    folder: Option<&str>,
+    writable: Option<bool>,
+) -> Result<(Option<String>, Option<bool>), String> {
+    let Some(folder) = folder else {
+        return Ok((None, writable.map(|_| false)));
+    };
+    match &host.folder_scope {
+        Some(granted) if granted.path == folder => Ok((
+            Some(folder.to_string()),
+            Some(writable.unwrap_or(false) && granted.access == "write"),
+        )),
+        _ => Err("Folder access for this conversation changed: the attached folder is no \
+                  longer granted"
+            .into()),
+    }
+}
+
+/// The ceiling a Cowork monitor captured at start: what the caller asked for.
+pub fn session_ceiling(
+    folder: Option<&str>,
+    writable: bool,
+    network: bool,
+) -> ThreadCapabilities {
+    ThreadCapabilities {
+        version: 1,
+        folder_scope: folder.map(|path| FolderScope {
+            path: path.to_string(),
+            access: if writable { "write" } else { "read" }.into(),
+        }),
+        shell_network: network,
+        memory_write: false,
+    }
+}
+
 impl ThreadCapabilities {
     pub fn validate(&self) -> Result<(), String> {
         if self.version != 1
@@ -849,21 +1291,416 @@ mod tests {
         assert!(is_denied(&current(id).0));
     }
 
-    #[cfg(not(unix))]
-    #[test]
-    fn saved_grants_require_explicit_confirmation_without_directory_durability() {
-        let id = "unsupported-directory-durability";
-        restore_if_absent(id, elevated()).unwrap();
-        assert!(
-            is_denied(&current(id).0),
-            "saved authority cannot auto-restore"
-        );
-        let token = narrow(id);
-        assert!(
-            confirm_if_current(id, elevated(), token),
-            "explicit current-process consent still works"
-        );
-        assert!(!is_denied(&current(id).0));
+    /// The Windows backend is portable std code, so it is exercised on every
+    /// platform through explicit `.ledger` paths (the path selects the backend).
+    mod ledger {
+        use super::*;
+
+        struct Dir(PathBuf);
+        impl Drop for Dir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        fn dir() -> Dir {
+            // A process-wide counter: parallel tests starting within one clock
+            // tick must never share (and delete) each other's directory.
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "jan-ledger-test-{}-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::SeqCst),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&path).unwrap();
+            Dir(path)
+        }
+        fn restart(id: &str) {
+            confirmed().lock().unwrap().remove(id);
+        }
+        fn restore(id: &str, path: &std::path::Path, stored: ThreadCapabilities) -> ThreadCapabilities {
+            restart(id);
+            restore_at(id, stored, Some(path.to_path_buf())).unwrap();
+            current(id).0
+        }
+        fn confirm(id: &str, path: &std::path::Path, grant: ThreadCapabilities) -> bool {
+            let token = deny_in_memory(id);
+            persist_denial_at(id, token, Ok(Some(path.to_path_buf())));
+            confirm_at(id, grant, token, Ok(Some(path.to_path_buf())))
+        }
+
+        #[test]
+        fn confirmed_grant_restores_after_restart_and_never_widens() {
+            let d = dir();
+            let (id, path) = ("ledger-restore", d.0.join("ledger-restore.ledger"));
+            assert!(confirm(id, &path, elevated()));
+            assert_eq!(restore(id, &path, elevated()).folder_scope.unwrap().access, "write");
+            // Stored metadata narrowed to read since: the intersection wins.
+            let mut read_only = elevated();
+            read_only.folder_scope.as_mut().unwrap().access = "read".into();
+            assert_eq!(restore(id, &path, read_only).folder_scope.unwrap().access, "read");
+            // A different stored folder than the one confirmed never restores.
+            let other = grant(true, Some(&absolute_fixture("other")), "write");
+            assert!(restore(id, &path, other).folder_scope.is_none());
+            // A ledger confirmed read-only never widens to a stored write grant.
+            let mut narrow_grant = elevated();
+            narrow_grant.folder_scope.as_mut().unwrap().access = "read".into();
+            assert!(confirm(id, &path, narrow_grant));
+            assert_eq!(restore(id, &path, elevated()).folder_scope.unwrap().access, "read");
+        }
+
+        #[test]
+        fn missing_empty_or_garbage_ledgers_fail_closed() {
+            let d = dir();
+            let id = "ledger-missing";
+            let path = d.0.join("ledger-missing.ledger");
+            assert!(is_denied(&restore(id, &path, elevated())), "no ledger");
+            std::fs::write(&path, b"").unwrap();
+            assert!(is_denied(&restore(id, &path, elevated())), "empty");
+            std::fs::write(&path, vec![0u8; 512]).unwrap();
+            assert!(is_denied(&restore(id, &path, elevated())), "zero-filled");
+            std::fs::write(&path, b"{\"v\":1,\"op\":\"confirm\"}\n").unwrap();
+            assert!(is_denied(&restore(id, &path, elevated())), "no checksum");
+            std::fs::remove_file(&path).unwrap();
+            std::fs::create_dir(&path).unwrap();
+            assert!(is_denied(&restore(id, &path, elevated())), "unreadable");
+        }
+
+        #[test]
+        fn deny_is_last_word_and_survives_restart() {
+            let d = dir();
+            let (id, path) = ("ledger-deny", d.0.join("ledger-deny.ledger"));
+            assert!(confirm(id, &path, elevated()));
+            let token = deny_in_memory(id);
+            persist_denial_at(id, token, Ok(Some(path.clone())));
+            denial_persisted(id).unwrap();
+            assert!(is_denied(&restore(id, &path, elevated())));
+            // Only a fresh positive confirmation lifts it.
+            assert!(confirm(id, &path, elevated()));
+            assert!(!is_denied(&restore(id, &path, elevated())));
+        }
+
+        #[test]
+        fn torn_or_foreign_records_after_a_confirm_deny() {
+            let d = dir();
+            let (id, path) = ("ledger-torn", d.0.join("ledger-torn.ledger"));
+            assert!(confirm(id, &path, elevated()));
+            let good = std::fs::read(&path).unwrap();
+            // Torn tail (crash mid-append of a later DENY).
+            let mut torn = good.clone();
+            torn.extend_from_slice(b"00000000deadbeef {\"v\":1,\"op\":\"de");
+            std::fs::write(&path, &torn).unwrap();
+            assert!(is_denied(&restore(id, &path, elevated())));
+            // A tampered record fails its checksum.
+            let tampered = String::from_utf8(good.clone()).unwrap().replace("write", "wr1te");
+            std::fs::write(&path, tampered).unwrap();
+            assert!(is_denied(&restore(id, &path, elevated())));
+            // A valid confirm copied from another identity's ledger is rejected.
+            std::fs::write(&path, String::from_utf8(good).unwrap()).unwrap();
+            assert!(!is_denied(&restore("ledger-torn", &path, elevated())));
+            assert!(is_denied(&restore("ledger-other", &path, elevated())));
+        }
+
+        #[test]
+        fn failed_confirm_never_acknowledges_and_next_append_survives_torn_tail() {
+            let d = dir();
+            let (id, path) = ("ledger-io", d.0.join("ledger-io.ledger"));
+            std::fs::create_dir(&path).unwrap();
+            assert!(!confirm(id, &path, elevated()), "unwritable ledger");
+            assert!(is_denied(&current(id).0));
+            std::fs::remove_dir(&path).unwrap();
+            std::fs::write(&path, b"torn-without-newline").unwrap();
+            assert!(confirm(id, &path, elevated()), "append repairs the torn tail");
+            assert!(!is_denied(&restore(id, &path, elevated())));
+            // A torn tail left after the confirm still denies.
+            let mut bytes = std::fs::read(&path).unwrap();
+            bytes.extend_from_slice(b"junk");
+            std::fs::write(&path, bytes).unwrap();
+            assert!(is_denied(&restore(id, &path, elevated())));
+        }
+
+        #[test]
+        fn legacy_marker_keeps_denying_until_fresh_consent() {
+            let d = dir();
+            let (id, path) = ("ledger-legacy", d.0.join("ledger-legacy.ledger"));
+            assert!(confirm(id, &path, elevated()));
+            std::fs::write(d.0.join("ledger-legacy"), b"").unwrap();
+            assert!(is_denied(&restore(id, &path, elevated())));
+            assert!(confirm(id, &path, elevated()));
+            assert!(!d.0.join("ledger-legacy").exists());
+            assert!(!is_denied(&restore(id, &path, elevated())));
+        }
+
+        fn inject(path: &std::path::Path, fault: impl Fn(LedgerOp, &str) -> bool + Send + Sync + 'static) {
+            ledger_faults().lock().unwrap().insert(path.to_path_buf(), Arc::new(fault));
+        }
+        fn clear_faults(path: &std::path::Path) {
+            ledger_faults().lock().unwrap().remove(path);
+        }
+        fn lines(path: &std::path::Path) -> Vec<String> {
+            String::from_utf8(std::fs::read(path).unwrap())
+                .unwrap()
+                .lines()
+                .map(|l| l.to_string())
+                .collect()
+        }
+        /// Revocation-then-grant as the host setter does it, but with the denial
+        /// persisted first (as the setter requires) and a caller-chosen fault.
+        fn begin(id: &str, path: &std::path::Path) -> u64 {
+            let token = deny_in_memory(id);
+            persist_denial_at(id, token, Ok(Some(path.to_path_buf())));
+            denial_persisted(id).expect("denial durable before any grant");
+            token
+        }
+
+        #[test]
+        fn failed_confirm_with_durable_compensating_denial_is_a_grant_failure() {
+            let d = dir();
+            let (id, path) = ("ledger-grant-fail", d.0.join("ledger-grant-fail.ledger"));
+            let token = begin(id, &path);
+            // Flush of the CONFIRM fails after the record was written.
+            inject(&path, |op, stage| op == LedgerOp::Confirm && stage == "sync");
+            assert!(!confirm_at(id, elevated(), token, Ok(Some(path.clone()))));
+            clear_faults(&path);
+            assert!(is_denied(&current(id).0), "in-process stays denied");
+            assert!(!confirm_rollback_failed(id));
+            let why = confirm_failure(id).expect("grant-side failure is reported");
+            assert!(why.contains("grant confirmation failed"), "{why}");
+            assert!(!why.contains("may return"), "{why}");
+            assert_eq!(confirm_failure_snapshot(id), (Some(why.clone()), false));
+            // Fail-closed barrier is NOT relaxed: setter/delete guards still refuse.
+            assert!(denial_persisted(id).is_err());
+            // The compensating DENY is the last word, so restore stays denied.
+            assert!(lines(&path).last().unwrap().contains("\"op\":\"deny\""));
+            assert!(is_denied(&restore(id, &path, elevated())));
+        }
+
+        #[test]
+        fn failed_confirm_write_leaves_no_confirm_record() {
+            let d = dir();
+            let (id, path) = ("ledger-write-fail", d.0.join("ledger-write-fail.ledger"));
+            let token = begin(id, &path);
+            let before = lines(&path).len();
+            inject(&path, |op, stage| op == LedgerOp::Confirm && stage == "write");
+            assert!(!confirm_at(id, elevated(), token, Ok(Some(path.clone()))));
+            clear_faults(&path);
+            assert!(lines(&path).iter().all(|l| !l.contains("\"op\":\"confirm\"")));
+            assert_eq!(lines(&path).len(), before + 1, "only the compensating denial");
+            assert!(is_denied(&restore(id, &path, elevated())));
+        }
+
+        #[test]
+        fn failed_compensating_denial_is_a_sticky_distinct_error() {
+            let d = dir();
+            let (id, path) = ("ledger-rollback-fail", d.0.join("ledger-rollback-fail.ledger"));
+            let token = begin(id, &path);
+            // CONFIRM is written but its flush fails, and so does the repair.
+            inject(&path, |op, stage| match op {
+                LedgerOp::Confirm => stage == "sync",
+                LedgerOp::Deny => true,
+            });
+            assert!(!confirm_at(id, elevated(), token, Ok(Some(path.clone()))));
+            assert!(is_denied(&current(id).0), "in-process stays denied");
+            assert!(confirm_rollback_failed(id));
+            let (msg, rolled) = confirm_failure_snapshot(id);
+            assert!(rolled && msg.is_some_and(|m| m.contains("compensating denial also failed")));
+            let error = denial_persisted(id).unwrap_err();
+            assert!(error.contains("compensating denial also failed"), "{error}");
+            assert!(error.contains("may persist and the grant may return after a crash"), "{error}");
+            assert!(error.contains("restart-safe revocation failed"), "{error}");
+            // Document the hazard honestly: the unflushed CONFIRM is on disk as the
+            // last record here, so a crash that keeps it restores the grant.
+            assert!(lines(&path).last().unwrap().contains("\"op\":\"confirm\""));
+            // Sticky across barrier bumps, clear, and a failing retry.
+            bump_generation(id);
+            assert!(confirm_rollback_failed(id));
+            persist_denial_at(id, token, Ok(Some(path.clone())));
+            assert!(denial_persisted(id).is_err(), "failed retry stays an error");
+            assert!(confirm_rollback_failed(id), "failed retry must retain the ambiguous-confirm diagnostic");
+            // Only a successful denial append clears it, and then it is the last word.
+            clear_faults(&path);
+            let retry = deny_in_memory(id);
+            persist_denial_at(id, retry, Ok(Some(path.clone())));
+            denial_persisted(id).expect("successful DENY clears the sticky error");
+            assert!(!confirm_rollback_failed(id));
+            assert!(is_denied(&restore(id, &path, elevated())));
+        }
+
+        #[test]
+        fn confirm_failure_snapshot_pairs_message_and_flag_from_one_entry() {
+            let d = dir();
+            assert_eq!(confirm_failure_snapshot("snap-absent"), (None, false));
+            let (id, path) = ("snap-rollback", d.0.join("snap-rollback.ledger"));
+            let token = begin(id, &path);
+            assert_eq!(confirm_failure_snapshot(id), (None, false));
+            inject(&path, |op, stage| match op {
+                LedgerOp::Confirm => stage == "sync",
+                LedgerOp::Deny => true,
+            });
+            assert!(!confirm_at(id, elevated(), token, Ok(Some(path.clone()))));
+            clear_faults(&path);
+            let (msg, rolled) = confirm_failure_snapshot(id);
+            assert!(rolled && msg.is_some_and(|m| m.contains("compensating denial also failed")));
+            // The entry is replaced (a revoke or stop-all): message and flag
+            // disappear together, never half-reported.
+            narrow(id);
+            let (msg, rolled) = confirm_failure_snapshot(id);
+            assert_eq!(msg.is_some(), rolled);
+        }
+
+        #[test]
+        fn rollback_failure_with_unwritable_ledger_never_acknowledges() {
+            let d = dir();
+            let (id, path) = ("ledger-dir-fail", d.0.join("ledger-dir-fail.ledger"));
+            std::fs::create_dir(&path).unwrap();
+            let token = deny_in_memory(id);
+            assert!(!confirm_at(id, elevated(), token, Ok(Some(path.clone()))));
+            assert!(confirm_rollback_failed(id));
+            assert!(is_denied(&current(id).0));
+            assert!(is_denied(&restore(id, &path, elevated())));
+        }
+
+        #[test]
+        fn appends_preserve_history_and_order_under_the_seeking_handle() {
+            let d = dir();
+            let (id, path) = ("ledger-order", d.0.join("ledger-order.ledger"));
+            for _ in 0..3 {
+                assert!(confirm(id, &path, elevated()));
+            }
+            let all = lines(&path);
+            assert_eq!(all.len(), 6, "deny+confirm per round, nothing overwritten");
+            for (i, line) in all.iter().enumerate() {
+                let op = if i % 2 == 0 { "deny" } else { "confirm" };
+                assert!(line.contains(&format!("\"op\":\"{op}\"")), "{i}: {line}");
+            }
+            // A rewound handle (e.g. cursor at 0) must still append, not overwrite.
+            let token = deny_in_memory(id);
+            persist_denial_at(id, token, Ok(Some(path.clone())));
+            assert_eq!(lines(&path).len(), 7);
+            assert!(is_denied(&restore(id, &path, elevated())));
+        }
+
+        #[test]
+        fn oversized_ledgers_are_never_fully_read_and_deny() {
+            let d = dir();
+            let (id, path) = ("ledger-huge", d.0.join("ledger-huge.ledger"));
+            assert!(confirm(id, &path, elevated()));
+            // A valid CONFIRM followed by > LEDGER_READ_MAX of foreign padding.
+            let mut bytes = std::fs::read(&path).unwrap();
+            bytes.extend(std::iter::repeat(b'x').take(LEDGER_READ_MAX as usize + 10));
+            std::fs::write(&path, &bytes).unwrap();
+            assert!(is_denied(&restore(id, &path, elevated())));
+            // Even a stream of otherwise valid records over the cap denies.
+            let good = encode_record(id, LedgerOp::Confirm, Some(&elevated())).unwrap();
+            let flood: Vec<u8> = good.iter().copied().cycle().take(LEDGER_READ_MAX as usize + 1).collect();
+            std::fs::write(&path, flood).unwrap();
+            assert!(is_denied(&restore(id, &path, elevated())));
+            // The next append compacts it (without reading it) to one flushed record.
+            assert!(confirm(id, &path, elevated()));
+            assert!(std::fs::metadata(&path).unwrap().len() < LEDGER_COMPACT_BYTES);
+            // The helper appends DENY then CONFIRM; compaction dropped all history.
+            let after = lines(&path);
+            assert_eq!(after.len(), 2, "only the post-compaction records remain");
+            assert!(after[0].contains("\"op\":\"deny\"") && after[1].contains("\"op\":\"confirm\""));
+            assert!(!is_denied(&restore(id, &path, elevated())));
+        }
+
+        #[test]
+        fn stale_confirm_repairs_with_a_deny_and_reports_a_failed_repair() {
+            use std::sync::mpsc;
+            use std::time::Duration;
+            for repair_fails in [false, true] {
+                let d = dir();
+                let id = format!("ledger-stale-{repair_fails}");
+                let path = d.0.join(format!("{id}.ledger"));
+                let token = begin(&id, &path);
+                let (entered_tx, entered_rx) = mpsc::channel();
+                let (release_tx, release_rx) = mpsc::channel();
+                let release_rx = Mutex::new(release_rx);
+                io_hooks().lock().unwrap().insert(
+                    id.clone(),
+                    Arc::new(move |op| {
+                        if op == "remove" {
+                            entered_tx.send(()).unwrap();
+                            release_rx.lock().unwrap().recv().unwrap();
+                        }
+                    }),
+                );
+                let (worker_id, worker_path) = (id.clone(), path.clone());
+                let worker = std::thread::spawn(move || {
+                    confirm_at(&worker_id, elevated(), token, Ok(Some(worker_path)))
+                });
+                entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                // A newer denial lands while the confirmation is stalled on I/O.
+                deny_in_memory(&id);
+                if repair_fails {
+                    inject(&path, |op, _| op == LedgerOp::Deny);
+                }
+                release_tx.send(()).unwrap();
+                assert!(!worker.join().unwrap(), "stale token never acknowledges");
+                io_hooks().lock().unwrap().remove(&id);
+                clear_faults(&path);
+                assert!(is_denied(&current(&id).0));
+                if repair_fails {
+                    assert!(denial_persisted(&id).is_err(), "failed repair is reported");
+                    // The CONFIRM was flushed and nothing repaired it: reported, not hidden.
+                    assert!(lines(&path).last().unwrap().contains("\"op\":\"confirm\""));
+                    let retry = deny_in_memory(&id);
+                    persist_denial_at(&id, retry, Ok(Some(path.clone())));
+                }
+                assert!(lines(&path).last().unwrap().contains("\"op\":\"deny\""));
+                denial_persisted(&id).unwrap();
+                assert!(is_denied(&restore(&id, &path, elevated())));
+            }
+        }
+
+        #[test]
+        fn restore_racing_a_denial_never_resurrects_a_confirm() {
+            use std::sync::mpsc;
+            use std::time::Duration;
+            let d = dir();
+            let (id, path) = ("ledger-restore-race", d.0.join("ledger-restore-race.ledger"));
+            assert!(confirm(id, &path, elevated()));
+            restart(id);
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let release_rx = Mutex::new(release_rx);
+            io_hooks().lock().unwrap().insert(
+                id.into(),
+                Arc::new(move |op| {
+                    if op == "restore" {
+                        entered_tx.send(()).unwrap();
+                        release_rx.lock().unwrap().recv().unwrap();
+                    }
+                }),
+            );
+            let worker_path = path.clone();
+            let worker = std::thread::spawn(move || {
+                restore_at(id, elevated(), Some(worker_path)).unwrap()
+            });
+            entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            deny_in_memory(id);
+            release_tx.send(()).unwrap();
+            worker.join().unwrap();
+            io_hooks().lock().unwrap().remove(id);
+            assert!(is_denied(&current(id).0), "restore never overwrites a newer denial");
+            persist_denial_at(id, 0, Ok(Some(path.clone())));
+            assert!(is_denied(&restore(id, &path, elevated())));
+        }
+
+        #[test]
+        fn ledger_stays_bounded() {
+            let d = dir();
+            let (id, path) = ("ledger-bounded", d.0.join("ledger-bounded.ledger"));
+            for _ in 0..600 {
+                assert!(confirm(id, &path, elevated()));
+            }
+            assert!(std::fs::metadata(&path).unwrap().len() < LEDGER_COMPACT_BYTES + 4096);
+            assert!(!is_denied(&restore(id, &path, elevated())));
+        }
     }
 
     /// Runs inside the durable-root test so global root configuration stays
@@ -1136,5 +1973,33 @@ mod tests {
                 memory_write: true
             }
         );
+    }
+
+    // ---- legacy (no host record) binding: never folder authority --------------
+
+    #[tokio::test]
+    async fn bind_legacy_session_never_authorizes_a_folder_for_any_kind() {
+        let folder = absolute_fixture("bind-legacy");
+        for (id, kind, scratch_ok) in [
+            ("bl-cowork", ThreadKind::Cowork, true),
+            ("bl-legacy", ThreadKind::LegacyCowork, true),
+            ("bl-chat", ThreadKind::Chat, false),
+            ("bl-unknown", ThreadKind::Unknown, false),
+        ] {
+            test_set_kind(id, kind);
+            // A renderer-recorded folder (metadata.folder / code-sessions) is
+            // not authority: even a positively identified Cowork id is refused.
+            for w in [Some(true), Some(false), None] {
+                assert!(bind_legacy_session(id, Some(&folder), w).await.is_err(), "{id} {w:?}");
+            }
+            assert_eq!(bind_legacy_session(id, None, Some(true)).await.is_ok(), scratch_ok, "{id} scratch");
+        }
+        // Scratch-only never carries write.
+        test_set_kind("bl-scratch", ThreadKind::Cowork);
+        assert_eq!(bind_legacy_session("bl-scratch", None, Some(true)).await.unwrap(), (None, Some(false)));
+        assert_eq!(bind_legacy_session("bl-scratch", None, None).await.unwrap(), (None, None));
+        // Nothing installed for this id: fail closed.
+        assert!(bind_legacy_session("bl-nothing", Some(&folder), Some(true)).await.is_err());
+        assert!(bind_legacy_session("bl-nothing", None, None).await.is_err());
     }
 }

@@ -93,8 +93,10 @@ fn patch_capabilities(
     if thread.get("id").and_then(Value::as_str) != Some(thread_id) {
         return Err("Thread id does not match stored thread".into());
     }
-    if thread_id == "temporary-chat" || thread["metadata"]["mode"].as_str() == Some("cowork") {
-        return Err("Conversation capabilities require a persistent Chat thread".into());
+    // A migrated Cowork conversation keeps its folder grant in the same strict
+    // record; only temporary Chat has no persisted consent at all.
+    if thread_id == "temporary-chat" {
+        return Err("Conversation capabilities require a persistent conversation".into());
     }
     if narrowing_only {
         use tauri_plugin_agent_tools::thread_capabilities::{denied, ThreadCapabilities};
@@ -189,6 +191,125 @@ pub async fn read_conversation_capabilities(
     let stored: tauri_plugin_agent_tools::thread_capabilities::ThreadCapabilities =
         serde_json::from_value(value).map_err(|e| e.to_string())?;
     serde_json::to_value(stored.intersect(mirror)?).map_err(|e| e.to_string())
+}
+
+/// Host-owned folder authority for a migrated Cowork conversation.
+///
+/// `Null` means the host holds no record: a legacy or never-narrowed session,
+/// whose attached folder keeps the old read+write default. Any stored record --
+/// including `folderScope: null` after a detach -- is authoritative from then
+/// on and is restored through the same marker/ledger path as Chat, so a revoke
+/// is never resurrected from `metadata.folder`.
+pub async fn read_cowork_capabilities(
+    data_folder: &Path,
+    thread_id: &str,
+) -> Result<Value, String> {
+    super::utils::validate_thread_id(thread_id)?;
+    if super::helpers::should_use_sqlite() {
+        return Err("Conversation capabilities are unavailable on mobile".into());
+    }
+    let lock = super::helpers::get_lock_for_thread(thread_id).await;
+    let _guard = lock.lock().await;
+    let path = super::utils::get_thread_metadata_path(data_folder, thread_id)?;
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        // A legacy session has no thread record at all.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Value::Null),
+        Err(e) => return Err(e.to_string()),
+    };
+    let thread: Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    if thread["id"].as_str() != Some(thread_id)
+        || thread["metadata"]["mode"].as_str() != Some("cowork")
+    {
+        return Err("Folder authority requires a Cowork conversation record".into());
+    }
+    let value = thread["metadata"]["conversationCapabilities"].clone();
+    if value.is_null() {
+        return Ok(Value::Null);
+    }
+    validate_conversation_capabilities(&value)?;
+    let stored: tauri_plugin_agent_tools::thread_capabilities::ThreadCapabilities =
+        serde_json::from_value(value).map_err(|e| format!("Invalid consent: {e}"))?;
+    tauri_plugin_agent_tools::thread_capabilities::restore_async(
+        thread_id.to_string(),
+        stored.clone(),
+    )
+    .await?;
+    let (mirror, _) = tauri_plugin_agent_tools::thread_capabilities::current(thread_id);
+    serde_json::to_value(stored.intersect(mirror)?).map_err(|e| e.to_string())
+}
+
+/// The all-off grant, as the wire value.
+pub fn denied_value() -> Value {
+    serde_json::json!({"version":1,"folderScope":null,"shellNetwork":false,"memoryWrite":false})
+}
+
+/// Second durable channel after a failed confirmation whose compensating DENY
+/// also failed: narrow stored metadata to all-off. Restore is CONFIRM ∩
+/// metadata, so a CONFIRM that persists late meets nothing to grant. Never
+/// widens (it goes through the narrowing-only patch). Caller holds the thread lock.
+pub fn narrow_after_failed_compensation(data_folder: &Path, thread_id: &str) -> Result<(), String> {
+    patch_narrowing_capabilities(data_folder, thread_id, denied_value())
+}
+
+/// Truthful setter error for a grant whose confirmation returned false.
+/// `failure` is the plugin's `confirm_failure`, `rollback_failed` its
+/// `confirm_rollback_failed`. The in-process denial is never relaxed here.
+pub fn confirm_failure_error(
+    data_folder: &Path,
+    thread_id: &str,
+    failure: Option<String>,
+    rollback_failed: bool,
+) -> String {
+    match failure {
+        None => "The permission change was written but a concurrent change prevented its \
+             activation; elevated access stays off. Try again."
+            .into(),
+        Some(detail) if !rollback_failed => format!(
+            "The permission change could not be activated; access stays off and a durable \
+             denial was recorded. Try again. ({detail})"
+        ),
+        Some(detail) => {
+            let narrowed = match narrow_after_failed_compensation(data_folder, thread_id) {
+                Ok(()) => "Saved permissions were narrowed to off as a precaution.".to_string(),
+                Err(e) => format!("Narrowing saved permissions also failed ({e}); durability is not assured."),
+            };
+            format!(
+                "Access is off now, but the permission change may return after a crash: its \
+                 confirmation failed and could not be undone durably. {narrowed} ({detail})"
+            )
+        }
+    }
+}
+
+/// Attach host-owned consent to a listed thread. A host read error fails
+/// CLOSED with an explicit all-off grant plus `conversationCapabilitiesError`:
+/// dropping the field would let the frontend fall back to its legacy default
+/// (a writable folder for Cowork). Only a Cowork thread the host holds no
+/// record for (`Null`) keeps the field absent, which is the legacy default.
+pub fn apply_listed_capabilities(thread: &mut Value, cowork: bool, read: Result<Value, String>) {
+    if thread["metadata"].is_null() {
+        if matches!(&read, Ok(v) if cowork && v.is_null()) {
+            return;
+        }
+        thread["metadata"] = serde_json::json!({});
+    }
+    // A non-object, non-null metadata cannot carry the field; it is listed as is.
+    let Some(metadata) = thread["metadata"].as_object_mut() else { return };
+    match read {
+        Ok(value) if cowork && value.is_null() => {
+            metadata.remove("conversationCapabilities");
+            metadata.remove("conversationCapabilitiesError");
+        }
+        Ok(value) => {
+            metadata.insert("conversationCapabilities".into(), value);
+            metadata.remove("conversationCapabilitiesError");
+        }
+        Err(error) => {
+            metadata.insert("conversationCapabilities".into(), denied_value());
+            metadata.insert("conversationCapabilitiesError".into(), Value::String(error));
+        }
+    }
 }
 
 /// Pure classification of a conversation id from what the host read.

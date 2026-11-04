@@ -9,6 +9,7 @@ import {
   type CoworkSidecar,
   type Invoke,
 } from '@/lib/migrateCoworkSessions'
+import { resolveConversationCapabilities } from '@/lib/conversationCapabilities'
 
 /**
  * Persistence for Cowork sessions stored as threads (`metadata.mode =
@@ -70,6 +71,9 @@ export function sessionToThreadRecord(
     mode: 'cowork',
     folder: s.folder ?? null,
   }
+  // Host-owned authority: list_threads overlays it on the records we adopt, so
+  // it must never be written back from (possibly stale) frontend metadata.
+  delete metadata.conversationCapabilities
   if (s.project !== undefined) metadata.project = s.project
   else delete metadata.project
   if (s.planMode !== undefined) metadata.planMode = s.planMode
@@ -100,6 +104,26 @@ export function sessionToThreadRecord(
   }
 }
 
+/**
+ * The folder access the host stored for this session. No record at all (a
+ * legacy session) leaves `folderAccess` absent, which keeps the old read+write
+ * default. Once a record exists it is authoritative: a grant for a different
+ * folder, or none, is `null`, never a fallback to `metadata.folder`.
+ */
+function hostFolderAccess(meta: Json): Pick<CoworkSession, 'folderAccess'> {
+  // Absent key: no host record (legacy). An explicit `null` is the host's
+  // "record exists but could not be read" signal: fail closed (denied), never
+  // the legacy read+write default.
+  if (!('conversationCapabilities' in meta) || meta.conversationCapabilities === undefined) return {}
+  const stored = meta.conversationCapabilities
+  if (stored === null) return { folderAccess: null }
+  const scope = resolveConversationCapabilities(stored).folderScope
+  return {
+    folderAccess:
+      scope && scope.path === meta.folder ? scope.access : null,
+  }
+}
+
 /** Rebuild a session from its thread record and sidecar. */
 export function sessionFromThread(
   thread: Json,
@@ -117,6 +141,7 @@ export function sessionFromThread(
         ? { id: String(model.id), provider: String(model.engine ?? 'llamacpp') }
         : undefined,
     folder: typeof meta.folder === 'string' ? meta.folder : null,
+    ...hostFolderAccess(meta),
     ...(meta.project && { project: meta.project }),
     turns: sidecar?.turns ?? [],
     messages: sidecar?.messages ?? [],
@@ -406,6 +431,9 @@ export function createCoworkPersistence(
     try {
       const existing = persisted.get(id)
       const record = sessionToThreadRecord(session, existing, legacy)
+      // Re-check right before ANY write: a late flush after delete must not
+      // recreate the sidecar (`create: true`) of a deleted session.
+      if (tombstones.has(id)) return
       await invoke('write_thread_extra', {
         threadId: id,
         name: COWORK_SIDECAR,
