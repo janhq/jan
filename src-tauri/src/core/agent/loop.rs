@@ -2340,10 +2340,7 @@ impl ToolInvoker for CompositeToolInvoker {
             git_status: crate::core::agent::git::workspace_status(&self.project_root),
             ..Default::default()
         };
-        let mut workspace = format!("Working directory: {}", self.project_root.display());
-        if let Some(branch) = crate::core::agent::git::current_branch(&self.project_root) {
-            workspace.push_str(&format!("\nBranch: {branch}"));
-        }
+        let mut workspace = workspace_lines(&self.project_root);
         if self.workspace.read_only {
             workspace.push_str("\nThe working directory is read-only for this run.");
         }
@@ -2365,17 +2362,10 @@ impl ToolInvoker for CompositeToolInvoker {
         }
         // A child's own shells and monitors are its business too: it started
         // them, and it is the one waiting on them.
-        let mut running = Vec::new();
-        for id in self.bg_shells.running_ids() {
-            running.push(format!("- background shell {id}"));
-        }
-        for monitor in self.monitors.snapshot() {
-            running.push(format!(
-                "- monitor {} ({}): {}",
-                monitor.monitor_id, monitor.name, monitor.script
-            ));
-        }
-        out.push("Running in the background", running.join("\n"));
+        out.push(
+            "Running in the background",
+            background_lines(Some(&self.bg_shells), Some(&self.monitors)),
+        );
         out
     }
 
@@ -4636,7 +4626,8 @@ pub(crate) async fn compact_history(
     args: &OrchestrationArgs,
     model_id: &str,
     messages: &[serde_json::Value],
-    keep_recent: usize,
+    run_mode: crate::core::agent::plan::RunMode,
+    goal_active: bool,
 ) -> Result<
     (
         Vec<serde_json::Value>,
@@ -4661,37 +4652,70 @@ pub(crate) async fn compact_history(
     // than somewhere a client cannot read.
     let mut model = side_call_invoker(args, model_id, None).await?;
     model.summarizer = smol_summarizer(args, model_id, None).await;
-    // What the harness can see between turns: the workspace and the todo
-    // list. Background work belongs to the run that owned it.
-    let mut harness = crate::core::agent::continuation::HarnessContext::default();
-    if let Some(root) = args.project_root.as_deref() {
-        harness.git_status = crate::core::agent::git::workspace_status(root);
-        let mut workspace = format!("Working directory: {}", root.display());
-        if let Some(branch) = crate::core::agent::git::current_branch(root) {
-            workspace.push_str(&format!("\nBranch: {branch}"));
-        }
-        harness.push("Workspace", workspace);
-    }
-    if let Some(registry) = &args.todo_registry {
-        if let Some(todo) = crate::core::agent::continuation::render_todo(&*registry.lock().await) {
-            harness.push("Todo list", todo);
-        }
-    }
-    // With no configured window the conversation itself is the best measure
-    // of one: it fit, or the user would not be compacting it by hand.
-    let window = args.compaction.map_or_else(
-        || crate::core::agent::compaction::estimate_token_count(messages).max(32_000),
-        |budget| budget.context_window,
-    );
+    let harness = between_turn_harness(args, run_mode, goal_active).await;
+    let (window, keep_tokens) = between_turn_sizing(args.compaction, messages);
     Ok(crate::core::agent::compaction::compact_conversation(
         messages,
         model_id,
         &model,
-        keep_recent,
+        keep_tokens,
         &harness,
         window,
     )
     .await)
+}
+
+/// The harness context a compaction between turns writes, built like a run's
+/// ([`CompactionScope::harness`]) from what the session owns: the workspace,
+/// its subagent roster, background shells and monitors (all session-owned in
+/// the TUI, so they outlive the run that started them), the todo list, mode
+/// and goal. No budget section: between turns no run is spending one.
+#[cfg(feature = "cli")]
+async fn between_turn_harness(
+    args: &OrchestrationArgs,
+    run_mode: crate::core::agent::plan::RunMode,
+    goal_active: bool,
+) -> crate::core::agent::continuation::HarnessContext {
+    // The main conversation is the parent; nothing compacts a child's
+    // history from outside its run.
+    let mut harness = crate::core::agent::continuation::HarnessContext::default();
+    if let Some(root) = args.project_root.as_deref() {
+        harness.git_status = crate::core::agent::git::workspace_status(root);
+        harness.push("Workspace", workspace_lines(root));
+    }
+    if let Some(bg) = &args.subagent_bg {
+        harness.push("Subagents", bg.roster_lines().join("\n"));
+    }
+    harness.push(
+        "Running in the background",
+        background_lines(args.bg_shells.as_deref(), args.monitors.as_deref()),
+    );
+    push_session_sections(&mut harness, args.todo_registry.as_ref(), run_mode, goal_active).await;
+    harness
+}
+
+/// The window a compaction between turns sizes against, and the tokens its
+/// kept tail may hold: the share of the trigger a run's own compaction keeps
+/// ([`crate::core::agent::compaction::tail_tokens`]). With no configured
+/// budget the conversation itself is the best measure of a window -- it fit,
+/// or the user would not be compacting it -- and the trigger is the default
+/// ratio of that.
+#[cfg(feature = "cli")]
+fn between_turn_sizing(
+    budget: Option<crate::core::agent::compaction::CompactionBudget>,
+    messages: &[serde_json::Value],
+) -> (u64, u64) {
+    use crate::core::agent::compaction::{
+        estimate_token_count, tail_tokens, trigger_tokens, DEFAULT_COMPACTION_RATIO,
+    };
+    let (window, trigger) = match budget {
+        Some(budget) => (budget.context_window, budget.trigger_tokens()),
+        None => {
+            let window = estimate_token_count(messages).max(32_000);
+            (window, trigger_tokens(window, DEFAULT_COMPACTION_RATIO, None))
+        }
+    };
+    (window, tail_tokens(trigger))
 }
 
 /// Run one stateless `/goal` evaluation against `smol_model_id` (the session's
@@ -4990,30 +5014,13 @@ impl CompactionScope<'_> {
         &self,
         budget: &SessionBudget,
     ) -> crate::core::agent::continuation::HarnessContext {
-        use crate::core::agent::continuation::render_todo;
         let mut out = self.tools.harness_context();
-        if let Some(registry) = self.todo_registry {
-            if let Some(todo) = render_todo(&*registry.lock().await) {
-                out.push("Todo list", todo);
-            }
-        }
-        if self.run_mode == crate::core::agent::plan::RunMode::Plan {
-            out.push(
-                "Mode",
-                "Plan mode (read-only): explore and plan, do not change anything.".to_string(),
-            );
-        }
-        if self
+        let goal_active = self
             .json_body
             .get("goal_mode")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
-            out.push(
-                "Goal",
-                "A /goal is active: keep working until its condition holds.".to_string(),
-            );
-        }
+            .unwrap_or(false);
+        push_session_sections(&mut out, self.todo_registry, self.run_mode, goal_active).await;
         let mut spend = format!("Tokens spent this run: {}", budget.spent());
         if let Some(max) = budget.max_tokens() {
             spend.push_str(&format!(" of {max}"));
@@ -5023,6 +5030,63 @@ impl CompactionScope<'_> {
         }
         out.push("Budget", spend);
         out
+    }
+}
+
+/// The `Workspace` section's opening lines: where the run works, and on which
+/// branch.
+fn workspace_lines(root: &std::path::Path) -> String {
+    let mut workspace = format!("Working directory: {}", root.display());
+    if let Some(branch) = crate::core::agent::git::current_branch(root) {
+        workspace.push_str(&format!("\nBranch: {branch}"));
+    }
+    workspace
+}
+
+/// The `Running in the background` section: each backgrounded shell and
+/// monitor with its id. The call that started them is in the span a
+/// compaction drops, so this is the only place the model can find them again.
+fn background_lines(
+    shells: Option<&crate::core::agent::bg_shell::BackgroundShells>,
+    monitors: Option<&tauri_plugin_agent_tools::tools::monitor::MonitorSet>,
+) -> String {
+    let mut running = Vec::new();
+    for id in shells.map(|s| s.running_ids()).unwrap_or_default() {
+        running.push(format!("- background shell {id}"));
+    }
+    for monitor in monitors.map(|m| m.snapshot()).unwrap_or_default() {
+        running.push(format!(
+            "- monitor {} ({}): {}",
+            monitor.monitor_id, monitor.name, monitor.script
+        ));
+    }
+    running.join("\n")
+}
+
+/// The sections a session holds rather than a tool invoker: the todo list,
+/// plan mode and an active goal. Parent-only, which `push` enforces.
+async fn push_session_sections(
+    out: &mut crate::core::agent::continuation::HarnessContext,
+    todo_registry: Option<&crate::core::agent::todo::TodoRegistry>,
+    run_mode: crate::core::agent::plan::RunMode,
+    goal_active: bool,
+) {
+    if let Some(registry) = todo_registry {
+        if let Some(todo) = crate::core::agent::continuation::render_todo(&*registry.lock().await) {
+            out.push("Todo list", todo);
+        }
+    }
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        out.push(
+            "Mode",
+            "Plan mode (read-only): explore and plan, do not change anything.".to_string(),
+        );
+    }
+    if goal_active {
+        out.push(
+            "Goal",
+            "A /goal is active: keep working until its condition holds.".to_string(),
+        );
     }
 }
 
@@ -8511,6 +8575,84 @@ mod tests {
             let body = serde_json::to_string(&history).unwrap();
             assert!(!body.contains("[Compaction request from the harness]"), "published the instruction");
         }
+    }
+
+    /// `/compact` and the TUI's auto-compaction write the same harness context
+    /// a run's own compaction does: the session's roster, background shells,
+    /// todo list, mode and goal all live on `args`, not in a run.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_between_turn_compaction_carries_the_sessions_harness_context() {
+        let root = tempfile::tempdir().unwrap();
+        let mut args = crate::core::agent::subagent::tests::max_par_args(root.path());
+        let bg = Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        bg.roster_add("explore", "sub-explore-1", "map the repo", false, Some("blackboard/explore.md".into()));
+        args.subagent_bg = Some(bg);
+        let shells = Arc::new(crate::core::agent::bg_shell::BackgroundShells::default());
+        shells.start(tauri_plugin_agent_tools::tools::ShellBackgrounded { id: 7, timeout_secs: 30 });
+        args.bg_shells = Some(shells);
+        let todo = crate::core::agent::todo::new_registry();
+        todo.lock()
+            .await
+            .init(vec![crate::core::agent::todo::TodoPhase {
+                name: "Fix".into(),
+                tasks: vec![crate::core::agent::todo::TodoItem {
+                    content: "patch the parser".into(),
+                    status: crate::core::agent::todo::TodoStatus::Pending,
+                }],
+            }])
+            .unwrap();
+        args.todo_registry = Some(todo);
+
+        let harness =
+            between_turn_harness(&args, crate::core::agent::plan::RunMode::Plan, true).await;
+        let section = |heading: &str| {
+            harness
+                .sections
+                .iter()
+                .find(|(h, _)| h == heading)
+                .map(|(_, body)| body.clone())
+                .unwrap_or_else(|| panic!("no {heading} section: {:?}", harness.sections))
+        };
+        assert_eq!(harness.role, crate::core::agent::continuation::Role::Parent);
+        assert!(section("Workspace").contains(&root.path().display().to_string()));
+        assert!(section("Subagents").contains("explore (sub-explore-1)"));
+        assert!(section("Subagents").contains("blackboard/explore.md"));
+        assert!(section("Running in the background").contains("background shell 7"));
+        assert!(section("Todo list").contains("patch the parser"));
+        assert!(section("Mode").contains("Plan mode"));
+        assert!(section("Goal").contains("/goal"));
+
+        // Normal mode and no goal write neither section.
+        let quiet =
+            between_turn_harness(&args, crate::core::agent::plan::RunMode::Normal, false).await;
+        assert!(quiet.sections.iter().all(|(h, _)| h != "Mode" && h != "Goal"));
+    }
+
+    /// A between-turn compaction sizes its tail like a run's: by tokens, from
+    /// the trigger the configured budget gives, or the default ratio of an
+    /// estimated window when none is configured.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_between_turn_compaction_sizes_its_tail_from_the_trigger() {
+        use crate::core::agent::compaction::{
+            tail_tokens, trigger_tokens, CompactionBudget, DEFAULT_COMPACTION_RATIO,
+        };
+        let budget = CompactionBudget {
+            context_window: 200_000,
+            ratio: 0.5,
+            reserve_tokens: None,
+            window_pinned: false,
+        };
+        let messages = vec![json!({ "role": "user", "content": "hi" })];
+        assert_eq!(
+            between_turn_sizing(Some(budget), &messages),
+            (200_000, tail_tokens(budget.trigger_tokens()))
+        );
+        assert_eq!(
+            between_turn_sizing(None, &messages),
+            (32_000, tail_tokens(trigger_tokens(32_000, DEFAULT_COMPACTION_RATIO, None)))
+        );
     }
 
     /// (c) A child's task -- phase handoff included -- and its parent's

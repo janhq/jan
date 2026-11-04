@@ -28,11 +28,6 @@ use crate::core::agent::events::{CompactionReport, Usage};
 use crate::core::agent::r#loop::ModelInvoker;
 use crate::core::agent::upstream::extract_choice_message;
 
-/// Most-recent messages the TUI's automatic compaction keeps verbatim. A run's
-/// own compaction sizes its tail by tokens instead ([`tail_tokens`]).
-#[cfg(feature = "cli")]
-pub(crate) const DEFAULT_KEEP_RECENT: usize = 8;
-
 /// Per-message envelope (role, delimiters) in [`estimate_token_count`], the
 /// usual OpenAI-accounting constant. CLI-only, like the estimator that reads it:
 /// nothing in the desktop config estimates a history, since the providers
@@ -210,11 +205,6 @@ pub(crate) fn estimate_token_count(messages: &[Value]) -> u64 {
     ((total_chars / 4) as u64 + envelope).max(1)
 }
 
-/// Recent tail kept when the user explicitly runs `/compact`. Smaller than the
-/// automatic threshold so a deliberate compaction is honoured on short threads.
-#[cfg(feature = "cli")]
-pub(crate) const MANUAL_KEEP_RECENT: usize = 2;
-
 /// Leading text of a compaction summary written before the continuation
 /// state existed: a `system` message. Saved sessions still carry it, so it is
 /// still recognized on load (and its text merged into the next state), but
@@ -281,32 +271,6 @@ const SUMMARY_MAX_TOKENS: u64 = 8_192;
 /// tenth of a small window, so the state written fits beside the tail.
 fn reply_cap(window: u64) -> u64 {
     SUMMARY_MAX_TOKENS.min(window / SHARE_DIVISOR).max(256)
-}
-
-/// Where the kept tail may begin, given the ideal boundary `target`. The tail
-/// must not open on an orphaned tool result whose `tool_calls` message sits in
-/// the dropped prefix, so the boundary moves to the nearest message that is not
-/// one. Forward first, since that drops the most; but a long agentic run under
-/// a single prompt can end on a fan-out whose results reach the end of the
-/// conversation, and walking forward there runs off the end and abandons
-/// compaction on exactly the history that needed it. So fall back to walking
-/// back onto the call that owns the batch, keeping the group whole.
-///
-/// `None` when the tail would leave nothing worth dropping: the summary is
-/// itself a message, so a prefix of one shrinks nothing.
-#[cfg(feature = "cli")]
-pub(crate) fn tail_start(rest: &[Value], target: usize) -> Option<usize> {
-    let mut cut = target;
-    while cut < rest.len() && role(&rest[cut]) == "tool" {
-        cut += 1;
-    }
-    if cut >= rest.len() {
-        cut = target;
-        while cut > 0 && role(&rest[cut]) == "tool" {
-            cut -= 1;
-        }
-    }
-    (cut >= 2).then_some(cut)
 }
 
 /// Where a tail of at most `keep_tokens` begins. Walks back over whole groups
@@ -393,15 +357,16 @@ pub(crate) async fn fire_pre_compact(
 }
 
 /// Compact a plain message list -- the TUI's `/compact`, which holds a history
-/// rather than a run's record -- keeping the last `keep_recent` messages. The
-/// input comes back unchanged with no report when there is nothing safe to
-/// drop. Never fails: a summarizer that cannot run leaves the code-built state.
+/// rather than a run's record -- keeping a tail of at most `keep_tokens`, cut
+/// by [`token_tail_start`] as a run's own compaction cuts it. The input comes
+/// back unchanged with no report when there is nothing safe to drop. Never
+/// fails: a summarizer that cannot run leaves the code-built state.
 #[cfg(feature = "cli")]
 pub(crate) async fn compact_conversation(
     messages: &[Value],
     model_id: &str,
     model: &dyn ModelInvoker,
-    keep_recent: usize,
+    keep_tokens: u64,
     harness: &HarnessContext,
     window: u64,
 ) -> (Vec<Value>, Option<CompactionReport>) {
@@ -411,10 +376,7 @@ pub(crate) async fn compact_conversation(
         .count();
     let (system_msgs, rest) = messages.split_at(sys_end);
 
-    if rest.len() <= keep_recent {
-        return (messages.to_vec(), None);
-    }
-    let Some(cut) = tail_start(rest, rest.len() - keep_recent) else {
+    let Some(cut) = token_tail_start(rest, keep_tokens) else {
         return (messages.to_vec(), None);
     };
 
@@ -1235,25 +1197,50 @@ mod tests {
         v
     }
 
-    /// `/compact` keeps the system prompt and the tail, and puts the state
-    /// between them as a user message.
+    /// `/compact` keeps the system prompt and a token-sized tail, and puts
+    /// the state between them as a user message.
     #[cfg(feature = "cli")]
     #[tokio::test]
     async fn compact_conversation_keeps_the_system_prompt_and_tail() {
         let model = stub("## Progress\nCONDENSED");
         let input = convo(20);
+        // Each `msgN` message is 8 or 9 tokens by the preflight's rule: 36
+        // holds the newest four.
         let (out, report) =
-            compact_conversation(&input, "m", &model, 4, &HarnessContext::default(), 100_000).await;
+            compact_conversation(&input, "m", &model, 36, &HarnessContext::default(), 100_000)
+                .await;
         assert!(report.is_some());
         assert_eq!(out[0], input[0]);
         assert!(continuation::is_state(&out[1]));
         assert!(state_text(&out[1]).contains("CONDENSED"));
         assert_eq!(&out[2..], &input[input.len() - 4..]);
 
+        // A conversation that fits the tail has nothing to drop.
         let (same, none) =
-            compact_conversation(&convo(4), "m", &model, 8, &HarnessContext::default(), 100_000).await;
+            compact_conversation(&convo(4), "m", &model, 1_000, &HarnessContext::default(), 100_000)
+                .await;
         assert_eq!(same, convo(4));
         assert!(none.is_none());
+    }
+
+    /// The tail is sized in tokens, not messages: eight large tool results no
+    /// longer survive a `/compact` whole and overflow the next request.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn compact_conversation_sizes_its_tail_by_tokens() {
+        let model = stub("## Progress\nCONDENSED");
+        let mut input = convo(2);
+        for i in 0..8 {
+            input.push(call(&format!("t{i}")));
+            input.push(result(&format!("t{i}"), 40_000));
+        }
+        let keep = tail_tokens(100_000);
+        let (out, _) =
+            compact_conversation(&input, "m", &model, keep, &HarnessContext::default(), 100_000)
+                .await;
+        let kept: u64 = out[2..].iter().map(message_tokens).sum();
+        assert!(kept <= 3 * keep, "kept {kept} tokens");
+        assert_eq!(out.len(), 4, "the newest call and its result: {}", out.len());
     }
 
     fn call(id: &str) -> Value {
