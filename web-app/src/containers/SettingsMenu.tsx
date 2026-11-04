@@ -18,6 +18,7 @@ import {
   IconWorldSearch,
   IconFolderCode,
   IconPaperclip,
+  IconPuzzle,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -137,7 +138,7 @@ const SettingsMenu = () => {
       >
         <ProvidersAvatar provider={provider} />
         <div className="truncate flex-1">
-          <span>{getProviderTitle(provider.provider)}</span>
+          <span>{getProviderTitle(provider)}</span>
         </div>
       </div>
     )
@@ -222,6 +223,11 @@ const SettingsMenu = () => {
       icon: IconCpu,
     },
     { title: 'common:privacy', route: route.settings.privacy, icon: IconLock },
+    {
+      title: 'common:extensions',
+      route: route.settings.extensions,
+      icon: IconPuzzle,
+    },
   ]
 
   const integrationSettings = [
@@ -358,7 +364,7 @@ const SettingsMenu = () => {
                         >
                           <ProvidersAvatar provider={provider} />
                           <div className="truncate flex-1">
-                            <span>{getProviderTitle(provider.provider)}</span>
+                            <span>{getProviderTitle(provider)}</span>
                           </div>
                         </div>
                       )

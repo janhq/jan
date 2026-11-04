@@ -49,16 +49,12 @@ vi.mock('@/hooks/useAgentMode', () => ({
 }))
 
 vi.mock('@janhq/core', () => ({
-  ExtensionTypeEnum: { VectorDB: 'VectorDB' },
-  VectorDBExtension: class {},
+  ServiceKeys: { VectorDB: { id: 'vector-db' } },
 }))
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      get: () => null,
-    }),
-  },
+const vectorDB = vi.hoisted(() => ({ deleteCollection: vi.fn() }))
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => ({ services: { get: () => vectorDB } }),
 }))
 
 vi.mock('@/constants/chat', () => ({
@@ -309,6 +305,17 @@ describe('useThreads - coverage', () => {
     expect(result.current.threads['t1']).toBeDefined()
     expect(result.current.threads['t2']).toBeUndefined()
     expect(result.current.threads['t3']).toBeDefined()
+  })
+
+  it('drops the vector DB collection of each thread deleted in bulk', () => {
+    const { result } = renderHook(() => useThreads())
+    act(() => {
+      result.current.setThreads([{ id: 't2', title: 'Normal' } as Thread])
+    })
+    act(() => {
+      result.current.deleteAllThreads()
+    })
+    expect(vectorDB.deleteCollection).toHaveBeenCalledWith('attachments_t2')
   })
 
   // Removing the chat session is what ends a turn still running in the

@@ -28,6 +28,7 @@ declare -A crates=()
 all_crates=(
   jan-cli
   plugins/tauri-plugin-agent-tools
+  plugins/tauri-plugin-extensions
   plugins/tauri-plugin-hardware
   plugins/tauri-plugin-llamacpp
   plugins/tauri-plugin-rag
@@ -87,7 +88,8 @@ else
         src-tauri/plugins/package.json | src-tauri/plugins/yarn.lock | src-tauri/plugins/.yarnrc.yml)
         ts=true mlx=true
         ;;
-      web-app/* | extensions/*)
+      web-app/* | extensions/* | packages/extension-api/* | packages/extension-runtime/* | \
+        extensions-samples/* | scripts/extensions-smoke.mjs)
         ts=true
         ;;
       src-tauri/plugins/*/*)

@@ -47,6 +47,7 @@ import { useGroundingStore } from '@/stores/grounding-store'
 import { useWebCitationStore } from '@/stores/web-citation-store'
 import { WebSourcesRow } from '@/components/WebSourcesRow'
 import { injectCitationMarkers } from '@/lib/grounding'
+import { ContributedOverflowMenu } from '@/containers/extensions/ContributedMenuItems'
 
 export type MessageItemProps = {
   message: UIMessage
@@ -73,6 +74,8 @@ export type MessageItemProps = {
    * e.g. while a continue is pending and re-running would be ambiguous. */
   hideActions?: boolean
   highlightedPrefix?: string | null
+  /** The thread the message belongs to; extension message actions need it. */
+  threadId?: string
 }
 
 // Footer icon buttons: 28px boxes (a roomier hover highlight at the same pitch
@@ -104,6 +107,7 @@ export const MessageItem = memo(
     versionInfo,
     onSwitchVersion,
     highlightedPrefix,
+    threadId,
   }: MessageItemProps) => {
     const { t } = useTranslation()
     // Footer controls fade in on hover or keyboard focus. Keyboard only
@@ -744,6 +748,18 @@ export const MessageItem = memo(
                   status !== CHAT_STATUS.SUBMITTED && (
                     <DeleteMessageDialog onDelete={handleDelete} />
                   )}
+
+                {threadId && (
+                  <ContributedOverflowMenu
+                    location="message/actions"
+                    context={{
+                      location: 'message/actions',
+                      threadId,
+                      messageId: message.id,
+                      role: 'user',
+                    }}
+                  />
+                )}
               </div>
               {/* Shown at rest when there are versions, beside copy. */}
               {versionNav}
@@ -821,6 +837,18 @@ export const MessageItem = memo(
                       <IconRefresh size={16} />
                     </Button>
                   )}
+
+                {threadId && (
+                  <ContributedOverflowMenu
+                    location="message/actions"
+                    context={{
+                      location: 'message/actions',
+                      threadId,
+                      messageId: message.id,
+                      role: 'assistant',
+                    }}
+                  />
+                )}
               </div>
             </div>
 
@@ -877,6 +905,7 @@ export const MessageItem = memo(
       prevProps.isLastMessage === nextProps.isLastMessage &&
       prevProps.status === nextProps.status &&
       prevProps.hideActions === nextProps.hideActions &&
+      prevProps.threadId === nextProps.threadId &&
       prevProps.versionInfo?.index === nextProps.versionInfo?.index &&
       prevProps.versionInfo?.count === nextProps.versionInfo?.count
     )

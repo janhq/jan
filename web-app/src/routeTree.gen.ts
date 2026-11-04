@@ -25,7 +25,6 @@ import { Route as SettingsInterfaceRouteImport } from './routes/settings/interfa
 import { Route as SettingsHttpsProxyRouteImport } from './routes/settings/https-proxy'
 import { Route as SettingsHardwareRouteImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralRouteImport } from './routes/settings/general'
-import { Route as SettingsExtensionsRouteImport } from './routes/settings/extensions'
 import { Route as SettingsCoworkRouteImport } from './routes/settings/cowork'
 import { Route as SettingsClaudeCodeRouteImport } from './routes/settings/claude-code'
 import { Route as SettingsAttachmentsRouteImport } from './routes/settings/attachments'
@@ -34,7 +33,9 @@ import { Route as ProjectProjectIdRouteImport } from './routes/project/$projectI
 import { Route as LocalApiServerLogsRouteImport } from './routes/local-api-server/logs'
 import { Route as HubModelIdRouteImport } from './routes/hub/$modelId'
 import { Route as SettingsProvidersIndexRouteImport } from './routes/settings/providers/index'
+import { Route as SettingsExtensionsIndexRouteImport } from './routes/settings/extensions/index'
 import { Route as SettingsProvidersProviderNameRouteImport } from './routes/settings/providers/$providerName'
+import { Route as SettingsExtensionsExtensionIdRouteImport } from './routes/settings/extensions/$extensionId'
 
 const SystemMonitorRoute = SystemMonitorRouteImport.update({
   id: '/system-monitor',
@@ -116,11 +117,6 @@ const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
   path: '/settings/general',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsExtensionsRoute = SettingsExtensionsRouteImport.update({
-  id: '/settings/extensions',
-  path: '/settings/extensions',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SettingsCoworkRoute = SettingsCoworkRouteImport.update({
   id: '/settings/cowork',
   path: '/settings/cowork',
@@ -161,10 +157,21 @@ const SettingsProvidersIndexRoute = SettingsProvidersIndexRouteImport.update({
   path: '/settings/providers/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsExtensionsIndexRoute = SettingsExtensionsIndexRouteImport.update({
+  id: '/settings/extensions/',
+  path: '/settings/extensions/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsProvidersProviderNameRoute =
   SettingsProvidersProviderNameRouteImport.update({
     id: '/settings/providers/$providerName',
     path: '/settings/providers/$providerName',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const SettingsExtensionsExtensionIdRoute =
+  SettingsExtensionsExtensionIdRouteImport.update({
+    id: '/settings/extensions/$extensionId',
+    path: '/settings/extensions/$extensionId',
     getParentRoute: () => rootRouteImport,
   } as any)
 
@@ -181,7 +188,6 @@ export interface FileRoutesByFullPath {
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/claude-code': typeof SettingsClaudeCodeRoute
   '/settings/cowork': typeof SettingsCoworkRoute
-  '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
@@ -193,7 +199,9 @@ export interface FileRoutesByFullPath {
   '/settings/web-search': typeof SettingsWebSearchRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
+  '/settings/extensions/$extensionId': typeof SettingsExtensionsExtensionIdRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
+  '/settings/extensions/': typeof SettingsExtensionsIndexRoute
   '/settings/providers/': typeof SettingsProvidersIndexRoute
 }
 export interface FileRoutesByTo {
@@ -209,7 +217,6 @@ export interface FileRoutesByTo {
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/claude-code': typeof SettingsClaudeCodeRoute
   '/settings/cowork': typeof SettingsCoworkRoute
-  '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
@@ -221,7 +228,9 @@ export interface FileRoutesByTo {
   '/settings/web-search': typeof SettingsWebSearchRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
+  '/settings/extensions/$extensionId': typeof SettingsExtensionsExtensionIdRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
+  '/settings/extensions': typeof SettingsExtensionsIndexRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
 export interface FileRoutesById {
@@ -238,7 +247,6 @@ export interface FileRoutesById {
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/claude-code': typeof SettingsClaudeCodeRoute
   '/settings/cowork': typeof SettingsCoworkRoute
-  '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
@@ -250,7 +258,9 @@ export interface FileRoutesById {
   '/settings/web-search': typeof SettingsWebSearchRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
+  '/settings/extensions/$extensionId': typeof SettingsExtensionsExtensionIdRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
+  '/settings/extensions/': typeof SettingsExtensionsIndexRoute
   '/settings/providers/': typeof SettingsProvidersIndexRoute
 }
 export interface FileRouteTypes {
@@ -268,7 +278,6 @@ export interface FileRouteTypes {
     | '/settings/attachments'
     | '/settings/claude-code'
     | '/settings/cowork'
-    | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
     | '/settings/https-proxy'
@@ -280,7 +289,9 @@ export interface FileRouteTypes {
     | '/settings/web-search'
     | '/threads/$threadId'
     | '/hub/'
+    | '/settings/extensions/$extensionId'
     | '/settings/providers/$providerName'
+    | '/settings/extensions/'
     | '/settings/providers/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -296,7 +307,6 @@ export interface FileRouteTypes {
     | '/settings/attachments'
     | '/settings/claude-code'
     | '/settings/cowork'
-    | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
     | '/settings/https-proxy'
@@ -308,7 +318,9 @@ export interface FileRouteTypes {
     | '/settings/web-search'
     | '/threads/$threadId'
     | '/hub'
+    | '/settings/extensions/$extensionId'
     | '/settings/providers/$providerName'
+    | '/settings/extensions'
     | '/settings/providers'
   id:
     | '__root__'
@@ -324,7 +336,6 @@ export interface FileRouteTypes {
     | '/settings/attachments'
     | '/settings/claude-code'
     | '/settings/cowork'
-    | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
     | '/settings/https-proxy'
@@ -336,7 +347,9 @@ export interface FileRouteTypes {
     | '/settings/web-search'
     | '/threads/$threadId'
     | '/hub/'
+    | '/settings/extensions/$extensionId'
     | '/settings/providers/$providerName'
+    | '/settings/extensions/'
     | '/settings/providers/'
   fileRoutesById: FileRoutesById
 }
@@ -353,7 +366,6 @@ export interface RootRouteChildren {
   SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
   SettingsClaudeCodeRoute: typeof SettingsClaudeCodeRoute
   SettingsCoworkRoute: typeof SettingsCoworkRoute
-  SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHardwareRoute: typeof SettingsHardwareRoute
   SettingsHttpsProxyRoute: typeof SettingsHttpsProxyRoute
@@ -365,7 +377,9 @@ export interface RootRouteChildren {
   SettingsWebSearchRoute: typeof SettingsWebSearchRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   HubIndexRoute: typeof HubIndexRoute
+  SettingsExtensionsExtensionIdRoute: typeof SettingsExtensionsExtensionIdRoute
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
+  SettingsExtensionsIndexRoute: typeof SettingsExtensionsIndexRoute
   SettingsProvidersIndexRoute: typeof SettingsProvidersIndexRoute
 }
 
@@ -483,13 +497,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsGeneralRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/extensions': {
-      id: '/settings/extensions'
-      path: '/settings/extensions'
-      fullPath: '/settings/extensions'
-      preLoaderRoute: typeof SettingsExtensionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/settings/cowork': {
       id: '/settings/cowork'
       path: '/settings/cowork'
@@ -546,11 +553,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsProvidersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/extensions/': {
+      id: '/settings/extensions/'
+      path: '/settings/extensions'
+      fullPath: '/settings/extensions/'
+      preLoaderRoute: typeof SettingsExtensionsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings/providers/$providerName': {
       id: '/settings/providers/$providerName'
       path: '/settings/providers/$providerName'
       fullPath: '/settings/providers/$providerName'
       preLoaderRoute: typeof SettingsProvidersProviderNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/extensions/$extensionId': {
+      id: '/settings/extensions/$extensionId'
+      path: '/settings/extensions/$extensionId'
+      fullPath: '/settings/extensions/$extensionId'
+      preLoaderRoute: typeof SettingsExtensionsExtensionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -569,7 +590,6 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsAttachmentsRoute: SettingsAttachmentsRoute,
   SettingsClaudeCodeRoute: SettingsClaudeCodeRoute,
   SettingsCoworkRoute: SettingsCoworkRoute,
-  SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHardwareRoute: SettingsHardwareRoute,
   SettingsHttpsProxyRoute: SettingsHttpsProxyRoute,
@@ -581,7 +601,9 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsWebSearchRoute: SettingsWebSearchRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   HubIndexRoute: HubIndexRoute,
+  SettingsExtensionsExtensionIdRoute: SettingsExtensionsExtensionIdRoute,
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
+  SettingsExtensionsIndexRoute: SettingsExtensionsIndexRoute,
   SettingsProvidersIndexRoute: SettingsProvidersIndexRoute,
 }
 export const routeTree = rootRouteImport

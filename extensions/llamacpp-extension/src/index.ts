@@ -1,8 +1,6 @@
 /**
- * @file This file exports a class that implements the InferenceExtension interface from the @janhq/core package.
- * The class provides methods for initializing and stopping a model, and for making inference requests.
- * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
- * @version 1.0.0
+ * @file The llama.cpp built-in: `activate(ctx)` registers the in-process
+ * engine with the host's engine manager and provides `ServiceKeys.Llamacpp`.
  * @module llamacpp-extension/src/index
  */
 
@@ -23,6 +21,12 @@ import {
  events,
  AppEvent,
  DownloadEvent,
+ ServiceKeys,
+ type DownloadService,
+ type InternalExtensionContext,
+ type LlamacppService,
+ type LoopbackFetch,
+ type ServiceRegistry,
  chatCompletionRequestMessage,
  SettingComponentProps,
  DropdownComponentProps,
@@ -36,8 +40,6 @@ import {
 import { applyPlatformFitDefault } from './fit-default'
 import { findModelEntries } from './model-tree'
 
-import { listen } from '@tauri-apps/api/event'
-import { invoke } from '@tauri-apps/api/core'
 import {
  getProxyConfig,
  buildEmbedBatches,
@@ -49,9 +51,9 @@ import {
  detectTemplateKwargsFromChatTemplate,
  getDefaultEmbeddingModelId,
  setDefaultEmbeddingModelId,
+ fileName,
  type EmbedBatchResult,
 } from './util'
-import { loopbackFetch } from './loopback-fetch'
 import {
  generatePreset,
  threadCacheDir,
@@ -71,7 +73,6 @@ import {
  setBackendSetting,
  removeBackendSetting,
 } from './backend-settings'
-import { basename } from '@tauri-apps/api/path'
 import {
  asI32,
  loadLlamaModel,
@@ -162,12 +163,6 @@ const PRESET_AFFECTING_KEYS = new Set<string>([
  'lazy_mode',
 ])
 
-
-/**
- * A class that implements the InferenceExtension interface from the @janhq/core package.
- * The class provides methods for initializing and stopping a model, and for making inference requests.
- * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
- */
 
 type YamlSettingValue = string | number | boolean | null
 
@@ -383,48 +378,6 @@ async function readPersistedLlamacppModels(): Promise<PersistedModelState[]> {
  }
 }
 
-/**
- * Breadth-first search of `rootDir` for the directory directly containing
- * a file named `serverName`. Returns the absolute path of that directory,
- * or null if not found. Used by manual backend install to tolerate
- * different archive layouts (Jan-built `build/bin/...` vs upstream
- * llama.cpp's flat `llama-bXXXX/...`).
- */
-async function findLlamaServerDir(
- rootDir: string,
- serverName: string
-): Promise<string | null> {
- // Note: fs.readdirSync returns absolute child paths (see
- // src-tauri/src/core/filesystem/commands.rs::readdir_sync), not basenames.
- const queue: string[] = [rootDir]
- while (queue.length > 0) {
-  const current = queue.shift() as string
-  let entries: string[]
-  try {
-   entries = await fs.readdirSync(current)
-  } catch {
-   continue
-  }
-  for (const entryPath of entries) {
-   let stat
-   try {
-    stat = await fs.fileStat(entryPath)
-   } catch {
-    continue
-   }
-   if (!stat) continue
-   const entryName = await basename(entryPath)
-   if (!stat.isDirectory && entryName === serverName) {
-    return current
-   }
-   if (stat.isDirectory) {
-    queue.push(entryPath)
-   }
-  }
- }
- return null
-}
-
 // Folder structure for llamacpp extension:
 // <Jan's data folder>/llamacpp
 //  - models/<modelId>/
@@ -438,6 +391,35 @@ async function findLlamaServerDir(
 //
 //  - lib/
 //    - e.g. libcudart.so.12
+
+// The package name: what the settings entries carry as their owner, and the
+// key the settings lived under in webview storage before the file store.
+const PACKAGE_NAME = '@janhq/llamacpp-extension'
+
+/**
+ * Runs the engine on the extension host: registers it with the engine
+ * manager and publishes the runtime queries the app makes of it.
+ */
+export async function activate(ctx: InternalExtensionContext): Promise<void> {
+ const engine = new llamacpp_extension(
+  ctx.internal.services,
+  ctx.internal.loopbackFetch
+ )
+ ctx.subscriptions.add(ctx.internal.engines.register(engine))
+ ctx.subscriptions.add({ dispose: () => engine.dispose() })
+ const service: LlamacppService = {
+  getModelProps: (modelId) => engine.getModelProps(modelId),
+  unload: (modelId) => engine.unload(modelId),
+  getDevices: () => engine.getDevices(),
+  reconcileEngineDevices: () => engine.reconcileEngineDevices(),
+ }
+ ctx.subscriptions.add(ctx.internal.services.provide(ServiceKeys.Llamacpp, service))
+ // As under the old extension manager, a failed startup is logged and the
+ // engine stays registered, so the provider and its models remain listed.
+ await engine.start().catch((error: unknown) =>
+  ctx.log.error('Engine startup failed:', error)
+ )
+}
 
 export default class llamacpp_extension extends AIEngine implements EmbeddingEngine {
  provider: string = 'llamacpp'
@@ -462,7 +444,6 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   */
  private embedderBootstrapping = false
  private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
- private unlistenValidationStarted?: () => void
 
  private enginePort?: number
  private engineApiKey?: string
@@ -485,9 +466,16 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
  /** Single-flight provisioning run; see ensureProvisioned(). */
  private provisioning?: Promise<void>
 
- override async onLoad(): Promise<void> {
-  super.onLoad() // Calls registerEngine() from AIEngine
+ constructor(
+  private readonly services: Pick<ServiceRegistry, 'get'>,
+  // Requests to the engine on loopback go through the host's proxy-bypassing
+  // client; see LoopbackFetch.
+  private readonly loopbackFetch: LoopbackFetch
+ ) {
+  super()
+ }
 
+ async start(): Promise<void> {
   await this.migrateLocalStorageToFile()
 
   // The engine is bundled at a pinned version, so there is no backend or
@@ -529,14 +517,6 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
   // After the backfill, which is what copied the seed into model.yml.
   await this.migrateSeededCtxSize()
-
-  // Set up validation event listeners to bridge Tauri events to frontend
-  this.unlistenValidationStarted = await listen<{
-   modelId: string
-   downloadType: string
-  }>('onModelValidationStarted', (event) => {
-   events.emit(DownloadEvent.onModelValidationStarted, event.payload)
-  })
 
   // Deferred off onLoad so the UI unblocks; performLoad awaits it via
   // ensureEngineReady(). The engine is bundled with the app now, so there is
@@ -821,11 +801,11 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   }
  }
 
- override async registerSettings(
+ private async registerSettings(
   settings: SettingComponentProps[]
  ): Promise<void> {
   settings.forEach((s) => {
-   s.extensionName = this.name
+   s.extensionName = PACKAGE_NAME
   })
   const old = await readSettingsFile()
   if (old.length) {
@@ -856,10 +836,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
  // no-localstorage.test.ts via the `localstorage-migration-allowed` markers.
  private async migrateLocalStorageToFile(): Promise<void> {
   if (await settingsFileExists()) return
-  if (!this.name) return
   let raw: string | null = null
   try {
-   raw = localStorage.getItem(this.name) // localstorage-migration-allowed
+   raw = localStorage.getItem(PACKAGE_NAME) // localstorage-migration-allowed
   } catch {
    raw = null
   }
@@ -877,7 +856,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    return
   }
   try {
-   localStorage.removeItem(this.name) // localstorage-migration-allowed
+   localStorage.removeItem(PACKAGE_NAME) // localstorage-migration-allowed
   } catch (e) {
    logger.warn('Failed to clear migrated localStorage entry:', e)
   }
@@ -1103,7 +1082,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   }
   try {
    const url = `http://127.0.0.1:${engine.port}/props?model=${encodeURIComponent(modelId)}`
-   const res = await loopbackFetch(url, {
+   const res = await this.loopbackFetch(url, {
     headers: { Authorization: `Bearer ${engine.apiKey}` },
    })
    if (!res.ok) return undefined
@@ -1238,9 +1217,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    ])
    if (!(await fs.existsSync(configPath))) continue
 
-   const cfg = (await invoke<ModelConfig>('read_yaml', {
-    path: configPath,
-   })) as ModelConfig & Record<string, unknown>
+   const cfg = (await fs.readYaml<ModelConfig>(configPath)) as ModelConfig &
+    Record<string, unknown>
 
    let touched = false
 
@@ -1275,7 +1253,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    }
 
    if (touched) {
-    await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
+    await fs.writeYaml(configPath, cfg)
    }
   }
 
@@ -1355,20 +1333,13 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   return this.providerPath
  }
 
- override async onUnload(): Promise<void> {
-  // Terminate all active sessions
-
-  // Clean up validation event listeners
-  if (this.unlistenValidationStarted) {
-   this.unlistenValidationStarted()
-  }
-
+ dispose(): void {
   // Deliberately does NOT stop the engine worker. It outlives any single
   // extension instance: the app owns its lifetime and stops it on
   // ExitRequested/Exit. An extension teardown is not an app exit -- React
-  // StrictMode and HMR both unload and immediately reload us, and awaiting
-  // backgroundInit here (as this used to) meant blocking until the worker was
-  // up, then killing exactly the process it had just started.
+  // StrictMode and HMR both deactivate and immediately reactivate us, and
+  // awaiting backgroundInit here (as this used to) meant blocking until the
+  // worker was up, then killing exactly the process it had just started.
   this.enginePort = undefined
   this.engineApiKey = undefined
  }
@@ -1422,9 +1393,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
   if (!(await fs.existsSync(path))) return undefined
 
-  const modelConfig = await invoke<ModelConfig>('read_yaml', {
-   path,
-  })
+  const modelConfig = await fs.readYaml<ModelConfig>(path)
 
   const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
   await this.resolveMtpLayersConfig(modelId, modelConfig)
@@ -1447,9 +1416,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
  }
 
  async getModelContextLimit(modelId: string): Promise<number | undefined> {
-  const config = await invoke<ModelConfig>('read_yaml', {
-   path: await joinPath([await this.getProviderPath(), 'models', modelId, 'model.yml']),
-  })
+  const config = await fs.readYaml<ModelConfig>(
+   await joinPath([await this.getProviderPath(), 'models', modelId, 'model.yml'])
+  )
   const path = await joinPath([await getJanDataFolderPath(), config.model_path])
   const { metadata } = await readGgufMetadata(path)
   const limit = Number(metadata?.[`${metadata?.['general.architecture']}.context_length`])
@@ -1514,10 +1483,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     if (!c.batch_size) c.batch_size = 2048
    }
 
-   await invoke<void>('write_yaml', {
-    data: cfg,
-    savePath: configPath,
-   })
+   await fs.writeYaml(configPath, cfg)
   } catch (e) {
    logger.warn(`Failed to update config for ${modelId}`, e)
   }
@@ -1571,10 +1537,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    ])
    cfg.expert_count = expertCount
    cfg.expert_check_v = EXPERT_CHECK_VERSION
-   await invoke<void>('write_yaml', {
-    data: cfg,
-    savePath: configPath,
-   })
+   await fs.writeYaml(configPath, cfg)
   } catch (e) {
    logger.warn(`Failed to persist expert count for ${modelId}`, e)
   }
@@ -1622,10 +1585,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    ])
    cfg.mtp_layers = mtpLayers
    cfg.mtp_check_v = MTP_CHECK_VERSION
-   await invoke<void>('write_yaml', {
-    data: cfg,
-    savePath: configPath,
-   })
+   await fs.writeYaml(configPath, cfg)
   } catch (e) {
    logger.warn(`Failed to persist MTP layers for ${modelId}`, e)
   }
@@ -1680,10 +1640,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    ])
    cfg.template_kwargs = kwargs
    cfg.template_kwargs_check_v = TEMPLATE_KWARGS_CHECK_VERSION
-   await invoke<void>('write_yaml', {
-    data: cfg,
-    savePath: configPath,
-   })
+   await fs.writeYaml(configPath, cfg)
   } catch (e) {
    logger.warn(`Failed to persist template kwargs for ${modelId}`, e)
   }
@@ -1715,7 +1672,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   for (const modelId of modelIds) {
    try {
     const path = await joinPath([modelsDir, modelId, 'model.yml'])
-    const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
+    const modelConfig = await fs.readYaml<ModelConfig>(path)
     const isEmbedding = await this.resolveEmbeddingConfig(
      modelId,
      modelConfig
@@ -1789,12 +1746,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       // check if model.yml exists
       const modelConfigPath = child
       if (await fs.existsSync(modelConfigPath)) {
-       const legacyModelConfig = await invoke<{
+       const legacyModelConfig = await fs.readYaml<{
         files: string[]
         model: string
-       }>('read_yaml', {
-        path: modelConfigPath,
-       })
+       }>(modelConfigPath)
        const legacyModelPath = legacyModelConfig.files?.[0]
        if (!legacyModelPath) continue
        // +1 to remove the leading slash
@@ -1804,7 +1759,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
        modelId =
         modelId !== 'imported'
          ? modelId.replace(/^(cortex\.so|huggingface\.co)[\/\\]/, '')
-         : (await basename(child)).replace('.yml', '')
+         : fileName(child).replace('.yml', '')
 
        const modelName = legacyModelConfig.model ?? modelId
        const configPath = await joinPath([
@@ -1831,10 +1786,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
         size_bytes,
        } as ModelConfig
        await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
-       await invoke<void>('write_yaml', {
-        data: modelConfig,
-        savePath: configPath,
-       })
+       await fs.writeYaml(configPath, modelConfig)
        continue
       }
      }
@@ -1878,9 +1830,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    'models',
    modelId,
   ])
-  const modelConfig = await invoke<ModelConfig>('read_yaml', {
-   path: await joinPath([modelFolderPath, 'model.yml']),
-  })
+  const modelConfig = await fs.readYaml<ModelConfig>(
+   await joinPath([modelFolderPath, 'model.yml'])
+  )
   const newFolderPath = await joinPath([
    await this.getProviderPath(),
    'models',
@@ -1893,19 +1845,16 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   const newModelConfigPath = await joinPath([newFolderPath, 'model.yml'])
   await fs.mv(modelFolderPath, newFolderPath).then(() =>
    // now replace what values have previous model name with format
-   invoke('write_yaml', {
-    data: {
-     ...modelConfig,
-     model_path: modelConfig?.model_path?.replace(
-      `${this.providerId}/models/${modelId}`,
-      `${this.providerId}/models/${model.id}`
-     ),
-     mmproj_path: modelConfig?.mmproj_path?.replace(
-      `${this.providerId}/models/${modelId}`,
-      `${this.providerId}/models/${model.id}`
-     ),
-    },
-    savePath: newModelConfigPath,
+   fs.writeYaml(newModelConfigPath, {
+    ...modelConfig,
+    model_path: modelConfig?.model_path?.replace(
+     `${this.providerId}/models/${modelId}`,
+     `${this.providerId}/models/${model.id}`
+    ),
+    mmproj_path: modelConfig?.mmproj_path?.replace(
+     `${this.providerId}/models/${modelId}`,
+     `${this.providerId}/models/${model.id}`
+    ),
    })
   )
 
@@ -2027,10 +1976,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       downloadType: 'Model',
      })
     }
-    const downloadManager = window.core.extensionManager.getByName(
-     '@janhq/download-extension'
-    )
-    await downloadManager.downloadFiles(
+    await this.downloads().downloadFiles(
      downloadItems,
      this.createDownloadTaskId(modelId),
      onProgress
@@ -2177,8 +2123,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   }
 
   if (!resolvedName) {
-   const base = opts.modelPath.split(/[\\/]/).pop() ?? modelId
-   resolvedName = base.replace(/\.gguf$/i, '') || modelId
+   resolvedName = fileName(opts.modelPath).replace(/\.gguf$/i, '') || modelId
   }
 
   // TODO: add updateModelConfig() method
@@ -2214,10 +2159,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     : {}),
   } as ModelConfig
   await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
-  await invoke<void>('write_yaml', {
-   data: modelConfig,
-   savePath: configPath,
-  })
+  await fs.writeYaml(configPath, modelConfig)
   events.emit(AppEvent.onModelImported, {
    modelId,
    modelPath,
@@ -2269,12 +2211,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   // Cancel any active download task
   // prepend provider name to avoid name collision
   const taskId = this.createDownloadTaskId(modelId)
-  const downloadManager = window.core.extensionManager.getByName(
-   '@janhq/download-extension'
-  )
-
   try {
-   await downloadManager.cancelDownload(taskId)
+   await this.downloads().cancelDownload(taskId)
   } catch (cancelError) {
    logger.warn('Failed to cancel download task:', cancelError)
   }
@@ -2285,11 +2223,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
  override async pauseImport(modelId: string): Promise<void> {
   const taskId = this.createDownloadTaskId(modelId)
-  const downloadManager = window.core.extensionManager.getByName(
-   '@janhq/download-extension'
-  )
   // Pause keeps the partial .tmp for resume; the model folder is preserved.
-  await downloadManager.pauseDownload(taskId)
+  await this.downloads().pauseDownload(taskId)
  }
 
  private async getRandomPort(): Promise<number> {
@@ -2452,6 +2387,12 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   }
  }
 
+ private downloads(): DownloadService {
+  const service = this.services.get(ServiceKeys.Downloads)
+  if (!service) throw new Error('Downloads service is not available')
+  return service
+ }
+
  /**
   * The id becomes a Tauri event name (`download-<taskId>`), which cannot contain
   * a dot. Dots are replaced rather than truncated at: truncating collapsed every
@@ -2488,7 +2429,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     )
    }
   }
-  const response = await loopbackFetch(url, {
+  const response = await this.loopbackFetch(url, {
    method: 'POST',
    headers,
    body,
@@ -2629,7 +2570,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    return this.handleStreamingResponse(url, headers, body, abortController)
   }
   // Handle non-streaming response
-  const response = await loopbackFetch(url, {
+  const response = await this.loopbackFetch(url, {
    method: 'POST',
    headers,
    body,
@@ -2694,9 +2635,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     'model.yml',
    ])
 
-   const modelConfig = await invoke<ModelConfig>('read_yaml', {
-    path: modelConfigPath,
-   })
+   const modelConfig = await fs.readYaml<ModelConfig>(modelConfigPath)
 
    // If mmproj_path is not defined in YAML, return false
    if (modelConfig.mmproj_path) {
@@ -2734,7 +2673,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   if (!(await fs.existsSync(path))) {
    return { mtp_layers: 0, mtp: false }
   }
-  const cfg = (await invoke<ModelConfig>('read_yaml', { path })) as ModelConfig & {
+  const cfg = (await fs.readYaml<ModelConfig>(path)) as ModelConfig & {
    mtp_layers?: number
    mtp?: boolean
    spec_draft_n_max?: number
@@ -2774,7 +2713,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   if (!(await fs.existsSync(configPath))) {
    throw new Error(`model.yml not found for ${modelId}`)
   }
-  const cfg = (await invoke<ModelConfig>('read_yaml', { path: configPath })) as ModelConfig & {
+  const cfg = (await fs.readYaml<ModelConfig>(configPath)) as ModelConfig & {
    mtp?: boolean
    spec_draft_n_max?: number
    spec_draft_n_min?: number
@@ -2809,7 +2748,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    cfg.spec_draft_sampling = patch.spec_draft_sampling
   }
 
-  await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
+  await fs.writeYaml(configPath, cfg)
 
   try {
    await this.refreshEnginePreset()
@@ -2840,9 +2779,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   if (!(await fs.existsSync(configPath))) {
    throw new Error(`model.yml not found for ${modelId}`)
   }
-  const cfg = (await invoke<ModelConfig>('read_yaml', {
-   path: configPath,
-  })) as ModelConfig & Record<string, unknown>
+  const cfg = (await fs.readYaml<ModelConfig>(configPath)) as ModelConfig & Record<string, unknown>
   const previousConfig = { ...cfg }
 
   let touched = false
@@ -2863,15 +2800,12 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
   if (!touched) return
 
-  await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
+  await fs.writeYaml(configPath, cfg)
 
   try {
    await this.refreshEnginePreset()
   } catch (e) {
-   await invoke<void>('write_yaml', {
-    data: previousConfig,
-    savePath: configPath,
-   })
+   await fs.writeYaml(configPath, previousConfig)
    throw e
   }
  }
@@ -3133,7 +3067,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   const sInfo = await this.ensureEmbeddingModelLoaded()
   const counts: number[] = []
   for (const text of texts) {
-   const res = await loopbackFetch(`http://localhost:${sInfo.port}/tokenize`, {
+   const res = await this.loopbackFetch(`http://localhost:${sInfo.port}/tokenize`, {
     method: 'POST',
     headers: {
      'Content-Type': 'application/json',
@@ -3200,7 +3134,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     model: session.model_id,
     encoding_format: 'float',
    })
-   const response = await loopbackFetch(baseUrl, {
+   const response = await this.loopbackFetch(baseUrl, {
     method: 'POST',
     headers,
     body,
@@ -3245,9 +3179,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    modelId,
    'model.yml',
   ])
-  const modelConfig = await invoke<ModelConfig>('read_yaml', {
-   path: modelConfigPath,
-  })
+  const modelConfig = await fs.readYaml<ModelConfig>(modelConfigPath)
   // model option is required
   // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
   const modelPath = await joinPath([
@@ -3338,9 +3270,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
      opts.model,
      'model.yml',
     ])
-    const modelConfig = await invoke<ModelConfig>('read_yaml', {
-     path: modelConfigPath,
-    })
+    const modelConfig = await fs.readYaml<ModelConfig>(modelConfigPath)
     if (modelConfig.mmproj_path) {
      const mmprojPath = await joinPath([
       janDataFolderPath,

@@ -19,13 +19,6 @@ vi.mock('zustand/middleware', () => ({
   }),
 }))
 
-// Mock ExtensionManager
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: vi.fn(),
-  },
-}))
-
 // Mock ServiceHub (setHuggingfaceToken persists to the keyring via set_secret)
 const mockInvoke = vi.fn().mockResolvedValue(undefined)
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -33,14 +26,8 @@ vi.mock('@/hooks/useServiceHub', () => ({
 }))
 
 describe('useGeneralSetting', () => {
-  let mockExtensionManager: any
-
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks()
-
-    // Get the mocked ExtensionManager
-    const { ExtensionManager } = await import('@/lib/extension')
-    mockExtensionManager = ExtensionManager
 
     // Reset store state to defaults
     useGeneralSetting.setState({
@@ -48,16 +35,6 @@ describe('useGeneralSetting', () => {
       spellCheckChatInput: true,
       tokenCounterCompact: true,
       huggingfaceToken: undefined,
-    })
-
-    // Setup default mock behavior to prevent errors
-    const mockGetByName = vi.fn().mockReturnValue({
-      getSettings: vi.fn().mockResolvedValue(null),
-      updateSettings: vi.fn(),
-    })
-
-    mockExtensionManager.getInstance.mockReturnValue({
-      getByName: mockGetByName,
     })
   })
 
@@ -198,41 +175,18 @@ describe('useGeneralSetting', () => {
       expect(result.current.huggingfaceToken).toBe('')
     })
 
-    it('should call ExtensionManager when setting token', async () => {
-      const mockSettings = [
-        { key: 'hf-token', controllerProps: { value: 'old-value' } },
-        { key: 'other-setting', controllerProps: { value: 'other-value' } },
-      ]
-
-      const mockGetByName = vi.fn()
-      const mockGetSettings = vi.fn().mockResolvedValue(mockSettings)
-      const mockUpdateSettings = vi.fn()
-
-      mockExtensionManager.getInstance.mockReturnValue({
-        getByName: mockGetByName,
-      })
-      mockGetByName.mockReturnValue({
-        getSettings: mockGetSettings,
-        updateSettings: mockUpdateSettings,
-      })
-
+    it('writes the token only to the keyring', () => {
       const { result } = renderHook(() => useGeneralSetting())
 
       act(() => {
         result.current.setHuggingfaceToken('new-token')
       })
 
-      expect(mockExtensionManager.getInstance).toHaveBeenCalled()
-      expect(mockGetByName).toHaveBeenCalledWith('@janhq/download-extension')
-
-      // Wait for async operations
-      await new Promise((resolve) => setTimeout(resolve, 0))
-
-      expect(mockGetSettings).toHaveBeenCalled()
-      expect(mockUpdateSettings).toHaveBeenCalledWith([
-        { key: 'hf-token', controllerProps: { value: 'new-token' } },
-        { key: 'other-setting', controllerProps: { value: 'other-value' } },
-      ])
+      expect(mockInvoke).toHaveBeenCalledTimes(1)
+      expect(mockInvoke).toHaveBeenCalledWith('set_secret', {
+        key: 'huggingface',
+        value: 'new-token',
+      })
     })
   })
 

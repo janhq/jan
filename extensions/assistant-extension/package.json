@@ -1,15 +1,21 @@
 {
   "name": "@janhq/assistant-extension",
-  "productName": "Jan Assistant",
   "version": "1.0.2",
   "description": "Powers the default AI assistant that works with all your installed models.",
   "main": "dist/index.js",
-  "node": "dist/node/index.js",
+  "jan": {
+    "id": "jan.assistant",
+    "displayName": "Jan Assistant",
+    "description": "Powers the default AI assistant that works with all your installed models.",
+    "publisher": "Jan",
+    "apiVersion": "^1.0.0",
+    "main": "dist/index.js",
+    "permissions": []
+  },
   "author": "Jan <service@jan.ai>",
   "license": "Apache-2.0",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
     "test": "vitest run"
   },
   "devDependencies": {

@@ -1,0 +1,22 @@
+{
+  // Type-checks sources and tests. The build output comes from
+  // tsconfig.build.json, which excludes the tests.
+  "compilerOptions": {
+    "target": "ES2022",
+    // NodeNext so the emitted ESM carries explicit `.js` specifiers and loads
+    // under plain Node, where the sandbox harness runs.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src"]
+}

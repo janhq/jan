@@ -19,10 +19,10 @@ vi.mock('@/lib/backendStorage', () => ({
     removeItem: async () => {},
   },
 }))
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: { getInstance: () => ({ get: () => undefined }) },
+// No rag built-in is active, so the page keeps the defs set below.
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => ({ list: () => [] }),
 }))
-vi.mock('@janhq/core', () => ({ ExtensionTypeEnum: { RAG: 'rag' } }))
 // Simple number input so the test can drive onChange directly.
 vi.mock('@/containers/dynamicControllerSetting', () => ({
   DynamicControllerSetting: ({

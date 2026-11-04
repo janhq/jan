@@ -15,7 +15,6 @@ core/lib/**
 .yarnrc
 *.tsbuildinfo
 test_results.html
-pre-install
 .build
 
 # docs

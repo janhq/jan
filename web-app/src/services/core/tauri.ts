@@ -3,10 +3,8 @@
  */
 
 import { invoke, convertFileSrc } from '@tauri-apps/api/core'
-import type { ExtensionManifest } from '@/lib/extension'
 import type { InvokeArgs } from './types'
 import { DefaultCoreService } from './default'
-import { getBundledExtensions } from './bundled-extensions'
 
 export class TauriCoreService extends DefaultCoreService {
   async invoke<T = unknown>(command: string, args?: InvokeArgs): Promise<T> {
@@ -25,21 +23,6 @@ export class TauriCoreService extends DefaultCoreService {
       console.error('Error converting file src in Tauri:', error)
       return filePath
     }
-  }
-
-  // Extensions are bundled into the app binary; no filesystem install step.
-  async getActiveExtensions(): Promise<ExtensionManifest[]> {
-    return getBundledExtensions()
-  }
-
-  async installExtensions(): Promise<void> {}
-
-  async installExtension(): Promise<ExtensionManifest[]> {
-    return getBundledExtensions()
-  }
-
-  async uninstallExtension(): Promise<boolean> {
-    return false
   }
 
   // App token

@@ -56,10 +56,9 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { createXai } from '@ai-sdk/xai'
 import { createMistral } from '@ai-sdk/mistral'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import { invoke } from '@tauri-apps/api/core'
 import { findSessionByModel } from '@janhq/tauri-plugin-llamacpp-api'
-import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { loopbackFetch } from './loopback-fetch'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
 import { hasVideoSentinel, splitVideoSentinels } from './video-sentinel'
 import {
@@ -80,6 +79,8 @@ import {
   getProviderApiType,
 } from '@/lib/providerCaps'
 import { engineFailure } from '@/lib/engineError'
+import { extensionProviderFetch } from '@/lib/extensions/providers'
+import { getMlxExtension } from '@/lib/llamacppRouterProps'
 import { i18n } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -887,29 +888,6 @@ function requireRemoteApiKey(
   return key
 }
 
-/**
- * Requests to the local engine and MLX servers, sent so that no proxy can
- * capture them.
- *
- * `@tauri-apps/plugin-http` sends from Rust's reqwest, which reads
- * `HTTP(S)_PROXY` and the OS proxy setting (on Windows, the registry one) and
- * does not exempt loopback unless `NO_PROXY` names it. With a VPN client, a
- * proxy tool or a corporate proxy configured, the chat request to
- * `http://localhost:<port>` is then sent to that proxy and fails, although the
- * server is up. Naming any proxy turns reqwest's environment and system lookup
- * off, and the no-proxy list covers every loopback host, so the placeholder
- * address is never dialled: these requests always go direct.
- *
- * Only for loopback servers. Remote providers keep `getRuntimeFetch`, which
- * must go on honouring the user's proxy.
- */
-export const LOOPBACK_DIRECT_PROXY = {
-  all: { url: 'http://127.0.0.1:9', noProxy: 'localhost,127.0.0.1,::1' },
-}
-
-export const loopbackFetch: typeof globalThis.fetch = (input, init) =>
-  httpFetch(input, { ...init, proxy: LOOPBACK_DIRECT_PROXY })
-
 function getRuntimeFetch(): typeof globalThis.fetch {
   const maybeWindow = globalThis as typeof globalThis & {
     __TAURI__?: unknown
@@ -966,6 +944,18 @@ export class ModelFactory {
   ): Promise<LanguageModel> {
     const providerName = provider.provider.toLowerCase()
     parameters = stripUnsupportedSamplers(parameters, provider, modelId)
+
+    // A provider an extension contributed is OpenAI-compatible by contract,
+    // and every request it makes runs on the extension's checked network
+    // path, never on the app's.
+    const extensionFetch = extensionProviderFetch(provider, 'stream')
+    if (extensionFetch)
+      return this.createOpenAICompatibleModel(
+        modelId,
+        provider,
+        parameters,
+        extensionFetch
+      )
 
     // Wire-format dispatch wins over name-based dispatch — custom providers
     // pointing at Anthropic-compatible proxies (LiteLLM, Bedrock gateways)
@@ -1118,11 +1108,10 @@ export class ModelFactory {
       }
     }
 
-    // Get session info which includes port and api_key
-    const sessionInfo = await invoke<SessionInfo | null>(
-      'plugin:mlx|find_mlx_session_by_model',
-      { modelId }
-    )
+    // Get session info which includes port and api_key. No mlx service means
+    // the engine is not running here (it only activates on macOS).
+    const sessionInfo =
+      (await getMlxExtension()?.findSession(modelId)) ?? null
 
     if (!sessionInfo) {
       throw new Error(`No running MLX session found for model: ${modelId}`)
@@ -1402,7 +1391,8 @@ export class ModelFactory {
   private static createOpenAICompatibleModel(
     modelId: string,
     provider: ProviderObject,
-    parameters: Record<string, unknown> = {}
+    parameters: Record<string, unknown> = {},
+    baseFetch: typeof globalThis.fetch = getRuntimeFetch()
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
@@ -1421,13 +1411,13 @@ export class ModelFactory {
     let fetchImpl: typeof globalThis.fetch =
       keyChain.length > 1
         ? createApiKeyRotatingFetch(
-            getRuntimeFetch(),
+            baseFetch,
             keyChain,
             parameters,
             'authorization-bearer',
             true
           )
-        : createCustomFetch(getRuntimeFetch(), parameters, false, undefined, true)
+        : createCustomFetch(baseFetch, parameters, false, undefined, true)
 
     // Groq's API rejects assistant `reasoning` fields, so it always strips
     // regardless of the toggle; other providers honor the global setting.

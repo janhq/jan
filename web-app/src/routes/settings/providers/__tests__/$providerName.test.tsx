@@ -148,7 +148,16 @@ const h = vi.hoisted(() => {
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (cfg: any) => ({ ...cfg, id: '/settings/providers/$providerName' }),
   useParams: () => h.params,
-  Link: ({ children, to }: any) => <a href={to}>{children}</a>,
+  Link: ({ children, to, params }: any) => (
+    <a
+      href={Object.entries(params ?? {}).reduce(
+        (path: string, [k, v]) => path.replace(`$${k}`, String(v)),
+        to
+      )}
+    >
+      {children}
+    </a>
+  ),
 }))
 
 vi.mock('sonner', () => ({
@@ -160,7 +169,10 @@ vi.mock('sonner', () => ({
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  useTranslation: () => ({
+    t: (k: string, o?: Record<string, unknown>) =>
+      o?.extension ? `${k}:${String(o.extension)}` : k,
+  }),
 }))
 
 vi.mock('@/containers/HeaderPage', () => ({
@@ -286,7 +298,8 @@ vi.mock('@tabler/icons-react', () => ({
 
 vi.mock('@/lib/utils', () => ({
   cn: (...a: any[]) => a.filter(Boolean).join(' '),
-  getProviderTitle: (name: string) => `Title:${name}`,
+  getProviderTitle: (p: any) =>
+    typeof p === 'string' ? `Title:${p}` : p.display_name || `Title:${p.provider}`,
   getModelDisplayName: (m: any) => m.name ?? m.id,
   basenameNoExt: (p: string) => p.split('/').pop() ?? p,
   isLocalProvider: (p: string) => p === 'llamacpp' || p === 'mlx',
@@ -297,7 +310,10 @@ vi.mock('@/constants/providers', () => ({
 }))
 
 vi.mock('@/constants/routes', () => ({
-  route: { hub: { index: '/hub' } },
+  route: {
+    hub: { index: '/hub' },
+    settings: { extension: '/settings/extensions/$extensionId' },
+  },
 }))
 
 vi.mock('@/hooks/useModelProvider', () => {
@@ -450,6 +466,69 @@ describe('ProviderDetail route', () => {
       h.params.providerName = 'llamacpp'
       renderComponent()
       await waitFor(() => expect(asked).toHaveBeenCalled())
+    })
+  })
+
+  describe('Extension-owned provider', () => {
+    const setupExtensionProvider = () => {
+      h.providerMap['acme.llm/local'] = {
+        provider: 'acme.llm/local',
+        display_name: 'Acme Local',
+        active: true,
+        base_url: 'http://127.0.0.1:11999/v1',
+        api_key: 'sk-ext',
+        settings: [],
+        models: [
+          { id: 'm1', name: 'm1', capabilities: ['completion'] },
+        ],
+        source: { extensionId: 'acme.llm', extensionName: 'Acme LLM' },
+      }
+      h.params.providerName = 'acme.llm/local'
+    }
+
+    it('is titled with its display name, not the raw id', () => {
+      setupExtensionProvider()
+      renderComponent()
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Acme Local' })
+      ).toBeInTheDocument()
+      expect(screen.queryByText('Title:acme.llm/local')).not.toBeInTheDocument()
+    })
+
+    it('links to the settings page of the extension that provides it', () => {
+      setupExtensionProvider()
+      renderComponent()
+      expect(
+        screen.getByText('providers:extensionManaged:Acme LLM')
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText('providers:openExtensionSettings').closest('a')
+      ).toHaveAttribute('href', '/settings/extensions/acme.llm')
+    })
+
+    it('offers no delete, API key, refresh, add or per-model delete controls', () => {
+      setupExtensionProvider()
+      renderComponent()
+      expect(screen.queryByTestId('delete-provider')).not.toBeInTheDocument()
+      expect(screen.queryByText('providers:apiKeys.title')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('dynamic-ctrl')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('add-model')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('del-m1')).not.toBeInTheDocument()
+      expect(screen.queryByText('providers:limitedSupport')).not.toBeInTheDocument()
+      // The models it lists still show.
+      expect(screen.getByTestId('edit-m1')).toBeInTheDocument()
+    })
+
+    it('does not point at refresh or add buttons when it lists no models', () => {
+      setupExtensionProvider()
+      h.providerMap['acme.llm/local'].models = []
+      renderComponent()
+      expect(
+        screen.getByText('providers:noModelFoundExtensionDesc')
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText('providers:noModelFoundRemoteDesc')
+      ).not.toBeInTheDocument()
     })
   })
 

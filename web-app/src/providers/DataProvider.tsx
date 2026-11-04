@@ -1,10 +1,7 @@
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppUpdater } from '@/hooks/useAppUpdater'
-import {
-  useGeneralSetting,
-  HUGGINGFACE_TOKEN_SECRET_KEY,
-} from '@/hooks/useGeneralSetting'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useRef } from 'react'
 import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
@@ -12,15 +9,15 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
-import { ExtensionManager } from '@/lib/extension'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
-import { AppEvent, events } from '@janhq/core'
+import { AppEvent, events, HUGGINGFACE_TOKEN_SECRET_KEY } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { isDev } from '@/lib/utils'
 import { sweepThreadWorkspaces } from '@/lib/agentTools'
 import { invoke } from '@tauri-apps/api/core'
 import { providerHasRemoteApiKeys, providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
+import { useExtensionProviders } from '@/hooks/useExtensionProviders'
 
 type ProviderCustomHeader = {
   header: string
@@ -39,6 +36,9 @@ type RegisterProviderRequest = {
 async function registerRemoteProvider(provider: ModelProvider) {
   // Skip llamacpp - those are local models
   if (provider.provider === 'llamacpp') return
+  // An extension's provider is reachable from the chat only: registering it
+  // would serve it, with the extension's key, to every local API client.
+  if (provider.source) return
 
   const chain = providerRemoteApiKeyChain(provider)
   if (chain.length === 0) {
@@ -75,7 +75,8 @@ async function seedProviderKeysFromKeyring(
 ): Promise<ModelProvider[]> {
   return Promise.all(
     providers.map(async (provider) => {
-      if (provider.provider === 'llamacpp') return provider
+      // Extension providers keep their key in the extension's settings.
+      if (provider.provider === 'llamacpp' || provider.source) return provider
       try {
         const keys = await invoke<string[]>('get_provider_keys', {
           provider: provider.provider,
@@ -127,6 +128,7 @@ const syncRemoteProviders = () => {
     if (
       provider.active &&
       provider.provider !== 'llamacpp' &&
+      !provider.source &&
       providerHasRemoteApiKeys(provider)
     ) {
       registerRemoteProvider(provider)
@@ -187,11 +189,12 @@ export function DataProvider() {
   const { setAssistants } = useAssistant()
   const { setThreads } = useThreads()
   const setThreadsLoading = useThreads((s) => s.setThreadsLoading)
-  // The thread fetch re-runs on extension re-registration; the sandbox sweep
-  // should not.
+  // The thread fetch re-runs whenever its effect does (StrictMode remount,
+  // a new service hub); the sandbox sweep should run once per session.
   const sweptWorkspaces = useRef(false)
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
+  useExtensionProviders()
 
   // Local API Server hooks
   const {
@@ -227,7 +230,7 @@ export function DataProvider() {
       })
     })
     // Re-seed the Hugging Face token from the keyring (no longer persisted to
-    // settings storage) into the store + download extension for this session.
+    // settings storage) into the store for this session.
     invoke<string | null>('get_secret', {
       key: HUGGINGFACE_TOKEN_SECRET_KEY,
     })
@@ -285,9 +288,9 @@ export function DataProvider() {
   }, [serviceHub])
 
   useEffect(() => {
-    // fetchThreads throws while the Conversational extension is still loading
-    // (startup race, e.g. reload mid-stream). Retry with backoff instead of
-    // letting a single failed fetch leave the thread list permanently empty.
+    // fetchThreads throws while the backend is not ready yet (startup race,
+    // e.g. reload mid-stream). Retry with backoff instead of letting a single
+    // failed fetch leave the thread list permanently empty.
     let cancelled = false
     let attempt = 0
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -328,22 +331,10 @@ export function DataProvider() {
           timer = setTimeout(load, Math.min(1000, 150 * attempt))
         })
     }
-    // A late (or re-)registration re-arms the fetch even after the bounded
-    // retries above are exhausted, e.g. when extension setup itself failed
-    // and only recovers later.
-    const unsubscribe = ExtensionManager.getInstance().onRegistrationChange(
-      () => {
-        if (cancelled) return
-        attempt = 0
-        clearTimeout(timer)
-        load()
-      }
-    )
     load()
     return () => {
       cancelled = true
       clearTimeout(timer)
-      unsubscribe()
     }
   }, [serviceHub, setThreads, setThreadsLoading])
 

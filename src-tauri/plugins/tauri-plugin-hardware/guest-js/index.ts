@@ -8,14 +8,26 @@ export interface CpuStaticInfo {
   extensions: string[];
 }
 
+export interface NvidiaInfo {
+  index: number;
+  compute_capability: string;
+}
+
+export interface VulkanInfo {
+  index: number;
+  device_type: string;
+  api_version: string;
+  device_id: number;
+}
+
 export interface GpuInfo {
   name: string;
   total_memory: number;
   vendor: string;
   uuid: string;
   driver_version: string;
-  nvidia_info?: any;
-  vulkan_info?: any;
+  nvidia_info: NvidiaInfo | null;
+  vulkan_info: VulkanInfo | null;
 }
 
 export interface SystemInfo {
@@ -46,4 +58,9 @@ export async function getSystemInfo(): Promise<SystemInfo> {
 
 export async function getSystemUsage(): Promise<SystemUsage> {
   return await invoke('plugin:hardware|get_system_usage');
+}
+
+/** Drops the cached detection so the next getSystemInfo() probes the GPUs again. */
+export async function refreshSystemInfo(): Promise<void> {
+  await invoke('plugin:hardware|refresh_system_info');
 }
