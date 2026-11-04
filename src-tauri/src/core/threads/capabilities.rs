@@ -284,10 +284,13 @@ pub fn confirm_failure_error(
 }
 
 /// Attach host-owned consent to a listed thread. A host read error fails
-/// CLOSED with an explicit all-off grant plus `conversationCapabilitiesError`:
-/// dropping the field would let the frontend fall back to its legacy default
-/// (a writable folder for Cowork). Only a Cowork thread the host holds no
-/// record for (`Null`) keeps the field absent, which is the legacy default.
+/// CLOSED: `conversationCapabilities` is the explicit all-off grant
+/// (`denied_value()`, `folderScope: null`) and `conversationCapabilitiesError`
+/// carries the error. Dropping the field would let the frontend fall back to
+/// its legacy default (a writable folder for Cowork). The sentinel alone looks
+/// like an acknowledged detach, so consumers must check the error field BEFORE
+/// interpreting the record. Only a Cowork thread the host holds no record for
+/// (`Null`) keeps both fields absent, which is the legacy default.
 pub fn apply_listed_capabilities(thread: &mut Value, cowork: bool, read: Result<Value, String>) {
     if thread["metadata"].is_null() {
         if matches!(&read, Ok(v) if cowork && v.is_null()) {

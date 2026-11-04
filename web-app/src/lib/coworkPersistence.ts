@@ -74,6 +74,7 @@ export function sessionToThreadRecord(
   // Host-owned authority: list_threads overlays it on the records we adopt, so
   // it must never be written back from (possibly stale) frontend metadata.
   delete metadata.conversationCapabilities
+  delete metadata.conversationCapabilitiesError
   if (s.project !== undefined) metadata.project = s.project
   else delete metadata.project
   if (s.planMode !== undefined) metadata.planMode = s.planMode
@@ -111,13 +112,22 @@ export function sessionToThreadRecord(
  * authority, and `metadata.folder` is just a debounced display copy that can
  * lag the strict setter (a reload between the two). A valid record hydrates
  * the folder from its own `folderScope.path` and the acknowledged access; an
- * explicit `folderScope: null` is detached. A host read error (`null`) or a
- * malformed record is denied: the metadata folder is shown with no access.
+ * explicit `folderScope: null` is detached. A host read error is denied: the
+ * host lists the valid all-off sentinel (`folderScope: null`) PLUS
+ * `conversationCapabilitiesError`, which is indistinguishable from an
+ * acknowledged detach by the record alone, so the error is checked FIRST. A
+ * read error, a `null` record or a malformed record shows the metadata folder
+ * with no access (`folderAccess: null`); keeping the folder also stops the next
+ * debounced flush from persisting `folder: null` over the display copy.
  */
 function hostFolderGrant(
   meta: Json
 ): Pick<CoworkSession, 'folder' | 'folderAccess'> {
   const metaFolder = typeof meta.folder === 'string' ? meta.folder : null
+  const readError =
+    meta.conversationCapabilitiesError !== undefined &&
+    meta.conversationCapabilitiesError !== null
+  if (readError) return { folder: metaFolder, folderAccess: null }
   if (!('conversationCapabilities' in meta) || meta.conversationCapabilities === undefined) {
     return { folder: metaFolder }
   }
