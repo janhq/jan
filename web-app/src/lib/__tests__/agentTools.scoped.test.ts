@@ -126,7 +126,7 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
   })
 
   it('preserves Cowork session legacy arguments without reading Chat authority', async () => {
-    await expect(executeAgentTool('shell', { command: 'echo session' }, 'cowork-session', '/cowork/folder', 'session', true, true, '/cowork/skills')).resolves.toMatchObject({ content: 'legacy output' })
+    await expect(executeAgentTool('shell', { command: 'echo session' }, 'cowork-session', '/cowork/folder', 'session', true, true, '/cowork/skills', undefined, undefined, () => false)).resolves.toMatchObject({ content: 'legacy output' })
     expect(mocks.executeTool).toHaveBeenCalledExactlyOnceWith('/isolated/verifier-data', 'cowork-session', 'shell', { command: 'echo session' }, '/cowork/skills', undefined, true, '/cowork/folder', true, 'session', undefined, false)
     expect(mocks.executeThreadTool).not.toHaveBeenCalled()
     expect(mocks.getState).not.toHaveBeenCalled()
@@ -254,11 +254,42 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
       expect(planArg()).toBe(false)
     })
 
-    it('does not send Plan on the legacy Cowork session path', async () => {
+    const session = (planActive?: () => boolean) =>
+      executeAgentTool('read', {}, 'cowork-session', '/cowork/folder', 'session', false, true, undefined, undefined, undefined, planActive)
+    const sessionPlanArg = () => mocks.executeTool.mock.calls[0][11]
+
+    it('legacy session path ignores the live Chat toolbar and sends only the run-latched Plan', async () => {
       livePlan.on = true
-      await executeAgentTool('read', {}, 'cowork-session', '/cowork/folder', 'session', false, true)
+      await session(() => false)
       expect(mocks.executeThreadTool).not.toHaveBeenCalled()
       expect(mocks.executeTool).toHaveBeenCalledTimes(1)
+      expect(sessionPlanArg()).toBe(false)
+    })
+
+    it('legacy session path sends true when the run latched Plan', async () => {
+      livePlan.on = false
+      await session(() => true)
+      expect(sessionPlanArg()).toBe(true)
+    })
+
+    it('legacy session path reads the latch at dispatch, after async setup', async () => {
+      const setup = deferred<string>()
+      mocks.getJanDataFolder.mockReturnValueOnce(setup.promise)
+      let latched = false
+      const call = session(() => latched)
+      latched = true
+      setup.resolve('/isolated/verifier-data')
+      await call
+      expect(sessionPlanArg()).toBe(true)
+    })
+
+    it('legacy session path with no planActive fails closed without native IPC', async () => {
+      livePlan.on = false
+      const result = await session()
+      expect(result).toEqual({ error: expect.stringContaining('planActive is required') })
+      expect(mocks.executeTool).not.toHaveBeenCalled()
+      expect(mocks.executeThreadTool).not.toHaveBeenCalled()
+      expect(mocks.getJanDataFolder).not.toHaveBeenCalled()
     })
   })
 })
