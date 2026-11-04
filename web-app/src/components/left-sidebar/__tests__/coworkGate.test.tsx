@@ -12,7 +12,8 @@ vi.mock('@/lib/version', async (importOriginal) => ({
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
   Link: ({ to, children }: { to: string; children: ReactNode }) => <a href={to}>{children}</a>,
-  useLocation: () => ({ pathname: '/' }),
+  useLocation: ({ select }: { select?: (l: { pathname: string }) => unknown } = {}) =>
+    select ? select({ pathname: '/' }) : { pathname: '/' },
 }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -47,6 +48,7 @@ vi.mock('@/components/ui/sidebar', () => {
     },
     SidebarTrigger: () => null,
     SidebarRail: () => null,
+    useSidebar: () => ({ isMobile: false, setOpenMobile: vi.fn() }),
   }
 })
 vi.mock('@/components/animated-icon/animated-lucide', () => ({

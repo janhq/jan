@@ -281,7 +281,8 @@
       "alreadyExists": "Dự án \"{{projectName}}\" đã tồn tại",
       "createSuccess": "Dự án \"{{projectName}}\" đã được tạo thành công",
       "renameSuccess": "Dự án đã được đổi tên từ \"{{oldName}}\" thành \"{{newName}}\""
-    }
+    },
+    "viewProject": "Xem dự án"
   },
   "dialogs": {
     "changeDataFolder": {
@@ -412,7 +413,22 @@
     "readOnly": "chỉ đọc",
     "allowChanges": "Cho phép sửa đổi tệp",
     "footnoteReadOnly": "Tác nhân có thể đọc nhưng không thể thay đổi thư mục này. Bật “Cho phép sửa đổi tệp” để tác nhân có thể chỉnh sửa các tệp.",
-    "a11yWithFolderReadOnly": "Thư mục dự án {{folder}} được đính kèm với quyền chỉ đọc. Thay đổi hoặc gỡ đính kèm."
+    "a11yWithFolderReadOnly": "Thư mục dự án {{folder}} được đính kèm với quyền chỉ đọc. Thay đổi hoặc gỡ đính kèm.",
+    "readsFrom": "Làm việc trong",
+    "writable": "đọc và ghi",
+    "footnote": "Tác nhân đọc và chỉnh sửa trực tiếp thư mục này. Xem lại các thay đổi trong bảng khác biệt.",
+    "footnoteEmpty": "Đính kèm một thư mục để tác nhân làm việc trên dự án của bạn. Tác nhân có thể đọc và chỉnh sửa các tệp bên trong.",
+    "attach": "Đính kèm thư mục",
+    "change": "Đổi thư mục",
+    "detach": "Gỡ thư mục",
+    "open": "Mở",
+    "reveal": "Hiện",
+    "unavailable": "Không có không gian làm việc",
+    "missing": "Thư mục không gian làm việc {{folder}} không còn khả dụng. Hãy chọn thư mục khác.",
+    "openFailed": "Không thể mở không gian làm việc",
+    "revealFailed": "Không thể hiện không gian làm việc",
+    "a11yWithFolder": "Thư mục dự án {{folder}}, được đính kèm với quyền đọc và ghi. Thay đổi hoặc gỡ đính kèm.",
+    "a11yNoFolder": "Chưa đính kèm thư mục dự án. Hãy đính kèm một thư mục."
   },
   "conversationScope": {
     "noToolsModel": "Mô hình đã chọn không hỗ trợ công cụ, nên các quyền này chỉ có hiệu lực khi bạn chọn mô hình hỗ trợ công cụ.",
@@ -423,11 +439,77 @@
     "confirmFolder": "Xác nhận",
     "removeFolder": "Gỡ bỏ",
     "hostRevokeUnconfirmed": "Jan không thể xác nhận thay đổi quyền này. Các tác vụ nền có thể vẫn giữ quyền truy cập trước đó. Hãy thử lại hoặc thoát Jan để dừng chúng.",
-    "saveFailed": "Không thể lưu thay đổi quyền. Quyền truy cập nâng cao vẫn tắt cho đến khi lưu thành công."
+    "saveFailed": "Không thể lưu thay đổi quyền. Quyền truy cập nâng cao vẫn tắt cho đến khi lưu thành công.",
+    "label": "Phạm vi cuộc trò chuyện",
+    "writable": "Các công cụ tác vụ có thể đọc và ghi tệp trong thư mục đã chọn. Quyền tác vụ hiện có vẫn được áp dụng.",
+    "optional": "Thư mục tùy chọn cho quyền đọc/ghi của tác vụ. Nếu không có thư mục, tác vụ dùng không gian làm việc được quản lý.",
+    "permissions": "Việc chọn thư mục không thay đổi cài đặt mạng hay bộ nhớ lưu trữ lâu dài.",
+    "unsupported": "Mô hình này không dùng được công cụ nên không có quyền truy cập thư mục, shell và bộ nhớ. Trò chuyện thông thường vẫn hoạt động.",
+    "pendingKept": "Bản nháp quyền đang chờ được giữ lại và sẽ khả dụng khi bạn chọn mô hình hỗ trợ công cụ.",
+    "pendingKeptTemporary": "Bản nháp quyền đang chờ được giữ lại và sẽ khả dụng khi bạn bắt đầu cuộc trò chuyện thông thường với mô hình hỗ trợ công cụ.",
+    "temporary": "Cuộc trò chuyện tạm thời không giữ quyền truy cập thư mục.",
+    "temporaryPermissions": "Cuộc trò chuyện tạm thời không thể dùng quyền truy cập thư mục, mạng của shell hoặc bộ nhớ lâu dài đã được cấp.",
+    "folderSelectModel": "Hãy chọn mô hình hỗ trợ công cụ trước khi thêm quyền truy cập thư mục.",
+    "folderUnsupported": "Mô hình này không dùng được công cụ nên không thể thêm thư mục. Trò chuyện thông thường vẫn hoạt động.",
+    "invalidFolder": "Đường dẫn thư mục này không được hỗ trợ. Hãy chọn thư mục khác.",
+    "folderSelected": "Đã thêm thư mục",
+    "removeProject": "Bỏ chọn dự án"
   },
   "memoryFeedback": {
     "saved": "Đã lưu bộ nhớ",
     "inspect": "Xem",
     "inspectLabel": "Xem bộ nhớ đã lưu"
+  },
+  "web_search": "Tìm kiếm web",
+  "shell": "Shell",
+  "browse": "Duyệt",
+  "moreControls": "Thêm điều khiển",
+  "artifacts": "Tạo phẩm",
+  "skills": "Kỹ năng",
+  "deleteSession": "Xóa phiên",
+  "deleteSessionTitle": "Xóa phiên?",
+  "deleteSessionBody": "“{{title}}” và bản ghi của phiên sẽ bị xóa vĩnh viễn. Không thể hoàn tác thao tác này.",
+  "chatsAndTasks": "Trò chuyện và tác vụ",
+  "artifactGroupCode": "Mã",
+  "artifactGroupImage": "Hình ảnh",
+  "artifactGroupDocument": "Tài liệu",
+  "artifactGroupVideo": "Video",
+  "artifactGroupAudio": "Âm thanh",
+  "artifactOpenPreview": "Mở bản xem trước",
+  "artifactOpenExternal": "Mở",
+  "artifactMoreActions": "Thêm thao tác",
+  "artifactShowInFolder": "Hiện trong thư mục",
+  "artifactsAll": "Tất cả",
+  "artifactsEmpty": "Chưa có gì được tạo. Các tệp được tạo trong cuộc trò chuyện của bạn sẽ hiển thị ở đây.",
+  "artifactsNoMatch": "Không có tạo phẩm nào phù hợp.",
+  "artifactsLibraryDescription": "Các tệp được tạo trong mọi cuộc trò chuyện của bạn, gom về một nơi.",
+  "artifactsLibraryFiles": "tệp",
+  "artifactsLibraryCount_one": "{{count}} tệp",
+  "artifactsLibraryCount_other": "{{count}} tệp",
+  "artifactsLibraryFilter": "Lọc theo loại tệp",
+  "artifactsLibraryReset": "Xóa bộ lọc",
+  "artifactsSearch": "Tìm tạo phẩm",
+  "artifactsShowMore": "Hiện thêm {{count}}",
+  "homeMode": {
+    "addFolder": "Thêm dự án hoặc thư mục",
+    "removeFolder": "Bỏ lựa chọn",
+    "addProject": "Thêm dự án",
+    "addToProject": "Thêm vào dự án",
+    "newProject": "Dự án mới",
+    "noProjects": "Chưa có dự án nào",
+    "addFolderAction": "Thêm thư mục"
+  },
+  "planMode": {
+    "label": "Kế hoạch",
+    "tooltipOff": "Lập kế hoạch trước: tác nhân đọc và đề xuất, không ghi.",
+    "tooltipOn": "Chế độ Kế hoạch",
+    "onAnnounce": "Đã bật chế độ Kế hoạch",
+    "placeholder": "Yêu cầu một kế hoạch. Tác nhân sẽ không thay đổi tệp nào."
+  },
+  "sidebar": {
+    "toggle": "Bật/tắt thanh bên",
+    "navigation": "Điều hướng",
+    "navigationDescription": "Chuyển đến trò chuyện, dự án, tạo phẩm, kỹ năng và cài đặt.",
+    "more": "Thêm"
   }
 }
