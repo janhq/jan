@@ -205,9 +205,10 @@ runtime.close()                   # close stdin, then the process
 runtime.close(force=True)         # kill at once; no grace for the process (see below)
 ```
 
-`close()` gives the process `shutdown_grace` seconds (default 5) to exit after
-stdin closes, then kills it, then waits up to `shutdown_grace` more for the pipe
-readers: about `2 * shutdown_grace` at most. `close(force=True)` kills first and
+`close()` allows up to `shutdown_grace` seconds (default 5) to close stdin,
+then gives the process another `shutdown_grace` to exit before killing it, and
+waits up to `shutdown_grace` more for the pipe readers: about
+`3 * shutdown_grace` at most (plus a short cleanup wait if stdin stays blocked). `close(force=True)` kills first and
 waits at most 0.25s for the readers. A descendant that inherited the runtime's
 pipes can keep them open past either; the reader threads are daemons and release
 the pipes when it lets go. A callback passed as `on_stderr` that raises is
