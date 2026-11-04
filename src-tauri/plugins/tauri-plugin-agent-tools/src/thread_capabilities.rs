@@ -478,10 +478,13 @@ fn ledger_append(
     // FlushFileBuffers documents GENERIC_WRITE. We seek to the end ourselves,
     // which is race-free only because every caller holds this identity's I/O
     // lock; a second process could at worst damage a record, which denies.
+    // Never truncate on open: the existing ledger is the revocation history.
+    // Compaction below is the only place it is emptied, via explicit `set_len`.
     let mut file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .open(path)
         .map_err(|e| e.to_string())?;
     let len = file.metadata().map_err(|e| e.to_string())?.len();
