@@ -980,6 +980,14 @@ async fn test_thread_json_writes_leave_no_temp_files() {
     assert_eq!(on_disk["title"], "Atomic 2");
 }
 
+// Positive host-authority fixtures must be absolute on the current platform.
+// No filesystem identity is needed: these tests exercise lexical consent only.
+fn authority_folder_path(name: &str) -> String {
+    let path = std::env::temp_dir().join(name);
+    assert!(path.is_absolute(), "{}", path.display());
+    path.to_str().unwrap().to_owned()
+}
+
 fn capability_grant(enabled: bool) -> serde_json::Value {
     json!({"version":1,"folderScope":null,"shellNetwork":enabled,"memoryWrite":enabled})
 }
@@ -2070,13 +2078,14 @@ async fn rollback_post_removal_marker_failure_does_not_restore_ghost() {
 // metadata write remains available, so a narrowing request must still save it.
 #[tokio::test]
 async fn failed_marker_still_persists_narrowing_but_refuses_widening() {
+    let folder_path = authority_folder_path("work-tree");
     for access in [None, Some("read"), Some("write")] {
         let (app, data_dir) = mock_app_with_temp_data_dir();
         let created = create_thread(app.handle().clone(), create_test_thread("marker-narrow"))
             .await.unwrap();
         let id = created["id"].as_str().unwrap().to_string();
         let mut original = capability_grant(true);
-        original["folderScope"] = json!({"path":"/work/tree","access":"write"});
+        original["folderScope"] = json!({"path":folder_path,"access":"write"});
         if access == Some("write") {
             original["folderScope"]["access"] = json!("read");
         }
@@ -2085,7 +2094,7 @@ async fn failed_marker_still_persists_narrowing_but_refuses_widening() {
         fs::remove_dir_all(&markers).unwrap();
         fs::write(&markers, b"blocked").unwrap();
         let mut requested = capability_grant(false);
-        requested["folderScope"] = access.map(|a| json!({"path":"/work/tree","access":a})).unwrap_or(json!(null));
+        requested["folderScope"] = access.map(|a| json!({"path":folder_path,"access":a})).unwrap_or(json!(null));
         let result = set_thread_conversation_capabilities(app.handle().clone(), id.clone(), requested.clone()).await;
         assert!(result.unwrap_err().contains("restart-safe revocation failed"));
         let mut stored: serde_json::Value = serde_json::from_slice(
@@ -2099,7 +2108,8 @@ async fn failed_marker_still_persists_narrowing_but_refuses_widening() {
         ensure_thread_dir_exists(&data_dir, &restarted_id).unwrap();
         update_thread_metadata(&data_dir, &restarted_id, &stored).unwrap();
         let restored = super::capabilities::read_conversation_capabilities(&data_dir, &restarted_id).await.unwrap();
-        assert_eq!(restored, expected);
+        // Without directory durability, saved authority must require fresh consent.
+        assert_eq!(restored, if cfg!(unix) { expected } else { capability_grant(false) });
     }
 }
 
@@ -2128,10 +2138,12 @@ async fn failed_marker_narrowing_reports_metadata_sync_failure() {
 #[test]
 fn narrowing_fallback_validates_stored_identity_and_refuses_path_switch() {
     let root = tempfile::tempdir().unwrap();
+    let folder_path = authority_folder_path("work-tree");
+    let different_path = authority_folder_path("different-tree");
     let id = "narrow-identity";
     ensure_thread_dir_exists(root.path(), id).unwrap();
     let mut original = capability_grant(true);
-    original["folderScope"] = json!({"path":"/work/tree","access":"write"});
+    original["folderScope"] = json!({"path":folder_path,"access":"write"});
     let mut record = json!({"id":"wrong-id","metadata":{"conversationCapabilities":original}});
     update_thread_metadata(root.path(), id, &record).unwrap();
     let patch = super::capabilities::patch_narrowing_capabilities;
@@ -2140,7 +2152,7 @@ fn narrowing_fallback_validates_stored_identity_and_refuses_path_switch() {
     update_thread_metadata(root.path(), id, &record).unwrap();
     let before = fs::read(get_thread_metadata_path(root.path(), id).unwrap()).unwrap();
     let mut switched = capability_grant(false);
-    switched["folderScope"] = json!({"path":"/different/tree","access":"read"});
+    switched["folderScope"] = json!({"path":different_path,"access":"read"});
     assert!(patch(root.path(), id, switched).unwrap_err().contains("widen"));
     assert_eq!(fs::read(get_thread_metadata_path(root.path(), id).unwrap()).unwrap(), before);
 }
@@ -2149,19 +2161,20 @@ fn narrowing_fallback_validates_stored_identity_and_refuses_path_switch() {
 // folder revocation or become an unrelated persisted widening on fallback.
 #[tokio::test]
 async fn failed_marker_narrows_folder_with_global_flags_overlaid() {
+    let folder_path = authority_folder_path("work-tree");
     for access in [None, Some("read")] {
         let (app, data_dir) = mock_app_with_temp_data_dir();
         let created = create_thread(app.handle().clone(), create_test_thread("marker-global-flags"))
             .await.unwrap();
         let id = created["id"].as_str().unwrap().to_string();
         let mut original = capability_grant(false);
-        original["folderScope"] = json!({"path":"/work/tree","access":"write"});
+        original["folderScope"] = json!({"path":folder_path,"access":"write"});
         set_thread_conversation_capabilities(app.handle().clone(), id.clone(), original).await.unwrap();
         let markers = data_dir.join("conversation-denials");
         fs::remove_dir_all(&markers).unwrap();
         fs::write(&markers, b"blocked").unwrap();
         let mut requested = capability_grant(true);
-        requested["folderScope"] = access.map(|a| json!({"path":"/work/tree","access":a})).unwrap_or(json!(null));
+        requested["folderScope"] = access.map(|a| json!({"path":folder_path,"access":a})).unwrap_or(json!(null));
         let error = set_thread_conversation_capabilities(app.handle().clone(), id.clone(), requested.clone())
             .await.unwrap_err();
         assert!(error.contains("requested narrowing was saved"), "{error}");
@@ -2178,19 +2191,23 @@ async fn failed_marker_narrows_folder_with_global_flags_overlaid() {
         stored["id"] = json!(restarted_id);
         ensure_thread_dir_exists(&data_dir, &restarted_id).unwrap();
         update_thread_metadata(&data_dir, &restarted_id, &stored).unwrap();
-        assert_eq!(super::capabilities::read_conversation_capabilities(&data_dir, &restarted_id).await.unwrap(), expected);
+        let restored = super::capabilities::read_conversation_capabilities(&data_dir, &restarted_id).await.unwrap();
+        // Still verify persistence above; non-Unix restart must fail closed.
+        assert_eq!(restored, if cfg!(unix) { expected } else { capability_grant(false) });
     }
 }
 
 #[test]
 fn narrowing_fallback_global_flags_never_allow_folder_widening() {
     let root = tempfile::tempdir().unwrap();
+    let folder_path = authority_folder_path("work-tree");
+    let different_path = authority_folder_path("different-tree");
     let id = "narrow-global-folder";
     ensure_thread_dir_exists(root.path(), id).unwrap();
     for (previous, requested) in [
-        (json!(null), json!({"path":"/work/tree","access":"read"})),
-        (json!({"path":"/work/tree","access":"read"}), json!({"path":"/work/tree","access":"write"})),
-        (json!({"path":"/work/tree","access":"write"}), json!({"path":"/different/tree","access":"read"})),
+        (json!(null), json!({"path":folder_path,"access":"read"})),
+        (json!({"path":folder_path,"access":"read"}), json!({"path":folder_path,"access":"write"})),
+        (json!({"path":folder_path,"access":"write"}), json!({"path":different_path,"access":"read"})),
     ] {
         let mut original = capability_grant(false);
         original["folderScope"] = previous;
