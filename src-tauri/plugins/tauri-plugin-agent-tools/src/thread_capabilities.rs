@@ -133,18 +133,51 @@ pub fn denied() -> ThreadCapabilities {
 
 /// Process entries distinguish never-loaded from explicitly denied. A durable
 /// marker blocks restart restoration after a failed metadata write. Marker I/O
-/// and mirror transitions share the mirror mutex, so no stale loader or
-/// confirmation can erase a newer revoke.
+/// is serialized per identity, never under the mirror mutex.
+/// Revocations publish denial before waiting for I/O; confirmations recheck
+/// their generation after I/O and repair a marker if a revocation raced.
 static CONSENT_ROOT: OnceLock<Arc<dyn Fn() -> PathBuf + Send + Sync>> = OnceLock::new();
 pub fn set_consent_root_resolver(resolve: Arc<dyn Fn() -> PathBuf + Send + Sync>) {
     let _ = CONSENT_ROOT.set(resolve);
 }
+/// Only marker operations take this lock; never acquire it while holding the
+/// mirror or spawn-admission lock. Entries live as long as mirror identities.
+fn marker_lock(thread_id: &str) -> Arc<Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    LOCKS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap()
+        .entry(thread_id.to_string())
+        .or_default()
+        .clone()
+}
 fn marker(thread_id: &str) -> Result<Option<PathBuf>, String> {
     let segment = crate::workspace::thread_segment(thread_id)?;
-    Ok(CONSENT_ROOT.get().map(|root| root().join("conversation-denials").join(segment)))
+    Ok(CONSENT_ROOT
+        .get()
+        .map(|root| root().join("conversation-denials").join(segment)))
 }
-fn write_denial(thread_id: &str) -> Result<(), String> {
-    if let Some(path) = marker(thread_id)? {
+#[cfg(test)]
+type IoHook = Arc<dyn Fn(&str) + Send + Sync>;
+#[cfg(test)]
+fn io_hooks() -> &'static Mutex<HashMap<String, IoHook>> {
+    static HOOKS: OnceLock<Mutex<HashMap<String, IoHook>>> = OnceLock::new();
+    HOOKS.get_or_init(Default::default)
+}
+#[cfg(test)]
+fn before_io(thread_id: &str, operation: &str) {
+    let hook = io_hooks().lock().unwrap().get(thread_id).cloned();
+    if let Some(hook) = hook {
+        hook(operation);
+    }
+}
+fn write_denial_at(thread_id: &str, path: Option<PathBuf>) -> Result<(), String> {
+    #[cfg(test)]
+    before_io(thread_id, "write");
+    #[cfg(not(test))]
+    let _ = thread_id;
+    if let Some(path) = path {
         let parent = path.parent().unwrap();
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         // Contents are deliberately irrelevant: even a corrupt/empty marker denies.
@@ -157,21 +190,23 @@ fn write_denial(thread_id: &str) -> Result<(), String> {
 }
 fn sync_directory(path: &std::path::Path) -> Result<(), String> {
     #[cfg(unix)]
-    std::fs::File::open(path).and_then(|f| f.sync_all()).map_err(|e| e.to_string())?;
+    std::fs::File::open(path)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| e.to_string())?;
     #[cfg(not(unix))]
     let _ = path;
     Ok(())
 }
-fn remove_denial(thread_id: &str) -> Result<(), String> {
-    if let Some(path) = marker(thread_id)? {
+fn remove_denial_at(thread_id: &str, marker_path: Option<PathBuf>) -> Result<(), String> {
+    if let Some(path) = marker_path {
         match std::fs::remove_file(&path) {
             Ok(()) => {
                 if let Err(error) = sync_directory(path.parent().unwrap()) {
-                    let _ = write_denial(thread_id);
+                    let _ = write_denial_at(thread_id, Some(path.clone()));
                     return Err(error);
                 }
-            },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.to_string()),
         }
     }
@@ -180,31 +215,50 @@ fn remove_denial(thread_id: &str) -> Result<(), String> {
 /// Called only with a host-validated disk snapshot. Never overwrite an entry,
 /// including explicit denial, even if disk still contains an older grant.
 pub fn restore_if_absent(thread_id: &str, grant: ThreadCapabilities) -> Result<(), String> {
+    restore_at(thread_id, grant, marker(thread_id)?)
+}
+fn restore_at(
+    thread_id: &str,
+    grant: ThreadCapabilities,
+    marker_path: Option<PathBuf>,
+) -> Result<(), String> {
     grant.validate()?;
-    let mut map = confirmed().lock().unwrap();
-    if map.contains_key(thread_id) { return Ok(()); }
+    if confirmed().lock().unwrap().contains_key(thread_id) {
+        return Ok(());
+    }
+    let lock = marker_lock(thread_id);
+    let _io = lock.lock().unwrap();
+    #[cfg(test)]
+    before_io(thread_id, "restore");
     // Platforms without a directory durability primitive cannot safely replay
     // saved authority: an acknowledged marker could disappear after a crash.
     // Explicit grants still work in-process; never auto-restore them there.
-    let blocked = !cfg!(unix) || match marker(thread_id)? {
-        Some(path) => match std::fs::symlink_metadata(path) {
-            Ok(_) => true,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-            Err(_) => true,
-        },
-        None => false,
-    };
-    map.insert(thread_id.to_string(), Confirmed {
-        grant: if blocked { denied() } else { grant },
-        generation: next_generation(),
-        durability_error: None,
-    });
+    let blocked = !cfg!(unix)
+        || match marker_path {
+            Some(path) => match std::fs::symlink_metadata(path) {
+                Ok(_) => true,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+                Err(_) => true,
+            },
+            None => false,
+        };
+    // A revoke/clear can publish while the marker lookup is blocked.
+    let mut map = confirmed().lock().unwrap();
+    map.entry(thread_id.to_string())
+        .or_insert_with(|| Confirmed {
+            grant: if blocked { denied() } else { grant },
+            generation: next_generation(),
+            durability_error: None,
+            denial_token: None,
+        });
     Ok(())
 }
 pub fn denial_persisted(thread_id: &str) -> Result<(), String> {
     let map = confirmed().lock().unwrap();
     match map.get(thread_id).and_then(|e| e.durability_error.clone()) {
-        Some(error) => Err(format!("Access denied in this process, but restart-safe revocation failed: {error}")),
+        Some(error) => Err(format!(
+            "Access denied in this process, but restart-safe revocation failed: {error}"
+        )),
         None => Ok(()),
     }
 }
@@ -213,6 +267,8 @@ struct Confirmed {
     grant: ThreadCapabilities,
     generation: u64,
     durability_error: Option<String>,
+    // Unlike the admission generation, survives stop/finalize barrier bumps.
+    denial_token: Option<u64>,
 }
 
 fn confirmed() -> &'static Mutex<HashMap<String, Confirmed>> {
@@ -237,15 +293,61 @@ pub fn admission() -> &'static tokio::sync::Mutex<()> {
     ADMISSION.get_or_init(Default::default)
 }
 
-/// Drop every elevation for a thread and return the new generation token.
+/// Blocking compatibility entry point: drop elevations and persist denial.
+/// Async hosts use `deny_in_memory` under admission, then `persist_denial_async`.
+/// Never call this while holding spawn admission.
 /// Callers narrow BEFORE persisting, so a failed or lost write can never
 /// leave an earlier confirmation live.
 pub fn narrow(thread_id: &str) -> u64 {
-    let generation = next_generation();
-    let mut map = confirmed().lock().unwrap();
-    let durability_error = write_denial(thread_id).err();
-    map.insert(thread_id.to_string(), Confirmed { grant: denied(), generation, durability_error });
+    let generation = deny_in_memory(thread_id);
+    persist_denial(thread_id, generation);
     generation
+}
+
+/// Synchronous barrier used under spawn admission. No filesystem work or
+/// per-identity I/O lock: even a stalled confirmation cannot delay denial.
+pub fn deny_in_memory(thread_id: &str) -> u64 {
+    let mut map = confirmed().lock().unwrap();
+    let generation = next_generation();
+    map.insert(
+        thread_id.to_string(),
+        Confirmed {
+            grant: denied(),
+            generation,
+            durability_error: Some("Denial persistence is pending".into()),
+            denial_token: Some(generation),
+        },
+    );
+    generation
+}
+
+/// Complete a published denial outside admission, on a blocking worker.
+/// A newer operation may have overtaken this one while it waited for I/O.
+pub fn persist_denial(thread_id: &str, token: u64) {
+    persist_denial_at(thread_id, token, marker(thread_id));
+}
+fn persist_denial_at(thread_id: &str, token: u64, marker_path: Result<Option<PathBuf>, String>) {
+    let lock = marker_lock(thread_id);
+    let _io = lock.lock().unwrap();
+    if confirmed()
+        .lock()
+        .unwrap()
+        .get(thread_id)
+        .and_then(|e| e.denial_token)
+        != Some(token)
+    {
+        return;
+    }
+    let error = marker_path
+        .and_then(|path| write_denial_at(thread_id, path))
+        .err();
+    let mut map = confirmed().lock().unwrap();
+    if let Some(entry) = map
+        .get_mut(thread_id)
+        .filter(|e| e.denial_token == Some(token))
+    {
+        entry.durability_error = error;
+    }
 }
 
 /// Advance a thread's barrier WITHOUT touching its grant, returning the new
@@ -270,18 +372,86 @@ pub fn bump_generation(thread_id: &str) -> u64 {
 /// Confirm elevations after the strict setter actually wrote them, and only
 /// when no newer narrow intervened. Never called on a write error.
 pub fn confirm_if_current(thread_id: &str, grant: ThreadCapabilities, token: u64) -> bool {
-    if grant.validate().is_err() {
+    confirm_at(thread_id, grant, token, marker(thread_id))
+}
+fn confirm_at(
+    thread_id: &str,
+    grant: ThreadCapabilities,
+    token: u64,
+    marker_path: Result<Option<PathBuf>, String>,
+) -> bool {
+    if token == 0 || grant.validate().is_err() {
         return false;
     }
+    let Ok(marker_path) = marker_path else {
+        return false;
+    };
+    let lock = marker_lock(thread_id);
+    let _io = lock.lock().unwrap();
+    if confirmed()
+        .lock()
+        .unwrap()
+        .get(thread_id)
+        .map(|e| e.generation)
+        != Some(token)
+    {
+        return false;
+    }
+    #[cfg(test)]
+    before_io(thread_id, "remove");
+    if let Err(error) = remove_denial_at(thread_id, marker_path.clone()) {
+        // Directory-sync failure may also have failed to recreate the marker.
+        // Do not let deletion acknowledge an earlier, now-removed denial.
+        if let Some(entry) = confirmed().lock().unwrap().get_mut(thread_id) {
+            entry.durability_error = Some(error);
+        }
+        return false;
+    }
+    {
+        let mut map = confirmed().lock().unwrap();
+        if map.get(thread_id).map(|e| e.generation) == Some(token) {
+            map.insert(
+                thread_id.to_string(),
+                Confirmed {
+                    grant,
+                    generation: next_generation(),
+                    durability_error: None,
+                    denial_token: None,
+                },
+            );
+            return true;
+        }
+    }
+    // A synchronous deny/clear overtook removal. Repair BEFORE releasing I/O
+    // serialization so no stale removal can erase its durable denial. Never
+    // hold the process-wide mirror during even this exceptional write.
+    let error = write_denial_at(thread_id, marker_path).err();
     let mut map = confirmed().lock().unwrap();
-    if map.get(thread_id).map(|e| e.generation) != Some(token) {
-        return false;
+    if let Some(entry) = map.get_mut(thread_id) {
+        entry.durability_error = error;
     }
-    if remove_denial(thread_id).is_err() { return false; }
-    map.insert(thread_id.to_string(), Confirmed {
-        grant, generation: next_generation(), durability_error: None,
-    });
-    true
+    false
+}
+
+/// Host entry points keep filesystem latency off async runtime workers.
+/// Resolve the host root before dispatch (it may be runtime/thread-local);
+/// workers receive an owned marker path, never re-resolve a different root.
+pub async fn confirm_async(thread_id: String, grant: ThreadCapabilities, token: u64) -> bool {
+    let path = marker(&thread_id);
+    tokio::task::spawn_blocking(move || confirm_at(&thread_id, grant, token, path))
+        .await
+        .unwrap_or(false)
+}
+pub async fn restore_async(thread_id: String, grant: ThreadCapabilities) -> Result<(), String> {
+    let path = marker(&thread_id)?;
+    tokio::task::spawn_blocking(move || restore_at(&thread_id, grant, path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+pub async fn persist_denial_async(thread_id: String, token: u64) {
+    // A failed worker leaves the synchronous pending error in place (fail closed).
+    let path = marker(&thread_id);
+    let _ = tokio::task::spawn_blocking(move || persist_denial_at(&thread_id, token, path)).await;
 }
 
 /// Finalize a deleted identity in memory, preserving the durable denial (and
@@ -291,9 +461,14 @@ pub fn confirm_if_current(thread_id: &str, grant: ThreadCapabilities, token: u64
 /// confirmations and monitor polls racing with finalization.
 pub fn clear(thread_id: &str) -> u64 {
     let mut map = confirmed().lock().unwrap();
-    let entry = map.entry(thread_id.to_string()).or_insert_with(|| Confirmed {
-        grant: denied(), generation: 0, durability_error: None,
-    });
+    let entry = map
+        .entry(thread_id.to_string())
+        .or_insert_with(|| Confirmed {
+            grant: denied(),
+            generation: 0,
+            durability_error: None,
+            denial_token: None,
+        });
     entry.grant = denied();
     entry.generation = next_generation();
     entry.generation
@@ -320,16 +495,16 @@ pub fn generation(thread_id: &str) -> u64 {
 /// temporary Chat. Callers must additionally intersect any
 /// frozen run/start-time ceiling, without applying `with_global` to that ceiling.
 /// The returned generation is the barrier token for the spawn that follows.
-pub async fn authorize(
-    thread_id: &str,
-) -> Result<(PathBuf, ThreadCapabilities, u64), String> {
+pub async fn authorize(thread_id: &str) -> Result<(PathBuf, ThreadCapabilities, u64), String> {
     let (data_folder, stored) = snapshot(thread_id.to_string()).await?;
     let stored: ThreadCapabilities = serde_json::from_value(stored)
         .map_err(|e| format!("Invalid stored conversation capabilities: {e}"))?;
     let (mirror, generation) = current(thread_id);
     Ok((
         data_folder,
-        stored.with_global(thread_id).intersect(mirror.with_global(thread_id))?,
+        stored
+            .with_global(thread_id)
+            .intersect(mirror.with_global(thread_id))?,
         generation,
     ))
 }
@@ -422,6 +597,73 @@ mod tests {
         !caps.shell_network && !caps.memory_write && caps.folder_scope.is_none()
     }
 
+    #[test]
+    fn slow_marker_io_does_not_block_other_threads() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let id = "slow-marker-write";
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        io_hooks().lock().unwrap().insert(
+            id.into(),
+            Arc::new(move |_| {
+                entered_tx.send(()).unwrap();
+                release_rx.lock().unwrap().recv().unwrap();
+            }),
+        );
+        let writer = std::thread::spawn(move || narrow(id));
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let (read_tx, read_rx) = mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            let _ = current("unrelated-responsive");
+            let _ = generation("unrelated-responsive");
+            read_tx.send(()).unwrap();
+        });
+        let responsive = read_rx.recv_timeout(Duration::from_secs(1)).is_ok();
+        release_tx.send(()).unwrap();
+        writer.join().unwrap();
+        reader.join().unwrap();
+        io_hooks().lock().unwrap().remove(id);
+        assert!(responsive, "marker I/O held the process-wide mirror mutex");
+    }
+
+    #[cfg(feature = "tauri")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn slow_revoke_releases_admission_and_async_worker() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let id = "async-slow-revoke";
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let entered_tx = Mutex::new(Some(entered_tx));
+        let (release_tx, release_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        io_hooks().lock().unwrap().insert(
+            id.into(),
+            Arc::new(move |_| {
+                if let Some(tx) = entered_tx.lock().unwrap().take() {
+                    let _ = tx.send(());
+                }
+                release_rx.lock().unwrap().recv().unwrap();
+            }),
+        );
+        let revoke = tokio::spawn(crate::commands::revoke_thread_consent(id));
+        tokio::time::timeout(Duration::from_secs(5), entered_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(is_denied(&current(id).0));
+        let admission_free = admission().try_lock().is_ok();
+        release_tx.send(()).unwrap();
+        revoke.await.unwrap();
+        io_hooks().lock().unwrap().remove(id);
+        assert!(
+            admission_free,
+            "durability work must not hold spawn admission"
+        );
+        denial_persisted(id).unwrap();
+    }
+
     /// A fresh process has confirmed nothing, so every thread reads denied at
     /// the reserved generation 0.
     #[test]
@@ -501,7 +743,10 @@ mod tests {
         assert_ne!(bumped, confirmed_at, "the barrier advanced");
         let (caps, generation) = current(id);
         assert_eq!(generation, bumped, "polls read the bumped token");
-        assert!(caps.shell_network, "the grant survives a stop, unlike a revoke");
+        assert!(
+            caps.shell_network,
+            "the grant survives a stop, unlike a revoke"
+        );
     }
 
     /// Deleting a thread forgets it, so an id supplied again at creation
@@ -514,7 +759,10 @@ mod tests {
         clear(id);
         let (caps, generation) = current(id);
         assert!(is_denied(&caps));
-        assert_ne!(generation, 0, "a deleted identity retains an explicit denial barrier");
+        assert_ne!(
+            generation, 0,
+            "a deleted identity retains an explicit denial barrier"
+        );
         assert!(!confirm_if_current(id, elevated(), token));
         assert!(is_denied(&current(id).0));
     }
@@ -524,10 +772,79 @@ mod tests {
     fn saved_grants_require_explicit_confirmation_without_directory_durability() {
         let id = "unsupported-directory-durability";
         restore_if_absent(id, elevated()).unwrap();
-        assert!(is_denied(&current(id).0), "saved authority cannot auto-restore");
+        assert!(
+            is_denied(&current(id).0),
+            "saved authority cannot auto-restore"
+        );
         let token = narrow(id);
-        assert!(confirm_if_current(id, elevated(), token), "explicit current-process consent still works");
+        assert!(
+            confirm_if_current(id, elevated(), token),
+            "explicit current-process consent still works"
+        );
         assert!(!is_denied(&current(id).0));
+    }
+
+    /// Runs inside the durable-root test so global root configuration stays
+    /// installed for the entire deterministic race (including repair writes).
+    fn marker_races_keep_newer_denials() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        for operation in ["remove", "restore", "write"] {
+            let id = format!("durable-race-{operation}");
+            let token = if operation == "restore" {
+                0
+            } else {
+                narrow(&id)
+            };
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let release_rx = Mutex::new(release_rx);
+            io_hooks().lock().unwrap().insert(
+                id.clone(),
+                Arc::new(move |op| {
+                    if op == operation {
+                        entered_tx.send(()).unwrap();
+                        release_rx.lock().unwrap().recv().unwrap();
+                    }
+                }),
+            );
+            let worker_id = id.clone();
+            let worker = std::thread::spawn(move || match operation {
+                "remove" => assert!(!confirm_if_current(&worker_id, elevated(), token)),
+                "restore" => restore_if_absent(&worker_id, elevated()).unwrap(),
+                _ => persist_denial(&worker_id, token),
+            });
+            entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            // Both another identity and this identity remain responsive while
+            // disk is stalled; denial does not wait for the I/O serialization.
+            assert_eq!(generation("durable-race-other"), 0);
+            let newer = deny_in_memory(&id);
+            assert!(is_denied(&current(&id).0));
+            assert_eq!(generation(&id), newer);
+            // Stop/delete barriers must not lose pending denial persistence.
+            bump_generation(&id);
+            clear(&id);
+            release_tx.send(()).unwrap();
+            worker.join().unwrap();
+            io_hooks().lock().unwrap().remove(&id);
+            if operation == "remove" {
+                assert!(
+                    marker(&id).unwrap().unwrap().exists(),
+                    "stale removal repairs before releasing I/O"
+                );
+            }
+            persist_denial(&id, newer);
+            denial_persisted(&id).unwrap();
+            assert!(!confirm_if_current(&id, elevated(), token));
+            assert!(is_denied(&current(&id).0));
+            assert!(marker(&id).unwrap().unwrap().exists());
+            confirmed().lock().unwrap().remove(&id);
+            restore_if_absent(&id, elevated()).unwrap();
+            assert!(
+                is_denied(&current(&id).0),
+                "restart must retain raced denial"
+            );
+        }
     }
 
     #[cfg(unix)]
@@ -535,11 +852,18 @@ mod tests {
     fn durable_denials_block_restart_stale_fetch_corruption_and_reused_ids() {
         struct TestDirectory(PathBuf);
         impl Drop for TestDirectory {
-            fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
         }
-        let path = std::env::temp_dir().join(format!("jan-consent-test-{}-{}",
-            std::process::id(), std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let path = std::env::temp_dir().join(format!(
+            "jan-consent-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         std::fs::create_dir(&path).unwrap();
         let _directory = TestDirectory(path.clone());
         let configured = path.clone();
@@ -579,7 +903,20 @@ mod tests {
         assert!(!confirm_if_current(id, elevated(), revoked_at));
         confirmed().lock().unwrap().remove(id);
         restore_if_absent(id, elevated()).unwrap();
-        assert!(is_denied(&current(id).0), "deleted/reused id cannot inherit disk consent");
+        assert!(
+            is_denied(&current(id).0),
+            "deleted/reused id cannot inherit disk consent"
+        );
+        let forged = "durable-unknown-zero";
+        let forged_marker = marker(forged).unwrap().unwrap();
+        std::fs::write(&forged_marker, b"deny").unwrap();
+        assert!(!confirm_if_current(forged, elevated(), 0));
+        assert!(
+            forged_marker.exists(),
+            "unknown zero token cannot erase a denial"
+        );
+        assert_eq!(generation(forged), 0);
+        marker_races_keep_newer_denials();
         // Failed marker writes still deny in-process and surface durability failure.
         let bad = "durable-marker-failure";
         std::fs::create_dir(marker(bad).unwrap().unwrap()).unwrap();
@@ -588,7 +925,10 @@ mod tests {
         restore_if_absent(bad, elevated()).unwrap();
         assert!(is_denied(&current(bad).0));
         clear(bad);
-        assert!(denial_persisted(bad).is_err(), "delete cannot hide failed durable denial");
+        assert!(
+            denial_persisted(bad).is_err(),
+            "delete cannot hide failed durable denial"
+        );
     }
 
     /// Generations are process-monotonic, so a barrier token captured at
@@ -670,8 +1010,10 @@ mod tests {
                 .unwrap()
                 .intersect(denied().with_global("persistent-chat"))
                 .unwrap();
-            assert!(!result.shell_network && !result.memory_write,
-                "frozen false ceilings cannot be widened by global ON");
+            assert!(
+                !result.shell_network && !result.memory_write,
+                "frozen false ceilings cannot be widened by global ON"
+            );
         }
         // Fully forged effective grants cannot supply temporary Chat authority,
         // even with global ON or stale elevated host layers.

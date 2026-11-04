@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { FolderPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -20,18 +20,27 @@ function useThreadFolder(threadId: string) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const thread = useThreads((s) => s.threads[threadId])
-  const folder = useThreads((s) => s.getConversationCapabilities(threadId).folderScope?.path ?? null)
+  // The capability getter resolves a fresh folder object on each read. Subscribe
+  // to primitives so React's external-store snapshot remains stable.
+  const effectivePath = useThreads((s) => s.getConversationCapabilities(threadId).folderScope?.path ?? null)
+  const effectiveAccess = useThreads((s) => s.getConversationCapabilities(threadId).folderScope?.access ?? null)
+  const effectiveFolder = useMemo(() => effectivePath && effectiveAccess
+    ? { path: effectivePath, access: effectiveAccess }
+    : null, [effectivePath, effectiveAccess])
   const persistedFolder = resolveConversationCapabilities(thread?.metadata?.conversationCapabilities).folderScope
   // The strict setter denies synchronously, including clearing persisted metadata.
   // Keep a retry affordance if its subsequent host/persistence operation fails.
   const [recovery, setRecovery] = useState<{ threadId: string; folder: typeof persistedFolder; requestedScope: typeof persistedFolder; error: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const sequence = useRef(0)
-  const savedFolder = persistedFolder ?? (recovery?.threadId === threadId ? recovery.folder : null)
+  const recoveryFolder = recovery?.threadId === threadId ? recovery.folder : null
+  const savedFolder = effectiveFolder ?? persistedFolder ?? recoveryFolder
+  // Display continuity is not authority: denied/pending scopes stay inactive.
+  const folder = effectiveFolder?.path ?? recoveryFolder?.path ?? null
   // Keep removal intent (null) distinct from the saved folder used for display.
   const retryScope = recovery?.threadId === threadId ? recovery.requestedScope : null
   const error = recovery?.threadId === threadId ? recovery.error : ''
-  const access = useThreads((s) => s.getConversationCapabilities(threadId).folderScope?.access ?? 'write')
+  const access = !saving && effectiveFolder ? effectiveFolder.access : null
 
   const apply = useCallback(
     async (folderScope: { path: string; access: 'read' | 'write' } | null) => {
@@ -80,6 +89,7 @@ export function ThreadWorkspacePill({ threadId }: { threadId: string }) {
       {folder ? <CoworkWorkspacePill
         folder={folder}
         access={access}
+        saving={saving}
         onAccessChange={(next) => folder && void apply({ path: folder, access: next })}
         onAttach={() => void attach()}
         onDetach={() => void apply(null)}

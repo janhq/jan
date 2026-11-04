@@ -787,7 +787,7 @@
     "removeFolder": "Remove",
     "hostRevokeUnconfirmed": "Jan could not confirm this permission change. Background tasks may still have the previous access. Retry, or quit Jan to stop them.",
     "saveFailed": "Permission change could not be saved. Elevated access stays off until a save succeeds.",
-    "folderSelected": "Read-only folder access to {{path}} is pending for your next chat.",
+    "folderSelected": "Folder added",
     "removeProject": "Remove project selection"
   },
   "homeMode": {

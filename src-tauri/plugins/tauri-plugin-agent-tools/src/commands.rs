@@ -927,7 +927,7 @@ pub async fn stop_all_thread_monitors(thread_id: String) -> Result<(), AgentTool
     Ok(())
 }
 
-/// Advance the barrier (`advance` is [`crate::thread_capabilities::narrow`]
+/// Advance the barrier (`advance` is [`crate::thread_capabilities::deny_in_memory`]
 /// for a revocation, [`crate::thread_capabilities::bump_generation`] for a
 /// plain stop) and empty this thread's process bucket under the admission
 /// guard, then reap outside it. Returns the new generation token.
@@ -993,7 +993,11 @@ pub async fn revoke_thread_capabilities(thread_id: String) -> Result<(), AgentTo
 /// rejected request writes nothing and narrows nothing.) The mirror is never
 /// restored on failure; it is re-confirmed only by a successful write.
 pub async fn revoke_thread_consent(thread_id: &str) -> u64 {
-    deny_thread_and_stop_monitors(thread_id, crate::thread_capabilities::narrow).await
+    let token = deny_thread_and_stop_monitors(
+        thread_id, crate::thread_capabilities::deny_in_memory,
+    ).await;
+    crate::thread_capabilities::persist_denial_async(thread_id.to_string(), token).await;
+    token
 }
 
 async fn deny_thread_and_stop_monitors(thread_id: &str, advance: fn(&str) -> u64) -> u64 {
@@ -1031,12 +1035,12 @@ pub async fn forget_thread_consent(thread_id: &str) {
 /// Confirm elevations after the strict setter actually wrote them. Returns
 /// false when a newer narrow intervened, in which case the thread stays
 /// denied -- fail closed.
-pub fn confirm_thread_consent(
+pub async fn confirm_thread_consent(
     thread_id: &str,
     grant: crate::thread_capabilities::ThreadCapabilities,
     token: u64,
 ) -> bool {
-    crate::thread_capabilities::confirm_if_current(thread_id, grant, token)
+    crate::thread_capabilities::confirm_async(thread_id.to_string(), grant, token).await
 }
 
 /// Validate the folder a surface asked to attach (Cowork's shared folder, chat's
@@ -1947,7 +1951,7 @@ mod tests {
             shell_network: true,
             memory_write: true,
         };
-        assert!(confirm_thread_consent(id, grant, token));
+        assert!(confirm_thread_consent(id, grant, token).await);
         let confirmed_at = crate::thread_capabilities::generation(id);
         stop_all_thread_monitors(id.to_string()).await.unwrap();
         let (caps, generation) = crate::thread_capabilities::current(id);
@@ -1973,7 +1977,7 @@ mod tests {
         let (grant, finalized_at) = crate::thread_capabilities::current(id);
         assert_ne!(finalized_at, revoked_at, "invalidate pre-finalization polls");
         assert!(!grant.shell_network && !grant.memory_write && grant.folder_scope.is_none());
-        assert!(!confirm_thread_consent(id, crate::thread_capabilities::denied(), revoked_at));
+        assert!(!confirm_thread_consent(id, crate::thread_capabilities::denied(), revoked_at).await);
         assert!(!thread_monitors().lock().unwrap().contains_key(id));
     }
 

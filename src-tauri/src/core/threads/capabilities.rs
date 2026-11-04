@@ -139,7 +139,7 @@ pub async fn read_conversation_capabilities(
     }
     validate_conversation_capabilities(&value)?;
     let grant = serde_json::from_value(value.clone()).map_err(|e| format!("Invalid consent: {e}"))?;
-    tauri_plugin_agent_tools::thread_capabilities::restore_if_absent(thread_id, grant)?;
+    tauri_plugin_agent_tools::thread_capabilities::restore_async(thread_id.to_string(), grant).await?;
     let (mirror, _) = tauri_plugin_agent_tools::thread_capabilities::current(thread_id);
     let stored: tauri_plugin_agent_tools::thread_capabilities::ThreadCapabilities =
         serde_json::from_value(value).map_err(|e| e.to_string())?;

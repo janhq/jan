@@ -306,7 +306,7 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
     // (consistent with the host) and the on-disk value reachable through the
     // reconfirm flow; a retry simply runs the setter again. The grant was
     // validated before the write, so this false really is concurrency.
-    if !tauri_plugin_agent_tools::confirm_thread_consent(&thread_id, grant, token) {
+    if !tauri_plugin_agent_tools::confirm_thread_consent(&thread_id, grant, token).await {
         return Err(
             "The permission change was written but a concurrent change prevented its \
              activation; elevated access stays off. Try again."

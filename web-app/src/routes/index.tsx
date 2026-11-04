@@ -140,7 +140,7 @@ function Index() {
       ...draft,
       folderScope: { path: picked, access: 'write' },
     }))
-    toast.info(t('common:conversationScope.folderSelected', { path: picked }))
+    toast.info(t('common:conversationScope.folderSelected'))
   }, [isTemporaryChat, selectedModel, modelSupportsTools, pickScopeFolder, t])
   const prepareThreadCreation = useCallback(() => {
     const snapshot = scopeDraft

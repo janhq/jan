@@ -1,12 +1,12 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   state: {
     threads: { t1: { id: 't1', metadata: {} } } as Record<string, any>,
     caps: { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false } as any,
-    setConversationCapabilities: vi.fn(async () => undefined),
+    setConversationCapabilities: vi.fn(async (_id: string, _caps: any) => undefined),
   },
   picked: '/work/proj' as string | null,
 }))
@@ -82,12 +82,56 @@ describe('ThreadWorkspacePill', () => {
     })
     render(<ThreadWorkspacePill threadId="t1" />)
     fireEvent.click(screen.getByRole('button', { name: 'common:workspace.a11yWithFolder' }))
+    const popover = screen.getByRole('dialog')
     fireEvent.click(await screen.findByText('common:workspace.detach'))
     expect(await screen.findByRole('alert')).toHaveTextContent('common:conversationScope.saveFailed')
+    expect(screen.getByRole('dialog')).toBe(popover)
+    expect(screen.getByRole('switch')).not.toBeChecked()
+    expect(screen.queryByText('common:workspace.writable')).toBeNull()
+    expect(screen.queryByText('common:workspace.readOnly')).toBeNull()
+    expect(screen.queryByText('common:conversationScope.folderNeedsConfirmation')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'common:run.tryAgain' }))
     await waitFor(() => expect(h.state.setConversationCapabilities).toHaveBeenCalledTimes(2))
     expect(h.state.setConversationCapabilities).toHaveBeenNthCalledWith(2, 't1',
       expect.objectContaining({ folderScope: null }))
+  })
+
+  it.each(['read', 'write'] as const)('keeps the popover mounted while saving %s access', async (nextAccess) => {
+    const initialAccess = nextAccess === 'read' ? 'write' : 'read'
+    h.state.caps = { ...h.state.caps, folderScope: { path: saved.path, access: initialAccess } }
+    let finish!: () => void
+    const pending = new Promise<void>((resolve) => { finish = resolve })
+    h.state.setConversationCapabilities.mockImplementation(async (_id, caps) => {
+      h.state.caps = { ...caps, folderScope: null }
+      h.state.threads.t1.metadata = { conversationCapabilities: h.state.caps }
+      await pending
+      h.state.caps = caps
+      h.state.threads.t1.metadata = { conversationCapabilities: caps }
+    })
+    render(<ThreadWorkspacePill threadId="t1" />)
+    fireEvent.click(screen.getByRole('button', { name: initialAccess === 'write'
+      ? 'common:workspace.a11yWithFolder' : 'common:workspace.a11yWithFolderReadOnly' }))
+    const popover = screen.getByRole('dialog')
+    const toggle = screen.getByRole('switch')
+    fireEvent.click(toggle)
+    expect(screen.getByRole('dialog')).toBe(popover)
+    expect(screen.getByRole('switch')).toBe(toggle)
+    expect(toggle).toBeDisabled()
+    expect(toggle).not.toBeChecked()
+    expect(screen.queryByText('common:workspace.writable')).toBeNull()
+    expect(screen.queryByText('common:workspace.readOnly')).toBeNull()
+    expect(screen.queryByText('common:conversationScope.folderNeedsConfirmation')).toBeNull()
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'saved' })).toBeInTheDocument()
+    for (const action of ['open', 'reveal', 'change', 'detach']) {
+      expect(screen.getByRole('button', { name: `common:workspace.${action}` })).toBeDisabled()
+    }
+    await act(async () => { finish(); await pending })
+    expect(screen.getByRole('dialog')).toBe(popover)
+    expect(screen.getByRole('switch')).toBe(toggle)
+    expect(toggle).toBeEnabled()
+    expect(toggle).toHaveAttribute('aria-checked', String(nextAccess === 'write'))
+    expect(screen.getByText(nextAccess === 'write' ? 'common:workspace.writable' : 'common:workspace.readOnly')).toBeInTheDocument()
   })
 
   it('shows the folder and says read only when the grant is read', () => {

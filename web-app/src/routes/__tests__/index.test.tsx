@@ -465,7 +465,7 @@ describe('Index route', () => {
         'common:conversationScope.folderSelected'
       )
       // The pill names the folder and states the access it really has.
-      expect(screen.getByRole('button', { name: /workspace\.a11yWithFolder/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'common:workspace.a11yWithFolder' })).toBeInTheDocument()
       fireEvent.click(screen.getByTestId('invoke-prepare'))
       await waitFor(() =>
         expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
