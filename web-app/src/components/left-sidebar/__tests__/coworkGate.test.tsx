@@ -48,7 +48,7 @@ vi.mock('@/components/ui/sidebar', () => {
     },
     SidebarTrigger: () => null,
     SidebarRail: () => null,
-    useSidebar: () => ({ isMobile: false, setOpenMobile: vi.fn() }),
+    useSidebar: () => ({ isMobile: false, setOpenMobile: vi.fn(), closeMobileForNavigation: vi.fn() }),
   }
 })
 vi.mock('@/components/animated-icon/animated-lucide', () => ({

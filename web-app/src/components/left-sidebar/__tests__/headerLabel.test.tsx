@@ -40,7 +40,7 @@ vi.mock('@/components/ui/sidebar', () => {
     SidebarHeader: Box,
     SidebarTrigger: () => null,
     SidebarRail: () => null,
-    useSidebar: () => ({ isMobile: false, setOpenMobile: vi.fn() }),
+    useSidebar: () => ({ isMobile: false, setOpenMobile: vi.fn(), closeMobileForNavigation: vi.fn() }),
   }
 })
 

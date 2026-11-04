@@ -57,6 +57,65 @@ it('closes the mobile overlay when navigation lands on a new page', () => {
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
 
+// Stand-in for a routed page: a fresh composer (as ChatInput) mounts per path.
+const routeTree = () => (
+  <SidebarProvider open>
+    <LeftSidebar />
+    <SidebarTrigger data-testid="outer-trigger" className="outer" />
+    <textarea
+      key={env.pathname}
+      aria-label="composer"
+      data-navigation-focus-target
+      autoFocus
+    />
+  </SidebarProvider>
+)
+
+const settle = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+it('keeps the destination composer focused when navigation closes the overlay', async () => {
+  const view = render(routeTree())
+  const toggle = screen.getAllByRole('button', { name: 'common:sidebar.toggle' }).at(-1)!
+  fireEvent.click(toggle)
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+  env.pathname = '/threads/1'
+  act(() => view.rerender(routeTree()))
+  await settle()
+
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.getByLabelText('composer')).toHaveFocus()
+  expect(toggle).not.toHaveFocus()
+})
+
+it('still returns focus to the toggle when Escape dismisses the overlay', async () => {
+  render(routeTree())
+  const toggle = screen.getAllByRole('button', { name: 'common:sidebar.toggle' }).at(-1)!
+  fireEvent.click(toggle)
+  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+  await settle()
+
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(toggle).toHaveFocus()
+})
+
+it('returns focus to the toggle on Escape after an earlier navigation close', async () => {
+  const view = render(routeTree())
+  const toggle = () => screen.getAllByRole('button', { name: 'common:sidebar.toggle' }).at(-1)!
+  fireEvent.click(toggle())
+  env.pathname = '/threads/1'
+  act(() => view.rerender(routeTree()))
+  await settle()
+
+  fireEvent.click(toggle())
+  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+  await settle()
+  expect(toggle()).toHaveFocus()
+})
+
 it('keeps the overlay open while the page does not change', () => {
   const view = render(tree())
   fireEvent.click(screen.getAllByRole('button', { name: 'common:sidebar.toggle' }).at(-1)!)

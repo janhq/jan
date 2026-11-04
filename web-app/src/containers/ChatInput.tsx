@@ -2452,6 +2452,7 @@ const ChatInput = memo(function ChatInput({
                 maxRows={10}
                 value={prompt}
                 data-testid={'chat-input'}
+                data-navigation-focus-target
                 onScroll={(event) => {
                   if (highlightRef.current) {
                     highlightRef.current.scrollTop =
