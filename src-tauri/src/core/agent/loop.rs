@@ -8982,7 +8982,7 @@ mod tests {
         .unwrap();
         let projected = project(&transcript, None, true);
         let text = projected[0]["content"].as_str().unwrap();
-        assert!(text.contains("## Todo list\nPhase: Ship\n- [completed] write the ledger\n\
+        assert!(text.contains("## Todo list (4 lines)\nPhase: Ship\n- [completed] write the ledger\n\
                                - [in_progress] wire the preflight\n- [abandoned] old idea"), "{text}");
     }
 

@@ -1631,7 +1631,7 @@ mod tests {
         let text = state_text(&third);
         assert!(text.contains("## Progress\nFIRST and SECOND"), "{text}");
         assert!(!text.contains("summarizer could not run"), "{text}");
-        assert!(text.contains("## Compaction note\nOnly 0 of 1 parts"), "{text}");
+        assert!(text.contains("## Compaction note (1 lines)\nOnly 0 of 1 parts"), "{text}");
         assert_eq!(report.model, None, "no model wrote sections this time");
         // And they keep being carried: the next pass still has them to merge.
         let back = continuation::parse(&third).unwrap();

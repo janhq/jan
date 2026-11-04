@@ -35,6 +35,8 @@ const MESSAGE_HEADING: &str = "### Message ";
 const OMITTED_PREFIX: &str = "[";
 const OMITTED_SUFFIX: &str = " earlier user messages omitted to fit the context budget]";
 const FILES_HEADING: &str = "## Files touched";
+/// The `git status` block under Files touched, counted like the sections.
+const GIT_HEADING: &str = "### Git status ";
 const ERRORS_HEADING: &str = "## Recent errors";
 
 /// The sections a model writes, in order. Everything else is built by code.
@@ -471,14 +473,18 @@ pub(crate) fn build(
         for path in files {
             out.push_str(&format!("- {}\n", path.replace('\n', " ")));
         }
+        // Counted, like every block of text the harness does not control: a
+        // branch or path line can read as a model heading (`## Findings`),
+        // and `parse` would take everything after it as model sections.
         if let Some(status) = &harness.git_status {
-            out.push_str(&reminder::neutralize(status));
-            out.push('\n');
+            let status = reminder::neutralize(status.trim_end());
+            out.push_str(&format!("{GIT_HEADING}({} lines)\n{status}\n", counted(&status)));
         }
     }
 
     for (heading, body) in &harness.sections {
-        out.push_str(&format!("\n## {heading}\n{}\n", reminder::neutralize(body.trim_end())));
+        let body = reminder::neutralize(body.trim_end());
+        out.push_str(&format!("\n## {heading} ({} lines)\n{body}\n", counted(&body)));
     }
 
     if !gathered.errors.is_empty() {
@@ -575,6 +581,18 @@ pub(crate) fn parse(msg: &Value) -> Option<PreviousState> {
                 state.files.push(path.to_string());
                 i += 1;
             }
+            if let Some(n) = lines.get(i).and_then(|l| count_of(l, GIT_HEADING)) {
+                i += 1 + n;
+            }
+        } else if let Some(n) = line
+            .strip_prefix("## ")
+            .filter(|_| !MODEL_HEADINGS.contains(&line))
+            .and_then(|rest| count_of(rest, ""))
+        {
+            // A harness section: rebuilt live on every compaction, so its
+            // body is skipped rather than read. A state from before the
+            // counts falls through to the line-by-line walk below instead.
+            i += 1 + n;
         } else if line == ERRORS_HEADING {
             i += 1;
             while let Some(error) = lines.get(i).filter(|l| l.starts_with("- ")) {
@@ -683,6 +701,61 @@ mod tests {
         assert_eq!(back.user_messages, gathered.user_messages);
         assert_eq!(back.files, vec!["src/a.rs".to_string(), "b.txt".to_string()]);
         assert_eq!(back.model_sections.as_deref(), Some(sections));
+    }
+
+    /// Harness sections and the git status block are counted like the task,
+    /// so a body line that reads as a model heading -- a monitor script with
+    /// `## Progress`, a branch line `## Findings` -- stays in its body: the
+    /// model sections, the files and the errors after it read back intact.
+    #[test]
+    fn harness_bodies_that_look_like_model_headings_round_trip() {
+        let gathered = Gathered {
+            turn: 3,
+            task: Some("the task".into()),
+            files: {
+                let mut f = FilesTouched::default();
+                f.record("a.rs");
+                f
+            },
+            errors: vec!["- `shell` {}: exit 1".into()],
+            ..Gathered::default()
+        };
+        let mut harness = HarnessContext {
+            git_status: Some("Workspace `git status --short`:\n## Findings\n- x\n M a.rs".into()),
+            ..HarnessContext::default()
+        };
+        harness.push("Running in the background", "monitor 2: echo '\n## Progress\n- done'".into());
+        harness.push("Budget", "## Next actions\nspent $1".into());
+        for sections in [None, Some("## Progress\nreal\n## Current step\na\n## Next actions\nb")] {
+            let state = build(&gathered, &harness, Caps::user_only(1_000), sections);
+            let back = parse(&state).unwrap();
+            assert_eq!(back.model_sections.as_deref(), sections, "{}", state["content"]);
+            assert_eq!(back.errors, gathered.errors);
+            assert_eq!(back.files, vec!["a.rs".to_string()]);
+            assert_eq!(back.task.as_deref(), Some("the task"));
+        }
+    }
+
+    /// A state written before harness sections were counted (never released)
+    /// still reads back its task, files, errors and model sections.
+    #[test]
+    fn a_state_without_section_counts_still_parses() {
+        let inner = format!(
+            "{STATE_HEADER}4]\n{INTRO}\n\n## Task (verbatim, 1 lines)\nold task\n\n\
+             ## Files touched\n- a.rs\nWorkspace `git status --short`:\n M a.rs\n\n\
+             ## Workspace\n/tmp/x\n\n## Recent errors\n- `shell` {{}}: boom\n\n\
+             ## Progress\nold\n## Current step\na\n## Next actions\nb"
+        );
+        let state = json!({ "role": "user", "content": reminder::wrap(&inner) });
+        let back = parse(&state).unwrap();
+        assert_eq!(back.turn, 4);
+        assert_eq!(back.task.as_deref(), Some("old task"));
+        assert_eq!(back.files, vec!["a.rs".to_string()]);
+        assert_eq!(back.errors, vec!["- `shell` {}: boom".to_string()]);
+        assert_eq!(
+            back.model_sections.as_deref(),
+            Some("## Progress\nold\n## Current step\na\n## Next actions\nb")
+        );
     }
 
     /// The cap keeps the task and the newest messages, and says how many went.
@@ -903,7 +976,7 @@ mod tests {
         harness.push("Todo list", "Phase: one\n- [in_progress] wire it".into());
         let state = build(&gathered, &harness, Caps::user_only(1_000), Some("## Current step\nx\n## Next actions\ny"));
         let text = state["content"].as_str().unwrap();
-        assert!(text.contains("## Subagents\n- explore (sub-explore-1): done"), "{text}");
+        assert!(text.contains("## Subagents (2 lines)\n- explore (sub-explore-1): done"), "{text}");
         assert!(text.contains("result: /tmp/blackboard/explore.md"), "{text}");
         assert!(text.contains("sub-fix-2): running"), "{text}");
         assert!(!text.contains(answer), "a child's answer is cited, not inlined: {text}");
@@ -925,7 +998,7 @@ mod tests {
         for absent in ["## Subagents", "## Todo list", "## Goal", "blackboard"] {
             assert!(!text.contains(absent), "{absent} leaked into a child: {text}");
         }
-        assert!(text.contains("## Subagent\nYou are the subagent fix"));
+        assert!(text.contains("## Subagent (1 lines)\nYou are the subagent fix"));
         assert!(text.contains("a steer from the parent"));
     }
 
