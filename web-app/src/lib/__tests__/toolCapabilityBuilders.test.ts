@@ -62,9 +62,6 @@ vi.mock('@/hooks/useMCPServers', () => ({
 vi.mock('@/hooks/useWebSearchConfig', () => ({
   useWebSearchConfig: { getState: () => ({ webSearchEnabled: h.webSearch }) },
 }))
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: { getInstance: () => ({ get: () => null }) },
-}))
 vi.mock('@/lib/mcp-orchestrator', () => ({
   mcpOrchestrator: { getRelevantTools: vi.fn() },
 }))

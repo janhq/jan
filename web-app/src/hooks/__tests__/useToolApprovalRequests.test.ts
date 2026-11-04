@@ -5,9 +5,17 @@ import { useToolApproval } from '../useToolApproval'
 import { toolWireName } from '@/lib/extensions/tools'
 
 // Real wire names, so a name shape can never pass for the origin flag.
-const X = toolWireName('acme.one', 'x_tool')
-const Y = toolWireName('acme.one', 'y_tool')
-const EXT = { origin: 'extension' } as const
+// Fresh per test: extension grants are process-local in the store, so a name
+// reused across tests would inherit an earlier test's grant.
+let X = ''
+let Y = ''
+let wireSeq = 0
+beforeEach(() => {
+  wireSeq += 1
+  X = toolWireName('acme.one', `x_tool_${wireSeq}`)
+  Y = toolWireName('acme.one', `y_tool_${wireSeq}`)
+})
+const EXT = { origin: 'extension', extension: { generation: 1 } } as const
 import { assertMcpIdentityAvailable } from '@/lib/chatMcpIdentity'
 import type { MCPTool } from '@/types/completion'
 
@@ -714,6 +722,8 @@ describe('native elevated approvals (explicit native identity)', () => {
     expect(result.current.pending[approvalKey('thread-1', 'tc1')]).toBeDefined()
   })
 
+  const ext = (generation: number) => ({ origin: 'extension' as const, extension: { generation } })
+
   it('keeps an allow-thread approval with the extension that got it', async () => {
     const { result } = renderHook(() => useToolApprovalRequests())
     let p: Promise<boolean>
@@ -848,6 +858,10 @@ describe('native elevated approvals (explicit native identity)', () => {
       again = result.current.requestApproval('tc3', 'x_tool', 'thread-1', 'server-a')
     })
     await expect(again!).resolves.toBe(true)
+    act(() => {
+      result.current.requestApproval('tc6', 'x_tool', 'thread-2', 'ext:acme.one', undefined, ext(1))
+    })
+    expect(result.current.pending[approvalKey('thread-2', 'tc6')]).toBeDefined()
   })
 
   it('keeps an allow-always approval to the one extension tool that got it', async () => {
@@ -870,5 +884,48 @@ describe('native elevated approvals (explicit native identity)', () => {
       again = result.current.requestApproval('tc3', X, 'thread-2', 'ext:acme.one', undefined, EXT)
     })
     await expect(again!).resolves.toBe(true)
+  })
+
+  it('never carries an extension grant to a rebound handler, and never persists it', async () => {
+    const { result } = renderHook(() => useToolApprovalRequests())
+    for (const [id, decision] of [['a1', 'allow-always'], ['a2', 'allow-thread']] as const) {
+      let p: Promise<boolean>
+      act(() => {
+        p = result.current.requestApproval(id, `t_${id}`, 'thread-1', 'ext:acme.one', undefined, ext(1))
+      })
+      act(() => result.current.resolveApproval(id, decision, 'thread-1'))
+      await expect(p!).resolves.toBe(true)
+    }
+    // Nothing process-local reaches the persisted approval store.
+    const stored = useToolApproval.getState()
+    expect(stored.approvedTools).toEqual({})
+    expect(stored.approvedMCPTools).toEqual([])
+    expect(stored.approvedToolsGlobal).toEqual([])
+    expect(stored.approvedServers).toEqual([])
+    // The same extension tool rebound under a new generation asks again.
+    act(() => {
+      result.current.requestApproval('b1', 't_a1', 'thread-1', 'ext:acme.one', undefined, ext(2))
+      result.current.requestApproval('b2', 't_a2', 'thread-1', 'ext:acme.one', undefined, ext(2))
+    })
+    expect(Object.keys(result.current.pending).sort()).toEqual(
+      ['b1', 'b2'].map((id) => approvalKey('thread-1', id)).sort()
+    )
+  })
+
+  it('treats a request with no generation as allow-once only', async () => {
+    const { result } = renderHook(() => useToolApprovalRequests())
+    let p: Promise<boolean>
+    act(() => {
+      p = result.current.requestApproval('tc1', 'once_tool', 'thread-1', 'ext:acme.one', undefined, { origin: 'extension' })
+    })
+    act(() => result.current.resolveApproval('tc1', 'allow-always', 'thread-1'))
+    await expect(p!).resolves.toBe(true)
+    act(() => {
+      result.current.requestApproval('tc2', 'once_tool', 'thread-1', 'ext:acme.one', undefined, { origin: 'extension' })
+      result.current.requestApproval('tc3', 'once_tool', 'thread-1', 'ext:acme.one', undefined, ext(1))
+    })
+    expect(Object.keys(result.current.pending).sort()).toEqual(
+      ['tc2', 'tc3'].map((id) => approvalKey('thread-1', id)).sort()
+    )
   })
 })

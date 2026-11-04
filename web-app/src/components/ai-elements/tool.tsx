@@ -352,6 +352,9 @@ export const ToolApprovalActions = memo(() => {
   const resolveApproval = useToolApprovalRequests((s) => s.resolveApproval)
 
   if (!pending || !toolCallId) return null
+  // Extension grants live in memory for one handler generation, so a
+  // persistent "always" would promise trust the host does not keep.
+  const extension = pending.extension
 
   return (
     <div className="mt-4 space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
@@ -373,6 +376,7 @@ export const ToolApprovalActions = memo(() => {
         <Button
           size="sm"
           variant="outline"
+          autoFocus={extension || pending.strict}
           onClick={() => resolveApproval(toolCallId, 'allow-once', threadId ?? '')}
         >
           {t('tools:toolApproval.allowOnce')}
@@ -388,20 +392,22 @@ export const ToolApprovalActions = memo(() => {
             >
               {t('tools:toolApproval.allowInThread')}
             </Button>
-            <Button
-              size="sm"
-              autoFocus
-              onClick={() => resolveApproval(toolCallId, 'allow-always', threadId ?? '')}
-            >
-              {/* Trusting a server tool-by-tool is the same decision repeated. */}
-              {pending.serverName
-                ? t('tools:toolApproval.allowServerAlways', {
-                    server: pending.serverName,
-                  })
-                : t('tools:toolApproval.allowToolAlways', {
-                    tool: pending.toolName,
-                  })}
-            </Button>
+            {!extension && (
+              <Button
+                size="sm"
+                autoFocus
+                onClick={() => resolveApproval(toolCallId, 'allow-always', threadId ?? '')}
+              >
+                {/* Trusting a server tool-by-tool is the same decision repeated. */}
+                {pending.serverName
+                  ? t('tools:toolApproval.allowServerAlways', {
+                      server: pending.serverName,
+                    })
+                  : t('tools:toolApproval.allowToolAlways', {
+                      tool: pending.toolName,
+                    })}
+              </Button>
+            )}
           </>
         )}
       </div>

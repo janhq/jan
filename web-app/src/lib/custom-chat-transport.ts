@@ -906,6 +906,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private turnRagIdentities?: Set<string>
   private mcpIdentities = new Map<string, string>()
   private turnMcpIdentities?: Map<string, string>
+  // Host-owned handler generation of each advertised extension tool, frozen
+  // with its identity. A reload that rebinds the handler is a different tool.
+  private extensionGenerations = new Map<string, number>()
+  private turnExtensionGenerations?: Map<string, number>
 
   hasAdvertisedNativeTool(name: string): boolean {
     const tools = this.chatRunSnapshot?.tools ?? this.tools
@@ -971,6 +975,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
   getMcpServerForTool(name: string): string | undefined {
     return (this.turnMcpIdentities ?? this.mcpIdentities).get(name)
+  }
+
+  /** The handler generation an extension tool was advertised with this turn. */
+  getExtensionGenerationForTool(name: string): number | undefined {
+    return (this.turnExtensionGenerations ?? this.extensionGenerations).get(name)
   }
   private chatRunSnapshot: { tools?: Record<string, Tool>; system?: string; systemReady?: boolean; planMode?: boolean } | null = null
 
@@ -1217,12 +1226,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     await refreshMemoryDigest()
     if (!this.serviceHub) {
       this.mcpIdentities.clear()
+      this.extensionGenerations.clear()
       this.tools = {}
       return
     }
 
     const toolsRecord: Record<string, Tool> = {}
     const mcpIdentities = new Map<string, string>()
+    const extensionGenerations = new Map<string, number>()
     const ragIdentities = new Set<string>()
 
     // Tool availability is global (shared across all chats).
@@ -1403,6 +1414,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // be redirected to another extension, an MCP server or a native tool.
         // Plan mode refuses it like any non-allowlisted external tool.
         mcpIdentities.set(tool.wireName, tool.server)
+        extensionGenerations.set(tool.wireName, tool.generation)
         toolsRecord[tool.wireName] = {
           description: tool.description,
           inputSchema: jsonSchema(
@@ -1500,6 +1512,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     if (this.chatRunSnapshot !== owningSnapshot || owningSnapshot?.tools) return
     this.ragIdentities = ragIdentities
     this.mcpIdentities = mcpIdentities
+    this.extensionGenerations = extensionGenerations
     this.tools = toolsRecord
     if (owningSnapshot) owningSnapshot.tools = toolsRecord
   }
@@ -1761,6 +1774,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     await this.refreshTools(options.abortSignal, turnModelSelection, true)
     const turnMcpIdentities = new Map(this.mcpIdentities)
+    const turnExtensionGenerations = new Map(this.extensionGenerations)
     const turnRagIdentities = new Set(this.ragIdentities)
     const turnTools = this.tools
 
@@ -1938,6 +1952,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Bind callbacks to this request, not a background menu refresh.
     this.turnRagIdentities = turnRagIdentities
     this.turnMcpIdentities = turnMcpIdentities
+    this.turnExtensionGenerations = turnExtensionGenerations
     const result = streamText({
       model: this.model,
       messages: modelMessages,

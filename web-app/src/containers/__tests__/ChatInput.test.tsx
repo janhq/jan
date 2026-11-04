@@ -270,6 +270,12 @@ vi.mock('@/stores/message-queue-store', () => ({
   useMessageQueue: useMessageQueueImpl,
 }))
 
+// A llamacpp selection reconciles video capability through the extension
+// host's llamacpp service; no service is registered in this unit.
+vi.mock('@/lib/llamacppRouterProps', () => ({
+  getLlamacppExtension: () => undefined,
+}))
+
 vi.mock('@janhq/core', () => ({
   ServiceKeys: { VectorDB: { id: 'vector-db' } },
   fs: {

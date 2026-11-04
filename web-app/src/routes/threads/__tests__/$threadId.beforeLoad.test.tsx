@@ -27,7 +27,6 @@ vi.mock('@/containers/ConversationHeaderTitle', () => ({
 }))
 vi.mock('@/hooks/use-chat', () => ({ useChat: vi.fn() }))
 vi.mock('@/hooks/useChatShell', () => ({ useChatShell: vi.fn() }))
-vi.mock('@/lib/extension', () => ({ ExtensionManager: { getInstance: vi.fn() } }))
 vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({ engineSlotsIdle: vi.fn() }))
 vi.mock('@/lib/agentTools', () => ({
   CHAT_AGENT_TOOL_NAMES: [],

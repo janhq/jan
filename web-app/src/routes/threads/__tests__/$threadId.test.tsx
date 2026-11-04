@@ -65,6 +65,7 @@ const h = vi.hoisted(() => {
       extensionId: string
       name: string
       server: string
+      generation: number
       description?: string
       inputSchema?: unknown
     }>,
@@ -457,6 +458,9 @@ vi.mock('@/hooks/use-chat', () => ({
       h.appStateState.mcpToolNames.has(name)
         ? h.appStateState.tools.find((tool) => tool.name === name)?.server ?? 'test-server'
         : undefined
+    // Real transports always expose the host-owned handler generation; only
+    // contributed (ext:) tools ever have one.
+    session.transport.getExtensionGenerationForTool ??= () => undefined
     ;(h as any).capturedOnFinish = _args?.onFinish
     ;(h as any).capturedOnToolCall = _args?.onToolCall
     ;(h as any).capturedDispatchTool = _args?.dispatchTool
@@ -2818,7 +2822,7 @@ describe('ThreadDetail route', () => {
       const wireName = 'x_acme_one__echo'
       const server = 'ext:acme.one'
       const declared = (over: Record<string, unknown> = {}) => ({
-        wireName, extensionId: 'acme.one', name: 'echo', server, ...over,
+        wireName, extensionId: 'acme.one', name: 'echo', server, generation: 7, ...over,
       })
       let approve: (allowed: boolean) => void
 
@@ -2829,6 +2833,7 @@ describe('ThreadDetail route', () => {
           transport: {
             getTurnModelSelection: () => null,
             getMcpServerForTool: vi.fn((name: string) => (name === wireName ? server : undefined)),
+            getExtensionGenerationForTool: vi.fn((name: string) => (name === wireName ? 7 : undefined)),
           },
           chat: { messages: [], stop: vi.fn() },
         }
@@ -2849,24 +2854,25 @@ describe('ThreadDetail route', () => {
           await arrive(call(id, wireName, { text: 'hi' }))
           pending = dispatch(call(id, wireName, { text: 'hi' }), signal)
         })
-        return pending
+        // Boxed: an async function returning the promise itself would wait on it.
+        return { pending }
       }
 
       it('prompts under its frozen ext: server with a validator, then runs it in the extension host', async () => {
-        const pending = await run()
+        const { pending } = await run()
         expect(h.toolApprovalState.requestApproval).toHaveBeenCalledExactlyOnceWith(
-          'ext-call', wireName, 'thread-1', server, expect.any(Function), { origin: 'extension' }
+          'ext-call', wireName, 'thread-1', server, expect.any(Function), { origin: 'extension', extension: { generation: 7 } }
         )
         expect(extensionHost.callTool).not.toHaveBeenCalled()
         await act(async () => { approve(true); await pending })
         expect(extensionHost.callTool).toHaveBeenCalledExactlyOnceWith(
-          'acme.one', 'echo', { text: 'hi' }, expect.objectContaining({ signal: expect.any(AbortSignal) })
+          'acme.one', 'echo', { text: 'hi' }, expect.objectContaining({ signal: expect.any(AbortSignal), generation: 7 })
         )
         expect(await pending).toEqual({ output: [{ type: 'text', text: 'HI' }] })
       })
 
       it('never runs a denied extension tool', async () => {
-        const pending = await run()
+        const { pending } = await run()
         await act(async () => { approve(false); await pending })
         expect(extensionHost.callTool).not.toHaveBeenCalled()
         expect(await pending).toMatchObject({ isError: true })
@@ -2880,7 +2886,7 @@ describe('ThreadDetail route', () => {
       })
 
       it('refuses when the stopped or replaced extension no longer provides the frozen pair', async () => {
-        const pending = await run()
+        const { pending } = await run()
         // The extension stopped while the approval card was open.
         h.appStateState.extensionTools = []
         await act(async () => { approve(true); await pending })
@@ -2888,8 +2894,25 @@ describe('ThreadDetail route', () => {
         expect(await pending).toMatchObject({ isError: true, output: expect.stringMatching(/unavailable|disabled|changed/) })
       })
 
+      it('refuses a handler rebound with an identical declaration after approval was requested', async () => {
+        const { pending } = await run()
+        // Same wire name, extension, schema and server: only the host-owned generation moved.
+        h.appStateState.extensionTools = [declared({ generation: 8 })]
+        await act(async () => { approve(true); await pending })
+        expect(extensionHost.callTool).not.toHaveBeenCalled()
+        expect(await pending).toMatchObject({ isError: true })
+      })
+
+      it('refuses an extension call whose offered generation was never frozen', async () => {
+        h.chatSessionsState.sessions['thread-1'].transport.getExtensionGenerationForTool = vi.fn(() => undefined)
+        const { pending } = await run()
+        await act(async () => { approve(true); await pending })
+        expect(extensionHost.callTool).not.toHaveBeenCalled()
+        expect(await pending).toMatchObject({ isError: true })
+      })
+
       it('does not reach a rival extension that took over the wire name after the freeze', async () => {
-        const pending = await run()
+        const { pending } = await run()
         h.appStateState.extensionTools = [declared({ extensionId: 'rival.two', server: 'ext:rival.two' })]
         await act(async () => { approve(true); await pending })
         expect(extensionHost.callTool).not.toHaveBeenCalled()
@@ -2897,7 +2920,7 @@ describe('ThreadDetail route', () => {
       })
 
       it('refuses a tool the user switched off while the approval was pending', async () => {
-        const pending = await run()
+        const { pending } = await run()
         h.toolAvailableState.isToolDisabled.mockReturnValue(true)
         await act(async () => { approve(true); await pending })
         expect(extensionHost.callTool).not.toHaveBeenCalled()
@@ -2923,7 +2946,7 @@ describe('ThreadDetail route', () => {
           }
         )
         const controller = new AbortController()
-        const pending = await run(controller.signal)
+        const { pending } = await run(controller.signal)
         await act(async () => { approve(true) })
         await waitFor(() => expect(given).toBeDefined())
         expect(given?.aborted).toBe(false)

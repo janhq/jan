@@ -276,6 +276,8 @@ export function finalizeChatRun(threadId: string, signal: AbortSignal): void {
 export type ChildBinding = {
   ceiling: unknown
   mcpServers: ReadonlyMap<string, string | undefined>
+  /** The parent's frozen extension handler generation per contributed tool. */
+  extensionGenerations?: ReadonlyMap<string, number>
 }
 
 export type ChatOrchestrationContext = {
@@ -289,6 +291,8 @@ export type ChatOrchestrationContext = {
   readGrant: () => unknown
   /** The parent's frozen MCP server (or undefined = native) for a tool name. */
   serverFor: (toolName: string) => string | undefined
+  /** The parent's frozen handler generation for a contributed tool name. */
+  generationFor?: (toolName: string) => number | undefined
   /** The route's single full dispatch (same threadId, per-call grant, same
    * native/MCP approval stores). Children never get a separate executor and
    * always pass the frozen binding so the route bounds the call by it. */
@@ -485,6 +489,12 @@ export async function runChatTask(input: unknown, callId: string, ctx: ChatOrche
     // monitor are already absent), each with the parent's frozen identity.
     mcpServers: new Map(
       [...new Set([...resolved.values()].flatMap((r) => Object.keys(r.tools)))].map((n) => [n, ctx.serverFor(n)] as const)
+    ),
+    extensionGenerations: new Map(
+      [...new Set([...resolved.values()].flatMap((r) => Object.keys(r.tools)))].flatMap((n) => {
+        const generation = ctx.generationFor?.(n)
+        return generation === undefined ? [] : [[n, generation] as const]
+      })
     ),
   }
   const model = ctx.getModel()
