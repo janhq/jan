@@ -2,6 +2,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import type { ModelsService } from '@/services/models/types'
+import { getLocalPropsExtension, readCtxLen } from '@/lib/llamacppRouterProps'
 
 export function coworkLocalModel(
   provider: ModelProvider | undefined,
@@ -60,8 +61,15 @@ export async function increaseCoworkContext(
   let context = coworkModelContext(provider, modelId)
   if (!context) {
     const setting = coworkLocalModel(provider, modelId)?.settings?.ctx_len
-    const value = Number(setting?.controller_props?.value)
-    if (setting && Number.isInteger(value) && value > 0) {
+    // An empty ctx_len is left to fit; grow from the window it launched with.
+    const value =
+      readCtxLen(setting?.controller_props?.value) ??
+      readCtxLen(
+        (await getLocalPropsExtension(providerName)
+          ?.getModelProps?.(modelId)
+          .catch(() => undefined))?.nCtx
+      )
+    if (setting && value !== undefined) {
       const max = await models.getModelContextLimit(modelId, providerName)
       if (max !== undefined && Number.isInteger(max) && max > 0)
         context = { value, max, next: nextCoworkContextSize(value, max) }

@@ -43,6 +43,7 @@ vi.mock('@/types/models', () => ({
 }))
 
 vi.mock('@/lib/predefined', () => ({
+  MLX_DEFAULT_CTX_LEN: 8192,
   modelSettings: {
     temperature: {
       key: 'temperature',
@@ -119,6 +120,29 @@ describe('TauriProvidersService', () => {
       const llama = result.find((p: any) => p.provider === 'llama.cpp')
       expect(llama).toBeDefined()
       expect(llama!.models).toHaveLength(1)
+    })
+
+    // MLX has no auto-fit, so an empty context would drop --ctx-size and leave
+    // the window to the mlx server; it keeps the old fixed default.
+    it('seeds an empty ctx_len for llamacpp only, MLX keeps 8192', async () => {
+      const engine = () => ({
+        list: vi.fn().mockResolvedValue([{ id: 'm', name: 'M' }]),
+        getSettings: vi.fn().mockResolvedValue([]),
+        isToolSupported: vi.fn().mockResolvedValue(false),
+      })
+      vi.mocked(EngineManager.instance).mockReturnValue({
+        engines: new Map([
+          ['llamacpp', engine()],
+          ['mlx', engine()],
+        ]),
+      } as any)
+
+      const result = await svc.getProviders()
+      const ctx = (name: string) =>
+        result.find((p: any) => p.provider === name)!.models[0].settings!
+          .ctx_len.controller_props.value
+      expect(ctx('llamacpp')).toBe(4096)
+      expect(ctx('mlx')).toBe(8192)
     })
 
     it('adds TOOLS capability when isToolSupported returns true', async () => {

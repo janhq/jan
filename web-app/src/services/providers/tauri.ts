@@ -6,7 +6,7 @@ import { predefinedProviders } from '@/constants/providers'
 import { providerModels } from '@/constants/models'
 import { EngineManager, SettingComponentProps } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
-import { modelSettings } from '@/lib/predefined'
+import { MLX_DEFAULT_CTX_LEN, modelSettings } from '@/lib/predefined'
 import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { invoke } from '@tauri-apps/api/core'
@@ -117,6 +117,9 @@ export class TauriProvidersService extends DefaultProvidersService {
                       ...setting,
                       controller_props: {
                         ...setting.controller_props,
+                        ...(setting.key === 'ctx_len' && providerName === 'mlx'
+                          ? { value: MLX_DEFAULT_CTX_LEN }
+                          : {}),
                       },
                     }
                     return acc
