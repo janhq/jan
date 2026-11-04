@@ -307,11 +307,22 @@ export async function executeAgentTool(
    * clears both. Native uses it to keep tool hooks inert in Plan.
    *
    * Session scope (legacy Cowork) sends it too, as the sole Plan source: Cowork's
-   * run-latched `planMode`. Omitting it sends `false` (Plan off), so every
-   * Cowork caller must pass it.
+   * run-latched `planMode`. It is required there at runtime: omitting it fails
+   * closed with an error before any native call, rather than defaulting Plan off
+   * and letting hooks and mutating tools run. The parameter stays optional in the
+   * signature only because thread scope does not need it.
    */
   planActive?: () => boolean
 ): Promise<AgentToolResult> {
+  // Session scope has no other Plan source, so a caller that predates the latched
+  // provider must not silently run as "Plan off". Mirrors the native commands,
+  // which make `planMode` required.
+  if (scope === 'session' && typeof planActive !== 'function') {
+    return {
+      error:
+        'Session-scope tool call refused: the run Plan state was not provided (planActive is required).',
+    }
+  }
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
     if (!dataFolder) return { error: 'Jan data folder is unavailable' }

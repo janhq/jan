@@ -299,7 +299,10 @@ describe('agentTools', () => {
       'session',
       true,
       true,
-      '/repo'
+      '/repo',
+      undefined,
+      undefined,
+      () => false
     )
     expect(executeTool).toHaveBeenLastCalledWith(
       '/data',
@@ -315,6 +318,13 @@ describe('agentTools', () => {
       undefined,
       false
     )
+  })
+
+  it('forwards the Cowork latched Plan true to the native session call', async () => {
+    vi.mocked(executeTool).mockResolvedValue({ content: 'ok', isError: false, diff: null } as never)
+    const { executeAgentTool } = await import('../agentTools')
+    await executeAgentTool('read', {}, 'sess-1', '/repo', 'session', false, true, '/repo', undefined, undefined, () => true)
+    expect(vi.mocked(executeTool).mock.calls.at(-1)?.[11]).toBe(true)
   })
 
   // Chat derives its authorized folder skill overlay on the native host.
@@ -443,7 +453,7 @@ describe('agentTools', () => {
     const { executeAgentTool, getMemoryCatalog } = await import('../agentTools')
     memoryCatalog.mockResolvedValue([])
     await getMemoryCatalog()
-    await executeAgentTool('memory', { op: 'write', name: 'a', content: 'b' }, 't1', undefined, 'session')
+    await executeAgentTool('memory', { op: 'write', name: 'a', content: 'b' }, 't1', undefined, 'session', false, false, null, undefined, undefined, () => false)
     await getMemoryCatalog()
     expect(memoryCatalog).toHaveBeenCalledTimes(2)
   })
@@ -459,7 +469,7 @@ describe('agentTools', () => {
   it('only forwards successful memory mutation results to feedback', async () => {
     const { executeAgentTool } = await import('../agentTools')
     const signal = new AbortController().signal
-    const run = () => executeAgentTool('memory', { op: 'write' }, 's1', null, 'session', false, false, null, undefined, signal)
+    const run = () => executeAgentTool('memory', { op: 'write' }, 's1', null, 'session', false, false, null, undefined, signal, () => false)
     executeTool.mockResolvedValue({ content: 'Wrote 2 bytes to memory/a.md', isError: false })
     await run()
     expect(notifyMemoryMutation).toHaveBeenCalledWith({ op: 'write' }, 'Wrote 2 bytes to memory/a.md', signal)
@@ -469,7 +479,7 @@ describe('agentTools', () => {
     executeTool.mockRejectedValue(new Error('permission denied'))
     await run()
     executeTool.mockResolvedValue({ content: 'some note', isError: false })
-    await executeAgentTool('memory', { op: 'view' }, 's1', null, 'session')
+    await executeAgentTool('memory', { op: 'view' }, 's1', null, 'session', false, false, null, undefined, undefined, () => false)
     expect(notifyMemoryMutation).not.toHaveBeenCalled()
   })
 

@@ -38,10 +38,15 @@ describe('real agent-tools guest invoke contract', () => {
 
   it('keeps the separate legacy Cowork invoke payload unchanged', async () => {
     invoke.mockResolvedValueOnce({ content: 'session result' })
-    await executeTool('/isolated/data', 'verifier-session', 'shell', {}, '/skills', ['one'], true, '/cowork/folder', true, 'session', 'call-id')
+    await executeTool('/isolated/data', 'verifier-session', 'shell', {}, '/skills', ['one'], true, '/cowork/folder', true, 'session', 'call-id', true)
     expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:agent-tools|execute_tool', {
       dataFolder: '/isolated/data', threadId: 'verifier-session', name: 'shell', args: {}, project: '/skills', enabledSkills: ['one'],
-      allowNetwork: true, readOnlyProject: '/cowork/folder', projectWritable: true, scope: 'session', callId: 'call-id',
+      allowNetwork: true, readOnlyProject: '/cowork/folder', projectWritable: true, scope: 'session', callId: 'call-id', planMode: true,
     })
+    // Exact key set: the host requires planMode, so it must be on the wire.
+    expect(Object.keys(invoke.mock.calls[0][1]).sort()).toEqual([
+      'allowNetwork', 'args', 'callId', 'dataFolder', 'enabledSkills', 'name', 'planMode',
+      'projectWritable', 'project', 'readOnlyProject', 'scope', 'threadId',
+    ].sort())
   })
 })
