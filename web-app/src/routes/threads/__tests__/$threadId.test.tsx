@@ -2905,6 +2905,76 @@ describe('ThreadDetail route', () => {
         expect(mcpCall).not.toHaveBeenCalled()
       })
 
+      // The approval and the execution act on the origin the call arrived
+      // with: a grant for the MCP tool must not run a contributed tool that
+      // took the name while the prompt was open, and the reverse.
+      it('refuses an MCP-approved call whose name an extension took before it ran', async () => {
+        h.appStateState.extensionTools = []
+        h.appStateState.mcpToolNames = new Set([wireName])
+        h.appStateState.tools = [{ name: wireName, server: 'mcp-server' }]
+        const mcpCall = vi.fn().mockResolvedValue({ error: '', content: [] })
+        hub.mcp = () =>
+          ({ callToolWithCancellation: cancellable(mcpCall) }) as never
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(extToolCall('te5'))
+        })
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+          'te5',
+          wireName,
+          'thread-1',
+          'mcp-server',
+          { origin: 'mcp' }
+        )
+        h.appStateState.extensionTools = [
+          {
+            wireName,
+            extensionId: 'acme.one',
+            name: 'echo',
+            server: 'ext:acme.one',
+          },
+        ]
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(extensionHost.callTool).not.toHaveBeenCalled()
+        expect(mcpCall).not.toHaveBeenCalled()
+        expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+          expect.objectContaining({
+            state: 'output-error',
+            toolCallId: 'te5',
+            errorText:
+              'Tool call refused: the tool changed while it was waiting for approval.',
+          })
+        )
+      })
+
+      it('refuses an extension-approved call whose extension unloaded before it ran', async () => {
+        h.appStateState.mcpToolNames = new Set([wireName])
+        h.appStateState.tools = [{ name: wireName, server: 'mcp-server' }]
+        const mcpCall = vi.fn().mockResolvedValue({ error: '', content: [] })
+        hub.mcp = () =>
+          ({ callToolWithCancellation: cancellable(mcpCall) }) as never
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(extToolCall('te6'))
+        })
+        h.appStateState.extensionTools = []
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(extensionHost.callTool).not.toHaveBeenCalled()
+        expect(mcpCall).not.toHaveBeenCalled()
+        expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+          expect.objectContaining({
+            state: 'output-error',
+            toolCallId: 'te6',
+            errorText:
+              'Tool call refused: the tool changed while it was waiting for approval.',
+          })
+        )
+      })
+
       it('does not run a denied extension tool', async () => {
         h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
         renderComponent()

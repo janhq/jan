@@ -230,8 +230,10 @@ useChatSessions.subscribe((state) => {
 // message and the AI SDK's auto-resubmit (sendAutomaticallyWhen) fires. A
 // component ref would be shared by every thread (the route is reused across
 // thread switches), so one thread finishing or being left would drop another
-// thread's pending approvals and prompt the user again.
-const toolApprovalPromises = new Map<string, Map<string, Promise<boolean>>>()
+// thread's pending approvals and prompt the user again. The origin the call was
+// asked under travels with it, so execution runs what was approved.
+type PendingApproval = { approved: Promise<boolean>; origin: ToolOrigin }
+const toolApprovalPromises = new Map<string, Map<string, PendingApproval>>()
 const approvalsOf = (threadId: string) => {
   let approvals = toolApprovalPromises.get(threadId)
   if (!approvals) {
@@ -287,11 +289,17 @@ function rewriteStoredTurn(
   })
 }
 
+// Recorded for an approved call whose tool came to be served by someone else
+// (an extension loaded or unloaded) while it waited: the grant was for the other.
+const ORIGIN_CHANGED_TOOL_ERROR =
+  'Tool call refused: the tool changed while it was waiting for approval.'
+
 // Who serves a call and under which server, so an approval prompt can offer
-// to trust the whole server. The approval request, the running timer and the
-// execution branch all read this one answer: a grant keyed as MCP must never
-// let a contributed tool of the same name run, so a name both claim is the
-// extension's here because execution runs the extension's.
+// to trust the whole server. Resolved once when the call arrives and carried
+// to the approval, the running timer and execution, so a grant keyed as MCP
+// never runs a contributed tool of the same name. A name both claim is the
+// extension's.
+type ToolOrigin = ReturnType<typeof toolOriginOf>
 function toolOriginOf(toolName: string) {
   const extensionTool = extensionToolOf(toolName)
   if (extensionTool) {
@@ -379,9 +387,8 @@ function isAutoAllowedTool(toolName: string, threadId: string): boolean {
 // neither "allow all MCP" nor a grant given on another turn covers it.
 function approvalOptions(
   threadId: string,
-  toolName: string
+  origin: ToolOrigin['origin']
 ): ApprovalOptions {
-  const { origin } = toolOriginOf(toolName)
   return turnOnExtensionProvider(threadId)
     ? { strict: true, origin }
     : { origin }
@@ -902,17 +909,19 @@ function ThreadDetail() {
               continue
             }
 
+            const pending = approvalsOf(threadId).get(toolCall.toolCallId)
+            const origin = pending?.origin ?? toolOriginOf(toolName)
             const approved = isAutoAllowedTool(toolName, threadId)
               ? true
-              : await (approvalsOf(threadId).get(toolCall.toolCallId) ??
+              : await (pending?.approved ??
                   useToolApprovalRequests
                     .getState()
                     .requestApproval(
                       toolCall.toolCallId,
                       toolName,
                       threadId,
-                      toolOriginOf(toolName).server,
-                      approvalOptions(threadId, toolName)
+                      origin.server,
+                      approvalOptions(threadId, origin.origin)
                     ))
             approvalsOf(threadId).delete(toolCall.toolCallId)
             // Only an explicit Stop skips the result. Deleting the thread also
@@ -934,11 +943,23 @@ function ThreadDetail() {
               continue
             }
 
+            // Re-resolved only to compare: running either tool now would act
+            // on a grant given for the other.
+            if (toolOriginOf(toolName).origin !== origin.origin) {
+              record({
+                state: 'output-error',
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                errorText: ORIGIN_CHANGED_TOOL_ERROR,
+              })
+              continue
+            }
+
             // Timed from here, not from approval, so a long approval wait is
             // not reported as the tool being slow.
             useToolCallRuntime
               .getState()
-              .markRunning(toolCall.toolCallId, toolOriginOf(toolName).server)
+              .markRunning(toolCall.toolCallId, origin.server)
 
             // A tool result is injected into conversation history verbatim, so a
             // page-sized one can exhaust the context on its own. This is the
@@ -954,7 +975,7 @@ function ThreadDetail() {
             // a hung MCP server) must not hold the loop, and the thread, busy.
             const result = await untilAborted<ToolRunResult>(
               (async () => {
-                const { extensionTool } = toolOriginOf(toolName)
+                const { extensionTool } = origin
                 if (webRoute(toolName) === 'builtin') {
                   return await executeWebTool(toolName, toolCall.input, {
                     maxOutputChars,
@@ -1170,18 +1191,19 @@ function ThreadDetail() {
         webRoute(toolCall.toolName) !== 'disabled' &&
         !approvalsOf(threadId).has(toolCall.toolCallId)
       ) {
-        approvalsOf(threadId).set(
-          toolCall.toolCallId,
-          useToolApprovalRequests
+        const origin = toolOriginOf(toolCall.toolName)
+        approvalsOf(threadId).set(toolCall.toolCallId, {
+          approved: useToolApprovalRequests
             .getState()
             .requestApproval(
               toolCall.toolCallId,
               toolCall.toolName,
               threadId,
-              toolOriginOf(toolCall.toolName).server,
-              approvalOptions(threadId, toolCall.toolName)
-            )
-        )
+              origin.server,
+              approvalOptions(threadId, origin.origin)
+            ),
+          origin,
+        })
       }
     },
     sendAutomaticallyWhen: followUpMessage,
