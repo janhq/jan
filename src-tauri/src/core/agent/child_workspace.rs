@@ -282,22 +282,17 @@ pub(crate) fn project_worktrees_dir(root: &Path) -> Option<PathBuf> {
 const CARGO_TARGET: &str = "cargo-target";
 
 /// The scope a child in `ws` runs under: the shared build directory for any
-/// child outside the plain writable checkout, and package caches in the
-/// session scratch for a reader. A writer is granted nothing of the user's
-/// `.git`: its commits go to its own, inside its workspace. `scratch` is the
-/// session scratch, when the session has one.
-pub(crate) fn scope_for(
-    ws: &ChildWorkspace,
-    parent_root: &Path,
-    scratch: Option<&Path>,
-) -> ChildScope {
+/// child outside the plain writable checkout. A writer is granted nothing of
+/// the user's `.git`: its commits go to its own, inside its workspace.
+/// Package caches need nothing here: a sandboxed child, reader or not, gets
+/// the project's package cache like any run (its checkout keys to the same
+/// project), which is how a reader that cannot write its checkout still
+/// installs.
+pub(crate) fn scope_for(ws: &ChildWorkspace, parent_root: &Path) -> ChildScope {
     let mut scope = ChildScope {
         read_only: ws.read_only,
         ..ChildScope::default()
     };
-    if let Some(scratch) = scratch.filter(|_| ws.read_only) {
-        scope.env_set.extend(reader_env(scratch));
-    }
     if ws.worktree.is_some() || ws.read_only {
         if let Some(target) = project_worktrees_dir(parent_root).map(|d| d.join(CARGO_TARGET)) {
             if std::fs::create_dir_all(&target).is_ok() {
@@ -327,12 +322,12 @@ pub(crate) struct Placement {
 /// Resolve the [`Placement`] of a child in `ws`: its checkout's branch and the
 /// scope its tools enforce. Runs git, so the dispatch calls it on
 /// the blocking pool and [`apply`], on the async child task, runs none.
-pub(crate) fn place(ws: &ChildWorkspace, parent_root: &Path, scratch: Option<&Path>) -> Placement {
+pub(crate) fn place(ws: &ChildWorkspace, parent_root: &Path) -> Placement {
     Placement {
         session_start: ws.worktree.as_ref().map(|wt| {
             crate::core::agent::context::SessionStart::with_branch(worktree_branch(wt))
         }),
-        scope: scope_for(ws, parent_root, scratch),
+        scope: scope_for(ws, parent_root),
     }
 }
 
@@ -349,17 +344,6 @@ pub(crate) fn apply(
     }
     args.project_root = Some(ws.root.clone());
     args.child_scope = Some(placement.scope);
-}
-
-/// Package-manager caches a read-only child keeps in its scratch, since it
-/// cannot write them into the project. By the scratch's real path, which is
-/// where the sandbox exposes it.
-fn reader_env(scratch: &Path) -> Vec<(String, String)> {
-    let at = |dir: &str| scratch.join(dir).to_string_lossy().into_owned();
-    vec![
-        ("YARN_CACHE_FOLDER".to_string(), at("yarn-cache")),
-        ("COREPACK_HOME".to_string(), at("corepack")),
-    ]
 }
 
 /// The directory the parent's sandboxed tools may read its children's
@@ -1397,7 +1381,7 @@ mod tests {
         let (ws, lease) = ledger.assign(&root, "explore", false, None).unwrap();
         assert!(lease.is_none());
         assert!(!ws.read_only, "{ws:?}");
-        assert_eq!(scope_for(&ws, &root, Some(&root)), ChildScope::default());
+        assert_eq!(scope_for(&ws, &root), ChildScope::default());
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1898,7 +1882,7 @@ mod git_tests {
         let wt = ws.worktree.clone().unwrap();
         let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
         args.session_start = Some(crate::core::agent::context::SessionStart::capture(Some(&root)));
-        apply(&mut args, &ws, place(&ws, &root, None));
+        apply(&mut args, &ws, place(&ws, &root));
         assert_eq!(args.project_root.as_deref(), Some(wt.path.as_path()));
         let start = args.session_start.as_ref().unwrap().block();
         assert!(start.contains(&wt.branch), "{start}");
@@ -1921,7 +1905,7 @@ mod git_tests {
         let (reader, _) = ledger.assign(&root, "explore", false, None).unwrap();
         let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
         let parent_start = args.session_start.clone();
-        apply(&mut args, &reader, place(&reader, &root, None));
+        apply(&mut args, &reader, place(&reader, &root));
         assert_eq!(args.project_root.as_deref(), Some(root.as_path()));
         assert_eq!(args.session_start, parent_start, "a reader keeps the parent's start");
         assert!(args.child_scope.as_ref().unwrap().read_only);
@@ -1994,7 +1978,7 @@ mod git_tests {
         let wt = ws.worktree.clone().expect("a writer gets a worktree");
         assert!(!wt.path.to_string_lossy().starts_with(r"\\?\"), "{wt:?}");
         assert!(wt.path.join(".git").is_dir(), "{wt:?}");
-        let scope = scope_for(&ws, &verbatim, None);
+        let scope = scope_for(&ws, &verbatim);
         assert!(scope.read_roots.contains(&root.join(".git/objects")), "{scope:?}");
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
@@ -2005,7 +1989,7 @@ mod git_tests {
         let Some(root) = repo("scope") else { return };
         let ledger = Arc::new(Ledger::default());
         let (w, _lease) = ledger.assign(&root, "general", true, None).unwrap();
-        let scope = scope_for(&w, &root, None);
+        let scope = scope_for(&w, &root);
         assert!(!scope.read_only);
         // Its commits go to the repository it is, inside its workspace: none
         // of the user's `.git` is writable, only its objects readable.
@@ -2015,15 +1999,12 @@ mod git_tests {
         assert!(scope.env_set.iter().any(|(k, v)| k == "CARGO_TARGET_DIR" && Path::new(v) == target));
 
         let (r, _) = ledger.assign(&root, "explore", false, None).unwrap();
-        let scratch = std::env::temp_dir().join(format!("jan_child_scratch_{}", std::process::id()));
-        let scope = scope_for(&r, &root, Some(&scratch));
+        let scope = scope_for(&r, &root);
         assert!(scope.read_only);
         assert_eq!(scope.write_roots, vec![target], "a reader never gets the git dir");
         assert!(scope.read_roots.is_empty(), "{scope:?}");
-        // By the scratch's real path, which the sandbox exposes as is.
-        let yarn = scope.env_set.iter().find(|(k, _)| k == "YARN_CACHE_FOLDER");
-        assert!(yarn.is_some_and(|(_, v)| Path::new(v) == scratch.join("yarn-cache")), "{scope:?}");
-        assert!(scope.env_set.iter().any(|(k, _)| k == "COREPACK_HOME"), "{scope:?}");
+        // Package caches come from the run's own package cache, not the scope.
+        assert!(!scope.env_set.iter().any(|(k, _)| k == "YARN_CACHE_FOLDER"), "{scope:?}");
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -2047,7 +2028,7 @@ mod git_tests {
             eprintln!("skipping: no sandbox backend on this host");
             return None;
         }
-        let scope = scope_for(ws, parent_root, None);
+        let scope = scope_for(ws, parent_root);
         let reads: Vec<PathBuf> = scope
             .write_roots
             .iter()

@@ -133,6 +133,11 @@ pub struct ToolContext<'a> {
     /// default throwaway per-command tmpfs. Cleaned up with the session (run end
     /// on the CLI, thread teardown on the desktop).
     pub scratch_root: Option<&'a Path>,
+    /// The project's package cache, which the sandboxed shell's package
+    /// managers write to (see [`crate::tools::proc::PKG_CACHE_ENV`]). Only on a
+    /// sandboxed run with a filesystem project; `None` keeps the host's caches
+    /// (unconfined) or none at all (desktop chat, which has no network).
+    pub pkg_cache: Option<&'a crate::workspace::PkgCache>,
     /// Whether `bash` runs under OS confinement. On by default, and the desktop
     /// keeps it that way: there, `bash` is either sandboxed or withheld.
     ///
@@ -249,6 +254,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("hidden_root", &self.hidden_root)
             .field("home_readonly", &self.home_readonly)
             .field("scratch_root", &self.scratch_root)
+            .field("pkg_cache", &self.pkg_cache)
             .field("sandbox", &self.sandbox)
             .field("escalation", &self.escalation)
             .field("on_output", &self.on_output.is_some())
@@ -408,6 +414,7 @@ impl<'a> ToolContext<'a> {
             hidden_root: None,
             home_readonly: false,
             scratch_root: None,
+            pkg_cache: None,
             sandbox: true,
             escalation: false,
             on_output: None,
@@ -626,6 +633,15 @@ impl<'a> ToolContext<'a> {
         self
     }
 
+    /// Point the sandboxed shell's package managers at `pkg`. See
+    /// [`Self::pkg_cache`]. Ignored when the sandbox is off, like the scratch.
+    pub fn with_pkg_cache(mut self, pkg: Option<&'a crate::workspace::PkgCache>) -> Self {
+        if self.sandbox {
+            self.pkg_cache = pkg;
+        }
+        self
+    }
+
     /// Mention escalation in sandbox denials. See [`Self::escalation`].
     pub fn with_escalation(mut self, escalation: bool) -> Self {
         self.escalation = escalation;
@@ -642,6 +658,7 @@ impl<'a> ToolContext<'a> {
         self.sandbox = sandbox;
         if !sandbox {
             self.scratch_root = None;
+            self.pkg_cache = None;
         }
         self
     }

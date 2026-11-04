@@ -1062,7 +1062,7 @@ fn read_only_refusal(args: &serde_json::Value, scratch: Option<&Path>) -> String
 /// call would.
 pub(crate) fn confined_shell(
     ctx: &ToolContext<'_>,
-) -> Result<(proc::ShellConfig, Option<PathBuf>, jail::Policy), String> {
+) -> Result<(proc::ShellConfig, Option<proc::SandboxEnv>, jail::Policy), String> {
     let root = ctx.project_root;
     let mut policy =
         jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
@@ -1074,6 +1074,9 @@ pub(crate) fn confined_shell(
     }
     if let Some(scratch) = ctx.scratch_root {
         policy = policy.with_scratch_root(scratch);
+    }
+    if let Some(pkg) = ctx.pkg_cache {
+        policy = policy.with_pkg_cache(pkg);
     }
     if !ctx.read_roots.is_empty() {
         policy = policy.with_read_roots(ctx.read_roots.to_vec());
@@ -1099,14 +1102,16 @@ pub(crate) fn confined_shell(
     } else {
         proc::shell().clone()
     };
-    // Every backend exposes the scratch at its real path, so that is what the
-    // shell's temp env names.
-    let sandbox_tmp = if confined {
-        policy.scratch_root.clone()
-    } else {
-        None
-    };
-    Ok((shell, sandbox_tmp, policy))
+    // Every backend exposes the scratch and the package cache at their real
+    // paths, so those are what the shell's env names. Unconfined, there is no
+    // sandbox env at all: the host's own values stand.
+    let sandbox_env = confined.then(|| {
+        proc::SandboxEnv::new(
+            policy.scratch_root.as_deref(),
+            policy.pkg_cache.as_ref().map(|p| p.root.as_path()),
+        )
+    });
+    Ok((shell, sandbox_env, policy))
 }
 
 async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
@@ -1124,7 +1129,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         );
     }
 
-    let (shell, sandbox_tmp, policy) = match confined_shell(ctx) {
+    let (shell, sandbox_env, policy) = match confined_shell(ctx) {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -1132,7 +1137,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         &shell,
         command,
         root,
-        sandbox_tmp.as_deref(),
+        sandbox_env.as_ref(),
         ctx.shell_env(),
         ctx.thread_id,
     )

@@ -114,6 +114,14 @@ chats use `<cache>/jan/chat`). The shell, the file tools and an approved escalat
 at that same path. It is removed when the session ends; one a crash left behind is removed at a later
 start once it is a week old.
 
+Confined commands in a project also get a package cache, `<cache>/jan/<project>/pkg`, shared by that
+project's sessions and never by another project. `CARGO_HOME`, `npm_config_cache`, `YARN_CACHE_FOLDER`,
+`PIP_CACHE_DIR`, `UV_CACHE_DIR`, `GOCACHE`/`GOMODCACHE`/`GOPATH`, `GRADLE_USER_HOME` and the other
+package-manager caches point inside it, so builds can download dependencies without touching your own
+`~/.cargo`, `~/.npm` and so on. Your `~/.cargo/config.toml` is available read-only there;
+`credentials.toml` and `~/.cargo/bin` are not copied in. Unconfined and escalated commands keep your
+normal environment. Jan does not clean this folder; delete it to reclaim the space.
+
 While the sandbox is on, Jan's own home, `~/.jan`, is hidden from every tool and from the shell,
 even when you run `jan` from your home directory. It holds `config.toml` (provider keys and hooks)
 and each project's `agent.toml`, memory and threads, so no approval can open it: file tools refuse

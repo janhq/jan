@@ -2458,7 +2458,7 @@ pub(crate) async fn spawn_subagent(
     scratch: Option<&Path>,
     notify_on_finish: bool,
 ) -> Result<Dispatched, SubagentError> {
-    let prepared = prepare_dispatch(scope, parent_args, req, parent, scratch).await?;
+    let prepared = prepare_dispatch(scope, parent_args, req, parent).await?;
     start_dispatch(scope, parent_args, prepared, events, scratch, notify_on_finish)
 }
 
@@ -2481,15 +2481,12 @@ struct PreparedDispatch {
 }
 
 /// The half of [`spawn_subagent`] that can fail on the request: resolve it,
-/// price it, and assign the child its workspace. `scratch` is the parent's own
-/// scratch root (`None` when it runs unconfined), passed down rather than
-/// recomputed so the child's caches land where the parent's sandbox binds.
+/// price it, and assign the child its workspace.
 async fn prepare_dispatch(
     scope: &DispatchScope,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     req: SubagentRequest,
     parent: &ParentRun,
-    scratch: Option<&Path>,
 ) -> Result<PreparedDispatch, SubagentError> {
     if !parent_args.subagents_enabled {
         return Err(SubagentError::PermissionDenied(
@@ -2521,20 +2518,18 @@ async fn prepare_dispatch(
         )?,
         ..resolved
     };
-    assign_dispatch(scope, parent_args, resolved, req, parent, scratch).await
+    assign_dispatch(scope, parent_args, resolved, req, parent).await
 }
 
 /// Give an already-resolved child its workspace: the part of
 /// [`prepare_dispatch`] after its definition and tools are settled, shared
-/// with Jan's internal subagents, which are not in the registry. `scratch` is
-/// the parent's (see [`prepare_dispatch`]).
+/// with Jan's internal subagents, which are not in the registry.
 async fn assign_dispatch(
     scope: &DispatchScope,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     resolved: ResolvedDispatch,
     req: SubagentRequest,
     parent: &ParentRun,
-    scratch: Option<&Path>,
 ) -> Result<PreparedDispatch, SubagentError> {
     let project_root = parent_args
         .project_root
@@ -2557,7 +2552,6 @@ async fn assign_dispatch(
     // a ref possibly a network fetch, and placing the child reads its branch,
     // which would otherwise stall every other task on this runtime worker
     // until git returns.
-    let scratch = scratch.map(Path::to_path_buf);
     let (workspace, placement, lease) = {
         let scope = scope.clone();
         let root = project_root.clone();
@@ -2578,7 +2572,7 @@ async fn assign_dispatch(
                 return Err(SubagentError::Cancelled);
             }
             let placement =
-                crate::core::agent::child_workspace::place(&ws, &root, scratch.as_deref());
+                crate::core::agent::child_workspace::place(&ws, &root);
             Ok((ws, placement, lease))
         })
         .await
@@ -2902,9 +2896,9 @@ pub(crate) async fn spawn_memory_tidy(
         ..parent.clone()
     };
     let args = memory_tidy_args(parent_args, budget);
-    // No scratch: the tidy has no shell, so it needs no package caches, and
-    // its answer comes back through `await_subagent`, not the blackboard.
-    let prepared = assign_dispatch(scope, &args, resolved, req, parent, None).await?;
+    // No scratch: its answer comes back through `await_subagent`, not the
+    // blackboard.
+    let prepared = assign_dispatch(scope, &args, resolved, req, parent).await?;
     start_dispatch(scope, &args, prepared, events, None, false)
 }
 
@@ -5890,7 +5884,7 @@ pub(crate) mod tests {
             agent: "writer".to_string(),
             ..req("late", None)
         };
-        let late = prepare_dispatch(&scope, &args, late, &parent_run(), None).await.unwrap();
+        let late = prepare_dispatch(&scope, &args, late, &parent_run()).await.unwrap();
         let late_wt = late.workspace.worktree.clone().expect("a writer gets a worktree");
         bg.abort_all(); // Esc: the session's registry lives on
         let refused = start_dispatch(&scope, &args, late, &events_tx, None, false);

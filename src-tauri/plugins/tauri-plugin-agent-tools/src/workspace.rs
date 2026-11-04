@@ -670,6 +670,146 @@ async fn create_private_dirs(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// `<project cache>/pkg`, the project's package cache.
+const PKG: &str = "pkg";
+
+/// `CARGO_HOME` inside the package cache.
+pub const PKG_CARGO_HOME: &str = "cargo";
+
+/// A project's package cache, `<cache>/jan/<slug>/pkg`. Only for a project:
+/// desktop chat has no network to fill one.
+pub fn pkg_dir_in(project_cache: &Path) -> PathBuf {
+    project_cache.join(PKG)
+}
+
+/// A prepared package cache: the folder a sandboxed command may write and
+/// whose subfolders its package-manager env names (`proc::PKG_CACHE_ENV`),
+/// plus the user's cargo config when there is one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PkgCache {
+    pub root: PathBuf,
+    pub cargo_config: Option<CargoConfig>,
+}
+
+/// The user's cargo config, offered read-only at `<CARGO_HOME>/config.toml`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CargoConfig {
+    /// The host file: `config.toml`, or legacy `config`, in the host's
+    /// `CARGO_HOME`. Bubblewrap binds it read-only over [`Self::copy`].
+    pub host: PathBuf,
+    /// `<pkg>/cargo/config.toml`. A read-only copy made at session start,
+    /// which is what Seatbelt and AppContainer expose (they cannot mount), and
+    /// bubblewrap's mount point.
+    pub copy: PathBuf,
+}
+
+/// The host's cargo config: `config.toml` (or the legacy `config`) in
+/// `cargo_home`, the host's `CARGO_HOME` or `~/.cargo`.
+fn host_cargo_config(cargo_home: &Path) -> Option<PathBuf> {
+    ["config.toml", "config"]
+        .iter()
+        .map(|name| cargo_home.join(name))
+        .find(|path| path.is_file())
+}
+
+/// The host's `CARGO_HOME`, honoring an explicit one. `None` without a home.
+fn host_cargo_home() -> Option<PathBuf> {
+    match std::env::var_os("CARGO_HOME").filter(|v| !v.is_empty()) {
+        Some(dir) => Some(PathBuf::from(dir)),
+        None => user_home().map(|home| home.join(".cargo")),
+    }
+}
+
+/// [`prepare_pkg_cache_in`] with the host's own cargo home.
+pub async fn prepare_pkg_cache(project_cache: &Path) -> Result<PkgCache, String> {
+    prepare_pkg_cache_in(project_cache, host_cargo_home().as_deref()).await
+}
+
+/// Create a project's package cache owner-only and symlink-hardened (as
+/// [`ensure_scratch_dir_path`] does a scratch), and refresh its cargo config.
+///
+/// The sandbox's `CARGO_HOME` is `<pkg>/cargo`, never the user's: a sandbox
+/// that could write `~/.cargo/registry/src` could tamper with sources a later
+/// unsandboxed build compiles. So nothing else of the host's comes in: not
+/// `credentials.toml` (a sandboxed command must not publish with the user's
+/// token) and not `bin/` (installed tools stay on the host `PATH`). The user's
+/// config does (mirrors, registries, `net.offline`), read-only, because cargo
+/// config can name programs to run (`build.rustc-wrapper`,
+/// `target.<triple>.runner`). It is copied afresh every session so host edits
+/// apply, and a copy left by an earlier session (or written by its sandbox)
+/// is removed when the host has none. Toolchains are untouched: rustup keeps
+/// them in `RUSTUP_HOME`.
+pub async fn prepare_pkg_cache_in(
+    project_cache: &Path,
+    host_cargo_home: Option<&Path>,
+) -> Result<PkgCache, String> {
+    let root = ensure_scratch_dir_path(&pkg_dir_in(project_cache)).await?;
+    let cargo = ensure_scratch_dir_path(&root.join(PKG_CARGO_HOME)).await?;
+    let copy = cargo.join("config.toml");
+    let refresh_error = |path: &Path, e: std::io::Error| {
+        format!("ERROR: cannot refresh {}: {e}", path.display())
+    };
+    // Cargo reads the legacy name too, so one a sandbox planted would apply.
+    let legacy = cargo.join("config");
+    remove_read_only_file(&legacy).await.map_err(|e| refresh_error(&legacy, e))?;
+    let cargo_config = match host_cargo_home.and_then(host_cargo_config) {
+        Some(host) => {
+            copy_read_only(&host, &copy).await.map_err(|e| refresh_error(&copy, e))?;
+            Some(CargoConfig { host, copy })
+        }
+        None => {
+            remove_read_only_file(&copy).await.map_err(|e| refresh_error(&copy, e))?;
+            None
+        }
+    };
+    Ok(PkgCache { root, cargo_config })
+}
+
+/// Remove `path` if it is there, whatever it is: the copy is read-only, and a
+/// sandbox may have left a directory or symlink in its place. A read-only file
+/// goes too: on Unix only the folder's mode matters, and std deletes one on
+/// Windows since Rust 1.86.
+async fn remove_read_only_file(path: &Path) -> std::io::Result<()> {
+    match tokio::fs::symlink_metadata(path).await {
+        Ok(meta) if meta.is_dir() => tokio::fs::remove_dir_all(path).await,
+        Ok(_) => tokio::fs::remove_file(path).await,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Write `src`'s bytes to `dst` and mark it read-only. Through a fresh file
+/// and a rename, so a concurrent session never reads a half-written config,
+/// and so a symlink planted at `dst` is replaced rather than followed.
+///
+/// The read-only mark is the whole protection on AppContainer, which grants
+/// by ACE and has no deny: the container holds full access on the package
+/// cache, so it could clear the mark or replace the file. Accepted: the copy
+/// configures only sandboxed cargo and is rewritten every session. Seatbelt
+/// also denies writes to it by rule, and bubblewrap mounts the host file over
+/// it read-only.
+async fn copy_read_only(src: &Path, dst: &Path) -> std::io::Result<()> {
+    // Unique per call: a parent run and its subagents share a process and may
+    // prepare the same project's cache at once.
+    static COPIES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = COPIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let bytes = tokio::fs::read(src).await?;
+    let tmp = dst.with_extension(format!("tmp-{}-{n}", std::process::id()));
+    remove_read_only_file(&tmp).await?;
+    tokio::fs::write(&tmp, bytes).await?;
+    let mut perms = tokio::fs::metadata(&tmp).await?.permissions();
+    perms.set_readonly(true);
+    tokio::fs::set_permissions(&tmp, perms).await?;
+    // Replaced in one step where the OS allows it, so a sibling session's
+    // bubblewrap never finds its mount point missing. Windows refuses to
+    // rename over a read-only file; there the old copy goes first.
+    if tokio::fs::rename(&tmp, dst).await.is_err() {
+        remove_read_only_file(dst).await?;
+        tokio::fs::rename(&tmp, dst).await?;
+    }
+    Ok(())
+}
+
 /// How long a scratch directory may sit untouched, with no live session
 /// claiming it, before the startup sweep treats it as abandoned. A week
 /// rather than a day: the live check is only as good as the caller's `keep`
@@ -1545,6 +1685,98 @@ mod tests {
         assert_eq!(mode(&base), 0o755, "an existing parent is left alone");
         let _ = std::fs::remove_dir_all(&base);
     }
+
+    /// The package cache is `<project cache>/pkg`, private, with a cargo home
+    /// that holds a read-only copy of the user's config and nothing else of
+    /// theirs: no credentials, no installed binaries.
+    #[tokio::test]
+    async fn pkg_cache_holds_only_a_read_only_cargo_config() {
+        let base = unique_data_folder();
+        let host = base.join("host-cargo");
+        std::fs::create_dir_all(host.join("bin")).unwrap();
+        std::fs::write(host.join("config.toml"), "[net]\noffline = true\n").unwrap();
+        std::fs::write(host.join("credentials.toml"), "token = \"secret\"\n").unwrap();
+        std::fs::write(host.join("bin/tool"), "").unwrap();
+        let project = base.join("cache/jan/p-1");
+
+        let pkg = prepare_pkg_cache_in(&project, Some(&host)).await.unwrap();
+        assert_eq!(pkg.root, project.join("pkg"));
+        let cargo = pkg.root.join("cargo");
+        let config = pkg.cargo_config.clone().expect("config offered");
+        assert_eq!(config.host, host.join("config.toml"));
+        assert_eq!(config.copy, cargo.join("config.toml"));
+        assert_eq!(std::fs::read_to_string(&config.copy).unwrap(), "[net]\noffline = true\n");
+        assert!(std::fs::metadata(&config.copy).unwrap().permissions().readonly());
+        let names: Vec<_> = std::fs::read_dir(&cargo)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["config.toml".to_string()], "{names:?}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for dir in [&pkg.root, &cargo] {
+                let mode = std::fs::metadata(dir).unwrap().permissions().mode() & 0o777;
+                assert_eq!(mode, 0o700, "{dir:?}");
+            }
+        }
+
+        // Re-copied each session, so a host edit applies; a host with no config
+        // leaves none behind, and a planted legacy `config` is cleared.
+        std::fs::write(host.join("config.toml"), "[net]\noffline = false\n").unwrap();
+        let again = prepare_pkg_cache_in(&project, Some(&host)).await.unwrap();
+        let copy = again.cargo_config.unwrap().copy;
+        assert_eq!(std::fs::read_to_string(&copy).unwrap(), "[net]\noffline = false\n");
+        std::fs::write(cargo.join("config"), "planted").unwrap();
+        std::fs::remove_file(host.join("config.toml")).unwrap();
+        let none = prepare_pkg_cache_in(&project, Some(&host)).await.unwrap();
+        assert_eq!(none.cargo_config, None);
+        assert!(!copy.exists() && !cargo.join("config").exists());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A host with only the legacy `config` name still gets it offered, under
+    /// the name cargo prefers.
+    #[tokio::test]
+    async fn pkg_cache_offers_a_legacy_cargo_config() {
+        let base = unique_data_folder();
+        let host = base.join("host-cargo");
+        std::fs::create_dir_all(&host).unwrap();
+        std::fs::write(host.join("config"), "legacy").unwrap();
+        let pkg = prepare_pkg_cache_in(&base.join("p"), Some(&host)).await.unwrap();
+        let config = pkg.cargo_config.unwrap();
+        assert_eq!(config.host, host.join("config"));
+        assert_eq!(config.copy.file_name().unwrap(), "config.toml");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Two projects never share a package cache.
+    #[test]
+    fn projects_get_distinct_pkg_dirs() {
+        let cache = Path::new("/c/jan");
+        let a = unique_data_folder();
+        let b = unique_data_folder();
+        let pa = pkg_dir_in(&project_cache_dir_in(cache, Some(&a)));
+        let pb = pkg_dir_in(&project_cache_dir_in(cache, Some(&b)));
+        assert_ne!(pa, pb);
+        assert!(pa.starts_with(cache) && pa.ends_with("pkg"));
+    }
+
+    /// A symlink planted where the package cache goes is refused, as for the
+    /// scratch: the sandbox must never bind an attacker-chosen folder.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pkg_cache_refuses_a_pre_planted_symlink() {
+        let base = unique_data_folder();
+        let outside = unique_data_folder();
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, base.join("pkg")).unwrap();
+        assert!(prepare_pkg_cache_in(&base, None).await.is_err());
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
     #[test]
     fn thread_segment_rejects_traversal_and_separators() {
         for bad in [

@@ -58,6 +58,7 @@ pub struct MonitorSpec {
 pub struct MonitorCtx {
     pub project_root: PathBuf,
     pub scratch_root: Option<PathBuf>,
+    pub pkg_cache: Option<crate::workspace::PkgCache>,
     pub mask_root: Option<PathBuf>,
     pub hidden_root: Option<PathBuf>,
     pub read_roots: Vec<PathBuf>,
@@ -73,6 +74,7 @@ impl MonitorCtx {
         Self {
             project_root: ctx.project_root.to_path_buf(),
             scratch_root: ctx.scratch_root.map(Path::to_path_buf),
+            pkg_cache: ctx.pkg_cache.cloned(),
             mask_root: ctx.mask_root.map(Path::to_path_buf),
             hidden_root: ctx.hidden_root.map(Path::to_path_buf),
             read_roots: ctx.read_roots.to_vec(),
@@ -102,7 +104,7 @@ impl MonitorCtx {
         if let Some(scratch) = &self.scratch_root {
             ctx = ctx.with_scratch_root(scratch);
         }
-        ctx
+        ctx.with_pkg_cache(self.pkg_cache.as_ref())
     }
 }
 
@@ -503,14 +505,14 @@ fn match_update(monitor_id: &str, name: &str, content: &str) -> MonitorUpdate {
 /// "not yet" and are retried on the next poll.
 async fn eval_script(ctx: &MonitorCtx, script: &str) -> Option<String> {
     let tool_ctx = ctx.as_tool_context();
-    let (shell, sandbox_tmp, _policy) = crate::tools::handlers::confined_shell(&tool_ctx).ok()?;
+    let (shell, sandbox_env, _policy) = crate::tools::handlers::confined_shell(&tool_ctx).ok()?;
     // A poll child is short-lived and re-spawned each interval; it is not tied
     // to a session's Stop, so it registers in the process-wide bucket.
     let mut child = crate::tools::proc::spawn(
         &shell,
         script,
         &ctx.project_root,
-        sandbox_tmp.as_deref(),
+        sandbox_env.as_ref(),
         tool_ctx.shell_env(),
         None,
     )
@@ -612,6 +614,7 @@ mod tests {
         MonitorCtx {
             project_root: root.to_path_buf(),
             scratch_root: None,
+            pkg_cache: None,
             mask_root: None,
             hidden_root: None,
             read_roots: Vec::new(),

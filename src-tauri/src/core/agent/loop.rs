@@ -815,6 +815,10 @@ struct CompositeToolInvoker {
     /// (see [`scratch_root_for`]), so `bash` scratch files persist across
     /// calls for the whole run. Created at run start and wiped at run end.
     scratch_root: std::path::PathBuf,
+    /// The project's package cache, for a sandboxed run (see
+    /// [`crate::core::agent::project::prepare_pkg_cache`]); `None` unconfined,
+    /// where the shell keeps the host's own caches.
+    pkg_cache: Option<tauri_plugin_agent_tools::workspace::PkgCache>,
     /// Host env-var names/globs the shell may inherit beyond the base allowlist,
     /// and explicit key=value overrides. Resolved once per run by merging
     /// `~/.jan/config.toml` with the project's `[tools]` section.
@@ -1337,6 +1341,7 @@ impl CompositeToolInvoker {
         .with_escalation(self.escalation.offered())
         .with_hidden_root(self.hidden_root.as_deref())
         .with_scratch_root(&self.scratch_root)
+        .with_pkg_cache(self.pkg_cache.as_ref())
         .with_env_passthrough(&self.env_passthrough)
         .with_env_set(&self.env_set)
         .with_web_search(self.web_search.as_ref())
@@ -2869,6 +2874,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 let sandbox = self.sandbox;
                 let hidden = self.hidden_root.clone();
                 let scratch = self.scratch_root.clone();
+                let pkg_cache = self.pkg_cache.clone();
                 let web_search = self.web_search.clone();
                 let read_roots = self.workspace.read_roots.clone();
                 // Hooks come along: a read is still a tool call, and a
@@ -2895,6 +2901,7 @@ impl ToolInvoker for CompositeToolInvoker {
                         .with_sandbox(sandbox)
                         .with_hidden_root(hidden.as_deref())
                         .with_scratch_root(&scratch)
+                        .with_pkg_cache(pkg_cache.as_ref())
                         .with_read_roots(&read_roots)
                         .with_web_search(web_search.as_ref())
                         .with_hooks(&hooks, planning, Some(hook_sink));
@@ -3700,6 +3707,18 @@ fn scratch_root_for(
     crate::core::agent::project::scratch_dir(project_root, &session)
 }
 
+/// The run's package cache: prepared for a sandboxed run, `None` unconfined,
+/// where the shell keeps the host's own caches and nothing would bind one.
+async fn pkg_cache_for(
+    sandbox: bool,
+    project_root: &std::path::Path,
+) -> Result<Option<tauri_plugin_agent_tools::workspace::PkgCache>, String> {
+    if !sandbox {
+        return Ok(None);
+    }
+    crate::core::agent::project::prepare_pkg_cache(project_root).await.map(Some)
+}
+
 /// Which todo addendum this turn needs, if any: the init guidance on a `/goal`
 /// turn with no plan staged, otherwise the upkeep guidance whenever a list
 /// already exists. `None` when there is nothing to say (no list, and not a
@@ -4255,6 +4274,7 @@ async fn orchestrate_inner(
         if settings.sandbox {
             tauri_plugin_agent_tools::workspace::ensure_scratch_dir_path(&scratch_root).await?;
         }
+        let pkg_cache = pkg_cache_for(settings.sandbox, root).await?;
         let (store_root, memory_home, cross_project) =
             crate::core::agent::project::memory_roots(root);
         let tool_notices = settings.tool_notices;
@@ -4270,6 +4290,7 @@ async fn orchestrate_inner(
             escalation: settings.escalation,
             hidden_root: crate::core::agent::project::hidden_root(settings.sandbox),
             scratch_root: scratch_root.clone(),
+            pkg_cache,
             env_passthrough: settings.env_passthrough,
             // A child's workspace adds its build and cache dirs on top.
             env_set: merge_env_set(
@@ -6671,6 +6692,25 @@ mod tests {
             anon,
             scratch_root_for(None, &root),
             "two session-less runs must not share a scratch"
+        );
+    }
+
+    /// A sandboxed run gets its project's package cache under the project's
+    /// cache folder, beside the scratch; an unconfined one gets none, and
+    /// creates nothing.
+    #[tokio::test]
+    async fn pkg_cache_is_prepared_only_for_a_sandboxed_run() {
+        let root = unique_project_root();
+        let cache = crate::core::agent::project::project_cache_dir(&root);
+        assert_eq!(pkg_cache_for(false, &root).await.unwrap(), None);
+        assert!(!cache.join("pkg").exists());
+        let pkg = pkg_cache_for(true, &root).await.unwrap().expect("sandboxed");
+        assert_eq!(pkg.root, cache.join("pkg"));
+        assert!(pkg.root.join("cargo").is_dir());
+        assert_ne!(
+            pkg.root,
+            pkg_cache_for(true, &unique_project_root()).await.unwrap().unwrap().root,
+            "two projects never share a package cache"
         );
     }
 
@@ -10099,6 +10139,7 @@ mod tests {
             allow_network: DEFAULT_ALLOW_NETWORK,
             allow_home_read: DEFAULT_ALLOW_HOME_READ,
             scratch_root: std::env::temp_dir().join("jan-loop-test-scratch"),
+            pkg_cache: None,
             env_passthrough: Vec::new(),
             env_set: Vec::new(),
             web_search: None,

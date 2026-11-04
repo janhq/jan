@@ -49051,6 +49051,7 @@ fn a() {}
         tauri_plugin_agent_tools::tools::monitor::MonitorCtx {
             project_root: root.to_path_buf(),
             scratch_root: None,
+            pkg_cache: None,
             mask_root: None,
             hidden_root: None,
             read_roots: Vec::new(),

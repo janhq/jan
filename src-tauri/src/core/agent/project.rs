@@ -469,6 +469,15 @@ pub(crate) fn scratch_dir(project_root: &Path, session: &str) -> PathBuf {
     tauri_plugin_agent_tools::workspace::scratch_dir_in(&project_cache_dir(project_root), session)
 }
 
+/// Prepare `project_root`'s package cache, `<cache>/jan/<slug>/pkg`, for a
+/// sandboxed run: shared by the project's sessions (subagent worktrees map to
+/// the same slug), never by another project's.
+pub(crate) async fn prepare_pkg_cache(
+    project_root: &Path,
+) -> Result<tauri_plugin_agent_tools::workspace::PkgCache, String> {
+    tauri_plugin_agent_tools::workspace::prepare_pkg_cache(&project_cache_dir(project_root)).await
+}
+
 /// The Jan home the general tools and the sandboxed shell may not reach while
 /// `sandbox` is on (see `workspace::hidden_root`). Resolved through [`jan_home`]
 /// so tests hide their temp home, not the developer's.
