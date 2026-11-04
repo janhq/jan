@@ -6,6 +6,7 @@ use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
     escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root, in_hidden_root,
+    Attached,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -165,6 +166,14 @@ pub struct GateContext<'a> {
     pub hidden_root: Option<&'a Path>,
 }
 
+impl<'a> GateContext<'a> {
+    /// The attached folders as the path helpers take them; see
+    /// [`crate::tools::sandbox::Attached`].
+    fn attached(&self) -> Attached<'a> {
+        Attached::new(self.read_roots, self.write_roots)
+    }
+}
+
 /// Decide how a built-in tool call should be gated, combining the static
 /// agent.toml policy, capability class, sandbox escape, and session grants.
 ///
@@ -242,7 +251,7 @@ pub fn resolve_decision(
                 args.get(key)
                     .and_then(|v| v.as_str())
                     .map(|p| {
-                        escapes_read_roots(ctx.project_root, ctx.scratch, ctx.read_roots, p)
+                        escapes_read_roots(ctx.project_root, ctx.scratch, ctx.attached(), p)
                             .unwrap_or(true)
                     })
                     .unwrap_or(false)
@@ -270,7 +279,7 @@ pub fn resolve_decision(
                 args.get(key)
                     .and_then(|v| v.as_str())
                     .map(|p| {
-                        escapes_write_roots(ctx.project_root, ctx.scratch, ctx.write_roots, p)
+                        escapes_write_roots(ctx.project_root, ctx.scratch, ctx.attached(), p)
                             .unwrap_or(true)
                     })
                     .unwrap_or(false)

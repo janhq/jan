@@ -742,6 +742,8 @@ async fn resolve_session_monitor_ctx(
             hooks: None,
             project_root: root,
             scratch_root: Some(scratch),
+            // Desktop chat and Cowork have no filesystem project to key one on.
+            pkg_cache: None,
             mask_root: Some(data_folder),
             hidden_root: workspace::hidden_root(true),
             read_roots,

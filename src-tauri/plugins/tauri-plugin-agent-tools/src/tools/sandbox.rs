@@ -1,10 +1,40 @@
 use std::path::{Path, PathBuf};
 
+/// The attached folders a tool call may reach besides the project: `read` is
+/// every attached root (readable), `write` the subset also writable (see
+/// [`super::ToolContext::write_roots`], always a subset of `read`).
+///
+/// Carried alongside the project root and scratch wherever the attached
+/// folders' access matters: a path inside a read-only one must stay readable
+/// and unwritable.
+#[derive(Debug, Clone, Copy)]
+pub struct Attached<'a> {
+    pub read: &'a [PathBuf],
+    pub write: &'a [PathBuf],
+}
+
+impl<'a> Attached<'a> {
+    /// No attached folders.
+    pub const NONE: Attached<'static> = Attached { read: &[], write: &[] };
+
+    pub fn new(read: &'a [PathBuf], write: &'a [PathBuf]) -> Self {
+        Self { read, write }
+    }
+
+    /// Readable roots only, for the read-side tools that never see `write_roots`.
+    pub fn reads(read: &'a [PathBuf]) -> Self {
+        Self { read, write: &[] }
+    }
+}
+
 /// True iff `raw` resolves to a path outside `project_root` and outside the
 /// session scratch. Relative paths are resolved against `project_root`.
 /// Canonicalizes (resolving `..` and symlinks) so string tricks and symlink
 /// escapes are caught. For a not-yet-existing leaf (new-file writes), the
 /// deepest existing ancestor is canonicalized and the remaining tail re-joined.
+///
+/// Knows no attached folders: a caller that has some uses
+/// [`escapes_read_roots`] / [`escapes_write_roots`], which share this check.
 pub fn escapes_project(
     project_root: &Path,
     scratch: Option<&Path>,
@@ -48,9 +78,10 @@ pub fn escapes_project(
 pub fn escapes_read_roots(
     project_root: &Path,
     scratch: Option<&Path>,
-    read_roots: &[PathBuf],
+    attached: Attached<'_>,
     raw: &str,
 ) -> Result<bool, String> {
+    let read_roots = attached.read;
     if !escapes_project(project_root, scratch, raw)? {
         return Ok(false);
     }
@@ -83,12 +114,14 @@ pub fn escapes_read_roots(
 /// for the same reason: a writable root can only ever widen what writes reach,
 /// and a caller that passes none keeps today's exact check. A root that cannot
 /// be canonicalized grants nothing.
+///
 pub fn escapes_write_roots(
     project_root: &Path,
     scratch: Option<&Path>,
-    write_roots: &[PathBuf],
+    attached: Attached<'_>,
     raw: &str,
 ) -> Result<bool, String> {
+    let write_roots = attached.write;
     if !escapes_project(project_root, scratch, raw)? {
         return Ok(false);
     }
@@ -200,6 +233,31 @@ pub fn lexical_normalize(path: &Path) -> PathBuf {
         }
     }
     out
+}
+
+/// True iff `real`, the link-free path a `write`/`edit` is about to open, is in
+/// an attached folder the caller did not make writable. Independent of write
+/// confinement: an unconfined run may reach unrelated paths it has been
+/// approved for, but an attached read-only folder stays read-only.
+///
+/// A writable root wins when it contains `real` too (a writable folder nested
+/// in a read-only one), and the project and the scratch are never refused here
+/// -- they are the run's own area even if a read-only folder encloses them.
+/// A root that cannot be canonicalized contains nothing.
+pub fn in_attached_read_only_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    attached: Attached<'_>,
+    real: &Path,
+) -> bool {
+    let inside = |root: &Path| root.canonicalize().is_ok_and(|r| real.starts_with(r));
+    if inside(project_root) || scratch.is_some_and(inside) {
+        return false;
+    }
+    if attached.write.iter().any(|r| inside(r)) {
+        return false;
+    }
+    attached.read.iter().any(|r| inside(r))
 }
 
 /// True iff a write to `raw` would land in a read-only `project_root`: inside
@@ -701,7 +759,7 @@ mod tests {
         assert_eq!(escapes_project(&root, None, "d/x.txt"), Ok(true));
         assert_eq!(escapes_project(&root, None, "sub/rel.md"), Ok(true));
         assert_eq!(escapes_project(&root, None, "missing/../notes.md"), Ok(true));
-        assert_eq!(escapes_write_roots(&root, None, &[], "notes.md"), Ok(true));
+        assert_eq!(escapes_write_roots(&root, None, Attached::NONE, "notes.md"), Ok(true));
         assert!(symlink_escapes_root(&root, None, &root.join("notes.md")));
         assert!(symlink_escapes_root(&root, None, &root.join("d/x.txt")));
         let _ = std::fs::remove_dir_all(&root);
@@ -795,7 +853,7 @@ mod tests {
 
         // Without the root it is an escape; with it, a legitimate read.
         assert!(escapes_project(&ws, None, &target).unwrap());
-        assert!(!escapes_read_roots(&ws, None, &roots, &target).unwrap());
+        assert!(!escapes_read_roots(&ws, None, Attached::reads(&roots), &target).unwrap());
 
         let _ = std::fs::remove_dir_all(&ws);
         let _ = std::fs::remove_dir_all(&repo);
@@ -820,7 +878,7 @@ mod tests {
         let other = unique_root_outside_tmp();
         let roots = vec![repo.clone()];
         let target = other.join("secret").to_string_lossy().into_owned();
-        assert!(escapes_read_roots(&ws, None, &roots, &target).unwrap());
+        assert!(escapes_read_roots(&ws, None, Attached::reads(&roots), &target).unwrap());
         for d in [&ws, &repo, &other] {
             let _ = std::fs::remove_dir_all(d);
         }
@@ -834,7 +892,7 @@ mod tests {
         let target = gone.join("x").to_string_lossy().into_owned();
         std::fs::remove_dir_all(&gone).unwrap();
         let roots = vec![gone];
-        assert!(escapes_read_roots(&ws, None, &roots, &target).unwrap());
+        assert!(escapes_read_roots(&ws, None, Attached::reads(&roots), &target).unwrap());
         let _ = std::fs::remove_dir_all(&ws);
     }
 
@@ -846,7 +904,7 @@ mod tests {
         let repo = unique_root_outside_tmp();
         std::fs::write(repo.join("only-in-repo.txt"), b"x").unwrap();
         let roots = vec![repo.clone()];
-        assert!(escapes_read_roots(&ws, None, &roots, "only-in-repo.txt").is_ok());
+        assert!(escapes_read_roots(&ws, None, Attached::reads(&roots), "only-in-repo.txt").is_ok());
         let _ = std::fs::remove_dir_all(&ws);
         let _ = std::fs::remove_dir_all(&repo);
     }

@@ -15,7 +15,7 @@ use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::nofollow;
 use crate::tools::sandbox::{
-    escapes_write_roots, hidden_under, in_read_only_root, in_scratch, landing, lexical_normalize,
+    escapes_write_roots, hidden_under, in_attached_read_only_root, in_read_only_root, Attached, in_scratch, landing, lexical_normalize,
     refuse_windows_name, resolve_path, symlink_escapes_any_root, Landing,
 };
 use crate::screenshot_pages::PageScope;
@@ -188,14 +188,14 @@ async fn execute_builtin_unhooked(
     let project_root = ctx.project_root;
     let scratch = ctx.scratch_root;
     let (content, images) = match tool.name {
-        "read" => read(args, project_root, scratch, ctx.read_roots).await,
+        "read" => read(args, project_root, scratch, ctx.attached()).await,
         #[cfg(feature = "tauri")]
         "screenshot" => {
             screenshot(
                 args,
                 project_root,
                 scratch,
-                ctx.read_roots,
+                ctx.attached(),
                 ctx.screenshot_backend.as_ref(),
             )
             .await
@@ -218,8 +218,8 @@ async fn execute_text(
         // Read tools consult the attached read-only roots; `write`/`edit`
         // deliberately do not, which is what keeps an attached folder
         // readable and unwritable.
-        "read" => read(args, project_root, scratch, ctx.read_roots).await.0,
-        "ls" => ls(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
+        "read" => read(args, project_root, scratch, ctx.attached()).await.0,
+        "ls" => ls(args, project_root, scratch, ctx.attached(), ctx.hidden_root).await,
         "write" if ctx.workspace_readonly
             && in_read_only_root(project_root, scratch, arg_str(args, "path").unwrap_or("")) =>
         {
@@ -231,7 +231,7 @@ async fn execute_text(
                 project_root,
                 scratch,
                 ctx.confine_writes,
-                ctx.write_roots,
+                ctx.attached(),
             )
             .await
         }
@@ -246,13 +246,13 @@ async fn execute_text(
                 project_root,
                 scratch,
                 ctx.confine_writes,
-                ctx.write_roots,
+                ctx.attached(),
             )
             .await
         }
         crate::tools::SHELL_TOOL => bash(args, ctx).await,
-        "find" => find(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
-        "grep" => grep(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
+        "find" => find(args, project_root, scratch, ctx.attached(), ctx.hidden_root).await,
+        "grep" => grep(args, project_root, scratch, ctx.attached(), ctx.hidden_root).await,
         // Memory and skills live in the store root, not the sandbox: they must
         // outlive the conversation the filesystem tools are scoped to.
         crate::tools::MEMORY_TOOL => {
@@ -689,9 +689,9 @@ async fn read(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
-    read_roots: &[PathBuf],
+    attached: Attached<'_>,
 ) -> (String, Option<Vec<ImageContentPart>>) {
-    read_with(args, root, scratch, read_roots, |_| {}).await
+    read_with(args, root, scratch, attached, |_| {}).await
 }
 
 /// `read` with a hook run after the path is resolved and before it is opened.
@@ -701,7 +701,7 @@ async fn read_with(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
-    read_roots: &[PathBuf],
+    attached: Attached<'_>,
     before_open: impl FnOnce(&Path),
 ) -> (String, Option<Vec<ImageContentPart>>) {
     let Some(path) = arg_str(args, "path") else {
@@ -717,7 +717,7 @@ async fn read_with(
     // than followed. This narrows the swap window the way the writers do; it is
     // not a proof of atomicity on every platform (Windows pins ancestors with
     // share modes instead of `openat`).
-    let resolved = match landing(root, scratch, read_roots, &target) {
+    let resolved = match landing(root, scratch, attached.read, &target) {
         Landing::Inside(p) => p,
         // Not under any root: the gate already put it to the user.
         Landing::Outside(p) => p.unwrap_or_else(|| target.clone()),
@@ -835,7 +835,7 @@ async fn ls(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
-    read_roots: &[PathBuf],
+    attached: Attached<'_>,
     hidden: Option<&Path>,
 ) -> String {
     let path = arg_str(args, "path").unwrap_or(".");
@@ -844,7 +844,7 @@ async fn ls(
         .unwrap_or(LS_DEFAULT_LIMIT);
     let target = resolve_path(root, path);
     // Names are content too: a symlinked directory would list a host directory.
-    if symlink_escapes_any_root(root, scratch, read_roots, &target) {
+    if symlink_escapes_any_root(root, scratch, attached.read, &target) {
         return format!("ERROR: refused to list through a symlink out of the workspace: {path}");
     }
     let mut entries = match tokio::fs::read_dir(&target).await {
@@ -886,7 +886,7 @@ async fn write(
     root: &Path,
     scratch: Option<&Path>,
     confine: bool,
-    write_roots: &[PathBuf],
+    attached: Attached<'_>,
 ) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
@@ -902,7 +902,7 @@ async fn write(
     // caught even if the gate's decision was made against a stale view.
     // `write_roots` widen the confinement exactly as they widened the gate.
     let target = resolve_path(root, path);
-    if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
+    if confine && escapes_write_roots(root, scratch, attached, path).unwrap_or(true) {
         return format!("ERROR: refused to write outside the agent workspace: {path}");
     }
     // Report the resolved location, not the raw argument: an absolute or `../`
@@ -912,12 +912,17 @@ async fn write(
     // resolution approved: a concurrent sandboxed process can swap a path
     // component for a link at any point, and both `create_dir_all` and a
     // by-name write would follow it.
-    let real = match write_landing(root, scratch, write_roots, &target) {
+    let real = match write_landing(root, scratch, attached.write, &target) {
         Ok(real) => real,
         Err(()) => {
             return format!("ERROR: refused to write through a symlink out of the workspace: {path}")
         }
     };
+    // Unconfined, `landing` lets a target outside every root through (the gate
+    // put it to the user), which includes a read-only attached folder.
+    if in_attached_read_only_root(root, scratch, attached, &real) {
+        return format!("ERROR: {path} is in a read-only attached folder; it cannot be changed.");
+    }
     let content = content.to_string();
     let outcome = tokio::task::spawn_blocking(move || {
         // Existence decides created/overwrote; a non-UTF8 file still exists, so
@@ -1019,7 +1024,7 @@ async fn edit(
     root: &Path,
     scratch: Option<&Path>,
     confine: bool,
-    write_roots: &[PathBuf],
+    attached: Attached<'_>,
 ) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
@@ -1034,15 +1039,18 @@ async fn edit(
         return format!("ERROR: refused to edit '{name}' in {path}: the name {why}");
     }
     let target = resolve_path(root, path);
-    if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
+    if confine && escapes_write_roots(root, scratch, attached, path).unwrap_or(true) {
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
     let shown = display_path(root, scratch, &target);
     // Resolve once and use that path for both the read and the write, each
     // opened without following links, so a swapped component redirects neither.
-    let Ok(real) = write_landing(root, scratch, write_roots, &target) else {
+    let Ok(real) = write_landing(root, scratch, attached.write, &target) else {
         return format!("ERROR: refused to edit through a symlink out of the workspace: {path}");
     };
+    if in_attached_read_only_root(root, scratch, attached, &real) {
+        return format!("ERROR: {path} is in a read-only attached folder; it cannot be changed.");
+    }
     let read_path = real.clone();
     let read = tokio::task::spawn_blocking(move || nofollow::read(&read_path)).await;
     let content = match read {
@@ -2013,7 +2021,7 @@ async fn screenshot(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
-    read_roots: &[PathBuf],
+    attached: Attached<'_>,
     backend: Option<&ScreenshotBackend>,
 ) -> (String, Option<Vec<ImageContentPart>>) {
     let Some(path) = arg_str(args, "path") else {
@@ -2024,7 +2032,7 @@ async fn screenshot(
     let target = resolve_path(root, path);
     // A page the user approved outside the trusted roots gets no neighbours:
     // its directory was never part of what they approved.
-    let scope = match landing(root, scratch, read_roots, &target) {
+    let scope = match landing(root, scratch, attached.read, &target) {
         Landing::Escapes => {
             return (
                 format!(
@@ -2059,7 +2067,7 @@ async fn find(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
-    read_roots: &[PathBuf],
+    attached: Attached<'_>,
     hidden: Option<&Path>,
 ) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
@@ -2068,7 +2076,7 @@ async fn find(
         .map(|v| v as usize)
         .unwrap_or(FIND_DEFAULT_LIMIT);
     let base = resolve_path(root, &path);
-    if symlink_escapes_any_root(root, scratch, read_roots, &base) {
+    if symlink_escapes_any_root(root, scratch, attached.read, &base) {
         return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
     }
     let skip = hidden.and_then(|h| hidden_under(&base, h));
@@ -2129,7 +2137,7 @@ async fn grep(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
-    read_roots: &[PathBuf],
+    attached: Attached<'_>,
     hidden: Option<&Path>,
 ) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
@@ -2142,13 +2150,13 @@ async fn grep(
         .map(|v| v as usize)
         .unwrap_or(GREP_DEFAULT_LIMIT);
     let base = resolve_path(root, &path);
-    if symlink_escapes_any_root(root, scratch, read_roots, &base) {
+    if symlink_escapes_any_root(root, scratch, attached.read, &base) {
         return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
     }
     let root_owned = root.to_path_buf();
     let scratch_owned = scratch.map(Path::to_path_buf);
     // Owned for the blocking walk closure, which outlives this frame.
-    let roots_owned = read_roots.to_vec();
+    let roots_owned = attached.read.to_vec();
     let skip = hidden.and_then(|h| hidden_under(&base, h));
 
     let Some(pattern) = pattern else {
@@ -3469,7 +3477,7 @@ mod tests {
         let swap_root = root.clone();
         let swap_out = outside.clone();
         let mut swapped = false;
-        let (out, image) = read_with(&json!({"path": "sub/doc.txt"}), &root, None, &[], |resolved| {
+        let (out, image) = read_with(&json!({"path": "sub/doc.txt"}), &root, None, Attached::NONE, |resolved| {
             assert!(resolved.ends_with("sub/doc.txt"), "{resolved:?}");
             std::fs::rename(swap_root.join("sub"), swap_root.join("sub-real")).unwrap();
             std::os::unix::fs::symlink(&swap_out, swap_root.join("sub")).unwrap();
@@ -3482,7 +3490,7 @@ mod tests {
         assert!(!out.contains("classified"), "leaked: {out}");
 
         // No swap: the ordinary in-root file is still read through the same seam.
-        let (ok, _) = read_with(&json!({"path": "sub-real/doc.txt"}), &root, None, &[], |_| {}).await;
+        let (ok, _) = read_with(&json!({"path": "sub-real/doc.txt"}), &root, None, Attached::NONE, |_| {}).await;
         assert_eq!(ok, "ordinary");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
@@ -3831,6 +3839,194 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    // ---- Linux: attached folders under /tmp vs the scratch-backed /tmp ----
+    //
+    // The sandbox binds the scratch over /tmp first, then the project and every
+    // attached folder at its own absolute path, so an attached folder that lives
+    // under /tmp is the real host folder in the shell. The file tools must agree.
+
+    /// A real folder directly under the host /tmp (not `temp_dir()`, which a
+    /// TMPDIR override can move), the shape the bug needs.
+    #[cfg(target_os = "linux")]
+    fn unique_host_tmp_dir(tag: &str) -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = PathBuf::from(format!("/tmp/jan_att_{tag}_{}_{}", std::process::id(), n));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create attached dir");
+        dir
+    }
+
+    /// Run one tool against a context with the given attached folders.
+    #[cfg(target_os = "linux")]
+    async fn run_attached(
+        tool: &str,
+        args: serde_json::Value,
+        root: &Path,
+        scratch: &Path,
+        read_roots: &[PathBuf],
+        write_roots: &[PathBuf],
+        confine: bool,
+    ) -> String {
+        let store = crate::workspace::project_store(root);
+        let ctx = ToolContext::new(root, &store, &[])
+            .with_scratch_root(scratch)
+            .with_read_roots(read_roots)
+            .with_write_roots(write_roots)
+            .with_confined_writes(confine);
+        super::execute_builtin(lookup(tool).unwrap(), &args, &ctx).await.0
+    }
+
+    /// `read` of a file in an attached folder under /tmp returns the host file,
+    /// not a same-named path in the scratch.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn read_of_attached_tmp_folder_hits_the_host_not_the_scratch() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let att = unique_host_tmp_dir("read");
+        std::fs::write(att.join("f.txt"), b"host").unwrap();
+        // Decoy at the path the scratch remap would produce.
+        let name = att.file_name().unwrap();
+        std::fs::create_dir_all(scratch.join(name)).unwrap();
+        std::fs::write(scratch.join(name).join("f.txt"), b"decoy").unwrap();
+        let roots = vec![att.clone()];
+        let p = att.join("f.txt").to_string_lossy().into_owned();
+        let out = run_attached("read", json!({"path": p}), &root, &scratch, &roots, &[], true).await;
+        assert_eq!(out, "host", "got: {out}");
+        for d in [&root, &scratch, &att] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    /// A writable attached folder under /tmp: `write` lands on the host folder,
+    /// no copy appears in the scratch, and `read` sees it back.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn write_to_rw_attached_tmp_folder_lands_on_host_with_no_scratch_copy() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let att = unique_host_tmp_dir("rw");
+        let name = att.file_name().unwrap().to_owned();
+        let roots = vec![att.clone()];
+        let p = att.join("out.txt").to_string_lossy().into_owned();
+        let out = run_attached(
+            "write",
+            json!({"path": p, "content": "rw"}),
+            &root, &scratch, &roots, &roots, true,
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "got: {out}");
+        assert_eq!(std::fs::read_to_string(att.join("out.txt")).unwrap(), "rw");
+        assert!(!scratch.join(&name).exists(), "a copy was made in the scratch");
+        let back = run_attached("read", json!({"path": p}), &root, &scratch, &roots, &roots, true).await;
+        assert_eq!(back, "rw");
+        // edit goes the same way.
+        let out = run_attached(
+            "edit",
+            json!({"path": p, "edits": [{"old_string": "rw", "new_string": "rw2"}]}),
+            &root, &scratch, &roots, &roots, true,
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "got: {out}");
+        assert_eq!(std::fs::read_to_string(att.join("out.txt")).unwrap(), "rw2");
+        assert!(!scratch.join(&name).exists());
+        for d in [&root, &scratch, &att] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    /// A read-only attached folder under /tmp stays unwritable: the write is
+    /// refused (both with and without confinement), not silently remapped into
+    /// the scratch, and nothing lands on the host.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn write_to_ro_attached_tmp_folder_is_denied_and_not_remapped() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let att = unique_host_tmp_dir("ro");
+        let name = att.file_name().unwrap().to_owned();
+        let roots = vec![att.clone()];
+        let p = att.join("new.txt").to_string_lossy().into_owned();
+        std::fs::write(att.join("existing.txt"), "original").unwrap();
+        for confine in [true, false] {
+            for tool in ["write", "edit"] {
+                let args = if tool == "write" {
+                    json!({"path": p, "content": "x"})
+                } else {
+                    json!({"path": att.join("existing.txt"), "edits": [{"old_string": "original", "new_string": "changed"}]})
+                };
+                let out = run_attached(tool, args, &root, &scratch, &roots, &[], confine).await;
+                assert!(
+                    out.starts_with("ERROR") || out.contains("refused") || out.contains("denied"),
+                    "{tool} confine={confine} was not denied: {out}"
+                );
+                assert!(!att.join("new.txt").exists(), "{tool} wrote into the RO folder");
+                assert_eq!(std::fs::read_to_string(att.join("existing.txt")).unwrap(), "original", "{tool} changed the RO file");
+                assert!(!scratch.join(&name).exists(), "{tool} was remapped into the scratch");
+            }
+        }
+        for d in [&root, &scratch, &att] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    /// Only the attached folder shadows the scratch. Any other /tmp path (a
+    /// sibling with the folder's name as prefix, or one that climbs out of the
+    /// folder with `..`) still maps into the scratch and clamps at its root.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn other_tmp_paths_still_remap_to_scratch_next_to_an_attached_folder() {
+        use crate::tools::sandbox::{resolve_path, Attached};
+        let root = unique_root();
+        let scratch = unique_root();
+        let att = unique_host_tmp_dir("remap");
+        let roots = vec![att.clone()];
+        let a = Attached::new(&roots, &roots);
+        let inside = att.join("f.txt");
+        assert_eq!(resolve_path(&root, Some(&scratch), a, inside.to_str().unwrap()), inside);
+        let name = att.file_name().unwrap().to_str().unwrap().to_string();
+        assert_eq!(
+            resolve_path(&root, Some(&scratch), a, "/tmp/other.txt"),
+            scratch.join("other.txt")
+        );
+        assert_eq!(
+            resolve_path(&root, Some(&scratch), a, &format!("/tmp/{name}-evil/x")),
+            scratch.join(format!("{name}-evil/x"))
+        );
+        assert_eq!(
+            resolve_path(&root, Some(&scratch), a, &format!("/tmp/{name}/../x.txt")),
+            scratch.join("x.txt")
+        );
+        for d in [&root, &scratch, &att] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    /// Shadowing the scratch must not weaken symlink checks: a link inside a
+    /// writable attached folder under /tmp that points out of it is still refused.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn symlink_out_of_rw_attached_tmp_folder_is_still_refused() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let att = unique_host_tmp_dir("link");
+        let outside = unique_host_tmp_dir("outside");
+        std::os::unix::fs::symlink(&outside, att.join("esc")).unwrap();
+        let roots = vec![att.clone()];
+        let p = att.join("esc/pwned.txt").to_string_lossy().into_owned();
+        let out = run_attached(
+            "write",
+            json!({"path": p, "content": "x"}),
+            &root, &scratch, &roots, &roots, true,
+        )
+        .await;
+        assert!(out.starts_with("ERROR"), "got: {out}");
+        assert!(!outside.join("pwned.txt").exists(), "wrote through the link");
+        for d in [&root, &scratch, &att, &outside] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 
     #[tokio::test]
@@ -5481,7 +5677,7 @@ mod tests {
     async fn screenshot_rejects_a_non_html_file() {
         let root = unique_root();
         std::fs::write(root.join("a.txt"), b"nope").unwrap();
-        let (out, images) = screenshot(&json!({"path": "a.txt"}), &root, None, &[], None).await;
+        let (out, images) = screenshot(&json!({"path": "a.txt"}), &root, None, Attached::NONE, None).await;
         assert!(out.contains("only renders"), "{out}");
         assert!(images.is_none());
         let _ = std::fs::remove_dir_all(&root);
@@ -5491,7 +5687,7 @@ mod tests {
     #[tokio::test]
     async fn screenshot_rejects_a_missing_file() {
         let root = unique_root();
-        let (out, images) = screenshot(&json!({"path": "gone.html"}), &root, None, &[], None).await;
+        let (out, images) = screenshot(&json!({"path": "gone.html"}), &root, None, Attached::NONE, None).await;
         assert!(out.contains("file not found"), "{out}");
         assert!(images.is_none());
         let _ = std::fs::remove_dir_all(&root);
@@ -5501,7 +5697,7 @@ mod tests {
     #[tokio::test]
     async fn screenshot_requires_a_path() {
         let root = unique_root();
-        let (out, _) = screenshot(&json!({}), &root, None, &[], None).await;
+        let (out, _) = screenshot(&json!({}), &root, None, Attached::NONE, None).await;
         assert!(out.contains("missing required argument"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -5516,7 +5712,7 @@ mod tests {
         let link = root.join("innocent.html");
         std::os::unix::fs::symlink(&secret, &link).unwrap();
 
-        let (out, images) = screenshot(&json!({"path": "innocent.html"}), &root, None, &[], None).await;
+        let (out, images) = screenshot(&json!({"path": "innocent.html"}), &root, None, Attached::NONE, None).await;
         assert!(out.contains("symlink"), "{out}");
         assert!(images.is_none());
         let _ = std::fs::remove_dir_all(&root);
@@ -5547,7 +5743,7 @@ mod tests {
             (out_page, vec![outside.clone()]),
         ] {
             let (out, _) =
-                screenshot(&json!({"path": path}), &root, None, &read_roots, Some(&backend)).await;
+                screenshot(&json!({"path": path}), &root, None, Attached::reads(&read_roots), Some(&backend)).await;
             assert!(!out.starts_with("ERROR"), "{out}");
         }
         assert_eq!(
@@ -5596,7 +5792,7 @@ mod tests {
             &json!({"path": "page.html", "width": 400, "height": 300}),
             &root,
             None,
-            &[],
+            Attached::NONE,
             None,
         )
         .await;
