@@ -6,7 +6,8 @@ import { render, screen } from '@testing-library/react'
 const titlebar = vi.hoisted(() => ({ left: [] as string[] }))
 
 vi.mock('@tanstack/react-router', () => ({
-  useLocation: () => ({ pathname: '/' }),
+  useLocation: ({ select }: { select?: (l: { pathname: string }) => unknown } = {}) =>
+    select ? select({ pathname: '/' }) : { pathname: '/' },
   Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
     <a {...props} href={to}>
       {children}
@@ -39,6 +40,7 @@ vi.mock('@/components/ui/sidebar', () => {
     SidebarHeader: Box,
     SidebarTrigger: () => null,
     SidebarRail: () => null,
+    useSidebar: () => ({ isMobile: false, setOpenMobile: vi.fn() }),
   }
 })
 

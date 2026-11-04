@@ -52,6 +52,8 @@ const AppLayout = () => {
         onOpenChange={setLeftPanel}
         defaultWidth={sidebarWidth}
         onWidthChange={setLeftPanelWidth}
+        // KeyboardShortcutsProvider owns the (configurable) toggle shortcut.
+        keyboardShortcut={false}
       >
         <AnalyticProvider />
         <KeyboardShortcutsProvider />

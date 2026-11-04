@@ -281,7 +281,8 @@
       "alreadyExists": "项目\"{{projectName}}\"已存在",
       "createSuccess": "项目\"{{projectName}}\"创建成功",
       "renameSuccess": "项目从\"{{oldName}}\"重命名为\"{{newName}}\""
-    }
+    },
+    "viewProject": "查看项目"
   },
   "dialogs": {
     "changeDataFolder": {
@@ -412,7 +413,22 @@
     "readOnly": "只读",
     "allowChanges": "允许修改文件",
     "footnoteReadOnly": "智能体可以读取此文件夹，但无法修改。开启“允许修改文件”后，智能体才能编辑其中的文件。",
-    "a11yWithFolderReadOnly": "项目文件夹 {{folder}}，已附加并授予只读权限。可更换或分离。"
+    "a11yWithFolderReadOnly": "项目文件夹 {{folder}}，已附加并授予只读权限。可更换或分离。",
+    "readsFrom": "工作目录",
+    "writable": "可读写",
+    "footnote": "智能体会直接读取并编辑此文件夹。可在差异面板中查看更改内容。",
+    "footnoteEmpty": "附加一个文件夹，让智能体在你的项目中工作。它可以读取和编辑其中的文件。",
+    "attach": "附加文件夹",
+    "change": "更换文件夹",
+    "detach": "分离文件夹",
+    "open": "打开",
+    "reveal": "显示",
+    "unavailable": "工作区不可用",
+    "missing": "工作区文件夹 {{folder}} 已不可用。请选择其他文件夹。",
+    "openFailed": "无法打开工作区",
+    "revealFailed": "无法显示工作区",
+    "a11yWithFolder": "项目文件夹 {{folder}}，已附加并授予读写权限。可更换或分离。",
+    "a11yNoFolder": "未附加项目文件夹。请附加一个。"
   },
   "conversationScope": {
     "noToolsModel": "所选模型不支持工具，因此这些权限在您选择支持工具的模型之前不会生效。",
@@ -423,11 +439,77 @@
     "confirmFolder": "确认",
     "removeFolder": "移除",
     "hostRevokeUnconfirmed": "Jan 无法确认此权限更改。后台任务可能仍拥有之前的访问权限。请重试，或退出 Jan 以停止这些任务。",
-    "saveFailed": "无法保存权限更改。在成功保存前，额外的访问权限将保持关闭。"
+    "saveFailed": "无法保存权限更改。在成功保存前，额外的访问权限将保持关闭。",
+    "label": "对话范围",
+    "writable": "任务工具可以读取和写入所选文件夹中的文件。你现有的任务权限仍然适用。",
+    "optional": "可选的文件夹，用于任务的读写访问。没有文件夹时，任务使用其受管理的工作区。",
+    "permissions": "选择文件夹不会更改网络或持久记忆设置。",
+    "unsupported": "此模型无法使用工具，因此无法访问文件夹、shell 和记忆。普通聊天仍可使用。",
+    "pendingKept": "待处理的权限草稿已保留，选择支持工具的模型后即可使用。",
+    "pendingKeptTemporary": "待处理的权限草稿已保留，使用支持工具的模型开始普通聊天后即可使用。",
+    "temporary": "临时聊天不会保留文件夹访问权限。",
+    "temporaryPermissions": "临时聊天无法使用已授予的文件夹、shell 网络或持久记忆访问权限。",
+    "folderSelectModel": "添加文件夹访问权限前，请先选择支持工具的模型。",
+    "folderUnsupported": "此模型无法使用工具，因此无法添加文件夹。普通聊天仍可使用。",
+    "invalidFolder": "不支持此文件夹路径。请选择其他文件夹。",
+    "folderSelected": "已添加文件夹",
+    "removeProject": "取消选择项目"
   },
   "memoryFeedback": {
     "saved": "记忆已保存",
     "inspect": "查看",
     "inspectLabel": "查看已保存的记忆"
+  },
+  "web_search": "网页搜索",
+  "shell": "Shell",
+  "browse": "浏览",
+  "moreControls": "更多控制项",
+  "artifacts": "产物",
+  "skills": "技能",
+  "deleteSession": "删除会话",
+  "deleteSessionTitle": "删除会话？",
+  "deleteSessionBody": "“{{title}}”及其记录将被永久删除，此操作无法撤销。",
+  "chatsAndTasks": "聊天和任务",
+  "artifactGroupCode": "代码",
+  "artifactGroupImage": "图片",
+  "artifactGroupDocument": "文档",
+  "artifactGroupVideo": "视频",
+  "artifactGroupAudio": "音频",
+  "artifactOpenPreview": "打开预览",
+  "artifactOpenExternal": "打开",
+  "artifactMoreActions": "更多操作",
+  "artifactShowInFolder": "在文件夹中显示",
+  "artifactsAll": "全部",
+  "artifactsEmpty": "尚未生成任何内容。你在对话中创建的文件会显示在这里。",
+  "artifactsNoMatch": "没有匹配的产物。",
+  "artifactsLibraryDescription": "你在所有对话中创建的文件，集中在一处。",
+  "artifactsLibraryFiles": "个文件",
+  "artifactsLibraryCount_one": "{{count}} 个文件",
+  "artifactsLibraryCount_other": "{{count}} 个文件",
+  "artifactsLibraryFilter": "按文件类型筛选",
+  "artifactsLibraryReset": "清除筛选",
+  "artifactsSearch": "搜索产物",
+  "artifactsShowMore": "再显示 {{count}} 个",
+  "homeMode": {
+    "addFolder": "添加项目或文件夹",
+    "removeFolder": "取消选择",
+    "addProject": "添加项目",
+    "addToProject": "添加到项目",
+    "newProject": "新建项目",
+    "noProjects": "暂无项目",
+    "addFolderAction": "添加文件夹"
+  },
+  "planMode": {
+    "label": "计划",
+    "tooltipOff": "先做计划：智能体只读取和提出方案，不写入。",
+    "tooltipOn": "计划模式",
+    "onAnnounce": "计划模式已开启",
+    "placeholder": "请求一份计划。智能体不会更改任何文件。"
+  },
+  "sidebar": {
+    "toggle": "切换侧边栏",
+    "navigation": "导航",
+    "navigationDescription": "跳转到聊天、项目、产物、技能和设置。",
+    "more": "更多"
   }
 }

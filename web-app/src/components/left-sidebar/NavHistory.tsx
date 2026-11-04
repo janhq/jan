@@ -82,7 +82,7 @@ const CoworkRow = memo(function CoworkRow({
         <DropdownMenuTrigger asChild>
           <SidebarMenuAction showOnHover className="hover:bg-sidebar-foreground/8">
             <MoreHorizontal />
-            <span className="sr-only">More</span>
+            <span className="sr-only">{t('common:sidebar.more')}</span>
           </SidebarMenuAction>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -165,7 +165,7 @@ export function NavHistory() {
           <DropdownMenuTrigger asChild>
             <SidebarGroupAction className="hover:bg-sidebar-foreground/8">
               <MoreHorizontal className="text-muted-foreground" />
-              <span className="sr-only">More</span>
+              <span className="sr-only">{t('common:sidebar.more')}</span>
             </SidebarGroupAction>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="right" align="start">
