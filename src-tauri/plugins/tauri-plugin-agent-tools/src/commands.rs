@@ -1475,8 +1475,9 @@ fn resolve_hooks(project: Option<&Path>, thread_id: &str) -> crate::tools::hooks
     crate::tools::hooks::resolve_for(project)
 }
 
-/// Host-derived facts about one native call that no legacy IPC argument may
-/// supply. Only [`execute_thread_tool_inner`] builds a non-default value.
+/// Per-call execution policy. `plan_mode` comes from the caller's run-latched
+/// policy and can only tighten execution. `folder_skills` is host-only: only
+/// [`execute_thread_tool_inner`] enables host-derived authorized folder skills.
 #[derive(Debug, Clone, Copy, Default)]
 struct ToolRun {
     /// Effective run-latched Plan: tool hooks are inert (they are shell commands
