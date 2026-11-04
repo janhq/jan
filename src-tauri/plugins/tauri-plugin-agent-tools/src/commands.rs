@@ -1791,7 +1791,8 @@ mod tests {
     fn session_elevation_matrix_follows_host_kind() {
         use crate::thread_capabilities::ThreadKind::{self, *};
         let none = serde_json::json!({});
-        let cases: [(&str, serde_json::Value, Option<bool>, Option<&str>, Option<bool>); 6] = [
+        type SessionCase<'a> = (&'a str, serde_json::Value, Option<bool>, Option<&'a str>, Option<bool>);
+        let cases: [SessionCase<'_>; 6] = [
             ("shell", none.clone(), Some(true), None, None),
             ("read", none.clone(), None, Some("/folder"), None),
             ("write", none.clone(), None, Some("/folder"), Some(true)),
