@@ -1686,7 +1686,7 @@ describe('ThreadDetail route', () => {
           'web_search',
           'thread-1',
           undefined,
-          { strict: true }
+          { strict: true, origin: 'mcp' }
         )
         expect(webTool.executeWebTool).toHaveBeenCalledTimes(1)
       } finally {
@@ -1756,7 +1756,7 @@ describe('ThreadDetail route', () => {
         'fetch',
         'thread-1',
         undefined,
-        undefined
+        { origin: 'mcp' }
       )
     })
 
@@ -1776,7 +1776,7 @@ describe('ThreadDetail route', () => {
         'fetch',
         'thread-1',
         'fetch-server',
-        undefined
+        { origin: 'mcp' }
       )
     })
 
@@ -2855,7 +2855,7 @@ describe('ThreadDetail route', () => {
           wireName,
           'thread-1',
           'ext:acme.one',
-          undefined
+          { origin: 'extension' }
         )
         expect(extensionHost.callTool).toHaveBeenCalledWith(
           'acme.one',
@@ -2869,6 +2869,40 @@ describe('ThreadDetail route', () => {
             output: [{ type: 'text', text: 'HI' }],
           })
         )
+      })
+
+      // Approval must be asked of whatever actually runs, and execution
+      // prefers the contributed tool, so a name both claim is the extension's.
+      it('asks as the extension when an MCP tool has the same name, and runs it there', async () => {
+        h.appStateState.mcpToolNames = new Set([wireName])
+        h.appStateState.tools = [{ name: wireName, server: 'mcp-server' }]
+        const mcpCall = vi.fn().mockResolvedValue({ error: '', content: [] })
+        hub.mcp = () =>
+          ({ callToolWithCancellation: cancellable(mcpCall) }) as never
+        extensionHost.callTool.mockResolvedValue({
+          content: [{ type: 'text', text: 'HI' }],
+        })
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(extToolCall('te4'))
+        })
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+          'te4',
+          wireName,
+          'thread-1',
+          'ext:acme.one',
+          { origin: 'extension' }
+        )
+        expect(extensionHost.callTool).toHaveBeenCalledWith(
+          'acme.one',
+          'echo',
+          { text: 'hi' },
+          expect.objectContaining({ signal: expect.any(AbortSignal) })
+        )
+        expect(mcpCall).not.toHaveBeenCalled()
       })
 
       it('does not run a denied extension tool', async () => {

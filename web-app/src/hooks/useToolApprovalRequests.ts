@@ -1,9 +1,6 @@
 import { create } from 'zustand'
 import { useToolApproval } from './useToolApproval'
-import {
-  EXTENSION_SERVER_PREFIX,
-  isExtensionToolName,
-} from '@/lib/extensions/tools'
+import { EXTENSION_SERVER_PREFIX } from '@/lib/extensions/tools'
 
 export type PendingApproval = {
   toolCallId: string
@@ -13,6 +10,8 @@ export type PendingApproval = {
   serverName?: string
   /** Asked for this call alone; see `ApprovalOptions.strict`. */
   strict?: boolean
+  /** See `ApprovalOptions.origin`. */
+  extension: boolean
   resolve: (approved: boolean) => void
 }
 
@@ -24,6 +23,14 @@ export type ApprovalOptions = {
    * and must not cover one that can send the extension's data anywhere.
    */
   strict?: boolean
+  /**
+   * Who serves the tool, as the caller resolved it. Only the caller can
+   * know: an MCP server the user named `ext:<id>` can expose a tool with
+   * the extension's exact wire name, so neither name tells them apart.
+   * Absent means MCP, so nothing is ever let in as an extension's by
+   * accident.
+   */
+  origin?: 'extension' | 'mcp'
 }
 
 /**
@@ -56,27 +63,20 @@ type ToolApprovalRequestsState = {
 /**
  * The name a grant is recorded under. A tool with a server is keyed by it
  * as well, so a grant can never cover a same-named tool of another
- * extension or MCP server. The two get separate namespaces (`ext:` and
- * `mcp:`), so neither can spell the other's key.
+ * extension or MCP server. Extension and MCP tools get separate namespaces
+ * (`ext:` and `mcp:`) chosen by origin, so neither can spell the other's
+ * key whatever the server or tool is called.
  */
-const approvalKey = (toolName: string, serverName?: string) => {
+const approvalKey = (
+  toolName: string,
+  serverName: string | undefined,
+  extension: boolean
+) => {
   if (!serverName) return toolName
-  return isExtensionTool(toolName, serverName)
+  return extension
     ? `${serverName}/${toolName}`
     : `mcp:${serverName}/${toolName}`
 }
-
-/**
- * A contributed tool: an `ext:` server and a wire name. Both, because the
- * user names MCP servers and could call one `ext:<id>`; such a server's
- * tools keep MCP keys, so they never share an extension's grant.
- */
-const isExtensionTool = (
-  toolName: string,
-  serverName?: string
-): serverName is string =>
-  (serverName?.startsWith(EXTENSION_SERVER_PREFIX) ?? false) &&
-  isExtensionToolName(toolName)
 
 export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
   (set, get) => ({
@@ -84,14 +84,11 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
 
     requestApproval: (toolCallId, toolName, threadId, serverName, options) => {
       const strict = options?.strict ?? false
+      const extension = options?.origin === 'extension'
       return new Promise<boolean>((resolve) => {
         const settings = useToolApproval.getState()
         // The shortcut is for MCP; extension tools always go through approval.
-        if (
-          !strict &&
-          settings.allowAllMCPPermissions &&
-          !isExtensionTool(toolName, serverName)
-        ) {
+        if (!strict && settings.allowAllMCPPermissions && !extension) {
           resolve(true)
           return
         }
@@ -99,7 +96,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
           !strict &&
           settings.isToolApproved(
             threadId,
-            approvalKey(toolName, serverName),
+            approvalKey(toolName, serverName, extension),
             serverName
           )
         ) {
@@ -115,6 +112,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
               threadId,
               serverName,
               strict,
+              extension,
               resolve,
             },
           },
@@ -126,7 +124,11 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       const entry = get().pending[toolCallId]
       if (!entry) return
       const approval = useToolApproval.getState()
-      const key = approvalKey(entry.toolName, entry.serverName)
+      const key = approvalKey(
+        entry.toolName,
+        entry.serverName,
+        entry.extension
+      )
       if (entry.strict) {
         // Answers this call only; nothing is saved.
       } else if (decision === 'allow-thread') {
@@ -139,7 +141,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
         if (
           entry.serverName &&
           !entry.serverName.startsWith(EXTENSION_SERVER_PREFIX) &&
-          !isExtensionTool(entry.toolName, entry.serverName)
+          !entry.extension
         ) {
           approval.approveServer(entry.serverName)
         } else {

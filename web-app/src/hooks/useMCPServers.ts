@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { EXTENSION_SERVER_PREFIX } from '@/lib/extensions/tools'
 
 // Define the structure of an MCP server configuration
 export type MCPServerConfig = {
@@ -76,6 +77,21 @@ type MCPServerStoreState = {
   syncServersAndRestart: () => Promise<void>
 }
 
+/**
+ * `ext:` names belong to extensions' tool servers. An MCP server under one
+ * could be taken for that extension wherever tools are shown or trusted by
+ * server, so the dialog refuses such names and the store, which the JSON
+ * editors and rename reach directly, drops them too.
+ */
+export const isReservedServerName = (name: string): boolean =>
+  name.trim().startsWith(EXTENSION_SERVER_PREFIX)
+
+const refusedName = (name: string): boolean => {
+  if (!isReservedServerName(name)) return false
+  console.warn(`MCP server name "${name}" is reserved for extensions`)
+  return true
+}
+
 export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
   open: true,
   mcpServers: {}, // Start with empty object
@@ -91,6 +107,7 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
   // Add a new MCP server or update if the key already exists
   addServer: (key, config) =>
     set((state) => {
+      if (refusedName(key)) return state
       // Remove the key first if it exists to maintain insertion order
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [key]: _, ...restServers } = state.mcpServers
@@ -113,6 +130,7 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
     set((state) => {
       // Only proceed if the server exists
       if (!state.mcpServers[oldKey]) return state
+      if (refusedName(newKey)) return state
 
       const entries = Object.entries(state.mcpServers)
       const mcpServers: MCPServers = {}

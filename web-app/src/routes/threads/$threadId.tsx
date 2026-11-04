@@ -287,14 +287,28 @@ function rewriteStoredTurn(
   })
 }
 
-// The MCP server a tool belongs to, so an approval prompt can offer to trust
-// the whole server rather than this one tool.
-function serverForTool(toolName: string): string | undefined {
-  const state = useAppState.getState()
-  return (
-    state.tools.find((tool) => tool.name === toolName)?.server ??
-    extensionToolOf(toolName)?.server
-  )
+// Who serves a call and under which server, so an approval prompt can offer
+// to trust the whole server. The approval request, the running timer and the
+// execution branch all read this one answer: a grant keyed as MCP must never
+// let a contributed tool of the same name run, so a name both claim is the
+// extension's here because execution runs the extension's.
+function toolOriginOf(toolName: string) {
+  const extensionTool = extensionToolOf(toolName)
+  if (extensionTool) {
+    return {
+      origin: 'extension' as const,
+      server: extensionTool.server,
+      extensionTool,
+    }
+  }
+  const mcpTool = useAppState
+    .getState()
+    .tools.find((tool) => tool.name === toolName)
+  return {
+    origin: 'mcp' as const,
+    server: mcpTool?.server,
+    extensionTool: undefined,
+  }
 }
 
 // The contributed tool a call names, by its wire name. Read per call, so a
@@ -363,8 +377,14 @@ function isAutoAllowedTool(toolName: string, threadId: string): boolean {
 
 // Every call the model an extension serves makes is asked for on its own:
 // neither "allow all MCP" nor a grant given on another turn covers it.
-function approvalOptions(threadId: string): ApprovalOptions | undefined {
-  return turnOnExtensionProvider(threadId) ? { strict: true } : undefined
+function approvalOptions(
+  threadId: string,
+  toolName: string
+): ApprovalOptions {
+  const { origin } = toolOriginOf(toolName)
+  return turnOnExtensionProvider(threadId)
+    ? { strict: true, origin }
+    : { origin }
 }
 
 function turnOnExtensionProvider(threadId: string): boolean {
@@ -891,8 +911,8 @@ function ThreadDetail() {
                       toolCall.toolCallId,
                       toolName,
                       threadId,
-                      serverForTool(toolName),
-                      approvalOptions(threadId)
+                      toolOriginOf(toolName).server,
+                      approvalOptions(threadId, toolName)
                     ))
             approvalsOf(threadId).delete(toolCall.toolCallId)
             // Only an explicit Stop skips the result. Deleting the thread also
@@ -918,7 +938,7 @@ function ThreadDetail() {
             // not reported as the tool being slow.
             useToolCallRuntime
               .getState()
-              .markRunning(toolCall.toolCallId, serverForTool(toolName))
+              .markRunning(toolCall.toolCallId, toolOriginOf(toolName).server)
 
             // A tool result is injected into conversation history verbatim, so a
             // page-sized one can exhaust the context on its own. This is the
@@ -934,7 +954,7 @@ function ThreadDetail() {
             // a hung MCP server) must not hold the loop, and the thread, busy.
             const result = await untilAborted<ToolRunResult>(
               (async () => {
-                const extensionTool = extensionToolOf(toolName)
+                const { extensionTool } = toolOriginOf(toolName)
                 if (webRoute(toolName) === 'builtin') {
                   return await executeWebTool(toolName, toolCall.input, {
                     maxOutputChars,
@@ -1158,8 +1178,8 @@ function ThreadDetail() {
               toolCall.toolCallId,
               toolCall.toolName,
               threadId,
-              serverForTool(toolCall.toolName),
-              approvalOptions(threadId)
+              toolOriginOf(toolCall.toolName).server,
+              approvalOptions(threadId, toolCall.toolName)
             )
         )
       }

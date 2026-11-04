@@ -4,10 +4,10 @@ import { useToolApprovalRequests } from '../useToolApprovalRequests'
 import { useToolApproval } from '../useToolApproval'
 import { toolWireName } from '@/lib/extensions/tools'
 
-// Real wire names: approval treats a tool as an extension's only when both
-// its server and its name have the shapes extensions get.
+// Real wire names, so a name shape can never pass for the origin flag.
 const X = toolWireName('acme.one', 'x_tool')
 const Y = toolWireName('acme.one', 'y_tool')
+const EXT = { origin: 'extension' } as const
 
 // useToolApproval persists via backendStorage; stub the persist layer so the
 // import is inert and no disk I/O happens in tests.
@@ -258,7 +258,7 @@ describe('useToolApprovalRequests', () => {
     useToolApproval.setState({ allowAllMCPPermissions: true })
     const { result } = renderHook(() => useToolApprovalRequests())
     act(() => {
-      result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one')
+      result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one', EXT)
     })
     expect(result.current.pending['tc1']).toBeDefined()
   })
@@ -267,13 +267,13 @@ describe('useToolApprovalRequests', () => {
     const { result } = renderHook(() => useToolApprovalRequests())
     let p: Promise<boolean>
     act(() => {
-      p = result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one')
+      p = result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one', EXT)
     })
     act(() => result.current.resolveApproval('tc1', 'allow-thread'))
     await expect(p!).resolves.toBe(true)
     // The same tool name from another extension, or from an MCP server, asks.
     act(() => {
-      result.current.requestApproval('tc2', X, 'thread-1', 'ext:acme.two')
+      result.current.requestApproval('tc2', X, 'thread-1', 'ext:acme.two', EXT)
       result.current.requestApproval('tc3', X, 'thread-1', 'mcp-server')
       result.current.requestApproval('tc4', X, 'thread-1')
     })
@@ -281,7 +281,7 @@ describe('useToolApprovalRequests', () => {
     // The extension that was approved is not asked again.
     let again: Promise<boolean>
     act(() => {
-      again = result.current.requestApproval('tc5', X, 'thread-1', 'ext:acme.one')
+      again = result.current.requestApproval('tc5', X, 'thread-1', 'ext:acme.one', EXT)
     })
     await expect(again!).resolves.toBe(true)
   })
@@ -290,7 +290,7 @@ describe('useToolApprovalRequests', () => {
     const { result } = renderHook(() => useToolApprovalRequests())
     let p: Promise<boolean>
     act(() => {
-      p = result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one')
+      p = result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one', EXT)
     })
     act(() => result.current.resolveApproval('tc1', 'allow-thread'))
     await expect(p!).resolves.toBe(true)
@@ -306,7 +306,7 @@ describe('useToolApprovalRequests', () => {
     const { result } = renderHook(() => useToolApprovalRequests())
     let p: Promise<boolean>
     act(() => {
-      p = result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one')
+      p = result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one', EXT)
     })
     act(() => result.current.resolveApproval('tc1', 'allow-thread'))
     await expect(p!).resolves.toBe(true)
@@ -322,10 +322,52 @@ describe('useToolApprovalRequests', () => {
       'mcp:ext:acme.one/x_tool',
     ])
     act(() => {
-      result.current.requestApproval('tc3', X, 'thread-2', 'ext:acme.one')
-      result.current.requestApproval('tc4', Y, 'thread-2', 'ext:acme.one')
+      result.current.requestApproval('tc3', X, 'thread-2', 'ext:acme.one', EXT)
+      result.current.requestApproval('tc4', Y, 'thread-2', 'ext:acme.one', EXT)
     })
     expect(Object.keys(result.current.pending)).toEqual(['tc3', 'tc4'])
+  })
+
+  // Name shape is no proof of origin: an MCP server the user called
+  // `ext:acme.one` can expose a tool with the extension's exact wire name.
+  describe('an MCP tool spelling an extension tool exactly', () => {
+    const MCP = { origin: 'mcp' } as const
+
+    it.each(['allow-thread', 'allow-always'] as const)(
+      'does not share the extension tool %s grant',
+      async (decision) => {
+        const { result } = renderHook(() => useToolApprovalRequests())
+        let p: Promise<boolean>
+        act(() => {
+          p = result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one', EXT)
+        })
+        act(() => result.current.resolveApproval('tc1', decision))
+        await expect(p!).resolves.toBe(true)
+        act(() => {
+          result.current.requestApproval('tc2', X, 'thread-1', 'ext:acme.one', MCP)
+          result.current.requestApproval('tc3', X, 'thread-1', 'ext:acme.one')
+        })
+        expect(Object.keys(result.current.pending).sort()).toEqual(['tc2', 'tc3'])
+      }
+    )
+
+    it.each(['allow-thread', 'allow-always'] as const)(
+      'does not hand its %s grant to the extension tool',
+      async (decision) => {
+        const { result } = renderHook(() => useToolApprovalRequests())
+        let p: Promise<boolean>
+        act(() => {
+          p = result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one', MCP)
+        })
+        act(() => result.current.resolveApproval('tc1', decision))
+        await expect(p!).resolves.toBe(true)
+        expect(useToolApproval.getState().approvedServers).toEqual([])
+        act(() => {
+          result.current.requestApproval('tc2', X, 'thread-1', 'ext:acme.one', EXT)
+        })
+        expect(Object.keys(result.current.pending)).toEqual(['tc2'])
+      }
+    )
   })
 
   // A build that saved server trust for an ext: name must not keep it working.
@@ -333,7 +375,7 @@ describe('useToolApprovalRequests', () => {
     useToolApproval.setState({ approvedServers: ['ext:acme.one'] })
     const { result } = renderHook(() => useToolApprovalRequests())
     act(() => {
-      result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one')
+      result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one', EXT)
     })
     expect(Object.keys(result.current.pending)).toEqual(['tc1'])
   })
@@ -361,20 +403,20 @@ describe('useToolApprovalRequests', () => {
     const { result } = renderHook(() => useToolApprovalRequests())
     let p: Promise<boolean>
     act(() => {
-      p = result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one')
+      p = result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one', EXT)
     })
     act(() => result.current.resolveApproval('tc1', 'allow-always'))
     await expect(p!).resolves.toBe(true)
     expect(useToolApproval.getState().approvedServers).toEqual([])
     // Another tool of the same extension (one an update added, say) asks.
     act(() => {
-      result.current.requestApproval('tc2', Y, 'thread-1', 'ext:acme.one')
+      result.current.requestApproval('tc2', Y, 'thread-1', 'ext:acme.one', EXT)
     })
     expect(Object.keys(result.current.pending)).toEqual(['tc2'])
     // The approved tool runs without asking, in any thread.
     let again: Promise<boolean>
     act(() => {
-      again = result.current.requestApproval('tc3', X, 'thread-2', 'ext:acme.one')
+      again = result.current.requestApproval('tc3', X, 'thread-2', 'ext:acme.one', EXT)
     })
     await expect(again!).resolves.toBe(true)
   })
