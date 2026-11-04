@@ -11,6 +11,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
 
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useChatPermissions } from '@/hooks/useChatPermissions'
+import { sessionFromThread } from '../coworkPersistence'
 import {
   coworkFolderGrant,
   liveCoworkFolderGrant,
@@ -108,9 +109,45 @@ describe('setCoworkFolderGrant persistence', () => {
     expect(liveCoworkFolderGrant('s')).toEqual({ folder: null, access: null })
   })
 
-  it('a rejected first attach does not invent a folder', async () => {
+  it('a rejected first attach shows the requested folder inactive, never access', async () => {
     mocks.setCaps.mockRejectedValueOnce(new Error('host down'))
     await expect(setCoworkFolderGrant('s', { path: '/proj', access: 'write' })).rejects.toThrow()
+    expect(current()).toMatchObject({ folder: '/proj', folderAccess: null })
+    expect(liveCoworkFolderGrant('s')).toEqual({ folder: null, access: null })
+  })
+
+  it('a failed switch A -> B displays B inactive, consistent with a host that stored B', async () => {
+    seed({ folder: '/A', folderAccess: 'write' })
+    mocks.setCaps.mockRejectedValueOnce(new Error('confirmation failed'))
+    await expect(setCoworkFolderGrant('s', { path: '/B', access: 'write' })).rejects.toThrow('confirmation failed')
+    expect(current()).toMatchObject({ folder: '/B', folderAccess: null })
+    expect(liveCoworkFolderGrant('s')).toEqual({ folder: null, access: null })
+    // The host lists B as stored-but-denied (all-off record + denied annotation):
+    // a reload hydrates the same inactive B, not A and not a detach.
+    const reloaded = sessionFromThread(
+      {
+        id: 's',
+        metadata: {
+          mode: 'cowork',
+          conversationCapabilities: { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false },
+          conversationCapabilitiesDenied: { denied: true, path: '/B' },
+        },
+      },
+      null
+    )
+    expect(reloaded).toMatchObject({ folder: current().folder, folderAccess: current().folderAccess })
+  })
+
+  it('a failed detach keeps the current folder inactive, not detached', async () => {
+    seed({ folder: '/A', folderAccess: 'write' })
+    mocks.setCaps.mockRejectedValueOnce(new Error('host down'))
+    await expect(setCoworkFolderGrant('s', null)).rejects.toThrow('host down')
+    expect(current()).toMatchObject({ folder: '/A', folderAccess: null })
+  })
+
+  it('a failed detach with no folder stays detached', async () => {
+    mocks.setCaps.mockRejectedValueOnce(new Error('host down'))
+    await expect(setCoworkFolderGrant('s', null)).rejects.toThrow()
     expect(current().folder).toBeNull()
   })
 

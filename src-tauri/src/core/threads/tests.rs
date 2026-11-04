@@ -2296,15 +2296,15 @@ async fn failed_confirmation_is_truthful_keeps_barriers_and_retry_repairs() {
     assert!(denial_persisted(&id).is_err());
     assert!(delete_thread(app.handle().clone(), id.clone()).await.is_err());
     assert!(get_thread_dir(&data_dir, &id).unwrap().exists(), "blocked delete removes nothing");
-    // Listing: Unix keeps the stored grant (denied-folder annotation, effective
-    // scope null); a ledger backend narrowed the record (true detach, none).
+    // Listing: effective scope is null and the attempted path is display-only.
     let threads = list_threads(app.handle().clone()).await.unwrap();
     let metadata = &listed(&threads, &id)["metadata"];
     assert!(metadata["conversationCapabilities"]["folderScope"].is_null());
-    if cfg!(unix) {
-        assert_eq!(metadata[super::capabilities::DENIED_FOLDER_KEY], json!({"denied":true,"path":folder}));
-    } else {
-        assert!(metadata.get(super::capabilities::DENIED_FOLDER_KEY).is_none());
+    // Both backends keep the attempted path for display: Unix stores the grant,
+    // a ledger backend narrowed to all-off but retained a host-owned marker.
+    assert_eq!(metadata[super::capabilities::DENIED_FOLDER_KEY], json!({"denied":true,"path":folder}));
+    if !cfg!(unix) {
+        assert_eq!(stored(&data_dir), capability_grant(false), "marker is never authority");
     }
 
     // Repair the store; a retry revokes first (repairing the ledger) and then confirms.
@@ -2348,6 +2348,9 @@ fn rollback_failed_error_narrows_metadata_and_reports_narrowing_failure() {
         &fs::read(get_thread_metadata_path(root.path(), id).unwrap()).unwrap()).unwrap();
     assert_eq!(stored["metadata"]["conversationCapabilities"], capability_grant(false));
     assert_eq!(stored["metadata"]["mode"], "cowork", "nothing else changes");
+    // Platform-independent: the narrowed record retains the attempted path as a
+    // display-only marker (the Windows ledger path), never as authority.
+    assert_eq!(stored["metadata"][super::capabilities::ATTEMPTED_FOLDER_KEY], json!({"path":folder}));
 
     // Narrowing itself failing is reported, never hidden.
     fs::remove_file(get_thread_metadata_path(root.path(), id).unwrap()).unwrap();
@@ -2512,11 +2515,67 @@ async fn list_threads_annotates_a_failed_confirmation_only_when_the_grant_is_sto
     let threads = list_threads(app.handle().clone()).await.unwrap();
     let metadata = &listed(&threads, &id)["metadata"];
     assert!(metadata["conversationCapabilities"]["folderScope"].is_null());
-    if cfg!(unix) {
-        assert_eq!(metadata[DENIED_FOLDER_KEY], json!({"denied":true,"path":folder}));
-    } else {
-        assert!(metadata.get(DENIED_FOLDER_KEY).is_none());
+    assert_eq!(metadata[DENIED_FOLDER_KEY], json!({"denied":true,"path":folder}));
+    assert!(metadata[DENIED_FOLDER_KEY].get("access").is_none());
+}
+
+// The attempted-folder marker is display-only, host-owned and never authority:
+// forged/invalid markers are ignored or stripped, and a true detach clears it.
+#[tokio::test]
+async fn attempted_folder_marker_is_display_only_validated_and_cleared_by_detach() {
+    use super::capabilities::{ATTEMPTED_FOLDER_KEY, DENIED_FOLDER_KEY};
+    let folder = authority_folder_path("attempted-marker-tree");
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let id = create_cowork(&app, "attempted-marker").await;
+    let path = get_thread_metadata_path(&data_dir, &id).unwrap();
+    let read = || -> serde_json::Value { serde_json::from_slice(&fs::read(&path).unwrap()).unwrap() };
+    // Narrowed record + marker (what a failed compensation leaves behind).
+    let mut record = read();
+    record["metadata"]["conversationCapabilities"] = capability_grant(false);
+    record["metadata"][ATTEMPTED_FOLDER_KEY] = json!({"path":folder});
+    update_thread_metadata(&data_dir, &id, &record).unwrap();
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    let metadata = &listed(&threads, &id)["metadata"];
+    assert!(metadata["conversationCapabilities"]["folderScope"].is_null(), "never authority");
+    assert!(metadata.get(ATTEMPTED_FOLDER_KEY).is_none(), "raw marker is not listed");
+    assert_eq!(metadata[DENIED_FOLDER_KEY], json!({"denied":true,"path":folder}));
+    let effective = super::capabilities::read_cowork_capabilities(&data_dir, &id).await.unwrap();
+    assert_eq!(effective, capability_grant(false));
+
+    // A whole-record UI update can neither forge nor erase the marker.
+    let mut echoed = listed(&threads, &id);
+    echoed["metadata"][ATTEMPTED_FOLDER_KEY] = json!({"path":"/etc"});
+    echoed["metadata"][DENIED_FOLDER_KEY] = json!({"denied":true,"path":"/etc"});
+    modify_thread(app.handle().clone(), echoed).await.unwrap();
+    assert_eq!(read()["metadata"][ATTEMPTED_FOLDER_KEY], json!({"path":folder}));
+    assert!(read()["metadata"].get(DENIED_FOLDER_KEY).is_none());
+
+    // Invalid identity/path shapes are ignored.
+    for bad in [json!({"path":"relative/dir"}), json!({"path":"/a/../b"}), json!({"path":folder,"access":"write"}),
+                json!({"path":7}), json!("/etc"), json!({"path":" /padded"})] {
+        let mut record = read();
+        record["metadata"][ATTEMPTED_FOLDER_KEY] = bad.clone();
+        update_thread_metadata(&data_dir, &id, &record).unwrap();
+        let threads = list_threads(app.handle().clone()).await.unwrap();
+        let metadata = &listed(&threads, &id)["metadata"];
+        assert!(metadata.get(DENIED_FOLDER_KEY).is_none(), "{bad}");
+        assert!(metadata["conversationCapabilities"]["folderScope"].is_null(), "{bad}");
     }
+
+    // A marker beside a stored all-off record is cleared by a true detach.
+    let mut record = read();
+    record["metadata"][ATTEMPTED_FOLDER_KEY] = json!({"path":folder});
+    update_thread_metadata(&data_dir, &id, &record).unwrap();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(false)).await.unwrap();
+    assert!(read()["metadata"].get(ATTEMPTED_FOLDER_KEY).is_none(), "detach clears the marker");
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    assert!(listed(&threads, &id)["metadata"].get(DENIED_FOLDER_KEY).is_none());
+
+    // Create strips a forged marker.
+    let mut input = create_test_thread("forged-attempted");
+    input["metadata"] = json!({"mode":"cowork",ATTEMPTED_FOLDER_KEY:{"path":"/etc"}});
+    let created = create_thread(app.handle().clone(), input).await.unwrap();
+    assert!(created["metadata"].get(ATTEMPTED_FOLDER_KEY).is_none());
 }
 
 // The annotation is list-only: create and modify strip a forged or echoed one.

@@ -595,7 +595,6 @@ describe('CoworkPage folder access', () => {
 
   it('a legacy session with no host record is inactive: no write display, no tool folder', async () => {
     seedFolder()
-    expect(screen.queryByTestId('pill')).toBeNull()
     const ctx = await runDispatchOnce()
     expect(screen.getByTestId('pill').textContent).toContain('/proj')
     expect(screen.getByTestId('pill').dataset.access).toBe('null')

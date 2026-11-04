@@ -136,6 +136,7 @@ pub async fn create_thread<R: Runtime>(
         metadata.remove("conversationCapabilities");
         metadata.remove("conversationCapabilitiesError");
         metadata.remove(super::capabilities::DENIED_FOLDER_KEY);
+        metadata.remove(super::capabilities::ATTEMPTED_FOLDER_KEY);
     }
     thread["id"] = serde_json::Value::String(uuid.clone());
     let thread_dir = get_thread_dir(&data_folder, &uuid)?;
@@ -258,6 +259,15 @@ pub async fn modify_thread<R: Runtime>(
         // List-only annotations; never persisted from a UI snapshot.
         metadata.remove("conversationCapabilitiesError");
         metadata.remove(super::capabilities::DENIED_FOLDER_KEY);
+        metadata.remove(super::capabilities::ATTEMPTED_FOLDER_KEY);
+    }
+    // The host-owned attempted-folder display marker survives whole-record updates.
+    let attempted = stored["metadata"].get(super::capabilities::ATTEMPTED_FOLDER_KEY).cloned();
+    if let Some(attempted) = attempted {
+        if !thread.get("metadata").is_some_and(|m| m.is_object()) {
+            thread["metadata"] = serde_json::json!({});
+        }
+        thread["metadata"][super::capabilities::ATTEMPTED_FOLDER_KEY] = attempted;
     }
     if let Some(current) = current {
         if !thread.get("metadata").is_some_and(|m| m.is_object()) {
