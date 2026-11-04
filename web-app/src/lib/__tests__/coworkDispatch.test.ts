@@ -127,7 +127,7 @@ describe('dispatchCoworkTool', () => {
   it.each(['skill_list', 'skill_read'])('dispatches advertised %s', async (name) => {
     const out = await dispatchCoworkTool(call(name), ctx())
     expect(out.isError).toBeFalsy()
-    expect(executeAgentTool).toHaveBeenCalledWith(name, {}, 's1', null, 'session', true, true, null, undefined, undefined)
+    expect(executeAgentTool).toHaveBeenCalledWith(name, {}, 's1', null, 'session', true, true, null, undefined, undefined, expect.any(Function))
   })
 
   // The trailing 'session' is load-bearing: under the default 'thread' scope a
@@ -146,7 +146,8 @@ describe('dispatchCoworkTool', () => {
       true,
       null,
       undefined,
-      undefined
+      undefined,
+      expect.any(Function)
     )
   })
 
@@ -164,7 +165,8 @@ describe('dispatchCoworkTool', () => {
       true,
       null,
       undefined,
-      undefined
+      undefined,
+      expect.any(Function)
     )
     chatPermissions.shellNetwork = false
     try {
@@ -179,7 +181,8 @@ describe('dispatchCoworkTool', () => {
         true,
         null,
         undefined,
-        undefined
+        undefined,
+        expect.any(Function)
       )
     } finally {
       chatPermissions.shellNetwork = true
@@ -261,7 +264,8 @@ describe('dispatchCoworkTool', () => {
       true,
       '/repo',
       undefined,
-      undefined
+      undefined,
+      expect.any(Function)
     )
   })
 

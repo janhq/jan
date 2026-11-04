@@ -298,7 +298,19 @@ export async function executeAgentTool(
    */
   effectiveGrantCeiling?: unknown,
   /** Suppresses UI feedback for a result discarded after Stop. */
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /**
+   * Thread scope only. The calling run's latched Plan state, read immediately
+   * before native dispatch (after approval waits and async setup). It is OR-ed
+   * with the live toolbar state, so enabling Plan late tightens, while turning
+   * it off cannot widen a run that latched Plan. The reviewed Execute transition
+   * clears both. Native uses it to keep tool hooks inert in Plan.
+   *
+   * Session scope (legacy Cowork) sends it too, as the sole Plan source: Cowork's
+   * run-latched `planMode`. Omitting it sends `false` (Plan off), so every
+   * Cowork caller must pass it.
+   */
+  planActive?: () => boolean
 ): Promise<AgentToolResult> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -312,6 +324,7 @@ export async function executeAgentTool(
     const runTool = async () => {
       if (scope === 'thread') {
         const { useThreads } = await import('@/hooks/useThreads')
+        const { chatPlanEnabled } = await import('@/hooks/useChatPlan')
         return dispatchThreadTool(
           toolName,
           args,
@@ -323,7 +336,15 @@ export async function executeAgentTool(
               ? current
               : intersectConversationCapabilities(current, effectiveGrantCeiling)
           },
-          (grant) => executeThreadTool(threadId, toolName, args, grant)
+          (grant) =>
+            // Evaluated here, not earlier: the last point before native code.
+            executeThreadTool(
+              threadId,
+              toolName,
+              args,
+              grant,
+              (planActive?.() ?? false) || chatPlanEnabled(threadId)
+            )
         )
       }
       return executeTool(
@@ -336,7 +357,10 @@ export async function executeAgentTool(
         allowNetwork,
         readOnlyProject ?? undefined,
         projectWritable,
-        scope
+        scope,
+        undefined,
+        // Evaluated here, the last point before native code, like the thread path.
+        planActive?.() ?? false
       )
     }
     const result = await runTool()
