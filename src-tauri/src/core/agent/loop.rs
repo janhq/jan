@@ -4130,8 +4130,14 @@ async fn orchestrate_inner(
             static ENGINE_CLIENT: std::sync::LazyLock<reqwest::Client> =
                 std::sync::LazyLock::new(tauri_plugin_llamacpp::engine::worker::loopback_client);
             let pc = provider_configs.lock().await.clone();
-            crate::core::agent::proxy_budget::resolve(&model_id, &pc, llama_state, &ENGINE_CLIENT)
-                .await
+            crate::core::agent::proxy_budget::resolve(
+                &model_id,
+                &upstream_url,
+                &pc,
+                llama_state,
+                &ENGINE_CLIENT,
+            )
+            .await
         }
     };
 

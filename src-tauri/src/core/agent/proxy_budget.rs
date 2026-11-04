@@ -11,8 +11,13 @@
 //! rather than guessing):
 //!
 //! - a route served by the local engine: the loaded model's `n_ctx`, from the
-//!   engine worker's `/props`. Only for a model already loaded, so probing the
-//!   window never starts a load on its own;
+//!   engine worker's `/props`. Only for a model the run is actually routed to
+//!   the engine (never a remote provider's id that a loaded model happens to
+//!   share), only for a model already loaded, so probing the window does not
+//!   start a load on its own, and each request bounded by [`PROBE_TIMEOUT`],
+//!   so a stuck worker cannot stall the run before its first request. A model
+//!   unloaded between the listing and `/props` can still be loaded by the
+//!   latter; that run is about to load it anyway, and the window is short;
 //! - any other route: the built-in model catalog
 //!   ([`crate::core::agent::model_window`]). The desktop keeps no `/models`
 //!   listing cache, so there is no provider-reported window to prefer, and the
@@ -23,6 +28,7 @@
 //! there is no configured window or reserve to honour.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use tauri_plugin_llamacpp::state::LlamacppState;
 
@@ -30,25 +36,65 @@ use crate::core::agent::compaction::{CompactionBudget, DEFAULT_COMPACTION_RATIO}
 use crate::core::agent::model_window::{resolve_context_window, ContextWindowSource};
 use crate::core::state::ProviderConfig;
 
-/// The budget for a run of `model`, or `None` when its window is unknown.
+/// How long each engine probe request may take. The worker answers both from
+/// memory, so anything slower is a stuck worker, and the run it would hold up
+/// has not sent its first request yet.
+pub(crate) const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// The budget for a run of `model`, routed to `upstream_url`, or `None` when
+/// its window is unknown.
 pub(crate) async fn resolve(
     model: &str,
+    upstream_url: &str,
     provider_configs: &HashMap<String, ProviderConfig>,
     llama_state: &LlamacppState,
+    client: &reqwest::Client,
+) -> Option<CompactionBudget> {
+    let engine = {
+        let guard = llama_state.engine.lock().await;
+        guard.as_ref().map(|h| (h.port, h.api_key.clone()))
+    };
+    resolve_with(model, upstream_url, provider_configs, engine, client).await
+}
+
+/// [`resolve`] with the engine worker's `(port, key)` already read, if one runs.
+async fn resolve_with(
+    model: &str,
+    upstream_url: &str,
+    provider_configs: &HashMap<String, ProviderConfig>,
+    engine: Option<(u16, String)>,
     client: &reqwest::Client,
 ) -> Option<CompactionBudget> {
     let ratio = provider_ratio(model, provider_configs);
     if let Some(window) = catalog_window(model) {
         return Some(budget(window, ratio));
     }
-    let (port, key) = {
-        let guard = llama_state.engine.lock().await;
-        guard.as_ref().map(|h| (h.port, h.api_key.clone()))?
-    };
+    let (port, key) = engine?;
     let base = format!("http://127.0.0.1:{port}");
+    if !routed_to_engine(model, upstream_url, provider_configs, &base) {
+        return None;
+    }
     engine_window(client, &base, &key, model)
         .await
         .map(|window| budget(window, ratio))
+}
+
+/// Whether the run's model is served by the local llama.cpp engine at `base`,
+/// decided the way the upstream was ([`crate::core::agent::upstream`]): a
+/// provider with an HTTP `base_url` serves it remotely, and only otherwise can
+/// the upstream be the engine worker (the desktop registers no provider entry
+/// for `llamacpp`, so its models resolve to no provider at all). A remote id
+/// that happens to match a loaded engine model must not borrow its window.
+fn routed_to_engine(
+    model: &str,
+    upstream_url: &str,
+    provider_configs: &HashMap<String, ProviderConfig>,
+    base: &str,
+) -> bool {
+    let remote = crate::core::agent::upstream::pick_provider_for_model(model, provider_configs)
+        .and_then(|name| provider_configs.get(&name)?.base_url.clone())
+        .is_some_and(|url| !url.is_empty());
+    !remote && upstream_url.starts_with(&format!("{base}/"))
 }
 
 fn budget(context_window: u64, ratio: f64) -> CompactionBudget {
@@ -92,6 +138,7 @@ pub(crate) async fn engine_window(
     let listing: serde_json::Value = client
         .get(format!("{base}/v1/models"))
         .header("Authorization", &auth)
+        .timeout(PROBE_TIMEOUT)
         .send()
         .await
         .ok()?
@@ -106,6 +153,7 @@ pub(crate) async fn engine_window(
     let props: serde_json::Value = client
         .get(format!("{base}/props"))
         .header("Authorization", &auth)
+        .timeout(PROBE_TIMEOUT)
         .json(&serde_json::json!({ "model": model }))
         .send()
         .await
@@ -269,19 +317,116 @@ mod tests {
         assert!(seen.iter().all(|l| !l.contains("/props")), "{seen:?}");
     }
 
+    /// A stub that accepts connections and reads the request but never answers.
+    fn silent_engine() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let mut held = Vec::new();
+            for connection in listener.incoming() {
+                let Ok(stream) = connection else { break };
+                held.push(stream);
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// A worker that accepts and then hangs must not stall the run: the probe
+    /// gives up after its timeout and the window stays unknown.
+    #[tokio::test]
+    async fn a_stuck_engine_probe_times_out() {
+        let base = silent_engine();
+        let client = tauri_plugin_llamacpp::engine::worker::loopback_client();
+        let started = std::time::Instant::now();
+        let window = tokio::time::timeout(PROBE_TIMEOUT * 3, engine_window(&client, &base, "k", "a"))
+            .await
+            .expect("the probe bounds itself");
+        assert_eq!(window, None);
+        assert!(started.elapsed() < PROBE_TIMEOUT * 2, "{:?}", started.elapsed());
+    }
+
+    fn provider(name: &str, base_url: Option<&str>, models: &[&str]) -> (String, ProviderConfig) {
+        (
+            name.to_string(),
+            ProviderConfig {
+                provider: name.into(),
+                base_url: base_url.map(str::to_string),
+                models: models.iter().map(|m| m.to_string()).collect(),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// A model the run sends to a remote provider is never looked up in the
+    /// local engine, even when a loaded engine model shares its id: that
+    /// model's window says nothing about the remote one's.
+    #[tokio::test]
+    async fn a_remote_provider_model_is_never_probed() {
+        let (base, seen) = stub_engine(json!({"data": [
+            {"id": "a", "status": {"value": "loaded"}},
+        ]}));
+        let port: u16 = base.rsplit(':').next().unwrap().parse().unwrap();
+        let pc: HashMap<_, _> =
+            [provider("remote", Some("https://api.example.com/v1"), &["a"])].into();
+        let client = tauri_plugin_llamacpp::engine::worker::loopback_client();
+        let budget = resolve_with(
+            "a",
+            "https://api.example.com/v1/chat/completions",
+            &pc,
+            Some((port, "k".to_string())),
+            &client,
+        )
+        .await;
+        assert!(budget.is_none());
+        assert!(seen.lock().unwrap().is_empty(), "{:?}", seen.lock().unwrap());
+    }
+
+    /// Only a model routed to the engine is probed: one with no HTTP provider
+    /// whose upstream is the engine worker. A local MLX session (another
+    /// loopback upstream) is not the engine either.
+    #[tokio::test]
+    async fn only_an_engine_routed_model_is_probed() {
+        let (base, seen) = stub_engine(json!({"data": [
+            {"id": "a", "status": {"value": "loaded"}},
+        ]}));
+        let port: u16 = base.rsplit(':').next().unwrap().parse().unwrap();
+        let client = tauri_plugin_llamacpp::engine::worker::loopback_client();
+        let engine = Some((port, "k".to_string()));
+        let upstream = format!("{base}/v1/chat/completions");
+
+        let mlx = resolve_with(
+            "a",
+            "http://127.0.0.1:1/v1/chat/completions",
+            &HashMap::new(),
+            engine.clone(),
+            &client,
+        )
+        .await;
+        assert!(mlx.is_none());
+        assert!(seen.lock().unwrap().is_empty(), "an MLX route is not probed");
+
+        let local: HashMap<_, _> = [provider("llamacpp", None, &["a"])].into();
+        for pc in [HashMap::new(), local] {
+            let budget = resolve_with("a", &upstream, &pc, engine.clone(), &client)
+                .await
+                .expect("an engine-routed model is probed");
+            assert_eq!(budget.context_window, 8192);
+        }
+    }
+
     /// No engine running and a model the catalog cannot place: unknown.
     #[tokio::test]
     async fn an_unknown_window_stays_unknown() {
         let state = LlamacppState::default();
         let client = tauri_plugin_llamacpp::engine::worker::loopback_client();
-        assert!(resolve("qwen3-8b-q4", &HashMap::new(), &state, &client).await.is_none());
+        assert!(resolve("qwen3-8b-q4", "", &HashMap::new(), &state, &client).await.is_none());
     }
 
     #[tokio::test]
     async fn a_catalog_model_gets_a_budget_at_the_default_ratio() {
         let state = LlamacppState::default();
         let client = tauri_plugin_llamacpp::engine::worker::loopback_client();
-        let b = resolve("claude-haiku-4-5", &HashMap::new(), &state, &client)
+        let b = resolve("claude-haiku-4-5", "", &HashMap::new(), &state, &client)
             .await
             .expect("a catalog model has a window");
         assert_eq!(b.context_window, 200_000);
