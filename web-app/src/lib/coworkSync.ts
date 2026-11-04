@@ -74,6 +74,9 @@ function upsertThread(thread: Json) {
       ...(existing?.metadata && 'conversationCapabilities' in existing.metadata
         ? { conversationCapabilities: existing.metadata.conversationCapabilities }
         : {}),
+      ...(existing?.metadata && 'conversationCapabilitiesError' in existing.metadata
+        ? { conversationCapabilitiesError: existing.metadata.conversationCapabilitiesError }
+        : {}),
     },
   } as Thread
   const all = { ...useThreads.getState().threads, [next.id]: next }

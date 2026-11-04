@@ -1020,6 +1020,53 @@ describe('loadCoworkSessions', () => {
     expect(s.folderAccess).toBeNull()
   })
 
+  describe('actual host wire shape for a capability read error', () => {
+    // apply_listed_capabilities on Err: denied_value() + conversationCapabilitiesError.
+    const deniedValue = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
+    const seedReadError = (id: string, metadata: Json = {}) => {
+      b.threads.set(id, {
+        id, title: 'T', updated: 1, assistants: [],
+        metadata: {
+          mode: 'cowork', folder: '/folderA',
+          conversationCapabilities: deniedValue,
+          conversationCapabilitiesError: 'read failed',
+          ...metadata,
+        },
+      })
+      b.extras.set(id, { version: 1, turns: [], messages: [] })
+    }
+
+    it('keeps metadata folder for display with folderAccess null, not a detach', async () => {
+      seedReadError('a')
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderA')
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('a later flush does not erase the displayed folder', async () => {
+      seedReadError('a')
+      const s = await loadOne('a')
+      const rec = sessionToThreadRecord(s, b.threads.get('a'))
+      expect(rec.metadata.folder).toBe('/folderA')
+      expect(rec.metadata.conversationCapabilities).toBeUndefined()
+      expect(rec.metadata.conversationCapabilitiesError).toBeUndefined()
+    })
+
+    it('a true acknowledged detach (no error) still detaches over stale metadata A', async () => {
+      seedStale('a', deniedValue)
+      const s = await loadOne('a')
+      expect(s.folder).toBeNull()
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('acknowledged folder B still wins over stale metadata A when there is no error', async () => {
+      seedStale('a', hostCaps({ path: '/folderB', access: 'write' }))
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderB')
+      expect(s.folderAccess).toBe('write')
+    })
+  })
+
   it('loads cowork threads only, newest first, and ignores chat threads', async () => {
     commit('old', { updated: 1_600_000_000_000 })
     commit('new', { updated: 1_700_000_000_000 })
