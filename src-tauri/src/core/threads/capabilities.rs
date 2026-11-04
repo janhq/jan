@@ -195,8 +195,9 @@ pub async fn read_conversation_capabilities(
 
 /// Host-owned folder authority for a migrated Cowork conversation.
 ///
-/// `Null` means the host holds no record: a legacy or never-narrowed session,
-/// whose attached folder keeps the old read+write default. Any stored record --
+/// `Null` means the host holds no record: a legacy or never-granted session.
+/// Its displayed folder stays inactive until the strict setter confirms access.
+/// Any stored record --
 /// including `folderScope: null` after a detach -- is authoritative from then
 /// on and is restored through the same marker/ledger path as Chat, so a revoke
 /// is never resurrected from `metadata.folder`.
