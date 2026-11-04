@@ -285,7 +285,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
         const capabilities = modelItem.capabilities || []
         const capabilitiesString = capabilities.join(' ')
-        const providerTitle = getProviderTitle(provider.provider)
+        const providerTitle = getProviderTitle(provider)
 
         // Create search string with model id, provider, and capabilities
         const searchStr =
@@ -642,8 +642,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                       <div className="flex items-center justify-between px-2 py-1">
                         <div className="flex items-center gap-1.5">
                           <ProvidersAvatar provider={providerInfo} />
-                          <span className="capitalize text-sm font-medium text-muted-foreground">
-                            {getProviderTitle(providerInfo.provider)}
+                          {/* A display name is shown as its author wrote it;
+                              only a title derived from an id is capitalised. */}
+                          <span
+                            className={cn(
+                              'text-sm font-medium text-muted-foreground',
+                              !providerInfo.display_name && 'capitalize'
+                            )}
+                          >
+                            {getProviderTitle(providerInfo)}
                           </span>
                         </div>
 

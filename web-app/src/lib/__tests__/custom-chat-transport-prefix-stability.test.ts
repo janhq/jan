@@ -95,14 +95,15 @@ vi.mock('@/hooks/useMCPServers', () => ({
   },
 }))
 // Every getState() setter is a no-op; unknown reads (currentStreamThreadId)
-// resolve to undefined.
+// resolve to undefined. No extension contributes tools.
 vi.mock('@/hooks/useAppState', () => ({
   useAppState: {
     getState: () =>
       new Proxy(
         {},
         {
-          get: () => () => undefined,
+          get: (_target, key) =>
+            key === 'extensionTools' ? [] : () => undefined,
         }
       ),
   },

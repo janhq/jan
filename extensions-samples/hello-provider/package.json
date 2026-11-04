@@ -1,0 +1,120 @@
+{
+  "name": "@janhq/sample-hello-provider",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sample Jan extension: a command, a setting, a status item, a tool and a model provider, run in a worker",
+  "license": "Apache-2.0",
+  "author": "Jan <service@jan.ai>",
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": {
+    "jan": ">=0.8.0"
+  },
+  "jan": {
+    "id": "jan-samples.hello-provider",
+    "displayName": "Hello Provider",
+    "description": "Shows every contribution point a worker extension can use.",
+    "publisher": "Jan",
+    "apiVersion": "^1.0.0",
+    "main": "dist/index.js",
+    "permissions": [
+      "ui:notify",
+      "tools",
+      "providers",
+      "network:127.0.0.1"
+    ],
+    "contributes": {
+      "settings": [
+        {
+          "key": "greeting",
+          "title": "Greeting",
+          "description": "What Say hello greets with.",
+          "control": {
+            "type": "input",
+            "placeholder": "Hello",
+            "default": "Hello"
+          }
+        }
+      ],
+      "commands": [
+        {
+          "id": "hello.greet",
+          "title": "Say hello",
+          "category": "Hello Provider"
+        },
+        {
+          "id": "hello.ping",
+          "title": "Ping the local server",
+          "category": "Hello Provider"
+        }
+      ],
+      "menus": {
+        "commandPalette": [
+          {
+            "command": "hello.greet"
+          },
+          {
+            "command": "hello.ping"
+          }
+        ]
+      },
+      "statusItems": [
+        {
+          "id": "hello.status",
+          "text": "Hello (0)",
+          "tooltip": "Greetings so far; click to say hello",
+          "command": "hello.greet"
+        }
+      ],
+      "tools": [
+        {
+          "name": "echo_upper",
+          "description": "Returns the given text in upper case. delayMs simulates slow work that can be cancelled.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "The text to upper-case"
+              },
+              "delayMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000,
+                "description": "Wait this long before answering"
+              }
+            },
+            "required": [
+              "text"
+            ]
+          }
+        }
+      ],
+      "providers": [
+        {
+          "id": "hello-local",
+          "displayName": "Hello Local",
+          "baseUrl": "http://127.0.0.1:11999/v1",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@janhq/extension-api": "workspace:*",
+    "@janhq/extension-runtime": "workspace:*",
+    "@types/node": "^22.10.0",
+    "rolldown": "1.0.0-beta.1",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  },
+  "packageManager": "yarn@4.5.3"
+}

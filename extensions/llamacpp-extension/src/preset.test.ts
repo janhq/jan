@@ -39,12 +39,9 @@ vi.mock('@janhq/core', () => ({
       delete writtenFiles[from]
     }),
     rm: vi.fn(async () => undefined),
+    readYaml: vi.fn(async (p: string) => modelYamls[p]),
   },
   joinPath: vi.fn(async (parts: string[]) => parts.join('/')),
-}))
-
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(async (_cmd: string, args: { path: string }) => modelYamls[args.path]),
 }))
 
 import { generatePreset, threadCacheDir } from './preset'

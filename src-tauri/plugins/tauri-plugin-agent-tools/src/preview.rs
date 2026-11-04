@@ -5,7 +5,7 @@
 //! The origin is shared with nothing else in the app, and what it can serve is
 //! bounded by [`PreviewRoots`]: a request resolves only to a file under a root
 //! the pane registered, so model markup cannot link its way to the rest of the
-//! disk even though the asset protocol's own scope is `**/*`. Each root carries
+//! disk through it, independently of what the asset protocol has been granted. Each root carries
 //! the network flag the pane chose, emitted as a CSP header on every response;
 //! the page cannot change it because it never sees the registration.
 //!

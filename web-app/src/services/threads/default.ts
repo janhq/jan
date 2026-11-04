@@ -2,8 +2,8 @@
  * Default Threads Service - Web implementation
  */
 
-import { ExtensionManager } from '@/lib/extension'
-import { ConversationalExtension, ExtensionTypeEnum } from '@janhq/core'
+import type { Thread as StoredThread } from '@janhq/core'
+import { Emitter } from '@janhq/extension-api'
 import type { ThreadsService } from './types'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 
@@ -22,21 +22,15 @@ function fromModelResponse(
 }
 
 export class DefaultThreadsService implements ThreadsService {
-  async fetchThreads(): Promise<Thread[]> {
-    const ext = ExtensionManager.getInstance().get<ConversationalExtension>(
-      ExtensionTypeEnum.Conversational
-    )
-    // The extension may not be registered yet during a startup race (e.g. a
-    // reload while the llamacpp router is busy). Throw so the caller can retry
-    // instead of treating "not ready" as "no threads" and wiping the list.
-    if (!ext) {
-      throw new Error('Conversational extension not available yet')
-    }
+  private readonly deleted = new Emitter<{ threadId: string }>()
+  readonly onDidDeleteThread = this.deleted.event
 
+  async fetchThreads(): Promise<Thread[]> {
     // Let listThreads failures propagate: a rejected invoke means "backend not
-    // ready / errored", not "no threads" — the caller retries instead of
+    // ready / errored", not "no threads", so the caller retries instead of
     // wiping the list with [].
-    const threads = await ext.listThreads()
+    const threads: StoredThread[] | null | undefined =
+      await window.core?.api?.listThreads()
     if (!Array.isArray(threads)) return []
 
     // new String("id") !== "id"
@@ -76,7 +70,7 @@ export class DefaultThreadsService implements ThreadsService {
   }
 
   async createThread(thread: Thread): Promise<Thread> {
-    // For temporary threads, bypass the conversational extension (in-memory only)
+    // Temporary threads are in-memory only and never reach the backend.
     if (thread.id === TEMPORARY_CHAT_ID) {
       return thread
     }
@@ -91,17 +85,18 @@ export class DefaultThreadsService implements ThreadsService {
       : [{ id: 'model-only', name: 'Model', model: modelPayload }]
 
     return (
-      ExtensionManager.getInstance()
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+      window.core?.api
         ?.createThread({
-          ...thread,
-          assistants: assistantsPayload,
-          metadata: {
-            ...thread.metadata,
-            order: thread.order,
+          thread: {
+            ...thread,
+            assistants: assistantsPayload,
+            metadata: {
+              ...thread.metadata,
+              order: thread.order,
+            },
           },
         })
-        .then((e) => {
+        .then((e: StoredThread) => {
           const model = fromModelResponse(e.assistants?.[0]?.model, thread.model)
 
           const assistants = e.assistants
@@ -119,14 +114,13 @@ export class DefaultThreadsService implements ThreadsService {
   }
 
   async updateThread(thread: Thread): Promise<void> {
-    // For temporary threads, skip updating via conversational extension
+    // Temporary threads are in-memory only and never reach the backend.
     if (thread.id === TEMPORARY_CHAT_ID) {
       return
     }
 
-    await ExtensionManager.getInstance()
-      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-      ?.modifyThread({
+    await window.core?.api?.modifyThread({
+      thread: {
         ...thread,
         assistants: thread.assistants?.map((e) => ({
           ...e,
@@ -142,17 +136,19 @@ export class DefaultThreadsService implements ThreadsService {
         object: 'thread',
         created: Date.now() / 1000,
         updated: Date.now() / 1000,
-      })
+      },
+    })
   }
 
   async deleteThread(threadId: string): Promise<void> {
-    // For temporary threads, skip deleting via conversational extension
+    // Temporary threads are in-memory only and never reach the backend.
     if (threadId === TEMPORARY_CHAT_ID) {
       return
     }
 
-    await ExtensionManager.getInstance()
-      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-      ?.deleteThread(threadId)
+    const api = window.core?.api
+    if (!api) return
+    await api.deleteThread({ threadId })
+    this.deleted.fire({ threadId })
   }
 }

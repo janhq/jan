@@ -45,39 +45,6 @@ describe('TauriCoreService', () => {
     })
   })
 
-  describe('getActiveExtensions', () => {
-    it('returns bundled extensions without invoking the backend', async () => {
-      const exts = await svc.getActiveExtensions()
-      expect(mockInvoke).not.toHaveBeenCalled()
-      expect(exts.length).toBeGreaterThan(0)
-      expect(exts.every((e) => e.url === 'built-in')).toBe(true)
-      expect(exts.every((e) => e.extensionInstance)).toBe(true)
-      expect(exts.map((e) => e.name)).toContain('@janhq/llamacpp-extension')
-    })
-  })
-
-  describe('installExtensions', () => {
-    it('is a no-op that does not invoke the backend', async () => {
-      await expect(svc.installExtensions()).resolves.toBeUndefined()
-      expect(mockInvoke).not.toHaveBeenCalled()
-    })
-  })
-
-  describe('installExtension', () => {
-    it('returns bundled extensions without invoking the backend', async () => {
-      const exts = await svc.installExtension([])
-      expect(mockInvoke).not.toHaveBeenCalled()
-      expect(exts.map((e) => e.name)).toContain('@janhq/llamacpp-extension')
-    })
-  })
-
-  describe('uninstallExtension', () => {
-    it('returns false (bundled extensions cannot be uninstalled)', async () => {
-      expect(await svc.uninstallExtension(['ext1'])).toBe(false)
-      expect(mockInvoke).not.toHaveBeenCalled()
-    })
-  })
-
   describe('getAppToken', () => {
     it('returns token string', async () => {
       mockInvoke.mockResolvedValue('token123')

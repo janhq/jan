@@ -27,11 +27,15 @@ expect() {
 }
 
 none='crates=[]'
-all_crates='crates=["jan-cli","plugins/tauri-plugin-agent-tools","plugins/tauri-plugin-hardware","plugins/tauri-plugin-llamacpp","plugins/tauri-plugin-rag","plugins/tauri-plugin-vector-db","plugins/tauri-plugin-websearch","utils"]'
+all_crates='crates=["jan-cli","plugins/tauri-plugin-agent-tools","plugins/tauri-plugin-extensions","plugins/tauri-plugin-hardware","plugins/tauri-plugin-llamacpp","plugins/tauri-plugin-rag","plugins/tauri-plugin-vector-db","plugins/tauri-plugin-websearch","utils"]'
 all_app='app=["cli","desktop","e2e"]'
 
 expect 'web-app only' 'web-app/src/routes/index.tsx' \
   ts=true mlx=false rust=false cli=false jan_cli=false adk=false 'app=[]' "$none"
+
+expect 'extension packages and samples' 'packages/extension-api/src/index.ts
+extensions-samples/hello-provider/src/index.ts' \
+  ts=true mlx=false rust=false cli=false 'app=[]' "$none"
 
 expect 'core reaches mlx-extension' 'core/src/index.ts' ts=true mlx=true rust=false
 

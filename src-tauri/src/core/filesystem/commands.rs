@@ -1,5 +1,6 @@
 // WARNING: These APIs will be deprecated soon due to removing FS API access from frontend.
 // It's added to ensure the legacy implementation from frontend still functions before removal.
+use super::asset_scope::allow_picked_file;
 use super::grants::{record_picks, DENIED_PREFIX};
 use super::helpers::{
     resolve_app_path_within_jan_data_folder, resolve_app_read_path, resolve_path,
@@ -269,7 +270,9 @@ pub(crate) fn unpack_archive(
     Ok(())
 }
 
-// rfd native file dialog
+// rfd native file dialog. Picked files (not folders) are granted to the asset
+// protocol, whose static scope is empty: the chat pickers read them back
+// through `convertFileSrc`.
 #[tauri::command]
 pub async fn open_dialog<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
@@ -308,7 +311,10 @@ pub async fn open_dialog<R: Runtime>(
                 record_picks(&app_handle, &picked);
                 let paths: Vec<String> = picked
                     .iter()
-                    .map(|p| p.to_string_lossy().to_string())
+                    .map(|p| {
+                        allow_picked_file(&app_handle, p);
+                        p.to_string_lossy().to_string()
+                    })
                     .collect();
                 serde_json::to_value(paths).unwrap()
             }));
@@ -319,6 +325,7 @@ pub async fn open_dialog<R: Runtime>(
     let result = dialog.pick_file().await;
     Ok(result.map(|file| {
         record_picks(&app_handle, &[file.path().to_path_buf()]);
+        allow_picked_file(&app_handle, file.path());
         serde_json::Value::String(file.path().to_string_lossy().to_string())
     }))
 }

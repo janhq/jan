@@ -33,16 +33,6 @@ vi.mock('../useModelProvider', () => ({
   },
 }))
 
-// Mock the window.core object
-Object.defineProperty(window, 'core', {
-  value: {
-    extensionManager: {
-      getByName: vi.fn(),
-    },
-  },
-  writable: true,
-})
-
 describe('useLlamacppDevices', () => {
 
   beforeEach(() => {

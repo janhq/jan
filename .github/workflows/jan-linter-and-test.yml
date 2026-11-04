@@ -21,6 +21,9 @@ on:
       - 'Makefile'
       - 'src-tauri/**'
       - 'web-app/**'
+      - 'packages/**'
+      - 'extensions-samples/**'
+      - 'scripts/extensions-smoke.mjs'
 
   # No paths filter on pull requests: a workflow a filter skips never reports,
   # so its required ci-ok check would sit pending and block the merge. The
@@ -287,12 +290,45 @@ jobs:
         shell: powershell
         run: make test-ci-rust
 
+  # End-to-end smoke install of the sample extension bundle: packs it, installs
+  # the tarball with the extensions plugin (tests/smoke.rs) and loads it in the
+  # web-app's extension host. It crosses both the TypeScript and Rust sides.
+  extensions-smoke:
+    needs: changes
+    if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Installing node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Install Tauri dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
+
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Extensions smoke install
+        run: |
+          make install-and-build
+          make test-extensions-smoke
+
   # The one check to mark required, for the reason given on rust-check's ci-ok:
   # the jobs above report "skipped" when a PR does not reach them.
   ci-ok:
     name: Linter & Test passed
     if: always()
-    needs: [changes, test-ts, test-mlx-extension, test-rust]
+    needs: [changes, test-ts, test-mlx-extension, test-rust, extensions-smoke]
     runs-on: ubuntu-latest
     steps:
       - name: Fail on a failed or cancelled job

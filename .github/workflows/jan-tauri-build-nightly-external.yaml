@@ -17,7 +17,6 @@ on:
       - 'web-app/**'
       - 'extensions/**'
       - 'scripts/**'
-      - 'pre-install/**'
       - 'Makefile'
       - 'package.json'
 

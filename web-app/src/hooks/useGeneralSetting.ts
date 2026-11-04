@@ -3,9 +3,8 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { backendStorage } from '@/lib/backendStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { ExtensionManager } from '@/lib/extension'
+import { HUGGINGFACE_TOKEN_SECRET_KEY } from '@janhq/core'
 
-export const HUGGINGFACE_TOKEN_SECRET_KEY = 'huggingface'
 type GeneralSettingState = {
   currentLanguage: Language
   spellCheckChatInput: boolean
@@ -38,7 +37,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       setCurrentLanguage: (value) => set({ currentLanguage: value }),
       setHuggingfaceToken: (token) => {
         set({ huggingfaceToken: token })
-        // Canonical secret store is the OS keyring, not settings storage.
+        // The OS keyring is the only copy; downloads read it from there.
         getServiceHub()
           .core()
           .invoke('set_secret', {
@@ -48,25 +47,6 @@ export const useGeneralSetting = create<GeneralSettingState>()(
           .catch((err) =>
             console.warn('Failed to persist huggingface token to keyring:', err)
           )
-        ExtensionManager.getInstance()
-          .getByName('@janhq/download-extension')
-          ?.getSettings()
-          .then((settings) => {
-            if (settings) {
-              const newSettings = settings.map((e) => {
-                if (e.key === 'hf-token') {
-                  e.controllerProps.value = token
-                }
-                return e
-              })
-              ExtensionManager.getInstance()
-                .getByName('@janhq/download-extension')
-                ?.updateSettings(newSettings)
-            }
-          })
-          .catch((err) => {
-            console.warn('Failed to persist huggingface token:', err)
-          })
       },
     }),
     {

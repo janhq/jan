@@ -1,146 +1,189 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import {
+  ServiceKeys,
+  createInternalToolRegistry,
+  createServiceRegistry,
+  type InternalToolRegistry,
+  type RAGIngestService,
+  type ServiceRegistry,
+} from '@janhq/core'
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: vi.fn(),
-  },
+let host: { services: ServiceRegistry; internalTools: InternalToolRegistry }
+
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => host,
 }))
 
-import { ExtensionManager } from '@/lib/extension'
 import { DefaultRAGService } from '../default'
 
-const mockGet = vi.fn()
-
 beforeEach(() => {
-  vi.mocked(ExtensionManager.getInstance).mockReturnValue({ get: mockGet } as any)
-  mockGet.mockReset()
+  host = {
+    services: createServiceRegistry(),
+    internalTools: createInternalToolRegistry(),
+  }
 })
 
+const registerTool = (
+  name: string,
+  call = vi.fn().mockResolvedValue({ error: '', content: [] })
+) => {
+  host.internalTools.register({
+    name,
+    definition: () => ({
+      name,
+      description: name,
+      inputSchema: {},
+      server: 'rag-internal',
+    }),
+    call,
+  })
+  return call
+}
+
+const provideRag = (impl: Partial<RAGIngestService>) =>
+  host.services.provide(ServiceKeys.RAG, impl as RAGIngestService)
+
 describe('DefaultRAGService.getTools', () => {
-  it('returns tools from extension', async () => {
-    const tools = [{ name: 'tool1' }]
-    mockGet.mockReturnValue({ getTools: vi.fn().mockResolvedValue(tools) })
-    const svc = new DefaultRAGService()
-    expect(await svc.getTools()).toEqual(tools)
+  it('returns the definitions of the host internal tools', async () => {
+    registerTool('retrieve')
+    registerTool('get_chunks')
+    const tools = await new DefaultRAGService().getTools()
+    expect(tools.map((t) => t.name)).toEqual(['retrieve', 'get_chunks'])
   })
 
-  it('returns [] when ext is undefined', async () => {
-    mockGet.mockReturnValue(undefined)
-    const svc = new DefaultRAGService()
-    expect(await svc.getTools()).toEqual([])
-  })
-
-  it('returns [] when ext has no getTools', async () => {
-    mockGet.mockReturnValue({})
-    const svc = new DefaultRAGService()
-    expect(await svc.getTools()).toEqual([])
-  })
-
-  it('returns [] and logs on error', async () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    mockGet.mockReturnValue({ getTools: vi.fn().mockRejectedValue(new Error('fail')) })
-    const svc = new DefaultRAGService()
-    expect(await svc.getTools()).toEqual([])
-    expect(spy).toHaveBeenCalled()
-    spy.mockRestore()
+  it('returns [] when no tool is registered', async () => {
+    expect(await new DefaultRAGService().getTools()).toEqual([])
   })
 })
 
 describe('DefaultRAGService.callTool', () => {
-  it('returns error when ext not available', async () => {
-    mockGet.mockReturnValue(undefined)
-    const svc = new DefaultRAGService()
-    const res = await svc.callTool({ toolName: 't', arguments: {}, scope: 'thread' })
+  it('returns error when the tool is not registered', async () => {
+    const res = await new DefaultRAGService().callTool({
+      toolName: 't',
+      arguments: {},
+      scope: 'thread',
+    })
     expect(res.error).toBe('RAG extension not available')
   })
 
-  it('returns error when ext has no callTool', async () => {
-    mockGet.mockReturnValue({})
-    const svc = new DefaultRAGService()
-    const res = await svc.callTool({ toolName: 't', arguments: {}, scope: 'thread' })
-    expect(res.error).toBe('RAG extension not available')
-  })
-
-  it('calls ext.callTool with thread scope injecting thread_id', async () => {
-    const callTool = vi.fn().mockResolvedValue({ content: [] })
-    mockGet.mockReturnValue({ callTool })
-    const svc = new DefaultRAGService()
-    await svc.callTool({ toolName: 'search', arguments: { q: 'hi' }, scope: 'thread', threadId: 't1' })
-    expect(callTool).toHaveBeenCalledWith('search', expect.objectContaining({ thread_id: 't1', scope: 'thread' }))
+  it('calls the tool with thread scope injecting thread_id', async () => {
+    const call = registerTool('search')
+    await new DefaultRAGService().callTool({
+      toolName: 'search',
+      arguments: { q: 'hi' },
+      scope: 'thread',
+      threadId: 't1',
+    })
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({ q: 'hi', thread_id: 't1', scope: 'thread' })
+    )
   })
 
   it('does not override existing thread_id', async () => {
-    const callTool = vi.fn().mockResolvedValue({ content: [] })
-    mockGet.mockReturnValue({ callTool })
-    const svc = new DefaultRAGService()
-    await svc.callTool({ toolName: 'search', arguments: { thread_id: 'existing' }, scope: 'thread', threadId: 't1' })
-    expect(callTool).toHaveBeenCalledWith('search', expect.objectContaining({ thread_id: 'existing' }))
+    const call = registerTool('search')
+    await new DefaultRAGService().callTool({
+      toolName: 'search',
+      arguments: { thread_id: 'existing' },
+      scope: 'thread',
+      threadId: 't1',
+    })
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({ thread_id: 'existing' })
+    )
   })
 
   it('injects project_id for project scope', async () => {
-    const callTool = vi.fn().mockResolvedValue({ content: [] })
-    mockGet.mockReturnValue({ callTool })
-    const svc = new DefaultRAGService()
-    await svc.callTool({ toolName: 'search', arguments: {}, scope: 'project', projectId: 'p1' })
-    expect(callTool).toHaveBeenCalledWith('search', expect.objectContaining({ project_id: 'p1', thread_id: 'p1', scope: 'project' }))
+    const call = registerTool('search')
+    await new DefaultRAGService().callTool({
+      toolName: 'search',
+      arguments: {},
+      scope: 'project',
+      projectId: 'p1',
+    })
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_id: 'p1',
+        thread_id: 'p1',
+        scope: 'project',
+      })
+    )
   })
 
   it('catches Error and returns message', async () => {
-    mockGet.mockReturnValue({ callTool: vi.fn().mockRejectedValue(new Error('boom')) })
-    const svc = new DefaultRAGService()
-    const res = await svc.callTool({ toolName: 't', arguments: {}, scope: 'thread' })
+    registerTool('t', vi.fn().mockRejectedValue(new Error('boom')))
+    const res = await new DefaultRAGService().callTool({
+      toolName: 't',
+      arguments: {},
+      scope: 'thread',
+    })
     expect(res.error).toBe('boom')
     expect(res.content[0].text).toContain('boom')
   })
 
   it('catches non-Error and stringifies', async () => {
-    mockGet.mockReturnValue({ callTool: vi.fn().mockRejectedValue('string-err') })
-    const svc = new DefaultRAGService()
-    const res = await svc.callTool({ toolName: 't', arguments: {}, scope: 'thread' })
+    registerTool('t', vi.fn().mockRejectedValue('string-err'))
+    const res = await new DefaultRAGService().callTool({
+      toolName: 't',
+      arguments: {},
+      scope: 'thread',
+    })
     expect(res.error).toContain('string-err')
   })
 })
 
 describe('DefaultRAGService.getToolNames', () => {
-  it('returns tool names from extension', async () => {
-    mockGet.mockReturnValue({ getToolNames: vi.fn().mockResolvedValue(['a', 'b']) })
-    const svc = new DefaultRAGService()
-    expect(await svc.getToolNames()).toEqual(['a', 'b'])
+  it('returns the host internal tool names', async () => {
+    registerTool('a')
+    registerTool('b')
+    expect(await new DefaultRAGService().getToolNames()).toEqual(['a', 'b'])
   })
 
-  it('returns [] when ext has no getToolNames', async () => {
-    mockGet.mockReturnValue({})
-    const svc = new DefaultRAGService()
-    expect(await svc.getToolNames()).toEqual([])
+  it('returns [] when no tool is registered', async () => {
+    expect(await new DefaultRAGService().getToolNames()).toEqual([])
+  })
+})
+
+describe('DefaultRAGService.embed', () => {
+  it('delegates to the RAG service', async () => {
+    const embed = vi.fn().mockResolvedValue([[1]])
+    provideRag({ embed })
+    expect(await new DefaultRAGService().embed(['a'])).toEqual([[1]])
+    expect(embed).toHaveBeenCalledWith(['a'])
   })
 
-  it('returns [] on error', async () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    mockGet.mockReturnValue({ getToolNames: vi.fn().mockRejectedValue(new Error('fail')) })
+  it('returns [] without the service or input', async () => {
     const svc = new DefaultRAGService()
-    expect(await svc.getToolNames()).toEqual([])
+    expect(await svc.embed(['a'])).toEqual([])
+    provideRag({ embed: vi.fn() })
+    expect(await svc.embed([])).toEqual([])
+  })
+
+  it('returns [] when embedding fails', async () => {
+    const spy = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    provideRag({ embed: vi.fn().mockRejectedValue(new Error('fail')) })
+    expect(await new DefaultRAGService().embed(['a'])).toEqual([])
     spy.mockRestore()
   })
 })
 
 describe('DefaultRAGService.parseDocument', () => {
   it('returns parsed document', async () => {
-    mockGet.mockReturnValue({ parseDocument: vi.fn().mockResolvedValue('content') })
-    const svc = new DefaultRAGService()
-    expect(await svc.parseDocument('/file.pdf', 'pdf')).toBe('content')
+    const parseDocument = vi.fn().mockResolvedValue('content')
+    provideRag({ parseDocument })
+    expect(await new DefaultRAGService().parseDocument('/file.pdf', 'pdf')).toBe(
+      'content'
+    )
+    expect(parseDocument).toHaveBeenCalledWith('/file.pdf', 'pdf')
   })
 
-  it('returns empty string when parseDocument returns undefined', async () => {
-    mockGet.mockReturnValue({})
-    const svc = new DefaultRAGService()
-    expect(await svc.parseDocument('/file.pdf')).toBe('')
+  it('returns empty string without the service', async () => {
+    expect(await new DefaultRAGService().parseDocument('/file.pdf')).toBe('')
   })
 
   it('returns empty string on error', async () => {
     const spy = vi.spyOn(console, 'debug').mockImplementation(() => {})
-    mockGet.mockReturnValue({ parseDocument: vi.fn().mockRejectedValue(new Error('fail')) })
-    const svc = new DefaultRAGService()
-    expect(await svc.parseDocument('/file.pdf')).toBe('')
+    provideRag({ parseDocument: vi.fn().mockRejectedValue(new Error('fail')) })
+    expect(await new DefaultRAGService().parseDocument('/file.pdf')).toBe('')
     spy.mockRestore()
   })
 })

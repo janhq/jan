@@ -78,9 +78,6 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
   getLoadedModels: h.getLoadedModels,
   unloadLlamaModel: h.unloadLlamaModel,
 }))
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: { getInstance: () => ({ get: () => null }) },
-}))
 vi.mock('@/lib/mcp-orchestrator', () => ({
   mcpOrchestrator: { getRelevantTools: vi.fn() },
 }))

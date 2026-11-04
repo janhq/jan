@@ -25,7 +25,6 @@ vi.mock('../updater/tauri', () => ({ TauriUpdaterService: vi.fn().mockImplementa
 vi.mock('../path/tauri', () => ({ TauriPathService: vi.fn().mockImplementation(() => ({})) }))
 vi.mock('../core/tauri', () => ({ TauriCoreService: vi.fn().mockImplementation(() => ({})) }))
 vi.mock('../deeplink/tauri', () => ({ TauriDeepLinkService: vi.fn().mockImplementation(() => ({})) }))
-vi.mock('../core/mobile', () => ({ MobileCoreService: vi.fn().mockImplementation(() => ({})) }))
 
 vi.spyOn(console, 'log').mockImplementation(() => {})
 vi.spyOn(console, 'error').mockImplementation(() => {})

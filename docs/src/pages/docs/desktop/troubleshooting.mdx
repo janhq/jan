@@ -386,29 +386,6 @@ invalid or unauthorized.
 
 See the [Custom Endpoints](/docs/desktop/remote-models/custom-endpoint#troubleshooting) guide for details.
 
-## Permission Denied
-
-When running Jan, you might encounter the following error message:
-
-```
-Uncaught (in promise) Error: Error invoking remote method 'installExtension':
-Error Package /Applications/Jan.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-assistant-extension-1.0.0.tgz does not contain a valid manifest:
-Error EACCES: permission denied, mkdtemp '/Users/username/.npm/_cacache/tmp/ueCMn4'
-```
-
-Permission problems mainly cause this error during installation. To resolve this issue, follow these steps:
-
-1. Open your **Terminal**
-
-2. Execute the following command to change ownership of the `~/.npm` directory to the current user:
-
-```bash
-sudo chown -R $(whoami) ~/.npm
-```
-
-This command ensures that the necessary permissions are granted for Jan's installation.
-
-
 ## "Failed to fetch" or "Something's Amiss" errors
 
 When you start a chat with a model and encounter a **Failed to Fetch** or **Something's Amiss** error, here are some possible solutions to resolve it:
