@@ -304,7 +304,7 @@ In `Settings -> General`:
 
 ### Folder access
 - [ ] Choose a folder from +; a folder pill appears. Opening it shows the selected path and honest read-only/read-write status.
-- [ ] Newly selected folders allow read and write. **Allow changes to files** can narrow that access; turning it off blocks the next write.
+- [ ] Newly selected folders allow read and write. Click the access badge to switch between **read only** and **read & write**; read-only access blocks writes targeting the attached folder while the private workspace remains writable. Click the folder name or path to reveal it in the file manager.
 - [ ] Change folder, cancel the picker and detach all behave correctly. Long and non-ASCII paths wrap or truncate without pushing actions out of view.
 - [ ] Restart with a saved folder grant: restore the saved access without a confirmation prompt. A revoked or failed-save grant must not return from stale disk data; verify durable denial survives restart.
 - [ ] Successful memory changes show one quiet **Memory saved** notice; **Inspect** opens memory management. Failed, denied and stopped calls do not claim success.

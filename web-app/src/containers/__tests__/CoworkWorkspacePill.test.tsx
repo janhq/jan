@@ -35,7 +35,6 @@ describe('CoworkWorkspacePill', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: /a11yNoFolder/ }))
 
-    expect(screen.queryByText('common:workspace.readsFrom')).toBeNull()
     // No folder means nothing to detach.
     expect(screen.queryByText('common:workspace.detach')).toBeNull()
     expect(
@@ -43,62 +42,84 @@ describe('CoworkWorkspacePill', () => {
     ).toBeGreaterThan(0)
   })
 
-  // The honesty requirement, inverted from the read-only days: the folder is
-  // mounted writable now, so the popover must say the agent edits it in place.
-  // A regression here would have the UI promising an untouched project while
-  // the agent changes real files.
-  it('names the folder and marks it read & write', async () => {
+  const PATH = '/home/u/Projects/jan-app'
+  const renderPill = (props: Partial<React.ComponentProps<typeof CoworkWorkspacePill>> = {}) =>
     render(
       <CoworkWorkspacePill
-        folder="/home/u/Projects/jan-app"
-        gitBranch="dev"
+        folder={PATH}
         onAttach={vi.fn()}
         onDetach={vi.fn()}
+        {...props}
       />
     )
+  const openPopover = (name = /a11yWithFolder/) =>
+    userEvent.click(screen.getByRole('button', { name }))
+  const accessButton = () =>
+    screen.getByRole('button', { name: /common:workspace\.changeAccess/ })
+
+  it('names the folder, marks it read & write and drops the old chrome', async () => {
+    renderPill({ gitBranch: 'dev' })
     const trigger = screen.getByRole('button', { name: /a11yWithFolder/ })
     expect(trigger).toHaveClass('h-9', 'rounded-full', 'border-border', 'text-muted-foreground')
     expect(trigger.querySelector('svg')).toHaveClass('size-4', 'shrink-0')
     await userEvent.click(trigger)
 
-    expect(screen.getByText('common:workspace.readsFrom')).toBeInTheDocument()
-    expect(
-      screen.getAllByText('common:workspace.writable').length
-    ).toBeGreaterThan(0)
+    expect(accessButton()).toHaveTextContent('common:workspace.writable')
     expect(screen.queryByText('common:workspace.readOnly')).toBeNull()
     expect(screen.getByText('dev')).toBeInTheDocument()
-    expect(screen.getByText('common:workspace.footnote')).toBeInTheDocument()
+    for (const gone of ['readsFrom', 'open', 'reveal', 'footnote', 'footnoteReadOnly', 'allowChanges']) {
+      expect(screen.queryByText(`common:workspace.${gone}`)).toBeNull()
+    }
+    expect(screen.queryByRole('switch')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'common:workspace.open' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'common:workspace.reveal' })).toBeNull()
   })
 
-  it('opens the folder and reveals it through the right opener calls', async () => {
-    render(
-      <CoworkWorkspacePill
-        folder="/home/u/Projects/jan-app"
-        onAttach={vi.fn()}
-        onDetach={vi.fn()}
-      />
+  it('shows read only when the grant is read', async () => {
+    renderPill({ access: 'read', onAccessChange: vi.fn() })
+    await openPopover(/a11yWithFolderReadOnly/)
+    expect(accessButton()).toHaveTextContent('common:workspace.readOnly')
+  })
+
+  it('reveals the folder from the folder name', async () => {
+    renderPill()
+    await openPopover()
+    await userEvent.click(
+      screen.getByRole('button', { name: `common:workspace.revealFolder ${'jan-app'}` })
     )
-    await userEvent.click(screen.getByRole('button', { name: /a11yWithFolder/ }))
-
-    await userEvent.click(screen.getAllByText('common:workspace.open')[0])
-    expect(openPath).toHaveBeenCalledWith('/home/u/Projects/jan-app')
-
-    await userEvent.click(screen.getByText('common:workspace.reveal'))
-    expect(revealItemInDir).toHaveBeenCalledWith('/home/u/Projects/jan-app')
+    expect(revealItemInDir).toHaveBeenCalledWith(PATH)
+    expect(openPath).not.toHaveBeenCalled()
   })
 
-  it('notifies and offers a replacement when the folder cannot be opened', async () => {
-    openPath.mockRejectedValueOnce(new Error('path does not exist'))
+  it('reveals the folder from the file path', async () => {
+    renderPill()
+    await openPopover()
+    await userEvent.click(
+      screen.getByRole('button', { name: `common:workspace.revealFolder ${PATH}` })
+    )
+    expect(revealItemInDir).toHaveBeenCalledWith(PATH)
+    expect(openPath).not.toHaveBeenCalled()
+  })
+
+  it('reveals from the keyboard', async () => {
+    renderPill()
+    await openPopover()
+    const name = screen.getByRole('button', { name: 'common:workspace.revealFolder jan-app' })
+    name.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(revealItemInDir).toHaveBeenCalledWith(PATH)
+  })
+
+  it.each(['name', 'path'])('notifies and offers a replacement when the folder cannot be revealed from the %s', async (which) => {
+    revealItemInDir.mockRejectedValueOnce(new Error('path does not exist'))
     const onAttach = vi.fn()
-    render(
-      <CoworkWorkspacePill
-        folder="/home/u/Projects/jan-app"
-        onAttach={onAttach}
-        onDetach={vi.fn()}
-      />
+    renderPill({ onAttach })
+    await openPopover()
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: `common:workspace.revealFolder ${which === 'name' ? 'jan-app' : PATH}`,
+      })
     )
-    await userEvent.click(screen.getByRole('button', { name: /a11yWithFolder/ }))
-    await userEvent.click(screen.getAllByText('common:workspace.open')[0])
 
     await vi.waitFor(() => {
       expect(toastError).toHaveBeenCalledWith(
@@ -117,79 +138,120 @@ describe('CoworkWorkspacePill', () => {
     expect(onAttach).toHaveBeenCalledOnce()
   })
 
-  it('notifies and offers a replacement when the folder cannot be revealed', async () => {
-    revealItemInDir.mockRejectedValueOnce(new Error('path does not exist'))
-    const onAttach = vi.fn()
-    render(
-      <CoworkWorkspacePill
-        folder="/home/u/Projects/jan-app"
-        onAttach={onAttach}
-        onDetach={vi.fn()}
-      />
-    )
-    await userEvent.click(screen.getByRole('button', { name: /a11yWithFolder/ }))
-    await userEvent.click(screen.getByText('common:workspace.reveal'))
-
-    await vi.waitFor(() => {
+  it('reports other reveal failures with the host detail', async () => {
+    revealItemInDir.mockRejectedValueOnce(new Error('denied'))
+    renderPill()
+    await openPopover()
+    await userEvent.click(screen.getByRole('button', { name: 'common:workspace.revealFolder jan-app' }))
+    await vi.waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
-        'common:workspace.unavailable',
-        expect.objectContaining({
-          description: 'common:workspace.missing jan-app',
-          action: expect.objectContaining({
-            label: 'common:workspace.change',
-            onClick: onAttach,
-          }),
-        })
+        'common:workspace.revealFailed',
+        expect.objectContaining({ description: 'denied' })
       )
-    })
+    )
   })
 
   it('detaches the folder', async () => {
     const onDetach = vi.fn()
-    render(
-      <CoworkWorkspacePill
-        folder="/home/u/Projects/jan-app"
-        onAttach={vi.fn()}
-        onDetach={onDetach}
-      />
-    )
-    await userEvent.click(screen.getByRole('button', { name: /a11yWithFolder/ }))
-    await userEvent.click(screen.getByText('common:workspace.detach'))
-    expect(onDetach).toHaveBeenCalled()
+    renderPill({ onDetach })
+    await openPopover()
+    await userEvent.click(screen.getByRole('button', { name: 'common:workspace.detach' }))
+    expect(onDetach).toHaveBeenCalledOnce()
   })
 
-  it('offers an Allow changes switch only when the caller can change access', async () => {
+  it('changes the folder', async () => {
+    const onAttach = vi.fn()
+    renderPill({ onAttach })
+    await openPopover()
+    await userEvent.click(screen.getByRole('button', { name: 'common:workspace.change' }))
+    expect(onAttach).toHaveBeenCalledOnce()
+  })
+
+  it('toggles read only to read & write by clicking the access badge', async () => {
     const onAccessChange = vi.fn()
-    const { rerender } = render(
-      <CoworkWorkspacePill folder="/home/u/app" access="read" onAttach={vi.fn()} onDetach={vi.fn()} />
+    renderPill({ access: 'read', onAccessChange })
+    await openPopover(/a11yWithFolderReadOnly/)
+    expect(accessButton()).toHaveAccessibleName(
+      'common:workspace.changeAccess common:workspace.readOnly common:workspace.writable'
     )
-    await userEvent.click(screen.getByRole('button', { name: /a11yWithFolder/ }))
-    expect(screen.queryByRole('switch')).toBeNull()
-
-    rerender(
-      <CoworkWorkspacePill
-        folder="/home/u/app"
-        access="read"
-        onAccessChange={onAccessChange}
-        onAttach={vi.fn()}
-        onDetach={vi.fn()}
-      />
-    )
-    const toggle = screen.getByRole('switch')
-    expect(toggle).not.toBeChecked()
-    await userEvent.click(toggle)
+    await userEvent.click(accessButton())
+    expect(onAccessChange).toHaveBeenCalledOnce()
     expect(onAccessChange).toHaveBeenCalledWith('write')
+  })
 
-    rerender(
-      <CoworkWorkspacePill
-        folder="/home/u/app"
-        access="write"
-        onAccessChange={onAccessChange}
-        onAttach={vi.fn()}
-        onDetach={vi.fn()}
-      />
+  it('toggles read & write to read only by clicking the access badge', async () => {
+    const onAccessChange = vi.fn()
+    renderPill({ access: 'write', onAccessChange })
+    await openPopover()
+    expect(accessButton()).toHaveAccessibleName(
+      'common:workspace.changeAccess common:workspace.writable common:workspace.readOnly'
     )
-    await userEvent.click(screen.getByRole('switch'))
-    expect(onAccessChange).toHaveBeenLastCalledWith('read')
+    await userEvent.click(accessButton())
+    expect(onAccessChange).toHaveBeenCalledWith('read')
+  })
+
+  it('toggles access from the keyboard', async () => {
+    const onAccessChange = vi.fn()
+    renderPill({ access: 'read', onAccessChange })
+    await openPopover(/a11yWithFolderReadOnly/)
+    accessButton().focus()
+    await userEvent.keyboard(' ')
+    expect(onAccessChange).toHaveBeenCalledWith('write')
+  })
+
+  it('disables the access badge without a callback', async () => {
+    renderPill({ access: 'read' })
+    await openPopover(/a11yWithFolderReadOnly/)
+    expect(accessButton()).toBeDisabled()
+  })
+
+  it('disables every folder action while saving', async () => {
+    const onAccessChange = vi.fn()
+    const onDetach = vi.fn()
+    renderPill({ access: 'write', saving: true, onAccessChange, onDetach })
+    await openPopover()
+    expect(accessButton()).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'common:workspace.revealFolder jan-app' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: `common:workspace.revealFolder ${PATH}` })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'common:workspace.change' })).toBeDisabled()
+    const detach = screen.getByRole('button', { name: 'common:workspace.detach' })
+    expect(detach).toBeDisabled()
+    await userEvent.click(accessButton())
+    await userEvent.click(detach)
+    expect(onAccessChange).not.toHaveBeenCalled()
+    expect(onDetach).not.toHaveBeenCalled()
+    expect(revealItemInDir).not.toHaveBeenCalled()
+  })
+
+  describe('inactive folder (access null)', () => {
+    it('shows an explicit confirm action and never grants by toggling', async () => {
+      const onAccessChange = vi.fn()
+      const onAllowAccess = vi.fn()
+      renderPill({ access: null, onAccessChange, onAllowAccess })
+      await userEvent.click(screen.getByRole('button', { name: 'jan-app' }))
+
+      expect(screen.getByText('common:conversationScope.folderNeedsConfirmation')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /common:workspace\.changeAccess/ })).toBeNull()
+      expect(screen.queryByText('common:workspace.writable')).toBeNull()
+      expect(screen.queryByText('common:workspace.readOnly')).toBeNull()
+      expect(onAllowAccess).not.toHaveBeenCalled()
+
+      await userEvent.click(screen.getByRole('button', { name: 'common:conversationScope.confirmFolder' }))
+      expect(onAllowAccess).toHaveBeenCalledOnce()
+      expect(onAccessChange).not.toHaveBeenCalled()
+    })
+
+    it('offers no confirm action without a callback and disables it while saving', async () => {
+      const { rerender } = render(
+        <CoworkWorkspacePill folder={PATH} access={null} onAttach={vi.fn()} onDetach={vi.fn()} />
+      )
+      await userEvent.click(screen.getByRole('button', { name: 'jan-app' }))
+      expect(screen.queryByRole('button', { name: 'common:conversationScope.confirmFolder' })).toBeNull()
+
+      rerender(
+        <CoworkWorkspacePill folder={PATH} access={null} saving onAllowAccess={vi.fn()} onAttach={vi.fn()} onDetach={vi.fn()} />
+      )
+      expect(screen.getByRole('button', { name: 'common:conversationScope.confirmFolder' })).toBeDisabled()
+    })
   })
 })

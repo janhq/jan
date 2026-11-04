@@ -6,8 +6,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { basenameOf } from '@/lib/coworkPreview'
@@ -27,13 +25,18 @@ type Props = {
   access?: 'read' | 'write' | null
   /** Disable mutations and folder actions while a strict grant save is pending. */
   saving?: boolean
-  /** When set, the popover offers an "Allow changes" switch for the folder. */
+  /** When set, the access badge toggles the folder between read-only and read & write. */
   onAccessChange?: (access: 'read' | 'write') => void
   /** Offered only while the folder has no host grant (access is null). */
   onAllowAccess?: () => void
   onAttach: () => void
   onDetach: () => void
 }
+
+const badgeClass =
+  'inline-flex items-center gap-1 self-start rounded-full bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground outline-none'
+const revealClass = (extra: string) =>
+  `${extra} cursor-pointer rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50`
 
 /**
  * Attach, inspect and detach the shared project folder.
@@ -61,38 +64,22 @@ export function CoworkWorkspacePill({
   const serviceHub = useServiceHub()
   const folderName = folder ? basenameOf(folder) : null
 
-  const notifyWorkspaceActionError = (
-    action: 'open' | 'reveal',
-    error: unknown
-  ) => {
+  const notifyRevealError = (error: unknown) => {
     const detail = error instanceof Error ? error.message : String(error)
     const missing = /ENOENT|no such file|does not exist|not found|path not found/i.test(detail)
-    const title = missing
-      ? t('common:workspace.unavailable')
-      : t(
-          action === 'open'
-            ? 'common:workspace.openFailed'
-            : 'common:workspace.revealFailed'
-        )
 
-    toast.error(title, {
-      description: missing
-        ? t('common:workspace.missing', { folder: folderName })
-        : detail,
-      action: {
-        label: t('common:workspace.change'),
-        onClick: onAttach,
-      },
-    })
-  }
-
-  const handleOpen = async () => {
-    if (!folder) return
-    try {
-      await serviceHub.opener().openPath(folder)
-    } catch (error) {
-      notifyWorkspaceActionError('open', error)
-    }
+    toast.error(
+      missing ? t('common:workspace.unavailable') : t('common:workspace.revealFailed'),
+      {
+        description: missing
+          ? t('common:workspace.missing', { folder: folderName })
+          : detail,
+        action: {
+          label: t('common:workspace.change'),
+          onClick: onAttach,
+        },
+      }
+    )
   }
 
   const handleReveal = async () => {
@@ -100,9 +87,14 @@ export function CoworkWorkspacePill({
     try {
       await serviceHub.opener().revealItemInDir(folder)
     } catch (error) {
-      notifyWorkspaceActionError('reveal', error)
+      notifyRevealError(error)
     }
   }
+
+  const accessLabel =
+    access === 'write' ? t('common:workspace.writable') : t('common:workspace.readOnly')
+  const nextAccessLabel =
+    access === 'write' ? t('common:workspace.readOnly') : t('common:workspace.writable')
 
   return (
     <Popover>
@@ -137,91 +129,79 @@ export function CoworkWorkspacePill({
       <PopoverContent align="start" className="w-80 p-3">
         {folder ? (
           <>
-            {access !== null && <p className="text-xs font-medium text-muted-foreground">
-              {t('common:workspace.readsFrom')}
-            </p>}
-            <div className="mt-1 flex items-center gap-2">
-              <Folder size={14} className="shrink-0 text-muted-foreground" />
-              <span className="truncate text-sm font-medium">{folderName}</span>
-              <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
-                {access === null ? null : access === 'write' ? <PencilLine size={10} /> : <Eye size={10} />}
-                {access === null ? '—' : t(access === 'write' ? 'common:workspace.writable' : 'common:workspace.readOnly')}
-              </span>
-            </div>
-            <p
-              className="mt-0.5 font-mono text-xs text-muted-foreground"
-              title={folder}
-            >
-              {truncateMiddle(folder, 44)}
-            </p>
-            <div className="mt-1.5 flex items-center gap-2">
-              {gitBranch && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
-                  <GitBranch size={10} />
-                  {gitBranch}
-                </span>
+            <div className="flex items-start gap-2">
+              <Folder size={14} className="mt-[3px] shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <button
+                  type="button"
+                  className={revealClass('block max-w-full truncate text-left text-sm font-medium hover:underline')}
+                  aria-label={t('common:workspace.revealFolder', { folder: folderName })}
+                  disabled={saving}
+                  onClick={handleReveal}
+                >
+                  {folderName}
+                </button>
+                <button
+                  type="button"
+                  className={revealClass('mt-0.5 block max-w-full truncate text-left font-mono text-xs text-muted-foreground hover:text-foreground hover:underline')}
+                  aria-label={t('common:workspace.revealFolder', { folder })}
+                  title={folder}
+                  disabled={saving}
+                  onClick={handleReveal}
+                >
+                  {truncateMiddle(folder, 44)}
+                </button>
+              </div>
+              {access === null ? (
+                <span className={`${badgeClass} shrink-0`}>—</span>
+              ) : (
+                <button
+                  type="button"
+                  className={`${badgeClass} shrink-0 cursor-pointer transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50`}
+                  aria-label={t('common:workspace.changeAccess', { current: accessLabel, next: nextAccessLabel })}
+                  disabled={saving || !onAccessChange}
+                  onClick={() => onAccessChange?.(access === 'write' ? 'read' : 'write')}
+                >
+                  {access === 'write' ? <PencilLine size={10} /> : <Eye size={10} />}
+                  {accessLabel}
+                </button>
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-auto h-7"
-                disabled={saving}
-                onClick={handleOpen}
-              >
-                {t('common:workspace.open')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7"
-                disabled={saving}
-                onClick={handleReveal}
-              >
-                {t('common:workspace.reveal')}
-              </Button>
             </div>
-            <Separator className="my-3" />
+
+            {gitBranch && (
+              <span className={`${badgeClass} mt-2`}>
+                <GitBranch size={10} />
+                {gitBranch}
+              </span>
+            )}
+
+            {access === null && onAllowAccess && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="flex-1 text-xs text-muted-foreground">
+                  {t('common:conversationScope.folderNeedsConfirmation')}
+                </span>
+                <Button variant="outline" size="sm" className="h-7" disabled={saving} onClick={onAllowAccess}>
+                  {t('common:conversationScope.confirmFolder')}
+                </Button>
+              </div>
+            )}
           </>
-        ) : null}
-
-        {folder && access === null && onAllowAccess && (
-          <div className="mb-2 flex items-center gap-2 text-sm">
-            <span className="flex-1 text-xs text-muted-foreground">
-              {t('common:conversationScope.folderNeedsConfirmation')}
-            </span>
-            <Button variant="outline" size="sm" className="h-7" disabled={saving} onClick={onAllowAccess}>
-              {t('common:conversationScope.confirmFolder')}
-            </Button>
-          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {t('common:workspace.footnoteEmpty')}
+          </p>
         )}
-
-        {folder && onAccessChange && (
-          <label className="mb-2 flex items-center gap-2 text-sm">
-            <span className="flex-1">{t('common:workspace.allowChanges')}</span>
-            <Switch
-              disabled={saving}
-              checked={access === 'write'}
-              onCheckedChange={(on) => onAccessChange(on ? 'write' : 'read')}
-            />
-          </label>
-        )}
-
-        {access !== null && <p className="text-xs text-muted-foreground">
-          {folder
-            ? t(access === 'write' ? 'common:workspace.footnote' : 'common:workspace.footnoteReadOnly')
-            : t('common:workspace.footnoteEmpty')}
-        </p>}
 
         <div className="mt-3 flex items-center gap-2">
           {folder ? (
             <>
-              <Button variant="ghost" size="sm" disabled={saving} onClick={onDetach}>
+              <Button variant="ghost" size="sm" className="h-7" disabled={saving} onClick={onDetach}>
                 {t('common:workspace.detach')}
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                className="ml-auto"
+                className="ml-auto h-7"
                 disabled={saving}
                 onClick={onAttach}
               >

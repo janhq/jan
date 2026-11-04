@@ -86,7 +86,7 @@ describe('ThreadWorkspacePill', () => {
     fireEvent.click(await screen.findByText('common:workspace.detach'))
     expect(await screen.findByRole('alert')).toHaveTextContent('common:conversationScope.saveFailed')
     expect(screen.getByRole('dialog')).toBe(popover)
-    expect(screen.getByRole('switch')).not.toBeChecked()
+    expect(screen.queryByRole('switch')).toBeNull()
     expect(screen.queryByText('common:workspace.writable')).toBeNull()
     expect(screen.queryByText('common:workspace.readOnly')).toBeNull()
     expect(screen.queryByText('common:conversationScope.folderNeedsConfirmation')).toBeNull()
@@ -112,26 +112,23 @@ describe('ThreadWorkspacePill', () => {
     fireEvent.click(screen.getByRole('button', { name: initialAccess === 'write'
       ? 'common:workspace.a11yWithFolder' : 'common:workspace.a11yWithFolderReadOnly' }))
     const popover = screen.getByRole('dialog')
-    const toggle = screen.getByRole('switch')
-    fireEvent.click(toggle)
+    fireEvent.click(screen.getByRole('button', { name: /common:workspace\.changeAccess/ }))
     expect(screen.getByRole('dialog')).toBe(popover)
-    expect(screen.getByRole('switch')).toBe(toggle)
-    expect(toggle).toBeDisabled()
-    expect(toggle).not.toBeChecked()
+    // The host has not acknowledged the new grant yet, so no access claim or toggle.
+    expect(screen.queryByRole('button', { name: /common:workspace\.changeAccess/ })).toBeNull()
     expect(screen.queryByText('common:workspace.writable')).toBeNull()
     expect(screen.queryByText('common:workspace.readOnly')).toBeNull()
     expect(screen.queryByText('common:conversationScope.folderNeedsConfirmation')).toBeNull()
     expect(screen.getByText('—')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'saved' })).toBeInTheDocument()
-    for (const action of ['open', 'reveal', 'change', 'detach']) {
+    for (const action of ['change', 'detach']) {
       expect(screen.getByRole('button', { name: `common:workspace.${action}` })).toBeDisabled()
     }
     await act(async () => { finish(); await pending })
     expect(screen.getByRole('dialog')).toBe(popover)
-    expect(screen.getByRole('switch')).toBe(toggle)
-    expect(toggle).toBeEnabled()
-    expect(toggle).toHaveAttribute('aria-checked', String(nextAccess === 'write'))
-    expect(screen.getByText(nextAccess === 'write' ? 'common:workspace.writable' : 'common:workspace.readOnly')).toBeInTheDocument()
+    const settled = screen.getByRole('button', { name: /common:workspace\.changeAccess/ })
+    expect(settled).toBeEnabled()
+    expect(settled).toHaveTextContent(nextAccess === 'write' ? 'common:workspace.writable' : 'common:workspace.readOnly')
   })
 
   it('shows the folder and says read only when the grant is read', () => {
