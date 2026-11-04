@@ -782,6 +782,15 @@ pub(crate) async fn continuation_state(
                     .to_string(),
             );
         }
+        // Said apart from the clipping: a clipped message was still read, a
+        // dropped one was not, and only the earlier sections may cover it.
+        if chunked.dropped > 0 {
+            notes.push(format!(
+                "The {} oldest messages of the compacted span were not summarized: even clipped, \
+                 the span did not fit the request limit. Only the earlier sections cover them.",
+                chunked.dropped
+            ));
+        }
         if chunked.done < chunked.total {
             notes.push(format!(
                 "Only {} of {} parts of the compacted span were summarized before the summarizer \
@@ -942,13 +951,14 @@ fn summarizer_window(model_id: &str) -> u64 {
 }
 
 /// The span as at most [`MAX_CHUNKS`] chunks a `window`-token writer can read,
-/// and whether messages had to be clipped to get there.
-fn bounded_chunks(span: &[Value], window: u64) -> (Vec<String>, bool) {
+/// whether messages had to be clipped to get there, and how many of its
+/// oldest messages were left out entirely.
+fn bounded_chunks(span: &[Value], window: u64) -> (Vec<String>, bool, usize) {
     let preferred = (window / 2).clamp(CHUNK_TOKENS.0, CHUNK_TOKENS.1);
     let largest = (window / 2).max(CHUNK_TOKENS.0);
     let chunks = render_chunks(span, (preferred * 4) as usize);
     if chunks.len() <= MAX_CHUNKS {
-        return (chunks, false);
+        return (chunks, false, 0);
     }
     // Larger chunks first: they read every word, only in fewer requests.
     // Grown by steps, since packing whole messages leaves each chunk short of
@@ -958,7 +968,7 @@ fn bounded_chunks(span: &[Value], window: u64) -> (Vec<String>, bool) {
     while grown <= largest {
         let chunks = render_chunks(span, (grown * 4) as usize);
         if chunks.len() <= MAX_CHUNKS {
-            return (chunks, false);
+            return (chunks, false, 0);
         }
         grown += grown / 4;
     }
@@ -981,13 +991,28 @@ fn bounded_chunks(span: &[Value], window: u64) -> (Vec<String>, bool) {
             high = mid - 1;
         }
     }
-    let mut chunks = packed(low);
+    let clipped: Vec<String> = rendered.iter().map(|t| clip_text_middle(t, low)).collect();
     // Even marks alone can overflow a span of thousands of messages: then
     // the oldest go, which is what the previous sections already cover best.
+    // Dropped whole messages rather than whole chunks, so the count the state
+    // reports is exact: the newest messages are kept while they pack into
+    // `MAX_CHUNKS`.
+    let mut dropped = 0;
+    let mut chunks = pack(&clipped, max_chars);
     if chunks.len() > MAX_CHUNKS {
-        chunks.drain(..chunks.len() - MAX_CHUNKS);
+        let (mut low, mut high) = (1usize, clipped.len());
+        while low < high {
+            let mid = (low + high) / 2;
+            if pack(&clipped[mid..], max_chars).len() <= MAX_CHUNKS {
+                high = mid;
+            } else {
+                low = mid + 1;
+            }
+        }
+        dropped = low;
+        chunks = pack(&clipped[dropped..], max_chars);
     }
-    (chunks, true)
+    (chunks, true, dropped)
 }
 
 /// What the fallback summarizer got done.
@@ -1001,6 +1026,8 @@ struct Chunked {
     total: usize,
     /// Messages were clipped to keep within [`MAX_CHUNKS`].
     clipped: bool,
+    /// Oldest messages of the span left out to keep within [`MAX_CHUNKS`].
+    dropped: usize,
 }
 
 /// The fallback summarizer: the span rendered to text and summarized chunk by
@@ -1024,11 +1051,12 @@ async fn summarize_in_chunks(
         Some((smol_id, _)) => summarizer_window(smol_id).min(sizing.window),
         None => sizing.window,
     };
-    let (chunks, clipped) = bounded_chunks(span, writer_window);
+    let (chunks, clipped, dropped) = bounded_chunks(span, writer_window);
     let mut usage: Option<Usage> = None;
     let mut out = Chunked {
         total: chunks.len(),
         clipped,
+        dropped,
         ..Chunked::default()
     };
     let prompt = fallback_prompt(role);
@@ -1710,6 +1738,39 @@ mod tests {
         let (state, _) = state_of(&mid, None, 100_000, &model).await;
         assert!(model.requests.lock().await.len() <= MAX_CHUNKS);
         assert!(!state_text(&state).contains("clipped"));
+    }
+
+    /// A span so long that even its clip marks overflow the requests loses
+    /// its oldest messages, and the state says how many, apart from the note
+    /// on clipped middles: the reader must know that part was never read.
+    #[tokio::test]
+    async fn dropped_oldest_messages_are_reported_with_their_count() {
+        let model = stub("## Progress\nok");
+        let mut huge = vec![json!({ "role": "user", "content": "the task" })];
+        // Each shorter than the clip mark, so none is clipped and every
+        // message kept is found by its number.
+        for i in 0..10_000 {
+            huge.push(json!({ "role": "assistant", "content": format!("OLD{i}-{}", "y".repeat(20)) }));
+        }
+        let (chunks, clipped, dropped) = bounded_chunks(&huge, 8_000);
+        assert!(clipped && chunks.len() <= MAX_CHUNKS);
+        assert!(dropped > 0 && dropped < huge.len(), "{dropped}");
+        let sent: String = chunks.concat();
+        assert!(!sent.contains("OLD0-"), "the oldest message was dropped");
+        assert!(sent.contains("OLD9999-"), "the newest message was kept");
+        assert!(!sent.contains(&format!("OLD{}-", dropped - 2)), "message {} was dropped", dropped - 1);
+        assert!(sent.contains(&format!("OLD{}-", dropped - 1)), "message {} was kept", dropped);
+
+        let (state, _) = state_of(&huge, None, 8_000, &model).await;
+        let text = state_text(&state);
+        assert!(
+            text.contains(&format!("The {dropped} oldest messages of the compacted span were not summarized")),
+            "{text}"
+        );
+        assert!(text.contains("middle of its longest messages was clipped"), "{text}");
+
+        let (_, _, none) = bounded_chunks(&span(16), 100_000);
+        assert_eq!(none, 0);
     }
 
     /// (#4) Chunks are sized for the smol model's window when smol writes:

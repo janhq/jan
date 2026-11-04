@@ -185,7 +185,8 @@ calls a tool or returns nothing; the request fails), the compacted span is summa
 chunks instead. Each chunk request carries the sections written so far, so the whole span is read
 rather than having its middle cut out. A summary takes at most eight such requests: past that the
 chunks grow, and past what the writer can read the middle of each long message is clipped, which
-the state says. `smol_model` from `~/.jan/config.toml` writes these chunks when one is set, sized
+the state says. A span so long that even clipped it does not fit loses its oldest messages, which
+are not summarized at all; the state gives their count in a separate note. `smol_model` from `~/.jan/config.toml` writes these chunks when one is set, sized
 for its own window. If it fails (its smaller window overflows, it is unreachable, or it returns
 nothing), the session's model writes the rest. A run under a `[budget]` money limit always
 summarizes on its own model, so every request is charged at the rates the limit was priced against.
