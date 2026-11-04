@@ -182,7 +182,7 @@ export function NavMain({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { setOpenMobile } = useSidebar()
+  const { closeMobileForNavigation } = useSidebar()
   const { addFolder } = useThreadManagement()
   const { open: searchOpen, setOpen: setSearchOpen } = useSearchDialog()
   const { open: projectDialogOpen, setOpen: setProjectDialogOpen } =
@@ -193,7 +193,7 @@ export function NavMain({
     () => {
       useAgentMode.getState().removeThread(TEMPORARY_CHAT_ID)
       // Already on home the path does not change, so close the overlay here.
-      setOpenMobile(false)
+      closeMobileForNavigation()
       navigate({ to: route.home })
     },
     () => {

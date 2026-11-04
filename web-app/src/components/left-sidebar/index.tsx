@@ -25,7 +25,7 @@ export function LeftSidebar() {
   // (macOS, or a Linux DE placing buttons left).
   const leftButtons = useTitlebarLayout((s) => s.layout.left.length)
   const reserveLeft = IS_MACOS || leftButtons > 0
-  const { isMobile, setOpenMobile } = useSidebar()
+  const { isMobile, closeMobileForNavigation } = useSidebar()
   // The mobile overlay is modal: leave it when a navigation lands on a new page
   // (dialogs opened from its rows keep it open underneath).
   const pathname = useLocation({ select: (location) => location.pathname })
@@ -33,9 +33,9 @@ export function LeftSidebar() {
   useEffect(() => {
     if (lastPathname.current !== pathname) {
       lastPathname.current = pathname
-      setOpenMobile(false)
+      closeMobileForNavigation()
     }
-  }, [pathname, setOpenMobile])
+  }, [pathname, closeMobileForNavigation])
   return (
     <div className='relative z-50'>
       <Sidebar variant="floating" collapsible="offcanvas">
