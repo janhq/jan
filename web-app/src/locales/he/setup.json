@@ -1,0 +1,13 @@
+{
+  "welcome": "ברוכים הבאים ל-Jan",
+  "description": "כדי להתחיל, אפשר לצאת לדרך מיד עם מודל Jan, או להגדיר ספק מקומי או מרוחק משלכם",
+  "descriptionWeb": "כדי להתחיל, תצטרכו להתחבר למודל בענן באמצעות מפתח API",
+  "quickStart": "התחלה מהירה עם מודל Jan",
+  "quickStartDescription": "לא נדרשת שום הגדרה",
+  "quickStartFailed": "משהו השתבש. נסו שוב.",
+  "downloading": "מוריד את מודל Jan...",
+  "downloadingDescription": "אנא המתינו בזמן שאנחנו מורידים את המודל. זה עשוי לקחת כמה דקות.",
+  "orDivider": "או",
+  "localModel": "הגדרת מודל מקומי",
+  "remoteProvider": "הגדרת ספק מרוחק"
+}

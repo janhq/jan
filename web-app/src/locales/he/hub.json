@@ -1,0 +1,18 @@
+{
+  "sortNewest": "החדשים ביותר",
+  "sortMostDownloaded": "המורדים ביותר",
+  "newChat": "צ'אט חדש",
+  "download": "הורדה",
+  "downloadFailed": "ההורדה נכשלה",
+  "downloaded": "הורד",
+  "loadingModels": "טוען מודלים...",
+  "noModels": "לא נמצאו מודלים",
+  "by": "מאת",
+  "downloads": "הורדות",
+  "variants": "וריאנטים",
+  "showVariants": "הצגת וריאנטים",
+  "useModel": "השתמשו במודל הזה",
+  "downloadModel": "הורדת מודל",
+  "tools": "כלים",
+  "searchPlaceholder": "חיפוש מודלים ב-Hugging Face..."
+}
