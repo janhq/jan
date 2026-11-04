@@ -1,9 +1,12 @@
 import {
   toolSchemas,
   executeTool,
+  executeThreadTool,
   sandboxStatus,
   threadWorkspaceDelete,
   threadWorkspaceSweep,
+  sessionWorkspaceDelete,
+  sessionWorkspaceSweep,
   memoryCatalog,
   memoryRead,
   subagentResultReserve,
@@ -13,6 +16,11 @@ import {
   startMonitor,
   stopMonitor,
   listMonitors,
+  startThreadMonitor,
+  stopThreadMonitor,
+  listThreadMonitors,
+  stopAllThreadMonitors,
+  revokeThreadCapabilities,
   sessionMonitorIds,
   stopSessionMonitors,
   cancelThreadBash,
@@ -24,6 +32,11 @@ import {
   type WorkspaceScope,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { notifyMemoryMutation } from '@/lib/memorySaveFeedback'
+import {
+  dispatchThreadTool,
+  intersectConversationCapabilities,
+} from './scopedToolDispatch'
 
 /**
  * The built-in agent tools the desktop can dispatch.
@@ -68,7 +81,7 @@ export const isRecordedShellCall = (toolName: string): boolean =>
  * shell alone, with no network. The full toolset above is Cowork's — chat is a
  * conversation that occasionally runs a command, not an agent surface.
  */
-export const CHAT_AGENT_TOOL_NAMES = new Set(['shell'])
+export { CHAT_AGENT_TOOL_NAMES } from './toolCapabilityPolicy'
 
 /**
  * Tools that only run under an enforcing OS sandbox. They stay in
@@ -241,14 +254,11 @@ const messageOf = (e: unknown): string =>
 /**
  * Execute one built-in agent tool.
  *
- * The filesystem tools are confined to this thread's own sandbox, so scratch
- * files from one conversation are invisible to the next; memory and skill tools
- * reach the permanent store instead and persist. No project path is passed --
- * the desktop has no project picker yet, so the plugin uses the permanent store
- * in the Jan data folder.
- *
- * `shell` additionally runs under an OS sandbox whose network access is closed
- * unless the caller opens it. Chat never does; Cowork passes its own setting.
+ * Thread scope always uses the dedicated native scoped command. Caller folder,
+ * network, write and skill-overlay flags are ignored in that scope: only current
+ * explicit per-thread consent can request them. Native rechecks persisted consent
+ * and canonical containment. Session scope retains Cowork's existing contract.
+ * The caller still owns currentChat tool approval; consent does not auto-approve.
  */
 export async function executeAgentTool(
   toolName: string,
@@ -279,7 +289,16 @@ export async function executeAgentTool(
    * Cowork passes its attached folder; chat leaves it unset, keeping its skills
    * global-only. Memory and skill writes stay on the permanent store regardless.
    */
-  skillProject?: string | null
+  skillProject?: string | null,
+  /**
+   * Thread scope only. Upper bound captured when the caller classified (and
+   * approved) this call. The grant read at dispatch is intersected with it, so
+   * a grant widened after classification cannot expand the call; a revoke
+   * still narrows. Undefined keeps the current-grant-only behaviour.
+   */
+  effectiveGrantCeiling?: unknown,
+  /** Suppresses UI feedback for a result discarded after Stop. */
+  signal?: AbortSignal
 ): Promise<AgentToolResult> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -288,22 +307,46 @@ export async function executeAgentTool(
       input && typeof input === 'object'
         ? (input as Record<string, unknown>)
         : {}
-    const result = await executeTool(
-      dataFolder,
-      threadId,
-      toolName,
-      args,
-      skillProject ?? undefined,
-      undefined,
-      allowNetwork,
-      readOnlyProject ?? undefined,
-      projectWritable,
-      scope
-    )
+    // Resolve after asynchronous setup, immediately before native dispatch. The
+    // dynamic import avoids useThreads -> cleanup helpers -> useThreads cycles.
+    const runTool = async () => {
+      if (scope === 'thread') {
+        const { useThreads } = await import('@/hooks/useThreads')
+        return dispatchThreadTool(
+          toolName,
+          args,
+          () => {
+            const current = useThreads
+              .getState()
+              .getConversationCapabilities(threadId)
+            return effectiveGrantCeiling === undefined
+              ? current
+              : intersectConversationCapabilities(current, effectiveGrantCeiling)
+          },
+          (grant) => executeThreadTool(threadId, toolName, args, grant)
+        )
+      }
+      return executeTool(
+        dataFolder,
+        threadId,
+        toolName,
+        args,
+        skillProject ?? undefined,
+        undefined,
+        allowNetwork,
+        readOnlyProject ?? undefined,
+        projectWritable,
+        scope
+      )
+    }
+    const result = await runTool()
     if (result.isError) return { error: result.content }
     // The store changed, so the recall injections must not keep serving the
     // snapshot taken before this note existed.
-    if (toolName === 'memory' && isMemoryChange(args)) invalidateMemory()
+    if (toolName === 'memory' && isMemoryChange(args)) {
+      invalidateMemory()
+      notifyMemoryMutation(args, result.content, signal)
+    }
     return {
       content: result.content,
       diff: result.diff ?? undefined,
@@ -349,6 +392,82 @@ export async function startAgentMonitor(
     return { output }
   } catch (e) {
     return { output: `ERROR: ${messageOf(e)}`, isError: true }
+  }
+}
+
+/**
+ * Drop a thread's confirmed elevations in the host process, and stop anything
+ * still running under them.
+ *
+ * Narrow-only, so it can deny but never grant. Awaited by the consent setter
+ * before it persists: the frontend's own save queue may still hold an earlier
+ * write, and until the host is narrowed a background monitor poll would keep
+ * being authorized by the grant being revoked. Throws if the host could not be
+ * narrowed, so the caller must not treat the revocation as applied.
+ */
+export async function revokeThreadCapabilitiesInHost(
+  threadId: string
+): Promise<void> {
+  await revokeThreadCapabilities(threadId)
+}
+
+/**
+ * Start a monitor owned by a Chat thread.
+ *
+ * Unlike {@link startAgentMonitor} this passes no data folder, scope, network
+ * or writability flag: the host resolves each one from the thread's own
+ * consent and re-resolves it before every poll, so a grant captured when the
+ * monitor started authorizes nothing later. Chat threads never go through the
+ * Cowork session surface.
+ */
+export async function startThreadAgentMonitor(
+  threadId: string,
+  args: unknown,
+  onUpdate: (update: MonitorUpdate) => void
+): Promise<{ output: string; isError?: boolean }> {
+  try {
+    const input =
+      args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
+    return { output: await startThreadMonitor(threadId, input, onUpdate) }
+  } catch (e) {
+    return { output: `ERROR: ${messageOf(e)}`, isError: true }
+  }
+}
+
+/** Stop one of a thread's monitors. The result string is model-facing. */
+export async function stopThreadAgentMonitor(
+  threadId: string,
+  monitorId: string
+): Promise<string> {
+  try {
+    return await stopThreadMonitor(threadId, monitorId)
+  } catch (e) {
+    return `ERROR: ${messageOf(e)}`
+  }
+}
+
+/** One line per active monitor on a thread, for `monitor {op:"list"}`. */
+export async function listThreadAgentMonitors(
+  threadId: string
+): Promise<string> {
+  try {
+    return await listThreadMonitors(threadId)
+  } catch (e) {
+    return `ERROR: ${messageOf(e)}`
+  }
+}
+
+/**
+ * Stop every monitor a thread still has. Best-effort: used at teardown, where
+ * a failure must not block the caller.
+ */
+export async function stopAllThreadAgentMonitors(
+  threadId: string
+): Promise<void> {
+  try {
+    await stopAllThreadMonitors(threadId)
+  } catch {
+    // Teardown only; the host also reaps on revoke and delete.
   }
 }
 
@@ -411,6 +530,11 @@ export async function cancelAgentThreadBash(sessionId: string): Promise<void> {
   } catch (e) {
     console.warn('[agentTools] Failed to cancel session shells:', messageOf(e))
   }
+}
+
+/** Close must confirm native teardown rather than treating it as best-effort. */
+export async function cancelAgentThreadBashStrict(sessionId: string): Promise<void> {
+  await cancelThreadBash(sessionId)
 }
 
 /** A file claimed for a subagent's answer: the name to fill it by, and its
@@ -496,16 +620,42 @@ export async function importAttachment(
  * behind for the next startup sweep to collect, which is not worth surfacing
  * while the user is deleting a thread.
  */
-export async function cleanupThreadWorkspace(threadId: string): Promise<void> {
+export async function cleanupThreadWorkspace(
+  threadId: string,
+  scope: WorkspaceScope = 'thread'
+): Promise<void> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
     if (!dataFolder) return
-    await threadWorkspaceDelete(dataFolder, threadId)
+    if (scope === 'session') {
+      await sessionWorkspaceDelete(dataFolder, threadId)
+    } else {
+      await threadWorkspaceDelete(dataFolder, threadId)
+    }
   } catch (e) {
     console.warn(
       `[agentTools] Failed to delete workspace for thread ${threadId}:`,
       messageOf(e)
     )
+  }
+}
+
+/**
+ * Collect Cowork (session-scope) sandboxes whose conversation is gone. The
+ * caller must only run this once the Cowork migration has finished: while it is
+ * partial, the live-id list is incomplete and the sweep would delete the
+ * sandboxes of sessions not yet migrated.
+ */
+export async function sweepSessionWorkspaces(
+  liveSessionIds: string[]
+): Promise<number> {
+  try {
+    const dataFolder = await getServiceHub().app().getJanDataFolder()
+    if (!dataFolder) return 0
+    return await sessionWorkspaceSweep(dataFolder, liveSessionIds)
+  } catch (e) {
+    console.warn('[agentTools] Failed to sweep session workspaces:', messageOf(e))
+    return 0
   }
 }
 

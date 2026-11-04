@@ -18,7 +18,7 @@ import { toast } from 'sonner'
 interface DeleteAllThreadsInProjectDialogProps {
   projectName: string
   threadCount: number
-  onDeleteAll: () => void
+  onDeleteAll: () => void | Promise<void>
   onDropdownClose?: () => void
 }
 
@@ -30,6 +30,7 @@ export function DeleteAllThreadsInProjectDialog({
 }: DeleteAllThreadsInProjectDialogProps) {
   const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const deleteButtonRef = useRef<HTMLButtonElement>(null)
 
   const handleOpenChange = (open: boolean) => {
@@ -39,19 +40,22 @@ export function DeleteAllThreadsInProjectDialog({
     }
   }
 
-  const handleDeleteAll = () => {
-    onDeleteAll()
-    setIsOpen(false)
-    if (onDropdownClose) onDropdownClose()
-    toast.success(t('common:toast.deleteAllThreads.title'), {
-      id: 'delete-all-threads-in-project',
-      description: t('common:toast.deleteAllThreads.description'),
-    })
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleDeleteAll()
+  const handleDeleteAll = async () => {
+    if (deleting) return
+    setDeleting(true)
+    try {
+      await onDeleteAll()
+      setIsOpen(false)
+      onDropdownClose?.()
+      toast.success(t('common:toast.deleteAllThreads.title'), {
+        id: 'delete-all-threads-in-project',
+        description: t('common:toast.deleteAllThreads.description'),
+      })
+    } catch (error) {
+      console.warn('Could not delete project conversations:', error)
+      toast.error(t('common:error'))
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -86,7 +90,7 @@ export function DeleteAllThreadsInProjectDialog({
               ref={deleteButtonRef}
               variant="destructive"
               onClick={handleDeleteAll}
-              onKeyDown={handleKeyDown}
+              disabled={deleting}
               size="sm"
               className="w-full sm:w-auto"
               aria-label={t('common:deleteAll')}

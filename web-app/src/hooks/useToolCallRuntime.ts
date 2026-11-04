@@ -42,6 +42,8 @@ export type ToolCallRuntimeSnapshot = {
    * settles, since the diff is the whole point of the finished card.
    */
   diffs: Record<string, string>
+  /** Request-bound origin, retained across card unmounts; null means internal. */
+  origins: Record<string, string | null>
 }
 
 type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
@@ -51,6 +53,7 @@ type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
    * otherwise lose the duration they had been showing.
    */
   enqueue: (toolCallIds: string[], owner?: string) => void
+  recordOrigin: (toolCallId: string, server: string | undefined, threadId?: string) => void
   markRunning: (toolCallId: string, server?: string) => void
   markSettled: (toolCallId: string) => void
   /**
@@ -76,11 +79,16 @@ type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
    * in the background, and what it settles from now on is there on return.
    */
   releaseSettled: (owner?: string) => void
+  releaseOrigins: (toolCallIds: string[], owner?: string) => void
   reset: () => void
 }
 
 /** The owner of calls enqueued without one. */
 const NO_OWNER = ''
+
+/** Scope provider call IDs: different threads may reuse the same wire ID. */
+export const toolOriginKey = (threadId: string | undefined, callId: string) =>
+  JSON.stringify([threadId ?? '', callId])
 
 export function isToolCallRunning(timing: ToolCallTiming | undefined): boolean {
   return timing?.startedAt !== undefined && timing.endedAt === undefined
@@ -124,6 +132,10 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
   timings: {},
   progress: {},
   diffs: {},
+  origins: {},
+
+  recordOrigin: (toolCallId, server, threadId) =>
+    set((s) => ({ origins: { ...s.origins, [toolOriginKey(threadId, toolCallId)]: server ?? null } })),
 
   enqueue: (toolCallIds, owner = NO_OWNER) =>
     set((s) => {
@@ -213,6 +225,12 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
       return { queue: s.queue.filter((id) => !settled.includes(id)), timings }
     }),
 
+  releaseOrigins: (toolCallIds, owner = NO_OWNER) =>
+    set((s) => {
+      const released = new Set(toolCallIds.map((id) => toolOriginKey(owner, id)))
+      return { origins: Object.fromEntries(Object.entries(s.origins).filter(([key]) => !released.has(key))) }
+    }),
+
   releaseSettled: (owner = NO_OWNER) =>
     set((s) => {
       const released = new Set(
@@ -224,6 +242,7 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
         )
       )
       if (released.size === 0) return s
+      const releasedOrigins = new Set([...released].map((id) => toolOriginKey(owner, id)))
       const keep = <T>(record: Record<string, T>) =>
         Object.fromEntries(
           Object.entries(record).filter(([id]) => !released.has(id))
@@ -232,10 +251,13 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
         timings: keep(s.timings),
         progress: keep(s.progress),
         diffs: keep(s.diffs),
+        origins: Object.fromEntries(Object.entries(s.origins).filter(([key]) =>
+          !releasedOrigins.has(key)
+        )),
       }
     }),
 
-  reset: () => set({ queue: [], timings: {}, progress: {}, diffs: {} }),
+  reset: () => set({ queue: [], timings: {}, progress: {}, diffs: {}, origins: {} }),
 }))
 
 /**

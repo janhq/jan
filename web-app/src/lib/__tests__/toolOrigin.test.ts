@@ -72,14 +72,14 @@ describe('resolveToolOrigin', () => {
     ).toEqual({ kind: 'web-search', detail: 'Exa' })
   })
 
-  it('prefers RAG over MCP when both somehow match', () => {
+  it('does not guess a historical origin when RAG and MCP overlap without a binding', () => {
     expect(
       resolveToolOrigin('search_documents', {
         ...context,
         isRagTool: true,
         mcpServer: 'someserver',
       })
-    ).toEqual({ kind: 'rag' })
+    ).toBeUndefined()
   })
 
   it('recognises a built-in agent tool', () => {
@@ -98,6 +98,18 @@ describe('resolveToolOrigin', () => {
         mcpServer: 'filesystem',
       })
     ).toEqual({ kind: 'agent' })
+  })
+
+  it('uses a bound MCP identity over a global overlapping RAG name', () => {
+    expect(resolveToolOrigin('retrieve', {
+      ...context, isRagTool: true, mcpServer: 'live-beta', boundMcpServer: 'request-alpha',
+    })).toEqual({ kind: 'mcp', detail: 'request-alpha' })
+  })
+
+  it('preserves actually advertised internal RAG over a same-name MCP menu entry', () => {
+    expect(resolveToolOrigin('retrieve', {
+      ...context, isRagTool: true, mcpServer: 'live-beta', boundMcpServer: null,
+    })).toEqual({ kind: 'rag' })
   })
 
   it('is undefined for an unknown tool', () => {

@@ -1,0 +1,44 @@
+[
+  {
+    "scenario": "chat-bare",
+    "tools": "read,write,edit,memory,skill_list,skill_read,todo,ask,task",
+    "systemUtf8Bytes": 450,
+    "toolsJsonUtf8Bytes": 7430,
+    "requestJsonUtf8Bytes": 7977
+  },
+  {
+    "scenario": "chat-default-assistant",
+    "tools": "read,write,edit,memory,skill_list,skill_read,todo,ask,task",
+    "systemUtf8Bytes": 1537,
+    "toolsJsonUtf8Bytes": 7430,
+    "requestJsonUtf8Bytes": 9085
+  },
+  {
+    "scenario": "chat-default-assistant-shell",
+    "tools": "read,write,edit,shell,memory,skill_list,skill_read,todo,ask,task",
+    "systemUtf8Bytes": 2068,
+    "toolsJsonUtf8Bytes": 8478,
+    "requestJsonUtf8Bytes": 10664
+  },
+  {
+    "scenario": "cowork-execute",
+    "tools": "read,screenshot,write,edit,shell,memory,skill_list,skill_read,skill_write,todo,ask,monitor",
+    "systemUtf8Bytes": 1117,
+    "toolsJsonUtf8Bytes": 10028,
+    "requestJsonUtf8Bytes": 11268
+  },
+  {
+    "scenario": "cowork-plan",
+    "tools": "read,screenshot,memory,skill_list,skill_read,todo,ask",
+    "systemUtf8Bytes": 1768,
+    "toolsJsonUtf8Bytes": 6048,
+    "requestJsonUtf8Bytes": 7965
+  },
+  {
+    "scenario": "cowork-execute-no-sandbox",
+    "tools": "read,screenshot,write,edit,memory,skill_list,skill_read,skill_write,todo,ask,monitor",
+    "systemUtf8Bytes": 1272,
+    "toolsJsonUtf8Bytes": 8980,
+    "requestJsonUtf8Bytes": 10378
+  }
+]

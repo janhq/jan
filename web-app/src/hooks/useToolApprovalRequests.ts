@@ -2,6 +2,14 @@ import { create } from 'zustand'
 import { useToolApproval } from './useToolApproval'
 import { EXTENSION_SERVER_PREFIX } from '@/lib/extensions/tools'
 
+/** Validation is not a user decision; this resolved result avoids unattended
+ * early-prompt rejections while retaining the exact diagnostic for the loop. */
+export type ApprovalValidationFailure = { kind: 'validation-error'; errorText: string }
+export type ApprovalResult = boolean | ApprovalValidationFailure
+export function throwIfApprovalValidationFailed(result: ApprovalResult): asserts result is boolean {
+  if (typeof result !== 'boolean') throw new Error(result.errorText)
+}
+
 export type PendingApproval = {
   toolCallId: string
   toolName: string
@@ -12,7 +20,10 @@ export type PendingApproval = {
   strict?: boolean
   /** See `ApprovalOptions.origin`. */
   extension: boolean
-  resolve: (approved: boolean) => void
+  resolve: (approved: ApprovalResult) => void
+  /** Native (non-MCP) elevated call: approvals live in a native namespace
+   * bound to the grant the call was classified under. */
+  nativeKey?: string
 }
 
 export type ApprovalOptions = {
@@ -33,6 +44,18 @@ export type ApprovalOptions = {
   origin?: 'extension' | 'mcp'
 }
 
+/** Options for a native elevated request. Native approvals never inherit the
+ * MCP-wide setting or a bare tool-name grant (an MCP tool may share the name);
+ * allow-thread/allow-always persist only under `native:<tool>:<grantKey>`, so
+ * they stop applying once the thread's grant changes. */
+export type NativeApprovalOptions = { native: { grantKey: string } }
+
+export const nativeApprovalKey = (toolName: string, grantKey: string): string =>
+  `native:${toolName}:${grantKey}`
+
+/** Reject/throw to deny an unavailable identity. Called before prompting and granting. */
+export type ApprovalValidator = (signal: AbortSignal) => Promise<void>
+
 /**
  * Scope of the grant. `allow-always` trusts the tool's whole server when it has
  * one, since trusting a server tool-by-tool is the same decision repeated.
@@ -43,10 +66,12 @@ export type ApprovalDecision =
   | 'allow-always'
   | 'deny'
 
+/** Collision-safe identity shared by visible prompts and validation in flight. */
+export const approvalKey = (threadId: string, callId: string): string =>
+  JSON.stringify([threadId, callId])
+
 type ToolApprovalRequestsState = {
-  // In-flight per-tool-call approval prompts. Kept out of the persisted
-  // useToolApproval store so approval churn never flushes to disk (the
-  // resolve callbacks are non-serializable anyway).
+  // Only actionable prompts; validation and callbacks are never persisted.
   pending: Record<string, PendingApproval>
 
   requestApproval: (
@@ -54,121 +79,183 @@ type ToolApprovalRequestsState = {
     toolName: string,
     threadId: string,
     serverName?: string,
-    options?: ApprovalOptions
-  ) => Promise<boolean>
-  resolveApproval: (toolCallId: string, decision: ApprovalDecision) => void
+    validate?: ApprovalValidator,
+    options?: ApprovalOptions & Partial<NativeApprovalOptions>
+  ) => Promise<ApprovalResult>
+  resolveApproval: (toolCallId: string, decision: ApprovalDecision, threadId: string) => void
+  cancelApproval: (toolCallId: string, threadId: string) => void
   clearPendingForThread: (threadId: string) => void
 }
 
 /**
- * The name a grant is recorded under. A tool with a server is keyed by it
- * as well, so a grant can never cover a same-named tool of another
- * extension or MCP server. Extension and MCP tools get separate namespaces
- * (`ext:` and `mcp:`) chosen by origin, so neither can spell the other's
- * key whatever the server or tool is called.
+ * A contributed tool is keyed by its `ext:<id>` server as well, so a thread or
+ * global grant can never cover a same-named tool of another extension, of an
+ * MCP server, or a native tool. Extension grants live in the tool-name stores
+ * (never `approvedServers`/`approvedMCPTools`), under this key only. Whether a
+ * call is an extension's is the caller's `origin`, never the shape of the
+ * server name: the user names MCP servers, and one called `ext:<id>` is still
+ * an MCP server.
  */
-const approvalKey = (
-  toolName: string,
-  serverName: string | undefined,
-  extension: boolean
-) => {
-  if (!serverName) return toolName
-  return extension
-    ? `${serverName}/${toolName}`
-    : `mcp:${serverName}/${toolName}`
+export const isExtensionServer = (serverName?: string): serverName is string =>
+  serverName?.startsWith(EXTENSION_SERVER_PREFIX) ?? false
+
+/** The grant for an MCP tool whose server cannot hold a server-wide grant (one
+ * the user named `ext:<id>`): a global tool name in an `mcp:` namespace no
+ * extension key can spell. */
+const mcpToolKey = (toolName: string, serverName: string): string =>
+  `mcp:${serverName}/${toolName}`
+
+export const extensionApprovalKey = (toolName: string, serverName: string): string =>
+  `${serverName}/${toolName}`
+
+type InFlightApproval = PendingApproval & {
+  validate?: ApprovalValidator
+  controller: AbortController
+  deciding: boolean
 }
 
 export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
-  (set, get) => ({
-    pending: {},
-
-    requestApproval: (toolCallId, toolName, threadId, serverName, options) => {
-      const strict = options?.strict ?? false
-      const extension = options?.origin === 'extension'
-      return new Promise<boolean>((resolve) => {
-        const settings = useToolApproval.getState()
-        // The shortcut is for MCP; extension tools always go through approval.
-        if (!strict && settings.allowAllMCPPermissions && !extension) {
-          resolve(true)
-          return
-        }
-        if (
-          !strict &&
-          settings.isToolApproved(
-            threadId,
-            approvalKey(toolName, serverName, extension),
-            serverName
-          )
-        ) {
-          resolve(true)
-          return
-        }
-        set((s) => ({
-          pending: {
-            ...s.pending,
-            [toolCallId]: {
-              toolCallId,
-              toolName,
-              threadId,
-              serverName,
-              strict,
-              extension,
-              resolve,
-            },
-          },
-        }))
-      })
-    },
-
-    resolveApproval: (toolCallId, decision) => {
-      const entry = get().pending[toolCallId]
-      if (!entry) return
-      const approval = useToolApproval.getState()
-      const key = approvalKey(
-        entry.toolName,
-        entry.serverName,
-        entry.extension
-      )
-      if (entry.strict) {
-        // Answers this call only; nothing is saved.
-      } else if (decision === 'allow-thread') {
-        approval.approveToolForThread(entry.threadId, key)
-      } else if (decision === 'allow-always') {
-        // An MCP server is trusted whole. An extension is not: an update can
-        // add tools, and those must ask before they first run. An MCP server
-        // the user named `ext:<id>` is not trusted whole either: that trust
-        // would also cover the real extension <id>'s tools.
-        if (
-          entry.serverName &&
-          !entry.serverName.startsWith(EXTENSION_SERVER_PREFIX) &&
-          !entry.extension
-        ) {
-          approval.approveServer(entry.serverName)
-        } else {
-          approval.approveToolEverywhere(key)
-        }
-      }
+  (set, get) => {
+    // Includes validations with no visible prompt, so cancellation can invalidate
+    // their continuations. Object identity also protects reused tool-call IDs.
+    const inFlight = new Map<string, InFlightApproval>()
+    const isCurrent = (entry: InFlightApproval) =>
+      inFlight.get(approvalKey(entry.threadId, entry.toolCallId)) === entry
+    const removePrompt = (entry: InFlightApproval) => {
+      if (get().pending[approvalKey(entry.threadId, entry.toolCallId)] !== entry) return
       set((s) => {
         const next = { ...s.pending }
-        delete next[toolCallId]
+        delete next[approvalKey(entry.threadId, entry.toolCallId)]
         return { pending: next }
       })
-      entry.resolve(decision !== 'deny')
-    },
+    }
+    const finish = (entry: InFlightApproval, approved: ApprovalResult) => {
+      if (!isCurrent(entry)) return
+      inFlight.delete(approvalKey(entry.threadId, entry.toolCallId))
+      entry.controller.abort()
+      removePrompt(entry)
+      entry.resolve(approved)
+    }
 
-    clearPendingForThread: (threadId) => {
-      const { pending } = get()
-      const stranded = Object.values(pending).filter(
-        (entry) => entry.threadId === threadId
-      )
-      if (stranded.length === 0) return
-      set((s) => {
-        const next = { ...s.pending }
-        for (const entry of stranded) delete next[entry.toolCallId]
-        return { pending: next }
-      })
-      // Resolve as denied so any awaiting tool loop unblocks instead of hanging.
-      for (const entry of stranded) entry.resolve(false)
-    },
-  })
+    return {
+      pending: {},
+
+      requestApproval: (toolCallId, toolName, threadId, serverName, validate, options) => {
+        const strict = options?.strict ?? false
+        const extension = options?.origin === 'extension' && !!serverName
+        const nativeKey = !serverName && options?.native
+          ? nativeApprovalKey(toolName, options.native.grantKey)
+          : undefined
+        const key = approvalKey(threadId, toolCallId)
+        const previous = inFlight.get(key)
+        if (previous) finish(previous, false)
+        return new Promise<ApprovalResult>((resolve) => {
+          const entry: InFlightApproval = {
+            toolCallId, toolName, threadId, serverName, resolve, validate, nativeKey,
+            strict, extension,
+            deciding: false, controller: new AbortController(),
+          }
+          inFlight.set(key, entry)
+          const publish = () => {
+            if (!isCurrent(entry)) return
+            const settings = useToolApproval.getState()
+            // Native elevated calls ignore the MCP blanket and bare names: only
+            // an earlier native choice under this same grant approves them.
+            // Extension tools never use the MCP blanket or a trusted server:
+            // only a grant recorded for this exact extension tool applies.
+            // A strict request (a model an extension serves) asks every time,
+            // whatever a blanket or a saved grant says.
+            const preApproved = strict
+              ? false
+              : nativeKey
+                ? settings.isToolApproved(threadId, nativeKey)
+                : extension
+                  ? settings.isToolApproved(threadId, extensionApprovalKey(toolName, serverName!))
+                  : settings.allowAllMCPPermissions ||
+                    settings.isToolApproved(threadId, toolName, serverName) ||
+                    (!!serverName && settings.isToolApproved(threadId, mcpToolKey(toolName, serverName)))
+            if (preApproved) {
+              finish(entry, true)
+              return
+            }
+            set((s) => ({ pending: { ...s.pending, [key]: entry } }))
+          }
+          // Preserve synchronous prompting/auto-approval for existing callers.
+          if (!validate) publish()
+          else {
+            void (async () => {
+              try {
+                await validate(entry.controller.signal)
+                publish()
+              } catch (error) {
+                finish(entry, { kind: 'validation-error', errorText: error instanceof Error ? error.message : 'MCP identity validation failed' })
+              }
+            })()
+          }
+        })
+      },
+
+      resolveApproval: (toolCallId, decision, threadId) => {
+        const key = approvalKey(threadId, toolCallId)
+        const entry = inFlight.get(key)
+        if (!entry) return
+        // Denial wins even while an earlier allow decision is validating.
+        if (decision === 'deny') {
+          finish(entry, false)
+          return
+        }
+        if (entry.deciding || get().pending[key] !== entry) return
+        entry.deciding = true
+        removePrompt(entry)
+        const grant = () => {
+          if (!isCurrent(entry)) return
+          // Consume before persistence: synchronous store subscribers cannot
+          // race another decision or resurrect this request.
+          inFlight.delete(key)
+          const approval = useToolApproval.getState()
+          const extension = entry.extension
+          const stored = entry.nativeKey
+            ?? (extension ? extensionApprovalKey(entry.toolName, entry.serverName!) : entry.toolName)
+          if (entry.strict) {
+            // Answers this call only; nothing is saved.
+          } else if (decision === 'allow-thread') {
+            approval.approveToolForThread(entry.threadId, stored, extension ? undefined : entry.serverName)
+          } else if (decision === 'allow-always') {
+            // An MCP server is trusted whole. An extension is not: an update
+            // can add tools, and those must ask before they first run. An MCP
+            // server the user named `ext:<id>` is not trusted whole either:
+            // that trust would also cover the real extension <id>'s tools.
+            if (entry.serverName && !extension && !isExtensionServer(entry.serverName)) {
+              approval.approveServer(entry.serverName)
+            } else if (entry.serverName && !extension && !entry.nativeKey) {
+              approval.approveToolEverywhere(mcpToolKey(entry.toolName, entry.serverName))
+            } else approval.approveToolEverywhere(stored)
+          }
+          entry.resolve(true)
+        }
+        if (!entry.validate) grant()
+        else {
+          void (async () => {
+            try {
+              await entry.validate!(entry.controller.signal)
+              grant()
+            } catch (error) {
+              finish(entry, { kind: 'validation-error', errorText: error instanceof Error ? error.message : 'MCP identity validation failed' })
+            }
+          })()
+        }
+      },
+
+      cancelApproval: (toolCallId, threadId) => {
+        const entry = inFlight.get(approvalKey(threadId, toolCallId))
+        if (entry) finish(entry, false)
+      },
+
+      clearPendingForThread: (threadId) => {
+        for (const entry of inFlight.values()) {
+          if (entry.threadId === threadId) finish(entry, false)
+        }
+      },
+    }
+  }
 )

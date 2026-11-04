@@ -1,0 +1,346 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "# Workspace files read, write, edit work inside an isolated scratch workspace that belongs to this conversation alone and is deleted with it, so do not keep anything there that should last. Folders outside it are reachable only if the user granted them to this conversation. # Skills skill_list, skill_read manage reusable skills. # Memory memory can only view and search your saved notes in the shared persistent memory store; it cannot change them."
+    },
+    {
+      "role": "user",
+      "content": "Reply with OK."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read",
+        "description": "Read the contents of a UTF-8 text file. Output is truncated to 2000 lines or 64KB (whichever is hit first), with a notice naming the offset to continue from; a single line over 64KB is cut and the notice says where. Use offset/limit for large files. Image files (png/jpeg/gif/webp, detected by their file signature, not the extension) are returned as a vision image instead of text.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the project root (or absolute)."
+            },
+            "offset": {
+              "type": "integer",
+              "description": "Line number to start reading from (1-indexed)."
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum number of lines to read."
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "write",
+        "description": "Create or overwrite a file relative to the project root.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the project root."
+            },
+            "content": {
+              "type": "string",
+              "description": "Full file contents to write."
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "edit",
+        "description": "Edit a file using one or more exact text replacements applied in order. Each old_string must match exactly once in the current file state.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the project root."
+            },
+            "edits": {
+              "type": "array",
+              "description": "Targeted replacements applied in order.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "old_string": {
+                    "type": "string",
+                    "description": "Exact text to replace (must be unique at apply time)."
+                  },
+                  "new_string": {
+                    "type": "string",
+                    "description": "Replacement text."
+                  }
+                },
+                "required": [
+                  "old_string",
+                  "new_string"
+                ]
+              }
+            }
+          },
+          "required": [
+            "path",
+            "edits"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "memory",
+        "description": "Read your long-term memory: durable notes kept across sessions. Use `view` for the index, a folder, or one note, and `search` to find notes by keyword. Only the read-only `view` and `search` operations are available here.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "view",
+                "search"
+              ],
+              "description": "view: the index (no name), a folder's notes (`folder/`), or a note's content. search: keyword search over titles and bodies, archived notes included."
+            },
+            "name": {
+              "type": "string",
+              "description": "Note name without .md: `note` or `folder/note` (this project), `user:note` (every project), `project:<slug>` or `project:<slug>/note` (another project). Optional for view."
+            },
+            "query": {
+              "type": "string",
+              "description": "search: words that must all appear in the note."
+            }
+          },
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "skill_list",
+        "description": "List the available skills (reusable procedures) with a one-line description of each. No arguments.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "skill_read",
+        "description": "Load a skill's full instructions by name. The system prompt lists each skill's name and purpose; call this to read the complete procedure before applying a skill.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Skill name (without the .md extension)."
+            }
+          },
+          "required": [
+            "name"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "todo",
+        "description": "Manage the canonical session todo list: init/start/done/drop/rm/append/view. One call applies one operation. Tasks advance automatically in phase and task order after done or drop; start only confirms the current task. init takes `list` or `items`, never `phase`/`task` directly.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "init",
+                "start",
+                "done",
+                "drop",
+                "rm",
+                "append",
+                "view"
+              ]
+            },
+            "list": {
+              "type": "array",
+              "description": "For init: [{phase, items}]",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "phase": {
+                    "type": "string"
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "phase",
+                  "items"
+                ]
+              }
+            },
+            "items": {
+              "type": "array",
+              "description": "For init (flat, single unnamed phase) or append.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "task": {
+              "type": "string"
+            },
+            "phase": {
+              "type": "string"
+            },
+            "all": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "ask",
+        "description": "Ask the user one or more structured questions. Use only when the answer materially changes the work. To suggest an option, list it first and set `recommended` to its index rather than writing \"(Recommended)\" into the label.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "questions": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "question": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 5,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "label"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "multi": {
+                    "type": "boolean"
+                  },
+                  "recommended": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "id",
+                  "question",
+                  "options"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "questions"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "task",
+        "description": "Dispatch one or more subagents -- nested, isolated agents -- to do work for you. List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase's results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes). Subagents run in the BACKGROUND, concurrently (more than the running cap are queued). You keep working and get a note the moment each finishes; that note carries the subagent's answer. No files are written and there is no shared scratch directory. No saved subagents yet; each runs as a focused general-purpose agent defined by its task.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "subagents": {
+              "type": "array",
+              "description": "The subagents to run. With no phases they all run concurrently; otherwise they run grouped and ordered by their `phase`.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It labels the subagent's status and completion note; no file is written. If it matches a saved subagent, that role and tools are used; otherwise it runs as a focused general-purpose agent."
+                  },
+                  "task": {
+                    "type": "string",
+                    "description": "The subagent's sole instruction. Include everything it needs; it does not see this conversation. A subagent in a later phase also receives the previous phase's results automatically, so tell it what to DO with them."
+                  },
+                  "phase": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Optional stage (default 0). Subagents with the same phase run concurrently; a phase starts only after every lower phase has finished. Omit it entirely for a plain fan-out."
+                  },
+                  "allowed_tools": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Optional tool allowlist. OMIT to give the subagent the parent's full toolset (the usual choice -- one that runs tests needs shell, one that edits needs write). Provide a list ONLY to restrict it; for a saved subagent it further narrows that subagent's own tools (never widens). An empty list is treated as omitted."
+                  }
+                },
+                "required": [
+                  "name",
+                  "task"
+                ]
+              }
+            }
+          },
+          "required": [
+            "subagents"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  ]
+}

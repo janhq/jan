@@ -63,7 +63,8 @@ export class TauriMCPService extends DefaultMCPService {
     }
   }
 
-  async getTools(): Promise<MCPTool[]> {
+  async getTools(options?: { freshOnly?: boolean; validationServer?: string; validationTool?: string }): Promise<MCPTool[]> {
+    if (options?.freshOnly || options?.validationServer) return invoke('get_tools', options)
     return window.core?.api?.getTools()
   }
 

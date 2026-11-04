@@ -36,6 +36,13 @@ describe('skill slash commands', () => {
     expect(filterSkillCommands(skills, '')).toEqual([skills[0], skills[2]])
   })
 
+  it('suggests prefixes only, never a substring inside an installed skill name', () => {
+    const installed = [{ name: 'data-analysis', description: 'Analyze data' }]
+    for (const query of ['a', 'an', 'n']) expect(filterSkillCommands(installed, query)).toEqual([])
+    expect(filterSkillCommands(installed, 'da')).toEqual(installed)
+    expect(filterSkillCommands(installed, 'DATA')).toEqual(installed)
+  })
+
   it('resolves short names and keeps explicit names unambiguous', () => {
     expect(resolveSkillCommand(skills, { name: 'deploy', args: '', explicit: false })).toEqual(
       skills[0]

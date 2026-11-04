@@ -406,5 +406,28 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "agentSettings": "智能体",
+  "workspace": {
+    "readOnly": "只读",
+    "allowChanges": "允许修改文件",
+    "footnoteReadOnly": "智能体可以读取此文件夹，但无法修改。开启“允许修改文件”后，智能体才能编辑其中的文件。",
+    "a11yWithFolderReadOnly": "项目文件夹 {{folder}}，已附加并授予只读权限。可更换或分离。"
+  },
+  "conversationScope": {
+    "noToolsModel": "所选模型不支持工具，因此这些权限在您选择支持工具的模型之前不会生效。",
+    "noSandbox": "此系统没有可用的操作系统沙箱，因此不提供 shell 命令。",
+    "live": "更改会立即应用于此对话。Jan 项目本身不会授予文件夹访问权限。",
+    "draft": "将在发送消息时应用。Jan 项目本身不会授予文件夹访问权限。",
+    "folderNeedsConfirmation": "未启用 · 需要确认",
+    "confirmFolder": "确认",
+    "removeFolder": "移除",
+    "hostRevokeUnconfirmed": "Jan 无法确认此权限更改。后台任务可能仍拥有之前的访问权限。请重试，或退出 Jan 以停止这些任务。",
+    "saveFailed": "无法保存权限更改。在成功保存前，额外的访问权限将保持关闭。"
+  },
+  "memoryFeedback": {
+    "saved": "记忆已保存",
+    "inspect": "查看",
+    "inspectLabel": "查看已保存的记忆"
   }
 }

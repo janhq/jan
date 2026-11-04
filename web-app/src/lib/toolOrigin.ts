@@ -16,6 +16,8 @@ export type ToolOrigin =
 export type ToolOriginContext = {
   /** MCP server owning this tool, when it is an MCP tool. */
   mcpServer?: string
+  /** Request snapshot: string = MCP, null = internal, undefined = legacy/unknown. */
+  boundMcpServer?: string | null
   isRagTool: boolean
   isAgentTool: boolean
   /** Display name of the configured web search provider, e.g. "Exa". */
@@ -28,22 +30,22 @@ export const WEB_SEARCH_TOOL = 'web_search'
 export const WEB_FETCH_TOOL = 'web_fetch'
 export const TASK_TOOL = 'task'
 
-/**
- * Resolution order mirrors the execution order in the thread route: native web
- * tools win, then agent tools, then RAG, then MCP. RAG names shadowed by an MCP
- * server are already dropped from the RAG set upstream, so the two cannot both
- * match.
- */
+/** Request-bound identity wins; legacy cards retain name-based inference. */
 export function resolveToolOrigin(
   toolName: string,
   {
     mcpServer,
+    boundMcpServer,
     isRagTool,
     isAgentTool,
     webSearchProviderLabel,
     webSearchEnabled,
   }: ToolOriginContext
 ): ToolOrigin | undefined {
+  if (boundMcpServer) return { kind: 'mcp', detail: boundMcpServer }
+  // An actually advertised internal schema must not inherit a live MCP menu
+  // entry after routing/refresh. Null deliberately differs from unknown history.
+  if (boundMcpServer === null) mcpServer = undefined
   // With web search off nothing built-in was offered, so an MCP server's tool
   // of the same name is the one that ran (`webToolRoute`). A recorded call with
   // no such server keeps its built-in label: it is history, not a live route.
@@ -56,6 +58,9 @@ export function resolveToolOrigin(
   // tool set and would otherwise fall through to the unlabelled generic card.
   if (toolName === TASK_TOOL) return { kind: 'subagent' }
   if (isAgentTool) return { kind: 'agent' }
+  // Without recorded request identity an overlapping historical card cannot
+  // safely credit either the internal retriever or today's external server.
+  if (isRagTool && mcpServer) return undefined
   if (isRagTool) return { kind: 'rag' }
   if (mcpServer) return { kind: 'mcp', detail: mcpServer }
   return undefined

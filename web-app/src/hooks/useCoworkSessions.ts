@@ -1,9 +1,6 @@
 import type { UIMessage } from 'ai'
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStorageKey } from '@/constants/localStorage'
-import { backendStorage } from '@/lib/backendStorage'
-import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
+import { todosFromTurns } from '@/lib/coworkTodo'
 import { isPingOnly } from '@/lib/coworkPing'
 import type {
   CoworkTurn,
@@ -46,6 +43,8 @@ export type CoworkSession = {
   /** An attached project folder, mounted read-only. Writes always land in the
    * session's own sandbox, never here. */
   folder: string | null
+  /** Optional Jan project associated with this conversation. */
+  project?: { id: string; name: string; updated_at: number; assistantId?: string }
   turns: CoworkTurn[]
   /** The authoritative conversation, sent to the model each turn. */
   messages: UIMessage[]
@@ -57,11 +56,15 @@ export type CoworkSession = {
   lastUsage?: Usage
   /** `/goal` state: checked after each turn, cleared when met. */
   goal?: CoworkGoal
-  /** Canonical session todo list, updated by the `todo_write` tool. */
+  /** Legacy fallback / rail projection. Recorded todo results are authoritative. */
   todos?: TodoList
   /** Plan mode: the agent reads and proposes, without writing. Absent means off. */
   planMode?: boolean
   updated: number
+  /** Set when the session's stored data cannot be used (missing/corrupt
+   * transcript, or its id collides with another conversation). It is shown but
+   * never written back, so the files on disk are preserved for recovery. */
+  unavailable?: 'missing-sidecar' | 'unreadable-sidecar' | 'id-collision' | 'missing-thread'
 }
 
 type CoworkSessionsState = {
@@ -70,6 +73,7 @@ type CoworkSessionsState = {
   createSession: () => string
   selectSession: (id: string) => void
   deleteSession: (id: string) => void
+  setProject: (id: string, project: CoworkSession['project']) => void
   setFolder: (id: string, folder: string | null) => void
   setModel: (id: string, model: ThreadModel) => void
   setPlanMode: (id: string, planMode: boolean) => void
@@ -141,7 +145,6 @@ function lastQuestionIndex(items: RoleLike[]): number {
 }
 
 export const useCoworkSessions = create<CoworkSessionsState>()(
-  persist(
     (set, get) => ({
       sessions: [],
       currentId: null,
@@ -183,6 +186,13 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
           return { sessions, currentId }
         }),
 
+      setProject: (id, project) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, project, updated: now() } : x
+          ),
+        })),
+
       setFolder: (id, folder) =>
         set((s) => ({
           sessions: s.sessions.map((x) =>
@@ -200,13 +210,15 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
       setGoal: (id, goal) =>
         set((s) => ({
           sessions: s.sessions.map((x) =>
-            x.id === id ? { ...x, goal: goal ?? undefined } : x
+            x.id === id ? { ...x, goal: goal ?? undefined, updated: now() } : x
           ),
         })),
 
       setTodos: (id, todos) =>
         set((s) => ({
-          sessions: s.sessions.map((x) => (x.id === id ? { ...x, todos } : x)),
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, todos, updated: now() } : x
+          ),
         })),
 
       setPlanMode: (id, planMode) =>
@@ -218,7 +230,9 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
 
       setTitle: (id, title) =>
         set((s) => ({
-          sessions: s.sessions.map((x) => (x.id === id ? { ...x, title } : x)),
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, title, updated: now() } : x
+          ),
         })),
 
       commitLegacyTurns: (id, turns, history) =>
@@ -262,6 +276,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
             return {
               ...x,
               // The question survives; the run it produced does not.
+              todos: todosFromTurns(x.turns.slice(0, lastTurn + 1)) ?? { phases: [] },
               turns: x.turns.slice(0, lastTurn + 1),
               messages: x.messages.slice(0, lastMessage + 1),
               updated: now(),
@@ -287,6 +302,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
             if (cut < 0) return x
             return {
               ...x,
+              todos: todosFromTurns(x.turns.slice(0, turnIndex)) ?? { phases: [] },
               turns: x.turns.slice(0, turnIndex),
               messages: x.messages.slice(0, cut),
               updated: now(),
@@ -302,6 +318,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
                   ...x,
                   turns: [],
                   messages: [],
+                  todos: { phases: [] },
                   subagents: [],
                   lastUsage: undefined,
                   updated: now(),
@@ -318,40 +335,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
           )
           return sessions.length === s.sessions.length ? {} : { sessions }
         }),
-    }),
-    {
-      name: localStorageKey.coworkSessions,
-      // Persist through the Rust settings store (see backendStorage) so sessions
-      // live in <jan_data>/settings.json instead of webview localStorage.
-      // Async storage requires skipHydration + explicit rehydrate in
-      // hydrateBackendStores() once the ServiceHub is ready.
-      storage: createJSONStorage(() => backendStorage),
-      skipHydration: true,
-      version: 1,
-      // v0 persisted an OpenAI-shaped `history` that could not represent tool
-      // calls, so replaying it dropped every tool turn. Rebuild the message
-      // list from `turns`, which did record them, and leave `history` in place
-      // untouched rather than mutating a blob a rollback would still read.
-      migrate: (persisted, version) => {
-        const state = persisted as { sessions?: CoworkSession[] } | undefined
-        if (version >= 1 || !state?.sessions) return persisted
-        return {
-          ...state,
-          sessions: state.sessions.map((session) =>
-            session.messages
-              ? session
-              : {
-                  ...session,
-                  messages: coworkTurnsToUIMessages(
-                    session.turns ?? [],
-                    session.id
-                  ),
-                }
-          ),
-        }
-      },
-    }
-  )
+    })
 )
 
 /**

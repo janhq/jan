@@ -12,7 +12,12 @@ import type { UIMessage } from '@ai-sdk/react'
 export const STOPPED_TOOL_ERROR = 'Stopped before the tool finished.'
 
 /** The part of a tool's result the tool loop reads. */
-export type ToolRunResult = { error?: string; content?: unknown }
+export type ToolRunResult = {
+  error?: string
+  content?: unknown
+  /** Display-only; carried to the recorded outcome, never to the model. */
+  diff?: string
+}
 
 const isUnsettled = (part: unknown): boolean => {
   const p = part as { type?: string; state?: string } | null

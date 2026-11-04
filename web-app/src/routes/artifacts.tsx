@@ -2,39 +2,93 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
 import { IconSearch } from '@tabler/icons-react'
-import { ChevronsUpDown } from 'lucide-react'
+import { Box, SearchX } from 'lucide-react'
 import HeaderPage from '@/containers/HeaderPage'
 import { Button } from '@/components/ui/button'
 import { CoworkArtifactCard } from '@/containers/CoworkArtifactCard'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { route } from '@/constants/routes'
-import { ensureCoworkEnabled } from '@/lib/coworkAccess'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { isCoworkEnabled } from '@/lib/version'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
+import { sessionWorkspacePath, threadWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
+import { useThreads } from '@/hooks/useThreads'
+import { isCoworkThread } from '@/lib/threadMode'
+import { convertThreadMessagesToUIMessages } from '@/lib/messages'
+import { resolveConversationCapabilities } from '@/lib/conversationCapabilities'
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import {
   ARTIFACT_GROUP_NAMES,
+  artifactsFromParts,
   artifactsFromTurns,
   type CoworkArtifact,
 } from '@/lib/coworkArtifacts'
 
 export const Route = createFileRoute(route.artifacts as any)({
-  beforeLoad: () => ensureCoworkEnabled(),
   component: ArtifactsPage,
 })
 
 const PAGE = 24
 
+// Threads store seconds, Cowork sessions milliseconds (same rule as mergeHistory).
+const toSeconds = (n: number) => (n > 1e12 ? n / 1000 : n)
+
 type Row = CoworkArtifact & {
+  /** Cowork session or unified thread id; `kind` says which. */
   sessionId: string
+  kind: 'session' | 'thread'
+  sessionTitle: string
+  updated: number
   roots: Array<string | null>
+}
+
+/** Most recent unified threads scanned for artifacts, and how many load at once.
+ * Messages live on disk, so the scan is bounded rather than reading every thread. */
+const THREAD_SCAN_LIMIT = 100
+const THREAD_SCAN_CONCURRENCY = 4
+
+type ThreadArtifacts = { artifacts: CoworkArtifact[]; scratch: string | null }
+
+/**
+ * Artifacts of unified (Chat-origin) threads, read from their persisted
+ * messages. Legacy Cowork sessions are handled separately from their turns.
+ * Loads the newest threads first and fills in as each one resolves.
+ */
+function useThreadArtifacts(
+  threadIds: string[]
+): Record<string, ThreadArtifacts> {
+  const [found, setFound] = useState<Record<string, ThreadArtifacts>>({})
+  const key = threadIds.join(',')
+
+  useEffect(() => {
+    let alive = true
+    const queue = key.split(',').filter(Boolean)
+    const worker = async () => {
+      const dataFolder = await getServiceHub().app().getJanDataFolder()
+      for (let id = queue.shift(); id; id = queue.shift()) {
+        try {
+          const messages = await getServiceHub().messages().fetchMessages(id)
+          const artifacts = convertThreadMessagesToUIMessages(messages ?? []).flatMap(
+            (message) => artifactsFromParts(message.parts as never)
+          )
+          if (artifacts.length === 0) continue
+          const scratch = dataFolder
+            ? await threadWorkspacePath(dataFolder, id).catch(() => null)
+            : null
+          if (alive) setFound((prev) => ({ ...prev, [id]: { artifacts, scratch } }))
+        } catch {
+          /* An unreadable thread simply contributes no artifacts. */
+        }
+      }
+    }
+    void Promise.all(Array.from({ length: THREAD_SCAN_CONCURRENCY }, worker))
+    return () => {
+      alive = false
+    }
+  }, [key])
+
+  return found
 }
 
 /**
@@ -80,7 +134,14 @@ function useSessionWorkspaces(sessionIds: string[]): Record<string, string> {
 function ArtifactsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const sessions = useCoworkSessions((s) => s.sessions)
+  const storedSessions = useCoworkSessions((s) => s.sessions)
+  // A legacy session opens on /cowork, which a build without that surface
+  // redirects Home; list only what the build can actually open.
+  const sessions = useMemo(
+    () => (isCoworkEnabled() ? storedSessions : []),
+    [storedSessions]
+  )
+  const threads = useThreads((s) => s.threads)
   const [query, setQuery] = useState('')
   const [group, setGroup] = useState<CoworkArtifact['group'] | null>(null)
   // ponytail: a render cap with "show more" rather than paging or a virtual
@@ -96,9 +157,38 @@ function ArtifactsPage() {
     useMemo(() => sessions.map((s) => s.id), [sessions])
   )
 
-  const rows = useMemo<Row[]>(
+  const scanned = useMemo(
     () =>
-      sessions.flatMap((session) => {
+      Object.values(threads)
+        .filter((thread) => thread.id !== TEMPORARY_CHAT_ID && !isCoworkThread(thread))
+        .sort((a, b) => (b.updated || 0) - (a.updated || 0))
+        .slice(0, THREAD_SCAN_LIMIT),
+    [threads]
+  )
+  const threadArtifacts = useThreadArtifacts(useMemo(() => scanned.map((t) => t.id), [scanned]))
+
+  const rows = useMemo<Row[]>(
+    () => [
+      ...scanned.flatMap((thread) => {
+        const hit = threadArtifacts[thread.id]
+        if (!hit) return []
+        const grant = resolveConversationCapabilities(thread.metadata?.conversationCapabilities)
+        const folder = grant.folderScope?.path ?? null
+        // A writable attached folder is the workspace root; otherwise relative
+        // tool paths were written into the thread's own sandbox.
+        const writableFolder = grant.folderScope?.access === 'write' ? folder : null
+        return hit.artifacts.map((artifact) => ({
+          ...artifact,
+          sessionId: thread.id,
+          kind: 'thread' as const,
+          sessionTitle: thread.title,
+          updated: toSeconds(thread.updated || 0),
+          roots: [writableFolder ?? hit.scratch, folder, hit.scratch].filter(
+            (root, i, all): root is string => !!root && all.indexOf(root) === i
+          ),
+        }))
+      }),
+      ...sessions.flatMap((session) => {
         const sandbox = workspaces[session.id] ?? null
         // The attached folder is the workspace root (#8882), so it comes first:
         // a relative tool path resolves against it, the sandbox is the fallback.
@@ -106,10 +196,14 @@ function ArtifactsPage() {
         return artifactsFromTurns(session.turns, root).map((artifact) => ({
           ...artifact,
           sessionId: session.id,
+          kind: 'session' as const,
+          sessionTitle: session.title,
+          updated: toSeconds(session.updated || 0),
           roots: [session.folder, sandbox],
         }))
       }),
-    [sessions, workspaces]
+    ].sort((a, b) => b.updated - a.updated),
+    [sessions, workspaces, scanned, threadArtifacts]
   )
 
   const shown = useMemo(() => {
@@ -119,7 +213,8 @@ function ArtifactsPage() {
         (!group || r.group === group) &&
         (!q ||
           r.title.toLowerCase().includes(q) ||
-          r.path.toLowerCase().includes(q))
+          r.path.toLowerCase().includes(q) ||
+          r.sessionTitle.toLowerCase().includes(q))
     )
   }, [rows, query, group])
 
@@ -127,6 +222,10 @@ function ArtifactsPage() {
   useEffect(() => setLimit(PAGE), [query, group])
 
   const open = (row: Row) => {
+    if (row.kind === 'thread') {
+      navigate({ to: route.threadsDetail, params: { threadId: row.sessionId } })
+      return
+    }
     useCoworkSessions.getState().selectSession(row.sessionId)
     useCoworkRun.getState().requestPreview(row.sessionId, row.path)
     navigate({ to: route.cowork })
@@ -134,77 +233,50 @@ function ArtifactsPage() {
 
   return (
     <div className="flex h-svh w-full flex-col">
-      {/* Search in the header, dropdown filter on the right — the hub page's
-          layout, so this reads as part of Jan rather than its own thing. */}
-      <HeaderPage>
-        <div className="relative z-20 flex h-10 w-full items-center justify-between py-3 pr-3">
-          <div className="flex w-full items-center gap-2">
-            <IconSearch size={14} className="shrink-0 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t('common:artifactsSearch')}
-              className="w-full focus:outline-none"
-            />
+      <HeaderPage />
+      <main className="min-h-0 flex-1 overflow-y-auto px-5 pb-10 md:px-8">
+        <div className="mx-auto w-full max-w-5xl pt-3 md:pt-5">
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-medium tracking-tight text-foreground">{t('common:artifacts')}</h1>
+              <p className="mt-1.5 text-sm text-muted-foreground">{t('common:artifactsLibraryDescription')}</p>
+            </div>
+            <span className="mt-2 shrink-0 text-sm tabular-nums text-muted-foreground">{t('common:artifactsLibraryCount', { count: rows.length })}</span>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="shrink-0">
-                {group
-                  ? t(`common:artifactGroup${group}`)
-                  : t('common:artifactsAll')}
-                <ChevronsUpDown className="ml-2 size-4 shrink-0 text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="bottom" align="end">
-              <DropdownMenuItem onClick={() => setGroup(null)}>
-                {t('common:artifactsAll')}
-              </DropdownMenuItem>
-              {ARTIFACT_GROUP_NAMES.map((g) => (
-                <DropdownMenuItem key={g} onClick={() => setGroup(g)}>
-                  {t(`common:artifactGroup${g}`)}
-                </DropdownMenuItem>
+          <div className="mb-6 space-y-3">
+            <div className="flex h-10 w-full items-center gap-2.5 rounded-xl border border-border/70 bg-background px-3 focus-within:ring-2 focus-within:ring-ring/30">
+              <IconSearch size={17} className="shrink-0 text-muted-foreground" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} aria-label={t('common:artifactsSearch')} placeholder={t('common:artifactsSearch')} className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none" />
+            </div>
+            <div role="group" aria-label={t('common:artifactsLibraryFilter')} className="flex flex-wrap items-center gap-1.5">
+              {[null, ...ARTIFACT_GROUP_NAMES].map((g) => (
+                <button key={g ?? 'all'} type="button" aria-pressed={group === g} onClick={() => setGroup(g)}
+                  className={`rounded-full px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${group === g ? 'bg-muted text-foreground font-medium' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
+                  {g ? t(`common:artifactGroup${g}`) : t('common:artifactsAll')}
+                </button>
               ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </HeaderPage>
-
-      <div className="h-[calc(100%-60px)] w-full overflow-y-auto p-4">
-        <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
+            </div>
+          </div>
           {shown.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {/* Distinct: nothing made yet vs nothing matching the filter. */}
-              {rows.length === 0
-                ? t('common:artifactsEmpty')
-                : t('common:artifactsNoMatch')}
-            </p>
+            <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-border px-6 py-12 text-center">
+              {rows.length === 0 ? <Box className="mb-4 size-8 text-muted-foreground/60" strokeWidth={1.4} /> : <SearchX className="mb-4 size-8 text-muted-foreground/60" strokeWidth={1.4} />}
+              <p className="max-w-sm text-sm leading-6 text-muted-foreground">{rows.length === 0 ? t('common:artifactsEmpty') : t('common:artifactsNoMatch')}</p>
+              {rows.length > 0 && <Button variant="ghost" size="sm" className="mt-3" onClick={() => { setQuery(''); setGroup(null) }}>{t('common:artifactsLibraryReset')}</Button>}
+            </div>
           ) : (
-            <div className="grid auto-rows-min gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
               {shown.slice(0, limit).map((row) => (
-                <CoworkArtifactCard
-                  key={`${row.sessionId}:${row.path}`}
-                  artifact={row}
-                  roots={row.roots}
-                  onPreview={() => open(row)}
-                  showPath
-                />
+                <CoworkArtifactCard key={`${row.kind}:${row.sessionId}:${row.path}`} variant="library" artifact={row} roots={row.roots} onPreview={() => open(row)} showPath />
               ))}
             </div>
           )}
           {shown.length > limit && (
-            <div className="mt-3 flex justify-center">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setLimit((n) => n + PAGE)}
-              >
-                {t('common:artifactsShowMore', { count: shown.length - limit })}
-              </Button>
+            <div className="mt-7 flex justify-center">
+              <Button variant="outline" size="sm" onClick={() => setLimit((n) => n + PAGE)}>{t('common:artifactsShowMore', { count: shown.length - limit })}</Button>
             </div>
           )}
         </div>
-      </div>
+      </main>
     </div>
   )
 }

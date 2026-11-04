@@ -12,7 +12,20 @@ const EMPTY_QUEUE: QueuedMessage[] = []
 interface MessageQueueState {
   // Per-thread message queues
   queues: Record<string, QueuedMessage[]>
+  // Threads whose queue is held after an error. A held queue never drains on
+  // its own and later submissions append behind it, until the user resumes or
+  // clears it.
+  paused: Record<string, boolean>
+  // Per-thread generation, bumped by every clearQueue (even of an empty queue).
+  // An in-flight send captures it at dequeue and may only put its item back
+  // while the generation is unchanged, so a late rejection can never recreate
+  // a queue the user cleared or the thread dropped.
+  generations: Record<string, number>
 
+  getToken: (threadId: string) => number
+  pause: (threadId: string) => void
+  resume: (threadId: string) => void
+  isPaused: (threadId: string) => boolean
   enqueue: (threadId: string, message: QueuedMessage) => void
   dequeue: (threadId: string) => QueuedMessage | undefined
   removeMessage: (threadId: string, messageId: string) => void
@@ -20,8 +33,36 @@ interface MessageQueueState {
   getQueue: (threadId: string) => QueuedMessage[]
 }
 
+function withoutPause(
+  state: { paused: Record<string, boolean> },
+  threadId: string
+): { paused: Record<string, boolean> } | undefined {
+  if (!state.paused[threadId]) return undefined
+  const paused = { ...state.paused }
+  delete paused[threadId]
+  return { paused }
+}
+
 export const useMessageQueue = create<MessageQueueState>((set, get) => ({
   queues: {},
+  paused: {},
+  generations: {},
+
+  getToken: (threadId) => get().generations[threadId] ?? 0,
+
+  // Only a non-empty queue can be held: there is nothing to protect otherwise.
+  pause: (threadId) => {
+    set((state) => {
+      if (state.paused[threadId] || !state.queues[threadId]?.length) return state
+      return { paused: { ...state.paused, [threadId]: true } }
+    })
+  },
+
+  resume: (threadId) => {
+    set((state) => withoutPause(state, threadId) ?? state)
+  },
+
+  isPaused: (threadId) => get().paused[threadId] === true,
 
   enqueue: (threadId, message) => {
     set((state) => ({
@@ -52,16 +93,24 @@ export const useMessageQueue = create<MessageQueueState>((set, get) => ({
       if (!queue) return state
       const filtered = queue.filter((m) => m.id !== messageId)
       if (filtered.length === queue.length) return state
-      return { queues: { ...state.queues, [threadId]: filtered } }
+      return {
+        queues: { ...state.queues, [threadId]: filtered },
+        ...(filtered.length === 0 ? withoutPause(state, threadId) : {}),
+      }
     })
   },
 
   clearQueue: (threadId) => {
     set((state) => {
-      if (!state.queues[threadId]?.length) return state
+      const generations = {
+        ...state.generations,
+        [threadId]: (state.generations[threadId] ?? 0) + 1,
+      }
+      const cleared = withoutPause(state, threadId)
+      if (!state.queues[threadId]?.length) return { generations, ...cleared }
       const updated = { ...state.queues }
       delete updated[threadId]
-      return { queues: updated }
+      return { queues: updated, generations, ...cleared }
     })
   },
 

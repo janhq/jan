@@ -6,6 +6,8 @@ import type { Thread as StoredThread } from '@janhq/core'
 import { Emitter } from '@janhq/extension-api'
 import type { ThreadsService } from './types'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { getServiceHub } from '@/hooks/useServiceHub'
+import { resolveConversationCapabilities, type ConversationCapabilitiesV1 } from '@/lib/conversationCapabilities'
 
 function toModelPayload(model?: Thread['model']) {
   return { id: model?.id ?? '*', engine: model?.provider ?? 'llamacpp' }
@@ -21,9 +23,23 @@ function fromModelResponse(
   return fallback
 }
 
+// Raw successful native creation responses, keyed by the exact returned UI
+// object. Never reconstruct a deletion receipt from a later UI snapshot.
+const creationReceipts = new WeakMap<Thread, unknown>()
+
 export class DefaultThreadsService implements ThreadsService {
   private readonly deleted = new Emitter<{ threadId: string }>()
   readonly onDidDeleteThread = this.deleted.event
+
+  async setConversationCapabilities(threadId: string, value: ConversationCapabilitiesV1): Promise<void> {
+    // Temporary conversations cannot own persistent capability consent.
+    if (threadId === TEMPORARY_CHAT_ID) throw new Error('Conversation permissions require a regular chat')
+    const capabilities = resolveConversationCapabilities(value)
+    await getServiceHub().core().invoke('set_thread_conversation_capabilities', {
+      threadId,
+      value: capabilities,
+    })
+  }
 
   async fetchThreads(): Promise<Thread[]> {
     // Let listThreads failures propagate: a rejected invoke means "backend not
@@ -31,7 +47,11 @@ export class DefaultThreadsService implements ThreadsService {
     // wiping the list with [].
     const threads: StoredThread[] | null | undefined =
       await window.core?.api?.listThreads()
-    if (!Array.isArray(threads)) return []
+    // A non-array is a malformed/not-ready response, not "zero threads".
+    // Only a real [] may be reported as an empty listing.
+    if (!Array.isArray(threads)) {
+      throw new Error('Thread listing returned a non-array response')
+    }
 
     // new String("id") !== "id"
     threads.forEach((e) => {
@@ -69,7 +89,7 @@ export class DefaultThreadsService implements ThreadsService {
     })
   }
 
-  async createThread(thread: Thread): Promise<Thread> {
+  async createThread(thread: Thread, options?: { strict?: boolean }): Promise<Thread> {
     // Temporary threads are in-memory only and never reach the backend.
     if (thread.id === TEMPORARY_CHAT_ID) {
       return thread
@@ -84,8 +104,10 @@ export class DefaultThreadsService implements ThreadsService {
       ? [{ ...thread.assistants![0], model: modelPayload }]
       : [{ id: 'model-only', name: 'Model', model: modelPayload }]
 
+    const api = window.core?.api
+    if (options?.strict && !api?.createThread) throw new Error('Chat persistence unavailable')
     return (
-      window.core?.api
+      api
         ?.createThread({
           thread: {
             ...thread,
@@ -97,19 +119,22 @@ export class DefaultThreadsService implements ThreadsService {
           },
         })
         .then((e: StoredThread) => {
+          if (options?.strict && (!e?.id || e.id !== thread.id)) throw new Error('Invalid persisted chat response')
           const model = fromModelResponse(e.assistants?.[0]?.model, thread.model)
 
           const assistants = e.assistants
 
-          return {
+          const created = {
             ...e,
             updated: e.updated,
             model,
             order: e.metadata?.order ?? thread.order,
             assistants,
           } as Thread
+          creationReceipts.set(created, JSON.parse(JSON.stringify(e)))
+          return created
         })
-        .catch(() => thread) ?? thread
+        .catch((error) => { if (options?.strict) throw error; return thread }) ?? thread
     )
   }
 
@@ -138,6 +163,21 @@ export class DefaultThreadsService implements ThreadsService {
         updated: Date.now() / 1000,
       },
     })
+  }
+
+  releaseCreatedThread(receipt: Thread): void {
+    creationReceipts.delete(receipt)
+  }
+
+  async rollbackCreatedThread(threadId: string, receipt: Thread): Promise<void> {
+    if (!threadId || threadId === TEMPORARY_CHAT_ID) {
+      throw new Error('Rollback requires a persisted chat id')
+    }
+    const expected = creationReceipts.get(receipt)
+    if (!expected || receipt.id !== threadId) throw new Error('Missing native creation receipt; chat retained')
+    // Compare and delete under the native writer lock; external changes refuse.
+    await getServiceHub().core().invoke('rollback_created_thread', { threadId, expected })
+    creationReceipts.delete(receipt)
   }
 
   async deleteThread(threadId: string): Promise<void> {

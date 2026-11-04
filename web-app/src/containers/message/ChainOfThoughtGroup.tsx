@@ -12,7 +12,7 @@ import {
 } from '@/components/ai-elements/reasoning-timeline'
 import { Button } from '@/components/ui/button'
 import { scrollToBottomButtonClassName } from '@/components/ai-elements/conversation'
-import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { approvalKey, useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import {
   isToolCallRunning,
   useToolCallRuntime,
@@ -27,6 +27,7 @@ export type ChainOfThoughtGroupProps = {
   /** Reasoning and tool parts belonging to this trace, in message order. */
   entries: PartEntry[]
   messageId: string
+  threadId?: string
   /** Total parts on the message, used to detect the currently streaming part. */
   totalParts: number
   isStreaming: boolean
@@ -45,6 +46,7 @@ export const ChainOfThoughtGroup = memo(
   ({
     entries,
     messageId,
+    threadId,
     totalParts,
     isStreaming,
     hasFollowingContent,
@@ -121,7 +123,7 @@ export const ChainOfThoughtGroup = memo(
         ? meaningful.filter((e) => {
             if (frontier.includes(e)) return true
             const toolCallId = e.part.toolCallId
-            return Boolean(toolCallId && pendingApprovals[toolCallId])
+            return Boolean(toolCallId && pendingApprovals[approvalKey(threadId ?? '', toolCallId)])
           })
         : entries
 
@@ -188,6 +190,7 @@ export const ChainOfThoughtGroup = memo(
               <ToolCallCard
                 part={part}
                 messageId={messageId}
+                threadId={threadId}
                 citationOffset={citationOffsets.get(partIndex) ?? 0}
                 className="mb-1"
               />
@@ -275,6 +278,7 @@ export const ChainOfThoughtGroup = memo(
             key={`${messageId}-t-${partIndex}`}
             part={part}
             messageId={messageId}
+            threadId={threadId}
             citationOffset={citationOffsets.get(partIndex) ?? 0}
             className="mb-1"
           />

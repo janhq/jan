@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { UIMessage, UIMessageChunk } from 'ai'
 import type { AskAnswer, CoworkTurn, Usage } from '@/types/coworkSession'
-import type { ToolImage } from '@/lib/agentTools'
+import type { PendingToolCall, ToolOutcome } from '@/lib/clientToolDispatch'
+export type { PendingToolCall, ToolOutcome } from '@/lib/clientToolDispatch'
 import {
   MAX_AGENT_STEPS,
   budgetExceeded,
@@ -24,26 +25,6 @@ import { encodeToolImageSentinel } from '@/lib/tool-image-sentinel'
  * declared without an `execute`, so `streamText` returns after one step and
  * `stopWhen` never evaluates. Every step boundary, and every cap, is explicit.
  */
-
-/** A tool call the model made, awaiting dispatch. */
-export type PendingToolCall = {
-  toolCallId: string
-  toolName: string
-  input: unknown
-}
-
-export type ToolOutcome = {
-  /** Sent to the model. */
-  output: string
-  isError?: boolean
-  /** Display-only unified diff. Never reaches the model. */
-  diff?: string
-  /** Images the tool returned (`read` of an image, `screenshot`). They reach
-   * the model inside the tool result, as `image_url` parts on the `role: tool`
-   * message (see `tool-image-sentinel.ts`), and are never persisted: a
-   * screenshot is megabytes of base64 and the session store is `settings.json`. */
-  images?: ToolImage[]
-}
 
 /** One model turn's worth of stream, folded into a shape the loop can act on. */
 export type StepResult = {
@@ -217,7 +198,8 @@ export type StreamSink = {
  */
 export async function consumeStep(
   stream: ReadableStream<UIMessageChunk>,
-  sink: StreamSink
+  sink: StreamSink,
+  signal?: AbortSignal
 ): Promise<StepResult> {
   const reader = stream.getReader()
   const result: StepResult = {
@@ -248,6 +230,9 @@ export async function consumeStep(
           sink.onToolArgsDelta(chunk.toolCallId, chunk.inputTextDelta)
           break
         case 'tool-input-available': {
+          // Hosted/provider-executed tools already carry their own output in
+          // the canonical stream; dispatching them locally repeats the action.
+          if (chunk.providerExecuted) break
           const call: PendingToolCall = {
             toolCallId: chunk.toolCallId,
             toolName: chunk.toolName,
@@ -275,6 +260,12 @@ export async function consumeStep(
           break
       }
     }
+  } catch (error) {
+    // An aborted fetch commonly rejects reader.read() rather than emitting an
+    // abort chunk. Return the accumulated step so the loop commits the partial
+    // response to wire history, not just the on-screen streaming transcript.
+    if (!isAbortLike(error, signal)) throw error
+    result.aborted = true
   } finally {
     reader.releaseLock()
   }
@@ -358,6 +349,19 @@ export function turnsFor(
   return turns
 }
 
+/** First id that repeats within `calls` or was already in `seen`, if any. */
+function firstDuplicateCallId(
+  calls: PendingToolCall[],
+  seen?: ReadonlySet<string>
+): string | undefined {
+  const inStep = new Set<string>()
+  for (const { toolCallId } of calls) {
+    if (inStep.has(toolCallId) || seen?.has(toolCallId)) return toolCallId
+    inStep.add(toolCallId)
+  }
+  return undefined
+}
+
 export type RunDeps = {
   /** One model turn. Returns the raw UI message stream. */
   sendStep: (
@@ -376,6 +380,14 @@ export type RunDeps = {
   }) => void
   /** Monotonic ids for the assistant messages this run appends. */
   nextMessageId: () => string
+  /** Presentation adapters may retain the canonical SDK parts (signatures,
+   * sources and media) rather than the Cowork projection. Called only after
+   * sendStep has been fully consumed; must include this step's tool outcomes. */
+  assistantMessage?: (
+    id: string,
+    result: StepResult,
+    outcomes: Map<string, ToolOutcome>
+  ) => UIMessage
   /**
    * Pings from work the model started and is no longer blocked on: a
    * backgrounded subagent finishing. Omitted by a child run, which cannot
@@ -415,6 +427,19 @@ export async function runTurn(opts: {
   maxSteps?: number
   /** Tokens already spent by this session, which the caps apply across. */
   sessionTokens?: number
+  /**
+   * Call ids already used by this run's routes. This only controls the
+   * cross-step policy: when given, an id repeated in a LATER step is refused;
+   * omitted (Cowork), ids may legitimately recur across steps. An id repeated
+   * inside ONE step is always refused on every surface, Cowork included,
+   * whether or not this is set (it would overwrite the first call's outcome).
+   */
+  seenCallIds?: Set<string>
+  /** Surface-owned cap policy; Cowork retains its existing defaults. */
+  budgetPolicy?: {
+    exceeded: (state: { step: number; sessionTokens: number }, maxSteps: number) => BudgetStop
+    record: typeof recordSpend
+  }
 }): Promise<RunOutcome> {
   const { deps, signal } = opts
   const maxSteps = opts.maxSteps ?? MAX_AGENT_STEPS
@@ -435,7 +460,7 @@ export async function runTurn(opts: {
         stoppedBy: 'aborted',
       }
     }
-    const overBudget = budgetExceeded(
+    const overBudget = (opts.budgetPolicy?.exceeded ?? budgetExceeded)(
       { step, sessionTokens: spend.spent },
       maxSteps
     )
@@ -489,7 +514,7 @@ export async function runTurn(opts: {
       }
       try {
         const stream = await deps.sendStep([...messages], signal)
-        result = await consumeStep(stream, sink)
+        result = await consumeStep(stream, sink, signal)
       } catch (e) {
         if (isAbortLike(e, signal)) {
           return {
@@ -541,7 +566,7 @@ export async function runTurn(opts: {
     step += 1
     if (result.usage) {
       usage = result.usage
-      spend = recordSpend(spend, result.usage)
+      spend = (opts.budgetPolicy?.record ?? recordSpend)(spend, result.usage)
     }
 
     if (result.errorText) {
@@ -549,7 +574,7 @@ export async function runTurn(opts: {
       // parts is a turn the model never took, and it would be replayed as one.
       if (result.text || result.toolCalls.length > 0) {
         messages.push(
-          assistantMessageFor(deps.nextMessageId(), result, new Map())
+          (deps.assistantMessage ?? assistantMessageFor)(deps.nextMessageId(), result, new Map())
         )
       }
       deps.onStep({
@@ -568,6 +593,30 @@ export async function runTurn(opts: {
       }
     }
 
+    // Validate the whole step before any side effect. Outcomes are keyed by
+    // call id, so a repeated id would let a later refusal overwrite the first
+    // call's real result (it may already have written). A malformed step fails
+    // closed: nothing is dispatched and its calls are not committed, so there is
+    // no phantom result for a call that never ran.
+    const duplicateId = firstDuplicateCallId(result.toolCalls, opts.seenCallIds)
+    if (duplicateId !== undefined) {
+      const errorText = `Duplicate tool call id: ${duplicateId}. The step was refused and none of its tool calls ran.`
+      const refused: StepResult = { ...result, toolCalls: [], errorText }
+      if (refused.text) {
+        messages.push((deps.assistantMessage ?? assistantMessageFor)(deps.nextMessageId(), refused, new Map()))
+      }
+      deps.onStep({ step, result: refused, turns: turnsFor(refused, new Map()), outcomes: new Map() })
+      return {
+        messages,
+        steps: step,
+        usage,
+        sessionTokens: spend.spent,
+        stoppedBy: 'error',
+        errorText,
+      }
+    }
+    for (const call of result.toolCalls) opts.seenCallIds?.add(call.toolCallId)
+
     // One at a time: tools share a workspace, and the progress attribution in
     // the UI assumes a single call in flight. A `task` fan-out is not an
     // exception any more and needs none -- each `task` call returns as soon as
@@ -585,7 +634,7 @@ export async function runTurn(opts: {
     }
 
     if (result.text || result.toolCalls.length > 0) {
-      messages.push(assistantMessageFor(deps.nextMessageId(), result, outcomes))
+      messages.push((deps.assistantMessage ?? assistantMessageFor)(deps.nextMessageId(), result, outcomes))
     }
     deps.onStep({ step, result, turns: turnsFor(result, outcomes), outcomes })
 

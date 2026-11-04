@@ -88,6 +88,7 @@ const boot = async () => {
   await consumePendingWebdataReset()
 
   // Dynamic imports keep store hydration AFTER the localStorage prune above.
+  const { StartupProvider } = await import('./providers/StartupProvider')
   const { routeTree } = await import('./routeTree.gen')
   await import('./i18n')
 
@@ -98,7 +99,9 @@ const boot = async () => {
     const root = ReactDOM.createRoot(rootElement)
     root.render(
       <StrictMode>
-        <RouterProvider router={router} />
+        <StartupProvider>
+          <RouterProvider router={router} />
+        </StartupProvider>
       </StrictMode>
     )
   }

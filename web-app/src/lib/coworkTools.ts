@@ -7,33 +7,78 @@
  * `subagent.rs`) so the CLI and the desktop advertise the same contract.
  */
 import { jsonSchema, type Tool } from 'ai'
+import { TODO_TOOL_NAME } from './coworkTodo'
+import type { ToolOutcome } from '@/lib/coworkRunner'
 import { getAgentToolSchemas } from '@/lib/agentTools'
 import { MONITOR_TOOL_NAME, monitorTool } from '@/lib/coworkMonitor'
 import {
+  WEB_TOOL_NAMES,
   WEB_FETCH_DESCRIPTION,
   WEB_FETCH_INPUT_SCHEMA,
   WEB_SEARCH_DESCRIPTION,
   WEB_SEARCH_INPUT_SCHEMA,
 } from '@/lib/webSearchTool'
 
-/** Tools that can mutate something. Withheld, and refused, in plan mode. */
-export const PLAN_DENIED_TOOLS = new Set([
-  'write',
-  'edit',
-  'shell',
-  'skill_write',
-  'task',
-  // Starting one schedules shell scripts, which is exec-class work.
-  MONITOR_TOOL_NAME,
-])
+/** Check the actual frozen record, never the native registry or prototype. */
+export function unadvertisedToolRefusal(
+  toolName: string,
+  advertisedTools: Record<string, Tool>
+): ToolOutcome | null {
+  if (Object.prototype.hasOwnProperty.call(advertisedTools, toolName)) return null
+  return {
+    output: `The \`${toolName}\` tool is not available to this run. Use an advertised tool.`,
+    isError: true,
+  }
+}
+
+// Shared advertisement policy; keep the existing export for dispatch callers.
+export { PLAN_DENIED_TOOLS } from './toolCapabilityPolicy'
+import { PLAN_DENIED_TOOLS, resolveToolCapabilities } from './toolCapabilityPolicy'
 
 /** `memory` ops that change the store. Plan mode keeps the tool for its
  * reads (`view`, `search`) and refuses these, as the Rust tool does. */
 export const PLAN_DENIED_MEMORY_OPS = new Set(['write', 'edit', 'delete', 'move'])
 
+/** The run state a refusal reason depends on, read when the call arrives. */
+export type CapabilityMode = { planMode: boolean; webSearch: boolean }
+
+/**
+ * Why a tool is off for this run, when a mode or setting is the reason. Pure:
+ * it only picks the refusal text. Callers refuse on `null` too when the name
+ * is not advertised (`unadvertisedToolRefusal`), so a reason never lets a call
+ * through. The parent dispatcher and the child guard share it so both tell the
+ * model *why* a tool is unavailable, not just that it is.
+ *
+ * Withholding alone is not authoritative -- a model can emit a call to a tool
+ * that was never advertised -- so these are enforced by name as well.
+ */
+export function capabilityModeRefusal(
+  toolName: string,
+  mode: CapabilityMode
+): ToolOutcome | null {
+  if (mode.planMode && PLAN_DENIED_TOOLS.has(toolName)) {
+    return {
+      output:
+        `The \`${toolName}\` tool is disabled in plan mode, which is read-only. ` +
+        'Finish investigating, stage the plan with the `todo` tool, then call ' +
+        '`ask` for plan review.',
+      isError: true,
+    }
+  }
+  if (WEB_TOOL_NAMES.has(toolName) && !mode.webSearch) {
+    return {
+      output:
+        `The \`${toolName}\` tool is off: web access is disabled in ` +
+        'Settings. Work from what you can read locally.',
+      isError: true,
+    }
+  }
+  return null
+}
+
 /** Named `todo` to match the Rust tool: the plan-mode addendum instructs the
  * model to call `todo` by name, so renaming it here breaks that prompt. */
-export const TODO_TOOL_NAME = 'todo'
+export { TODO_TOOL_NAME } from './coworkTodo'
 export const ASK_TOOL_NAME = 'ask'
 export const TASK_TOOL_NAME = 'task'
 
@@ -45,7 +90,7 @@ export const CLIENT_TOOL_NAMES = new Set([
   MONITOR_TOOL_NAME,
 ])
 
-const todoTool: Tool = {
+export const todoTool: Tool = {
   description:
     'Manage the canonical session todo list: init/start/done/drop/rm/append/view. One call applies one operation. Tasks advance automatically in phase and task order after done or drop; start only confirms the current task. init takes `list` or `items`, never `phase`/`task` directly.',
   inputSchema: jsonSchema({
@@ -80,7 +125,7 @@ const todoTool: Tool = {
   }),
 } as Tool
 
-const askTool: Tool = {
+export const askTool: Tool = {
   description:
     'Ask the user one or more structured questions. Use only when the answer materially changes the work. To suggest an option, list it first and set `recommended` to its index rather than writing "(Recommended)" into the label.',
   inputSchema: jsonSchema({
@@ -129,11 +174,15 @@ const askTool: Tool = {
  * name runs as a focused general-purpose agent, so there is no `system_prompt`
  * and no unknown-name failure. Wording tracks the Rust description.
  */
-function taskTool(subagentNames: string[]): Tool {
+export function taskTool(subagentNames: string[], opts: { blackboard?: boolean } = {}): Tool {
+  // Cowork has a scratch directory; Chat has none (its writeBlackboard is a
+  // no-op), so its schema must not promise files.
+  const blackboard = opts.blackboard !== false
   const phasesDesc =
     ' List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase\'s results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes).'
-  const bg =
-    " Subagents run in the BACKGROUND, concurrently (more than the running cap are queued). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to."
+  const bg = blackboard
+    ? " Subagents run in the BACKGROUND, concurrently (more than the running cap are queued). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to."
+    : " Subagents run in the BACKGROUND, concurrently (more than the running cap are queued). You keep working and get a note the moment each finishes; that note carries the subagent's answer. No files are written and there is no shared scratch directory."
   const saved = subagentNames.length
     ? ` A subagent whose name matches a saved one uses that role and tools; otherwise it runs as a focused general-purpose agent. Saved subagents: ${subagentNames.join(', ')}.`
     : ' No saved subagents yet; each runs as a focused general-purpose agent defined by its task.'
@@ -155,8 +204,9 @@ function taskTool(subagentNames: string[]): Tool {
             properties: {
               name: {
                 type: 'string',
-                description:
-                  "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It is also the blackboard file its answer is written to (blackboard/<name>.md). If it matches a saved subagent, that role and tools are used; otherwise it runs as a focused general-purpose agent.",
+                description: blackboard
+                  ? "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It is also the blackboard file its answer is written to (blackboard/<name>.md). If it matches a saved subagent, that role and tools are used; otherwise it runs as a focused general-purpose agent."
+                  : "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It labels the subagent's status and completion note; no file is written. If it matches a saved subagent, that role and tools are used; otherwise it runs as a focused general-purpose agent.",
               },
               task: {
                 type: 'string',
@@ -233,12 +283,13 @@ export function allowedToolNames(
 export async function buildCoworkTools(
   opts: CoworkToolOptions
 ): Promise<Record<string, Tool>> {
+  const policy = resolveToolCapabilities({ surface: 'cowork', ...opts })
   const schemas = await getAgentToolSchemas()
   const tools: Record<string, Tool> = {}
 
   for (const s of schemas) {
     const name = s.function.name
-    if (opts.planMode && PLAN_DENIED_TOOLS.has(name)) continue
+    if (!policy.allowsNativeTool(name)) continue
     tools[name] = {
       description: s.function.description,
       inputSchema: jsonSchema(
@@ -248,7 +299,7 @@ export async function buildCoworkTools(
   }
 
   // Reads, so plan mode keeps them: research is most of what planning is.
-  if (opts.webSearch) {
+  if (policy.webSearch) {
     tools['web_search'] = {
       description: WEB_SEARCH_DESCRIPTION,
       inputSchema: jsonSchema(WEB_SEARCH_INPUT_SCHEMA as Record<string, unknown>),
@@ -261,10 +312,10 @@ export async function buildCoworkTools(
 
   tools[TODO_TOOL_NAME] = todoTool
   tools[ASK_TOOL_NAME] = askTool
-  if (opts.allowSubagents && !opts.planMode) {
+  if (policy.task) {
     tools[TASK_TOOL_NAME] = taskTool(opts.subagentNames)
   }
-  if (!opts.planMode) {
+  if (policy.monitor) {
     tools[MONITOR_TOOL_NAME] = monitorTool()
   }
   return tools

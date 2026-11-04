@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { executeAgentTool } = vi.hoisted(() => ({ executeAgentTool: vi.fn() }))
-vi.mock('@/lib/agentTools', () => ({ executeAgentTool }))
+const native = vi.hoisted(() => ({
+  executeAgentTool: vi.fn(),
+  startAgentMonitor: vi.fn(),
+  stopAgentMonitor: vi.fn(),
+  listAgentMonitors: vi.fn(),
+}))
+const { executeAgentTool } = native
+vi.mock('@/lib/agentTools', () => native)
 
 const { executeWebTool } = vi.hoisted(() => ({ executeWebTool: vi.fn() }))
 vi.mock('@/lib/webSearchTool', () => ({
@@ -9,11 +15,12 @@ vi.mock('@/lib/webSearchTool', () => ({
   executeWebTool,
 }))
 
-const coworkConfig = vi.hoisted(() => ({ networkEnabled: true }))
-vi.mock('@/hooks/useCoworkConfig', () => ({
-  useCoworkConfig: { getState: () => coworkConfig },
+const chatPermissions = vi.hoisted(() => ({ shellNetwork: true }))
+vi.mock('@/hooks/useChatPermissions', () => ({
+  useChatPermissions: { getState: () => chatPermissions },
 }))
 
+import type { Tool } from 'ai'
 import { dispatchCoworkTool } from '../coworkDispatch'
 import type { PendingToolCall } from '../coworkRunner'
 
@@ -24,6 +31,12 @@ const call = (toolName: string, input: unknown = {}): PendingToolCall => ({
 })
 
 const ctx = (over = {}) => ({
+  advertisedTools: Object.fromEntries([
+    'read', 'ls', 'find', 'grep', 'write', 'edit', 'shell', 'screenshot',
+    'memory', 'skill_list', 'skill_read', 'skill_write', 'todo', 'ask', 'task',
+    'monitor', 'web_search', 'web_fetch',
+  ].map((name) => [name, {} as Tool])),
+  monitors: null,
   sessionId: 's1',
   readOnlyFolder: null,
   planMode: false,
@@ -40,6 +53,83 @@ describe('dispatchCoworkTool', () => {
     executeAgentTool.mockResolvedValue({ content: 'ok' })
   })
 
+  it.each([
+    'unknown_tool', 'bash', 'toString', 'constructor', '__proto__',
+    'shell', 'write', 'memory', 'skill_write', 'task', 'ask', 'todo',
+    'monitor', 'web_search', 'web_fetch',
+  ])('refuses unknown or withheld %s before any side effect', async (name) => {
+    vi.clearAllMocks()
+    const c = ctx({ advertisedTools: { read: {} as Tool }, webSearch: true })
+    const out = await dispatchCoworkTool(call(name, { op: 'start' }), c)
+    expect(out).toMatchObject({ isError: true })
+    expect(out.output).toContain('not available to this run')
+    for (const fn of Object.values(native)) expect(fn).not.toHaveBeenCalled()
+    expect(executeWebTool).not.toHaveBeenCalled()
+    expect(c.onTodo).not.toHaveBeenCalled()
+    expect(c.onAsk).not.toHaveBeenCalled()
+    expect(c.onTask).not.toHaveBeenCalled()
+  })
+
+  it('fails closed with an empty advertised record', async () => {
+    const out = await dispatchCoworkTool(call('read'), ctx({ advertisedTools: {} }))
+    expect(out.isError).toBe(true)
+    expect(executeAgentTool).not.toHaveBeenCalled()
+  })
+
+  describe('against a plan-mode record', () => {
+    const planRecord = Object.fromEntries([
+      'read', 'ls', 'find', 'grep', 'screenshot', 'memory', 'skill_list',
+      'skill_read', 'todo', 'ask', 'web_search', 'web_fetch',
+    ].map((name) => [name, {} as Tool]))
+    const planCtx = () =>
+      ctx({ planMode: true, advertisedTools: planRecord, webSearch: true })
+
+    it.each(['write', 'edit', 'shell', 'skill_write', 'task', 'monitor'])(
+      'keeps the plan-mode guidance for withheld %s',
+      async (name) => {
+        const out = await dispatchCoworkTool(call(name), planCtx())
+        expect(out.isError).toBe(true)
+        expect(out.output).toMatch(/disabled in plan mode/)
+        expect(executeAgentTool).not.toHaveBeenCalled()
+      }
+    )
+
+    it('refuses an unknown tool before the native registry', async () => {
+      const out = await dispatchCoworkTool(call('bash'), planCtx())
+      expect(out.output).toContain('not available to this run')
+      expect(executeAgentTool).not.toHaveBeenCalled()
+    })
+
+    it.each(['read', 'skill_read'])('dispatches advertised %s', async (name) => {
+      const out = await dispatchCoworkTool(call(name), planCtx())
+      expect(out.isError).toBeFalsy()
+      expect(executeAgentTool).toHaveBeenCalledOnce()
+    })
+
+    it('dispatches memory view but refuses a memory write', async () => {
+      const c = planCtx()
+      const view = await dispatchCoworkTool(call('memory', { op: 'view' }), c)
+      expect(view.isError).toBeFalsy()
+      const write = await dispatchCoworkTool(call('memory', { op: 'write' }), c)
+      expect(write.isError).toBe(true)
+      expect(executeAgentTool).toHaveBeenCalledOnce()
+    })
+
+    it('runs todo and ask through their callbacks', async () => {
+      const c = planCtx()
+      await dispatchCoworkTool(call('todo'), c)
+      await dispatchCoworkTool(call('ask'), c)
+      expect(c.onTodo).toHaveBeenCalledOnce()
+      expect(c.onAsk).toHaveBeenCalledOnce()
+    })
+  })
+
+  it.each(['skill_list', 'skill_read'])('dispatches advertised %s', async (name) => {
+    const out = await dispatchCoworkTool(call(name), ctx())
+    expect(out.isError).toBeFalsy()
+    expect(executeAgentTool).toHaveBeenCalledWith(name, {}, 's1', null, 'session', true, true, null, undefined, undefined)
+  })
+
   // The trailing 'session' is load-bearing: under the default 'thread' scope a
   // session's files land where the thread sweep's keep-list can never mention
   // them, and the sweep deletes the only copy of the agent's work.
@@ -54,13 +144,15 @@ describe('dispatchCoworkTool', () => {
       'session',
       true,
       true,
-      null
+      null,
+      undefined,
+      undefined
     )
   })
 
-  // Cowork's shell network follows the Cowork setting (on by default), read
+  // Shell network follows the app-wide permission (on by default), read
   // per call so a Settings toggle applies to the next command.
-  it('passes the cowork network setting through per call', async () => {
+  it('passes the app-wide network setting through per call', async () => {
     await dispatchCoworkTool(call('shell', { command: 'curl x' }), ctx())
     expect(executeAgentTool).toHaveBeenCalledWith(
       'shell',
@@ -70,9 +162,11 @@ describe('dispatchCoworkTool', () => {
       'session',
       true,
       true,
-      null
+      null,
+      undefined,
+      undefined
     )
-    coworkConfig.networkEnabled = false
+    chatPermissions.shellNetwork = false
     try {
       await dispatchCoworkTool(call('shell', { command: 'curl x' }), ctx())
       expect(executeAgentTool).toHaveBeenLastCalledWith(
@@ -83,11 +177,19 @@ describe('dispatchCoworkTool', () => {
         'session',
         false,
         true,
-        null
+        null,
+        undefined,
+        undefined
       )
     } finally {
-      coworkConfig.networkEnabled = true
+      chatPermissions.shellNetwork = true
     }
+  })
+
+  it('passes the owning run signal through for late-result feedback suppression', async () => {
+    const signal = new AbortController().signal
+    await dispatchCoworkTool(call('memory', { op: 'write' }), ctx({ signal }))
+    expect(executeAgentTool.mock.calls[0][9]).toBe(signal)
   })
 
   it('routes the client-only tools to their handlers', async () => {
@@ -157,7 +259,9 @@ describe('dispatchCoworkTool', () => {
       'session',
       true,
       true,
-      '/repo'
+      '/repo',
+      undefined,
+      undefined
     )
   })
 
@@ -260,6 +364,18 @@ describe('web tools', () => {
     expect(out.output).toContain('Settings')
   })
 
+  // The real off-state record withholds web tools; the reason still wins over
+  // the generic membership refusal.
+  it('names the setting when the off-state record withholds web tools', async () => {
+    const out = await dispatchCoworkTool(
+      call('web_fetch'),
+      ctx({ advertisedTools: { read: {} as Tool } })
+    )
+    expect(executeWebTool).not.toHaveBeenCalled()
+    expect(out.isError).toBe(true)
+    expect(out.output).toContain('web access is disabled in Settings')
+  })
+
   it('reports a plugin failure as a tool error', async () => {
     executeWebTool.mockResolvedValue({ error: 'no API key' })
     const out = await dispatchCoworkTool(
@@ -268,4 +384,45 @@ describe('web tools', () => {
     )
     expect(out).toMatchObject({ output: 'no API key', isError: true })
   })
+})
+
+describe('shared client dispatch integration', () => {
+  it.each(['onTodo', 'onAsk', 'onTask'] as const)('normalizes %s rejection once without falling through to native tools', async (handler) => {
+    vi.clearAllMocks()
+    const fn = vi.fn().mockRejectedValue(new Error('client failed'))
+    const toolName = { onTodo: 'todo', onAsk: 'ask', onTask: 'task' }[handler]
+    expect(await dispatchCoworkTool(call(toolName), ctx({ [handler]: fn }))).toEqual({ output: 'client failed', isError: true })
+    expect(fn).toHaveBeenCalledOnce()
+    expect(executeAgentTool).not.toHaveBeenCalled()
+  })
+
+  it('keeps monitor session/folder/network grants in the Cowork adapter', async () => {
+    vi.clearAllMocks()
+    native.startAgentMonitor.mockResolvedValue({ output: 'monitor-1' })
+    const monitors = { update: vi.fn(), started: vi.fn(), stopped: vi.fn() }
+    const input = { op: 'start', script: 'fixture', interval: 5 }
+    await dispatchCoworkTool(call('monitor', input), ctx({ monitors, readOnlyFolder: '/synthetic-scope' }))
+    expect(native.startAgentMonitor).toHaveBeenCalledExactlyOnceWith('s1', input, expect.any(Function), '/synthetic-scope', true, true)
+    expect(monitors.started).toHaveBeenCalledOnce()
+    expect(executeAgentTool).not.toHaveBeenCalled()
+  })
+
+  it('does not give a child a monitor lane', async () => {
+    vi.clearAllMocks()
+    expect(await dispatchCoworkTool(call('monitor', { op: 'start' }), ctx())).toEqual({ output: 'The monitor belongs to the agent that dispatched you.', isError: true })
+    expect(native.startAgentMonitor).not.toHaveBeenCalled()
+  })
+})
+
+
+it.each(['onTodo', 'onAsk', 'onTask'] as const)('fails closed when Cowork %s resolves undefined', async (handler) => {
+  vi.clearAllMocks()
+  const fn = vi.fn().mockResolvedValue(undefined)
+  const toolName = { onTodo: 'todo', onAsk: 'ask', onTask: 'task' }[handler]
+  expect(await dispatchCoworkTool(call(toolName), ctx({ [handler]: fn }))).toEqual({
+    output: `The \`${toolName}\` client handler returned no outcome.`, isError: true,
+  })
+  expect(fn).toHaveBeenCalledOnce()
+  for (const nativeFn of Object.values(native)) expect(nativeFn).not.toHaveBeenCalled()
+  expect(executeWebTool).not.toHaveBeenCalled()
 })
