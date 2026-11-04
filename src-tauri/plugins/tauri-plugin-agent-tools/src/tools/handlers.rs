@@ -1050,8 +1050,9 @@ fn read_only_refusal(args: &serde_json::Value, scratch: Option<&Path>) -> String
 }
 
 /// The shell a confined command launches with: the (possibly jail-wrapped)
-/// shell config, the path the sandbox exposes as its temp dir, and the policy
-/// itself (which `denial_hint` reads even when the shell runs unconfined).
+/// shell config, the env that names the scratch and package cache at their
+/// real paths (`None` unconfined), and the policy itself (which `denial_hint`
+/// reads even when the shell runs unconfined).
 ///
 /// With the sandbox off the shell is spawned bare, the way the user's own
 /// terminal would run it: no wrapper, no policy mounts, the real `$HOME` and
@@ -1087,7 +1088,7 @@ pub(crate) fn confined_shell(
     policy = policy.with_workspace_readonly(ctx.workspace_readonly);
     // A read-only root is only read-only inside the sandbox, so it is never
     // run without one, whatever the surface chose.
-    let confined = ctx.sandbox || ctx.workspace_readonly;
+    let confined = ctx.shell_confined();
     let shell = if confined {
         // No confinement available means no shell: running unsandboxed would give
         // the command the whole machine, which is never what the caller asked for.
@@ -1166,7 +1167,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let sink = ctx.on_output.clone();
     // A read-only root is confined even in an unsandboxed session, so its
     // denials get the note too.
-    let sandboxed = ctx.sandbox || ctx.workspace_readonly;
+    let sandboxed = ctx.shell_confined();
     let escalation = ctx.escalation;
     // Fed from the first byte, so a command the user opens in `/shells` after it
     // backgrounded still shows what it printed before the timeout.
@@ -4557,8 +4558,50 @@ mod tests {
                 .scratch_root,
             Some(scratch.as_path())
         );
+        // The package cache goes with it, in either order: an escalated
+        // command (the sandbox cleared for one call) keeps the host's caches.
+        let pkg = crate::workspace::PkgCache { root: scratch.join("pkg"), cargo_config: None };
+        assert!(ToolContext::new(&root, &store, &[])
+            .with_pkg_cache(Some(&pkg))
+            .with_sandbox(false)
+            .pkg_cache
+            .is_none());
+        assert!(ToolContext::new(&root, &store, &[])
+            .with_sandbox(false)
+            .with_pkg_cache(Some(&pkg))
+            .pkg_cache
+            .is_none());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A read-only root runs its shell confined even with the sandbox off (a
+    /// reader under the CLI default), so it keeps the package cache: its
+    /// `$HOME` is read-only in there and the host caches are unwritable.
+    /// Clearing the sandbox for one call does not unconfine it either, so it
+    /// keeps the cache then too; only clearing both drops it.
+    #[test]
+    fn a_read_only_root_keeps_its_pkg_cache_with_the_sandbox_off() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let pkg = crate::workspace::PkgCache { root: root.join("pkg"), cargo_config: None };
+        let reader = || {
+            ToolContext::new(&root, &store, &[])
+                .with_sandbox(false)
+                .with_workspace_readonly(true)
+                .with_pkg_cache(Some(&pkg))
+        };
+        assert_eq!(reader().pkg_cache, Some(&pkg));
+        assert_eq!(reader().with_sandbox(false).pkg_cache, Some(&pkg));
+        assert!(reader().with_workspace_readonly(false).pkg_cache.is_none());
+        // And the shell it builds names the cache.
+        let (_, env, _) = match confined_shell(&reader()) {
+            Ok(v) => v,
+            Err(_) => return, // no backend here: no shell at all
+        };
+        let env = env.expect("a read-only root is always confined");
+        assert!(env.vars().iter().any(|(k, v)| *k == "CARGO_HOME" && v.starts_with(&pkg.root)));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     // POSIX command text: Windows runs PowerShell.

@@ -3707,13 +3707,17 @@ fn scratch_root_for(
     crate::core::agent::project::scratch_dir(project_root, &session)
 }
 
-/// The run's package cache: prepared for a sandboxed run, `None` unconfined,
-/// where the shell keeps the host's own caches and nothing would bind one.
+/// The run's package cache: prepared whenever its shell runs confined --
+/// sandboxed, or a read-only child, which is confined even with the sandbox
+/// off and whose read-only `$HOME` leaves the host caches unwritable. `None`
+/// unconfined, where the shell keeps the host's own caches and nothing would
+/// bind one.
 async fn pkg_cache_for(
     sandbox: bool,
+    workspace_readonly: bool,
     project_root: &std::path::Path,
 ) -> Result<Option<tauri_plugin_agent_tools::workspace::PkgCache>, String> {
-    if !sandbox {
+    if !(sandbox || workspace_readonly) {
         return Ok(None);
     }
     crate::core::agent::project::prepare_pkg_cache(project_root).await.map(Some)
@@ -4270,11 +4274,22 @@ async fn orchestrate_inner(
         // directory as its sanctioned scratch. Skipped entirely when the shell
         // is unconfined: nothing binds it, so creating it would only leave an
         // empty directory behind.
+        //
+        // Claimed for as long as this turn runs, and freshened each turn, so
+        // another Jan process's startup sweep (whose keep list cannot name
+        // this session) leaves it alone; see `claim_scratch_dir`.
         let scratch_root = scratch_root_for(session_id.as_deref(), root);
-        if settings.sandbox {
-            tauri_plugin_agent_tools::workspace::ensure_scratch_dir_path(&scratch_root).await?;
-        }
-        let pkg_cache = pkg_cache_for(settings.sandbox, root).await?;
+        let _scratch_claim = if settings.sandbox {
+            Some(tauri_plugin_agent_tools::workspace::claim_scratch_dir(&scratch_root).await?)
+        } else {
+            None
+        };
+        let pkg_cache = pkg_cache_for(
+            settings.sandbox,
+            child_scope.as_ref().is_some_and(|scope| scope.read_only),
+            root,
+        )
+        .await?;
         let (store_root, memory_home, cross_project) =
             crate::core::agent::project::memory_roots(root);
         let tool_notices = settings.tool_notices;
@@ -6695,21 +6710,24 @@ mod tests {
         );
     }
 
-    /// A sandboxed run gets its project's package cache under the project's
+    /// A confined run gets its project's package cache under the project's
     /// cache folder, beside the scratch; an unconfined one gets none, and
-    /// creates nothing.
+    /// creates nothing. A read-only child is confined with the sandbox off
+    /// (the CLI default), so it gets one too.
     #[tokio::test]
-    async fn pkg_cache_is_prepared_only_for_a_sandboxed_run() {
+    async fn pkg_cache_is_prepared_only_for_a_confined_run() {
         let root = unique_project_root();
         let cache = crate::core::agent::project::project_cache_dir(&root);
-        assert_eq!(pkg_cache_for(false, &root).await.unwrap(), None);
+        assert_eq!(pkg_cache_for(false, false, &root).await.unwrap(), None);
         assert!(!cache.join("pkg").exists());
-        let pkg = pkg_cache_for(true, &root).await.unwrap().expect("sandboxed");
+        let reader = pkg_cache_for(false, true, &root).await.unwrap().expect("read-only");
+        assert_eq!(reader.root, cache.join("pkg"));
+        let pkg = pkg_cache_for(true, false, &root).await.unwrap().expect("sandboxed");
         assert_eq!(pkg.root, cache.join("pkg"));
         assert!(pkg.root.join("cargo").is_dir());
         assert_ne!(
             pkg.root,
-            pkg_cache_for(true, &unique_project_root()).await.unwrap().unwrap().root,
+            pkg_cache_for(true, false, &unique_project_root()).await.unwrap().unwrap().root,
             "two projects never share a package cache"
         );
     }

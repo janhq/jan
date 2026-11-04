@@ -737,6 +737,23 @@ pub async fn spawn_with_stdin(
     // tools, and on the backends that confine by path, not writable at all.
     // Every backend exposes both at their real paths, so those are the values.
     if let Some(sandbox) = sandbox {
+        // A case variant copied in above (`NPM_CONFIG_CACHE` from the host,
+        // `Tmpdir` from `env_set`) would sit beside the exact name set here,
+        // and tools that read either spelling (npm) would get two answers.
+        // Only on Unix: Windows env names have no case, so the set below
+        // already replaces any spelling.
+        #[cfg(unix)]
+        {
+            let names: Vec<std::ffi::OsString> =
+                cmd.as_std().get_envs().map(|(name, _)| name.to_owned()).collect();
+            for name in names {
+                let Some(text) = name.to_str() else { continue };
+                let variant = |(key, _): &(&str, PathBuf)| key.eq_ignore_ascii_case(text) && *key != text;
+                if sandbox.vars().iter().any(variant) {
+                    cmd.env_remove(&name);
+                }
+            }
+        }
         for (key, dir) in sandbox.vars() {
             cmd.env(key, dir);
         }
@@ -1137,6 +1154,34 @@ mod env_allowlist_tests {
         assert!(is_reserved_env_key("NPM_CONFIG_CACHE"));
         assert!(is_reserved_env_key("cargo_home"));
         assert!(!is_reserved_env_key("CARGO_TARGET_DIR"));
+    }
+
+    /// A host `NPM_CONFIG_CACHE` copied in by passthrough (or set) must not
+    /// sit beside the sandbox's `npm_config_cache`: npm reads both spellings,
+    /// so the shell would get two answers to one key. Any case variant of a
+    /// name the sandbox env sets is dropped; unconfined, it is kept.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_case_variant_of_a_sandbox_env_name_is_dropped() {
+        let pkg = std::env::temp_dir().join(format!("jan_proc_case_{}", std::process::id()));
+        let set = vec![
+            ("NPM_CONFIG_CACHE".to_string(), "/host/npm".to_string()),
+            ("Tmpdir".to_string(), "/host/tmp".to_string()),
+            ("KEEP_ME".to_string(), "yes".to_string()),
+        ];
+        let env = ShellEnv { passthrough: &[], set: &set };
+        let run = |sandbox: Option<SandboxEnv>| async move {
+            let child = spawn(shell(), "env", Path::new("/"), sandbox.as_ref(), env, None)
+                .await
+                .unwrap();
+            let out = child.wait_with_output().await.unwrap();
+            String::from_utf8_lossy(&out.stdout).into_owned()
+        };
+        let out = run(Some(SandboxEnv::new(Some(&pkg), Some(&pkg)))).await;
+        assert!(!out.contains("/host/"), "{out}");
+        assert!(out.contains("npm_config_cache=") && out.contains("KEEP_ME=yes"), "{out}");
+        let bare = run(None).await;
+        assert!(bare.contains("NPM_CONFIG_CACHE=/host/npm"), "{bare}");
     }
 
     /// No scratch and no package cache: nothing is overridden.
