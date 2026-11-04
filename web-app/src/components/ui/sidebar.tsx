@@ -45,6 +45,11 @@ type SidebarContext = {
 	setOpen: (open: boolean) => void;
 	openMobile: boolean;
 	setOpenMobile: (open: boolean) => void;
+	/**
+	 * Close the overlay because navigation already moved the user elsewhere.
+	 * Focus is not returned to a sidebar toggle; the destination keeps its own.
+	 */
+	closeMobileForNavigation: () => void;
 	isMobile: boolean;
 	/** `opener` is the control that was activated; focus returns there on close. */
 	toggleSidebar: (opener?: HTMLElement | null) => void;
@@ -56,6 +61,8 @@ type SidebarContext = {
 	setIsDraggingRail: (isDraggingRail: boolean) => void;
 	//* element to refocus when the mobile overlay closes
 	mobileReturnFocusRef: React.MutableRefObject<HTMLElement | null>;
+	//* set when the overlay closed because of navigation, not a dismissal
+	closedByNavigationRef: React.MutableRefObject<boolean>;
 };
 
 const SidebarContext = React.createContext<SidebarContext | null>(null);
@@ -87,6 +94,24 @@ function isRenderedVisible(element: HTMLElement) {
 		if (style.display === "none" || style.visibility === "hidden") return false;
 	}
 	return true;
+}
+
+/** Marks the destination control that should take focus after a navigation close. */
+const NAVIGATION_FOCUS_TARGET = "[data-navigation-focus-target]";
+
+/**
+ * After a navigation close the destination page may have tried to focus its own
+ * field while the modal trap blocked it. Give it focus now, unless something
+ * already has it.
+ */
+function focusNavigationDestination() {
+	const active = document.activeElement;
+	if (active && active !== document.body) return;
+	Array.from(
+		document.querySelectorAll<HTMLElement>(NAVIGATION_FOCUS_TARGET),
+	)
+		.find(isRenderedVisible)
+		?.focus();
 }
 
 function restoreMobileFocus(opener: HTMLElement | null) {
@@ -142,11 +167,15 @@ const SidebarProvider = React.forwardRef<
 		}, [onWidthChange]);
 		const [openMobile, setOpenMobileState] = React.useState(false);
 		const mobileReturnFocusRef = React.useRef<HTMLElement | null>(null);
+		const openMobileRef = React.useRef(false);
+		const closedByNavigationRef = React.useRef(false);
 		// An explicit opener (the control that was activated) always wins over
 		// document.activeElement, which may be an unrelated field such as the composer.
 		const openMobileFrom = React.useCallback(
 			(value: boolean, opener?: HTMLElement | null) => {
+				openMobileRef.current = value;
 				if (value) {
+					closedByNavigationRef.current = false;
 					const active = document.activeElement;
 					if (opener) mobileReturnFocusRef.current = opener;
 					else if (active instanceof HTMLElement && active !== document.body)
@@ -160,10 +189,18 @@ const SidebarProvider = React.forwardRef<
 			(value: boolean) => openMobileFrom(value),
 			[openMobileFrom],
 		);
+		const closeMobileForNavigation = React.useCallback(() => {
+			// Only an overlay that is actually open needs its focus return skipped.
+			if (openMobileRef.current) closedByNavigationRef.current = true;
+			openMobileFrom(false);
+		}, [openMobileFrom]);
 		// An overlay left open while the window grows to the desktop layout must
 		// not pop back open when it shrinks again.
 		React.useEffect(() => {
-			if (!isMobile) setOpenMobileState(false);
+			if (!isMobile) {
+				openMobileRef.current = false;
+				setOpenMobileState(false);
+			}
 		}, [isMobile]);
 		//* new state for tracking is dragging rail
 		const [isDraggingRail, setIsDraggingRail] = React.useState(false);
@@ -227,6 +264,7 @@ const SidebarProvider = React.forwardRef<
 				isMobile,
 				openMobile,
 				setOpenMobile,
+				closeMobileForNavigation,
 				toggleSidebar,
 				//* new context for sidebar resizing
 				width,
@@ -235,6 +273,7 @@ const SidebarProvider = React.forwardRef<
 				isDraggingRail,
 				setIsDraggingRail,
 				mobileReturnFocusRef,
+				closedByNavigationRef,
 			}),
 			[
 				state,
@@ -243,6 +282,7 @@ const SidebarProvider = React.forwardRef<
 				isMobile,
 				openMobile,
 				setOpenMobile,
+				closeMobileForNavigation,
 				toggleSidebar,
 				width,
 				setWidth,
@@ -306,6 +346,7 @@ const Sidebar = React.forwardRef<
 			//* new property for tracking is dragging rail
 			isDraggingRail,
 			mobileReturnFocusRef,
+			closedByNavigationRef,
 		} = useSidebar();
 		const { t } = useTranslation();
 
@@ -341,6 +382,13 @@ const Sidebar = React.forwardRef<
 							// Radix only refocuses a Sheet.Trigger; the sidebar is opened
 							// from toggle buttons elsewhere, so return focus explicitly.
 							event.preventDefault();
+							if (closedByNavigationRef.current) {
+								// Navigation, not dismissal: the old opener is gone and any
+								// toggle on the new page must not outrank its own autofocus.
+								closedByNavigationRef.current = false;
+								focusNavigationDestination();
+								return;
+							}
 							restoreMobileFocus(mobileReturnFocusRef.current);
 						}}
 					>
