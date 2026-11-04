@@ -43,6 +43,12 @@ export type CoworkSession = {
   /** An attached project folder, mounted read-only. Writes always land in the
    * session's own sandbox, never here. */
   folder: string | null
+  /** What the HOST acknowledged for `folder`. `undefined`: the host holds no
+   * record (legacy session), which is inactive, not read+write. `null`: a
+   * host record exists and grants no access to this folder. Only the strict
+   * setter, or hydration of what the host stored, may set it. A grant with
+   * `access: null` keeps the folder shown but unusable (a failed save). */
+  folderAccess?: 'read' | 'write' | null
   /** Optional Jan project associated with this conversation. */
   project?: { id: string; name: string; updated_at: number; assistantId?: string }
   turns: CoworkTurn[]
@@ -75,6 +81,11 @@ type CoworkSessionsState = {
   deleteSession: (id: string) => void
   setProject: (id: string, project: CoworkSession['project']) => void
   setFolder: (id: string, folder: string | null) => void
+  /** Record a folder grant the host has ALREADY accepted (never a request). */
+  setFolderGrant: (
+    id: string,
+    grant: { path: string; access: 'read' | 'write' | null } | null
+  ) => void
   setModel: (id: string, model: ThreadModel) => void
   setPlanMode: (id: string, planMode: boolean) => void
   setTitle: (id: string, title: string) => void
@@ -193,10 +204,35 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
           ),
         })),
 
+      // Local, UNACKNOWLEDGED change: it never carries access. A different
+      // folder (or detach) drops any previous grant to `null` (shown, unusable),
+      // so an old write grant or the legacy `undefined` default cannot apply to
+      // it. Only `setFolderGrant` (after the host accepted) may grant access.
       setFolder: (id, folder) =>
         set((s) => ({
           sessions: s.sessions.map((x) =>
-            x.id === id ? { ...x, folder, updated: now() } : x
+            x.id === id
+              ? {
+                  ...x,
+                  folder,
+                  ...(folder === x.folder ? {} : { folderAccess: null }),
+                  updated: now(),
+                }
+              : x
+          ),
+        })),
+
+      setFolderGrant: (id, grant) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === id
+              ? {
+                  ...x,
+                  folder: grant?.path ?? null,
+                  folderAccess: grant ? grant.access : null,
+                  updated: now(),
+                }
+              : x
           ),
         })),
 

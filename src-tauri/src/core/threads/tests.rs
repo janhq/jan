@@ -44,6 +44,14 @@ fn mock_app_with_temp_data_dir() -> (tauri::App<MockRuntime>, DataDirGuard) {
     (app, DataDirGuard(data_dir))
 }
 
+/// The platform's real durable-denial entry for `id` (Unix marker, Windows
+/// ledger), so fault injection hits the backend actually in use.
+fn denial_store(id: &str) -> std::path::PathBuf {
+    tauri_plugin_agent_tools::thread_capabilities::denial_store_path(id)
+        .unwrap()
+        .expect("consent root configured")
+}
+
 // Helper to create a basic thread
 fn create_test_thread(title: &str) -> serde_json::Value {
     json!({
@@ -1539,7 +1547,7 @@ async fn conversation_capabilities_reject_non_chat_and_malformed_stored_records(
     let original = create_thread(app.handle().clone(), create_test_thread("invalid-stored")).await.unwrap();
     let id = original["id"].as_str().unwrap().to_string();
     let path = get_thread_metadata_path(&data_dir, &id).unwrap();
-    for patch in [json!({"metadata":{"mode":"cowork"}}), json!({"metadata":[]}), json!({"id":"different-id"})] {
+    for patch in [json!({"metadata":[]}), json!({"id":"different-id"})] {
         let mut stored = original.clone();
         for (key, value) in patch.as_object().unwrap() { stored[key] = value.clone(); }
         let bytes = serde_json::to_vec(&stored).unwrap();
@@ -1996,8 +2004,7 @@ async fn consent_directory_sync_failure_cannot_confirm_replacement() {
     stored["id"] = json!(restarted_id);
     ensure_thread_dir_exists(&data_dir, &restarted_id).unwrap();
     update_thread_metadata(&data_dir, &restarted_id, &stored).unwrap();
-    fs::copy(data_dir.join("conversation-denials").join(&id),
-        data_dir.join("conversation-denials").join(&restarted_id)).unwrap();
+    fs::copy(denial_store(&id), denial_store(&restarted_id)).unwrap();
     assert_eq!(current(&restarted_id).1, 0, "simulated fresh host has no mirror entry");
     let restored = super::capabilities::read_conversation_capabilities(&data_dir, &restarted_id).await.unwrap();
     assert_eq!(restored, capability_grant(false), "durable denial survives host restart");
@@ -2014,7 +2021,8 @@ async fn marker_failure_aborts_removal(rollback: bool) {
     let metadata = get_thread_metadata_path(&data_dir, &id).unwrap();
     let before = fs::read(&metadata).unwrap();
     // A directory at the marker path deterministically prevents File::create.
-    let marker = data_dir.join("conversation-denials").join(&id);
+    let marker = denial_store(&id);
+    fs::remove_file(&marker).ok();
     fs::create_dir_all(&marker).unwrap();
     let result = if rollback {
         rollback_created_thread(app.handle().clone(), id.clone(), created).await
@@ -2055,7 +2063,7 @@ async fn marker_failure_after_removal_still_succeeds(rollback: bool) {
         delete_thread(app.handle().clone(), id.clone()).await
     };
     assert!(!get_thread_dir(&data_dir, &id).unwrap().exists(), "removal succeeded");
-    assert!(data_dir.join("conversation-denials").join(&id).is_dir(), "post-removal fault was injected");
+    assert!(denial_store(&id).is_dir(), "post-removal fault was injected");
     assert!(result.is_ok(), "successful removal must not restore a frontend ghost: {result:?}");
     denial_persisted(&id).expect("the pre-removal denial remains acknowledged");
     let (grant, barrier) = current(&id);
@@ -2090,7 +2098,8 @@ async fn failed_marker_still_persists_narrowing_but_refuses_widening() {
             original["folderScope"]["access"] = json!("read");
         }
         set_thread_conversation_capabilities(app.handle().clone(), id.clone(), original.clone()).await.unwrap();
-        let markers = data_dir.join("conversation-denials");
+        let markers = denial_store(&id).parent().unwrap().to_owned();
+        assert!(markers.starts_with(&*data_dir), "fault targets the platform denial store directory");
         fs::remove_dir_all(&markers).unwrap();
         fs::write(&markers, b"blocked").unwrap();
         let mut requested = capability_grant(false);
@@ -2120,7 +2129,8 @@ async fn failed_marker_narrowing_reports_metadata_sync_failure() {
         .await.unwrap();
     let id = created["id"].as_str().unwrap().to_string();
     set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true)).await.unwrap();
-    let markers = data_dir.join("conversation-denials");
+    let markers = denial_store(&id).parent().unwrap().to_owned();
+    assert!(markers.starts_with(&*data_dir), "fault targets the platform denial store directory");
     fs::remove_dir_all(&markers).unwrap();
     fs::write(&markers, b"blocked").unwrap();
     *super::capabilities::FAIL_CONSENT_DIR_SYNC.lock().unwrap() = Some(id.clone());
@@ -2170,7 +2180,8 @@ async fn failed_marker_narrows_folder_with_global_flags_overlaid() {
         let mut original = capability_grant(false);
         original["folderScope"] = json!({"path":folder_path,"access":"write"});
         set_thread_conversation_capabilities(app.handle().clone(), id.clone(), original).await.unwrap();
-        let markers = data_dir.join("conversation-denials");
+        let markers = denial_store(&id).parent().unwrap().to_owned();
+        assert!(markers.starts_with(&*data_dir), "fault targets the platform denial store directory");
         fs::remove_dir_all(&markers).unwrap();
         fs::write(&markers, b"blocked").unwrap();
         let mut requested = capability_grant(true);
@@ -2221,4 +2232,385 @@ fn narrowing_fallback_global_flags_never_allow_folder_widening() {
         assert!(error.contains("widen"), "{error}");
         assert_eq!(fs::read(path).unwrap(), before);
     }
+}
+
+// ---- Final host safety: truthful confirm failure, fail-closed listing ----
+
+fn listed(threads: &[serde_json::Value], id: &str) -> serde_json::Value {
+    threads.iter().find(|t| t["id"] == id).cloned().expect("thread is listed")
+}
+
+async fn create_cowork(app: &tauri::App<MockRuntime>, title: &str) -> String {
+    let mut input = create_test_thread(title);
+    input["metadata"] = json!({"mode":"cowork","coworkSessionId":"session-1"});
+    let created = create_thread(app.handle().clone(), input).await.unwrap();
+    created["id"].as_str().unwrap().to_string()
+}
+
+// A failed confirmation must say what is true. Unix removes a marker (the
+// directory fault fails the remove, no compensation needed); a ledger backend
+// fails CONFIRM and its compensating DENY (outcome unknown). Either way the
+// in-process denial and the delete barrier stay, and a retry repairs the store.
+#[tokio::test]
+async fn failed_confirmation_is_truthful_keeps_barriers_and_retry_repairs() {
+    use tauri_plugin_agent_tools::thread_capabilities::{
+        confirm_failure, confirm_rollback_failed, current, denial_persisted,
+    };
+    let folder = authority_folder_path("confirm-failure-tree");
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    // Cowork: only Cowork listings carry the denied-folder annotation.
+    let id = create_cowork(&app, "confirm-failure").await;
+    let mut previous = capability_grant(false);
+    previous["folderScope"] = json!({"path":folder,"access":"read"});
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), previous.clone()).await.unwrap();
+    assert!(current(&id).0.folder_scope.is_some());
+
+    let mut widened = capability_grant(true);
+    widened["folderScope"] = json!({"path":folder,"access":"write"});
+    SETTER_BREAK_STORE_BEFORE_CONFIRM.lock().unwrap().push(id.clone());
+    let result = set_thread_conversation_capabilities(app.handle().clone(), id.clone(), widened.clone()).await;
+    SETTER_BREAK_STORE_BEFORE_CONFIRM.lock().unwrap().retain(|armed| armed != &id);
+    let error = result.unwrap_err();
+    assert!(confirm_failure(&id).is_some(), "the plugin recorded the failed confirmation: {error}");
+    let unknown = confirm_rollback_failed(&id);
+    assert_eq!(unknown, !cfg!(unix), "ledger backends cannot compensate a broken store");
+    assert!(!error.contains("concurrent change"), "not misreported as concurrency: {error}");
+    let stored = |data_dir: &std::path::Path| -> serde_json::Value {
+        serde_json::from_slice::<serde_json::Value>(
+            &fs::read(get_thread_metadata_path(data_dir, &id).unwrap()).unwrap(),
+        ).unwrap()["metadata"]["conversationCapabilities"].clone()
+    };
+    if unknown {
+        assert!(error.contains("may return after a crash"), "{error}");
+        assert!(error.contains("narrowed"), "{error}");
+        // Second durable channel: a late CONFIRM now meets all-off metadata.
+        assert_eq!(stored(&data_dir), capability_grant(false));
+    } else {
+        assert!(error.contains("could not be activated"), "{error}");
+        assert!(!error.contains("may return after a crash"), "{error}");
+        assert_eq!(stored(&data_dir), widened, "no compensation failure, no extra narrowing");
+    }
+    // In-process denial and delete barrier are never relaxed.
+    let live = current(&id).0;
+    assert!(live.folder_scope.is_none() && !live.shell_network && !live.memory_write);
+    assert!(denial_persisted(&id).is_err());
+    assert!(delete_thread(app.handle().clone(), id.clone()).await.is_err());
+    assert!(get_thread_dir(&data_dir, &id).unwrap().exists(), "blocked delete removes nothing");
+    // Listing: effective scope is null and the attempted path is display-only.
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    let metadata = &listed(&threads, &id)["metadata"];
+    assert!(metadata["conversationCapabilities"]["folderScope"].is_null());
+    // Both backends keep the attempted path for display: Unix stores the grant,
+    // a ledger backend narrowed to all-off but retained a host-owned marker.
+    assert_eq!(metadata[super::capabilities::DENIED_FOLDER_KEY], json!({"denied":true,"path":folder}));
+    if !cfg!(unix) {
+        assert_eq!(stored(&data_dir), capability_grant(false), "marker is never authority");
+    }
+
+    // Repair the store; a retry revokes first (repairing the ledger) and then confirms.
+    let store = denial_store(&id);
+    fs::remove_dir_all(&store).unwrap();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), previous.clone())
+        .await.expect("retry repairs the store and confirms");
+    denial_persisted(&id).unwrap();
+    assert_eq!(current(&id).0.folder_scope.unwrap().path, folder);
+
+    // Positive control: a confirmed folder is effective and unannotated; an
+    // explicit detach is a stored null scope, also unannotated (never the
+    // stored-but-denied path asserted above).
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    let metadata = &listed(&threads, &id)["metadata"];
+    assert_eq!(metadata["conversationCapabilities"]["folderScope"]["path"], json!(folder));
+    assert!(metadata.get(super::capabilities::DENIED_FOLDER_KEY).is_none(), "confirmed: no annotation");
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(false))
+        .await.expect("explicit detach");
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    let metadata = &listed(&threads, &id)["metadata"];
+    assert!(metadata["conversationCapabilities"]["folderScope"].is_null());
+    assert!(metadata.get(super::capabilities::DENIED_FOLDER_KEY).is_none(), "detach is not stored-but-denied");
+}
+
+#[test]
+fn rollback_failed_error_narrows_metadata_and_reports_narrowing_failure() {
+    let root = tempfile::tempdir().unwrap();
+    let folder = authority_folder_path("rollback-failed-tree");
+    let id = "rollback-failed";
+    ensure_thread_dir_exists(root.path(), id).unwrap();
+    let mut g2 = capability_grant(true);
+    g2["folderScope"] = json!({"path":folder,"access":"write"});
+    let record = json!({"id":id,"metadata":{"mode":"cowork","conversationCapabilities":g2}});
+    update_thread_metadata(root.path(), id, &record).unwrap();
+    let error = super::capabilities::confirm_failure_error(
+        root.path(), id, Some("injected".into()), true);
+    assert!(error.contains("may return after a crash") && error.contains("narrowed"), "{error}");
+    assert!(!error.contains("not granted"), "{error}");
+    let stored: serde_json::Value = serde_json::from_slice(
+        &fs::read(get_thread_metadata_path(root.path(), id).unwrap()).unwrap()).unwrap();
+    assert_eq!(stored["metadata"]["conversationCapabilities"], capability_grant(false));
+    assert_eq!(stored["metadata"]["mode"], "cowork", "nothing else changes");
+    // Platform-independent: the narrowed record retains the attempted path as a
+    // display-only marker (the Windows ledger path), never as authority.
+    assert_eq!(stored["metadata"][super::capabilities::ATTEMPTED_FOLDER_KEY], json!({"path":folder}));
+
+    // Narrowing itself failing is reported, never hidden.
+    fs::remove_file(get_thread_metadata_path(root.path(), id).unwrap()).unwrap();
+    let error = super::capabilities::confirm_failure_error(
+        root.path(), id, Some("injected".into()), true);
+    assert!(error.contains("Narrowing saved permissions also failed"), "{error}");
+    assert!(error.contains("durability is not assured"), "{error}");
+    // The other kinds do not touch metadata and say what is true.
+    let plain = super::capabilities::confirm_failure_error(root.path(), id, Some("x".into()), false);
+    assert!(plain.contains("could not be activated") && plain.contains("access stays off"), "{plain}");
+    let race = super::capabilities::confirm_failure_error(root.path(), id, None, false);
+    assert!(race.contains("concurrent change"), "{race}");
+}
+
+// A persisted Cowork read-only folder and a persisted detach are host
+// authority: listing returns them explicitly. A detach is `folderScope:null`
+// PRESENT, which the frontend must not confuse with an absent legacy record.
+#[tokio::test]
+async fn cowork_read_only_and_detach_are_restored_from_the_host() {
+    let folder = authority_folder_path("cowork-ro-tree");
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let id = create_cowork(&app, "cowork-restore").await;
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    assert!(listed(&threads, &id)["metadata"].get("conversationCapabilities").is_none(),
+        "no host record: legacy default, not a grant");
+
+    let mut read_only = capability_grant(false);
+    read_only["folderScope"] = json!({"path":folder,"access":"read"});
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), read_only.clone()).await.unwrap();
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    assert_eq!(listed(&threads, &id)["metadata"]["conversationCapabilities"], read_only);
+
+    // Restart: a fresh host mirror. Unix restores the saved grant; the positive
+    // ledger backend needs a durable CONFIRM for this identity, so it is denied
+    // explicitly -- present and all-off, never absent.
+    let mut stored: serde_json::Value = serde_json::from_slice(
+        &fs::read(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap()).unwrap();
+    let restarted = uuid::Uuid::new_v4().to_string();
+    stored["id"] = json!(restarted);
+    ensure_thread_dir_exists(&data_dir, &restarted).unwrap();
+    update_thread_metadata(&data_dir, &restarted, &stored).unwrap();
+    let after = super::capabilities::read_cowork_capabilities(&data_dir, &restarted).await.unwrap();
+    assert_eq!(after, if cfg!(unix) { read_only.clone() } else { capability_grant(false) });
+    assert!(after["folderScope"].is_object() == cfg!(unix));
+
+    // Detach is authoritative and never resurrects the folder.
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(false)).await.unwrap();
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    let detached = &listed(&threads, &id)["metadata"]["conversationCapabilities"];
+    assert!(detached.is_object() && detached["folderScope"].is_null(), "{detached}");
+    stored["metadata"]["conversationCapabilities"] = detached.clone();
+    stored["id"] = json!(uuid::Uuid::new_v4().to_string());
+    let detached_restart = stored["id"].as_str().unwrap().to_string();
+    ensure_thread_dir_exists(&data_dir, &detached_restart).unwrap();
+    update_thread_metadata(&data_dir, &detached_restart, &stored).unwrap();
+    let after = super::capabilities::read_cowork_capabilities(&data_dir, &detached_restart).await.unwrap();
+    assert_eq!(after, capability_grant(false));
+}
+
+// A host read error must never drop the field (the frontend would default a
+// Cowork folder to writable): list_threads fails closed with an explicit
+// all-off grant and the reason.
+#[tokio::test]
+async fn list_threads_fails_closed_on_host_capability_read_errors() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let cowork = create_cowork(&app, "list-cowork-bad").await;
+    let chat = create_thread(app.handle().clone(), create_test_thread("list-chat-bad"))
+        .await.unwrap()["id"].as_str().unwrap().to_string();
+    for id in [&cowork, &chat] {
+        let path = get_thread_metadata_path(&data_dir, id).unwrap();
+        let mut record: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        if !record["metadata"].is_object() { record["metadata"] = json!({}); }
+        record["metadata"]["conversationCapabilities"] = json!({"version":2});
+        update_thread_metadata(&data_dir, id, &record).unwrap();
+    }
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    for id in [&cowork, &chat] {
+        let metadata = &listed(&threads, id)["metadata"];
+        assert_eq!(metadata["conversationCapabilities"], capability_grant(false), "{id}");
+        assert!(metadata["conversationCapabilitiesError"].is_string(), "{id}");
+    }
+    // The annotation is list-only: a UI round trip never persists it.
+    let mut echoed = listed(&threads, &cowork);
+    echoed["metadata"]["conversationCapabilities"] = capability_grant(true);
+    modify_thread(app.handle().clone(), echoed).await.unwrap();
+    let stored: serde_json::Value = serde_json::from_slice(
+        &fs::read(get_thread_metadata_path(&data_dir, &cowork).unwrap()).unwrap()).unwrap();
+    assert!(stored["metadata"].get("conversationCapabilitiesError").is_none());
+    assert_eq!(stored["metadata"]["conversationCapabilities"], json!({"version":2}));
+}
+
+#[test]
+fn apply_listed_capabilities_is_explicit_on_every_branch() {
+    use super::capabilities::apply_listed_capabilities as apply;
+    let mut t = json!({"id":"a","metadata":{"mode":"cowork"}});
+    apply(&mut t, true, Ok(json!(null)));
+    assert!(t["metadata"].get("conversationCapabilities").is_none());
+    let mut t = json!({"id":"a","metadata":null});
+    apply(&mut t, false, Err("boom".into()));
+    assert_eq!(t["metadata"]["conversationCapabilities"], capability_grant(false));
+    assert_eq!(t["metadata"]["conversationCapabilitiesError"], "boom");
+    let mut t = json!({"id":"a","metadata":{"mode":"cowork","conversationCapabilities":capability_grant(true)}});
+    apply(&mut t, true, Err("boom".into()));
+    assert_eq!(t["metadata"]["conversationCapabilities"], capability_grant(false));
+    let mut t = json!({"id":"a","metadata":{"conversationCapabilitiesError":"old"}});
+    apply(&mut t, false, Ok(capability_grant(false)));
+    assert!(t["metadata"].get("conversationCapabilitiesError").is_none());
+}
+
+// A stored folder grant the in-process mirror denies (revoked in memory, or a
+// failed confirmation) is not a detach: listing keeps the effective grant
+// folder-less AND reports the stored path as a display-only annotation.
+#[tokio::test]
+async fn list_threads_annotates_stored_folder_the_mirror_denies_but_not_a_true_detach() {
+    use super::capabilities::DENIED_FOLDER_KEY;
+    use tauri_plugin_agent_tools::thread_capabilities::{current, deny_in_memory};
+    let folder = authority_folder_path("denied-display-tree");
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let id = create_cowork(&app, "denied-display").await;
+    let mut stored_grant = capability_grant(false);
+    stored_grant["folderScope"] = json!({"path":folder,"access":"write"});
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), stored_grant).await.unwrap();
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    assert!(listed(&threads, &id)["metadata"].get(DENIED_FOLDER_KEY).is_none(), "granted: no annotation");
+
+    // In-process revoke: the stored grant stays, the mirror denies it.
+    deny_in_memory(&id);
+    assert!(current(&id).0.folder_scope.is_none());
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    let metadata = &listed(&threads, &id)["metadata"];
+    assert!(metadata["conversationCapabilities"].is_object());
+    assert!(metadata["conversationCapabilities"]["folderScope"].is_null(), "effective scope is never widened");
+    assert_eq!(metadata[DENIED_FOLDER_KEY], json!({"denied":true,"path":folder}));
+    assert!(metadata[DENIED_FOLDER_KEY].get("access").is_none(), "display path, never an access level");
+
+    // True detach: stored folderScope null has no annotation.
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(false)).await.unwrap();
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    let metadata = &listed(&threads, &id)["metadata"];
+    assert!(metadata["conversationCapabilities"]["folderScope"].is_null());
+    assert!(metadata.get(DENIED_FOLDER_KEY).is_none(), "detach is not a denied folder");
+}
+
+// Failed confirmation of a widened Cowork grant keeps the folder visible but
+// inactive: Unix retains the stored grant; the ledger backend narrows to all-off
+// and retains only the host-owned attempted-folder display marker.
+#[tokio::test]
+async fn list_threads_keeps_failed_confirmation_folder_visible_without_authority() {
+    use super::capabilities::DENIED_FOLDER_KEY;
+    let folder = authority_folder_path("denied-display-confirm-tree");
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let id = create_cowork(&app, "denied-display-confirm").await;
+    let mut previous = capability_grant(false);
+    previous["folderScope"] = json!({"path":folder,"access":"read"});
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), previous).await.unwrap();
+    let mut widened = capability_grant(true);
+    widened["folderScope"] = json!({"path":folder,"access":"write"});
+    SETTER_BREAK_STORE_BEFORE_CONFIRM.lock().unwrap().push(id.clone());
+    let result = set_thread_conversation_capabilities(app.handle().clone(), id.clone(), widened).await;
+    SETTER_BREAK_STORE_BEFORE_CONFIRM.lock().unwrap().retain(|armed| armed != &id);
+    assert!(result.is_err());
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    let metadata = &listed(&threads, &id)["metadata"];
+    assert!(metadata["conversationCapabilities"]["folderScope"].is_null());
+    assert_eq!(metadata[DENIED_FOLDER_KEY], json!({"denied":true,"path":folder}));
+    assert!(metadata[DENIED_FOLDER_KEY].get("access").is_none());
+}
+
+// The attempted-folder marker is display-only, host-owned and never authority:
+// forged/invalid markers are ignored or stripped, and a true detach clears it.
+#[tokio::test]
+async fn attempted_folder_marker_is_display_only_validated_and_cleared_by_detach() {
+    use super::capabilities::{ATTEMPTED_FOLDER_KEY, DENIED_FOLDER_KEY};
+    let folder = authority_folder_path("attempted-marker-tree");
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let id = create_cowork(&app, "attempted-marker").await;
+    let path = get_thread_metadata_path(&data_dir, &id).unwrap();
+    let read = || -> serde_json::Value { serde_json::from_slice(&fs::read(&path).unwrap()).unwrap() };
+    // Narrowed record + marker (what a failed compensation leaves behind).
+    let mut record = read();
+    record["metadata"]["conversationCapabilities"] = capability_grant(false);
+    record["metadata"][ATTEMPTED_FOLDER_KEY] = json!({"path":folder});
+    update_thread_metadata(&data_dir, &id, &record).unwrap();
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    let metadata = &listed(&threads, &id)["metadata"];
+    assert!(metadata["conversationCapabilities"]["folderScope"].is_null(), "never authority");
+    assert!(metadata.get(ATTEMPTED_FOLDER_KEY).is_none(), "raw marker is not listed");
+    assert_eq!(metadata[DENIED_FOLDER_KEY], json!({"denied":true,"path":folder}));
+    let effective = super::capabilities::read_cowork_capabilities(&data_dir, &id).await.unwrap();
+    assert_eq!(effective, capability_grant(false));
+
+    // A whole-record UI update can neither forge nor erase the marker.
+    let mut echoed = listed(&threads, &id);
+    echoed["metadata"][ATTEMPTED_FOLDER_KEY] = json!({"path":"/etc"});
+    echoed["metadata"][DENIED_FOLDER_KEY] = json!({"denied":true,"path":"/etc"});
+    modify_thread(app.handle().clone(), echoed).await.unwrap();
+    assert_eq!(read()["metadata"][ATTEMPTED_FOLDER_KEY], json!({"path":folder}));
+    assert!(read()["metadata"].get(DENIED_FOLDER_KEY).is_none());
+
+    // Invalid identity/path shapes are ignored.
+    for bad in [json!({"path":"relative/dir"}), json!({"path":"/a/../b"}), json!({"path":folder,"access":"write"}),
+                json!({"path":7}), json!("/etc"), json!({"path":" /padded"})] {
+        let mut record = read();
+        record["metadata"][ATTEMPTED_FOLDER_KEY] = bad.clone();
+        update_thread_metadata(&data_dir, &id, &record).unwrap();
+        let threads = list_threads(app.handle().clone()).await.unwrap();
+        let metadata = &listed(&threads, &id)["metadata"];
+        assert!(metadata.get(DENIED_FOLDER_KEY).is_none(), "{bad}");
+        assert!(metadata["conversationCapabilities"]["folderScope"].is_null(), "{bad}");
+    }
+
+    // A marker beside a stored all-off record is cleared by a true detach.
+    let mut record = read();
+    record["metadata"][ATTEMPTED_FOLDER_KEY] = json!({"path":folder});
+    update_thread_metadata(&data_dir, &id, &record).unwrap();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(false)).await.unwrap();
+    assert!(read()["metadata"].get(ATTEMPTED_FOLDER_KEY).is_none(), "detach clears the marker");
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    assert!(listed(&threads, &id)["metadata"].get(DENIED_FOLDER_KEY).is_none());
+
+    // Create strips a forged marker.
+    let mut input = create_test_thread("forged-attempted");
+    input["metadata"] = json!({"mode":"cowork",ATTEMPTED_FOLDER_KEY:{"path":"/etc"}});
+    let created = create_thread(app.handle().clone(), input).await.unwrap();
+    assert!(created["metadata"].get(ATTEMPTED_FOLDER_KEY).is_none());
+}
+
+// The annotation is list-only: create and modify strip a forged or echoed one.
+#[tokio::test]
+async fn denied_folder_annotation_is_stripped_on_create_and_modify() {
+    use super::capabilities::DENIED_FOLDER_KEY;
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let forged = json!({"denied":true,"path":"/etc"});
+    let mut input = create_test_thread("forged-annotation");
+    input["metadata"] = json!({"mode":"cowork","coworkSessionId":"session-1",DENIED_FOLDER_KEY:forged});
+    let created = create_thread(app.handle().clone(), input).await.unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    let read = |data_dir: &std::path::Path| -> serde_json::Value {
+        serde_json::from_slice(&fs::read(get_thread_metadata_path(data_dir, &id).unwrap()).unwrap()).unwrap()
+    };
+    assert!(created["metadata"].get(DENIED_FOLDER_KEY).is_none());
+    assert!(read(&data_dir)["metadata"].get(DENIED_FOLDER_KEY).is_none(), "create strips it");
+
+    let mut echoed = created.clone();
+    echoed["metadata"][DENIED_FOLDER_KEY] = forged;
+    modify_thread(app.handle().clone(), echoed).await.unwrap();
+    let stored = read(&data_dir);
+    assert!(stored["metadata"].get(DENIED_FOLDER_KEY).is_none(), "modify strips it");
+    assert_eq!(stored["metadata"]["mode"], "cowork", "nothing else changes");
+}
+
+#[test]
+fn listed_denied_folder_none_clears_a_stale_display_annotation() {
+    use super::capabilities::{apply_listed_denied_folder, DENIED_FOLDER_KEY};
+    let mut thread = json!({"metadata": {
+        "conversationCapabilities": {"version":1,"folderScope":null,"shellNetwork":false,"memoryWrite":false},
+        "conversationCapabilitiesDenied": {"denied":true,"path":"/old-folder"}
+    }});
+    let grant = thread["metadata"]["conversationCapabilities"].clone();
+    apply_listed_denied_folder(&mut thread, None);
+    assert!(thread["metadata"].get(DENIED_FOLDER_KEY).is_none());
+    assert_eq!(thread["metadata"]["conversationCapabilities"], grant);
 }

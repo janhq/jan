@@ -98,6 +98,12 @@ import { CoworkAskCard } from '@/containers/CoworkAskCard'
 import { CoworkChatTransport } from '@/lib/coworkTransport'
 import { getCoworkEnvironment } from '@/lib/coworkEnv'
 import { dispatchCoworkTool } from '@/lib/coworkDispatch'
+import {
+  coworkFolderGrant,
+  liveCoworkFolderGrant,
+  setCoworkFolderGrant,
+} from '@/lib/coworkFolderAccess'
+import { isConversationFolderPath } from '@/lib/conversationCapabilities'
 import { createConversationToolHandlers } from '@/lib/conversationToolHandlers'
 import { conversationTodos, resolveConversationTodos } from '@/lib/conversationTaskPresentation'
 import { TODO_TOOL_NAME } from '@/lib/coworkTools'
@@ -194,6 +200,12 @@ function sessionMonitorLane(sid: string): MonitorLane {
   }))
 }
 
+/** The folder and access the host acknowledged, read at each tool call. */
+const liveFolder = (sid: string) => {
+  const grant = liveCoworkFolderGrant(sid)
+  return { readOnlyFolder: grant.folder, folderAccess: grant.access }
+}
+
 export function CoworkPage() {
   const { t } = useTranslation()
   const { folders: projects } = useThreadManagement()
@@ -208,9 +220,18 @@ export function CoworkPage() {
     [sessions, currentId]
   )
   const unavailable = !!session?.unavailable
+  // The pill shows the attached folder; tools only get one the host grants.
   const folder = session?.folder ?? null
+  // A missing host grant (legacy session) is inactive, never write.
+  const folderAccess = session?.folder ? session.folderAccess ?? null : null
+  // Skills, git and tools only ever see a folder the host has granted.
+  const grantedFolder = coworkFolderGrant(session).folder
+  // In-flight grant saves per session. Overlapping requests and session switches
+  // must not clear or leak each other's busy state.
+  const [folderSavePending, setFolderSavePending] = useState<Record<string, number>>({})
+  const folderSaving = !!currentId && (folderSavePending[currentId] ?? 0) > 0
 
-  const { skills: skillCommands, invoke: invokeSkillCommand } = useSkills(folder)
+  const { skills: skillCommands, invoke: invokeSkillCommand } = useSkills(grantedFolder)
   const planMode = session?.planMode ?? false
 
   const running = useCoworkRun((s) => !!(currentId && s.runId[currentId]))
@@ -310,25 +331,67 @@ export function CoworkPage() {
   }, [])
 
   useEffect(() => {
-    if (!folder) {
+    if (!grantedFolder) {
       setGitBranch(null)
       return
     }
-    invoke<string | null>('agent_git_branch', { project: folder })
+    invoke<string | null>('agent_git_branch', { project: grantedFolder })
       .then(setGitBranch)
       .catch(() => setGitBranch(null))
-  }, [folder])
+  }, [grantedFolder])
+
+  // Every folder change goes through the host's strict setter; the session only
+  // changes after the host accepts it. A failure leaves the folder visible with
+  // no access (the setter has already narrowed the host).
+  const saveFolderGrant = useCallback(
+    async (sid: string, scope: { path: string; access: 'read' | 'write' } | null) => {
+      setFolderSavePending((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }))
+      try {
+        await setCoworkFolderGrant(sid, scope)
+      } catch {
+        toast.error(t('common:conversationScope.saveFailed'))
+      } finally {
+        setFolderSavePending((p) => {
+          const { [sid]: count = 0, ...rest } = p
+          return count > 1 ? { ...rest, [sid]: count - 1 } : rest
+        })
+      }
+    },
+    [t]
+  )
 
   const attachFolder = useCallback(async () => {
     const picked = await serviceHub.dialog().open({ directory: true })
     if (typeof picked !== 'string') return
+    if (!isConversationFolderPath(picked)) {
+      toast.error(t('common:conversationScope.invalidFolder'))
+      return
+    }
     const sid = ensureCurrentSession()
-    useCoworkSessions.getState().setFolder(sid, picked)
-  }, [serviceHub])
+    // A new folder is read and write, as Cowork always was.
+    await saveFolderGrant(sid, { path: picked, access: 'write' })
+  }, [serviceHub, saveFolderGrant, t])
 
   const detachFolder = useCallback(() => {
-    if (session?.id) useCoworkSessions.getState().setFolder(session.id, null)
-  }, [session?.id])
+    if (session?.id) void saveFolderGrant(session.id, null)
+  }, [session?.id, saveFolderGrant])
+
+  // An inactive folder may be a denied read-only grant, not just a legacy
+  // session. Confirm read-only; write requires a separate explicit access change.
+  const allowFolderAccess = useCallback(() => {
+    if (session?.id && session.folder) {
+      void saveFolderGrant(session.id, { path: session.folder, access: 'read' })
+    }
+  }, [session?.id, session?.folder, saveFolderGrant])
+
+  const changeFolderAccess = useCallback(
+    (access: 'read' | 'write') => {
+      if (session?.id && session.folder) {
+        void saveFolderGrant(session.id, { path: session.folder, access })
+      }
+    },
+    [session?.id, session?.folder, saveFolderGrant]
+  )
 
   // `liveTurns` holds only the rows this run has produced — `commitTurns`
   // appends them — so the committed transcript has to be shown alongside it or
@@ -677,7 +740,7 @@ export function CoworkPage() {
           allowSubagents: true,
           webSearch,
           workspacePath,
-          readOnlyFolder: current?.folder ?? null,
+          readOnlyFolder: coworkFolderGrant(current).folder,
         }
         const transport = new CoworkChatTransport(sid, runConfig)
         await transport.refreshTools()
@@ -824,7 +887,7 @@ export function CoworkPage() {
                   signal,
                   advertisedTools: transport.advertisedTools,
                   sessionId: sid,
-                  readOnlyFolder: current?.folder ?? null,
+                  ...liveFolder(sid),
                   planMode: runConfig.planMode,
                   failedReadPaths,
                   webSearch,
@@ -923,7 +986,7 @@ export function CoworkPage() {
                           parentTools: transport.advertisedTools,
                           system: {
                             workspacePath,
-                            readOnlyFolder: current?.folder ?? null,
+                            readOnlyFolder: coworkFolderGrant(current).folder,
                             bashAvailable: sandboxEnforces(),
                             environment,
                           },
@@ -944,7 +1007,7 @@ export function CoworkPage() {
                               signal,
                               advertisedTools: transport.advertisedTools,
                               sessionId: sid,
-                              readOnlyFolder: current?.folder ?? null,
+                              ...liveFolder(sid),
                               planMode: current?.planMode ?? false,
                               webSearch,
                               // A child has no inbox for a watcher to ping.
@@ -1884,7 +1947,7 @@ export function CoworkPage() {
                 )}
                 {folder && (
                   <div className="mb-2 flex items-center gap-2">
-                    <CoworkWorkspacePill folder={folder} gitBranch={gitBranch} onAttach={() => void attachFolder()} onDetach={detachFolder} />
+                    <CoworkWorkspacePill folder={folder} gitBranch={gitBranch} access={folderAccess} saving={folderSaving} onAccessChange={changeFolderAccess} onAllowAccess={allowFolderAccess} onAttach={() => void attachFolder()} onDetach={detachFolder} />
                   </div>
                 )}
                 <ChatInput
@@ -1902,7 +1965,7 @@ export function CoworkPage() {
                   onStop={handleStop}
                   chatStatus={running ? 'streaming' : 'ready'}
                   tokenSource={tokenSource}
-                  menuWorkspace={<CoworkComposerMenu section="workspace" projects={projects} projectId={session?.project?.id} onAttachFolder={() => void attachFolder()} onSelectProject={(project) => {
+                  menuWorkspace={<CoworkComposerMenu section="workspace" projects={projects} projectId={session?.project?.id} onAttachFolder={folderSaving ? undefined : () => void attachFolder()} onSelectProject={(project) => {
                     if (session?.id) updateThreadProject(session.id, project)
                   }} />}
                   menuControls={<CoworkComposerMenu section="controls" planMode={planMode} onPlanChange={(next) => {

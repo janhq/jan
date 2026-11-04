@@ -727,6 +727,46 @@ describe('coworkPersistence write protocol', () => {
     expect(b.threads.has('a')).toBe(false)
   })
 
+  it('a late flush after delete never recreates the sidecar or thread', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50 })
+    p.schedule(session('a'))
+    await p.flush()
+    p.schedule(session('a', { title: 'late' }))
+    await p.remove('a')
+    b.log.length = 0
+    await p.flush()
+    await vi.advanceTimersByTimeAsync(1000)
+    p.schedule(session('a', { title: 'later' }), { allowEmpty: true })
+    await p.flush()
+    expect(b.log.filter((l) => l.startsWith('write_thread_extra'))).toEqual([])
+    expect(b.extras.has('a')).toBe(false)
+    expect(b.threads.has('a')).toBe(false)
+  })
+
+  it('a first write queued behind the tombstone does not create the sidecar (create: true)', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50 })
+    p.schedule(session('n'))
+    await vi.advanceTimersByTimeAsync(10) // write dispatched, never persisted before remove
+    await p.remove('n')
+    await p.flush()
+    expect(b.extras.has('n')).toBe(false)
+    expect(b.threads.has('n')).toBe(false)
+  })
+
+  it('never writes host-owned conversationCapabilities back from stale metadata', async () => {
+    const stale = { version: 1, folderScope: { path: '/proj', access: 'write' }, shellNetwork: true, memoryWrite: true }
+    const existing = { id: 'a', created: 1, metadata: { mode: 'cowork', conversationCapabilities: stale } }
+    expect(sessionToThreadRecord(session('a'), existing).metadata.conversationCapabilities).toBeUndefined()
+
+    b.threads.set('a', { ...existing, assistants: [], metadata: { mode: 'cowork', folder: '/proj' } })
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 5, retryMs: 50 })
+    p.adopt([existing])
+    p.schedule(session('a', { title: 'edit' }))
+    await p.flush()
+    expect(b.threads.get('a')!.metadata.conversationCapabilities).toBeUndefined()
+    expect(b.threads.get('a')!.title).toBe('edit')
+  })
+
   it('isMissingThreadError accepts only the host code, as a string, Error or {message}', () => {
     expect(isMissingThreadError('thread_missing: x')).toBe(true)
     expect(isMissingThreadError(new Error('thread_missing: x'))).toBe(true)
@@ -863,6 +903,60 @@ describe('thread record mapping', () => {
     expect(back.updated).toBe(1_700_000_000_000)
   })
 
+  describe('host-acknowledged folder access', () => {
+    const restore = (meta: Json) =>
+      sessionFromThread(
+        { id: 'a', title: 'T', updated: 1, metadata: { mode: 'cowork', folder: '/proj', ...meta }, assistants: [] },
+        { version: 1, turns: [], messages: [] }
+      )
+    const caps = (folderScope: Json | null) => ({
+      version: 1, folderScope, shellNetwork: true, memoryWrite: true,
+    })
+
+    it('leaves access absent when the host holds no record (legacy, inactive)', () => {
+      expect('folderAccess' in restore({})).toBe(false)
+    })
+
+    it('restores a stored read-only grant as read, never write', () => {
+      const s = restore({ conversationCapabilities: caps({ path: '/proj', access: 'read' }) })
+      expect(s.folderAccess).toBe('read')
+    })
+
+    it('restores a stored write grant as write', () => {
+      expect(restore({ conversationCapabilities: caps({ path: '/proj', access: 'write' }) }).folderAccess).toBe('write')
+    })
+
+    it('hydrates a valid record from its own folderScope, not stale metadata.folder', () => {
+      const s = restore({ conversationCapabilities: caps({ path: '/other', access: 'read' }) })
+      expect(s.folder).toBe('/other')
+      expect(s.folderAccess).toBe('read')
+    })
+
+    it('treats an explicit detach record as no folder and no access', () => {
+      const s = restore({ conversationCapabilities: caps(null) })
+      expect(s.folder).toBeNull()
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it.each([
+      ['a malformed record', { version: 1, folderScope: { path: '/proj', access: 'admin' } }],
+      ['a record with a malformed path', caps({ path: 'relative', access: 'write' })],
+    ])('is denied (null), not the legacy default, for %s', (_name, stored) => {
+      const s = restore({ conversationCapabilities: stored })
+      expect(s.folder).toBe('/proj')
+      expect(s.folderAccess).toBeNull()
+    })
+
+
+    it('hydrates a host read error (explicit null record) as denied, never the legacy default', () => {
+      expect(restore({ conversationCapabilities: null }).folderAccess).toBeNull()
+    })
+
+    it('an absent or undefined record is still the legacy default', () => {
+      expect('folderAccess' in restore({ conversationCapabilities: undefined })).toBe(false)
+    })
+  })
+
   it('does not rewrite created and drops cleared plan mode / goal', () => {
     const rec = sessionToThreadRecord(session('a'), {
       id: 'a',
@@ -884,6 +978,181 @@ describe('loadCoworkSessions', () => {
     b.threads.set(id, { ...sessionToThreadRecord(session(id, extra)) })
     b.extras.set(id, { version: 1, turns: session(id).turns, messages: session(id).messages })
   }
+
+  const hostCaps = (folderScope: Json | null) => ({
+    version: 1, folderScope, shellNetwork: true, memoryWrite: true,
+  })
+  const seedStale = (id: string, stored: unknown) => {
+    // metadata.folder is still A: the debounced flush has not run yet.
+    b.threads.set(id, {
+      id, title: 'T', updated: 1, assistants: [],
+      metadata: { mode: 'cowork', folder: '/folderA', conversationCapabilities: stored },
+    })
+    b.extras.set(id, { version: 1, turns: [], messages: [] })
+  }
+  const loadOne = async (id: string) =>
+    (await loadCoworkSessions(b.invoke, { migrationSettled: true })).sessions.find((x) => x.id === id)!
+
+  it.each([['write'], ['read']] as const)(
+    'reload between the strict setter and the debounced flush hydrates acknowledged folder B with %s access',
+    async (access) => {
+      seedStale('a', hostCaps({ path: '/folderB', access }))
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderB')
+      expect(s.folderAccess).toBe(access)
+    }
+  )
+
+  it('an explicit detach record hydrates as no folder and no access, not stale metadata A', async () => {
+    seedStale('a', hostCaps(null))
+    const s = await loadOne('a')
+    expect(s.folder).toBeNull()
+    expect(s.folderAccess).toBeNull()
+  })
+
+  it.each([
+    ['a host read error (null)', null],
+    ['a malformed record', { version: 1, folderScope: { path: '/folderB', access: 'admin' } }],
+  ])('stays denied for %s: metadata folder shown, no access', async (_n, stored) => {
+    seedStale('a', stored)
+    const s = await loadOne('a')
+    expect(s.folder).toBe('/folderA')
+    expect(s.folderAccess).toBeNull()
+  })
+
+  describe('actual host wire shape for a capability read error', () => {
+    // apply_listed_capabilities on Err: denied_value() + conversationCapabilitiesError.
+    const deniedValue = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
+    const seedReadError = (id: string, metadata: Json = {}) => {
+      b.threads.set(id, {
+        id, title: 'T', updated: 1, assistants: [],
+        metadata: {
+          mode: 'cowork', folder: '/folderA',
+          conversationCapabilities: deniedValue,
+          conversationCapabilitiesError: 'read failed',
+          ...metadata,
+        },
+      })
+      b.extras.set(id, { version: 1, turns: [], messages: [] })
+    }
+
+    it('keeps metadata folder for display with folderAccess null, not a detach', async () => {
+      seedReadError('a')
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderA')
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('a later flush does not erase the displayed folder', async () => {
+      seedReadError('a')
+      const s = await loadOne('a')
+      const rec = sessionToThreadRecord(s, b.threads.get('a'))
+      expect(rec.metadata.folder).toBe('/folderA')
+      expect(rec.metadata.conversationCapabilities).toBeUndefined()
+      expect(rec.metadata.conversationCapabilitiesError).toBeUndefined()
+    })
+
+    it('a true acknowledged detach (no error) still detaches over stale metadata A', async () => {
+      seedStale('a', deniedValue)
+      const s = await loadOne('a')
+      expect(s.folder).toBeNull()
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('acknowledged folder B still wins over stale metadata A when there is no error', async () => {
+      seedStale('a', hostCaps({ path: '/folderB', access: 'write' }))
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderB')
+      expect(s.folderAccess).toBe('write')
+    })
+  })
+
+  describe('actual host wire shape for a stored-but-denied folder', () => {
+    // apply_listed_denied_folder: the effective record is the all-off denied_value()
+    // (folderScope null) PLUS conversationCapabilitiesDenied {denied:true,path}.
+    const deniedValue = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
+    const seedDenied = (id: string, annotation: unknown, metadata: Json = {}) => {
+      b.threads.set(id, {
+        id, title: 'T', updated: 1, assistants: [],
+        metadata: {
+          mode: 'cowork', folder: '/folderA',
+          conversationCapabilities: deniedValue,
+          conversationCapabilitiesDenied: annotation,
+          ...metadata,
+        },
+      })
+      b.extras.set(id, { version: 1, turns: [], messages: [] })
+    }
+
+    it('preserves the stored path and stays inactive (folderAccess null), not a detach', async () => {
+      seedDenied('a', { denied: true, path: '/folderB' })
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderB')
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('never widens: the annotation carries no access, whatever extra fields it has', async () => {
+      seedDenied('a', { denied: true, path: '/folderB', access: 'write', folderAccess: 'write' })
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderB')
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('a read error still wins over the annotation', async () => {
+      seedDenied('a', { denied: true, path: '/folderB' }, { conversationCapabilitiesError: 'read failed' })
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderA')
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('an effective grant wins over a stray annotation', async () => {
+      seedDenied('a', { denied: true, path: '/folderB' }, {
+        conversationCapabilities: hostCaps({ path: '/folderC', access: 'read' }),
+      })
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderC')
+      expect(s.folderAccess).toBe('read')
+    })
+
+    it.each([
+      ['denied is not true', { denied: false, path: '/folderB' }],
+      ['denied is a string', { denied: 'true', path: '/folderB' }],
+      ['the path is relative', { denied: true, path: 'folderB' }],
+      ['the path is missing', { denied: true }],
+      ['the annotation is not an object', 'yes'],
+      ['the annotation is an array', [{ denied: true, path: '/folderB' }]],
+    ])('fails closed when %s: metadata folder shown, no access', async (_n, annotation) => {
+      seedDenied('a', annotation)
+      const s = await loadOne('a')
+      expect(s.folder).toBe('/folderA')
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('without the annotation the same all-off record is still a true detach', async () => {
+      seedStale('a', deniedValue)
+      const s = await loadOne('a')
+      expect(s.folder).toBeNull()
+      expect(s.folderAccess).toBeNull()
+    })
+
+    it('a later flush strips the annotation and keeps the displayed folder', async () => {
+      seedDenied('a', { denied: true, path: '/folderB' })
+      const s = await loadOne('a')
+      const rec = sessionToThreadRecord(s, b.threads.get('a'))
+      expect(rec.metadata.folder).toBe('/folderB')
+      expect(rec.metadata.conversationCapabilitiesDenied).toBeUndefined()
+      expect(rec.metadata.conversationCapabilities).toBeUndefined()
+      expect(rec.metadata.conversationCapabilitiesError).toBeUndefined()
+    })
+
+    it('strips the annotation even when the session was never loaded from it', () => {
+      const rec = sessionToThreadRecord(session('a'), {
+        id: 'a',
+        metadata: { mode: 'cowork', conversationCapabilitiesDenied: { denied: true, path: '/x' } },
+      })
+      expect('conversationCapabilitiesDenied' in rec.metadata).toBe(false)
+    })
+  })
 
   it('loads cowork threads only, newest first, and ignores chat threads', async () => {
     commit('old', { updated: 1_600_000_000_000 })

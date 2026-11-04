@@ -17,14 +17,20 @@ type Props = {
   /** Attached project folder, or null when the session is sandbox-only. */
   folder: string | null
   gitBranch?: string | null
-  /** What the agent may do in the folder. Old Cowork folders were always
-   * read and write, so that stays the default; a unified thread can grant read
-   * only, and the pill must not claim more than the grant. */
+  /** What the host has acknowledged for the folder: `'read'`, `'write'`, or
+   * `null` when it is inactive (no host grant, a denied/failed confirmation, or
+   * a host read error), which shows the confirmation control instead of an
+   * access claim. CoworkPage always passes this explicitly, mapping a missing
+   * session value to `null`; the pill never infers write access for a session.
+   * The `'write'` default only applies to a caller that omits the prop. The
+   * pill must not claim more than the grant. */
   access?: 'read' | 'write' | null
   /** Disable mutations and folder actions while a strict grant save is pending. */
   saving?: boolean
   /** When set, the popover offers an "Allow changes" switch for the folder. */
   onAccessChange?: (access: 'read' | 'write') => void
+  /** Offered only while the folder has no host grant (access is null). */
+  onAllowAccess?: () => void
   onAttach: () => void
   onDetach: () => void
 }
@@ -47,6 +53,7 @@ export function CoworkWorkspacePill({
   access = 'write',
   saving = false,
   onAccessChange,
+  onAllowAccess,
   onAttach,
   onDetach,
 }: Props) {
@@ -176,6 +183,17 @@ export function CoworkWorkspacePill({
             <Separator className="my-3" />
           </>
         ) : null}
+
+        {folder && access === null && onAllowAccess && (
+          <div className="mb-2 flex items-center gap-2 text-sm">
+            <span className="flex-1 text-xs text-muted-foreground">
+              {t('common:conversationScope.folderNeedsConfirmation')}
+            </span>
+            <Button variant="outline" size="sm" className="h-7" disabled={saving} onClick={onAllowAccess}>
+              {t('common:conversationScope.confirmFolder')}
+            </Button>
+          </div>
+        )}
 
         {folder && onAccessChange && (
           <label className="mb-2 flex items-center gap-2 text-sm">

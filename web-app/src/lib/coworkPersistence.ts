@@ -9,6 +9,7 @@ import {
   type CoworkSidecar,
   type Invoke,
 } from '@/lib/migrateCoworkSessions'
+import { isConversationFolderPath, parseConversationCapabilities } from '@/lib/conversationCapabilities'
 
 /**
  * Persistence for Cowork sessions stored as threads (`metadata.mode =
@@ -35,6 +36,17 @@ export const COWORK_CURRENT_ID_KEY = 'cowork_current_id'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = Record<string, any>
+
+/**
+ * Host-owned keys `list_threads` overlays on a listed record: the effective
+ * grant, the read-error annotation and the stored-but-denied folder annotation.
+ * None of them is ever written back from frontend metadata.
+ */
+export const HOST_LIST_KEYS = [
+  'conversationCapabilities',
+  'conversationCapabilitiesError',
+  'conversationCapabilitiesDenied',
+] as const
 
 const toSeconds = (ms: number) => (ms > 1e12 ? Math.floor(ms / 1000) : ms)
 
@@ -70,6 +82,9 @@ export function sessionToThreadRecord(
     mode: 'cowork',
     folder: s.folder ?? null,
   }
+  // Host-owned authority: list_threads overlays it on the records we adopt, so
+  // it must never be written back from (possibly stale) frontend metadata.
+  for (const key of HOST_LIST_KEYS) delete metadata[key]
   if (s.project !== undefined) metadata.project = s.project
   else delete metadata.project
   if (s.planMode !== undefined) metadata.planMode = s.planMode
@@ -100,6 +115,83 @@ export function sessionToThreadRecord(
   }
 }
 
+/**
+ * The folder and access the host stored for this session. No record at all (a
+ * legacy session) leaves `folderAccess` absent, which is inactive: the host
+ * refuses legacy no-record folder calls. Once a record exists it is the only
+ * authority, and `metadata.folder` is just a debounced display copy that can
+ * lag the strict setter (a reload between the two). A valid record hydrates
+ * the folder from its own `folderScope.path` and the acknowledged access.
+ *
+ * The record alone cannot tell three different hosts states apart, so the
+ * list-only annotations are checked FIRST, in this order:
+ * 1. `conversationCapabilitiesError` (a host read error): the host lists the
+ *    valid all-off sentinel (`folderScope: null`) PLUS the error.
+ * 2. `conversationCapabilitiesDenied` (`{denied: true, path}`): the host STORES
+ *    a folder grant that the in-process mirror denies (a failed confirm, or a
+ *    durable DENY that outlived the CONFIRM across a restart). The effective
+ *    record is again all-off. The folder stays visible at the stored path with
+ *    `folderAccess: null`, so the confirmation control survives. The path is
+ *    display only; the annotation never carries or grants access.
+ * 3. Neither: an explicit `folderScope: null` is a true acknowledged detach.
+ * A read error, a denied folder, a `null`/malformed record or a malformed
+ * annotation shows a folder with no access; keeping it also stops the next
+ * debounced flush from persisting `folder: null` over the display copy.
+ */
+function hostFolderGrant(
+  meta: Json
+): Pick<CoworkSession, 'folder' | 'folderAccess'> {
+  const metaFolder = typeof meta.folder === 'string' ? meta.folder : null
+  const readError =
+    meta.conversationCapabilitiesError !== undefined &&
+    meta.conversationCapabilitiesError !== null
+  if (readError) return { folder: metaFolder, folderAccess: null }
+  const denied = deniedFolder(meta.conversationCapabilitiesDenied)
+  if (!('conversationCapabilities' in meta) || meta.conversationCapabilities === undefined) {
+    return { folder: metaFolder }
+  }
+  const record = parseConversationCapabilities(meta.conversationCapabilities)
+  if (!record) return { folder: metaFolder, folderAccess: null }
+  const scope = record.folderScope
+  // An effective grant always wins; the annotation only qualifies a detach-looking record.
+  if (scope) return { folder: scope.path, folderAccess: scope.access }
+  if (denied !== undefined) return { folder: denied ?? metaFolder, folderAccess: null }
+  return { folder: null, folderAccess: null }
+}
+
+/**
+ * The folder PATH the host currently stores for a listed Cowork record, for
+ * display after a failed save. `undefined` means the listing cannot say (no
+ * record, a host read error, or a malformed record/annotation); `null` is an
+ * acknowledged detach. It never yields access: an effective grant and a
+ * stored-but-denied folder both resolve to just their path.
+ */
+export function hostStoredFolder(meta: Json): string | null | undefined {
+  const error = meta.conversationCapabilitiesError
+  if (error !== undefined && error !== null) return undefined
+  if (meta.conversationCapabilities === undefined) return undefined
+  const record = parseConversationCapabilities(meta.conversationCapabilities)
+  if (!record) return undefined
+  if (record.folderScope) return record.folderScope.path
+  const denied = deniedFolder(meta.conversationCapabilitiesDenied)
+  if (denied === undefined) return null
+  return denied ?? undefined
+}
+
+/**
+ * The stored path of a host `conversationCapabilitiesDenied` annotation.
+ * `undefined`: no annotation. `null`: present but malformed (still denied, so
+ * the caller falls back to the metadata folder). Never yields access.
+ */
+function deniedFolder(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'object' || Array.isArray(value)) return null
+  const { denied, path } = value as Json
+  return denied === true && typeof path === 'string' && isConversationFolderPath(path)
+    ? path
+    : null
+}
+
 /** Rebuild a session from its thread record and sidecar. */
 export function sessionFromThread(
   thread: Json,
@@ -116,7 +208,7 @@ export function sessionFromThread(
       model && model.id && model.id !== '*'
         ? { id: String(model.id), provider: String(model.engine ?? 'llamacpp') }
         : undefined,
-    folder: typeof meta.folder === 'string' ? meta.folder : null,
+    ...hostFolderGrant(meta),
     ...(meta.project && { project: meta.project }),
     turns: sidecar?.turns ?? [],
     messages: sidecar?.messages ?? [],
@@ -406,6 +498,9 @@ export function createCoworkPersistence(
     try {
       const existing = persisted.get(id)
       const record = sessionToThreadRecord(session, existing, legacy)
+      // Re-check right before ANY write: a late flush after delete must not
+      // recreate the sidecar (`create: true`) of a deleted session.
+      if (tombstones.has(id)) return
       await invoke('write_thread_extra', {
         threadId: id,
         name: COWORK_SIDECAR,

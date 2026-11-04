@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
@@ -10,13 +10,14 @@ import { CoworkPage } from '../CoworkPage'
 import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
 import type { CoworkTurn, TodoList } from '@/types/coworkSession'
 
-const mocks = vi.hoisted(() => ({ run: vi.fn(), sandbox: vi.fn(), refresh: vi.fn(), cancelShells: vi.fn(), dispatch: vi.fn(), handoff: vi.fn(), ensure: vi.fn(), navigate: vi.fn() }))
+const mocks = vi.hoisted(() => ({ run: vi.fn(), sandbox: vi.fn(), refresh: vi.fn(), cancelShells: vi.fn(), dispatch: vi.fn(), handoff: vi.fn(), ensure: vi.fn(), navigate: vi.fn(), pick: vi.fn(), setGrant: vi.fn(), toastError: vi.fn() }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mocks.navigate }))
 vi.mock('@/i18n/react-i18next-compat', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('@/hooks/useThreadManagement', () => ({ useThreadManagement: () => ({ folders: [] }) }))
-vi.mock('@/hooks/useServiceHub', () => ({ useServiceHub: () => ({ app: () => ({ getJanDataFolder: async () => null }) }) }))
+vi.mock('@/hooks/useServiceHub', () => ({ getServiceHub: () => ({}), useServiceHub: () => ({ app: () => ({ getJanDataFolder: async () => null }), dialog: () => ({ open: mocks.pick }) }) }))
 vi.mock('@/hooks/useMediaQuery', () => ({ useMediaQuery: () => false }))
-vi.mock('@/hooks/useSkills', () => ({ useSkills: () => ({ skills: [], invoke: vi.fn() }) }))
+const skillsFolder = vi.hoisted(() => vi.fn())
+vi.mock('@/hooks/useSkills', () => ({ useSkills: (folder: string | null) => { skillsFolder(folder); return { skills: [], invoke: vi.fn() } } }))
 vi.mock('@/hooks/useAutoScroll', () => ({ useAutoScroll: () => ({}) }))
 vi.mock('@/lib/coworkSubagentRegistry', () => ({ listSubagents: async () => [] }))
 vi.mock('@/lib/coworkHandoff', () => ({ peekCoworkHandoff: mocks.handoff, claimCoworkHandoff: () => true, clearCoworkHandoff: vi.fn(), releaseCoworkHandoff: vi.fn() }))
@@ -45,7 +46,9 @@ vi.mock('@/containers/CoworkComposerMenu', () => ({ CoworkComposerMenu: ({ child
 vi.mock('@/containers/MessageItem', () => ({ MessageItem: (props: Record<string, unknown>) => <div>{['onRegenerate', 'onEdit', 'onRetry', 'onDelete'].map((name) => typeof props[name] === 'function' ? <button key={name} onClick={() => (props[name] as (...args: string[]) => void)((props.message as { id: string }).id, 'Edited question')}>{name}</button> : null)}</div> }))
 vi.mock('@/components/PromptProgress', () => ({ PromptProgress: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/components/ai-elements/conversation', () => ({ Conversation: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>, ConversationContent: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>, ConversationScrollButton: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
-vi.mock('@/containers/CoworkWorkspacePill', () => ({ CoworkWorkspacePill: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
+vi.mock('@/containers/CoworkWorkspacePill', () => ({ CoworkWorkspacePill: ({ folder, access, saving, onAccessChange, onAllowAccess, onAttach, onDetach }: { folder: string; access?: string | null; saving?: boolean; onAccessChange?: (a: 'read' | 'write') => void; onAllowAccess?: () => void; onAttach: () => void; onDetach: () => void }) => <div data-testid="pill" data-access={String(access)} data-saving={String(!!saving)}>{folder}<button onClick={() => onAccessChange?.('read')}>make-read</button><button onClick={onAllowAccess}>allow-access</button><button onClick={onAttach}>attach</button><button onClick={onDetach}>detach</button></div> }))
+vi.mock('sonner', () => ({ toast: { error: mocks.toastError, success: vi.fn() } }))
+vi.mock('@/lib/coworkFolderAccess', async (original) => ({ ...await original<typeof import('@/lib/coworkFolderAccess')>(), setCoworkFolderGrant: mocks.setGrant }))
 vi.mock('@/containers/CoworkPlanToggle', () => ({ CoworkPlanToggle: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/containers/CoworkEmptyState', () => ({ CoworkEmptyState: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/containers/CoworkArtifactCard', () => ({ CoworkArtifactCard: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
@@ -561,5 +564,222 @@ describe('CoworkPage legacy first todo read', () => {
     await waitFor(() => expect(mocks.dispatch).toHaveBeenCalledTimes(failFirst ? 2 : 1))
     await waitFor(() => expect(useCoworkRun.getState().runId.test).toBeUndefined())
     expect(screen.getByTestId('rail-todos').textContent).toBe(JSON.stringify(legacy))
+  })
+})
+
+describe('CoworkPage folder access', () => {
+  const seedFolder = (extra: Record<string, unknown> = {}) => useCoworkSessions.setState({ sessions: [{ id: 'test', title: 'T', folder: '/proj', turns: [], messages: [], updated: 0, ...extra }] as never, currentId: 'test' })
+  const runDispatchOnce = async () => {
+    mocks.dispatch.mockResolvedValue({ output: 'ok' })
+    mocks.run.mockImplementationOnce(async ({ deps }) => {
+      await deps.dispatch({ toolCallId: 'c', toolName: 'read', input: {} })
+      return { stoppedBy: 'done', messages: [], usage: null }
+    })
+    render(<CoworkPage />)
+    await act(async () => { fireEvent.click(screen.getByText('Submit')) })
+    await waitFor(() => expect(mocks.dispatch).toHaveBeenCalledOnce())
+    return mocks.dispatch.mock.calls[0][1]
+  }
+  beforeEach(() => {
+    mocks.setGrant.mockReset()
+    mocks.setGrant.mockResolvedValue(undefined)
+    mocks.pick.mockReset()
+  })
+
+  it('shows a read-only grant as read-only and dispatch receives read, not write', async () => {
+    seedFolder({ folderAccess: 'read' })
+    const ctx = await runDispatchOnce()
+    expect(screen.getByTestId('pill').dataset.access).toBe('read')
+    expect(ctx).toMatchObject({ readOnlyFolder: '/proj', folderAccess: 'read' })
+  })
+
+  it('a legacy session with no host record is inactive: no write display, no tool folder', async () => {
+    seedFolder()
+    const ctx = await runDispatchOnce()
+    expect(screen.getByTestId('pill').textContent).toContain('/proj')
+    expect(screen.getByTestId('pill').dataset.access).toBe('null')
+    expect(ctx).toMatchObject({ readOnlyFolder: null, folderAccess: null })
+  })
+
+  it('does not inject the legacy folder into skills before a grant, and does after', async () => {
+    skillsFolder.mockClear()
+    seedFolder()
+    render(<CoworkPage />)
+    expect(skillsFolder).toHaveBeenCalled()
+    expect(skillsFolder.mock.calls.every(([f]) => f === null)).toBe(true)
+    cleanup()
+    skillsFolder.mockClear()
+    seedFolder({ folderAccess: 'read' })
+    render(<CoworkPage />)
+    expect(skillsFolder).toHaveBeenLastCalledWith('/proj')
+  })
+
+  it('Confirm restores only read access so a denied read-only grant cannot silently widen', async () => {
+    seedFolder()
+    mocks.setGrant.mockImplementationOnce(async (sid: string, scope: { path: string; access: 'read' | 'write' }) => {
+      useCoworkSessions.getState().setFolderGrant(sid, scope)
+    })
+    render(<CoworkPage />)
+    await act(async () => { fireEvent.click(screen.getByText('allow-access')) })
+    expect(mocks.setGrant).toHaveBeenCalledExactlyOnceWith('test', { path: '/proj', access: 'read' })
+    expect(screen.getByTestId('pill').dataset.access).toBe('read')
+    expect(skillsFolder).toHaveBeenLastCalledWith('/proj')
+  })
+
+  it('a failed Allow access toasts and stays inactive', async () => {
+    seedFolder()
+    mocks.setGrant.mockRejectedValueOnce(new Error('host down'))
+    render(<CoworkPage />)
+    await act(async () => { fireEvent.click(screen.getByText('allow-access')) })
+    expect(mocks.toastError).toHaveBeenCalledWith('common:conversationScope.saveFailed')
+    expect(screen.getByTestId('pill').dataset.access).toBe('null')
+    expect(screen.getByTestId('pill').dataset.saving).toBe('false')
+    expect(skillsFolder).toHaveBeenLastCalledWith(null)
+  })
+
+  it('explicit saved write restores without confirmation', async () => {
+    seedFolder({ folderAccess: 'write' })
+    const ctx = await runDispatchOnce()
+    expect(mocks.setGrant).not.toHaveBeenCalled()
+    expect(screen.getByTestId('pill').dataset.access).toBe('write')
+    expect(ctx).toMatchObject({ readOnlyFolder: '/proj', folderAccess: 'write' })
+  })
+
+  it('a denied grant keeps the folder visible but dispatch gets no folder and no access', async () => {
+    seedFolder({ folderAccess: null })
+    const ctx = await runDispatchOnce()
+    expect(screen.getByTestId('pill').textContent).toContain('/proj')
+    expect(screen.getByTestId('pill').dataset.access).toBe('null')
+    expect(ctx).toMatchObject({ readOnlyFolder: null, folderAccess: null })
+  })
+
+  it('attaching a picked folder saves read+write through the strict setter', async () => {
+    seedFolder({ folderAccess: 'write' })
+    mocks.pick.mockResolvedValue('/Users/me/other')
+    render(<CoworkPage />)
+    await act(async () => { fireEvent.click(screen.getByText('attach')) })
+    expect(mocks.setGrant).toHaveBeenCalledExactlyOnceWith('test', { path: '/Users/me/other', access: 'write' })
+  })
+
+  it('does not save an unsupported picked path', async () => {
+    seedFolder({ folderAccess: 'write' })
+    mocks.pick.mockResolvedValue('relative/dir')
+    render(<CoworkPage />)
+    await act(async () => { fireEvent.click(screen.getByText('attach')) })
+    expect(mocks.setGrant).not.toHaveBeenCalled()
+    expect(mocks.toastError).toHaveBeenCalledWith('common:conversationScope.invalidFolder')
+  })
+
+  it('detach and access switch persist through the setter; session is not mutated by the page', async () => {
+    seedFolder({ folderAccess: 'write' })
+    render(<CoworkPage />)
+    await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+    expect(mocks.setGrant).toHaveBeenLastCalledWith('test', { path: '/proj', access: 'read' })
+    await act(async () => { fireEvent.click(screen.getByText('detach')) })
+    expect(mocks.setGrant).toHaveBeenLastCalledWith('test', null)
+    expect(useCoworkSessions.getState().sessions[0]).toMatchObject({ folder: '/proj', folderAccess: 'write' })
+  })
+
+  describe('save busy state', () => {
+    const deferred = () => { let resolve!: () => void; let reject!: (e: Error) => void; const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej }); return { promise, resolve, reject } }
+    const saving = () => screen.getByTestId('pill').dataset.saving
+
+    it('overlapping saves keep the session busy until the last one settles', async () => {
+      seedFolder({ folderAccess: 'write' })
+      const first = deferred()
+      const second = deferred()
+      mocks.setGrant.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+      render(<CoworkPage />)
+      await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+      await act(async () => { fireEvent.click(screen.getByText('detach')) })
+      expect(mocks.setGrant).toHaveBeenCalledTimes(2)
+      expect(saving()).toBe('true')
+      await act(async () => { first.resolve() })
+      expect(saving()).toBe('true')
+      await act(async () => { second.reject(new Error('host down')) })
+      expect(saving()).toBe('false')
+    })
+
+    it('a failing first request does not clear a still-pending second request', async () => {
+      seedFolder({ folderAccess: 'write' })
+      const first = deferred()
+      const second = deferred()
+      mocks.setGrant.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+      render(<CoworkPage />)
+      await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+      await act(async () => { fireEvent.click(screen.getByText('allow-access')) })
+      await act(async () => { first.reject(new Error('host down')) })
+      expect(saving()).toBe('true')
+      await act(async () => { second.resolve() })
+      expect(saving()).toBe('false')
+    })
+
+    it('a pending save in session A does not disable session B, and survives switching back', async () => {
+      useCoworkSessions.setState({ sessions: [
+        { id: 'a', title: 'A', folder: '/a', folderAccess: 'write', turns: [], messages: [], updated: 0 },
+        { id: 'b', title: 'B', folder: '/b', folderAccess: 'write', turns: [], messages: [], updated: 0 },
+      ] as never, currentId: 'a' })
+      const pendingA = deferred()
+      mocks.setGrant.mockReturnValueOnce(pendingA.promise)
+      render(<CoworkPage />)
+      await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+      expect(saving()).toBe('true')
+      await act(async () => { useCoworkSessions.setState({ currentId: 'b' }) })
+      expect(screen.getByTestId('pill').textContent).toContain('/b')
+      expect(saving()).toBe('false')
+      await act(async () => { useCoworkSessions.setState({ currentId: 'a' }) })
+      expect(saving()).toBe('true')
+      await act(async () => { pendingA.resolve() })
+      expect(saving()).toBe('false')
+    })
+
+    it('settling session A while B is pending leaves B busy', async () => {
+      useCoworkSessions.setState({ sessions: [
+        { id: 'a', title: 'A', folder: '/a', folderAccess: 'write', turns: [], messages: [], updated: 0 },
+        { id: 'b', title: 'B', folder: '/b', folderAccess: 'write', turns: [], messages: [], updated: 0 },
+      ] as never, currentId: 'a' })
+      const pendingA = deferred()
+      const pendingB = deferred()
+      mocks.setGrant.mockReturnValueOnce(pendingA.promise).mockReturnValueOnce(pendingB.promise)
+      render(<CoworkPage />)
+      await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+      await act(async () => { useCoworkSessions.setState({ currentId: 'b' }) })
+      await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+      expect(mocks.setGrant).toHaveBeenLastCalledWith('b', { path: '/b', access: 'read' })
+      expect(saving()).toBe('true')
+      await act(async () => { pendingA.resolve() })
+      expect(saving()).toBe('true')
+      await act(async () => { pendingB.resolve() })
+      expect(saving()).toBe('false')
+    })
+
+    it('attach and access requests overlapping on one session both count', async () => {
+      seedFolder({ folderAccess: 'write' })
+      const access = deferred()
+      const attach = deferred()
+      mocks.setGrant.mockReturnValueOnce(access.promise).mockReturnValueOnce(attach.promise)
+      mocks.pick.mockResolvedValue('/Users/me/other')
+      render(<CoworkPage />)
+      await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+      await act(async () => { fireEvent.click(screen.getByText('attach')) })
+      expect(mocks.setGrant).toHaveBeenCalledTimes(2)
+      await act(async () => { attach.resolve() })
+      expect(saving()).toBe('true')
+      await act(async () => { access.resolve() })
+      expect(saving()).toBe('false')
+    })
+  })
+
+  it('a rejected save tells the user and leaves the session as the setter left it', async () => {
+    seedFolder({ folderAccess: 'write' })
+    mocks.setGrant.mockImplementationOnce(async () => {
+      useCoworkSessions.getState().setFolderGrant('test', { path: '/proj', access: null })
+      throw new Error('host down')
+    })
+    render(<CoworkPage />)
+    await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+    expect(mocks.toastError).toHaveBeenCalledWith('common:conversationScope.saveFailed')
+    expect(screen.getByTestId('pill').dataset.access).toBe('null')
+    expect(screen.getByTestId('pill').dataset.saving).toBe('false')
   })
 })

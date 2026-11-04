@@ -8,6 +8,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import {
   createCoworkPersistence,
+  HOST_LIST_KEYS,
   loadCoworkSessions,
   type CoworkPersistence,
 } from '@/lib/coworkPersistence'
@@ -67,7 +68,16 @@ function upsertThread(thread: Json) {
         ? { id: model.id, provider: model.engine ?? 'llamacpp' }
         : existing?.model,
     updated: thread.updated,
-    metadata: { ...(thread.metadata ?? {}) },
+    // Persisted records never carry the host-owned authority overlay; keep the
+    // one already in the store (from the strict setter / list_threads).
+    metadata: {
+      ...(thread.metadata ?? {}),
+      ...Object.fromEntries(
+        HOST_LIST_KEYS.filter((key) => existing?.metadata && key in existing.metadata).map(
+          (key) => [key, existing.metadata?.[key]]
+        )
+      ),
+    },
   } as Thread
   const all = { ...useThreads.getState().threads, [next.id]: next }
   useThreads.getState().setThreads(Object.values(all))

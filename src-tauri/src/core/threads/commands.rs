@@ -52,17 +52,31 @@ pub async fn list_threads<R: Runtime>(
                         // Never expose stale disk consent as restorable authority.
                         if let Some(id) = thread.get("id").and_then(serde_json::Value::as_str).map(str::to_owned) {
                             if path.file_name().and_then(|name| name.to_str()) != Some(id.as_str()) {
-                                if let Some(metadata) = thread["metadata"].as_object_mut() {
-                                    metadata.remove("conversationCapabilities");
-                                }
+                                // Stale/foreign record: never expose its consent, and fail closed.
+                                let cowork = thread["metadata"]["mode"].as_str() == Some("cowork");
+                                super::capabilities::apply_listed_capabilities(
+                                    &mut thread,
+                                    cowork,
+                                    Err("Thread record does not match its directory".into()),
+                                );
                                 threads.push(thread);
                                 continue;
                             }
-                            if let Ok(value) = super::capabilities::read_conversation_capabilities(&data_folder, &id).await {
-                                thread["metadata"]["conversationCapabilities"] = value;
-                            } else if thread["metadata"].is_object() {
-                                thread["metadata"].as_object_mut().unwrap().remove("conversationCapabilities");
-                            }
+                            let cowork = thread["metadata"]["mode"].as_str() == Some("cowork");
+                            let (read, denied_folder) = if cowork {
+                                match super::capabilities::read_cowork_listing(&data_folder, &id).await {
+                                    Ok((value, denied)) => (Ok(value), denied),
+                                    Err(error) => (Err(error), None),
+                                }
+                            } else {
+                                (super::capabilities::read_conversation_capabilities(&data_folder, &id).await, None)
+                            };
+                            // A host read error fails CLOSED (explicit all-off + error), never
+                            // an absent field the frontend would treat as anything but inactive.
+                            super::capabilities::apply_listed_capabilities(&mut thread, cowork, read);
+                            // A stored folder the host currently denies is not a detach: list
+                            // its path (display only, never an access level).
+                            super::capabilities::apply_listed_denied_folder(&mut thread, denied_folder.as_deref());
                         }
                         threads.push(thread)
                     },
@@ -120,6 +134,9 @@ pub async fn create_thread<R: Runtime>(
         .and_then(serde_json::Value::as_object_mut)
     {
         metadata.remove("conversationCapabilities");
+        metadata.remove("conversationCapabilitiesError");
+        metadata.remove(super::capabilities::DENIED_FOLDER_KEY);
+        metadata.remove(super::capabilities::ATTEMPTED_FOLDER_KEY);
     }
     thread["id"] = serde_json::Value::String(uuid.clone());
     let thread_dir = get_thread_dir(&data_folder, &uuid)?;
@@ -239,6 +256,18 @@ pub async fn modify_thread<R: Runtime>(
         .cloned();
     if let Some(metadata) = thread.get_mut("metadata").and_then(|m| m.as_object_mut()) {
         metadata.remove("conversationCapabilities");
+        // List-only annotations; never persisted from a UI snapshot.
+        metadata.remove("conversationCapabilitiesError");
+        metadata.remove(super::capabilities::DENIED_FOLDER_KEY);
+        metadata.remove(super::capabilities::ATTEMPTED_FOLDER_KEY);
+    }
+    // The host-owned attempted-folder display marker survives whole-record updates.
+    let attempted = stored["metadata"].get(super::capabilities::ATTEMPTED_FOLDER_KEY).cloned();
+    if let Some(attempted) = attempted {
+        if !thread.get("metadata").is_some_and(|m| m.is_object()) {
+            thread["metadata"] = serde_json::json!({});
+        }
+        thread["metadata"][super::capabilities::ATTEMPTED_FOLDER_KEY] = attempted;
     }
     if let Some(current) = current {
         if !thread.get("metadata").is_some_and(|m| m.is_object()) {
@@ -305,6 +334,16 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
     if SETTER_BUMP_BEFORE_CONFIRM.lock().unwrap().as_deref() == Some(thread_id.as_str()) {
         tauri_plugin_agent_tools::thread_capabilities::bump_generation(&thread_id);
     }
+    // Test seam: break the platform's durable store after the DENY+metadata
+    // steps so both the CONFIRM and its compensating DENY fail.
+    #[cfg(test)]
+    if SETTER_BREAK_STORE_BEFORE_CONFIRM.lock().unwrap().contains(&thread_id) {
+        let store = tauri_plugin_agent_tools::thread_capabilities::denial_store_path(&thread_id)
+            .unwrap()
+            .expect("consent root configured");
+        fs::remove_file(&store).ok();
+        fs::create_dir_all(&store).unwrap();
+    }
     // Only a write that actually succeeded confirms, and only when no newer
     // narrow intervened. A skipped confirm leaves the thread denied, which the
     // per-poll intersection enforces regardless of what is on disk -- so a
@@ -315,14 +354,30 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
     // reconfirm flow; a retry simply runs the setter again. The grant was
     // validated before the write, so this false really is concurrency.
     if !tauri_plugin_agent_tools::confirm_thread_consent(&thread_id, grant, token).await {
-        return Err(
-            "The permission change was written but a concurrent change prevented its \
-             activation; elevated access stays off. Try again."
-                .into(),
-        );
+        // Never relaxes the in-process denial. The wording follows what the
+        // plugin knows: concurrency, a durable DENY after a failed confirm, or
+        // an unknown outcome (then narrow metadata as a second durable channel).
+        // One lock acquisition: the message and the rollback flag must describe
+        // the same entry, or the metadata narrowing could be skipped wrongly.
+        let (failure, rollback_failed) =
+            tauri_plugin_agent_tools::thread_capabilities::confirm_failure_snapshot(&thread_id);
+        return Err(super::capabilities::confirm_failure_error(
+            &data_folder,
+            &thread_id,
+            failure,
+            rollback_failed,
+        ));
     }
     Ok(())
 }
+
+/// Test seam: replaces the thread's durable denial store with a directory just
+/// before the confirm, so the CONFIRM append fails (Windows ledger: its
+/// compensating DENY fails too; Unix marker: the remove fails).
+#[cfg(test)]
+/// A set of thread ids (not one slot) so parallel tests never disarm each other.
+pub(super) static SETTER_BREAK_STORE_BEFORE_CONFIRM: std::sync::Mutex<Vec<String>> =
+    std::sync::Mutex::new(Vec::new());
 
 /// Test seam: forces a `stop_all_thread_monitors`-style barrier bump between
 /// the strict setter's narrow and its confirm (per-thread id, so parallel
@@ -415,13 +470,16 @@ pub(super) static FAIL_MARKER_AFTER_REMOVAL: std::sync::Mutex<Vec<String>> =
     std::sync::Mutex::new(Vec::new());
 
 #[cfg(test)]
-fn fail_marker_writes_after_removal(data_folder: &std::path::Path, thread_id: &str) {
+fn fail_marker_writes_after_removal(_data_folder: &std::path::Path, thread_id: &str) {
     let mut ids = FAIL_MARKER_AFTER_REMOVAL.lock().unwrap();
     if let Some(index) = ids.iter().position(|id| id == thread_id) {
         ids.remove(index);
-        let marker = data_folder.join("conversation-denials").join(thread_id);
+        // The real platform store (Unix marker / Windows ledger), not a fixed name.
+        let marker = tauri_plugin_agent_tools::thread_capabilities::denial_store_path(thread_id)
+            .unwrap()
+            .expect("consent root configured");
         fs::remove_file(&marker).unwrap();
-        // Still a denial on restart, but any redundant File::create now fails.
+        // Still a denial on restart, but any redundant write now fails.
         fs::create_dir(&marker).unwrap();
     }
 }
