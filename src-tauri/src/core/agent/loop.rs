@@ -14173,16 +14173,17 @@ mod tests {
         let sent = bodies.lock().unwrap().clone();
         assert_eq!(sent.len(), 2, "a summary, then the compacted request: {}", sent.len());
         assert!(
-            sent[0].contains("Summarize the AI agent conversation"),
-            "the first request is the preflight summary"
+            sent[0].contains("[Compaction request from the harness]"),
+            "the first request is the cached preflight compaction"
         );
-        // The full history is 120K chars of filler; the kept tail is 8 of the
-        // 13 messages, so a dispatched request under 100K is the compacted one.
+        // The tail is sized by tokens (a tenth of the window), not by message
+        // count, so the compacted request is measured against the original.
+        let original = body.to_string().len();
         assert!(
-            sent[1].len() < 100_000,
-            "the dispatched request is the compacted one: {}",
+            sent[1].len() < original,
+            "the dispatched request is the compacted one: {} of {original}",
             sent[1].len()
         );
-        assert!(sent[1].contains("[Summary of earlier conversation"));
+        assert!(sent[1].contains("[Continuation state - compacted at turn "));
     }
 }

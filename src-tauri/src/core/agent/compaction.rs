@@ -1225,6 +1225,7 @@ mod tests {
         assert!(!body.contains(SUMMARY_MARKER), "the old summary is not rendered as transcript");
     }
 
+    #[cfg(feature = "cli")]
     fn convo(n: usize) -> Vec<Value> {
         let mut v = vec![json!({ "role": "system", "content": "sys" })];
         for i in 0..n {
