@@ -315,7 +315,27 @@ describe('useToolApprovalRequests', () => {
     })
     expect(Object.keys(result.current.pending)).toEqual(['tc2'])
     act(() => result.current.resolveApproval('tc2', 'allow-always'))
-    expect(useToolApproval.getState().approvedServers).toEqual(['ext:acme.one'])
+    // No server-wide trust for an ext: name: it would cover the real
+    // extension's tools. The grant is for this one MCP tool.
+    expect(useToolApproval.getState().approvedServers).toEqual([])
+    expect(useToolApproval.getState().approvedToolsGlobal).toEqual([
+      'mcp:ext:acme.one/x_tool',
+    ])
+    act(() => {
+      result.current.requestApproval('tc3', X, 'thread-2', 'ext:acme.one')
+      result.current.requestApproval('tc4', Y, 'thread-2', 'ext:acme.one')
+    })
+    expect(Object.keys(result.current.pending)).toEqual(['tc3', 'tc4'])
+  })
+
+  // A build that saved server trust for an ext: name must not keep it working.
+  it('ignores a saved server trust for an ext: name', () => {
+    useToolApproval.setState({ approvedServers: ['ext:acme.one'] })
+    const { result } = renderHook(() => useToolApprovalRequests())
+    act(() => {
+      result.current.requestApproval('tc1', X, 'thread-1', 'ext:acme.one')
+    })
+    expect(Object.keys(result.current.pending)).toEqual(['tc1'])
   })
 
   it('keeps an MCP allow-thread approval with the server that got it', async () => {

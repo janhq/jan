@@ -133,9 +133,12 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
         approval.approveToolForThread(entry.threadId, key)
       } else if (decision === 'allow-always') {
         // An MCP server is trusted whole. An extension is not: an update can
-        // add tools, and those must ask before they first run.
+        // add tools, and those must ask before they first run. An MCP server
+        // the user named `ext:<id>` is not trusted whole either: that trust
+        // would also cover the real extension <id>'s tools.
         if (
           entry.serverName &&
+          !entry.serverName.startsWith(EXTENSION_SERVER_PREFIX) &&
           !isExtensionTool(entry.toolName, entry.serverName)
         ) {
           approval.approveServer(entry.serverName)
