@@ -2,6 +2,7 @@ import { useChatPermissions } from '@/hooks/useChatPermissions'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { ensureCoworkRecorded } from '@/lib/coworkSync'
+import { hostStoredFolder } from '@/lib/coworkPersistence'
 import {
   isConversationFolderPath,
   type ConversationCapabilitiesV1,
@@ -36,15 +37,42 @@ export function liveCoworkFolderGrant(sessionId: string) {
   )
 }
 
+/**
+ * After a failed save, display the folder the host actually stores, never
+ * access. The failure may have happened before the host changed (the record
+ * or the setter's validation rejected: the previous folder is still stored) or
+ * after it stored the requested one (a failed confirmation), so neither the
+ * request nor the old folder can be assumed. The host listing is the only
+ * authority; only its folder path is used, so a still-confirmed old grant is
+ * not restored as access. If the listing cannot be read or cannot say, keep
+ * the current folder, inactive.
+ */
+async function showFailedFolder(sessionId: string): Promise<void> {
+  const current = useCoworkSessions
+    .getState()
+    .sessions.find((s) => s.id === sessionId)
+  let stored: string | null | undefined
+  try {
+    const listed = await getServiceHub().threads().fetchThreads()
+    const thread = listed.find((t) => t.id === sessionId)
+    stored = thread?.metadata ? hostStoredFolder(thread.metadata) : undefined
+  } catch {
+    stored = undefined
+  }
+  const display = stored === undefined ? current?.folder ?? null : stored
+  useCoworkSessions
+    .getState()
+    .setFolderGrant(sessionId, display ? { path: display, access: null } : null)
+}
+
 const queues = new Map<string, Promise<unknown>>()
 
 /**
  * Persist a folder grant for a Cowork session through the host's strict setter,
  * and only then record it locally. The setter narrows the host before it
- * writes, so a failure leaves the host denied: the UI then shows the requested
- * folder (or, for a failed detach, the current one) with no access instead of
- * claiming the old grant. Requests for one
- * session run in order.
+ * writes, so a failure leaves the host denied: the UI then shows the folder
+ * the host listing reports (the current one if it cannot be read) with no
+ * access instead of claiming a grant. Requests for one session run in order.
  */
 export function setCoworkFolderGrant(
   sessionId: string,
@@ -66,19 +94,7 @@ export function setCoworkFolderGrant(
       }
       await getServiceHub().threads().setConversationCapabilities(sessionId, value)
     } catch (error) {
-      const current = useCoworkSessions
-        .getState()
-        .sessions.find((s) => s.id === sessionId)
-      // Display only, never access. A failed attach/switch shows the REQUESTED
-      // folder inactive: the host may already have stored it (a failed
-      // confirmation), so showing the previous folder would disagree with the
-      // host after a reload. A failed detach keeps the current folder inactive.
-      const display = folderScope?.path ?? current?.folder
-      if (display) {
-        useCoworkSessions
-          .getState()
-          .setFolderGrant(sessionId, { path: display, access: null })
-      }
+      await showFailedFolder(sessionId)
       throw error
     }
     useCoworkSessions.getState().setFolderGrant(sessionId, folderScope)
