@@ -680,6 +680,96 @@ describe('CoworkPage folder access', () => {
     expect(useCoworkSessions.getState().sessions[0]).toMatchObject({ folder: '/proj', folderAccess: 'write' })
   })
 
+  describe('save busy state', () => {
+    const deferred = () => { let resolve!: () => void; let reject!: (e: Error) => void; const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej }); return { promise, resolve, reject } }
+    const saving = () => screen.getByTestId('pill').dataset.saving
+
+    it('overlapping saves keep the session busy until the last one settles', async () => {
+      seedFolder({ folderAccess: 'write' })
+      const first = deferred()
+      const second = deferred()
+      mocks.setGrant.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+      render(<CoworkPage />)
+      await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+      await act(async () => { fireEvent.click(screen.getByText('detach')) })
+      expect(mocks.setGrant).toHaveBeenCalledTimes(2)
+      expect(saving()).toBe('true')
+      await act(async () => { first.resolve() })
+      expect(saving()).toBe('true')
+      await act(async () => { second.reject(new Error('host down')) })
+      expect(saving()).toBe('false')
+    })
+
+    it('a failing first request does not clear a still-pending second request', async () => {
+      seedFolder({ folderAccess: 'write' })
+      const first = deferred()
+      const second = deferred()
+      mocks.setGrant.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+      render(<CoworkPage />)
+      await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+      await act(async () => { fireEvent.click(screen.getByText('allow-access')) })
+      await act(async () => { first.reject(new Error('host down')) })
+      expect(saving()).toBe('true')
+      await act(async () => { second.resolve() })
+      expect(saving()).toBe('false')
+    })
+
+    it('a pending save in session A does not disable session B, and survives switching back', async () => {
+      useCoworkSessions.setState({ sessions: [
+        { id: 'a', title: 'A', folder: '/a', folderAccess: 'write', turns: [], messages: [], updated: 0 },
+        { id: 'b', title: 'B', folder: '/b', folderAccess: 'write', turns: [], messages: [], updated: 0 },
+      ] as never, currentId: 'a' })
+      const pendingA = deferred()
+      mocks.setGrant.mockReturnValueOnce(pendingA.promise)
+      render(<CoworkPage />)
+      await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+      expect(saving()).toBe('true')
+      await act(async () => { useCoworkSessions.setState({ currentId: 'b' }) })
+      expect(screen.getByTestId('pill').textContent).toContain('/b')
+      expect(saving()).toBe('false')
+      await act(async () => { useCoworkSessions.setState({ currentId: 'a' }) })
+      expect(saving()).toBe('true')
+      await act(async () => { pendingA.resolve() })
+      expect(saving()).toBe('false')
+    })
+
+    it('settling session A while B is pending leaves B busy', async () => {
+      useCoworkSessions.setState({ sessions: [
+        { id: 'a', title: 'A', folder: '/a', folderAccess: 'write', turns: [], messages: [], updated: 0 },
+        { id: 'b', title: 'B', folder: '/b', folderAccess: 'write', turns: [], messages: [], updated: 0 },
+      ] as never, currentId: 'a' })
+      const pendingA = deferred()
+      const pendingB = deferred()
+      mocks.setGrant.mockReturnValueOnce(pendingA.promise).mockReturnValueOnce(pendingB.promise)
+      render(<CoworkPage />)
+      await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+      await act(async () => { useCoworkSessions.setState({ currentId: 'b' }) })
+      await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+      expect(mocks.setGrant).toHaveBeenLastCalledWith('b', { path: '/b', access: 'read' })
+      expect(saving()).toBe('true')
+      await act(async () => { pendingA.resolve() })
+      expect(saving()).toBe('true')
+      await act(async () => { pendingB.resolve() })
+      expect(saving()).toBe('false')
+    })
+
+    it('attach and access requests overlapping on one session both count', async () => {
+      seedFolder({ folderAccess: 'write' })
+      const access = deferred()
+      const attach = deferred()
+      mocks.setGrant.mockReturnValueOnce(access.promise).mockReturnValueOnce(attach.promise)
+      mocks.pick.mockResolvedValue('/Users/me/other')
+      render(<CoworkPage />)
+      await act(async () => { fireEvent.click(screen.getByText('make-read')) })
+      await act(async () => { fireEvent.click(screen.getByText('attach')) })
+      expect(mocks.setGrant).toHaveBeenCalledTimes(2)
+      await act(async () => { attach.resolve() })
+      expect(saving()).toBe('true')
+      await act(async () => { access.resolve() })
+      expect(saving()).toBe('false')
+    })
+  })
+
   it('a rejected save tells the user and leaves the session as the setter left it', async () => {
     seedFolder({ folderAccess: 'write' })
     mocks.setGrant.mockImplementationOnce(async () => {
