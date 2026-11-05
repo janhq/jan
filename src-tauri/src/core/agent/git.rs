@@ -922,11 +922,18 @@ fn alternates(checkout: &Path) -> Result<Vec<PathBuf>, String> {
 /// other key of a child's config is emptied for Jan's own git: whatever it is
 /// (`filter.*`, `diff.*`, `merge.*`, `credential.*`, `remote.*.uploadpack`,
 /// `core.sshCommand`, ...), it may be a command git would run.
+///
+/// The numeric and size tuning keys are left alone for a second reason: git
+/// parses them as numbers and dies on the empty value that would neutralise
+/// them (`bad numeric config value '' for 'core.compression'`), which would
+/// fail every one of Jan's reads of the checkout. A number cannot run
+/// anything. Only keys with no subsection are listed: `diff.<driver>.*` and
+/// `gc.<pattern>.*` are not these.
 #[cfg(feature = "cli")]
 fn inert_config(key: &str) -> bool {
     let Some((section, rest)) = key.split_once('.') else { return false };
     let name = rest.rsplit_once('.').map_or(rest, |(_, name)| name);
-    match section {
+    let everyday = match section {
         "core" => matches!(
             name,
             "repositoryformatversion" | "filemode" | "bare" | "logallrefupdates" | "symlinks"
@@ -934,6 +941,28 @@ fn inert_config(key: &str) -> bool {
         ),
         "user" | "branch" => true,
         "remote" => matches!(name, "url" | "pushurl" | "fetch" | "push" | "tagopt"),
+        _ => false,
+    };
+    everyday || is_numeric_tuning(section, rest)
+}
+
+/// A `section.name` key (no subsection) that holds only a number or a size:
+/// compression levels, cache and pack limits, thread counts, rename limits.
+#[cfg(feature = "cli")]
+fn is_numeric_tuning(section: &str, name: &str) -> bool {
+    match section {
+        "core" => matches!(
+            name,
+            "compression" | "loosecompression" | "bigfilethreshold" | "packedgitlimit"
+                | "packedgitwindowsize" | "deltabasecachelimit" | "abbrev"
+        ),
+        "gc" => matches!(name, "auto" | "autopacklimit"),
+        "pack" => matches!(
+            name,
+            "threads" | "window" | "depth" | "compression" | "windowmemory" | "deltacachesize"
+                | "deltacachelimit" | "packsizelimit"
+        ),
+        "diff" => name == "renamelimit",
         _ => false,
     }
 }
@@ -1844,6 +1873,55 @@ mod tests {
         let err = Checkout::open(&wt, &objects).unwrap_err();
         assert!(err.contains(".git was replaced"), "{err}");
         let _ = std::fs::remove_dir_all(&moved);
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A child may tune git in its own checkout. Numeric and size keys cannot
+    /// be emptied (git dies on `core.abbrev=`), and none of them names a
+    /// program, so they are left alone while program-naming keys still are
+    /// emptied. Otherwise every read fails and the child's branch is never
+    /// brought back.
+    #[test]
+    fn a_numeric_tuning_key_in_the_child_checkout_does_not_break_jans_git() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.parent().unwrap().join(format!(
+            "{}-tuned",
+            root.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/tuned-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        for (key, value) in [
+            ("core.compression", "9"),
+            ("core.looseCompression", "1"),
+            ("core.bigFileThreshold", "1m"),
+            ("core.packedGitLimit", "256m"),
+            ("core.deltaBaseCacheLimit", "64m"),
+            ("core.abbrev", "12"),
+            ("gc.auto", "0"),
+            ("pack.threads", "2"),
+            ("diff.renameLimit", "500"),
+            ("core.sshCommand", "touch /tmp/never-run"),
+        ] {
+            run(&wt, None, &["config", key, value]).unwrap();
+        }
+
+        let child = Checkout::open(&wt, &objects).unwrap();
+        assert_eq!(child.commits_anywhere(&head), Some(0));
+        assert_eq!(child.current_branch().as_deref(), Some("jan/agent/tuned-1"));
+        std::fs::write(wt.join("t.txt"), "t\n").unwrap();
+        run(&wt, None, &["add", "t.txt"]).unwrap();
+        run(&wt, None, &["commit", "-q", "-m", "t", "--no-gpg-sign"]).unwrap();
+        assert_eq!(child.commits_anywhere(&head), Some(1));
+        child.fetch_branch(&root, "jan/agent/tuned-1", LIMIT).unwrap();
+        let tip = head_sha(&wt).unwrap();
+        assert_eq!(resolve_commit(&root, "jan/agent/tuned-1").as_deref(), Some(tip.as_str()));
+
+        let hardened = child.hardened();
+        assert!(hardened.contains(&"core.sshcommand=".to_string()), "{hardened:?}");
+        assert!(!hardened.iter().any(|o| o.starts_with("core.abbrev")), "{hardened:?}");
         let _ = std::fs::remove_dir_all(&wt);
         let _ = std::fs::remove_dir_all(&root);
     }
