@@ -50,6 +50,13 @@ const YOU_COM_CLIENT_INFO: &str = concat!(
 const YOU_COM_SEARCH_URL: &str = "https://ydc-index.io/v1/search";
 const YOU_COM_CONTENTS_URL: &str = "https://ydc-index.io/v1/contents";
 
+const KEENABLE_API_BASE: &str = "https://api.keenable.ai/v1";
+// Keenable's keyless endpoints refuse a request that does not name the calling
+// application. Sent only on keyless requests to Keenable.
+const KEENABLE_APP_TITLE: &str = "Jan";
+// Keenable marks content it cut at `max_chars` with this phrase.
+const KEENABLE_TRUNCATED_MARK: &str = "This content has been truncated";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearchResult {
     pub title: String,
@@ -122,6 +129,13 @@ pub const PROVIDERS: &[ProviderMeta] = &[
         secret_key: Some("you-api-key"),
         requires_endpoint: false,
     },
+    ProviderMeta {
+        id: "keenable",
+        label: "Keenable",
+        keyless: true,
+        secret_key: Some("keenable-api-key"),
+        requires_endpoint: false,
+    },
 ];
 
 /// Look up a backend by id (case-insensitive; empty/absent is the default).
@@ -177,6 +191,7 @@ pub fn create_provider(
         Some("tavily") => Ok(Box::new(TavilyProvider::new(api_key)?)),
         Some("searxng") => Ok(Box::new(SearxngProvider::new(endpoint)?)),
         Some("you") => Ok(Box::new(YouComProvider::new(api_key)?)),
+        Some("keenable") => Ok(Box::new(KeenableProvider::new(api_key)?)),
         Some(other) => Err(format!("Unknown web search provider '{other}'")),
     }
 }
@@ -677,6 +692,143 @@ fn normalize_tavily_extract(body: &Value, requested_url: &str) -> Result<Fetched
         title: String::new(),
         content,
         truncated,
+    })
+}
+
+/// Keenable backend. Keyless by default: search and fetch go to Keenable's
+/// public endpoints (`/v1/search/public`, `/v1/fetch/public`), rate limited per
+/// IP, with the `X-Keenable-Title` header those endpoints require. With an API
+/// key the same requests go to `/v1/search` and `/v1/fetch` with `X-API-Key`.
+/// Both transports return the same JSON, so one normalizer serves both.
+pub struct KeenableProvider {
+    api_key: Option<String>,
+    client: reqwest::Client,
+}
+
+impl KeenableProvider {
+    pub fn new(api_key: Option<String>) -> Result<Self, String> {
+        Ok(Self {
+            api_key: normalize_key(api_key),
+            client: build_http_client("Keenable")?,
+        })
+    }
+
+    /// Endpoint for `path` (`search` or `fetch`): the keyed one with a key,
+    /// the public one without.
+    fn endpoint(&self, path: &str) -> String {
+        match self.api_key {
+            Some(_) => format!("{KEENABLE_API_BASE}/{path}"),
+            None => format!("{KEENABLE_API_BASE}/{path}/public"),
+        }
+    }
+
+    fn authorize(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match &self.api_key {
+            Some(key) => request.header("x-api-key", key),
+            None => request.header("x-keenable-title", KEENABLE_APP_TITLE),
+        }
+    }
+
+    async fn send(&self, request: reqwest::RequestBuilder) -> Result<Value, String> {
+        let resp = self
+            .authorize(request)
+            .send()
+            .await
+            .map_err(|e| format!("Keenable request failed: {e}"))?;
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("Keenable: failed to read response body: {e}"))?;
+        if !status.is_success() {
+            return Err(format!(
+                "Keenable failed with HTTP {}: {}",
+                status.as_u16(),
+                text.chars().take(400).collect::<String>()
+            ));
+        }
+        serde_json::from_str(&text).map_err(|e| format!("Keenable: invalid JSON response: {e}"))
+    }
+}
+
+#[async_trait]
+impl SearchProvider for KeenableProvider {
+    async fn search(&self, query: &str, count: u32) -> Result<Vec<SearchResult>, String> {
+        let request = self
+            .client
+            .post(self.endpoint("search"))
+            .json(&json!({ "query": query, "max_results": count }));
+        let parsed = self.send(request).await?;
+        Ok(normalize_keenable_search(&parsed))
+    }
+
+    async fn fetch(&self, url: &str) -> Result<FetchedPage, String> {
+        let max_chars = FETCH_MAX_CHARS.to_string();
+        let request = self.client.get(self.endpoint("fetch")).query(&[
+            ("url", url),
+            ("live", "true"),
+            ("max_chars", max_chars.as_str()),
+        ]);
+        let parsed = self.send(request).await?;
+        normalize_keenable_fetch(&parsed, url)
+    }
+}
+
+fn normalize_keenable_search(body: &Value) -> Vec<SearchResult> {
+    let Some(results) = body.get("results").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    results
+        .iter()
+        .map(|r| {
+            let title = r.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            let url = r.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            // `description` is deprecated and always empty; `snippet` holds the excerpt.
+            let snippet = r
+                .get("snippet")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .or_else(|| r.get("description").and_then(|v| v.as_str()))
+                .map(|t| clip_chars(t, 500))
+                .unwrap_or_default();
+            let published_at = r
+                .get("published_at")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            SearchResult {
+                title: title.to_string(),
+                url: url.to_string(),
+                snippet,
+                published_at,
+            }
+        })
+        .collect()
+}
+
+fn normalize_keenable_fetch(body: &Value, requested_url: &str) -> Result<FetchedPage, String> {
+    let raw = body
+        .get("content")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| format!("Keenable returned no content for {requested_url}"))?;
+    let url = body
+        .get("url")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(requested_url)
+        .to_string();
+    let title = body
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let (content, cut) = bound_text(raw);
+    Ok(FetchedPage {
+        url,
+        title,
+        truncated: cut || content.contains(KEENABLE_TRUNCATED_MARK),
+        content,
     })
 }
 
@@ -1354,6 +1506,98 @@ mod tests {
         assert_eq!(results[0].snippet, "A short excerpt.");
         assert_eq!(results[0].published_at.as_deref(), Some("2024-05-01"));
         assert!(results[1].published_at.is_none());
+    }
+
+    #[test]
+    fn keenable_is_keyless_and_listed() {
+        let p = KeenableProvider::new(None).unwrap();
+        assert!(p.api_key.is_none());
+        assert_eq!(
+            p.endpoint("search"),
+            "https://api.keenable.ai/v1/search/public"
+        );
+        assert_eq!(
+            p.endpoint("fetch"),
+            "https://api.keenable.ai/v1/fetch/public"
+        );
+        let p = KeenableProvider::new(Some("  ".into())).unwrap();
+        assert!(p.api_key.is_none());
+        let meta = provider_meta(Some("Keenable")).unwrap();
+        assert!(meta.keyless);
+        assert_eq!(meta.secret_key, Some("keenable-api-key"));
+        assert!(create_provider(Some("keenable"), None, None).is_ok());
+    }
+
+    #[test]
+    fn keenable_key_selects_keyed_endpoints_and_header() {
+        let p = KeenableProvider::new(Some(" keen_abc ".into())).unwrap();
+        assert_eq!(p.api_key.as_deref(), Some("keen_abc"));
+        assert_eq!(p.endpoint("search"), "https://api.keenable.ai/v1/search");
+        let req = p
+            .authorize(p.client.get(p.endpoint("search")))
+            .build()
+            .unwrap();
+        assert_eq!(req.headers()["x-api-key"], "keen_abc");
+        assert!(req.headers().get("x-keenable-title").is_none());
+
+        let keyless = KeenableProvider::new(None).unwrap();
+        let req = keyless
+            .authorize(keyless.client.get(keyless.endpoint("search")))
+            .build()
+            .unwrap();
+        assert_eq!(req.headers()["x-keenable-title"], KEENABLE_APP_TITLE);
+        assert!(req.headers().get("x-api-key").is_none());
+    }
+
+    #[test]
+    fn normalize_keenable_search_maps_contract() {
+        let body = json!({
+            "query": "q",
+            "mode": "pro",
+            "results": [
+                {
+                    "title": "Example",
+                    "url": "https://example.com",
+                    "description": "",
+                    "snippet": "A short excerpt.",
+                    "published_at": "2026-05-01T00:00:00Z",
+                    "acquired_at": "2026-05-02T00:00:00Z"
+                },
+                { "title": "No date", "url": "https://example.org", "description": "", "snippet": "Body." }
+            ]
+        });
+        let results = normalize_keenable_search(&body);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].url, "https://example.com");
+        assert_eq!(results[0].snippet, "A short excerpt.");
+        assert_eq!(
+            results[0].published_at.as_deref(),
+            Some("2026-05-01T00:00:00Z")
+        );
+        assert!(results[1].published_at.is_none());
+        assert!(normalize_keenable_search(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn normalize_keenable_fetch_reads_content_and_title() {
+        let body = json!({
+            "url": "https://example.com/",
+            "title": "Example",
+            "description": "",
+            "content": "# Example\n\nhello"
+        });
+        let page = normalize_keenable_fetch(&body, "https://example.com").unwrap();
+        assert_eq!(page.url, "https://example.com/");
+        assert_eq!(page.title, "Example");
+        assert_eq!(page.content, "# Example\n\nhello");
+        assert!(!page.truncated);
+
+        let cut = json!({ "content": "text\n\n..._This content has been truncated to stay below 40000 characters_..." });
+        let page = normalize_keenable_fetch(&cut, "https://example.com").unwrap();
+        assert_eq!(page.url, "https://example.com");
+        assert!(page.truncated);
+
+        assert!(normalize_keenable_fetch(&json!({ "content": "" }), "u").is_err());
     }
 
     #[test]
