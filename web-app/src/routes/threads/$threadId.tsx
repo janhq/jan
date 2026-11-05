@@ -98,12 +98,16 @@ import {
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
-import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import {
+  useToolApprovalRequests,
+  type ApprovalOptions,
+} from '@/hooks/useToolApprovalRequests'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
 import { getExtensionHost } from '@/lib/extensions/host'
+import { extensionAuthorOf } from '@/lib/extensions/authorship'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ServiceKeys } from '@janhq/core'
 import { Shimmer } from '@/components/ai-elements/shimmer'
@@ -170,14 +174,20 @@ const launchedCtxLens = new Map<string, number | undefined>()
 const titleAborts = new Map<string, AbortController>()
 
 // The text and reasoning a reply generated so far: what a resume replays as
-// the assistant prefill, so a thinking model keeps its reasoning.
+// the assistant prefill, so a thinking model keeps its reasoning. Its author
+// rides along: the resumed reply replaces this one and keeps rendering
+// without remote images if an extension wrote it.
 const partialOf = (message: UIMessage) => {
   const collect = (type: 'text' | 'reasoning') =>
     message.parts
       .filter((p) => p.type === type)
       .map((p) => (p as { text: string }).text)
       .join('')
-  return { text: collect('text'), reasoning: collect('reasoning') }
+  return {
+    text: collect('text'),
+    reasoning: collect('reasoning'),
+    extensionAuthor: extensionAuthorOf(message.metadata),
+  }
 }
 
 const takeFrom = <V,>(map: Map<string, V>, threadId: string) => {
@@ -220,8 +230,10 @@ useChatSessions.subscribe((state) => {
 // message and the AI SDK's auto-resubmit (sendAutomaticallyWhen) fires. A
 // component ref would be shared by every thread (the route is reused across
 // thread switches), so one thread finishing or being left would drop another
-// thread's pending approvals and prompt the user again.
-const toolApprovalPromises = new Map<string, Map<string, Promise<boolean>>>()
+// thread's pending approvals and prompt the user again. The origin the call was
+// asked under travels with it, so execution runs what was approved.
+type PendingApproval = { approved: Promise<boolean>; origin: ToolOrigin }
+const toolApprovalPromises = new Map<string, Map<string, PendingApproval>>()
 const approvalsOf = (threadId: string) => {
   let approvals = toolApprovalPromises.get(threadId)
   if (!approvals) {
@@ -277,14 +289,34 @@ function rewriteStoredTurn(
   })
 }
 
-// The MCP server a tool belongs to, so an approval prompt can offer to trust
-// the whole server rather than this one tool.
-function serverForTool(toolName: string): string | undefined {
-  const state = useAppState.getState()
-  return (
-    state.tools.find((tool) => tool.name === toolName)?.server ??
-    extensionToolOf(toolName)?.server
-  )
+// Recorded for an approved call whose tool came to be served by someone else
+// (an extension loaded or unloaded) while it waited: the grant was for the other.
+const ORIGIN_CHANGED_TOOL_ERROR =
+  'Tool call refused: the tool changed while it was waiting for approval.'
+
+// Who serves a call and under which server, so an approval prompt can offer
+// to trust the whole server. Resolved once when the call arrives and carried
+// to the approval, the running timer and execution, so a grant keyed as MCP
+// never runs a contributed tool of the same name. A name both claim is the
+// extension's.
+type ToolOrigin = ReturnType<typeof toolOriginOf>
+function toolOriginOf(toolName: string) {
+  const extensionTool = extensionToolOf(toolName)
+  if (extensionTool) {
+    return {
+      origin: 'extension' as const,
+      server: extensionTool.server,
+      extensionTool,
+    }
+  }
+  const mcpTool = useAppState
+    .getState()
+    .tools.find((tool) => tool.name === toolName)
+  return {
+    origin: 'mcp' as const,
+    server: mcpTool?.server,
+    extensionTool: undefined,
+  }
 }
 
 // The contributed tool a call names, by its wire name. Read per call, so a
@@ -339,12 +371,33 @@ function webRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
 
 // Internal tools never prompt: RAG and the native web tools are Jan's own, and
 // the built-in shell is gated in Rust (execute_tool refuses anything needing
-// approval), so only workspace-confined calls ever reach here.
-function isAutoAllowedTool(toolName: string): boolean {
+// approval), so only workspace-confined calls ever reach here. The web tools
+// do prompt on a turn an extension's provider serves: there the model is the
+// extension's, and a free `web_fetch` would reach any host its network grants
+// leave out.
+function isAutoAllowedTool(toolName: string, threadId: string): boolean {
   return (
     useAppState.getState().ragToolNames.has(toolName) ||
-    webRoute(toolName) === 'builtin' ||
+    (webRoute(toolName) === 'builtin' && !turnOnExtensionProvider(threadId)) ||
     chatShellRoute(toolName) === 'builtin'
+  )
+}
+
+// Every call the model an extension serves makes is asked for on its own:
+// neither "allow all MCP" nor a grant given on another turn covers it.
+function approvalOptions(
+  threadId: string,
+  origin: ToolOrigin['origin']
+): ApprovalOptions {
+  return turnOnExtensionProvider(threadId)
+    ? { strict: true, origin }
+    : { origin }
+}
+
+function turnOnExtensionProvider(threadId: string): boolean {
+  const providerName = turnModelOf(threadId).selectedProvider
+  return Boolean(
+    useModelProvider.getState().getProviderByName(providerName)?.source
   )
 }
 
@@ -856,16 +909,19 @@ function ThreadDetail() {
               continue
             }
 
-            const approved = isAutoAllowedTool(toolName)
+            const pending = approvalsOf(threadId).get(toolCall.toolCallId)
+            const origin = pending?.origin ?? toolOriginOf(toolName)
+            const approved = isAutoAllowedTool(toolName, threadId)
               ? true
-              : await (approvalsOf(threadId).get(toolCall.toolCallId) ??
+              : await (pending?.approved ??
                   useToolApprovalRequests
                     .getState()
                     .requestApproval(
                       toolCall.toolCallId,
                       toolName,
                       threadId,
-                      serverForTool(toolName)
+                      origin.server,
+                      approvalOptions(threadId, origin.origin)
                     ))
             approvalsOf(threadId).delete(toolCall.toolCallId)
             // Only an explicit Stop skips the result. Deleting the thread also
@@ -887,11 +943,23 @@ function ThreadDetail() {
               continue
             }
 
+            // Re-resolved only to compare: running either tool now would act
+            // on a grant given for the other.
+            if (toolOriginOf(toolName).origin !== origin.origin) {
+              record({
+                state: 'output-error',
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                errorText: ORIGIN_CHANGED_TOOL_ERROR,
+              })
+              continue
+            }
+
             // Timed from here, not from approval, so a long approval wait is
             // not reported as the tool being slow.
             useToolCallRuntime
               .getState()
-              .markRunning(toolCall.toolCallId, serverForTool(toolName))
+              .markRunning(toolCall.toolCallId, origin.server)
 
             // A tool result is injected into conversation history verbatim, so a
             // page-sized one can exhaust the context on its own. This is the
@@ -907,7 +975,7 @@ function ThreadDetail() {
             // a hung MCP server) must not hold the loop, and the thread, busy.
             const result = await untilAborted<ToolRunResult>(
               (async () => {
-                const extensionTool = extensionToolOf(toolName)
+                const { extensionTool } = origin
                 if (webRoute(toolName) === 'builtin') {
                   return await executeWebTool(toolName, toolCall.input, {
                     maxOutputChars,
@@ -1118,22 +1186,24 @@ function ThreadDetail() {
       // never prompt (see isAutoAllowedTool).
       sessionData.tools.push(toolCall)
       if (
-        !isAutoAllowedTool(toolCall.toolName) &&
+        !isAutoAllowedTool(toolCall.toolName, threadId) &&
         !isDisabledChatAgentTool(toolCall.toolName) &&
         webRoute(toolCall.toolName) !== 'disabled' &&
         !approvalsOf(threadId).has(toolCall.toolCallId)
       ) {
-        approvalsOf(threadId).set(
-          toolCall.toolCallId,
-          useToolApprovalRequests
+        const origin = toolOriginOf(toolCall.toolName)
+        approvalsOf(threadId).set(toolCall.toolCallId, {
+          approved: useToolApprovalRequests
             .getState()
             .requestApproval(
               toolCall.toolCallId,
               toolCall.toolName,
               threadId,
-              serverForTool(toolCall.toolName)
-            )
-        )
+              origin.server,
+              approvalOptions(threadId, origin.origin)
+            ),
+          origin,
+        })
       }
     },
     sendAutomaticallyWhen: followUpMessage,
@@ -1972,9 +2042,9 @@ function ThreadDetail() {
     (messageId: string) => {
       const msg = chatMessages.find((m) => m.id === messageId)
       if (!msg) return
-      const { text, reasoning } = partialOf(msg)
-      if (!text && !reasoning) return
-      setContinueFromContent({ text, reasoning })
+      const partial = partialOf(msg)
+      if (!partial.text && !partial.reasoning) return
+      setContinueFromContent(partial)
       continueReplaceIds.set(threadId, messageId)
       handleRegenerate(messageId)
     },

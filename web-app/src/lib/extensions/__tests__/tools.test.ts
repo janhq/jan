@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import type { ContributionState } from '../contributions'
-import { listExtensionTools, toToolOutcome, toolWireName } from '../tools'
+import {
+  isExtensionToolName,
+  listExtensionTools,
+  toToolOutcome,
+  toolWireName,
+} from '../tools'
 
 const tool = (name: string, bound = true) => ({
   name,
@@ -106,5 +111,14 @@ describe('toToolOutcome', () => {
       error: expect.any(String),
     })
     expect(toToolOutcome(undefined)).toMatchObject({ error: expect.any(String) })
+  })
+})
+
+describe('isExtensionToolName', () => {
+  it('recognises a wire name whether or not the tool is loaded', () => {
+    expect(isExtensionToolName(toolWireName('acme.one', 'search'))).toBe(true)
+    expect(isExtensionToolName('web_search')).toBe(false)
+    expect(isExtensionToolName('x_search')).toBe(false)
+    expect(isExtensionToolName('x_0123__search')).toBe(false)
   })
 })

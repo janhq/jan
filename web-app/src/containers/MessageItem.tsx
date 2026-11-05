@@ -9,6 +9,9 @@ import { ChainOfThoughtGroup } from './message/ChainOfThoughtGroup'
 import { AskSummaryCard } from './message/AskSummaryCard'
 import { summarizeAsk } from '@/lib/coworkAsk'
 import { ASK_TOOL_NAME } from '@/lib/coworkTools'
+import { extensionAuthorOf } from '@/lib/extensions/authorship'
+import { withRemoteImages } from '@/lib/extensions/remoteImages'
+import { isExtensionToolName } from '@/lib/extensions/tools'
 import {
   CHAT_STATUS,
   CONTENT_TYPE,
@@ -126,6 +129,9 @@ export const MessageItem = memo(
     const selectedModel = useModelProvider((state) => state.selectedModel)
     const coloredUserBubble = useInterfaceSettings((s) => s.coloredUserBubble)
     const metadata = message.metadata as Record<string, unknown> | undefined
+    // Written by a third-party extension: nothing in it may load from the
+    // network (see lib/extensions/authorship).
+    const extensionAuthored = extensionAuthorOf(metadata) !== undefined
     const messageError = useMessageErrors((s) => s.errors[message.id])
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
     // Machine-readable stamp for <time>; toISOString throws on an invalid date,
@@ -235,6 +241,9 @@ export const MessageItem = memo(
           const part = parts[i]
           if (!part.type?.startsWith('tool-')) continue
           if (part.state !== 'output-available') continue
+          // A contributed tool's output is its extension's text: citations in
+          // it would put favicons from any host in the footer and the chips.
+          if (isExtensionToolName(part.type.slice('tool-'.length))) continue
           const parsed = parseCitationsFromToolOutput(part.output)
           if (parsed?.kind === 'rag') {
             offsets.set(i, out.length)
@@ -421,6 +430,7 @@ export const MessageItem = memo(
                 isStreaming={isStreaming && isLastPart}
                 messageId={message.id}
                 isAnimating={isAnimating}
+                noRemoteImages={extensionAuthored}
               />
             </>
           )}
@@ -433,6 +443,14 @@ export const MessageItem = memo(
       const isAudio =
         part.mediaType === 'audio/wav' || part.mediaType === 'audio/mpeg'
       const isVideo = part.mediaType?.startsWith('video/')
+      // Only inline media for extension-authored messages: a URL would be
+      // fetched from whatever host it names.
+      if (
+        extensionAuthored &&
+        part.url &&
+        !/^(data|blob):/i.test(part.url)
+      )
+        return null
 
       if (isAudio && part.url) {
         const justify =
@@ -578,6 +596,7 @@ export const MessageItem = memo(
       grounding,
       awaitingApproval,
       citationOffsets,
+      extensionAuthored,
     ])
 
     const versionNav =
@@ -628,7 +647,10 @@ export const MessageItem = memo(
       )
     }
 
-    return (
+    // Off for a message an extension authored: every widget below that would
+    // fetch an image by URL (citation favicons, the web tool bar) reads it.
+    return withRemoteImages(
+      !extensionAuthored,
       <div
         data-testid="message-item"
         data-message-role={message.role}

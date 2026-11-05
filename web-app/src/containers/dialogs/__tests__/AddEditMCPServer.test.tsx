@@ -198,6 +198,43 @@ describe('AddEditMCPServer', () => {
     expect(props.onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  // `ext:` names are extensions' tool servers; an MCP server under one could
+  // be mistaken for an extension wherever tools are listed by server.
+  it('refuses a server name starting with ext: (form mode)', () => {
+    const props = baseProps()
+    render(<AddEditMCPServer {...props} />)
+    fireEvent.change(
+      screen.getByPlaceholderText('mcp-servers:enterServerName'),
+      { target: { value: 'ext:foo' } }
+    )
+    fireEvent.change(
+      screen.getByPlaceholderText('mcp-servers:enterCommand'),
+      { target: { value: 'node' } }
+    )
+    fireEvent.click(screen.getByText('mcp-servers:save'))
+    expect(props.onSave).not.toHaveBeenCalled()
+    expect(props.onOpenChange).not.toHaveBeenCalled()
+    expect(
+      screen.getByText('mcp-servers:editJson.errorReservedServerName')
+    ).toBeInTheDocument()
+  })
+
+  it('refuses a server name starting with ext: (JSON mode)', () => {
+    const props = baseProps()
+    render(<AddEditMCPServer {...props} />)
+    fireEvent.click(document.querySelector('[title="Add server by JSON"]')!)
+    fireEvent.change(screen.getByTestId('code-editor'), {
+      target: {
+        value: JSON.stringify({ ' ext:foo': { command: 'c', type: 'stdio' } }),
+      },
+    })
+    fireEvent.click(screen.getByText('mcp-servers:save'))
+    expect(props.onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getByText('mcp-servers:editJson.errorReservedServerName')
+    ).toBeInTheDocument()
+  })
+
   it('rejects JSON where a server declares an invalid transport type', () => {
     const props = baseProps()
     render(<AddEditMCPServer {...props} />)

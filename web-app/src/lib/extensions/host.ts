@@ -7,7 +7,6 @@ import {
   isModelCapability,
   RESERVED_PUBLISHER,
   toDisposable,
-  type ConversationsApi,
   type Event,
   type ExtensionContext,
   type ExtensionModule,
@@ -36,7 +35,10 @@ import { loopbackFetch } from '@/lib/loopback-fetch'
 import * as extensionsPlugin from '@janhq/tauri-plugin-extensions-api'
 import type { BuiltinExtension } from './builtins'
 import { createContext } from './context'
-import { createConversationsApi } from './conversations'
+import {
+  createConversationsApi,
+  type HostConversations,
+} from './conversations'
 import { ContributionStore, own, useContributions } from './contributions'
 import { PermissionDispatcher } from './dispatcher'
 import { createHostApi, type Notify } from './host-api'
@@ -110,7 +112,7 @@ export interface ExtensionHostOptions {
   notify: Notify
   /** Defaults to a private store; the app passes `useContributions`. */
   contributions?: ContributionStore
-  conversations?: ConversationsApi
+  conversations?: HostConversations
   /** The network path of installed extensions; absent means none. */
   http?: ExtensionHttp
   /** The registry installed extensions are loaded and reloaded from. */

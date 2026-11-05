@@ -5,6 +5,7 @@ import { DefaultMessagesService } from '@/services/messages/default'
 import { DefaultThreadsService } from '@/services/threads/default'
 import { createConversationsApi } from '../conversations'
 import { createContext } from '../context'
+import { createHostApi } from '../host-api'
 import { ContributionStore } from '../contributions'
 import { PermissionDispatcher } from '../dispatcher'
 import { ExtensionSettingsStore } from '../settings-store'
@@ -181,6 +182,62 @@ describe('createConversationsApi', () => {
     await expect(
       conversations.appendMessage('missing', { role: 'user', text: 'x' })
     ).rejects.toMatchObject({ code: 'E_NOT_FOUND' })
+  })
+
+  it('stamps a message with the extension that appended it', async () => {
+    const { conversations } = setup()
+    await conversations.appendMessage(
+      't1',
+      { role: 'assistant', text: '![](https://evil.example/p)' },
+      'acme.writer'
+    )
+    expect(api.createMessage).toHaveBeenCalledWith({
+      message: expect.objectContaining({
+        metadata: { extensionAuthor: 'acme.writer' },
+      }),
+    })
+  })
+
+  it('stamps what a worker extension appends, and not what a built-in does', async () => {
+    const { conversations } = setup()
+    const append = vi.spyOn(conversations, 'appendMessage')
+    const deps = (m: ReturnType<typeof manifest>) => {
+      const dispatcher = new PermissionDispatcher()
+      dispatcher.grant(m.id, m.permissions)
+      return {
+        dispatcher,
+        contributions: new ContributionStore(),
+        settings: new ExtensionSettingsStore({
+          appSettings: memoryAppSettings(),
+          secrets: memorySecrets(),
+        }),
+        storage: memoryAppSettings(),
+        notify: vi.fn(),
+        conversations,
+      }
+    }
+    const msg = { role: 'assistant' as const, text: 'hi' }
+
+    const worker = manifest('acme.writer', {
+      permissions: ['conversations:write'],
+    })
+    const d = deps(worker)
+    await d.dispatcher.dispatch(
+      worker,
+      createHostApi(worker, d),
+      'conversations.appendMessage',
+      ['t1', msg]
+    )
+    expect(append).toHaveBeenLastCalledWith('t1', msg, 'acme.writer')
+
+    const builtin = manifest('jan.writer', {
+      permissions: ['conversations:write'],
+    })
+    await createContext(builtin, deps(builtin)).conversations.appendMessage(
+      't1',
+      msg
+    )
+    expect(append).toHaveBeenLastCalledWith('t1', msg, undefined)
   })
 
   it('fires onDidCreateMessage once per created message, whoever created it', async () => {

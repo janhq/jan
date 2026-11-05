@@ -103,6 +103,10 @@ const KNOWN_NETWORK_AND_LOADER_GLOBALS = [
   'Worker',
   'SharedWorker',
   'BroadcastChannel',
+  // WebRTC: not in a worker scope today, but connect-src does not govern it.
+  'RTCPeerConnection',
+  'webkitRTCPeerConnection',
+  'RTCDataChannel',
 ]
 
 describe('stripped globals', () => {

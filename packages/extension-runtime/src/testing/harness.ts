@@ -21,6 +21,9 @@ const NETWORK_GLOBALS = [
   'Notification',
   'indexedDB',
   'caches',
+  'RTCPeerConnection',
+  'webkitRTCPeerConnection',
+  'RTCDataChannel',
 ] as const
 
 export interface SandboxOptions {

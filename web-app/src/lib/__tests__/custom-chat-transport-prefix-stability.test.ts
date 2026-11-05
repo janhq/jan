@@ -5,6 +5,8 @@ import type * as ProviderCaps from '@/lib/providerCaps'
 // Capture every streamText({...}) call so we can compare the prompt prefix
 // (system + tools + prior model messages) across consecutive turns.
 const streamTextCalls: Array<Record<string, unknown>> = []
+// What each request stamps on its reply's start part.
+const startMetadata: unknown[] = []
 
 const h = vi.hoisted(() => ({
   disabledTools: [] as string[],
@@ -37,12 +39,18 @@ vi.mock('ai', async () => {
     streamText: (args: Record<string, unknown>) => {
       streamTextCalls.push(args)
       return {
-        toUIMessageStream: () =>
-          new ReadableStream({
+        toUIMessageStream: (opts?: {
+          messageMetadata?: (o: { part: { type: string } }) => unknown
+        }) => {
+          startMetadata.push(
+            opts?.messageMetadata?.({ part: { type: 'start' } })
+          )
+          return new ReadableStream({
             start(controller) {
               controller.close()
             },
-          }),
+          })
+        },
       }
     },
   }
@@ -360,6 +368,23 @@ describe('CustomChatTransport assistant completion (continuation prefill)', () =
     expect(JSON.stringify(contMessages.slice(0, normalMessages.length))).toBe(
       JSON.stringify(normalMessages)
     )
+  })
+
+  // The continued reply replaces the stopped one, so it has to keep that
+  // reply's author even when it now runs on a built-in model.
+  it('stamps the continued reply with the partial reply author', async () => {
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    startMetadata.length = 0
+    transport.setContinueFromContent({
+      text: 'Roses are red,',
+      extensionAuthor: 'acme.provider',
+    })
+    await drain(await send(transport, history))
+    await drain(await send(transport, history))
+    expect(startMetadata).toEqual([
+      { extensionAuthor: 'acme.provider' },
+      undefined,
+    ])
   })
 
   it('consumes the prefill once (next send appends nothing)', async () => {

@@ -29,6 +29,10 @@ import { CitationLink } from '@/components/CitationLink'
 import { WebCitationChip } from '@/components/WebCitationChip'
 import { MarkdownTable } from '@/components/MarkdownTable'
 import { externalHref, openExternalUrl } from '@/lib/externalLink'
+import {
+  useRemoteImagesAllowed,
+  withRemoteImages,
+} from '@/lib/extensions/remoteImages'
 
 // Do not resolve model-generated links against the app's own origin.
 function isWebLink(href: string | undefined): boolean {
@@ -75,6 +79,29 @@ function restrictChatLinks() {
   }
 }
 
+// Replaces every <img> whose source is not an inline `data:` image with its
+// alt text. Runs after the hardener, which resolves relative and
+// protocol-relative sources, so anything left that is not `data:` would make
+// a request.
+function dropRemoteImages() {
+  return (tree: Root) => {
+    visit(tree, 'element', (node, index, parent) => {
+      if (node.tagName !== 'img' || !parent || index === undefined) return
+      const src = node.properties.src
+      if (typeof src === 'string' && src.startsWith('data:image/')) return
+      const alt = node.properties.alt
+      parent.children.splice(
+        index,
+        1,
+        ...(typeof alt === 'string' && alt
+          ? [{ type: 'text' as const, value: alt }]
+          : [])
+      )
+      return [SKIP, index]
+    })
+  }
+}
+
 const WEB_CITE_MARKER = /\[\[cite:\s*([^\]\s]+?)\s*\]\]/g
 
 // Models sometimes drop the scheme (e.g. "example.com/x"); normalize to https.
@@ -101,6 +128,14 @@ interface MarkdownProps {
   isStreaming?: boolean
   messageId?: string
   isAnimating?: boolean
+  /**
+   * Content a third-party extension authored (see lib/extensions/authorship).
+   * Remote images, mermaid diagrams and citation favicons are not loaded:
+   * the app's img-src allows any https host, so any of them would let the
+   * extension reach a host it holds no `network:` grant for. Inline `data:`
+   * images still render. Also on whenever `RemoteImagesContext` is off.
+   */
+  noRemoteImages?: boolean
 }
 
 // Hoisted so their identity is stable across renders — Streamdown is memoized
@@ -108,7 +143,12 @@ interface MarkdownProps {
 // a full re-parse + re-highlight on every streamed token.
 const REMARK_PLUGINS = [remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]
 const REHYPE_PLUGINS = [rehypeKatex, restrictChatLinks, defaultRehypePlugins.harden]
+const NO_REMOTE_IMAGE_REHYPE_PLUGINS = [...REHYPE_PLUGINS, dropRemoteImages]
 const STREAMDOWN_PLUGINS = { code, mermaid, cjk }
+// Mermaid draws in the browser, after the rehype pass, and its image shape
+// (`A@{ img: "https://..." }`) loads whatever URL the diagram names. Content
+// an extension authored keeps its diagrams as code blocks instead.
+const NO_REMOTE_IMAGE_STREAMDOWN_PLUGINS = { code, cjk }
 const STREAMDOWN_CONTROLS = { mermaid: { fullscreen: false } }
 const LINK_SAFETY = { enabled: false }
 const EMPTY_MERMAID = {}
@@ -256,7 +296,10 @@ function RenderMarkdownComponent({
   messageId,
   isAnimating,
   isStreaming,
+  noRemoteImages: noRemoteImagesProp,
 }: MarkdownProps) {
+  const remoteImagesAllowed = useRemoteImagesAllowed()
+  const noRemoteImages = noRemoteImagesProp || !remoteImagesAllowed
   const renderHtmlArtifacts = useInterfaceSettings(
     (s) => s.renderHtmlArtifacts
   )
@@ -339,7 +382,8 @@ function RenderMarkdownComponent({
       : null
   }, [normalizedContent, isStreaming, renderHtmlArtifacts])
 
-  return (
+  return withRemoteImages(
+    !noRemoteImages,
     <div
       dir="auto"
       className={cn(
@@ -368,6 +412,7 @@ function RenderMarkdownComponent({
                 messageId={messageId}
                 className={className}
                 components={mergedComponents}
+                noRemoteImages={noRemoteImages}
               />
             )
           )
@@ -379,6 +424,7 @@ function RenderMarkdownComponent({
             messageId={messageId}
             className={className}
             components={mergedComponents}
+            noRemoteImages={noRemoteImages}
           />
         )}
     </div>
@@ -392,6 +438,7 @@ interface StreamdownViewProps {
   isStreaming?: boolean
   isAnimating?: boolean
   messageId?: string
+  noRemoteImages?: boolean
 }
 
 function StreamdownViewComponent({
@@ -401,6 +448,7 @@ function StreamdownViewComponent({
   isStreaming,
   isAnimating,
   messageId,
+  noRemoteImages,
 }: StreamdownViewProps) {
   const mermaidOptions = useMemo(
     () =>
@@ -436,9 +484,13 @@ function StreamdownViewComponent({
       linkSafety={LINK_SAFETY}
       className={mergedClassName}
       remarkPlugins={REMARK_PLUGINS}
-      rehypePlugins={REHYPE_PLUGINS}
+      rehypePlugins={
+        noRemoteImages ? NO_REMOTE_IMAGE_REHYPE_PLUGINS : REHYPE_PLUGINS
+      }
       components={effectiveComponents}
-      plugins={STREAMDOWN_PLUGINS}
+      plugins={
+        noRemoteImages ? NO_REMOTE_IMAGE_STREAMDOWN_PLUGINS : STREAMDOWN_PLUGINS
+      }
       controls={STREAMDOWN_CONTROLS}
       mermaid={mermaidOptions}
     >
@@ -452,5 +504,6 @@ export const RenderMarkdown = memo(
   RenderMarkdownComponent,
   (prevProps, nextProps) =>
     prevProps.content === nextProps.content &&
-    prevProps.isStreaming === nextProps.isStreaming
+    prevProps.isStreaming === nextProps.isStreaming &&
+    prevProps.noRemoteImages === nextProps.noRemoteImages
 )

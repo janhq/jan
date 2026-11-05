@@ -53,7 +53,7 @@
     },
     "providers": {
       "title": "Add model providers",
-      "description": "Add model providers that appear in the model picker."
+      "description": "Add model providers that appear in the model picker. Replies are shown without web images, so they cannot make Jan contact other servers."
     },
     "tools": {
       "title": "Add tools for models",
@@ -65,7 +65,7 @@
     },
     "conversationsWrite": {
       "title": "Change your conversations",
-      "description": "Create threads and add messages to them."
+      "description": "Create threads and add messages to them. Messages it adds are shown without web images, so they cannot make Jan contact other servers."
     },
     "chatHooks": {
       "title": "Change messages before they are sent",

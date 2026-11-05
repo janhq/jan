@@ -10,7 +10,9 @@ import type { Realm } from './realm.js'
  * This list is the second layer. The app creates every worker under its
  * own CSP (`default-src 'none'`, web-app worker-runtime.ts WORKER_CSP), so
  * the engine refuses network access through any primitive, listed here or
- * not; `import()` and `FontFace` are left to that policy alone.
+ * not; `import()` and `FontFace` are left to that policy alone. WebRTC is
+ * the exception: `connect-src` does not govern it, so its constructors are
+ * listed even though no engine exposes them to workers yet.
  */
 export const STRIPPED_GLOBALS = [
   'fetch',
@@ -26,6 +28,9 @@ export const STRIPPED_GLOBALS = [
   'Notification',
   'indexedDB',
   'caches',
+  'RTCPeerConnection',
+  'webkitRTCPeerConnection',
+  'RTCDataChannel',
   '__TAURI__',
   '__TAURI_INTERNALS__',
   '__TAURI_IPC__',
