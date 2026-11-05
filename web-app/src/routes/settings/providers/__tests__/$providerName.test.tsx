@@ -404,9 +404,10 @@ describe('ProviderDetail route', () => {
       expect(r.step).toBe('42')
     })
 
-    it('validateSearch handles missing search', () => {
+    it('validateSearch leaves a missing step out instead of the string "undefined"', () => {
       const r = (Route as any).validateSearch({})
-      expect(r.step).toBe('undefined')
+      expect(r).toEqual({})
+      expect('step' in r).toBe(false)
     })
   })
 

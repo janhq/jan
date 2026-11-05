@@ -58,10 +58,9 @@ import {
 export const Route = createFileRoute('/settings/providers/$providerName')({
   component: ProviderDetail,
   validateSearch: (search: Record<string, unknown>): { step?: string } => {
-    // validate and parse the search params into a typed state
-    return {
-      step: String(search?.step),
-    }
+    // validate and parse the search params into a typed state. An absent
+    // step stays absent: String(undefined) put `?step=undefined` in the URL.
+    return search?.step === undefined ? {} : { step: String(search.step) }
   },
 })
 
