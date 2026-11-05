@@ -1,6 +1,8 @@
 import { toast } from 'sonner'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
+import { stopAgentSessionMonitors } from '@/lib/agentTools'
+import { dropMonitorLane } from '@/lib/coworkMonitor'
 
 /**
  * Canned onboarding prompt for `/init`. Sent as a normal user turn so the agent
@@ -47,10 +49,12 @@ export type SlashCommandDeps = {
   submitTurn: (text: string) => void
   openRail: (kind: 'todos' | 'tasks') => void
   compact: () => void
+  /** Leave the (now deleted) session's route. */
+  goHome?: () => void
 }
 
 export function runSlashCommand(raw: string, deps: SlashCommandDeps): void {
-  const { t, running, currentId, submitTurn, openRail, compact } = deps
+  const { t, running, currentId, submitTurn, openRail, compact, goHome } = deps
   const name = raw.trim().split(/\s+/)[0]
   switch (name) {
     case '/compact':
@@ -75,8 +79,16 @@ export function runSlashCommand(raw: string, deps: SlashCommandDeps): void {
         break
       }
       if (currentId) {
-        useCoworkSessions.getState().clearSession(currentId)
+        // An emptied session has no row anywhere (an empty session is the
+        // unified home, and its route redirects there), so keeping it would
+        // leave a hidden thread on disk. Clearing a conversation deletes it;
+        // sync removes the persisted record and its workspace.
+        void stopAgentSessionMonitors(currentId)
+        dropMonitorLane(currentId)
+        useCoworkRun.getState().clearMonitors(currentId)
         useCoworkRun.getState().clearCodeRun(currentId)
+        useCoworkSessions.getState().deleteSession(currentId)
+        goHome?.()
       }
       break
     case '/models':

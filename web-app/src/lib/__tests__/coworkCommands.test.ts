@@ -7,6 +7,7 @@ vi.mock('sonner', () => ({
   }),
 }))
 
+vi.mock('@/lib/agentTools', () => ({ stopAgentSessionMonitors: vi.fn() }))
 vi.mock('@/lib/backendStorage', () => ({
   backendStorage: {
     getItem: vi.fn().mockResolvedValue(null),
@@ -41,14 +42,16 @@ beforeEach(() => {
 })
 
 describe('runSlashCommand', () => {
-  it('/clear wipes the current session when idle', () => {
+  it('/clear deletes the current session (no hidden empty thread) and leaves its route', () => {
     const id = useCoworkSessions.getState().createSession()
     useCoworkSessions
       .getState()
       .commitTurns(id, [{ role: 'user', content: 'hi' }], [], [])
-    runSlashCommand('/clear', makeDeps({ currentId: id }))
-    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
-    expect(s.turns).toEqual([])
+    const goHome = vi.fn()
+    runSlashCommand('/clear', makeDeps({ currentId: id, goHome }))
+    expect(useCoworkSessions.getState().sessions.find((x) => x.id === id)).toBeUndefined()
+    expect(useCoworkSessions.getState().currentId).not.toBe(id)
+    expect(goHome).toHaveBeenCalledOnce()
   })
 
   it('/clear refuses while a run is in flight', () => {
