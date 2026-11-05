@@ -540,17 +540,27 @@ export async function listMonitors(threadId: string): Promise<string> {
  * authority, and re-derives them before every poll, so nothing passed here can
  * widen what the monitor may do. A monitor whose consent is withdrawn stops
  * with a terminal `permission revoked` update rather than polling on.
+ *
+ * `effectiveGrant` is the run's captured grant (what it classified and had
+ * approved): the host intersects it with its current authority and keeps the
+ * result as the ceiling for every poll, so a grant raised after the run began
+ * cannot widen the monitor. `planMode` is the run's effective, latched Plan
+ * state; the host refuses to start a monitor under it. Both are required.
  */
 export async function startThreadMonitor(
   threadId: string,
   args: Record<string, unknown>,
-  onUpdate: (update: MonitorUpdate) => void
+  onUpdate: (update: MonitorUpdate) => void,
+  effectiveGrant: ThreadCapabilities,
+  planMode: boolean
 ): Promise<string> {
   const channel = new Channel<MonitorUpdate>()
   channel.onmessage = onUpdate
   return await invoke('plugin:agent-tools|start_thread_monitor', {
     threadId,
     args,
+    effectiveGrant,
+    planMode,
     onUpdate: channel,
   })
 }

@@ -561,7 +561,15 @@ export async function runChatTask(input: unknown, callId: string, ctx: ChatOrche
 
 /** Chat `monitor`: native thread APIs only (threadId, args, onUpdate). The host
  * resolves the CURRENT grant each poll; nothing here supplies roots or flags. */
-export async function runChatMonitor(input: unknown, ctx: Pick<ChatOrchestrationContext, 'threadId' | 'signal'>): Promise<ToolOutcome> {
+export async function runChatMonitor(
+  input: unknown,
+  ctx: Pick<ChatOrchestrationContext, 'threadId' | 'signal'> & {
+    /** The grant the run classified (and had approved) this start under; the host keeps its intersection with current authority as the monitor's ceiling. */
+    grant: unknown
+    /** The run's latched Plan state; native refuses a start under Plan. */
+    planActive: () => boolean
+  }
+): Promise<ToolOutcome> {
   const state = stateOf(ctx.threadId)
   const args = (input ?? {}) as { op?: unknown; monitor_id?: unknown }
   const op = typeof args.op === 'string' ? args.op : ''
@@ -589,7 +597,7 @@ export async function runChatMonitor(input: unknown, ctx: Pick<ChatOrchestration
         headline: update.headline,
         text: update.text,
       })
-    })
+    }, ctx.grant, ctx.planActive)
     if (dead()) {
       // Stop/delete landed while the host was starting: do not leak the monitor.
       state.monitors.delete(token)

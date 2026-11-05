@@ -1941,7 +1941,13 @@ fn thread_monitor_commands_pass_the_real_acl_and_dispatch() {
     let started = acl_invoke(
         &main,
         "plugin:agent-tools|start_thread_monitor",
-        json!({"threadId": id, "args": {"op": "start", "script": "true"}, "onUpdate": "__CHANNEL__:1"}),
+        json!({
+            "threadId": id,
+            "args": {"op": "start", "script": "true"},
+            "effectiveGrant": {"version": 1, "folderScope": null, "shellNetwork": false, "memoryWrite": false},
+            "planMode": false,
+            "onUpdate": "__CHANNEL__:1"
+        }),
     );
     let refusal = started.expect_err(
         "start_thread_monitor must refuse in this headless harness: no consent \

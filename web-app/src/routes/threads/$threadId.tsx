@@ -1329,7 +1329,13 @@ function ThreadDetail() {
                 dispatch: dispatchChatTool,
               })
             },
-            onMonitor: (_callId, input) => runChatMonitor(input, { threadId, signal }),
+            onMonitor: (callId, input) => runChatMonitor(input, {
+              threadId,
+              signal,
+              // The grant this call was classified under, never the live one.
+              grant: nativeGrantOf(threadId, callId),
+              planActive: () => useChatSessions.getState().sessions[threadId]?.transport.isPlanActive() === true,
+            }),
           })
           if (clientOutcome) return clientOutcome
         }
