@@ -160,6 +160,7 @@ pub fn get_chat_permissions() -> GlobalGrants {
 /// unit. Two overlapping setters (enable saves and pauses; disable saves,
 /// publishes and fences; enable resumes and publishes) would otherwise leave
 /// the disk saying disabled while the live value says enabled.
+#[cfg(not(feature = "cli"))]
 fn setter_lock() -> &'static tokio::sync::Mutex<()> {
     static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
     LOCK.get_or_init(Default::default)
@@ -180,6 +181,7 @@ fn setter_lock() -> &'static tokio::sync::Mutex<()> {
 /// request that only widens or changes nothing is then reported as success
 /// with a warning; one that narrows anything also returns the error, because
 /// the durability of that revocation is uncertain.
+#[cfg(not(feature = "cli"))]
 async fn apply_chat_permissions(
     data_folder: &Path,
     value: GlobalGrants,
@@ -187,6 +189,7 @@ async fn apply_chat_permissions(
     apply_chat_permissions_with(data_folder, value, sync_dir).await
 }
 
+#[cfg(not(feature = "cli"))]
 async fn apply_chat_permissions_with(
     data_folder: &Path,
     value: GlobalGrants,
@@ -492,6 +495,7 @@ mod tests {
 
     /// Serializes the tests below, which drive the process-wide live grants.
     /// Async-aware, so the guard may be held across the setters' `.await`s.
+    #[cfg(not(feature = "cli"))]
     async fn live_grants_guard() -> tokio::sync::MutexGuard<'static, ()> {
         static G: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
         G.lock().await
@@ -499,6 +503,7 @@ mod tests {
 
     /// E1: a revocation whose write fails is still applied to the live value
     /// and the error is surfaced; a widening whose write fails is not.
+    #[cfg(not(feature = "cli"))]
     #[cfg(unix)]
     #[tokio::test]
     async fn a_revocation_survives_a_failed_write_and_a_widening_does_not() {
@@ -525,16 +530,19 @@ mod tests {
         assert_eq!(after_widen, off, "an unpersisted widening must not take effect");
     }
 
+    #[cfg(not(feature = "cli"))]
     fn get_live() -> GlobalGrants {
         tauri_plugin_agent_tools::thread_capabilities::get_global_grants()
     }
 
+    #[cfg(not(feature = "cli"))]
     fn dir_sync_fails(_: &Path) -> Result<(), String> {
         Err("injected directory sync failure".to_string())
     }
 
     /// Rename done, directory sync failed: the file holds the request, so the
     /// live value must too. Widening-only is a success with a warning.
+    #[cfg(not(feature = "cli"))]
     #[tokio::test]
     async fn a_dir_sync_failure_after_a_widening_applies_it_and_succeeds() {
         let _g = live_grants_guard().await;
@@ -555,6 +563,7 @@ mod tests {
 
     /// A narrowing whose rename is not known durable reports the error, with
     /// the revocation already live and equal to the file.
+    #[cfg(not(feature = "cli"))]
     #[tokio::test]
     async fn a_dir_sync_failure_after_a_narrowing_errors_with_live_equal_to_disk() {
         let _g = live_grants_guard().await;
@@ -572,6 +581,7 @@ mod tests {
 
     /// Mixed: one field narrows, one widens. Both apply live (disk has both),
     /// and the narrowing makes the result an error.
+    #[cfg(not(feature = "cli"))]
     #[tokio::test]
     async fn a_dir_sync_failure_after_a_mixed_request_applies_both_and_errors() {
         let _g = live_grants_guard().await;
@@ -589,6 +599,7 @@ mod tests {
 
     /// A failure before the rename leaves the disk alone and applies no
     /// widening (the injected sync is never reached). Works as root too.
+    #[cfg(not(feature = "cli"))]
     #[tokio::test]
     async fn a_failed_rename_widens_nothing_even_without_filesystem_permissions() {
         let _g = live_grants_guard().await;
@@ -605,6 +616,7 @@ mod tests {
     }
 
     /// E2: overlapping setters leave the live value and the file in agreement.
+    #[cfg(not(feature = "cli"))]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn overlapping_setters_leave_live_and_persisted_state_equal() {
         let _g = live_grants_guard().await;
