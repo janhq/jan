@@ -230,6 +230,24 @@ describe('ToolHeader runtime state', () => {
     expect(screen.queryByText(/tools:toolCall.running/)).not.toBeInTheDocument()
   })
 
+  it('words a pending ask as waiting for the person, with no raw argument preview', () => {
+    useToolCallRuntime.getState().enqueue(['tc1'])
+    renderHeader({
+      title: 'ask',
+      type: 'tool-ask',
+      state: 'input-available',
+      input: { questions: [{ question: 'Pick one' }] },
+    })
+    expect(screen.getByText('common:askToolPending')).toBeInTheDocument()
+    expect(screen.queryByText(/toolCall.queued/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/questions:/)).not.toBeInTheDocument()
+  })
+
+  it('words a settled ask as a question that was asked', () => {
+    renderHeader({ title: 'ask', type: 'tool-ask', state: 'output-available' })
+    expect(screen.getByText('common:askToolAsked')).toBeInTheDocument()
+  })
+
   it('counts the calls waiting ahead of it', () => {
     useToolCallRuntime.getState().enqueue(['a', 'b', 'tc1'])
     renderHeader({ state: 'input-available' })
