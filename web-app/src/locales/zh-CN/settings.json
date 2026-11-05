@@ -215,6 +215,8 @@
     "checkForUpdates": "检查更新",
     "checkForUpdatesDesc": "检查是否有更新版本的 Jan 可用。",
     "checkingForUpdates": "正在检查更新...",
+    "autoUpdateCheck": "自动检查更新",
+    "autoUpdateCheckDesc": "在启动时及之后定期自动检查更新。",
     "copied": "已复制",
     "copyPath": "复制路径",
     "changeLocation": "更改位置",
@@ -248,7 +250,10 @@
     "creditsDesc1": "Jan 由 Menlo 团队用 ❤️ 构建。",
     "creditsDesc2": "特别感谢我们的开源依赖项——尤其是 llama.cpp 和 Tauri——以及我们出色的 AI 社区。",
     "huggingfaceToken": "HuggingFace 令牌",
-    "huggingfaceTokenDesc": "您用于访问模型的 HuggingFace API 令牌。"
+    "huggingfaceTokenDesc": "您用于访问模型的 HuggingFace API 令牌。",
+    "janCli": "Jan CLI",
+    "janCliDesc": "在终端中运行 Jan 的智能体。按照指南安装并开始使用。",
+    "janCliSetupGuide": "安装指南"
   },
   "extensions": {
     "title": "扩展"
