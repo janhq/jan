@@ -1487,7 +1487,10 @@ impl CompositeToolInvoker {
                     request_id: request_id.clone(),
                     tool_name: name.to_string(),
                     capability: "exec outside the sandbox".to_string(),
-                    path: None,
+                    // Where it runs, once a `cd` has moved the shell, as an
+                    // ordinary exec prompt shows: the command alone does not
+                    // say which tree an `rm -rf build` would hit.
+                    path: self.held_shell_cwd(tool),
                     command: args.get("command").and_then(|v| v.as_str()).map(String::from),
                     diff: None,
                     prompt_kind: "escalate".to_string(),
@@ -1511,12 +1514,13 @@ impl CompositeToolInvoker {
         if !approved {
             return escalation_denied_msg(name);
         }
-        let mut ctx = self.streaming_tool_context(id).with_sandbox(false);
-        // An escalated command runs in the project root and its `cd` is not
-        // kept: the prompt the user approved shows only the command, and a
-        // directory reached outside the sandbox would be one the next,
-        // confined call cannot enter.
-        ctx.shell_cwd = None;
+        // The held directory comes along: the model was told every later call
+        // starts there, and the prompt named it. A gone one refuses the
+        // command rather than running it in the root. Where it lands is held
+        // too, checked no differently from a confined call's: never on the
+        // host, but by the next call entering it inside its own sandbox, or
+        // refusing and resetting to the root.
+        let ctx = self.streaming_tool_context(id).with_sandbox(false);
         tauri_plugin_agent_tools::tools::handlers::execute_builtin_with_diff(tool, args, &ctx)
             .await
             .0
@@ -12771,14 +12775,127 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// An escalated command runs in the project root whatever a `cd` left the
-    /// shell in, and its own `cd` is not kept: the user approved a command,
-    /// not a directory, and one reached outside the sandbox may be one the
-    /// next confined call cannot enter. A gated confined exec names the held
-    /// directory in its prompt instead.
+    /// A `shell` call with `args`, as the model sends it.
+    #[cfg(all(feature = "cli", unix))]
+    fn shell_call(id: &str, args: serde_json::Value) -> serde_json::Value {
+        json!({
+            "id": id,
+            "type": "function",
+            "function": { "name": "shell", "arguments": args.to_string() }
+        })
+    }
+
+    /// An invoker holding `held` as the shell's directory whose escalation
+    /// prompt is approved, and the task answering it, which reports the
+    /// prompt's `path`.
+    #[cfg(all(feature = "cli", unix))]
+    fn held_cwd_escalation(
+        root: &std::path::Path,
+        held: std::path::PathBuf,
+    ) -> (
+        CompositeToolInvoker,
+        tauri_plugin_agent_tools::tools::ShellCwd,
+        tokio::task::JoinHandle<Option<String>>,
+    ) {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.to_path_buf(), tx, registry.clone());
+        invoker.escalation = Escalation::Prompt;
+        let cwd = tauri_plugin_agent_tools::tools::ShellCwd::default();
+        *cwd.lock().unwrap() = Some(held);
+        invoker.shell_cwd = Some(cwd.clone());
+        let responder = tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Some(StreamEvent::PermissionRequest { request_id, path, .. }) => {
+                        if let Some(tx) = registry.lock().await.remove(&request_id) {
+                            let _ = tx.send(PermissionDecision::AllowOnce);
+                        }
+                        return path;
+                    }
+                    Some(_) => continue,
+                    None => panic!("no prompt was sent"),
+                }
+            }
+        });
+        (invoker, cwd, responder)
+    }
+
+    /// An escalated command starts where a `cd` left the shell, as the tool
+    /// description promises every later call does, and its prompt names that
+    /// directory: after `cd pkg`, an approved `rm -rf build` hits `pkg/build`,
+    /// and the user sees that it will.
     #[tokio::test]
     #[cfg(all(feature = "cli", unix))]
-    async fn escalation_ignores_and_keeps_no_held_shell_cwd() {
+    async fn escalation_runs_in_and_names_the_held_shell_cwd() {
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
+            return;
+        }
+        let root = unique_project_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let sub = std::fs::canonicalize(root.join("sub")).unwrap();
+        let (invoker, cwd, responder) = held_cwd_escalation(&root, sub.clone());
+        let escalated = json!({ "command": "pwd -P", "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[shell_call("esc", escalated)]).await.unwrap();
+        assert_eq!(responder.await.unwrap(), Some(sub.display().to_string()));
+        assert!(
+            out[0].content.starts_with(&sub.display().to_string()),
+            "ran in the held directory: {}",
+            out[0].content
+        );
+        assert_eq!(*cwd.lock().unwrap(), Some(sub), "a plain command moves nothing");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An escalated `cd` holds like any other and is announced. It needs no
+    /// host-side check: no held directory gets one, and the next confined
+    /// call enters it inside the sandbox or refuses and resets to the root.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", unix))]
+    async fn an_escalated_cd_is_held_and_announced() {
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
+            return;
+        }
+        let root = unique_project_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::create_dir_all(root.join("other")).unwrap();
+        let sub = std::fs::canonicalize(root.join("sub")).unwrap();
+        let other = std::fs::canonicalize(root.join("other")).unwrap();
+        let (invoker, cwd, responder) = held_cwd_escalation(&root, sub);
+        let command = format!("cd '{}'", other.display());
+        let escalated = json!({ "command": command, "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[shell_call("esc", escalated)]).await.unwrap();
+        responder.await.unwrap();
+        assert!(out[0].content.contains("shell cwd is now"), "{}", out[0].content);
+        assert_eq!(*cwd.lock().unwrap(), Some(other));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A held directory that is gone refuses the escalated command rather than
+    /// running it in the project root, and the shell is back in the root.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", unix))]
+    async fn escalation_refuses_a_held_shell_cwd_that_is_gone() {
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
+            return;
+        }
+        let root = unique_project_root();
+        let gone = std::fs::canonicalize(&root).unwrap().join("gone");
+        let (invoker, cwd, responder) = held_cwd_escalation(&root, gone);
+        let escalated = json!({ "command": "touch marker", "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[shell_call("esc", escalated)]).await.unwrap();
+        responder.await.unwrap();
+        assert!(out[0].content.contains("was NOT run"), "{}", out[0].content);
+        assert!(!root.join("marker").exists(), "fell back to the project root");
+        assert_eq!(*cwd.lock().unwrap(), None, "the shell is back in the root");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A gated confined exec names the held directory in its prompt, so the
+    /// user does not approve a command for the wrong tree.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", unix))]
+    async fn a_gated_exec_names_the_held_shell_cwd() {
         if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
             return;
         }
@@ -12788,31 +12905,9 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
         let mut invoker = build_prompting_invoker(root.clone(), tx, registry.clone());
-        invoker.auto_approve = true;
-        invoker.escalation = Escalation::Allow;
         let cwd = tauri_plugin_agent_tools::tools::ShellCwd::default();
         *cwd.lock().unwrap() = Some(canonical_sub.clone());
-        invoker.shell_cwd = Some(cwd.clone());
-        let call = |id: &str, args: serde_json::Value| {
-            json!({
-                "id": id,
-                "type": "function",
-                "function": { "name": "shell", "arguments": args.to_string() }
-            })
-        };
-        let escalated = json!({ "command": "pwd -P; cd /", "escalate": true, "justification": "x" });
-        let out = invoker.invoke(&[call("esc", escalated)]).await.unwrap();
-        let canonical_root = std::fs::canonicalize(&root).unwrap();
-        assert!(
-            out[0].content.starts_with(&canonical_root.display().to_string()),
-            "ran in the root: {}",
-            out[0].content
-        );
-        assert!(!out[0].content.contains("shell cwd"), "{}", out[0].content);
-        assert_eq!(*cwd.lock().unwrap(), Some(canonical_sub.clone()), "its cd is not kept");
-
-        // A gated confined exec shows where it will run.
-        invoker.auto_approve = false;
+        invoker.shell_cwd = Some(cwd);
         let responder = tokio::spawn(async move {
             loop {
                 match rx.recv().await {
@@ -12827,7 +12922,7 @@ mod tests {
                 }
             }
         });
-        invoker.invoke(&[call("plain", json!({ "command": "rm -rf build" }))]).await.unwrap();
+        invoker.invoke(&[shell_call("plain", json!({ "command": "rm -rf build" }))]).await.unwrap();
         let (path, command) = responder.await.unwrap();
         assert_eq!(command.as_deref(), Some("rm -rf build"));
         assert_eq!(path, Some(canonical_sub.display().to_string()));
