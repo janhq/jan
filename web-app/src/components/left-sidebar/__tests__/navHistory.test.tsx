@@ -194,3 +194,18 @@ describe('NavHistory threads that point at a project', () => {
     expect(screen.getByTestId('thread-plain')).toBeInTheDocument()
   })
 })
+
+describe('NavHistory rename availability', () => {
+  it.each(['missing-sidecar', 'unreadable-sidecar', 'id-collision', 'missing-thread'] as const)(
+    'does not offer Rename for an unavailable session (%s), only Delete',
+    (unavailable) => {
+      useCoworkSessions.setState({
+        sessions: [{ ...session('open', 'Open one'), unavailable }],
+      })
+      render(<NavHistory />)
+      const row = screen.getByTestId('history-cowork-open').closest('li') as HTMLElement
+      expect(within(row).queryByRole('menuitem', { name: 'common:rename' })).toBeNull()
+      expect(within(row).getByRole('menuitem', { name: 'common:deleteSession' })).toBeInTheDocument()
+    }
+  )
+})
