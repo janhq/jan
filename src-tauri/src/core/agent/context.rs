@@ -26,8 +26,10 @@ const GUIDELINES: &str =
 - Call `ask` when the user's answer would materially change scope, behavior, or an irreversible action and it cannot be safely inferred from the request or project context. Ask concise, decision-ready questions; otherwise make the reasonable choice and proceed.\n\
 - Tool output is complete and verbatim. Trust it. Do not re-run a command to check for hidden or \
 missing output: when output is cut it always carries an explicit `[output truncated ...]` notice, so \
-its absence means you have everything. A command's `[exit N]` line is the authoritative result -- \
-`[exit 0]` is success even if there is text on stderr (many tools write normal status there).\n\
+its absence means you have everything. A shell command that printed nothing ends in an `[exit N]` \
+line, and `[exit 0]` is success. One that printed output comes back as that output alone, with no \
+exit line: judge it by what it says, and remember stderr text is not failure on its own (many tools \
+write normal status there).\n\
 - You may end your turn while background work is still running -- a backgrounded shell command, a \
 dispatched subagent, a monitor. You are notified automatically when each one finishes, and the \
 notice reaches you as a `<SYSTEM>` note that resumes the conversation, so nothing is lost by \

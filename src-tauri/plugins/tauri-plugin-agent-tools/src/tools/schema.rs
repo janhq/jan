@@ -35,15 +35,20 @@ const ESCALATE_NOTE: &str = " Commands run inside an OS sandbox. If a command th
 /// not only from a hand-off result -- that a backgrounded command needs no polling.
 const BACKGROUND_NOTE: &str = " A command that outlives its `timeout` keeps running in the background and you are notified automatically when it finishes, with where its output was written: do not poll, sleep, or re-run it to check; carry on with other work or end your turn.";
 
+/// Appended for an agent run, which reports the exit code only when a command
+/// printed nothing (see `handlers::model_shell_result`): replaces the plain
+/// description's marker promise, which an MCP client still gets in full.
+const EXIT_NOTE: &str = " In this session the `[exit N]` line appears only when the command printed nothing; when there is output it is left off, so read success or failure from the output itself.";
+
 /// Appended when the caller carries the shell's directory across calls
 /// (`ToolContext::shell_cwd`), so the model stops prefixing every command with
 /// `cd <path> &&`.
 const CWD_NOTE: &str = " The working directory persists between calls: after `cd dir`, later calls start in `dir` until you `cd` elsewhere, and a note in the result tells you whenever it changes. Do not repeat `cd <path> &&` in every command. Other tools still resolve relative paths against the project root.";
 
 /// Add the agent session's shell notes to the `shell` schema in `schemas`:
-/// [`BACKGROUND_NOTE`] always, [`CWD_NOTE`] with `persistent_cwd`. An MCP
-/// client served the same schemas gets neither behaviour, so it keeps the plain
-/// description.
+/// [`BACKGROUND_NOTE`] and [`EXIT_NOTE`] always, [`CWD_NOTE`] with
+/// `persistent_cwd`. An MCP client served the same schemas gets none of these
+/// behaviours, so it keeps the plain description.
 pub fn offer_session_shell(schemas: &mut [Value], persistent_cwd: bool) {
     for schema in schemas.iter_mut() {
         let function = &mut schema["function"];
@@ -52,7 +57,8 @@ pub fn offer_session_shell(schemas: &mut [Value], persistent_cwd: bool) {
         }
         if let Some(description) = function["description"].as_str() {
             let cwd = if persistent_cwd { CWD_NOTE } else { "" };
-            function["description"] = Value::String(format!("{description}{BACKGROUND_NOTE}{cwd}"));
+            function["description"] =
+                Value::String(format!("{description}{EXIT_NOTE}{BACKGROUND_NOTE}{cwd}"));
         }
     }
 }
@@ -360,6 +366,7 @@ mod tests {
                     let text = after["function"]["description"].as_str().unwrap();
                     assert!(text.contains("notified automatically when it finishes"), "{text}");
                     assert!(text.contains("do not poll"), "{text}");
+                    assert!(text.contains("appears only when the command printed nothing"), "{text}");
                     assert_eq!(text.contains("directory persists"), persistent_cwd, "{text}");
                 } else {
                     assert_eq!(before, after);

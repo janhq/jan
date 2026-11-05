@@ -357,6 +357,14 @@ impl ServerHandler for JanToolServer {
             Some(tool) => tool_result_failed(tool, &content),
             None => content.starts_with("ERROR"),
         };
+        // The peer's model reads this text; `is_error` already carries the
+        // failure the dropped marker said.
+        let content = match lookup(&request.name) {
+            Some(tool) if tool.capability == tauri_plugin_agent_tools::tools::Capability::Exec => {
+                tauri_plugin_agent_tools::tools::handlers::model_shell_result(&content)
+            }
+            _ => content,
+        };
         blocks.insert(0, ContentBlock::text(content));
         let result = if is_error {
             CallToolResult::error(blocks)

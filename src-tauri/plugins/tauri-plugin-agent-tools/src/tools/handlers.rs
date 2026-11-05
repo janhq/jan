@@ -1257,7 +1257,10 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                         // already there -- and if publishing failed the ping
                         // says nothing was captured rather than naming a file
                         // that is absent or stale.
-                        let published = write_background_output(&path, &out);
+                        // The model reads this file, so it gets what a direct
+                        // result would have given it; `failed` below reads the
+                        // marker from `out` itself.
+                        let published = write_background_output(&path, &model_shell_result(&out));
                         if let Some(sink) = done_sink {
                             sink(crate::tools::ShellEvent::Finished(crate::tools::ShellDone {
                                 id,
@@ -1760,6 +1763,36 @@ pub fn exit_marker(line: &str) -> Option<Option<i32>> {
         .and_then(|r| r.strip_suffix(']'))
         .and_then(|n| n.parse::<i32>().ok())
         .map(Some)
+}
+
+/// Opening words of the notes the harness adds to a shell result, which are
+/// not the command's own output: the sandbox hint, the escalation hint, the
+/// shell-cwd notes, a hook-config notice.
+const HARNESS_NOTE_PREFIXES: &[&str] = &["[sandbox:", "[If this command", "[shell cwd", "[hook config:"];
+
+/// A shell result as the model receives it: the exit marker only when the
+/// command printed nothing, so a result that has output is just that output
+/// (and any harness notes). The full result, marker included, is what failure
+/// detection ([`tool_result_failed`]) and the UIs read; call this only where
+/// the text is handed to a model. A backgrounded hand-off and an `ERROR`
+/// result carry no marker and come back unchanged.
+pub fn model_shell_result(content: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    // The last one is ours: a command can print `[exit 0]` itself.
+    let Some(at) = lines.iter().rposition(|line| exit_marker(line).is_some()) else {
+        return content.to_string();
+    };
+    let printed = lines.iter().enumerate().any(|(i, line)| {
+        i != at
+            && !line.trim().is_empty()
+            && !HARNESS_NOTE_PREFIXES.iter().any(|note| line.starts_with(note))
+    });
+    if !printed {
+        return content.to_string();
+    }
+    let mut kept = lines;
+    kept.remove(at);
+    kept.join("\n")
 }
 
 /// How the result of a command that outran its timeout starts. Private: callers
@@ -4565,8 +4598,9 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
         let body = body.expect("output file must appear after the command finishes");
-        assert!(body.contains("done"), "unexpected: {body}");
-        assert!(body.contains("[exit 0]"), "carries the exit marker: {body}");
+        // The model reads this file, so it gets the result a direct call
+        // would: output present, so no exit marker.
+        assert_eq!(body, "done", "unexpected: {body}");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -4808,6 +4842,35 @@ mod tests {
 
     /// The sandbox hint is spliced in above the exit marker, so the marker
     /// stays the final line.
+    /// The model sees the exit marker only when the command printed nothing;
+    /// harness notes do not count as output, and a marker the command printed
+    /// itself is kept as output.
+    #[test]
+    fn model_shell_result_keeps_the_marker_only_for_empty_output() {
+        assert_eq!(model_shell_result("hi\n[exit 0]"), "hi");
+        assert_eq!(model_shell_result("boom\n[exit 1]"), "boom");
+        assert_eq!(model_shell_result("[exit 0]"), "[exit 0]");
+        assert_eq!(model_shell_result("[exit 3]"), "[exit 3]");
+        assert_eq!(model_shell_result("\n[exit 0]"), "\n[exit 0]");
+        assert_eq!(model_shell_result("[terminated by signal]"), "[terminated by signal]");
+        assert_eq!(model_shell_result("partial\n[terminated by signal]"), "partial");
+        let notes = "[sandbox: writes are limited]\n[shell cwd is now /x: later]\n[exit 1]";
+        assert_eq!(model_shell_result(notes), notes, "notes alone are not output");
+        assert_eq!(
+            model_shell_result("Permission denied\n[sandbox: writes are limited]\n[exit 1]"),
+            "Permission denied\n[sandbox: writes are limited]"
+        );
+        assert_eq!(
+            model_shell_result("x\n[exit 2]\n[output truncated at 10 of 99 bytes]"),
+            "x\n[output truncated at 10 of 99 bytes]"
+        );
+        assert_eq!(model_shell_result("echoed [exit 0]\n[exit 0]"), "echoed [exit 0]");
+        assert_eq!(model_shell_result("[exit 0]\n[exit 4]"), "[exit 0]", "the last is ours");
+        let handoff = "Command exceeded 5s and is still running in the background.";
+        assert_eq!(model_shell_result(handoff), handoff);
+        assert_eq!(model_shell_result("ERROR: missing"), "ERROR: missing");
+    }
+
     #[test]
     fn notes_are_inserted_above_the_exit_marker() {
         let mut out = "touch: x: Read-only file system\n[exit 1]".to_string();

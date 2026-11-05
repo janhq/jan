@@ -5956,6 +5956,14 @@ async fn run_turn_cycle(
             // stay plain text, preserving the standard tool protocol. A host
             // that answered with content parts chose the message itself, so
             // its parts go out verbatim.
+            // A shell result reaches the model without its exit marker when
+            // the command printed something; the event above kept the full
+            // text, so the UIs still read the code and failure from it.
+            let content = if name == tauri_plugin_agent_tools::tools::SHELL_TOOL {
+                tauri_plugin_agent_tools::tools::handlers::model_shell_result(&content)
+            } else {
+                content
+            };
             let wire_content = if let Some(parts) = parts {
                 serde_json::Value::Array(parts)
             } else if images.is_empty() {
