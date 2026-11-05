@@ -2510,18 +2510,32 @@ enum RowKind {
 /// under it, or `• Finished <name> · 3 tools` for a child that ended, with how
 /// it ended under it. Neither is rewritten as the child runs: the dock and
 /// `/agents` show where a child stands, and its end is an event of its own.
+/// A child a later plan phase holds back reads `Queued <name>` with its
+/// phase instead, since the call did not start it.
 #[derive(Clone)]
 struct AgentRow {
     state: ToolState,
     verb: AgentVerb,
     /// Each child the row names, with the first line of its task (empty for a
     /// finished child's row, which has its status instead).
-    children: Vec<(String, String)>,
+    children: Vec<RowChild>,
     /// Dim text after a finished child's name: its tool count and run time.
     stats: Option<String>,
     /// How a finished child ended, then where it worked, under its name.
     status: Option<AgentStatus>,
     workspace: Option<String>,
+}
+
+/// One child an `AgentRow` names.
+#[derive(Clone, Default)]
+struct RowChild {
+    name: String,
+    brief: String,
+    /// The plan phase that holds this child back, for a dispatch child past
+    /// the call's first phase. Such a child is not started by the call: it
+    /// waits for the phase before it, so the row must not say it was
+    /// dispatched.
+    later_phase: Option<u32>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -2531,13 +2545,17 @@ enum AgentVerb {
 }
 
 impl AgentRow {
-    /// The row's verb: present tense while the dispatch is in flight (or was
-    /// cut short before it resolved), past tense once it has.
-    fn verb(&self) -> &'static str {
-        match (self.verb, self.state) {
-            (AgentVerb::Dispatch, ToolState::Running | ToolState::Interrupted) => "Dispatching",
-            (AgentVerb::Dispatch, _) => "Dispatched",
-            (AgentVerb::Finish, _) => "Finished",
+    /// The verb for `child`: present tense while the dispatch is in flight (or
+    /// was cut short before it resolved), past tense once it has. A later-phase
+    /// child is queued by the call rather than started by it.
+    fn verb(&self, child: &RowChild) -> &'static str {
+        let in_flight = matches!(self.state, ToolState::Running | ToolState::Interrupted);
+        match (self.verb, child.later_phase.is_some(), in_flight) {
+            (AgentVerb::Dispatch, false, true) => "Dispatching",
+            (AgentVerb::Dispatch, false, false) => "Dispatched",
+            (AgentVerb::Dispatch, true, true) => "Queueing",
+            (AgentVerb::Dispatch, true, false) => "Queued",
+            (AgentVerb::Finish, ..) => "Finished",
         }
     }
 
@@ -2548,13 +2566,17 @@ impl AgentRow {
         let dim = Style::new().fg(theme::muted());
         // A dispatch that names no child it can parse keeps a bare header, so
         // the error it is answered with still has a title above it.
-        let bare = [(String::new(), String::new())];
+        let bare = [RowChild::default()];
         let children = if self.children.is_empty() { &bare[..] } else { &self.children[..] };
         let mut out = Vec::new();
-        for (name, brief) in children {
-            let mut head = vec![Span::styled(self.verb(), Style::new().bold())];
+        for child in children {
+            let (name, brief) = (&child.name, &child.brief);
+            let mut head = vec![Span::styled(self.verb(child), Style::new().bold())];
             if !name.is_empty() {
                 head.extend([Span::raw(" "), agent_label(name)]);
+            }
+            if let Some(p) = child.later_phase {
+                head.push(Span::styled(format!(" \u{b7} {}", phase_badge(p)), dim));
             }
             if let Some(stats) = &self.stats {
                 head.push(Span::styled(format!(" \u{b7} {stats}"), dim));
@@ -2692,12 +2714,23 @@ fn dispatched_workers<'a>(
 /// the first line of its task. `reported` is the worker names from the
 /// dispatch result, once it has landed.
 fn dispatch_row(args: &serde_json::Value, reported: Option<&[String]>) -> AgentRow {
-    let children = dispatched_workers(args, reported)
+    let workers = dispatched_workers(args, reported);
+    // Read the way dispatch groups them: a missing `phase` is 0, and only the
+    // lowest phase starts with the call; the rest wait their turn.
+    let phase = |s: &serde_json::Value| {
+        s.get("phase").and_then(|v| v.as_u64()).and_then(|n| u32::try_from(n).ok()).unwrap_or(0)
+    };
+    let first = workers.iter().map(|(_, s)| phase(s)).min().unwrap_or(0);
+    let children = workers
         .into_iter()
         .map(|(name, s)| {
             let task = s.get("task").and_then(|v| v.as_str()).unwrap_or("");
             let brief = task.lines().map(str::trim).find(|l| !l.is_empty());
-            (name, brief.unwrap_or("").to_string())
+            RowChild {
+                name,
+                brief: brief.unwrap_or("").to_string(),
+                later_phase: Some(phase(s)).filter(|p| *p > first),
+            }
         })
         .collect();
     AgentRow {
@@ -5783,7 +5816,9 @@ enum AgentStatus {
     Running,
     /// Parked on the `max_parallel_subagents` cap, at this queue position.
     Queued(u32),
-    /// A later-phase child waiting on the phase before it.
+    /// A later-phase child, announced by its plan but not started: it is
+    /// queued behind the phase before it. Reads as queued, with its phase, so
+    /// it is never taken for a child that is already running.
     Waiting(Option<u32>),
     /// Started, but idle until a command it backgrounded reports back.
     Parked,
@@ -5803,8 +5838,10 @@ impl AgentStatus {
         match self {
             AgentStatus::Running => word("Running", Style::new().fg(theme::accent()).bold()),
             AgentStatus::Queued(n) => word(&format!("Queued ({n})"), dim),
-            AgentStatus::Waiting(Some(p)) => word(&format!("Waiting (phase {p})"), dim),
-            AgentStatus::Waiting(None) => word("Waiting", dim),
+            AgentStatus::Waiting(Some(p)) => {
+                word(&format!("Queued \u{b7} {}", phase_badge(*p)), dim)
+            }
+            AgentStatus::Waiting(None) => word("Queued", dim),
             AgentStatus::Parked => word("Waiting on background work", dim),
             AgentStatus::Completed(preview) => {
                 let mut out = word("Completed", Style::new().fg(theme::success()));
@@ -5818,6 +5855,12 @@ impl AgentStatus {
             AgentStatus::Error(msg) => word(&format!("Error - {msg}"), Style::new().red()),
         }
     }
+}
+
+/// A plan phase as every surface names it: the model's own `phase` key, so
+/// the number matches the dispatch call that set it.
+fn phase_badge(phase: u32) -> String {
+    format!("phase {phase}")
 }
 
 /// A subagent's name as every surface shows it.
@@ -5844,7 +5887,7 @@ fn agent_stats(panel: &SubagentPanel, context_window: u64) -> Vec<Span<'static>>
     // A running later-phase child keeps its phase, so the dependent stage
     // stays visible past the wait.
     if let Some(p) = panel.phase {
-        parts.push(format!("phase {p}"));
+        parts.push(phase_badge(p));
     }
     // `context_window` arrives as 0 when the session has disproven it, and the
     // share is clamped: a child on a model with a larger window than the
@@ -6697,7 +6740,10 @@ impl App {
         self.transcript.push_row(RowKind::Agent(Box::new(AgentRow {
             state,
             verb: AgentVerb::Finish,
-            children: vec![(name, String::new())],
+            children: vec![RowChild {
+                name,
+                ..RowChild::default()
+            }],
             stats: Some(stats),
             status: Some(panel.status(Some(&outcome))),
             workspace: panel.workspace.clone(),
@@ -9053,8 +9099,19 @@ impl App {
                 error,
             } => {
                 // A child with no panel (its start never reached this screen)
-                // still gets its row, from an empty one.
-                let panel = match self.subagents.iter().position(|p| p.run_id == run_id) {
+                // still gets its row, from an empty one. A later-phase child
+                // stopped before it started ends under a run id its panel never
+                // learned (only a start or queue names it), so an unknown id
+                // falls back to the waiting panel of that name -- else its row
+                // waits on its phase forever.
+                let at = self
+                    .subagents
+                    .iter()
+                    .position(|p| p.run_id == run_id)
+                    .or_else(|| {
+                        self.subagents.iter().position(|p| p.pending && p.name == name)
+                    });
+                let panel = match at {
                     Some(at) => self.subagents.remove(at),
                     None => SubagentPanel::new(run_id.clone(), name, String::new()),
                 };
@@ -26789,8 +26846,9 @@ fn monitor_group(monitors: &[MonitorSnapshot]) -> Option<WorkGroup> {
 /// The session's subagents as a group. A running child shows its elapsed
 /// time and what it is doing; the head already says it is running, so only
 /// a child that is not carries a status word: queued for a slot (with its
-/// place in line), waiting on an earlier phase, or started and waiting on
-/// background work of its own, which keeps its elapsed time.
+/// place in line), queued behind an earlier phase (with its phase), or
+/// started and waiting on background work of its own, which keeps its
+/// elapsed time.
 /// The head names `/agents` because that is where a child is viewed and
 /// stopped in either state: Esc mid-turn cancels the turn and every child
 /// with it, and idle it only clears the input.
@@ -26803,8 +26861,11 @@ fn subagent_group(panels: &mut [SubagentPanel], now: Instant) -> Option<WorkGrou
     let count = |want: fn(&AgentStatus) -> bool| statuses.iter().filter(|s| want(s)).count();
     let counts = vec![
         ("running", count(|s| *s == AgentStatus::Running)),
-        ("queued", count(|s| matches!(s, AgentStatus::Queued(_)))),
-        ("waiting", count(|s| matches!(s, AgentStatus::Waiting(_) | AgentStatus::Parked))),
+        // A later-phase child has not started either, so it counts as queued
+        // with the capped ones; "waiting" is a started child idle on its own
+        // background work.
+        ("queued", count(|s| matches!(s, AgentStatus::Queued(_) | AgentStatus::Waiting(_)))),
+        ("waiting", count(|s| *s == AgentStatus::Parked)),
     ];
     let children = panels
         .iter_mut()
@@ -27416,7 +27477,7 @@ mod tests {
         assert_eq!(text, "Error - 429");
         assert_eq!(style.fg, Some(ratatui::style::Color::Red));
         assert_eq!(words(AgentStatus::Queued(2)).0, "Queued (2)");
-        assert_eq!(words(AgentStatus::Waiting(Some(3))).0, "Waiting (phase 3)");
+        assert_eq!(words(AgentStatus::Waiting(Some(3))).0, "Queued \u{b7} phase 3");
         assert_eq!(words(AgentStatus::Parked).0, "Waiting on background work");
     }
 
@@ -27892,7 +27953,7 @@ mod tests {
 
         let text = subagent_text(&mut app, 80, Instant::now()).join("\n");
         assert!(
-            text.contains("collector") && text.contains("Waiting (phase 2)"),
+            text.contains("collector") && text.contains("Queued \u{b7} phase 2"),
             "the waiting hint is shown: {text}"
         );
 
@@ -27912,6 +27973,97 @@ mod tests {
             Some(2),
             "keeps its phase badge once running"
         );
+    }
+
+    /// A multi-phase dispatch, driven by the events the core sends in order:
+    /// the call, its `SubagentPlan`, phase 0's start, the result, then a later
+    /// phase's start and the end of one stopped before it started. Only a
+    /// started child reads as dispatched or running; a later-phase one reads
+    /// as queued for its phase on every surface until its own start flips it,
+    /// and one stopped before it started ends instead of waiting forever.
+    #[test]
+    fn a_later_phase_child_reads_queued_until_it_starts() {
+        use crate::core::agent::events::PendingSubagent;
+        let mut app = test_app();
+        let now = Instant::now();
+        app.apply(StreamEvent::ToolCall {
+            id: "d1".into(),
+            name: "dispatch_subagent".into(),
+            args: json!({ "subagents": [
+                { "agent": "explore", "task": "Find the parser." },
+                { "agent": "collector", "task": "Merge the findings.", "phase": 2 },
+                { "agent": "general", "task": "Write it up.", "phase": 2 },
+            ] }),
+        });
+        assert!(transcript_text(&app).contains("\u{2022} Queueing collector \u{b7} phase 2\n"));
+        app.apply(StreamEvent::SubagentPlan {
+            pending: ["collector", "general"]
+                .map(|name| PendingSubagent { name: name.into(), phase: 2 })
+                .to_vec(),
+        });
+        start_subagent(&mut app, "sub-explore-1", "explore");
+        app.apply(StreamEvent::ToolResult {
+            id: "d1".into(),
+            content: crate::core::agent::subagent::worker_names_line(&[
+                "explore".to_string(),
+                "collector".to_string(),
+                "general".to_string(),
+            ]),
+            is_error: false,
+            diff: None,
+        });
+        let text = transcript_text(&app);
+        assert!(text.contains("\u{2022} Dispatched explore\n"), "{text}");
+        assert!(
+            text.contains(concat!(
+                "\u{2022} Queued collector \u{b7} phase 2\n",
+                "  \u{2514} Merge the findings."
+            )),
+            "{text}"
+        );
+        assert!(!text.contains("Dispatched collector"), "{text}");
+        assert!(!text.contains("Dispatched general"), "{text}");
+        let block = subagent_text(&mut app, 100, now);
+        assert_eq!(block[0], " 1 subagent running \u{b7} 2 queued \u{b7} /agents to view or stop");
+        // The plan announces its later phases before phase 0 starts, so
+        // their panels come first.
+        assert!(block[1].ends_with("collector \u{b7} Queued \u{b7} phase 2"), "{block:?}");
+        assert!(block[3].contains("explore") && !block[3].contains("Queued"), "{block:?}");
+        let items = agent_picker_items(&mut app.subagents, &[], &[], 128_000);
+        assert!(items[0].label.ends_with("Queued \u{b7} phase 2"), "{}", items[0].label);
+        assert!(items[2].label.contains("Running"), "{}", items[2].label);
+        let header = super::agent_detail_header(&mut app.subagents[0], None, 128_000, 80);
+        let header: String = header[1].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(header, "Queued \u{b7} phase 2");
+
+        // A child stopped before it started ends under a run id no panel
+        // knows: its end falls back to the waiting panel of its name, so its
+        // row closes rather than waiting forever.
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-general-stopped-9".into(),
+            name: "general".into(),
+            error: Some("stopped by the parent agent before it started".into()),
+        });
+        let names: Vec<&str> = app.subagents.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["collector", "explore"], "only the stopped row is gone");
+        let text = transcript_text(&app);
+        assert!(
+            text.contains("Finished general")
+                && text.contains("Error - stopped by the parent agent before it started"),
+            "{text}"
+        );
+
+        // Phase 0 ends and the next phase starts: the label flips in place.
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            error: None,
+        });
+        start_subagent(&mut app, "sub-collector-1", "collector");
+        let block = subagent_text(&mut app, 100, now);
+        assert_eq!(block[0], " 1 subagent running \u{b7} /agents to view or stop");
+        assert!(!block[1].contains("Queued"), "{block:?}");
+        assert_eq!(app.subagents[0].status(None), AgentStatus::Running);
     }
 
     /// Enter on the `/agents` list drills into a child's detail; Esc steps back
@@ -48937,7 +49089,7 @@ fn a() {}
 
     /// Past `BACKGROUND_GROUP_ROWS` the last row counts the rest, without
     /// repeating the `/agents` the head already names, and a later phase reads
-    /// as waiting, not running.
+    /// as queued, not running.
     #[test]
     fn a_wide_fan_out_overflows_to_agents() {
         let mut app = test_app();
@@ -48951,7 +49103,7 @@ fn a() {}
         });
         let rows = subagent_text(&mut app, 100, Instant::now());
         assert_eq!(rows.len(), 1 + super::BACKGROUND_GROUP_ROWS, "{rows:#?}");
-        assert!(rows[0].contains("4 subagents running \u{b7} 1 waiting"), "{rows:#?}");
+        assert!(rows[0].contains("4 subagents running \u{b7} 1 queued"), "{rows:#?}");
         assert_eq!(rows[3], "    +3 more", "{rows:#?}");
         assert_eq!(rows.join("\n").matches("/agents").count(), 1, "{rows:#?}");
     }

@@ -8,7 +8,7 @@ expression: render_snapshot(buf)
 |│   • perf-scan  3 tools · 3 req · 16% ctx · 0% cache hit  Running · Read mod_2.rs       │|
 |│   • lint-fix  1 tool · 1 req · 4% ctx  Running · Read mod_0.rs                         │|
 |│   • docs-writer  Queued (1)                                                            │|
-|│   • collector  Waiting (phase 2)                                                       │|
+|│   • collector  Queued · phase 2                                                        │|
 |│                                                                                        │|
 |│                                                                                        │|
 |│                                                                                        │|
@@ -51,7 +51,7 @@ expression: render_snapshot(buf)
  6 0..1 fg=#56B6C2
  6 4..6 fg=#808080
  6 6..15 fg=#56B6C2 mod=BOLD
- 6 17..34 fg=#808080
+ 6 17..33 fg=#808080
  6 89..90 fg=#56B6C2
  7 0..1 fg=#56B6C2
  7 89..90 fg=#56B6C2
