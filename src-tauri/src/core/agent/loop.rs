@@ -3712,6 +3712,14 @@ fn scratch_root_for(
 /// off and whose read-only `$HOME` leaves the host caches unwritable. `None`
 /// unconfined, where the shell keeps the host's own caches and nothing would
 /// bind one.
+///
+/// A sandboxed run whose cache cannot be prepared (an unreadable
+/// `~/.cargo/config.toml`, a cache folder another user owns) runs without one,
+/// with a warning: the cache only spares downloads, and the run's scratch still
+/// masks the Jan cache root, so losing it must not cost the user the run. A
+/// read-only child with the sandbox off has no scratch, and the package cache
+/// is the only thing masking that root from its readable `$HOME`, so there the
+/// error stands rather than exposing every project's scratch.
 async fn pkg_cache_for(
     sandbox: bool,
     workspace_readonly: bool,
@@ -3720,7 +3728,14 @@ async fn pkg_cache_for(
     if !(sandbox || workspace_readonly) {
         return Ok(None);
     }
-    crate::core::agent::project::prepare_pkg_cache(project_root).await.map(Some)
+    match crate::core::agent::project::prepare_pkg_cache(project_root).await {
+        Ok(pkg) => Ok(Some(pkg)),
+        Err(e) if sandbox => {
+            log::warn!("agent: running without a package cache: {e}");
+            Ok(None)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Which todo addendum this turn needs, if any: the init guidance on a `/goal`
@@ -6730,6 +6745,21 @@ mod tests {
             pkg_cache_for(true, false, &unique_project_root()).await.unwrap().unwrap().root,
             "two projects never share a package cache"
         );
+    }
+
+    /// A sandboxed run whose cache cannot be prepared runs without one; a
+    /// read-only child with the sandbox off, which only the package cache
+    /// masks the Jan cache root for, still refuses. Here the package folder's
+    /// name is taken by a file.
+    #[tokio::test]
+    async fn an_unpreparable_pkg_cache_leaves_the_run_without_one() {
+        let root = unique_project_root();
+        let cache = crate::core::agent::project::project_cache_dir(&root);
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("pkg"), "not a folder").unwrap();
+        assert_eq!(pkg_cache_for(true, false, &root).await, Ok(None));
+        assert_eq!(pkg_cache_for(true, true, &root).await, Ok(None));
+        assert!(pkg_cache_for(false, true, &root).await.is_err());
     }
 
     #[test]
