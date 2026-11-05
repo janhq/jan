@@ -185,8 +185,8 @@ pub fn resolve_decision(
 /// [`resolve_decision`] for a session whose shell holds a directory a `cd`
 /// moved it to (`ToolContext::shell_cwd`; `None` is the project root). A
 /// confined shell command's relative tokens name paths under that directory,
-/// so `cat .jan/config.toml` after `cd ~` must be checked there. Every other
-/// tool, and an escalated command (which runs in the project root), still
+/// so `cat .jan/config.toml` after `cd ~` must be checked there; an escalated
+/// command starts in the held directory as well. Every other tool still
 /// resolves against the project root.
 pub fn resolve_decision_with_cwd(
     tool: &BuiltinTool,
@@ -221,7 +221,11 @@ pub fn resolve_decision_with_cwd(
             }
             _ => false,
         };
-        let base = shell_cwd.filter(|_| shell_reads_only).unwrap_or(ctx.project_root);
+        // An escalated command starts in the held directory too, so its
+        // relative tokens resolve there as well.
+        let base = shell_cwd
+            .filter(|_| tool.capability == Capability::Exec)
+            .unwrap_or(ctx.project_root);
         let hidden_hit = |p: &str| {
             in_hidden_root_from(ctx.project_root, base, hidden, p) && !carved(p)
         };
@@ -1305,9 +1309,11 @@ mod tests {
         };
         assert_eq!(gate(shell, &cat, None), Decision::Prompt(PromptKind::Exec), "no .jan here");
         assert_eq!(gate(shell, &cat, Some(&home)), Decision::HardDeny(DenyReason::Hidden));
-        // An escalated command runs in the project root, not the held dir.
+        // An escalated command starts in the held dir too, and the hidden
+        // deny runs ahead of the escalate prompt.
         let escalated = json!({"command": "cat .jan/config.toml", ESCALATE_ARG: true});
-        assert_eq!(gate(shell, &escalated, Some(&home)), Decision::Prompt(PromptKind::Escalate));
+        assert_eq!(gate(shell, &escalated, Some(&home)), Decision::HardDeny(DenyReason::Hidden));
+        assert_eq!(gate(shell, &escalated, None), Decision::Prompt(PromptKind::Escalate));
         // Other tools resolve against the project root whatever the shell holds.
         let read = json!({"path": ".jan/config.toml"});
         assert_eq!(gate(lookup("read").unwrap(), &read, Some(&home)), Decision::Allow);
