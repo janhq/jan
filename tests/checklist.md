@@ -205,8 +205,8 @@ Ensure that the following section information show up for hardware
 - [ ] User can delete an old thread, and it won't reappear even when app restart
 - [ ] Change the title of the thread should update its last modification date and re-organise its position in the correct chronological order on the left bar.
 - [ ] [0.8.5] New thread titles are AI-generated from conversation content (Auto-generate chat title toggle in Settings → Appearance). Verify titles are meaningful and the toggle works
-- [ ] Ensure that the search thread feature return accurate result based on thread titles and contents
-- [ ] `Delete All` should delete only threads in the `Recents` section
+- [ ] Ensure that the search thread feature return accurate result based on thread titles (search matches titles only, not message contents)
+- [ ] `Delete All` removes only conversations outside projects; project conversations and legacy Cowork sessions are kept, and the dialog and toast say so
 #### In a thread:
 - [ ] When `New Chat` is clicked, the assistant is set as the last selected assistant, the model selected is set as the last used model, and the user can immediately chat with the model. 
 - [ ] User can conduct multi-turn conversation in a single thread without lost of data (given that `Context Shift` is not enabled)
@@ -321,6 +321,7 @@ In `Settings -> General`:
 - [ ] Missing settings use first-run defaults. Damaged/unreadable persisted permission settings do not silently re-enable restricted access.
 
 ### Other unified-flow checks
+- [ ] Existing legacy Cowork sessions (from a nightly profile) appear under **Chats and tasks** and in Artifacts on every channel, including stable, and open at their own URL; there is still no Cowork tab or mode switch.
 - [ ] Artifacts and Skills remain reachable without a Cowork tab. Sidebar icon sizes match the other rows.
 - [ ] Check multi-turn chat, Stop, regenerate, edit/version navigation, thread deletion/restart and project creation/deletion from section D.
 - [ ] Confirm Plan mode and skill commands are reachable and enforced before marking parity with the former Cowork surface complete.

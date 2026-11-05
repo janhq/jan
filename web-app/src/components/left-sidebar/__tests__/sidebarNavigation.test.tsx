@@ -1,14 +1,8 @@
 import '@testing-library/jest-dom/vitest'
 import type { ComponentProps, ReactNode } from 'react'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 
-const channel = vi.hoisted(() => ({ cowork: false }))
-
-vi.mock('@/lib/version', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/version')>()),
-  isCoworkEnabled: () => channel.cowork,
-}))
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
   Link: ({ to, children }: { to: string; children: ReactNode }) => <a href={to}>{children}</a>,
@@ -57,10 +51,6 @@ vi.mock('@/components/animated-icon/animated-lucide', () => ({
 
 import { LeftSidebar } from '..'
 
-beforeEach(() => {
-  channel.cowork = false
-})
-
 it('renders one sidebar: navigation, projects and a single history, with no tab switcher', () => {
   render(<LeftSidebar />)
   expect(screen.getByText('common:newChat')).toBeInTheDocument()
@@ -70,15 +60,13 @@ it('renders one sidebar: navigation, projects and a single history, with no tab 
   expect(screen.queryByRole('link', { name: 'common:home' })).not.toBeInTheDocument()
 })
 
-it('offers Artifacts and Skills on every build, including where the Cowork surface is off', () => {
-  channel.cowork = false
+it('offers Artifacts and Skills on every build', () => {
   render(<LeftSidebar />)
   expect(screen.getByTestId('nav-artifacts')).toBeInTheDocument()
   expect(screen.getByTestId('nav-customize')).toBeInTheDocument()
 })
 
 it('places Artifacts and Skills without replacing the rest of the navigation', () => {
-  channel.cowork = true
   render(<LeftSidebar />)
   expect(screen.getByTestId('nav-artifacts')).toBeInTheDocument()
   expect(screen.getByTestId('nav-customize')).toHaveTextContent('common:skills')
@@ -91,7 +79,6 @@ it('places Artifacts and Skills without replacing the rest of the navigation', (
 })
 
 it('inserts Skills directly before Settings as a menu row and opens its dialog', () => {
-  channel.cowork = true
   render(<LeftSidebar />)
   const skills = screen.getByRole('button', { name: 'common:skills' })
   const row = skills.closest('li')!

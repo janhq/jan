@@ -10,7 +10,6 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/constants/routes', () => ({
   route: { settings: { cowork: '/settings/cowork', general: '/settings/general' } },
 }))
-vi.mock('@/lib/coworkAccess', () => ({ ensureCoworkEnabled: () => undefined }))
 vi.mock('@/containers/SettingsMenu', () => ({ default: () => null }))
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,

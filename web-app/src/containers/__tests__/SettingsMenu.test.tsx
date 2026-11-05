@@ -5,13 +5,7 @@ import SettingsMenu from '../SettingsMenu'
 import { useNavigate, useMatches } from '@tanstack/react-router'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
-vi.mock('@/lib/version', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/version')>()),
-  isCoworkEnabled: () => channel.cowork,
-}))
-
 // Mock global platform constants - simulate desktop (Tauri) environment
-const channel = vi.hoisted(() => ({ cowork: true }))
 
 Object.defineProperty(global, 'IS_IOS', { value: false, writable: true })
 Object.defineProperty(global, 'IS_ANDROID', { value: false, writable: true })
@@ -90,7 +84,6 @@ describe('SettingsMenu', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    channel.cowork = true
 
     vi.mocked(useNavigate).mockReturnValue(mockNavigate)
     vi.mocked(useMatches).mockReturnValue(mockMatches)
@@ -119,10 +112,7 @@ describe('SettingsMenu', () => {
     expect(screen.getByText('common:privacy')).toBeInTheDocument()
   })
 
-  // Network and memory permissions apply to every conversation, so their page
-  // is not tied to whether the legacy Cowork surface ships.
-  it.each([true, false])('lists the Agent settings entry (cowork channel: %s)', (cowork) => {
-    channel.cowork = cowork
+  it('lists the Agent settings entry', () => {
     render(<SettingsMenu />)
     expect(screen.getByText('common:agentSettings')).toBeInTheDocument()
     expect(screen.queryByText('common:cowork')).not.toBeInTheDocument()

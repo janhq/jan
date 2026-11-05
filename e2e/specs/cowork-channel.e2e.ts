@@ -3,25 +3,21 @@ import { expect, $ } from '@wdio/globals'
 import { goto, pushRoute, waitForPath } from '../helpers/navigation.js'
 
 /**
- * Legacy Cowork execution ships in the `nightly` channel only (web-app/src/lib/version.ts), and
- * this suite is the only place the *stable* half can be proven against a
- * launched app.
- *
- * `yarn build:e2e:app` builds the web app with vite and serves it from the
- * Tauri asset protocol, so the webview is not on localhost and VERSION carries
- * no `-`: exactly the channel where the surface must be absent. The render side
- * is covered by web-app/src/components/left-sidebar/__tests__/coworkGate.test.tsx
- * and web-app/src/lib/__tests__/coworkAccess.test.tsx, but neither can prove
- * what a bookmarked URL does in a real app, which is what this spec exists for.
- *
- * The nightly half is a manual step: the QA checklist carries it, because a
- * nightly build cannot be produced inside a single suite run.
+ * Legacy Cowork sessions are plain thread-backed sessions that open on every
+ * channel; there is no channel gate any more. What the unified UI must still
+ * never offer is a Cowork *entry point*: no sidebar tab and no mode switch.
+ * Only existing sessions appear (in "Chats and tasks" and Artifacts), and they
+ * are covered with seeded sessions by
+ * web-app/src/components/left-sidebar/__tests__/NavHistory*.test.tsx and
+ * web-app/src/routes/__tests__/artifacts.test.tsx. This suite cannot seed a
+ * session into the launched app, so it proves what a fresh profile does with
+ * the legacy URLs.
  */
 const COWORK_TAB = 'a[href="/cowork"]'
 const AGENT_SETTINGS_ENTRY = 'a[href="/settings/cowork"]'
 const CHAT_SIDEBAR = '[data-testid="new-chat-button"]'
 
-describe('Cowork is hidden on a build that does not ship it', () => {
+describe('Cowork has no entry point of its own', () => {
   before(async () => {
     await $('#root').waitForExist({ timeout: 60_000 })
     await goto('/')
@@ -35,7 +31,7 @@ describe('Cowork is hidden on a build that does not ship it', () => {
     await $(CHAT_SIDEBAR).waitForDisplayed({ timeout: 30_000 })
 
     // There is no Home/Cowork switcher any more; a link to /cowork would only
-    // come from a Cowork entry, and none may exist on this channel.
+    // come from a Cowork entry, and none may exist.
     expect(await $(COWORK_TAB).isExisting()).toBe(false)
     // The Chat | Cowork selector is part of the home composer and hidden too.
     expect(await $('[data-testid="home-mode-toggle"]').isExisting()).toBe(false)
@@ -55,8 +51,8 @@ describe('Cowork is hidden on a build that does not ship it', () => {
     expect(await $('a[href="/settings/general"]').isExisting()).toBe(true)
   })
 
-  it('sends a bookmarked Cowork URL to Home', async () => {
-    // pushRoute and not goto: the guard redirects, so `/cowork` never becomes
+  it('sends a bookmarked Cowork URL to Home when there is no session', async () => {
+    // pushRoute and not goto: with no current session the route redirects, so `/cowork` never becomes
     // the current path and goto would wait for something that cannot happen.
     await pushRoute('/cowork')
     await waitForPath('/')
@@ -67,7 +63,7 @@ describe('Cowork is hidden on a build that does not ship it', () => {
     await $(CHAT_SIDEBAR).waitForDisplayed({ timeout: 30_000 })
   })
 
-  it('sends a bookmarked per-conversation Cowork URL to Home', async () => {
+  it('sends a Cowork URL for an unknown session to Home', async () => {
     await pushRoute('/cowork/00000000-0000-4000-8000-000000000000')
     await waitForPath('/')
 

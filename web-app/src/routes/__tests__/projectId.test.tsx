@@ -6,7 +6,6 @@ import React from 'react'
 
 const h = vi.hoisted(() => ({
   navigate: vi.fn(),
-  coworkEnabled: false,
   selectedModel: undefined as any,
   selectedProvider: '',
   project: {
@@ -29,7 +28,6 @@ vi.mock('@tanstack/react-router', () => ({
   useParams: () => ({ projectId: h.projectId }),
 }))
 
-vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.coworkEnabled }))
 vi.mock('sonner', () => ({ toast: { error: (...args: any[]) => h.toastError(...args) } }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -161,17 +159,15 @@ describe('Project route single Chat flow', () => {
   })
   beforeEach(() => {
     vi.clearAllMocks()
-    h.coworkEnabled = false
     h.selectedModel = undefined
     h.selectedProvider = ''
     h.lastSubmitResult = undefined
     h.projectId = 'project-1'
   })
 
-  it.each([false, true])(
-    'shows no mode selector and keeps the ordinary Chat contract (coworkEnabled=%s)',
-    (coworkEnabled) => {
-      h.coworkEnabled = coworkEnabled
+  it(
+    'shows no mode selector and keeps the ordinary Chat contract',
+    () => {
       renderComponent()
       expect(screen.queryByTestId('home-mode-toggle')).not.toBeInTheDocument()
       const input = screen.getByTestId('chat-input')

@@ -14,7 +14,6 @@ const h = vi.hoisted(() => ({
   prepareOutcome: undefined as unknown,
 }))
 
-vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => false }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),

@@ -1,7 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-const enabled = vi.hoisted(() => ({ value: true }))
-vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => enabled.value }))
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (options: unknown) => options,
   redirect: (r: unknown) => Object.assign(new Error('redirect'), { redirect: r }),
@@ -37,7 +35,6 @@ const seed = (ids: string[], currentId: string | null) =>
 
 describe('/cowork', () => {
   beforeEach(() => {
-    enabled.value = true
     seed([], null)
   })
 
@@ -55,18 +52,10 @@ describe('/cowork', () => {
     expect(run(Route)).toMatchObject({ to: '/' })
     expect(useCoworkSessions.getState().sessions).toHaveLength(0)
   })
-
-  it('redirects home when Cowork is not enabled on the channel', async () => {
-    const { Route } = (await import('../cowork/index')) as unknown as { Route: Opts }
-    enabled.value = false
-    seed(['a'], 'a')
-    expect(run(Route)).toMatchObject({ to: '/' })
-  })
 })
 
 describe('/cowork/$sessionId', () => {
   beforeEach(() => {
-    enabled.value = true
     seed([], null)
   })
 
@@ -90,12 +79,5 @@ describe('/cowork/$sessionId', () => {
     const { Route } = (await import('../cowork/$sessionId')) as unknown as { Route: Opts }
     seed(['a'], null)
     expect(run(Route, { sessionId: 'nope' })).toMatchObject({ to: '/' })
-  })
-
-  it('redirects home when Cowork is disabled', async () => {
-    const { Route } = (await import('../cowork/$sessionId')) as unknown as { Route: Opts }
-    enabled.value = false
-    seed(['a'], null)
-    expect(run(Route, { sessionId: 'a' })).toMatchObject({ to: '/' })
   })
 })
