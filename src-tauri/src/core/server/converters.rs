@@ -1062,7 +1062,7 @@ fn map_anthropic_finish(reason: &str, saw_tool: bool) -> &'static str {
         return "tool_calls";
     }
     match reason {
-        "max_tokens" => "length",
+        "max_tokens" | "model_context_window_exceeded" => "length",
         "tool_use" => "tool_calls",
         "refusal" => "content_filter",
         _ => "stop",
@@ -2776,5 +2776,12 @@ mod anthropic_messages_tests {
         let atc = &arg_chunk["choices"][0]["delta"]["tool_calls"][0];
         assert_eq!(atc["index"], json!(0));
         assert_eq!(atc["function"]["arguments"], json!("{\"a\""));
+    }
+
+    #[test]
+    fn anthropic_context_window_exceeded_maps_to_length() {
+        assert_eq!(map_anthropic_finish("model_context_window_exceeded", false), "length");
+        assert_eq!(map_anthropic_finish("max_tokens", false), "length");
+        assert_eq!(map_anthropic_finish("end_turn", false), "stop");
     }
 }
