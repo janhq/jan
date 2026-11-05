@@ -1252,10 +1252,16 @@ fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> S
         None => " Each answer rides the note that tells you it finished.",
     };
     let head = if d.phase_count > 1 {
+        let reuses: String = d
+            .later_workspaces
+            .iter()
+            .map(|(worker, owner)| format!("\n  - {worker} will work in {owner}'s workspace"))
+            .collect();
         format!(
             "Dispatched a {}-phase plan of {} subagents. Phase 1 is now running:\n{roster}\nLater \
              phases start automatically as each phase finishes, each receiving the previous \
-             phase's results; their run ids are reported as they start.",
+             phase's results; their run ids are reported as they start, but each can already be \
+             messaged or stopped by name.{reuses}",
             d.phase_count, d.total_subagents
         )
     } else {
@@ -13965,6 +13971,7 @@ mod tests {
             ],
             blackboard_dir: Some("blackboard".to_string()),
             names: vec!["explorer-a".to_string(), "explorer-b".to_string()],
+            later_workspaces: Vec::new(),
         });
         assert!(out.contains("sub-explorer-a-1"), "{out}");
         assert!(out.contains("sub-explorer-b-2"), "{out}");
@@ -13987,8 +13994,12 @@ mod tests {
             }],
             blackboard_dir: None,
             names: vec!["researcher".to_string(), "writer".to_string()],
+            later_workspaces: vec![("writer".to_string(), "researcher".to_string())],
         });
         assert!(out.contains("sub-researcher-1"), "{out}");
+        // The parent named neither worker, so it is told whose workspace the
+        // later one will get.
+        assert!(out.contains("writer will work in researcher's workspace"), "{out}");
         // Every worker is named, the later phase's included, in listed order.
         assert!(
             out.contains(&crate::core::agent::subagent::worker_names_line(&[
@@ -14279,6 +14290,7 @@ mod tests {
             }],
             blackboard_dir: None,
             names: vec!["w".to_string()],
+            later_workspaces: Vec::new(),
         });
         assert!(out.contains("stop_subagent"), "{out}");
         assert!(out.contains("by name"), "{out}");
