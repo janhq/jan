@@ -480,7 +480,6 @@ export default function AddEditMCPServer({
                 placeholder={t('mcp-servers:enterServerName')}
                 autoFocus
               />
-              {error && <div className="text-destructive text-sm">{error}</div>}
             </div>
 
             <div className="space-y-2">
