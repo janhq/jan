@@ -3239,6 +3239,38 @@ describe('ThreadDetail route', () => {
         expect(monitorHost.start).toHaveBeenCalledTimes(1)
       })
 
+      it('is refused while the shell switch is off even if an MCP tool is named shell', async () => {
+        setup()
+        shell.enabled = false
+        h.appStateState.mcpToolNames = new Set(['shell'])
+        try {
+          h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+          renderComponent()
+          const out = await dispatch(start('mon-off-mcp'))
+          expect(out.isError).toBe(true)
+          expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+          expect(monitorHost.start).not.toHaveBeenCalled()
+        } finally {
+          shell.enabled = true
+        }
+      })
+
+      it('bounds the start by the grant in force on ARRIVAL, not a later raise', async () => {
+        setup()
+        const readOnly = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
+        h.threadsState.getConversationCapabilities.mockImplementation(() => readOnly)
+        h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+        renderComponent()
+        const toolCall = start('mon-arrive')
+        await arrive(toolCall)
+        // The user raises permissions while the call waits to dispatch.
+        h.threadsState.getConversationCapabilities.mockImplementation(() => elevated)
+        await dispatch(toolCall)
+        // Arrival-time grant is the ceiling: no elevation, so no prompt either.
+        expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+        expect(monitorHost.start.mock.calls[0][3]).toEqual(readOnly)
+      })
+
       it('is refused outright while the shell switch is off', async () => {
         setup()
         shell.enabled = false

@@ -533,7 +533,10 @@ async function approveMonitorStart(
   signal: AbortSignal
 ): Promise<{ output: string; isError: true } | undefined> {
   const args = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
-  if (chatShellRoute('shell') === 'disabled') return { output: SHELL_DISABLED_TOOL_ERROR, isError: true }
+  // Only the native shell may run this script. 'other' (switch off, but an MCP
+  // tool is named `shell`) is not it: the native monitor would run a script
+  // with shell disabled, under a saved native approval.
+  if (chatShellRoute('shell') !== 'builtin') return { output: SHELL_DISABLED_TOOL_ERROR, isError: true }
   if (!isElevatedThreadCall('shell', args, grant)) return undefined
   const approvals = approvalsOf(threadId)
   let pending = approvals.get(toolCallId)
@@ -1234,7 +1237,13 @@ function ThreadDetail() {
       try { bound = bindMcpCall(toolCall) } catch { return }
       const { serverName, checkMcp, generation } = bound
       // Conversation todo/ask never prompt: dispatch serves or refuses them.
-      if (!serverName && isConversationClientTool(toolCall.toolName)) return
+      if (!serverName && isConversationClientTool(toolCall.toolName)) {
+        // A monitor start is shell execution bounded by the grant in force when
+        // the call ARRIVED: capture it now (dispatch reuses it by call id), so a
+        // permission raised while the call waits cannot raise its ceiling.
+        if (toolCall.toolName === 'monitor') nativeGrantOf(threadId, toolCall.toolCallId)
+        return
+      }
       const isNative = !serverName && chatShellRoute(toolCall.toolName) === 'builtin'
       // A call dispatch will refuse as unadvertised must not open a prompt (or
       // an always-allow choice) that nothing will ever wait on.
