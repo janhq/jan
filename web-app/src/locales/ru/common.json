@@ -287,7 +287,6 @@
       "renameSuccess": "Проект переименован с \"{{oldName}}\" на \"{{newName}}\""
     },
     "noConversationsIn": "В проекте {{projectName}} нет диалогов",
-    "startNewConversation": "Начните новый диалог с {{projectName}} ниже",
     "conversationsIn": "Диалоги в {{projectName}}",
     "conversationsDescription": "Нажмите на любой диалог, чтобы продолжить общение, или начните новый ниже.",
     "thread": "обсуждение",

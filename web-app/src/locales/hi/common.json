@@ -313,7 +313,6 @@
       "updateSuccess": "प्रोजेक्ट \"{{projectName}}\" सफलतापूर्वक अपडेट किया गया"
     },
     "noConversationsIn": "{{projectName}} में कोई वार्तालाप नहीं है",
-    "startNewConversation": "{{projectName}} के साथ नीचे एक नई वार्तालाप शुरू करें",
     "conversationsIn": "{{projectName}} में वार्तालाप",
     "conversationsDescription": "चैट जारी रखने के लिए किसी भी वार्तालाप पर क्लिक करें, या नीचे एक नई शुरू करें।",
     "conversation": "वार्तालाप",

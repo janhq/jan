@@ -313,7 +313,6 @@
       "updateSuccess": "Proyecto \"{{projectName}}\" actualizado correctamente"
     },
     "noConversationsIn": "No hay conversaciones en {{projectName}}",
-    "startNewConversation": "Inicia una nueva conversación con {{projectName}} a continuación",
     "conversationsIn": "Conversaciones en {{projectName}}",
     "conversationsDescription": "Haz clic en cualquier conversación para continuar chateando, o inicia una nueva a continuación.",
     "conversation": "Conversación",

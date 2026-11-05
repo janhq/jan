@@ -284,7 +284,6 @@
       "renameSuccess": "Projeto renomeado de \"{{oldName}}\" para \"{{newName}}\""
     },
     "noConversationsIn": "Nenhuma Conversa em {{projectName}}",
-    "startNewConversation": "Inicie uma nova conversa com {{projectName}} abaixo",
     "conversationsIn": "Conversas em {{projectName}}",
     "conversationsDescription": "Clique em qualquer conversa para continuar o chat, ou inicie uma nova abaixo.",
     "thread": "conversa",
