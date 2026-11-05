@@ -242,7 +242,6 @@
     "addToProject": "加入專案",
     "removeFromProject": "從專案中移除",
     "noConversationsIn": "{{projectName}} 中尚無對話",
-    "startNewConversation": "在下方開始與 {{projectName}} 的新對話",
     "conversationsIn": "{{projectName}} 中的對話",
     "conversationsDescription": "點擊任何對話以繼續聊天，或在下方開始新的對話。",
     "thread": "執行緒",

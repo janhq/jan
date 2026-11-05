@@ -243,7 +243,6 @@
     "addToProject": "Thêm vào dự án",
     "removeFromProject": "Xóa khỏi dự án",
     "noConversationsIn": "Chưa có cuộc trò chuyện nào trong {{projectName}}",
-    "startNewConversation": "Bắt đầu một cuộc trò chuyện mới với {{projectName}} bên dưới",
     "conversationsIn": "Cuộc trò chuyện trong {{projectName}}",
     "conversationsDescription": "Nhấp vào bất kỳ cuộc trò chuyện nào để tiếp tục trò chuyện hoặc bắt đầu một cuộc trò chuyện mới bên dưới.",
     "thread": "chủ đề",

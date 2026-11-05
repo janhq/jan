@@ -279,7 +279,6 @@
       "renameSuccess": "Projecte reanomenat de \"{{oldName}}\" a \"{{newName}}\""
     },
     "noConversationsIn": "No hi ha converses a {{projectName}}",
-    "startNewConversation": "Inicia una conversa nova amb {{projectName}} a continuació",
     "conversationsIn": "Converses a {{projectName}}",
     "conversationsDescription": "Fes clic a qualsevol conversa per continuar parlant o inicia’n una de nova a continuació.",
     "thread": "fil",

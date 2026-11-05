@@ -312,7 +312,6 @@
       "updateSuccess": "\"{{projectName}}\" 프로젝트가 성공적으로 업데이트되었습니다"
     },
     "noConversationsIn": "{{projectName}}에 대화가 없습니다",
-    "startNewConversation": "아래에서 {{projectName}}와(과) 새 대화를 시작하세요",
     "conversationsIn": "{{projectName}}의 대화",
     "conversationsDescription": "대화를 클릭하여 채팅을 계속하거나 아래에서 새 대화를 시작하세요.",
     "conversation": "대화",

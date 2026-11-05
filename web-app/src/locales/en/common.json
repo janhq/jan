@@ -440,7 +440,8 @@
     "processButton": "Add",
     "deleteProjectDialog": {
       "title": "Delete Project",
-      "permanentDelete": "This will permanently delete all threads.",
+      "permanentDelete_one": "This will permanently delete \"{{projectName}}\" and its {{count}} conversation. This action cannot be undone.",
+      "permanentDelete_other": "This will permanently delete \"{{projectName}}\" and its {{count}} conversations. This action cannot be undone.",
       "permanentDeleteWarning": "This action will permanently delete ALL threads within the project!",
       "deleteEmptyProject": "This action will delete project \"{{projectName}}\".",
       "saveThreadsAdvice": "To save threads, move them to your thread list or another project before deleting.",
@@ -467,7 +468,7 @@
       "updateSuccess": "Project \"{{projectName}}\" updated successfully"
     },
     "noConversationsIn": "No Conversations in {{projectName}}",
-    "startNewConversation": "Start a new conversation with {{projectName}} above",
+    "sendMessageToStart": "Send a message above to start one.",
     "conversationsIn": "Conversations in {{projectName}}",
     "conversationsDescription": "Click on any conversation to continue chatting, or start a new one below.",
     "conversation": "Conversation",

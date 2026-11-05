@@ -381,7 +381,6 @@
       "renameSuccess": "Proyek diubah dari \"{{oldName}}\" menjadi \"{{newName}}\""
     },
     "noConversationsIn": "Tidak Ada Percakapan di {{projectName}}",
-    "startNewConversation": "Mulai percakapan baru dengan {{projectName}} di bawah",
     "conversationsIn": "Percakapan di {{projectName}}",
     "conversationsDescription": "Klik percakapan mana pun untuk melanjutkan chatting, atau mulai yang baru di bawah.",
     "thread": "utas",
