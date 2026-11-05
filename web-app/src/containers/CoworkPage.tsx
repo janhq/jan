@@ -1371,7 +1371,6 @@ export function CoworkPage() {
         submitTurn: (prompt) => void runRequestRef.current(prompt),
         openRail: (kind) => setRail({ kind }),
         compact: () => void handleCompact(),
-        goHome: () => void navigate({ to: route.home }),
       })
       return true
     }
