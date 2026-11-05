@@ -9,6 +9,8 @@ import { useEffect } from 'react'
 
 type ThreadManagementState = {
   folders: ThreadFolder[]
+  /** True once the project list has been read; `folders` is not authoritative before that. */
+  foldersLoaded: boolean
   setFolders: (folders: ThreadFolder[]) => void
   addFolder: (name: string, assistantId?: string) => Promise<ThreadFolder>
   updateFolder: (id: string, name: string, assistantId?: string) => Promise<void>
@@ -20,9 +22,10 @@ type ThreadManagementState = {
 
 const useThreadManagementStore = create<ThreadManagementState>()((set, get) => ({
   folders: [],
+  foldersLoaded: false,
 
   setFolders: (folders) => {
-    set({ folders })
+    set({ folders, foldersLoaded: true })
   },
 
   addFolder: async (name, assistantId) => {
@@ -92,7 +95,7 @@ export const useThreadManagement = () => {
       try {
         const projectsService = getServiceHub().projects()
         const projects = await projectsService.getProjects()
-        useThreadManagementStore.setState({ folders: projects })
+        useThreadManagementStore.setState({ folders: projects, foldersLoaded: true })
       } catch (error) {
         console.error('Error syncing projects:', error)
       }

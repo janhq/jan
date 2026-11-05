@@ -16,11 +16,19 @@ const toSeconds = (n: number) => (n > 1e12 ? n / 1000 : n)
 export function mergeHistory(
   threads: Thread[],
   sessions: CoworkSession[],
-  runIds: Record<string, unknown>
+  runIds: Record<string, unknown>,
+  // Ids of the projects that exist. A thread is left out of the history only
+  // when its project is real (it is listed under that project instead); one
+  // pointing at a missing project would otherwise be unreachable from the
+  // sidebar. `null` means the project list has not loaded yet, so every
+  // project thread stays hidden rather than flashing in and out.
+  projectIds: ReadonlySet<string> | null = null
 ): Row[] {
   const rows: Row[] = []
   for (const thread of threads) {
-    if (thread.metadata?.project || isCoworkThread(thread)) continue
+    if (isCoworkThread(thread)) continue
+    const project = thread.metadata?.project
+    if (project && (projectIds === null || projectIds.has(project.id))) continue
     rows.push({
       kind: 'chat',
       id: thread.id,
