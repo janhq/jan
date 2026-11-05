@@ -853,8 +853,10 @@ pub async fn cancel_thread_bash(thread_id: String) -> Result<(), AgentToolsError
 /// structural, so nothing on this surface can address a Cowork session's
 /// monitors even if the ids were identical.
 struct ThreadMonitors {
-    set: std::sync::Arc<crate::tools::monitor::MonitorSet>,
-    channel: MonitorChannelSlot,
+    /// Each monitor's updates go to the channel it was started with: a thread
+    /// holds several at once, and one shared "latest channel" slot handed the
+    /// earlier monitor's update to the later start's listener.
+    monitors: crate::tools::monitor::RoutedMonitors,
 }
 
 fn thread_monitors(
@@ -977,25 +979,21 @@ pub async fn start_thread_monitor(
     // aborted by a later revocation.
     {
         let mut sets = thread_monitors().lock().unwrap();
-        let entry = sets.entry(thread_id).or_insert_with(|| {
-            let slot: MonitorChannelSlot = std::sync::Arc::new(std::sync::Mutex::new(None));
-            let subscriber_slot = slot.clone();
-            ThreadMonitors {
-                set: std::sync::Arc::new(crate::tools::monitor::MonitorSet::subscribed(
-                    std::sync::Arc::new(move |update| {
-                        if let Some(channel) = subscriber_slot.lock().unwrap().as_ref() {
-                            let _ = channel.send(update);
-                        }
-                    }),
-                )),
-                channel: slot,
-            }
-        });
-        *entry.channel.lock().unwrap() = Some(on_update);
+        let entry = sets
+            .entry(thread_id)
+            .or_insert_with(|| ThreadMonitors {
+                monitors: crate::tools::monitor::RoutedMonitors::new(),
+            });
         entry
-            .set
-            .clone()
-            .start_owned(spec, ctx, Some(authority))
+            .monitors
+            .start(
+                spec,
+                ctx,
+                Some(authority),
+                std::sync::Arc::new(move |update| {
+                    let _ = on_update.send(update);
+                }),
+            )
             .map_err(AgentToolsError::from)
     }
 }
@@ -1007,13 +1005,13 @@ pub async fn stop_thread_monitor(
     thread_id: String,
     monitor_id: String,
 ) -> Result<String, AgentToolsError> {
-    let set = thread_monitors()
+    let stopped = thread_monitors()
         .lock()
         .unwrap()
         .get(&thread_id)
-        .map(|entry| entry.set.clone());
-    Ok(match set {
-        Some(set) => set.stop(&monitor_id),
+        .map(|entry| entry.monitors.stop(&monitor_id));
+    Ok(match stopped {
+        Some(result) => result,
         None => format!("ERROR: unknown or already-stopped monitor '{monitor_id}'"),
     })
 }
@@ -1024,7 +1022,7 @@ pub async fn list_thread_monitors(thread_id: String) -> Result<String, AgentTool
         .lock()
         .unwrap()
         .get(&thread_id)
-        .map(|entry| entry.set.clone());
+        .map(|entry| entry.monitors.set().clone());
     Ok(match set {
         Some(set) => set.list(),
         None => "No active monitors.".to_string(),
@@ -1071,7 +1069,7 @@ async fn stop_thread_monitors_and_children(thread_id: &str) {
         .lock()
         .unwrap()
         .remove(thread_id)
-        .map(|entry| entry.set);
+        .map(|entry| entry.monitors.set().clone());
     reap_thread_monitor_children(thread_id, crate::thread_capabilities::bump_generation).await;
     if let Some(set) = set {
         set.stop_all();
@@ -1116,7 +1114,7 @@ async fn deny_thread_and_stop_monitors(thread_id: &str, advance: fn(&str) -> u64
         .lock()
         .unwrap()
         .remove(thread_id)
-        .map(|entry| entry.set);
+        .map(|entry| entry.monitors.set().clone());
     if let Some(set) = set {
         set.stop_all();
     }
@@ -1125,7 +1123,7 @@ async fn deny_thread_and_stop_monitors(thread_id: &str, advance: fn(&str) -> u64
         .lock()
         .unwrap()
         .remove(thread_id)
-        .map(|entry| entry.set);
+        .map(|entry| entry.set.clone());
     if let Some(set) = session {
         set.stop_all();
     }

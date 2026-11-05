@@ -343,6 +343,18 @@ impl MonitorSet {
         ctx: MonitorCtx,
         authority: Option<ThreadAuthority>,
     ) -> Result<String, String> {
+        self.start_owned_with_id(spec, ctx, authority)
+            .map(|(_, message)| message)
+    }
+
+    /// [`MonitorSet::start_owned`], also returning the new monitor's id so a
+    /// caller can bind per-monitor state without parsing the result string.
+    pub fn start_owned_with_id(
+        self: &Arc<Self>,
+        spec: MonitorSpec,
+        ctx: MonitorCtx,
+        authority: Option<ThreadAuthority>,
+    ) -> Result<(String, String), String> {
         if self.inner.lock().unwrap().len() >= MAX_MONITORS {
             return Err(format!(
                 "at most {MAX_MONITORS} monitors may be active; stop one first"
@@ -378,12 +390,13 @@ impl MonitorSet {
                 status,
             },
         );
-        Ok(format!(
+        let message = format!(
             "Monitor started (monitor_id={monitor_id}): '{name}' runs every {interval_secs}s. \
              When it exits 0 you get a <SYSTEM> note with its output and the monitor stops; it \
              also stops if you stop it or after {timeout_secs}s without a match. Keep working \
              meanwhile."
-        ))
+        );
+        Ok((monitor_id, message))
     }
 
     /// Stop one monitor. Its own tool result reports the state; no notice is
@@ -455,6 +468,68 @@ impl MonitorSet {
         }
         self.notices.lock().unwrap().clear();
         self.wake.notify_waiters();
+    }
+}
+
+/// Where one monitor's updates go.
+pub type UpdateSink = Arc<dyn Fn(MonitorUpdate) + Send + Sync>;
+
+/// A [`MonitorSet`] whose updates are routed to the sink each monitor was
+/// *started with*, by monitor id. One shared "latest subscriber" slot would
+/// hand monitor M1's update to the sink of the later-started M2, whose owner
+/// then treats M1's terminal update as M2's. Every update is terminal, so a
+/// route is dropped as soon as it has fired (or its monitor is stopped).
+pub struct RoutedMonitors {
+    set: Arc<MonitorSet>,
+    sinks: Arc<Mutex<std::collections::HashMap<String, UpdateSink>>>,
+}
+
+impl Default for RoutedMonitors {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RoutedMonitors {
+    pub fn new() -> Self {
+        let sinks: Arc<Mutex<std::collections::HashMap<String, UpdateSink>>> =
+            Arc::new(Mutex::new(std::collections::HashMap::new()));
+        let routed = sinks.clone();
+        let set = Arc::new(MonitorSet::subscribed(Arc::new(move |update| {
+            // Blocks while `start` is still binding the id below, so an update
+            // that fires immediately is never delivered to nobody.
+            let sink = routed.lock().unwrap().remove(&update.monitor_id);
+            if let Some(sink) = sink {
+                sink(update);
+            }
+        })));
+        Self { set, sinks }
+    }
+
+    pub fn set(&self) -> &Arc<MonitorSet> {
+        &self.set
+    }
+
+    /// Start a monitor whose updates (and only its updates) go to `sink`.
+    pub fn start(
+        &self,
+        spec: MonitorSpec,
+        ctx: MonitorCtx,
+        authority: Option<ThreadAuthority>,
+        sink: UpdateSink,
+    ) -> Result<String, String> {
+        // Held across the start so the subscriber cannot look the id up before
+        // it is bound.
+        let mut sinks = self.sinks.lock().unwrap();
+        let (id, message) = self.set.start_owned_with_id(spec, ctx, authority)?;
+        sinks.insert(id, sink);
+        Ok(message)
+    }
+
+    /// Stop one monitor and drop its route.
+    pub fn stop(&self, monitor_id: &str) -> String {
+        self.sinks.lock().unwrap().remove(monitor_id);
+        self.set.stop(monitor_id)
     }
 }
 
@@ -1392,6 +1467,57 @@ mod tests {
             .unwrap();
         assert_eq!(notices.len(), 1);
         assert!(notices[0].text.contains("a hit at last"));
+    }
+
+    // R8: two monitors started on one thread must each deliver to the sink
+    // they were started with, not to whichever subscribed last.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn each_monitor_delivers_to_its_own_sink() {
+        let dir = unique_root();
+        std::fs::write(dir.join("one.log"), "").unwrap();
+        std::fs::write(dir.join("two.log"), "").unwrap();
+        let routed = RoutedMonitors::new();
+        let (tx1, mut rx1) = tokio::sync::mpsc::unbounded_channel();
+        let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel();
+        let m1 = routed
+            .start(
+                spec("one", "grep hit one.log", 30),
+                ctx_for(&dir),
+                None,
+                Arc::new(move |u| {
+                    let _ = tx1.send(u);
+                }),
+            )
+            .unwrap();
+        routed
+            .start(
+                spec("two", "grep hit two.log", 30),
+                ctx_for(&dir),
+                None,
+                Arc::new(move |u| {
+                    let _ = tx2.send(u);
+                }),
+            )
+            .unwrap();
+        assert!(m1.contains("monitor_id=mon-1"), "{m1}");
+        // M1 matches while M2 (started later) is still polling.
+        std::fs::write(dir.join("one.log"), "hit\n").unwrap();
+        let first = tokio::time::timeout(Duration::from_secs(5), rx1.recv())
+            .await
+            .expect("M1's update never reached M1's sink")
+            .unwrap();
+        assert_eq!((first.monitor_id.as_str(), first.name.as_str()), ("mon-1", "one"));
+        assert!(rx2.try_recv().is_err(), "M1's update leaked into M2's sink");
+        std::fs::write(dir.join("two.log"), "hit\n").unwrap();
+        let second = tokio::time::timeout(Duration::from_secs(5), rx2.recv())
+            .await
+            .expect("M2's update never reached M2's sink")
+            .unwrap();
+        assert_eq!(second.monitor_id, "mon-2");
+        assert!(rx1.try_recv().is_err());
+        assert!(routed.sinks.lock().unwrap().is_empty(), "fired routes are dropped");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // POSIX command text: Windows runs PowerShell.
