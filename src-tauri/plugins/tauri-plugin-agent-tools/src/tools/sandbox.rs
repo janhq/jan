@@ -445,24 +445,34 @@ pub fn landing(
     for r in roots {
         all.push(r.as_path());
     }
-    let normalized = lexical_normalize(target);
-    if !all
-        .iter()
-        .any(|r| normalized.starts_with(lexical_normalize(r)))
-    {
-        return Landing::Outside(canonicalize_lenient(&normalized).ok());
+    // Resolve the raw target once, with the kernel's semantics: every link is
+    // followed before the `..` after it. That is the identity the gate vetted
+    // (`canonicalize_lenient` of the same raw path), so it is the one to open.
+    // Collapsing `..` textually first would name a different file whenever a
+    // link precedes a `..` (`link/../..` is not `../`), one the gate never saw.
+    let resolved = canonicalize_lenient(target);
+    if let Ok(resolved) = &resolved {
+        if all
+            .iter()
+            .filter_map(|r| r.canonicalize().ok())
+            .any(|r| resolved.starts_with(r))
+        {
+            return Landing::Inside(resolved.clone());
+        }
     }
-    let Ok(resolved) = canonicalize_lenient(&normalized) else {
-        return Landing::Escapes;
-    };
-    if all
+    // Not inside any root once resolved. The lexical spelling only decides
+    // whether the caller *claimed* a trusted root (so a link that leaves it is
+    // an escape to refuse) or named somewhere else outright (the gate already
+    // put that to the user).
+    let normalized = lexical_normalize(target);
+    let claims_root = all
         .iter()
-        .filter_map(|r| r.canonicalize().ok())
-        .any(|r| resolved.starts_with(r))
-    {
-        Landing::Inside(resolved)
-    } else {
-        Landing::Escapes
+        .any(|r| normalized.starts_with(lexical_normalize(r)));
+    match resolved {
+        Ok(_) if claims_root => Landing::Escapes,
+        Ok(real) => Landing::Outside(Some(real)),
+        Err(_) if claims_root => Landing::Escapes,
+        Err(_) => Landing::Outside(None),
     }
 }
 
@@ -973,6 +983,45 @@ mod tests {
         assert!(!symlink_escapes_any_root(&ws, None, &roots, &link));
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    // R1: `landing` must classify and return the identity the gate saw
+    // (`canonicalize_lenient` of the raw path: each link followed before the
+    // next `..`), not a lexically collapsed spelling of it.
+    #[cfg(unix)]
+    #[test]
+    fn landing_follows_links_before_dotdot_like_the_gate() {
+        let home = unique_root_outside_tmp();
+        let project = home.join("project");
+        std::fs::create_dir_all(project.join("a/b")).unwrap();
+        std::fs::create_dir_all(project.join(".jan")).unwrap();
+        std::fs::create_dir_all(home.join(".jan")).unwrap();
+        std::fs::write(project.join(".jan/config.toml"), b"inside").unwrap();
+        std::fs::write(home.join(".jan/config.toml"), b"outside").unwrap();
+        std::os::unix::fs::symlink(project.join("a/b"), project.join("link")).unwrap();
+        let target = project.join("link/../../.jan/config.toml");
+        let gate_view = canonicalize_lenient(&target).unwrap();
+        assert_eq!(gate_view, project.canonicalize().unwrap().join(".jan/config.toml"));
+        assert_eq!(landing(&project, None, &[], &target), Landing::Inside(gate_view.clone()));
+        // The same holds when the project is only an attached read root.
+        let ws = unique_root_outside_tmp();
+        assert_eq!(
+            landing(&ws, None, std::slice::from_ref(&project), &target),
+            Landing::Inside(gate_view)
+        );
+        // Mirror image: lexically inside, really outside (link leaves the root,
+        // `..` returns beside its target): refused, not silently re-pointed.
+        let far = unique_root_outside_tmp();
+        std::fs::create_dir_all(far.join("deep")).unwrap();
+        std::fs::write(far.join("secret.txt"), b"s").unwrap();
+        std::os::unix::fs::symlink(far.join("deep"), project.join("out")).unwrap();
+        assert_eq!(
+            landing(&project, None, &[], &project.join("out/../secret.txt")),
+            Landing::Escapes
+        );
+        for d in [&home, &ws, &far] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 
     /// The home-as-project case from the #9065 review: the Jan home sits inside

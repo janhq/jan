@@ -50,8 +50,9 @@ export const HOST_LIST_KEYS = [
 
 const toSeconds = (ms: number) => (ms > 1e12 ? Math.floor(ms / 1000) : ms)
 
+// A cleared session was used: it is never a droppable blank placeholder.
 const isEmpty = (s: CoworkSession) =>
-  (s.turns?.length ?? 0) === 0 && (s.messages?.length ?? 0) === 0
+  !s.cleared && (s.turns?.length ?? 0) === 0 && (s.messages?.length ?? 0) === 0
 
 // Key-order-insensitive comparison (the backend may reorder object keys).
 function canonical(v: unknown): string {
@@ -91,6 +92,8 @@ export function sessionToThreadRecord(
   else delete metadata.planMode
   if (s.goal !== undefined) metadata.goal = s.goal
   else delete metadata.goal
+  if (s.cleared) metadata.cleared = true
+  else delete metadata.cleared
   if (legacy && !metadata.migratedFrom) {
     metadata.migratedFrom = { store: CODE_SESSIONS_KEY, updated: s.updated }
   }
@@ -218,6 +221,7 @@ export function sessionFromThread(
     ...(sidecar?.todos !== undefined && { todos: sidecar.todos }),
     ...(meta.planMode !== undefined && { planMode: meta.planMode }),
     ...(meta.goal !== undefined && { goal: meta.goal }),
+    ...(meta.cleared === true && { cleared: true as const }),
     updated: updated * 1000,
     ...(unavailable && { unavailable }),
   }

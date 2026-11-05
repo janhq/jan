@@ -65,4 +65,50 @@ describe('mergeHistory', () => {
     const rows = mergeHistory([], [session('broken', 1, 0, { unavailable: 'unreadable-sidecar' })], {})
     expect(rows.map((r) => r.id)).toEqual(['broken'])
   })
+
+  it('lists a Cowork session of an existing project only under that project, but keeps an orphan-project one', () => {
+    const proj = (id: string) => ({ project: { id, name: id, updated_at: 1 } })
+    const sessions = [
+      session('homed', 1_000_000_000_000, 1, proj('p')),
+      session('orphan', 2_000_000_000_000, 1, proj('gone')),
+      session('plain', 3_000_000_000_000),
+    ]
+    expect(mergeHistory([], sessions, {}, new Set(['p'])).map((r) => r.id)).toEqual(['plain', 'orphan'])
+    // Project list not loaded yet: project rows stay hidden, as chat rows do.
+    expect(mergeHistory([], sessions, {}, null).map((r) => r.id)).toEqual(['plain'])
+  })
+
+  it('lists a cleared session (used, then emptied) but not a never-used blank placeholder', () => {
+    const rows = mergeHistory(
+      [],
+      [session('cleared', 2_000_000_000_000, 0, { cleared: true }), session('blank', 3_000_000_000_000, 0)],
+      {}
+    )
+    expect(rows.map((r) => r.id)).toEqual(['cleared'])
+  })
+
+  it('lists a project session whose mirror thread is gone: history is the only way to delete it', () => {
+    const project = { id: 'p', name: 'p', updated_at: 1 }
+    const rows = mergeHistory(
+      [],
+      [session('gone', 1_000_000_000_000, 1, { project, unavailable: 'missing-thread' }), session('ok', 2_000_000_000_000, 1, { project })],
+      {},
+      new Set(['p'])
+    )
+    expect(rows.map((r) => r.id)).toEqual(['gone'])
+  })
+
+  it.each(['missing-sidecar', 'unreadable-sidecar', 'id-collision'])(
+    'does not list a %s project session in history: its mirror thread is still listed under the project',
+    (unavailable) => {
+      const project = { id: 'p', name: 'p', updated_at: 1 }
+      const rows = mergeHistory(
+        [],
+        [session('s', 1_000_000_000_000, 1, { project, unavailable })],
+        {},
+        new Set(['p'])
+      )
+      expect(rows).toEqual([])
+    }
+  )
 })

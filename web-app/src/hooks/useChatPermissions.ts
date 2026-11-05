@@ -56,9 +56,30 @@ export const useChatPermissions = create<State>()((set) => {
           .core()
           .invoke<ChatPermissions>('get_chat_permissions')
         const value = { shellNetwork, memoryWrite, ...patch }
-        const saved = await getServiceHub()
-          .core()
-          .invoke<ChatPermissions>('set_chat_permissions', { value })
+        let saved: ChatPermissions
+        try {
+          saved = await getServiceHub()
+            .core()
+            .invoke<ChatPermissions>('set_chat_permissions', { value })
+        } catch (error) {
+          // The host applies (and keeps) a revocation before it persists, so a
+          // failed save can still have changed what it enforces. Resync the
+          // mirror, then surface the original error. If the resync fails too,
+          // stay fail-closed: treat every side this save tried to revoke as off.
+          try {
+            const current = await getServiceHub()
+              .core()
+              .invoke<ChatPermissions>('get_chat_permissions')
+            if (current) set({ shellNetwork: current.shellNetwork, memoryWrite: current.memoryWrite })
+          } catch (refreshError) {
+            console.warn('[chat-permissions] could not refresh after a failed save:', refreshError)
+            set((state) => ({
+              shellNetwork: state.shellNetwork && value.shellNetwork,
+              memoryWrite: state.memoryWrite && value.memoryWrite,
+            }))
+          }
+          throw error
+        }
         set({ shellNetwork: saved.shellNetwork, memoryWrite: saved.memoryWrite })
       })
     },

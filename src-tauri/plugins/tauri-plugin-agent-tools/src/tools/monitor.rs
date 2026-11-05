@@ -343,6 +343,18 @@ impl MonitorSet {
         ctx: MonitorCtx,
         authority: Option<ThreadAuthority>,
     ) -> Result<String, String> {
+        self.start_owned_with_id(spec, ctx, authority)
+            .map(|(_, message)| message)
+    }
+
+    /// [`MonitorSet::start_owned`], also returning the new monitor's id so a
+    /// caller can bind per-monitor state without parsing the result string.
+    pub fn start_owned_with_id(
+        self: &Arc<Self>,
+        spec: MonitorSpec,
+        ctx: MonitorCtx,
+        authority: Option<ThreadAuthority>,
+    ) -> Result<(String, String), String> {
         if self.inner.lock().unwrap().len() >= MAX_MONITORS {
             return Err(format!(
                 "at most {MAX_MONITORS} monitors may be active; stop one first"
@@ -378,12 +390,13 @@ impl MonitorSet {
                 status,
             },
         );
-        Ok(format!(
+        let message = format!(
             "Monitor started (monitor_id={monitor_id}): '{name}' runs every {interval_secs}s. \
              When it exits 0 you get a <SYSTEM> note with its output and the monitor stops; it \
              also stops if you stop it or after {timeout_secs}s without a match. Keep working \
              meanwhile."
-        ))
+        );
+        Ok((monitor_id, message))
     }
 
     /// Stop one monitor. Its own tool result reports the state; no notice is
@@ -455,6 +468,68 @@ impl MonitorSet {
         }
         self.notices.lock().unwrap().clear();
         self.wake.notify_waiters();
+    }
+}
+
+/// Where one monitor's updates go.
+pub type UpdateSink = Arc<dyn Fn(MonitorUpdate) + Send + Sync>;
+
+/// A [`MonitorSet`] whose updates are routed to the sink each monitor was
+/// *started with*, by monitor id. One shared "latest subscriber" slot would
+/// hand monitor M1's update to the sink of the later-started M2, whose owner
+/// then treats M1's terminal update as M2's. Every update is terminal, so a
+/// route is dropped as soon as it has fired (or its monitor is stopped).
+pub struct RoutedMonitors {
+    set: Arc<MonitorSet>,
+    sinks: Arc<Mutex<std::collections::HashMap<String, UpdateSink>>>,
+}
+
+impl Default for RoutedMonitors {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RoutedMonitors {
+    pub fn new() -> Self {
+        let sinks: Arc<Mutex<std::collections::HashMap<String, UpdateSink>>> =
+            Arc::new(Mutex::new(std::collections::HashMap::new()));
+        let routed = sinks.clone();
+        let set = Arc::new(MonitorSet::subscribed(Arc::new(move |update| {
+            // Blocks while `start` is still binding the id below, so an update
+            // that fires immediately is never delivered to nobody.
+            let sink = routed.lock().unwrap().remove(&update.monitor_id);
+            if let Some(sink) = sink {
+                sink(update);
+            }
+        })));
+        Self { set, sinks }
+    }
+
+    pub fn set(&self) -> &Arc<MonitorSet> {
+        &self.set
+    }
+
+    /// Start a monitor whose updates (and only its updates) go to `sink`.
+    pub fn start(
+        &self,
+        spec: MonitorSpec,
+        ctx: MonitorCtx,
+        authority: Option<ThreadAuthority>,
+        sink: UpdateSink,
+    ) -> Result<String, String> {
+        // Held across the start so the subscriber cannot look the id up before
+        // it is bound.
+        let mut sinks = self.sinks.lock().unwrap();
+        let (id, message) = self.set.start_owned_with_id(spec, ctx, authority)?;
+        sinks.insert(id, sink);
+        Ok(message)
+    }
+
+    /// Stop one monitor and drop its route.
+    pub fn stop(&self, monitor_id: &str) -> String {
+        self.sinks.lock().unwrap().remove(monitor_id);
+        self.set.stop(monitor_id)
     }
 }
 
@@ -660,10 +735,13 @@ async fn eval_script(
 ) -> PollVerdict {
     // Re-read on EVERY poll, including legacy Session monitors whose context
     // otherwise stays fixed. A requested/start-time false is a permanent ceiling.
-    let tool_ctx = ctx.as_tool_context().with_network(poll_network_allowed(
+    // Sampled here, but only a sample: it is re-checked under the admission
+    // guard at every spawn below (the poll's hooks may run for a long time).
+    let network = poll_network_allowed(
         ctx.allow_network,
         crate::thread_capabilities::get_global_grants().shell_network,
-    ));
+    );
+    let tool_ctx = ctx.as_tool_context().with_network(network);
     // Thread-only PreToolUse gate, fired for the poll script exactly as the
     // `shell` tool would fire it, BEFORE any spawn. Only the thread-owned
     // resolver populates `ctx.hooks` (re-resolved each poll); the Session
@@ -683,16 +761,32 @@ async fn eval_script(
             tool_input: Some(serde_json::json!({ "command": script })),
             ..Default::default()
         };
-        let outcome = crate::tools::hooks::run_hooks(
+        // Hooks are spawned under the same admission as the poll itself: a
+        // revocation either finds the hook registered under the monitor's
+        // owner or stops it from starting (see `SpawnAdmission`).
+        let admission = barrier.map(|(auth, generation)| crate::tools::hooks::SpawnAdmission {
+            owner: auth.owner.clone(),
+            thread_id: auth.thread_id.clone(),
+            generation,
+            network,
+        });
+        let outcome = crate::tools::hooks::run_hooks_admitted(
             hooks,
             crate::tools::hooks::HookEvent::PreToolUse,
             &payload,
             &tool_ctx,
             false,
+            admission.as_ref(),
         )
         .await;
         if let Some(reason) = outcome.denied {
             return PollVerdict::Denied(reason);
+        }
+        // A hook that was refused admission never ran: its gate did not answer.
+        // Skip the whole poll (the script must not run ungated) and let the
+        // next tick re-resolve authority and hooks.
+        if outcome.admission_refused {
+            return PollVerdict::NotYet;
         }
     }
     let Ok((shell, sandbox_env, _policy)) = crate::tools::handlers::confined_shell(&tool_ctx)
@@ -712,9 +806,10 @@ async fn eval_script(
         let _admitted = match barrier {
             Some((auth, token)) => {
                 let guard = crate::thread_capabilities::admission().lock().await;
-                if crate::thread_capabilities::generation(&auth.thread_id) != token {
-                    // Consent moved under us. Skip this poll; the next one
-                    // re-resolves and reports the revocation terminally.
+                if !crate::thread_capabilities::spawn_authorized(&auth.thread_id, token, network) {
+                    // Consent moved under us (this thread's barrier, or the
+                    // app-wide network switch). Skip this poll; the next one
+                    // re-resolves and reports a revocation terminally.
                     return PollVerdict::NotYet;
                 }
                 Some(guard)
@@ -779,6 +874,14 @@ async fn eval_script(
     registered.disarm();
     if let Some(pid) = pid {
         crate::tools::proc::unregister(owner, pid);
+        // The leader is done, but whatever it left running in its process group
+        // (`(sleep 30; touch marker) &`) is not: once unregistered, a later
+        // revocation could no longer find it. Reap the group on every
+        // completed-poll path, a match included. Windows cannot enumerate the
+        // descendants of an exited parent, so only the timeout arm below
+        // (leader still alive) reaps there.
+        #[cfg(unix)]
+        crate::tools::proc::kill_tree(pid);
     }
     match result {
         Ok((Ok(exit), head)) if exit.success() => {
@@ -1190,6 +1293,190 @@ mod tests {
         assert!(marker.exists(), "control failed to spawn");
     }
 
+    fn sleeping_hook_set(command: &str) -> crate::tools::hooks::HookSet {
+        let mut hooks = crate::tools::hooks::HookSet::new();
+        hooks.extend_from(
+            vec![crate::tools::hooks::HookEntry {
+                event: "PreToolUse".into(),
+                matcher: Some(crate::tools::SHELL_TOOL.into()),
+                command: command.into(),
+                timeout_secs: None,
+            }],
+            Path::new("test-hooks"),
+        );
+        assert_eq!(hooks.len(), 1, "the test hook must have loaded");
+        hooks
+    }
+
+    /// R4: a poll's PreToolUse hook is part of the monitor's authority. It
+    /// registers under the monitor's owner so a revocation's reap finds it and
+    /// its descendants, instead of an ownerless bucket nothing sweeps.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_poll_hook_is_owned_and_reaped_by_a_revocation() {
+        let dir = unique_root();
+        let id = "tm-hook-owned";
+        let owner = format!("thread-monitor:{id}");
+        let pidfile = dir.join("hook-sleeper.pid");
+        let mut ctx = ctx_for(&dir);
+        // The sleeper is the hook shell's grandchild, so liveness can be probed
+        // without a zombie (same pattern as the owned-children test).
+        ctx.hooks = Some(sleeping_hook_set(&format!(
+            "sleep 30 & echo $! > {}; wait",
+            pidfile.display()
+        )));
+        let (ctx, authority) = thread_authority_with(
+            ctx,
+            id,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(id))),
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start_owned(spec("watch", "false", 30), ctx, Some(authority))
+            .unwrap();
+        let mut pid = None;
+        for _ in 0..400 {
+            if let Some(parsed) = std::fs::read_to_string(&pidfile)
+                .ok()
+                .and_then(|s| s.trim().parse::<i32>().ok())
+            {
+                pid = Some(parsed);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let pid = nix::unistd::Pid::from_raw(pid.expect("the hook never started"));
+        assert!(nix::sys::signal::kill(pid, None).is_ok(), "hook sleeper must be alive");
+        // What a revocation does: drain the owner's bucket and kill its trees.
+        let pids = crate::tools::proc::take_thread_pids(&owner);
+        assert!(!pids.is_empty(), "the hook child is not registered under the monitor's owner");
+        for p in pids {
+            crate::tools::proc::kill_tree(p);
+        }
+        let mut dead = false;
+        for _ in 0..500 {
+            if nix::sys::signal::kill(pid, None).is_err() {
+                dead = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        set.stop_all();
+        assert!(dead, "the revocation's reap did not take the hook's process tree");
+    }
+
+    /// R4: hook spawning is admitted against the generation like the poll's own
+    /// spawn. A poll authorized at a generation that has since moved starts no
+    /// hook (and so, with the hook refused, no script either).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_poll_hook_does_not_start_after_the_generation_moved() {
+        let dir = unique_root();
+        let id = "tm-hook-stale";
+        let hook_marker = dir.join("hook-ran");
+        let script_marker = dir.join("script-ran");
+        let mut ctx = ctx_for(&dir);
+        ctx.hooks = Some(sleeping_hook_set(&format!("touch {}", hook_marker.display())));
+        // The poll was authorized at a token the thread has already moved past.
+        let (ctx, authority) = thread_authority_with(
+            ctx,
+            id,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(id) + 1_000_000)),
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start_owned(
+            spec("watch", &format!("touch {}", script_marker.display()), 30),
+            ctx,
+            Some(authority),
+        )
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        set.stop_all();
+        assert!(!hook_marker.exists(), "a hook started under a stale generation");
+        assert!(!script_marker.exists(), "the poll script started under a stale generation");
+    }
+
+    /// C: stopping ONE monitor aborts its task mid-hook; the hook's whole tree
+    /// (a backgrounded sleeper with redirected stdio) must go with it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stopping_a_monitor_mid_hook_reaps_the_hooks_descendants() {
+        let dir = unique_root();
+        let id = "tm-hook-stop";
+        let pidfile = dir.join("bg.pid");
+        let mut ctx = ctx_for(&dir);
+        ctx.hooks = Some(sleeping_hook_set(&format!(
+            "(sleep 30 >/dev/null 2>&1 </dev/null & echo $! > {}); sleep 30",
+            pidfile.display()
+        )));
+        let (ctx, authority) = thread_authority_with(
+            ctx,
+            id,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(id))),
+        );
+        let set = Arc::new(MonitorSet::new());
+        let (mid, _) = set
+            .start_owned_with_id(spec("watch", "false", 30), ctx, Some(authority))
+            .unwrap();
+        let mut pid = None;
+        for _ in 0..400 {
+            if let Some(p) = std::fs::read_to_string(&pidfile).ok().and_then(|s| s.trim().parse::<i32>().ok()) {
+                pid = Some(p);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let pid = nix::unistd::Pid::from_raw(pid.expect("the hook never started"));
+        assert!(nix::sys::signal::kill(pid, None).is_ok());
+        set.stop(&mid);
+        let mut dead = false;
+        for _ in 0..500 {
+            if nix::sys::signal::kill(pid, None).is_err() {
+                dead = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(dead, "the hook's background descendant survived the monitor's stop");
+        assert!(
+            crate::tools::proc::take_thread_pids(&format!("thread-monitor:{id}")).is_empty(),
+            "the aborted hook's pid is still registered"
+        );
+    }
+
+    /// D: a refused hook admission is not a hook error. The gate did not run,
+    /// so the outcome says so (and later hooks do not run either).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_refused_hook_admission_is_reported_not_swallowed_as_a_notice() {
+        let dir = unique_root();
+        let marker = dir.join("hook-ran");
+        let hooks = sleeping_hook_set(&format!("touch {}", marker.display()));
+        let ctx = ctx_for(&dir);
+        let tool_ctx = ctx.as_tool_context();
+        let stale = crate::tools::hooks::SpawnAdmission {
+            owner: "thread-monitor:tm-refused".into(),
+            thread_id: "tm-refused".into(),
+            generation: crate::thread_capabilities::generation("tm-refused") + 7,
+            network: false,
+        };
+        let payload = crate::tools::hooks::HookPayload {
+            tool_name: Some(crate::tools::SHELL_TOOL.to_string()),
+            ..Default::default()
+        };
+        let outcome = crate::tools::hooks::run_hooks_admitted(
+            &hooks,
+            crate::tools::hooks::HookEvent::PreToolUse,
+            &payload,
+            &tool_ctx,
+            false,
+            Some(&stale),
+        )
+        .await;
+        assert!(outcome.admission_refused);
+        assert!(outcome.notices.is_empty(), "{:?}", outcome.notices);
+        assert!(!marker.exists());
+    }
+
     /// A thread monitor's poll children are owned, so a revocation reaps
     /// exactly its pids -- by registered id, never by process name. Probes
     /// REAL process liveness by pid: registry membership alone is a
@@ -1392,6 +1679,77 @@ mod tests {
             .unwrap();
         assert_eq!(notices.len(), 1);
         assert!(notices[0].text.contains("a hit at last"));
+    }
+
+    // R5: a poll that completes normally must not leave its background
+    // descendants running (and, once unregistered, beyond a revocation's reach).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_completed_poll_does_not_leave_descendants_running() {
+        let dir = unique_root();
+        let marker = dir.join("late-marker");
+        let script = format!(
+            "(sleep 1; touch '{}') >/dev/null 2>&1 & exit 0",
+            marker.display()
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start(spec("bg", &script, 30), ctx_for(&dir)).unwrap();
+        let update = next_notice(&set).await;
+        assert!(update.matched, "the poll itself must still match");
+        tokio::time::sleep(Duration::from_millis(1700)).await;
+        assert!(!marker.exists(), "a surviving descendant of a completed poll wrote its marker");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // R8: two monitors started on one thread must each deliver to the sink
+    // they were started with, not to whichever subscribed last.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn each_monitor_delivers_to_its_own_sink() {
+        let dir = unique_root();
+        std::fs::write(dir.join("one.log"), "").unwrap();
+        std::fs::write(dir.join("two.log"), "").unwrap();
+        let routed = RoutedMonitors::new();
+        let (tx1, mut rx1) = tokio::sync::mpsc::unbounded_channel();
+        let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel();
+        let m1 = routed
+            .start(
+                spec("one", "grep hit one.log", 30),
+                ctx_for(&dir),
+                None,
+                Arc::new(move |u| {
+                    let _ = tx1.send(u);
+                }),
+            )
+            .unwrap();
+        routed
+            .start(
+                spec("two", "grep hit two.log", 30),
+                ctx_for(&dir),
+                None,
+                Arc::new(move |u| {
+                    let _ = tx2.send(u);
+                }),
+            )
+            .unwrap();
+        assert!(m1.contains("monitor_id=mon-1"), "{m1}");
+        // M1 matches while M2 (started later) is still polling.
+        std::fs::write(dir.join("one.log"), "hit\n").unwrap();
+        let first = tokio::time::timeout(Duration::from_secs(5), rx1.recv())
+            .await
+            .expect("M1's update never reached M1's sink")
+            .unwrap();
+        assert_eq!((first.monitor_id.as_str(), first.name.as_str()), ("mon-1", "one"));
+        assert!(rx2.try_recv().is_err(), "M1's update leaked into M2's sink");
+        std::fs::write(dir.join("two.log"), "hit\n").unwrap();
+        let second = tokio::time::timeout(Duration::from_secs(5), rx2.recv())
+            .await
+            .expect("M2's update never reached M2's sink")
+            .unwrap();
+        assert_eq!(second.monitor_id, "mon-2");
+        assert!(rx1.try_recv().is_err());
+        assert!(routed.sinks.lock().unwrap().is_empty(), "fired routes are dropped");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // POSIX command text: Windows runs PowerShell.

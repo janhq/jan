@@ -3461,6 +3461,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
+    /// R1: the gate classifies a path with kernel semantics (every link followed
+    /// before the next `..`), so the handler must open that same file. A
+    /// `link/../..` spelling collapsed textually first would open the file one
+    /// directory above the project instead, which the gate never vetted.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_opens_the_file_the_gate_vetted_not_a_lexically_collapsed_one() {
+        let home = unique_root();
+        let project = home.join("project");
+        std::fs::create_dir_all(project.join("a/b")).unwrap();
+        std::fs::create_dir_all(project.join(".jan")).unwrap();
+        std::fs::create_dir_all(home.join(".jan")).unwrap();
+        std::fs::write(project.join(".jan/config.toml"), b"inside").unwrap();
+        std::fs::write(home.join(".jan/config.toml"), b"classified").unwrap();
+        std::os::unix::fs::symlink(project.join("a/b"), project.join("link")).unwrap();
+        let raw = format!("{}/link/../../.jan/config.toml", project.display());
+
+        let out = execute_builtin(lookup("read").unwrap(), &json!({ "path": raw }), &project).await;
+        assert!(!out.contains("classified"), "opened a file the gate never vetted: {out}");
+        assert_eq!(out, "inside");
+
+        // Writers resolve through the same `landing`: the write must hit the
+        // vetted file, never the collapsed one.
+        let out = execute_builtin(
+            lookup("write").unwrap(),
+            &json!({ "path": raw, "content": "pwned" }),
+            &project,
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "{out}");
+        assert_eq!(std::fs::read(home.join(".jan/config.toml")).unwrap(), b"classified");
+        assert_eq!(std::fs::read(project.join(".jan/config.toml")).unwrap(), b"pwned");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     /// The race itself, made deterministic: the path is clean when `landing`
     /// classifies it, then a parent directory is swapped for a link to an outside
     /// tree after resolution and before the open. `read` must refuse and never
@@ -3967,38 +4002,6 @@ mod tests {
                 assert!(!scratch.join(&name).exists(), "{tool} was remapped into the scratch");
             }
         }
-        for d in [&root, &scratch, &att] {
-            let _ = std::fs::remove_dir_all(d);
-        }
-    }
-
-    /// Only the attached folder shadows the scratch. Any other /tmp path (a
-    /// sibling with the folder's name as prefix, or one that climbs out of the
-    /// folder with `..`) still maps into the scratch and clamps at its root.
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn other_tmp_paths_still_remap_to_scratch_next_to_an_attached_folder() {
-        use crate::tools::sandbox::{resolve_path, Attached};
-        let root = unique_root();
-        let scratch = unique_root();
-        let att = unique_host_tmp_dir("remap");
-        let roots = vec![att.clone()];
-        let a = Attached::new(&roots, &roots);
-        let inside = att.join("f.txt");
-        assert_eq!(resolve_path(&root, Some(&scratch), a, inside.to_str().unwrap()), inside);
-        let name = att.file_name().unwrap().to_str().unwrap().to_string();
-        assert_eq!(
-            resolve_path(&root, Some(&scratch), a, "/tmp/other.txt"),
-            scratch.join("other.txt")
-        );
-        assert_eq!(
-            resolve_path(&root, Some(&scratch), a, &format!("/tmp/{name}-evil/x")),
-            scratch.join(format!("{name}-evil/x"))
-        );
-        assert_eq!(
-            resolve_path(&root, Some(&scratch), a, &format!("/tmp/{name}/../x.txt")),
-            scratch.join("x.txt")
-        );
         for d in [&root, &scratch, &att] {
             let _ = std::fs::remove_dir_all(d);
         }

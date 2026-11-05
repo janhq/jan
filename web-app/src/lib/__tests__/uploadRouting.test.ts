@@ -14,19 +14,20 @@ describe('routeUploadPaths', () => {
     expect(routed.audio).toEqual(['/a/clip.mp3'])
     expect(routed.video).toEqual(['/a/movie.mov'])
     expect(routed.documents).toEqual(['/a/notes.md'])
-    expect(routed.imagesAsDocuments).toBe(0)
+    expect(routed.rejected).toEqual([])
   })
 
-  it('falls back to documents for media the model cannot take, and counts images', () => {
+  it('rejects images for a model without vision instead of routing them to document ingestion', () => {
     const routed = routeUploadPaths(
-      ['/a/photo.jpg', '/a/clip.wav', '/a/movie.mp4'],
+      ['/a/photo.jpg', '/a/clip.wav', '/a/movie.mp4', '/a/notes.md'],
       none
     )
     expect(routed.image).toEqual([])
-    expect(routed.audio).toEqual([])
-    expect(routed.video).toEqual([])
-    expect(routed.documents).toEqual(['/a/photo.jpg', '/a/clip.wav', '/a/movie.mp4'])
-    expect(routed.imagesAsDocuments).toBe(1)
+    expect(routed.rejected).toEqual(['/a/photo.jpg'])
+    // The RAG parser has no image branch, so an image must never reach it.
+    expect(routed.documents).not.toContain('/a/photo.jpg')
+    // Audio/video the model cannot take keep their existing document fallback.
+    expect(routed.documents).toEqual(['/a/clip.wav', '/a/movie.mp4', '/a/notes.md'])
   })
 
   it('treats unknown and extensionless files as documents', () => {

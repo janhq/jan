@@ -616,6 +616,29 @@ pub fn admission() -> &'static tokio::sync::Mutex<()> {
     ADMISSION.get_or_init(Default::default)
 }
 
+/// Whether a spawn authorized at `generation` may start now. Called under the
+/// [`admission`] guard, immediately before the spawn registers its child.
+///
+/// Two things can have moved since the poll was authorized, and either skips
+/// the spawn: the thread's own barrier (a revoke or stop), and the app-wide
+/// network switch. The global setting does not advance any thread's generation,
+/// so a poll whose sandbox was built with network on -- sampled before its
+/// PreToolUse hooks ran, perhaps long before -- would otherwise spawn with
+/// network after the user switched it off. `network` is whether the spawn's
+/// sandbox grants network; a spawn without it is unaffected by the switch.
+pub fn spawn_authorized(thread_id: &str, generation: u64, network: bool) -> bool {
+    spawn_authorized_under(thread_id, generation, network, get_global_grants())
+}
+
+fn spawn_authorized_under(
+    thread_id: &str,
+    generation: u64,
+    network: bool,
+    global: GlobalGrants,
+) -> bool {
+    self::generation(thread_id) == generation && (!network || global.shell_network)
+}
+
 /// Blocking compatibility entry point: drop elevations and persist denial.
 /// Async hosts use `deny_in_memory` under admission, then `persist_denial_async`.
 /// Never call this while holding spawn admission.
@@ -1024,6 +1047,19 @@ mod tests {
             shell_network: enabled,
             memory_write: enabled,
         }
+    }
+    /// R6: a poll authorized with network on must not spawn once the app-wide
+    /// switch is off, although no thread generation moved.
+    #[test]
+    fn spawn_admission_rechecks_the_global_network_switch() {
+        let on = GlobalGrants { shell_network: true, memory_write: true };
+        let off = GlobalGrants { shell_network: false, ..on };
+        let id = "spawn-admission-global";
+        let token = generation(id);
+        assert!(spawn_authorized_under(id, token, true, on), "positive control");
+        assert!(!spawn_authorized_under(id, token, true, off), "network revoked after sampling");
+        assert!(spawn_authorized_under(id, token, false, off), "a no-network spawn is unaffected");
+        assert!(!spawn_authorized_under(id, token + 1, false, on), "the thread barrier still applies");
     }
     #[test]
     fn intersection_never_widens_disk_or_local_revocation() {

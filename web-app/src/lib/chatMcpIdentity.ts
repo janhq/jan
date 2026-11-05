@@ -1,4 +1,22 @@
+import { toast } from 'sonner'
+import { i18n } from '@/i18n/react-i18next-compat'
 import type { MCPTool } from '@/types/completion'
+
+const announcedCollisions = new Set<string>()
+export const resetWithheldMcpToastsForTest = () => announcedCollisions.clear()
+
+/** The withholding is right for identity safety, but silent omission looks like
+ * a broken tool. Tell the user once per distinct set of colliding names. */
+function announceWithheldCollisions(names: string[]): void {
+  if (names.length === 0) return
+  const key = [...names].sort().join('\u0000')
+  if (announcedCollisions.has(key)) return
+  announcedCollisions.add(key)
+  toast.warning(
+    i18n.t('chat:mcpToolsWithheld', { names: [...names].sort().join(', ') }),
+    { id: 'mcp-tools-withheld', duration: 10000 }
+  )
+}
 
 /** Keep wire names compatible; collisions are withheld, never renamed or picked. */
 export function uniqueMcpTools(tools: MCPTool[]): MCPTool[] {
@@ -15,7 +33,9 @@ export function warnWithheldMcpTools(tools: MCPTool[]): void {
     group.push(tool)
     byName.set(tool.name, group)
   }
+  const collided: string[] = []
   for (const [name, group] of byName) {
+    if (group.length > 1) collided.push(name)
     const missing = group.some((tool) => !tool.server?.trim())
     if (group.length < 2 && !missing) continue
     const servers = group.map((tool) => tool.server?.trim() ? tool.server : '(missing server identity)')
@@ -23,6 +43,7 @@ export function warnWithheldMcpTools(tools: MCPTool[]): void {
       `[tools] Withheld MCP tool ${JSON.stringify(name)}: ${group.length > 1 ? 'name collision' : 'missing server identity'}; servers: ${servers.map((server) => JSON.stringify(server)).join(', ')}`
     )
   }
+  announceWithheldCollisions(collided)
 }
 
 /** A native tool owns its name and replaces the same-named MCP tool; say so

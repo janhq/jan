@@ -519,6 +519,51 @@ function approvalOptions(
     : { origin }
 }
 
+// Approval for a chat `monitor` start, which is shell execution: the same
+// route switch, the same elevated-or-not classification and the same native
+// per-call approval (strict on an extension-provider turn) under the same
+// grant as a direct `shell` call. Requested on this call's id, so it covers
+// exactly this script; the grant it is asked under is the one the caller hands
+// to native startup. Returns the refusal outcome, or undefined to go on.
+async function approveMonitorStart(
+  threadId: string,
+  toolCallId: string,
+  input: unknown,
+  grant: unknown,
+  signal: AbortSignal
+): Promise<{ output: string; isError: true } | undefined> {
+  const args = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
+  // Only the native shell may run this script. 'other' (switch off, but an MCP
+  // tool is named `shell`) is not it: the native monitor would run a script
+  // with shell disabled, under a saved native approval.
+  if (chatShellRoute('shell') !== 'builtin') return { output: SHELL_DISABLED_TOOL_ERROR, isError: true }
+  if (!isElevatedThreadCall('shell', args, grant)) return undefined
+  const approvals = approvalsOf(threadId)
+  let pending = approvals.get(toolCallId)
+  if (!pending) {
+    const origin = toolOriginOf('shell')
+    pending = {
+      approved: useToolApprovalRequests.getState().requestApproval(
+        toolCallId, 'shell', threadId, undefined, undefined,
+        { ...approvalOptions(threadId, origin.origin), native: { grantKey: grantKeyOf(grant) } }
+      ),
+      origin: origin.origin,
+    }
+    approvals.set(toolCallId, pending)
+  }
+  const approved = await untilAborted(pending.approved, signal)
+  if (signal.aborted || isChatClosing()) return { output: CHAT_CLOSED_TOOL_ERROR, isError: true }
+  // The shell switch may have been turned off while the approval card was
+  // open; an allowed approval must not start native shell execution then.
+  if (chatShellRoute('shell') !== 'builtin') return { output: SHELL_DISABLED_TOOL_ERROR, isError: true }
+  // Plan may have been enabled while the approval card was open.
+  const planRefusal = useChatSessions.getState().sessions[threadId]?.transport.planToolRefusal('shell', input)
+  if (planRefusal) return { output: planRefusal, isError: true }
+  throwIfApprovalValidationFailed(approved)
+  if (!approved) return { output: 'Tool execution denied by user', isError: true }
+  return undefined
+}
+
 function turnOnExtensionProvider(threadId: string): boolean {
   const providerName = turnModelOf(threadId).selectedProvider
   return Boolean(
@@ -1195,7 +1240,13 @@ function ThreadDetail() {
       try { bound = bindMcpCall(toolCall) } catch { return }
       const { serverName, checkMcp, generation } = bound
       // Conversation todo/ask never prompt: dispatch serves or refuses them.
-      if (!serverName && isConversationClientTool(toolCall.toolName)) return
+      if (!serverName && isConversationClientTool(toolCall.toolName)) {
+        // A monitor start is shell execution bounded by the grant in force when
+        // the call ARRIVED: capture it now (dispatch reuses it by call id), so a
+        // permission raised while the call waits cannot raise its ceiling.
+        if (toolCall.toolName === 'monitor') nativeGrantOf(threadId, toolCall.toolCallId)
+        return
+      }
       const isNative = !serverName && chatShellRoute(toolCall.toolName) === 'builtin'
       // A call dispatch will refuse as unadvertised must not open a prompt (or
       // an always-allow choice) that nothing will ever wait on.
@@ -1329,7 +1380,23 @@ function ThreadDetail() {
                 dispatch: dispatchChatTool,
               })
             },
-            onMonitor: (_callId, input) => runChatMonitor(input, { threadId, signal }),
+            onMonitor: async (callId, input) => {
+              // The grant this call was classified under, never the live one.
+              const grant = nativeGrantOf(threadId, callId)
+              // Starting a monitor runs an arbitrary shell script on a timer, so
+              // it is approved exactly as the same script sent to `shell` would
+              // be, before native startup. list/stop run nothing.
+              if ((input as { op?: unknown } | null)?.op === 'start') {
+                const refusal = await approveMonitorStart(threadId, toolCall.toolCallId, input, grant, signal)
+                if (refusal) return refusal
+              }
+              return runChatMonitor(input, {
+                threadId,
+                signal,
+                grant,
+                planActive: () => useChatSessions.getState().sessions[threadId]?.transport.isPlanActive() === true,
+              })
+            },
           })
           if (clientOutcome) return clientOutcome
         }

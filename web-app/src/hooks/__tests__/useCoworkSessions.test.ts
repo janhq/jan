@@ -33,6 +33,65 @@ describe('startNewSession', () => {
     ])
   })
 
+  it('does not reuse an unavailable current session', () => {
+    const broken = useCoworkSessions.getState().createSession()
+    useCoworkSessions.setState((s) => ({
+      sessions: s.sessions.map((x) => (x.id === broken ? { ...x, unavailable: 'missing-sidecar' as const } : x)),
+    }))
+    const fresh = useCoworkSessions.getState().createSession()
+    expect(fresh).not.toBe(broken)
+    expect(useCoworkSessions.getState().sessions.find((x) => x.id === fresh)?.unavailable).toBeUndefined()
+  })
+
+  it('does not reuse a cleared session as a new one, and pruning keeps it', () => {
+    const store = useCoworkSessions.getState()
+    const used = store.createSession()
+    store.commitTurns(used, [{ role: 'user', content: 'hi' }], [], [])
+    store.clearSession(used)
+    const fresh = useCoworkSessions.getState().createSession()
+    expect(fresh).not.toBe(used)
+    useCoworkSessions.getState().selectSession(fresh)
+    useCoworkSessions.getState().pruneEmptySessions([])
+    expect(useCoworkSessions.getState().sessions.map((x) => x.id)).toEqual([fresh, used])
+  })
+
+  it('keeps a used session listed when deleting its first question empties it, but not a blank placeholder', () => {
+    const store = useCoworkSessions.getState()
+    const used = store.createSession()
+    store.commitTurns(
+      used,
+      [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'yo' }],
+      [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'yo' }] as never,
+      []
+    )
+    store.dropFromTurn(used, 0)
+    const after = useCoworkSessions.getState().sessions.find((x) => x.id === used)
+    expect(after?.turns).toEqual([])
+    expect(after?.cleared).toBe(true)
+    const blank = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().dropFromTurn(blank, 0)
+    expect(useCoworkSessions.getState().sessions.find((x) => x.id === blank)?.cleared).toBeUndefined()
+    const fresh = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().selectSession(fresh)
+    useCoworkSessions.getState().pruneEmptySessions([])
+    expect(useCoworkSessions.getState().sessions.map((x) => x.id)).toEqual([fresh, used])
+  })
+
+  it('does not mark a session cleared when a later question is dropped', () => {
+    const store = useCoworkSessions.getState()
+    const id = store.createSession()
+    const t: CoworkTurn[] = [
+      { role: 'user', content: 'a' }, { role: 'assistant', content: 'b' },
+      { role: 'user', content: 'c' }, { role: 'assistant', content: 'd' },
+    ]
+    store.commitTurns(id, t, [
+      { role: 'user', content: 'a' }, { role: 'assistant', content: 'b' },
+      { role: 'user', content: 'c' }, { role: 'assistant', content: 'd' },
+    ] as never, [])
+    store.dropFromTurn(id, 2)
+    expect(useCoworkSessions.getState().sessions.find((x) => x.id === id)?.cleared).toBeUndefined()
+  })
+
   it('reuses an untouched current session', () => {
     const empty = useCoworkSessions.getState().createSession()
     expect(startNewSession([])).toBe(empty)

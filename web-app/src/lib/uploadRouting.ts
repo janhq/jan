@@ -13,17 +13,19 @@ export type RoutedUploads = {
   image: string[]
   audio: string[]
   video: string[]
-  /** Everything else, plus media the model cannot take. */
+  /** Everything else, plus audio/video the model cannot take. */
   documents: string[]
-  /** Images that fell back to documents because the model has no vision. */
-  imagesAsDocuments: number
+  /** Images the model cannot see. Document ingestion has no image parser, so
+   * they are refused rather than attached as files that always fail to send. */
+  rejected: string[]
 }
 
 const extOf = (path: string): string => path.toLowerCase().split('.').pop() ?? ''
 
 /**
  * One upload picker, one routing rule: media goes to the model when it can take
- * it, and everything else becomes a document attachment. Drag-and-drop applies
+ * it, images it cannot see are rejected, and everything else becomes a document
+ * attachment. Drag-and-drop applies
  * the same split, so the two entry points cannot disagree.
  */
 export function routeUploadPaths(
@@ -35,16 +37,13 @@ export function routeUploadPaths(
     audio: [],
     video: [],
     documents: [],
-    imagesAsDocuments: 0,
+    rejected: [],
   }
   for (const path of paths) {
     const ext = extOf(path)
     if (IMAGE_EXTS.includes(ext)) {
       if (can.image) routed.image.push(path)
-      else {
-        routed.imagesAsDocuments += 1
-        routed.documents.push(path)
-      }
+      else routed.rejected.push(path)
     } else if (AUDIO_EXTS.includes(ext) && can.audio) routed.audio.push(path)
     else if (VIDEO_EXTS.includes(ext) && can.video) routed.video.push(path)
     else routed.documents.push(path)

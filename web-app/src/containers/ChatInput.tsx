@@ -827,7 +827,23 @@ const ChatInput = memo(function ChatInput({
     {}
   )
 
+  // One submit at a time: a held send (attachment processing) leaves the draft
+  // in the box until onSubmit settles, so a second Enter/click would resubmit it.
+  const submittingRef = useRef(false)
+  const [submitting, setSubmitting] = useState(false)
   const handleSendMessage = async (prompt: string) => {
+    if (submittingRef.current) return false
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      return await submitMessage(prompt)
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
+  }
+
+  const submitMessage = async (prompt: string) => {
     let isSkillCommand = false
     if (unifiedCommands && prompt.trim().startsWith('/')) {
       if (prompt.trim() === '/plan') {
@@ -1915,9 +1931,9 @@ const ChatInput = memo(function ChatInput({
         audio: audioSupported,
         video: videoSupported,
       })
-      if (routed.imagesAsDocuments > 0) {
-        toast.info("This model can't see images", {
-          description: 'They are attached as files instead.',
+      if (routed.rejected.length > 0) {
+        toast.error("This model can't see images", {
+          description: 'Choose a vision-capable model to attach images.',
         })
       }
       const toFiles = async (list: string[], mimeFor: (ext: string) => string) => {
@@ -3066,7 +3082,9 @@ const ChatInput = memo(function ChatInput({
                       variant="default"
                       size="icon-sm"
                       disabled={
-                        (!prompt.trim() && !hasSendableMedia) || ingestingAny
+                        (!prompt.trim() && !hasSendableMedia) ||
+                        ingestingAny ||
+                        submitting
                       }
                       data-test-id="send-message-button"
                       data-testid="send-message-button"

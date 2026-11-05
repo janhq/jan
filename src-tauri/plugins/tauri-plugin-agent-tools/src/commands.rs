@@ -853,8 +853,10 @@ pub async fn cancel_thread_bash(thread_id: String) -> Result<(), AgentToolsError
 /// structural, so nothing on this surface can address a Cowork session's
 /// monitors even if the ids were identical.
 struct ThreadMonitors {
-    set: std::sync::Arc<crate::tools::monitor::MonitorSet>,
-    channel: MonitorChannelSlot,
+    /// Each monitor's updates go to the channel it was started with: a thread
+    /// holds several at once, and one shared "latest channel" slot handed the
+    /// earlier monitor's update to the later start's listener.
+    monitors: crate::tools::monitor::RoutedMonitors,
 }
 
 fn thread_monitors(
@@ -947,25 +949,54 @@ fn thread_authority(
     }
 }
 
+/// The most a Chat monitor may ever do: the host's current authority for the
+/// thread, narrowed to the grant the run captured when it classified (and had
+/// the user approve) the start, exactly as ordinary scoped dispatch does for
+/// one call. Without this a turn that began read-only/no-network could start a
+/// monitor that picked up folder-write or network the user granted later.
+///
+/// `plan_mode` is the run's effective, latched Plan state: a monitor is an
+/// arbitrary shell script polled on a timer, and Plan is read-only with shell
+/// disabled, so a start under Plan is refused (nothing is polled to carry the
+/// state forward).
+fn monitor_start_ceiling(
+    host: crate::thread_capabilities::ThreadCapabilities,
+    effective: crate::thread_capabilities::ThreadCapabilities,
+    plan_mode: bool,
+) -> Result<crate::thread_capabilities::ThreadCapabilities, String> {
+    if plan_mode {
+        return Err("tool 'monitor' is disabled in Plan mode, which is read-only. Stage changes \
+             in the plan and ask the user to leave Plan mode before starting a monitor."
+            .into());
+    }
+    host.intersect(effective)
+}
+
 /// Start a monitor owned by a Chat thread.
 ///
 /// Unlike [`start_monitor`] there is no caller-supplied data folder, scope,
 /// network or writability flag to forge: the host derives every one of them
-/// from the thread's own consent, and re-derives them on each poll. Nothing
-/// the caller passes can widen authority.
+/// from the thread's own consent, and re-derives them on each poll. The only
+/// caller input is `effective_grant` -- the run's captured grant -- and it can
+/// only narrow: the monitor's ceiling is its intersection with the host's
+/// current authority, kept for every poll.
 #[tauri::command]
 pub async fn start_thread_monitor(
     thread_id: String,
     args: serde_json::Value,
+    effective_grant: crate::thread_capabilities::ThreadCapabilities,
+    plan_mode: bool,
     on_update: tauri::ipc::Channel<crate::tools::monitor::MonitorUpdate>,
 ) -> Result<String, AgentToolsError> {
     let spec =
         crate::tools::monitor::parse_start_args(&args).map_err(AgentToolsError::from)?;
     // Authorize once up front so an unauthorized start fails loudly, rather
     // than starting a monitor whose only possible output is a revoked notice.
-    let (_, ceiling, _) = crate::thread_capabilities::authorize(&thread_id)
+    let (_, host, _) = crate::thread_capabilities::authorize(&thread_id)
         .await
         .map_err(AgentToolsError::from)?;
+    let ceiling =
+        monitor_start_ceiling(host, effective_grant, plan_mode).map_err(AgentToolsError::from)?;
     let (ctx, _) = resolve_thread_monitor_ctx(&thread_id, &ceiling)
         .await
         .map_err(AgentToolsError::from)?;
@@ -977,25 +1008,21 @@ pub async fn start_thread_monitor(
     // aborted by a later revocation.
     {
         let mut sets = thread_monitors().lock().unwrap();
-        let entry = sets.entry(thread_id).or_insert_with(|| {
-            let slot: MonitorChannelSlot = std::sync::Arc::new(std::sync::Mutex::new(None));
-            let subscriber_slot = slot.clone();
-            ThreadMonitors {
-                set: std::sync::Arc::new(crate::tools::monitor::MonitorSet::subscribed(
-                    std::sync::Arc::new(move |update| {
-                        if let Some(channel) = subscriber_slot.lock().unwrap().as_ref() {
-                            let _ = channel.send(update);
-                        }
-                    }),
-                )),
-                channel: slot,
-            }
-        });
-        *entry.channel.lock().unwrap() = Some(on_update);
+        let entry = sets
+            .entry(thread_id)
+            .or_insert_with(|| ThreadMonitors {
+                monitors: crate::tools::monitor::RoutedMonitors::new(),
+            });
         entry
-            .set
-            .clone()
-            .start_owned(spec, ctx, Some(authority))
+            .monitors
+            .start(
+                spec,
+                ctx,
+                Some(authority),
+                std::sync::Arc::new(move |update| {
+                    let _ = on_update.send(update);
+                }),
+            )
             .map_err(AgentToolsError::from)
     }
 }
@@ -1007,13 +1034,13 @@ pub async fn stop_thread_monitor(
     thread_id: String,
     monitor_id: String,
 ) -> Result<String, AgentToolsError> {
-    let set = thread_monitors()
+    let stopped = thread_monitors()
         .lock()
         .unwrap()
         .get(&thread_id)
-        .map(|entry| entry.set.clone());
-    Ok(match set {
-        Some(set) => set.stop(&monitor_id),
+        .map(|entry| entry.monitors.stop(&monitor_id));
+    Ok(match stopped {
+        Some(result) => result,
         None => format!("ERROR: unknown or already-stopped monitor '{monitor_id}'"),
     })
 }
@@ -1024,7 +1051,7 @@ pub async fn list_thread_monitors(thread_id: String) -> Result<String, AgentTool
         .lock()
         .unwrap()
         .get(&thread_id)
-        .map(|entry| entry.set.clone());
+        .map(|entry| entry.monitors.set().clone());
     Ok(match set {
         Some(set) => set.list(),
         None => "No active monitors.".to_string(),
@@ -1071,7 +1098,7 @@ async fn stop_thread_monitors_and_children(thread_id: &str) {
         .lock()
         .unwrap()
         .remove(thread_id)
-        .map(|entry| entry.set);
+        .map(|entry| entry.monitors.set().clone());
     reap_thread_monitor_children(thread_id, crate::thread_capabilities::bump_generation).await;
     if let Some(set) = set {
         set.stop_all();
@@ -1116,7 +1143,7 @@ async fn deny_thread_and_stop_monitors(thread_id: &str, advance: fn(&str) -> u64
         .lock()
         .unwrap()
         .remove(thread_id)
-        .map(|entry| entry.set);
+        .map(|entry| entry.monitors.set().clone());
     if let Some(set) = set {
         set.stop_all();
     }
@@ -1125,7 +1152,7 @@ async fn deny_thread_and_stop_monitors(thread_id: &str, advance: fn(&str) -> u64
         .lock()
         .unwrap()
         .remove(thread_id)
-        .map(|entry| entry.set);
+        .map(|entry| entry.set.clone());
     if let Some(set) = session {
         set.stop_all();
     }
@@ -4044,6 +4071,38 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(got.writable, Some(true));
+    }
+
+    /// R2: the monitor's ceiling is the run's captured grant, not whatever the
+    /// host allows at start. A run that began read-only/no-network cannot start
+    /// a monitor with folder-write or network the user granted afterwards.
+    #[test]
+    fn monitor_start_ceiling_is_narrowed_to_the_runs_captured_grant() {
+        use crate::thread_capabilities::{FolderScope, ThreadCapabilities};
+        let caps = |access: &str, network: bool| ThreadCapabilities {
+            version: 1,
+            folder_scope: Some(FolderScope {
+                path: std::env::temp_dir().to_string_lossy().into_owned(),
+                access: access.into(),
+            }),
+            shell_network: network,
+            memory_write: false,
+        };
+        // Host raised to write + network after the run captured read-only/off.
+        let got = monitor_start_ceiling(caps("write", true), caps("read", false), false).unwrap();
+        assert_eq!(got.folder_scope.unwrap().access, "read");
+        assert!(!got.shell_network);
+        // Positive control: captured grant equal to the host's keeps it.
+        let got = monitor_start_ceiling(caps("write", true), caps("write", true), false).unwrap();
+        assert_eq!(got.folder_scope.unwrap().access, "write");
+        assert!(got.shell_network);
+        // A captured grant wider than the host never widens it.
+        let got = monitor_start_ceiling(caps("read", false), caps("write", true), false).unwrap();
+        assert_eq!(got.folder_scope.unwrap().access, "read");
+        assert!(!got.shell_network);
+        // Plan is read-only with shell disabled: no monitor starts under it.
+        let refused = monitor_start_ceiling(caps("write", true), caps("write", true), true);
+        assert!(refused.unwrap_err().contains("Plan"));
     }
 
     /// Background captured ceiling: a monitor started read+write re-reads the

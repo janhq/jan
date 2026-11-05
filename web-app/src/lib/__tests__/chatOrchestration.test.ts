@@ -30,7 +30,7 @@ import {
   cancelChatOrchestration,
   chatRunInbox,
   childEffectiveGrant,
-  runChatMonitor,
+  runChatMonitor as runChatMonitorWith,
   runChatTask,
   finalizeChatRun,
   takeTaskStatus,
@@ -72,6 +72,12 @@ const PARENT: Record<string, Tool> = Object.fromEntries(
 )
 
 let seq = 0
+// The run's captured grant and latched Plan state, required by the boundary.
+const CAPTURED_GRANT = { sentinel: 'captured-grant' }
+const runChatMonitor = (
+  input: unknown,
+  ctx: Pick<ChatOrchestrationContext, 'threadId' | 'signal'>
+) => runChatMonitorWith(input, { ...ctx, grant: CAPTURED_GRANT, planActive: () => false })
 const ctxFor = (over: Partial<ChatOrchestrationContext> = {}) => {
   const controller = new AbortController()
   const dispatch = vi.fn(async () => ({ output: 'done' }))
@@ -358,14 +364,23 @@ describe('task result + inbox', () => {
 describe('monitor host boundary', () => {
   const started = (id = 'mon-1') => ({ output: `Started. monitor_id=${id}` })
 
-  it('start/list/stop call the host with only threadId, args, onUpdate', async () => {
+  it('start/list/stop call the host with threadId, args, onUpdate and the run\'s captured grant and Plan state', async () => {
     const { ctx } = ctxFor()
     hoisted.start.mockResolvedValue(started())
     hoisted.list.mockResolvedValue('mon-1 running')
     const args = { op: 'start', name: 'w', script: 'x' }
     expect((await runChatMonitor(args, ctx)).output).toContain('mon-1')
-    expect(hoisted.start).toHaveBeenCalledWith(ctx.threadId, args, expect.any(Function))
-    expect(hoisted.start.mock.calls[0]).toHaveLength(3)
+    expect(hoisted.start).toHaveBeenCalledWith(
+      ctx.threadId,
+      args,
+      expect.any(Function),
+      CAPTURED_GRANT,
+      expect.any(Function)
+    )
+    expect(hoisted.start.mock.calls[0]).toHaveLength(5)
+    // Plan state is read at the boundary, not frozen: a late Plan toggle reaches it.
+    const planActive = hoisted.start.mock.calls[0][4] as () => boolean
+    expect(planActive()).toBe(false)
     expect((await runChatMonitor({ op: 'list' }, ctx)).output).toBe('mon-1 running')
     expect(hoisted.list).toHaveBeenCalledWith(ctx.threadId)
     expect((await runChatMonitor({ op: 'stop', monitor_id: 'mon-1' }, ctx)).isError).toBe(false)

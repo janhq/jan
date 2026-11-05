@@ -33,7 +33,11 @@ vi.mock('@/lib/utils', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/utils')>()),
   isDev: () => false,
 }))
-vi.mock('@/lib/agentTools', () => ({ stopAgentSessionMonitors: vi.fn() }))
+vi.mock('@/lib/agentTools', () => ({
+  stopAgentSessionMonitors: vi.fn(),
+  cancelAgentThreadBash: vi.fn(),
+}))
+vi.mock('@/lib/coworkRunner', () => ({ abortRun: vi.fn() }))
 vi.mock('@/lib/coworkMonitor', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/coworkMonitor')>()),
   dropMonitorLane: vi.fn(),
@@ -90,6 +94,7 @@ vi.mock('@/components/ui/sidebar', () => {
 
 import { NavHistory } from '../NavHistory'
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
+import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
 
@@ -139,6 +144,28 @@ describe('NavHistory delete Cowork session', () => {
     expect(router.navigate).toHaveBeenCalledWith({ to: route.home })
     expect(route.home).toBe('/')
     expect(ids()).toEqual(['other'])
+  })
+
+  it('stops the run, its shell and its monitors before removing the session', async () => {
+    const { abortRun } = await import('@/lib/coworkRunner')
+    const { cancelAgentThreadBash, stopAgentSessionMonitors } = await import('@/lib/agentTools')
+    useCoworkRun.setState({ runId: { other: 'run-1' } } as never)
+    render(<NavHistory />)
+    deleteRow('other')
+    expect(abortRun).toHaveBeenCalledWith('other')
+    expect(cancelAgentThreadBash).toHaveBeenCalledWith('other')
+    expect(stopAgentSessionMonitors).toHaveBeenCalledWith('other')
+    expect(ids()).toEqual(['open'])
+  })
+
+  it('keeps rows keyed apart when a chat thread and a session share an id', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    useThreads.setState({ threads: { other: { id: 'other', title: 'Chat', updated: 1, messages: [] } as never } })
+    render(<NavHistory />)
+    expect(screen.getByTestId('thread-other')).toBeInTheDocument()
+    expect(screen.getByTestId('history-cowork-other')).toBeInTheDocument()
+    expect(errors.mock.calls.some((c) => String(c[0]).includes('same key'))).toBe(false)
+    errors.mockRestore()
   })
 
   it('stays on the current route when a different conversation is deleted', () => {

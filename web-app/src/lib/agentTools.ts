@@ -458,12 +458,32 @@ export async function revokeThreadCapabilitiesInHost(
 export async function startThreadAgentMonitor(
   threadId: string,
   args: unknown,
-  onUpdate: (update: MonitorUpdate) => void
+  onUpdate: (update: MonitorUpdate) => void,
+  /** The grant the run captured when it classified (and had approved) this
+   * start. Required: the host keeps its intersection with current authority as
+   * the monitor's ceiling for every poll. */
+  effectiveGrantCeiling: unknown,
+  /** The run's latched Plan state; the host refuses a start under Plan. */
+  planActive: () => boolean
 ): Promise<{ output: string; isError?: boolean }> {
   try {
     const input =
       args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
-    return { output: await startThreadMonitor(threadId, input, onUpdate) }
+    const { useThreads } = await import('@/hooks/useThreads')
+    const { chatPlanEnabled } = await import('@/hooks/useChatPlan')
+    const grant = intersectConversationCapabilities(
+      useThreads.getState().getConversationCapabilities(threadId),
+      effectiveGrantCeiling
+    )
+    return {
+      output: await startThreadMonitor(
+        threadId,
+        input,
+        onUpdate,
+        grant,
+        planActive() || chatPlanEnabled(threadId)
+      ),
+    }
   } catch (e) {
     return { output: `ERROR: ${messageOf(e)}`, isError: true }
   }
