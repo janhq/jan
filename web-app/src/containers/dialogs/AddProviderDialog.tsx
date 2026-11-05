@@ -90,14 +90,23 @@ export function AddProviderDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3 mt-2">
-          <Input
-            data-testid="provider-name-input"
-            ref={nameInputRef}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t('provider:enterNameForProvider')}
-            onKeyDown={(e) => e.stopPropagation()}
-          />
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="provider-name-input"
+              className="text-xs text-muted-foreground"
+            >
+              {t('provider:nameLabel')}
+            </label>
+            <Input
+              id="provider-name-input"
+              data-testid="provider-name-input"
+              ref={nameInputRef}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('provider:enterNameForProvider')}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+          </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs text-muted-foreground">
               {t('provider:apiTypeLabel')}
