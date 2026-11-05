@@ -50,7 +50,7 @@ vi.mock('@/hooks/useThreadManagement', () => ({
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/containers/dialogs/DeleteAllThreadsDialog', () => ({
-  DeleteAllThreadsDialog: () => null,
+  DeleteAllThreadsDialog: () => <div data-testid="delete-all" />,
 }))
 vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -208,4 +208,31 @@ describe('NavHistory rename availability', () => {
       expect(within(row).getByRole('menuitem', { name: 'common:deleteSession' })).toBeInTheDocument()
     }
   )
+})
+
+describe('NavHistory Delete All is offered only when it would delete something', () => {
+  const t = (id: string, extra: Record<string, unknown> = {}) =>
+    ({ id, title: id, updated: 1, metadata: {}, ...extra }) as never
+  const orphan = (id: string) => t(id, { metadata: { project: { id: 'gone', name: 'P' } } })
+
+  beforeEach(() => useCoworkSessions.setState({ sessions: [] }))
+
+  it('is not offered for orphan-project threads, which Delete All keeps', () => {
+    useThreads.setState({ threads: { a: orphan('a'), b: orphan('b'), c: orphan('c') } })
+    render(<NavHistory />)
+    expect(screen.getByTestId('thread-a')).toBeInTheDocument()
+    expect(screen.queryByTestId('delete-all')).not.toBeInTheDocument()
+  })
+
+  it('is not offered for favorites only', () => {
+    useThreads.setState({ threads: { a: t('a', { isFavorite: true }), b: t('b', { isFavorite: true }) } })
+    render(<NavHistory />)
+    expect(screen.queryByTestId('delete-all')).not.toBeInTheDocument()
+  })
+
+  it('is offered once two deletable chats exist, whatever else is listed', () => {
+    useThreads.setState({ threads: { a: t('a'), b: t('b'), c: orphan('c') } })
+    render(<NavHistory />)
+    expect(screen.getByTestId('delete-all')).toBeInTheDocument()
+  })
 })

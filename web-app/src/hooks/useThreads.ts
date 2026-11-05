@@ -204,6 +204,15 @@ const deleteThreadOnDisk = (threadId: string, thread?: Thread) => {
     })
 }
 
+/**
+ * What the sidebar's Delete All removes: plain chats only. Favorites, anything
+ * with project metadata (even a project that no longer exists, so no data is
+ * lost to a dangling reference) and Cowork threads are kept. The sidebar uses
+ * the same predicate to decide whether to offer the action at all.
+ */
+export const isDeletedByDeleteAll = (thread: Thread): boolean =>
+  !thread.isFavorite && !thread.metadata?.project && !isCoworkThread(thread)
+
 export const useThreads = create<ThreadState>()((set, get) => ({
   threads: {},
   isLoadingThreads: true,
@@ -399,20 +408,12 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
 
-      // Identify threads to keep (favorites OR have project metadata)
+      // Threads to keep: everything Delete All does not delete.
       const threadsToKeepIds = allThreadIds.filter(
-        (threadId) =>
-          state.threads[threadId].isFavorite ||
-          state.threads[threadId].metadata?.project ||
-          isCoworkThread(state.threads[threadId])
+        (threadId) => !isDeletedByDeleteAll(state.threads[threadId])
       )
-
-      // Identify threads to delete (non-favorites AND no project metadata)
-      const threadsToDeleteIds = allThreadIds.filter(
-        (threadId) =>
-          !state.threads[threadId].isFavorite &&
-          !state.threads[threadId].metadata?.project &&
-          !isCoworkThread(state.threads[threadId])
+      const threadsToDeleteIds = allThreadIds.filter((threadId) =>
+        isDeletedByDeleteAll(state.threads[threadId])
       )
 
       // Delete threads and clean up their out-of-store artifacts. As in
