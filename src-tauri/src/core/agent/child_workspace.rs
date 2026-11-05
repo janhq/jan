@@ -2011,12 +2011,14 @@ mod git_tests {
 
     /// Run `command` in `ws` the way its child's shell runs: sandboxed, under
     /// the scope [`scope_for`] gives it. `None` when no sandbox can start here.
+    #[cfg(target_os = "linux")]
     fn child_shell(ws: &ChildWorkspace, parent_root: &Path, command: &str) -> Option<String> {
         child_shell_seeing(ws, parent_root, &[], command)
     }
 
     /// [`child_shell`] with `visible` also mounted read-only, as the user's
     /// home is for a run with `home_readonly`.
+    #[cfg(target_os = "linux")]
     fn child_shell_seeing(
         ws: &ChildWorkspace,
         parent_root: &Path,
