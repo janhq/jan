@@ -19,7 +19,6 @@ const h = vi.hoisted(() => ({
 
 // Everything EXCEPT @tanstack/react-router is mocked like the main home
 // suite; the router itself is real.
-vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => false }))
 vi.mock('@/lib/providerReadiness', () => ({ hasUsableProvider: () => true }))
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({ dialog: () => ({ open: vi.fn(async () => '/synthetic/workspace') }) }),

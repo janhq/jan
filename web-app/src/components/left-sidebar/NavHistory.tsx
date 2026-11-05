@@ -36,7 +36,6 @@ import { dropMonitorLane } from '@/lib/coworkMonitor'
 import { ThreadItem } from '@/containers/ThreadList'
 import { DeleteAllThreadsDialog } from '@/containers/dialogs/DeleteAllThreadsDialog'
 import { mergeHistory } from '@/lib/mergeHistory'
-import { isCoworkEnabled } from '@/lib/version'
 
 /**
  * One history for every conversation: chat threads (outside projects) and
@@ -120,12 +119,10 @@ export function NavHistory() {
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null)
 
   const rows = useMemo(
-    // A build without the Cowork surface cannot open a session row (the route
-    // redirects Home), so it is not offered at all rather than bouncing.
     () =>
       mergeHistory(
         Object.values(threads).filter((t) => t.id !== 'temporary-chat'),
-        isCoworkEnabled() ? sessions : [],
+        sessions,
         runIds
       ),
     [threads, sessions, runIds]

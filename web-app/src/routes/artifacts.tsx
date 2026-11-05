@@ -9,7 +9,6 @@ import { CoworkArtifactCard } from '@/containers/CoworkArtifactCard'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
-import { isCoworkEnabled } from '@/lib/version'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { sessionWorkspacePath, threadWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
@@ -134,13 +133,7 @@ function useSessionWorkspaces(sessionIds: string[]): Record<string, string> {
 function ArtifactsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const storedSessions = useCoworkSessions((s) => s.sessions)
-  // A legacy session opens on /cowork, which a build without that surface
-  // redirects Home; list only what the build can actually open.
-  const sessions = useMemo(
-    () => (isCoworkEnabled() ? storedSessions : []),
-    [storedSessions]
-  )
+  const sessions = useCoworkSessions((s) => s.sessions)
   const threads = useThreads((s) => s.threads)
   const [query, setQuery] = useState('')
   const [group, setGroup] = useState<CoworkArtifact['group'] | null>(null)

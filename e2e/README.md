@@ -44,7 +44,7 @@ Five spec files, run in this order (see [Spec order](#spec-order-is-maintained-b
 | `chat.e2e.ts` | Configure a provider and a model through the real dialogs; send; stream a reply; a second turn; survive a webview reload; delete the thread and confirm it left disk. |
 | `message-actions.e2e.ts` | Regenerate; switch between reply versions; edit a user message and re-run; delete a single message; stop a reply mid-stream; New Chat into a fresh thread. |
 | `image-limit.e2e.ts` | Image/document defaults and disabled state; persisted image limit; oversized rejection and accepted images through paste, drop and the hidden file input; inline base64 parts received by the mock. |
-| `cowork-channel.e2e.ts` | The absent half of the channel gate: no sidebar tab, no settings entry, and a bookmarked `/cowork`, `/artifacts` or `/settings/cowork` URL lands where the guard sends it. |
+| `cowork-channel.e2e.ts` | A fresh profile has no Cowork entry point: no sidebar tab or mode switch, and a bookmarked `/cowork` or `/cowork/<unknown id>` URL lands on Home. Artifacts and Agent settings stay reachable. |
 
 The image spec generates valid PNGs inside the webview and dispatches synthetic
 `ClipboardEvent` / `DragEvent` events, plus assigns a generated `FileList` to the

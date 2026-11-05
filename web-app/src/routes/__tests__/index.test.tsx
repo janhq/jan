@@ -7,7 +7,6 @@ import React from 'react'
 const h = vi.hoisted(() => ({
   navigate: vi.fn(),
   pickFolder: vi.fn(),
-  coworkEnabled: false,
   providers: [] as any[],
   selectedModel: undefined as Model | undefined,
   selectedProvider: '',
@@ -33,7 +32,6 @@ vi.mock('@tanstack/react-router', () => ({
   useLocation: (opts: any) => opts.select({ searchStr: window.location.search }),
 }))
 
-vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.coworkEnabled }))
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({ dialog: () => ({ open: h.pickFolder }) }),
 }))
@@ -155,7 +153,6 @@ describe('Index route', () => {
     h.selectedProvider = ''
     h.search = { threadModel: undefined }
     h.providerHasRemoteApiKeys.mockReturnValue(false)
-    h.coworkEnabled = false
     h.navigate.mockClear()
     sessionStorage.clear()
     useCoworkSessions.setState({ sessions: [], currentId: null })
@@ -252,8 +249,7 @@ describe('Index route', () => {
     }
 
     it('shows no mode selector and an ordinary submit never starts a legacy Cowork session', () => {
-      // Even where Cowork is available: the home composer is one Chat flow.
-      h.coworkEnabled = true
+      // The home composer is one Chat flow.
       renderComponent()
       expect(screen.queryByTestId('home-mode-toggle')).not.toBeInTheDocument()
       const input = screen.getByTestId('chat-input')

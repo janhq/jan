@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   navigate: vi.fn(),
-  cowork: false,
   threads: {} as Record<string, unknown>,
   sessions: [] as unknown[],
   messages: {} as Record<string, unknown[]>,
@@ -14,7 +13,6 @@ vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (options: unknown) => ({ options }),
   useNavigate: () => h.navigate,
 }))
-vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.cowork }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (k: string, o?: { count?: number }) => (o?.count !== undefined ? `${k}:${o.count}` : k) }),
 }))
@@ -65,7 +63,6 @@ const writeMessage = (path: string) => ({
 
 beforeEach(() => {
   h.navigate.mockClear()
-  h.cowork = false
   h.threads = {}
   h.sessions = []
   h.messages = {}
@@ -86,21 +83,7 @@ describe('Artifacts page', () => {
     expect(h.navigate).toHaveBeenCalledWith({ to: '/threads/$threadId', params: { threadId: 't1' } })
   })
 
-  it('does not list legacy Cowork sessions on a build that cannot open them', async () => {
-    h.cowork = false
-    h.sessions = [
-      {
-        id: 's1', title: 'Old session', updated: 5, folder: null,
-        turns: [{ role: 'tool', name: 'write', args: { path: 'old.html' }, result: 'Created old.html (2 bytes)' }],
-      },
-    ]
-    render(<Page />)
-    await waitFor(() => expect(screen.getByText('common:artifactsEmpty')).toBeInTheDocument())
-    expect(screen.queryByText('old')).toBeNull()
-  })
-
-  it('lists legacy Cowork sessions where the surface is available', async () => {
-    h.cowork = true
+  it('lists legacy Cowork sessions on every channel', async () => {
     h.sessions = [
       {
         id: 's1', title: 'Old session', updated: 5, folder: null,

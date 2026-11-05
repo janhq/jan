@@ -3,13 +3,11 @@ import { useEffect } from 'react'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { peekCoworkHandoff } from '@/lib/coworkHandoff'
 import { route } from '@/constants/routes'
-import { ensureCoworkEnabled } from '@/lib/coworkAccess'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { CoworkPage } from '@/containers/CoworkPage'
 
 export const Route = createFileRoute('/cowork/$sessionId')({
   beforeLoad: ({ params }) => {
-    ensureCoworkEnabled()
     const { sessionId } = params as { sessionId: string }
     // Sessions are hydrated before routes render, so an id that is not in the
     // store is unknown, not "not loaded yet".
