@@ -3461,6 +3461,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
+    /// R1: the gate classifies a path with kernel semantics (every link followed
+    /// before the next `..`), so the handler must open that same file. A
+    /// `link/../..` spelling collapsed textually first would open the file one
+    /// directory above the project instead, which the gate never vetted.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_opens_the_file_the_gate_vetted_not_a_lexically_collapsed_one() {
+        let home = unique_root();
+        let project = home.join("project");
+        std::fs::create_dir_all(project.join("a/b")).unwrap();
+        std::fs::create_dir_all(project.join(".jan")).unwrap();
+        std::fs::create_dir_all(home.join(".jan")).unwrap();
+        std::fs::write(project.join(".jan/config.toml"), b"inside").unwrap();
+        std::fs::write(home.join(".jan/config.toml"), b"classified").unwrap();
+        std::os::unix::fs::symlink(project.join("a/b"), project.join("link")).unwrap();
+        let raw = format!("{}/link/../../.jan/config.toml", project.display());
+
+        let out = execute_builtin(lookup("read").unwrap(), &json!({ "path": raw }), &project).await;
+        assert!(!out.contains("classified"), "opened a file the gate never vetted: {out}");
+        assert_eq!(out, "inside");
+
+        // Writers resolve through the same `landing`: the write must hit the
+        // vetted file, never the collapsed one.
+        let out = execute_builtin(
+            lookup("write").unwrap(),
+            &json!({ "path": raw, "content": "pwned" }),
+            &project,
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "{out}");
+        assert_eq!(std::fs::read(home.join(".jan/config.toml")).unwrap(), b"classified");
+        assert_eq!(std::fs::read(project.join(".jan/config.toml")).unwrap(), b"pwned");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     /// The race itself, made deterministic: the path is clean when `landing`
     /// classifies it, then a parent directory is swapped for a link to an outside
     /// tree after resolution and before the open. `read` must refuse and never
