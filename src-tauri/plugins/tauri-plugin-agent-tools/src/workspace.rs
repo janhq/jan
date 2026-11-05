@@ -273,7 +273,8 @@ pub fn jan_cache_root() -> PathBuf {
 /// (`jan-<uid>`), and a name already taken by anything but a directory this
 /// user owns is passed over for the next one. A name planted between this
 /// check and its creation is caught there: [`ensure_scratch_dir_path`]
-/// refuses a directory this user does not own. Windows keeps a plain `jan`:
+/// refuses a directory this user does not own, the root and every other
+/// folder it creates on the way included. Windows keeps a plain `jan`:
 /// its temp dir is already per user.
 pub fn temp_cache_root_in(temp: &Path) -> PathBuf {
     #[cfg(unix)]
@@ -818,6 +819,23 @@ fn private_dir_builder() -> tokio::fs::DirBuilder {
 /// Create `dir` and any missing ancestors owner-only, leaving ancestors that
 /// already exist (`~/.cache` itself) exactly as they are.
 async fn create_private_dirs(dir: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    let mine = owned_by_me;
+    #[cfg(not(unix))]
+    let mine = |_: &std::fs::Metadata| true;
+    create_private_dirs_owned(dir, mine).await
+}
+
+/// [`create_private_dirs`] with the ownership test `mine`. Each ancestor it
+/// had to create is re-checked afterwards, including one that turned out to
+/// exist already: in a shared temp dir another user can make
+/// `/tmp/jan-<uid>` between the lookup and the create, and would then own
+/// (and could swap) everything under it, so such a node is refused rather
+/// than adopted.
+async fn create_private_dirs_owned(
+    dir: &Path,
+    mine: impl Fn(&std::fs::Metadata) -> bool,
+) -> Result<(), String> {
     let mut missing = Vec::new();
     for ancestor in dir.ancestors() {
         match tokio::fs::symlink_metadata(ancestor).await {
@@ -830,6 +848,15 @@ async fn create_private_dirs(dir: &Path) -> Result<(), String> {
         if let Err(e) = private_dir_builder().create(ancestor).await {
             if e.kind() != std::io::ErrorKind::AlreadyExists {
                 return Err(format!("ERROR: {e}"));
+            }
+        }
+        match tokio::fs::symlink_metadata(ancestor).await {
+            Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() && mine(&meta) => {}
+            _ => {
+                return Err(format!(
+                    "ERROR: scratch path {:?} is not a real directory",
+                    ancestor
+                ))
             }
         }
     }
@@ -2002,6 +2029,29 @@ mod tests {
             assert_eq!(mode(created), 0o700, "{created:?}");
         }
         assert_eq!(mode(&base), 0o755, "an existing parent is left alone");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A folder on the way to the scratch that is not this user's is refused,
+    /// even when it is one Jan meant to create: a `/tmp/jan-<uid>` another
+    /// user planted just before the create reads as "already exists", and
+    /// adopting it would let them swap everything under it. Another user's
+    /// node cannot be made without root, so `mine` stands in for ownership.
+    #[tokio::test]
+    async fn a_created_parent_that_is_not_mine_is_refused() {
+        let base = unique_data_folder();
+        std::fs::create_dir_all(&base).unwrap();
+        let root = base.join("jan-1000");
+        let parent = root.join("p-1").join("scratch");
+
+        let r = create_private_dirs_owned(&parent, |_| false).await;
+        assert!(r.is_err(), "another user's root was adopted");
+        assert!(!root.join("p-1").exists(), "nothing created under a refused root");
+
+        // Mine, the same tree is accepted, the root now existing included.
+        let r = create_private_dirs_owned(&parent, |_| true).await;
+        assert!(r.is_ok(), "{r:?}");
+        assert!(parent.is_dir());
         let _ = std::fs::remove_dir_all(&base);
     }
 
