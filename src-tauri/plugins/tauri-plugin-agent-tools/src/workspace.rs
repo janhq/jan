@@ -1009,21 +1009,6 @@ async fn remove_read_only_file(path: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Write `bytes` to `dst` and mark it read-only. Through a fresh file and a
-/// rename, so a concurrent session never reads a half-written config, and so
-/// a symlink planted at `dst` is replaced rather than followed. Skipped when
-/// `dst` already is a read-only regular file holding exactly `bytes` (every
-/// session but the first after an edit): replacing a file a live sibling
-/// sandbox has mounted over detaches that mount inside it (Linux 3.18+).
-/// That still happens when the host config changes mid-session; the sibling
-/// then sees the new, read-only-moded copy until its next session.
-///
-/// The read-only mark is the whole protection on AppContainer, which grants
-/// by ACE and has no deny: the container holds full access on the package
-/// cache, so it could clear the mark or replace the file. Accepted: the copy
-/// configures only sandboxed cargo and is rewritten every session. Seatbelt
-/// also denies writes to it by rule, and bubblewrap mounts the host file over
-/// it read-only.
 /// Write `bytes` to a new read-only file at `path`. The folder is writable by
 /// every sandboxed command of the project, so the name may hold a symlink
 /// planted after it was cleared: created exclusively and never through a
@@ -1045,6 +1030,21 @@ fn create_read_only_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     file.set_permissions(perms)
 }
 
+/// Write `bytes` to `dst` and mark it read-only. Through a fresh file and a
+/// rename, so a concurrent session never reads a half-written config, and so
+/// a symlink planted at `dst` is replaced rather than followed. Skipped when
+/// `dst` already is a read-only regular file holding exactly `bytes` (every
+/// session but the first after an edit): replacing a file a live sibling
+/// sandbox has mounted over detaches that mount inside it (Linux 3.18+).
+/// That still happens when the host config changes mid-session; the sibling
+/// then sees the new, read-only-moded copy until its next session.
+///
+/// The read-only mark is the whole protection on AppContainer, which grants
+/// by ACE and has no deny: the container holds full access on the package
+/// cache, so it could clear the mark or replace the file. Accepted: the copy
+/// configures only sandboxed cargo and is rewritten every session. Seatbelt
+/// also denies writes to it by rule, and bubblewrap mounts the host file over
+/// it read-only.
 async fn write_read_only(bytes: &[u8], dst: &Path) -> std::io::Result<()> {
     if let Ok(meta) = tokio::fs::symlink_metadata(dst).await {
         if meta.is_file()
