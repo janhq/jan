@@ -101,11 +101,31 @@ describe('useChatPermissions', () => {
     expect(useChatPermissions.getState()).toMatchObject({ shellNetwork: false, memoryWrite: true })
   })
 
-  it('does not change the mirror when the host rejects the write', async () => {
+  it('resyncs the mirror from the host after a rejected write and rethrows the original error', async () => {
+    // The host applies and keeps a revocation even when persisting fails.
     invoke.mockResolvedValueOnce(DEFAULT_CHAT_PERMISSIONS)
       .mockRejectedValueOnce(new Error('disk full'))
+      .mockResolvedValueOnce({ shellNetwork: true, memoryWrite: false })
     await expect(useChatPermissions.getState().set({ memoryWrite: false })).rejects.toThrow('disk full')
-    expect(useChatPermissions.getState()).toMatchObject({ shellNetwork: true, memoryWrite: true })
+    expect(invoke).toHaveBeenNthCalledWith(3, 'get_chat_permissions')
+    expect(useChatPermissions.getState()).toMatchObject({ shellNetwork: true, memoryWrite: false })
+  })
+
+  it('fails closed on the revoked side when the refresh after a rejected write also fails', async () => {
+    invoke.mockResolvedValueOnce(DEFAULT_CHAT_PERMISSIONS)
+      .mockRejectedValueOnce(new Error('disk full'))
+      .mockRejectedValueOnce(new Error('ipc down'))
+    await expect(useChatPermissions.getState().set({ memoryWrite: false })).rejects.toThrow('disk full')
+    expect(useChatPermissions.getState()).toMatchObject({ shellNetwork: true, memoryWrite: false })
+  })
+
+  it('does not turn a side on when a rejected write tried to enable it and the refresh fails', async () => {
+    useChatPermissions.setState({ shellNetwork: false })
+    invoke.mockResolvedValueOnce({ shellNetwork: false, memoryWrite: true })
+      .mockRejectedValueOnce(new Error('disk full'))
+      .mockRejectedValueOnce(new Error('ipc down'))
+    await expect(useChatPermissions.getState().set({ shellNetwork: true })).rejects.toThrow('disk full')
+    expect(useChatPermissions.getState()).toMatchObject({ shellNetwork: false, memoryWrite: true })
   })
 
   it('serializes overlapping patches and merges against the latest host acknowledgement', async () => {
@@ -137,6 +157,7 @@ describe('useChatPermissions', () => {
     const first = deferred<{ shellNetwork: boolean; memoryWrite: boolean }>()
     invoke.mockResolvedValueOnce(DEFAULT_CHAT_PERMISSIONS)
       .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(DEFAULT_CHAT_PERMISSIONS) // refresh after the rejection
       .mockResolvedValueOnce(DEFAULT_CHAT_PERMISSIONS)
       .mockImplementationOnce(async (_cmd, args) => args.value)
     const saveNetwork = useChatPermissions.getState().set({ shellNetwork: false })
@@ -148,10 +169,11 @@ describe('useChatPermissions', () => {
     })
   })
 
-  it('continues queued patches after a delayed rejected write without mirroring it', async () => {
+  it('continues queued patches after a delayed rejected write, resyncing from the host', async () => {
     const first = deferred<{ shellNetwork: boolean; memoryWrite: boolean }>()
     invoke.mockResolvedValueOnce(DEFAULT_CHAT_PERMISSIONS)
       .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(DEFAULT_CHAT_PERMISSIONS) // refresh after the rejection
       .mockResolvedValueOnce(DEFAULT_CHAT_PERMISSIONS)
       .mockImplementationOnce(async (_cmd, args) => args.value)
     const saveNetwork = useChatPermissions.getState().set({ shellNetwork: false })
@@ -161,7 +183,7 @@ describe('useChatPermissions', () => {
     first.reject(new Error('disk full'))
     await rejected
     await saveMemory
-    expect(invoke).toHaveBeenNthCalledWith(4, 'set_chat_permissions', {
+    expect(invoke).toHaveBeenNthCalledWith(5, 'set_chat_permissions', {
       value: { shellNetwork: true, memoryWrite: false },
     })
     expect(useChatPermissions.getState()).toMatchObject({ shellNetwork: true, memoryWrite: false })
