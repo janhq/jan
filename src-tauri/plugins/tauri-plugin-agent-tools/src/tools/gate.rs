@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
-    escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root, in_hidden_root,
+    escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root, in_hidden_root_from,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -179,6 +179,23 @@ pub fn resolve_decision(
     perms: &ToolPermissions,
     grants: &SessionGrants,
 ) -> Decision {
+    resolve_decision_with_cwd(tool, args, ctx, None, perms, grants)
+}
+
+/// [`resolve_decision`] for a session whose shell holds a directory a `cd`
+/// moved it to (`ToolContext::shell_cwd`; `None` is the project root). A
+/// confined shell command's relative tokens name paths under that directory,
+/// so `cat .jan/config.toml` after `cd ~` must be checked there. Every other
+/// tool, and an escalated command (which runs in the project root), still
+/// resolves against the project root.
+pub fn resolve_decision_with_cwd(
+    tool: &BuiltinTool,
+    args: &serde_json::Value,
+    ctx: &GateContext,
+    shell_cwd: Option<&Path>,
+    perms: &ToolPermissions,
+    grants: &SessionGrants,
+) -> Decision {
     if perms.is_denied(tool.name) {
         return Decision::HardDeny(DenyReason::Policy);
     }
@@ -204,8 +221,9 @@ pub fn resolve_decision(
             }
             _ => false,
         };
+        let base = shell_cwd.filter(|_| shell_reads_only).unwrap_or(ctx.project_root);
         let hidden_hit = |p: &str| {
-            in_hidden_root(ctx.project_root, hidden, p) && !carved(p)
+            in_hidden_root_from(ctx.project_root, base, hidden, p) && !carved(p)
         };
         let hits_path = tool.path_args.iter().any(|key| {
             args.get(key)
@@ -1258,5 +1276,73 @@ mod tests {
         for d in [&root, &repo, &elsewhere] {
             let _ = std::fs::remove_dir_all(d);
         }
+    }
+
+    /// After `cd ~` a relative token names a path under the held directory,
+    /// so `cat .jan/config.toml` reaches the Jan home even though the project
+    /// root has no `.jan` of its own.
+    #[test]
+    fn a_held_shell_cwd_resolves_relative_tokens_for_the_hidden_deny() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let cat = json!({"command": "cat .jan/config.toml"});
+        let gate = |tool, args: &serde_json::Value, held: Option<&Path>| {
+            resolve_decision_with_cwd(tool, args, &ctx, held, &perms, &grants)
+        };
+        assert_eq!(gate(shell, &cat, None), Decision::Prompt(PromptKind::Exec), "no .jan here");
+        assert_eq!(gate(shell, &cat, Some(&home)), Decision::HardDeny(DenyReason::Hidden));
+        // An escalated command runs in the project root, not the held dir.
+        let escalated = json!({"command": "cat .jan/config.toml", ESCALATE_ARG: true});
+        assert_eq!(gate(shell, &escalated, Some(&home)), Decision::Prompt(PromptKind::Escalate));
+        // Other tools resolve against the project root whatever the shell holds.
+        let read = json!({"path": ".jan/config.toml"});
+        assert_eq!(gate(lookup("read").unwrap(), &read, Some(&home)), Decision::Allow);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The worktree exception stays keyed on the project root: a relative
+    /// token that climbs out of the worktree from the held directory lands in
+    /// the Jan home and is refused, though the same token read from the
+    /// project root would climb above the home and pass.
+    #[test]
+    fn a_held_shell_cwd_resolves_relative_tokens_for_the_worktree_escape() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        let worktree = jan.join("worktrees/proj/wt");
+        let held = worktree.join("src");
+        std::fs::create_dir_all(&held).unwrap();
+        std::fs::write(jan.join("notes.txt"), b"k").unwrap();
+        std::fs::write(home.join("notes.txt"), b"x").unwrap();
+        let ctx = GateContext {
+            project_root: &worktree,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let cat = json!({"command": "cat ../../../../notes.txt"});
+        let gate = |held: Option<&Path>| {
+            resolve_decision_with_cwd(shell, &cat, &ctx, held, &perms, &grants)
+        };
+        assert_eq!(gate(None), Decision::Prompt(PromptKind::Exec));
+        assert_eq!(gate(Some(&held)), Decision::HardDeny(DenyReason::Hidden));
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

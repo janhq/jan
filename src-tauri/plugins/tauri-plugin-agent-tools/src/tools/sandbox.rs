@@ -229,10 +229,18 @@ pub fn in_read_only_root(project_root: &Path, scratch: Option<&Path>, raw: &str)
 /// `~/.jan/worktrees/`) is the agent's working tree, so paths inside it stay
 /// reachable. The home itself as the project grants nothing.
 pub fn in_hidden_root(project_root: &Path, hidden: &Path, raw: &str) -> bool {
+    in_hidden_root_from(project_root, project_root, hidden, raw)
+}
+
+/// [`in_hidden_root`] with a relative `raw` resolved against `base` instead of
+/// the project root: a shell that a `cd` moved elsewhere reads `.jan/...`
+/// from there. The worktree exception stays keyed on `project_root`, since
+/// that, not where the shell stands, is the agent's working tree.
+pub fn in_hidden_root_from(project_root: &Path, base: &Path, hidden: &Path, raw: &str) -> bool {
     let Ok(hidden) = canonicalize_lenient(hidden) else {
         return false;
     };
-    let Ok(resolved) = canonicalize_lenient(&resolve_path(project_root, raw)) else {
+    let Ok(resolved) = canonicalize_lenient(&resolve_path(base, raw)) else {
         return false;
     };
     if !resolved.starts_with(&hidden) {

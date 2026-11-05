@@ -2469,7 +2469,7 @@ impl ToolInvoker for CompositeToolInvoker {
         on_complete: &OnComplete<'_>,
     ) -> Result<Vec<ToolOutcome>, String> {
         use tauri_plugin_agent_tools::tools::{
-            gate::{resolve_decision, Decision, PromptKind},
+            gate::{resolve_decision_with_cwd, Decision, PromptKind},
             handlers::{execute_builtin_with_diff, preview_diff},
             is_builtin, lookup, Capability, ToolContext,
         };
@@ -2860,7 +2860,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 continue;
             }
             let snapshot = { self.grants.lock().unwrap().clone() };
-            let decision = resolve_decision(
+            let decision = resolve_decision_with_cwd(
                 tool,
                 &args,
                 &tauri_plugin_agent_tools::tools::gate::GateContext {
@@ -2873,6 +2873,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     write_roots: &self.workspace.write_roots,
                     hidden_root: self.hidden_root.as_deref(),
                 },
+                self.held_shell_cwd(tool).as_deref().map(std::path::Path::new),
                 &self.permissions,
                 &snapshot,
             );

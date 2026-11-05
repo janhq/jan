@@ -18232,11 +18232,13 @@ fn init_command(app: &mut App) {
     let plan = init_plan(&app.project_root);
     let file = plan.file;
     match (plan.seed, plan.existing) {
-        (_, true) => app.note(&format!("◈ init · reviewing {file} for this project")),
+        (_, true) => app.note(&format!("\u{25c8} init \u{b7} reviewing {file} for this project")),
         (Some(seed), false) => app.note(&format!(
-            "◈ init · writing {file} from this project's {seed}"
+            "\u{25c8} init \u{b7} writing {file} from this project's {seed}"
         )),
-        (None, false) => app.note(&format!("◈ init · studying the project to write {file}")),
+        (None, false) => app.note(&format!(
+            "\u{25c8} init \u{b7} studying the project to write {file}"
+        )),
     }
     let mut prompt = init_prompt(file);
     if let Some(seed) = plan.seed {
