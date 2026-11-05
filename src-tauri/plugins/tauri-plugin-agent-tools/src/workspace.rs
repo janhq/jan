@@ -820,26 +820,41 @@ fn private_dir_builder() -> tokio::fs::DirBuilder {
 /// already exist (`~/.cache` itself) exactly as they are.
 async fn create_private_dirs(dir: &Path) -> Result<(), String> {
     #[cfg(unix)]
-    let mine = owned_by_me;
+    let trusted = |_: &Path, meta: &std::fs::Metadata| {
+        use std::os::unix::fs::MetadataExt;
+        owned_by_me(meta) || meta.uid() == 0
+    };
     #[cfg(not(unix))]
-    let mine = |_: &std::fs::Metadata| true;
-    create_private_dirs_owned(dir, mine).await
+    let trusted = |_: &Path, _: &std::fs::Metadata| true;
+    #[cfg(unix)]
+    let mine = |_: &Path, meta: &std::fs::Metadata| owned_by_me(meta);
+    #[cfg(not(unix))]
+    let mine = |_: &Path, _: &std::fs::Metadata| true;
+    create_private_dirs_owned(dir, trusted, mine).await
 }
 
-/// [`create_private_dirs`] with the ownership test `mine`. Each ancestor it
-/// had to create is re-checked afterwards, including one that turned out to
-/// exist already: in a shared temp dir another user can make
-/// `/tmp/jan-<uid>` between the lookup and the create, and would then own
-/// (and could swap) everything under it, so such a node is refused rather
-/// than adopted.
+/// [`create_private_dirs`] with its ownership tests. In a shared temp dir
+/// another user can plant `/tmp/jan-<uid>` (before the walk, or between it
+/// and the create) and would then own, and could swap, everything under it.
+/// So the nearest ancestor that already exists must belong to a `trusted`
+/// owner (this user, or root for `/tmp` and `/home` themselves), and each
+/// ancestor this call had to create must be a real directory that is `mine`,
+/// including one that turned out to exist already.
 async fn create_private_dirs_owned(
     dir: &Path,
-    mine: impl Fn(&std::fs::Metadata) -> bool,
+    trusted: impl Fn(&Path, &std::fs::Metadata) -> bool,
+    mine: impl Fn(&Path, &std::fs::Metadata) -> bool,
 ) -> Result<(), String> {
     let mut missing = Vec::new();
     for ancestor in dir.ancestors() {
         match tokio::fs::symlink_metadata(ancestor).await {
-            Ok(_) => break,
+            Ok(meta) if trusted(ancestor, &meta) => break,
+            Ok(_) => {
+                return Err(format!(
+                    "ERROR: scratch path {:?} belongs to another user",
+                    ancestor
+                ))
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => missing.push(ancestor),
             Err(e) => return Err(format!("ERROR: {e}")),
         }
@@ -851,7 +866,7 @@ async fn create_private_dirs_owned(
             }
         }
         match tokio::fs::symlink_metadata(ancestor).await {
-            Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() && mine(&meta) => {}
+            Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() && mine(ancestor, &meta) => {}
             _ => {
                 return Err(format!(
                     "ERROR: scratch path {:?} is not a real directory",
@@ -2044,12 +2059,21 @@ mod tests {
         let root = base.join("jan-1000");
         let parent = root.join("p-1").join("scratch");
 
-        let r = create_private_dirs_owned(&parent, |_| false).await;
+        let yes = |_: &Path, _: &std::fs::Metadata| true;
+        let not_root = |p: &Path, _: &std::fs::Metadata| p != root;
+
+        // Planted between the walk and the create: refused once created.
+        let r = create_private_dirs_owned(&parent, yes, not_root).await;
         assert!(r.is_err(), "another user's root was adopted");
         assert!(!root.join("p-1").exists(), "nothing created under a refused root");
 
+        // Planted before the walk: the existing root is refused as found.
+        let r = create_private_dirs_owned(&parent, not_root, yes).await;
+        assert!(r.is_err(), "an existing root of another user's was adopted");
+        assert!(!root.join("p-1").exists(), "nothing created under a refused root");
+
         // Mine, the same tree is accepted, the root now existing included.
-        let r = create_private_dirs_owned(&parent, |_| true).await;
+        let r = create_private_dirs_owned(&parent, yes, yes).await;
         assert!(r.is_ok(), "{r:?}");
         assert!(parent.is_dir());
         let _ = std::fs::remove_dir_all(&base);

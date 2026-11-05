@@ -644,7 +644,7 @@ mod win {
         // The package cache is where `CARGO_HOME`, npm and the rest write. The
         // cargo config copy inside it is only marked read-only: no deny ACE is
         // used (see the module doc), so the container could clear the mark.
-        // See `workspace::copy_read_only` for why that is accepted.
+        // See `workspace::write_read_only` for why that is accepted.
         if let Some(pkg) = &req.pkg {
             grant_path(pkg, sid.0)?;
         }
