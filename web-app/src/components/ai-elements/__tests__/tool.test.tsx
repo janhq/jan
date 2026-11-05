@@ -40,8 +40,6 @@ import {
 } from '../tool'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 
-const resolver = (input: string) => Promise.resolve(input)
-
 // The approval mock is module state; leaving a pending entry behind would make
 // every later header render as awaiting approval.
 beforeEach(() => {
@@ -240,7 +238,6 @@ const renderOutput = (
         <ToolOutput
           output="short result"
           errorText={undefined}
-          resolver={resolver}
           {...props}
         />
       </ToolContent>
@@ -317,11 +314,118 @@ describe('ToolOutput', () => {
           <ToolOutput
             output={undefined}
             errorText={undefined}
-            resolver={resolver}
           />
         </ToolContent>
       </Tool>
     )
     expect(container).not.toHaveTextContent('tools:toolCall.result')
+  })
+
+  // #9547: an MCP image result must be visible in the card without opening the
+  // raw payload. The summary used to hide the whole output, images included.
+  describe('MCP image results', () => {
+    const png = 'iVBORw0KGgo='
+
+    it('shows an image from a bare content array without "View raw"', () => {
+      const { container } = renderOutput({
+        output: [{ type: 'image', data: png, mimeType: 'image/png' }],
+      })
+      const img = container.querySelector('img')
+      expect(img).not.toBeNull()
+      expect(img).toHaveAttribute('src', `data:image/png;base64,${png}`)
+    })
+
+    it('shows an image from a { content } envelope without "View raw"', () => {
+      const { container } = renderOutput({
+        output: {
+          content: [{ type: 'image', data: png, mimeType: 'image/png' }],
+        },
+      })
+      expect(container.querySelectorAll('img')).toHaveLength(1)
+    })
+
+    it('keeps the caption summary next to the image', () => {
+      const { container } = renderOutput({
+        output: [
+          { type: 'text', text: 'rendered' },
+          { type: 'image', data: png, mimeType: 'image/png' },
+        ],
+      })
+      expect(container.querySelectorAll('img')).toHaveLength(1)
+      expect(screen.getByText('tools:toolCall.summaryItems')).toBeInTheDocument()
+    })
+
+    it('uses the declared media type, not always png', () => {
+      const { container } = renderOutput({
+        output: [{ type: 'image', data: png, mimeType: 'image/jpeg' }],
+      })
+      expect(container.querySelector('img')).toHaveAttribute(
+        'src',
+        `data:image/jpeg;base64,${png}`
+      )
+    })
+
+    it('does not draw the image twice when the raw payload is opened', () => {
+      const { container } = renderOutput({
+        output: [
+          { type: 'text', text: 'rendered' },
+          { type: 'image', data: png, mimeType: 'image/png' },
+        ],
+      })
+      fireEvent.click(screen.getByText('tools:toolCall.viewRaw'))
+      expect(container.querySelectorAll('img')).toHaveLength(1)
+      expect(screen.getByTestId('code-block').textContent).toContain('rendered')
+      expect(screen.getByTestId('code-block').textContent).not.toContain(png)
+    })
+
+    it('renders every image of a multi-image result', () => {
+      const { container } = renderOutput({
+        output: [
+          { type: 'image', data: png, mimeType: 'image/png' },
+          { type: 'image', data: png, mimeType: 'image/png' },
+        ],
+      })
+      expect(container.querySelectorAll('img')).toHaveLength(2)
+    })
+
+    it('does not render an image block for a result with none', () => {
+      const { container } = renderOutput({
+        output: { content: [{ type: 'text', text: 'plain' }] },
+      })
+      expect(container.querySelectorAll('img')).toHaveLength(0)
+    })
+
+    it('does not fetch a remote URL a tool points an image block at', () => {
+      const { container } = renderOutput({
+        output: [
+          { type: 'image', data: 'https://tracker.example/pixel.png' },
+          { type: 'image', image: { url: 'http://tracker.example/b.png' } },
+        ],
+      })
+      expect(container.querySelectorAll('img')).toHaveLength(0)
+    })
+
+    it('falls back to png when the declared media type is not an image type', () => {
+      const { container } = renderOutput({
+        output: [{ type: 'image', data: png, mimeType: 'text/html' }],
+      })
+      expect(container.querySelector('img')).toHaveAttribute(
+        'src',
+        `data:image/png;base64,${png}`
+      )
+    })
+
+    // The raw view elides the base64, so a large image alone must not make a
+    // short caption look long enough to need "Show more".
+    it('does not offer "Show more" because an image is large', () => {
+      renderOutput({
+        output: [
+          { type: 'text', text: 'caption' },
+          { type: 'image', data: 'A'.repeat(5000), mimeType: 'image/png' },
+        ],
+      })
+      fireEvent.click(screen.getByText('tools:toolCall.viewRaw'))
+      expect(screen.queryByText('tools:toolCall.showMore')).not.toBeInTheDocument()
+    })
   })
 })

@@ -18,8 +18,6 @@ import { WebToolWidget } from './WebToolWidget'
 import { AgentToolWidget, TerminalWidget } from './AgentToolWidget'
 import { SubagentToolWidget } from './SubagentToolWidget'
 
-const identityResolver = (input: string) => Promise.resolve(input)
-
 export type ToolCallCardProps = {
   part: MessagePartLike
   messageId: string
@@ -145,14 +143,12 @@ export const ToolCallCard = memo(
               <ToolOutput
                 output={undefined}
                 errorText={errorText}
-                resolver={identityResolver}
               />
             ) : (
               Boolean(part.output) && (
                 <ToolOutput
                   output={part.output}
                   errorText={undefined}
-                  resolver={identityResolver}
                   citationOffset={citationOffset}
                 />
               )
