@@ -1754,6 +1754,9 @@ mod tests {
     /// The package cache is bound writable at its real path in the scratch's
     /// position (after the masks, before the workspace), and the user's cargo
     /// config read-only over its copy after every rw bind, so none shadows it.
+    // Unix fixture paths: `Path::join` would add `\\` on Windows, which has
+    // neither backend.
+    #[cfg(unix)]
     #[test]
     fn bwrap_binds_the_pkg_cache_and_the_cargo_config_read_only() {
         let pkg = "/home/u/.cache/jan/p-1/pkg";
@@ -1807,6 +1810,9 @@ mod tests {
 
     /// A read-only workspace containing the package cache rebinds it, and the
     /// cargo config still lands read-only after that rebind.
+    // Unix fixture paths: `Path::join` would add `\\` on Windows, which has
+    // neither backend.
+    #[cfg(unix)]
     #[test]
     fn bwrap_rebinds_a_pkg_cache_inside_a_read_only_workspace() {
         let pkg = "/home/u/.cache/jan/p/pkg";
@@ -1824,6 +1830,9 @@ mod tests {
     /// recreated), and both names cargo reads its config from are the host
     /// file, read-only: neither can be written or planted. One inode under
     /// both names, so cargo (1.79+) sees one file and does not warn.
+    // Unix fixture paths: `Path::join` would add `\\` on Windows, which has
+    // neither backend.
+    #[cfg(unix)]
     #[test]
     fn bwrap_pins_cargos_folder_and_both_config_names() {
         let pkg = "/home/u/.cache/jan/p-1/pkg";
@@ -1845,6 +1854,9 @@ mod tests {
     /// show every project's cache again, so the cache root is masked again
     /// after the workspace bind and this run's scratch and package cache are
     /// bound back on top, with cargo's config pinned after that.
+    // Unix fixture paths: `Path::join` would add `\\` on Windows, which has
+    // neither backend.
+    #[cfg(unix)]
     #[test]
     fn bwrap_masks_the_cache_root_again_inside_the_workspace() {
         let pkg = "/home/u/.cache/jan/p-1/pkg";
@@ -1939,6 +1951,9 @@ mod tests {
 
     /// Seatbelt grants the package cache by parameter and denies writes to
     /// the cargo config copy after that grant; every parameter has its `-D`.
+    // Unix fixture paths: `Path::join` would add `\\` on Windows, which has
+    // neither backend.
+    #[cfg(unix)]
     #[test]
     fn seatbelt_grants_the_pkg_cache_and_denies_the_cargo_config() {
         let pkg = "/Users/u/Library/Caches/jan/p-1/pkg";
