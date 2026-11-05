@@ -235,6 +235,7 @@ describe('ToolHeader runtime state', () => {
     renderHeader({
       title: 'ask',
       type: 'tool-ask',
+      builtin: true,
       state: 'input-available',
       input: { questions: [{ question: 'Pick one' }] },
     })
@@ -243,8 +244,15 @@ describe('ToolHeader runtime state', () => {
     expect(screen.queryByText(/questions:/)).not.toBeInTheDocument()
   })
 
+  it('keeps the generic wording for an MCP tool that is merely named ask', () => {
+    useToolCallRuntime.getState().enqueue(['tc1'])
+    renderHeader({ title: 'ask', type: 'tool-ask', state: 'input-available', input: { q: 'x' } })
+    expect(screen.queryByText('common:askToolPending')).not.toBeInTheDocument()
+    expect(screen.getByText(/tools:toolCall.queued/)).toBeInTheDocument()
+  })
+
   it('words a settled ask as a question that was asked', () => {
-    renderHeader({ title: 'ask', type: 'tool-ask', state: 'output-available' })
+    renderHeader({ title: 'ask', type: 'tool-ask', builtin: true, state: 'output-available' })
     expect(screen.getByText('common:askToolAsked')).toBeInTheDocument()
   })
 

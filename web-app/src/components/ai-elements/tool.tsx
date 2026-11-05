@@ -135,6 +135,8 @@ export type ToolHeaderProps = {
   className?: string
   /** Where the tool came from (web provider, documents, MCP server name). */
   origin?: string
+  /** The call is one of Jan's built-in tools, not an MCP server's tool that happens to share a name. */
+  builtin?: boolean
   /** Arguments, previewed inline so a collapsed call still says what it did. */
   input?: ToolUIPart['input']
 }
@@ -146,7 +148,8 @@ const getStatusText = (
   status: ToolUIPart['state'],
   toolName: string,
   awaitingApproval: boolean,
-  isQueued: boolean
+  isQueued: boolean,
+  isBuiltinAsk: boolean
 ) => {
   const isRunning = status === 'input-streaming' || status === 'input-available'
   const hasError = status === 'output-error' || status === 'output-denied'
@@ -157,7 +160,7 @@ const getStatusText = (
   }
   // `ask` is a question put to the person, not work being scheduled: "Ask
   // queued" read as a technical state. It is pending until they answer.
-  if (toolName === ASK_TOOL_NAME && !hasError) {
+  if (isBuiltinAsk && !hasError) {
     return t(isQueued || isRunning ? 'common:askToolPending' : 'common:askToolAsked')
   }
   // Tools run one at a time, so a pending call is only "running" once the
@@ -175,7 +178,7 @@ const getStatusText = (
 }
 
 export const ToolHeader = memo(
-  ({ className, title, state, type, origin, input }: ToolHeaderProps) => {
+  ({ className, title, state, type, origin, builtin = false, input }: ToolHeaderProps) => {
     const { t } = useTranslation()
     const { isOpen, toolCallId, threadId } = useTool()
     const awaitingApproval = useToolApprovalRequests((s) =>
@@ -184,9 +187,10 @@ export const ToolHeader = memo(
     const toolName = title ?? type.split('-').slice(1).join('-')
     // The raw argument preview of an `ask` is `questions: [1]`; the question
     // card already shows what was asked.
+    const isBuiltinAsk = builtin && toolName === ASK_TOOL_NAME
     const summary = useMemo(
-      () => (toolName === ASK_TOOL_NAME ? '' : summarizeToolInput(input)),
-      [input, toolName]
+      () => (isBuiltinAsk ? '' : summarizeToolInput(input)),
+      [input, isBuiltinAsk]
     )
     // Position in the pending queue, or -1 once the executor has reached it.
     const queuePosition = useToolCallRuntime((s) =>
@@ -229,7 +233,8 @@ export const ToolHeader = memo(
             state,
             toolName,
             awaitingApproval,
-            queuePosition >= 0
+            queuePosition >= 0,
+            isBuiltinAsk
           )}
         </span>
         {origin && (
