@@ -36651,6 +36651,26 @@ fn a() {}
         });
     }
 
+    /// Sofya needs a key: choosing it without one is refused, and a key is
+    /// kept under the record the desktop's Web Search settings use.
+    #[test]
+    fn web_search_set_sofya_requires_a_key() {
+        with_isolated_login_state(|| {
+            assert!(super::super::cli_web_search_set("sofya", None, None).is_err());
+            super::super::cli_web_search_set("sofya", Some("sofya-secret".into()), None)
+                .expect("saved");
+            let section = crate::core::agent::global_config::web_search_setting();
+            assert_eq!(section.provider.as_deref(), Some("sofya"));
+            assert_eq!(
+                crate::core::server::provider_secrets::load_provider_keys("sofya-api-key"),
+                vec!["sofya-secret".to_string()]
+            );
+            let prompt = super::WebSearchPrompt::load();
+            assert_eq!(prompt.meta().id, "sofya");
+            assert_eq!(prompt.value_row(), ("api key", "(stored)".to_string()));
+        });
+    }
+
     #[test]
     fn provider_prompt_save_writes_global_config() {
         crate::core::agent::global_config::with_temp_home(|_| {
