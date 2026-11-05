@@ -158,6 +158,16 @@ describe('NavHistory delete Cowork session', () => {
     expect(ids()).toEqual(['open'])
   })
 
+  it('keeps rows keyed apart when a chat thread and a session share an id', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    useThreads.setState({ threads: { other: { id: 'other', title: 'Chat', updated: 1, messages: [] } as never } })
+    render(<NavHistory />)
+    expect(screen.getByTestId('thread-other')).toBeInTheDocument()
+    expect(screen.getByTestId('history-cowork-other')).toBeInTheDocument()
+    expect(errors.mock.calls.some((c) => String(c[0]).includes('same key'))).toBe(false)
+    errors.mockRestore()
+  })
+
   it('stays on the current route when a different conversation is deleted', () => {
     router.sessionId = 'open'
     render(<NavHistory />)

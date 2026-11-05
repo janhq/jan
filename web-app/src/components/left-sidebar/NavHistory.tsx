@@ -212,7 +212,7 @@ export function NavHistory() {
         {rows.map((row) =>
           row.kind === 'cowork' ? (
             <CoworkRow
-              key={row.id}
+              key={`cowork:${row.id}`}
               session={row.session}
               isCurrent={row.id === activeSessionId}
               isMobile={isMobile}
@@ -220,7 +220,7 @@ export function NavHistory() {
             />
           ) : (
             // Chat rows keep ThreadList's item (rename, move to project, delete).
-            <ThreadItem key={row.id} thread={row.thread} isMobile={isMobile} />
+            <ThreadItem key={`chat:${row.id}`} thread={row.thread} isMobile={isMobile} />
           )
         )}
       </SidebarMenu>
