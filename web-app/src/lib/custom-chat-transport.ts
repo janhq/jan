@@ -547,15 +547,28 @@ export function stripUnsupportedImageParts(
       .map((part) => {
         // A tool image (see tool-image-sentinel.ts) would decode into an
         // image_url part on the tool message; a text-only model rejects that.
-        const output = (part as { output?: unknown }).output
-        if (typeof output !== 'string' || !hasToolImageSentinel(output)) {
-          return part
+        // An error reaches the model the same way a result does.
+        const next: Record<string, string> = {}
+        if (
+          'output' in part &&
+          typeof part.output === 'string' &&
+          hasToolImageSentinel(part.output)
+        ) {
+          next.output = stripToolImageSentinels(part.output, TOOL_IMAGE_OMITTED)
         }
+        if (
+          'errorText' in part &&
+          typeof part.errorText === 'string' &&
+          hasToolImageSentinel(part.errorText)
+        ) {
+          next.errorText = stripToolImageSentinels(
+            part.errorText,
+            TOOL_IMAGE_OMITTED
+          )
+        }
+        if (Object.keys(next).length === 0) return part
         touched = true
-        return {
-          ...part,
-          output: stripToolImageSentinels(output, TOOL_IMAGE_OMITTED),
-        } as typeof part
+        return { ...part, ...next } as typeof part
       })
     if (!touched) return message
     return { ...message, parts: nextParts } as UIMessage
