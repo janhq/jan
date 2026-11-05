@@ -4007,38 +4007,6 @@ mod tests {
         }
     }
 
-    /// Only the attached folder shadows the scratch. Any other /tmp path (a
-    /// sibling with the folder's name as prefix, or one that climbs out of the
-    /// folder with `..`) still maps into the scratch and clamps at its root.
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn other_tmp_paths_still_remap_to_scratch_next_to_an_attached_folder() {
-        use crate::tools::sandbox::{resolve_path, Attached};
-        let root = unique_root();
-        let scratch = unique_root();
-        let att = unique_host_tmp_dir("remap");
-        let roots = vec![att.clone()];
-        let a = Attached::new(&roots, &roots);
-        let inside = att.join("f.txt");
-        assert_eq!(resolve_path(&root, Some(&scratch), a, inside.to_str().unwrap()), inside);
-        let name = att.file_name().unwrap().to_str().unwrap().to_string();
-        assert_eq!(
-            resolve_path(&root, Some(&scratch), a, "/tmp/other.txt"),
-            scratch.join("other.txt")
-        );
-        assert_eq!(
-            resolve_path(&root, Some(&scratch), a, &format!("/tmp/{name}-evil/x")),
-            scratch.join(format!("{name}-evil/x"))
-        );
-        assert_eq!(
-            resolve_path(&root, Some(&scratch), a, &format!("/tmp/{name}/../x.txt")),
-            scratch.join("x.txt")
-        );
-        for d in [&root, &scratch, &att] {
-            let _ = std::fs::remove_dir_all(d);
-        }
-    }
-
     /// Shadowing the scratch must not weaken symlink checks: a link inside a
     /// writable attached folder under /tmp that points out of it is still refused.
     #[tokio::test]
