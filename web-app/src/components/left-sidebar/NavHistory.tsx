@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { Loader2, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Loader2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -34,6 +34,7 @@ import { useCoworkRun, useIsSessionActive } from '@/hooks/useCoworkRun'
 import { stopAgentSessionMonitors } from '@/lib/agentTools'
 import { dropMonitorLane } from '@/lib/coworkMonitor'
 import { ThreadItem } from '@/containers/ThreadList'
+import { RenameThreadDialog } from '@/containers/dialogs/RenameThreadDialog'
 import { DeleteAllThreadsDialog } from '@/containers/dialogs/DeleteAllThreadsDialog'
 import { mergeHistory } from '@/lib/mergeHistory'
 
@@ -57,6 +58,7 @@ const CoworkRow = memo(function CoworkRow({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const isRunning = useIsSessionActive(session.id)
+  const [renameOpen, setRenameOpen] = useState(false)
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
@@ -89,6 +91,10 @@ const CoworkRow = memo(function CoworkRow({
           side={isMobile ? 'bottom' : 'right'}
           align={isMobile ? 'end' : 'start'}
         >
+          <DropdownMenuItem onSelect={() => setRenameOpen(true)}>
+            <Pencil />
+            <span>{t('common:rename')}</span>
+          </DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
             onSelect={() => onRequestDelete({ id: session.id, title: session.title })}
@@ -98,6 +104,16 @@ const CoworkRow = memo(function CoworkRow({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <RenameThreadDialog
+        // The dialog only reads the id; the title is persisted through the
+        // session store, which writes it to the session's thread.json.
+        thread={{ id: session.id, title: session.title } as Thread}
+        plainTitleForRename={session.title}
+        onRename={(id, title) => useCoworkSessions.getState().setTitle(id, title)}
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        withoutTrigger
+      />
     </SidebarMenuItem>
   )
 })
