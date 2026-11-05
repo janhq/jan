@@ -494,7 +494,9 @@ it('sends an MCP image result to an OpenAI-compatible provider as a sentinel', a
   const transport = new CustomChatTransport('you are jan', 'thread-1')
   await drain(await send(transport, mcpImageTurn()))
   const sent = JSON.stringify(streamTextCalls[0].messages)
-  expect(sent).toContain('__JAN_TOOL_IMAGE__data:image/png;base64,iVBORw0KGgo=')
+  expect(sent).toMatch(
+    /__JAN_TOOL_IMAGE__[0-9a-f]{32}:data:image\/png;base64,iVBORw0KGgo=/
+  )
   expect(sent).not.toContain('mimeType')
 })
 

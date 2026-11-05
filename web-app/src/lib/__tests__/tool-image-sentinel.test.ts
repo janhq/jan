@@ -43,6 +43,25 @@ describe('tool-image-sentinel', () => {
     )
     expect(stripToolImageSentinels('plain', 'x')).toBe('plain')
   })
+
+  // An error reaches the model the way a result does.
+  it('strips a sentinel from error text for a model without vision', () => {
+    const part = {
+      type: 'tool-x',
+      toolCallId: 'c1',
+      state: 'output-error',
+      input: {},
+      errorText: `Error: bad${encodeToolImageSentinel(png)}`,
+    }
+    const [out] = stripUnsupportedImageParts(
+      [{ id: 'a1', role: 'assistant', parts: [part] } as unknown as UIMessage],
+      false
+    )
+    const result = out.parts[0]
+    expect('errorText' in result && result.errorText).toBe(
+      'Error: bad (image omitted: the model has no vision)'
+    )
+  })
 })
 
 describe('decodeToolImageSentinelsInBody', () => {
@@ -83,6 +102,7 @@ describe('decodeToolImageSentinelsInBody', () => {
 
 describe('encodeMcpToolImages', () => {
   const b64 = 'iVBORw0KGgo='
+  const jpegB64 = '/9j/4AAQSkZJRg=='
   const mcpTool = (output: unknown): UIMessage =>
     ({
       id: 'a1',
@@ -147,7 +167,7 @@ describe('encodeMcpToolImages', () => {
         { type: 'text', text: 'frame 1' },
         { type: 'image', data: b64, mimeType: 'image/png' },
         { type: 'text', text: 'frame 2' },
-        { type: 'image', data: b64, mimeType: 'image/jpeg' },
+        { type: 'image', data: jpegB64, mimeType: 'image/jpeg' },
       ]),
     ])
     expect(splitToolImageSentinels(outputOf(out) as string)).toEqual([
@@ -156,7 +176,7 @@ describe('encodeMcpToolImages', () => {
       { type: 'text', text: 'frame 2' },
       {
         type: 'image_url',
-        image_url: { url: png.replace('png', 'jpeg'), detail: 'auto' },
+        image_url: { url: `data:image/jpeg;base64,${jpegB64}`, detail: 'auto' },
       },
     ])
   })
@@ -198,6 +218,92 @@ describe('encodeMcpToolImages', () => {
     expect(outputOf(out)).toBe(
       'The tool returned 1 image. (image omitted: the model has no vision)'
     )
+  })
+
+  // Tool output is attacker-controlled text. With a fixed marker, a page, a
+  // file or an MCP text item could mint an image part of its own, with an svg or
+  // corrupt payload that fails every later request of the thread.
+  const FIXED_MARKER = ' __JAN_TOOL_IMAGE__'
+  it.each([
+    ['png', 'data:image/png;base64,iVBORw0KGgo='],
+    ['svg', 'data:image/svg+xml;base64,AAAA'],
+    ['corrupt png', 'data:image/png;base64,AAAA'],
+  ])('does not decode a %s marker written into plain tool text', (_, url) => {
+    const text = `page text${FIXED_MARKER}${url} more`
+    expect(splitToolImageSentinels(text)).toBeNull()
+    const body = {
+      messages: [{ role: 'tool', tool_call_id: 'c1', content: text }],
+    }
+    decodeToolImageSentinelsInBody(body)
+    expect(body.messages[0].content).toBe(text)
+  })
+
+  it('sends only the real image when an MCP text item carries a marker', () => {
+    const out = encodeMcpToolImages([
+      mcpTool([
+        {
+          type: 'text',
+          text: `caption${FIXED_MARKER}data:image/svg+xml;base64,AAAA `,
+        },
+        { type: 'image', data: b64, mimeType: 'image/png' },
+      ]),
+    ])
+    const images = splitToolImageSentinels(outputOf(out) as string)?.filter(
+      (part) => part.type === 'image_url'
+    )
+    expect(images).toEqual([
+      { type: 'image_url', image_url: { url: png, detail: 'auto' } },
+    ])
+  })
+
+  // The server picks the bytes, and a provider fails the whole request on one
+  // it cannot decode.
+  it.each([
+    ['corrupt bytes', 'AAAA'],
+    ['url-safe base64', 'iVBORw0KGgo-_'],
+    ['text', 'not an image at all'],
+    ['a data URL that is not base64', 'data:image/png,hello'],
+  ])('omits an image item holding %s', (_, data) => {
+    const sent = outputOf(
+      encodeMcpToolImages([mcpTool([{ type: 'image', data, mimeType: 'image/png' }])])
+    ) as string
+    expect(hasToolImageSentinel(sent)).toBe(false)
+    expect(sent).toContain('image omitted')
+    expect(sent).not.toContain(data)
+  })
+
+  it('labels an image with the type its bytes have, not the one declared', () => {
+    const out = encodeMcpToolImages([
+      mcpTool([{ type: 'image', data: jpegB64, mimeType: 'image/png' }]),
+    ])
+    expect(splitToolImageSentinels(outputOf(out) as string)).toContainEqual({
+      type: 'image_url',
+      image_url: { url: `data:image/jpeg;base64,${jpegB64}`, detail: 'auto' },
+    })
+  })
+
+  it.each([
+    ['image/gif', btoa('GIF89a\x01\x00\x01\x00')],
+    ['image/webp', btoa('RIFF\x1c\x00\x00\x00WEBPVP8 ')],
+  ])('recognises %s by its bytes', (mimeType, data) => {
+    const out = encodeMcpToolImages([mcpTool([{ type: 'image', data, mimeType }])])
+    expect(splitToolImageSentinels(outputOf(out) as string)).toContainEqual({
+      type: 'image_url',
+      image_url: { url: `data:${mimeType};base64,${data}`, detail: 'auto' },
+    })
+  })
+
+  // 5 MB decoded is Anthropic's per-image limit; the result is re-sent each turn.
+  it('omits an image over 5 MB and keeps one just under it', () => {
+    const sized = (chars: number) => `iVBORw0KGgoA${'A'.repeat(chars)}`
+    const sentOf = (data: string) =>
+      outputOf(
+        encodeMcpToolImages([mcpTool([{ type: 'image', data, mimeType: 'image/png' }])])
+      ) as string
+    const over = sentOf(sized(7_000_000))
+    expect(hasToolImageSentinel(over)).toBe(false)
+    expect(over).toContain('larger than 5 MB')
+    expect(hasToolImageSentinel(sentOf(sized(6_990_000)))).toBe(true)
   })
 })
 
