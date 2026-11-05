@@ -1159,6 +1159,10 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         Err(e) => return format!("ERROR: failed to run command: {e}"),
     };
     let pid = child.id();
+    // `spawn` registered the wrapper; `/shells` should show what was asked for.
+    if let (Some(pid), Some(_)) = (pid, persist) {
+        proc::relabel(ctx.thread_id, pid, command);
+    }
 
     // The child is handed to a detached task immediately so it keeps running
     // (and its output keeps being collected) no matter what the race below
@@ -1224,6 +1228,18 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                 )
             } else {
                 format!("{BACKGROUNDED_PREFIX}{timeout_secs}s and is still running in the background")
+            };
+            // Its `cd` is dropped (see the task below), which the model would
+            // otherwise only learn from where its next command runs.
+            let lead = match persist {
+                Some(_) => {
+                    let stays = start.clone().unwrap_or_else(|| root.to_path_buf());
+                    format!(
+                        "{lead}. Any `cd` in it is not carried over: the shell stays in {}",
+                        stays.display()
+                    )
+                }
+                None => lead,
             };
             if let Some(pid) = pid {
                 proc::mark_backgrounded(ctx.thread_id, pid);
@@ -1354,11 +1370,15 @@ const CWD_MARKER: &[u8] = b"\x1eJAN_CWD ";
 /// for; the report then names the project root, which resets the held
 /// directory.
 ///
-/// The command keeps line 1 so `$LINENO` and the shell's `line N:` errors
-/// match what the model wrote, and ends on a blank line so a trailing `\`
-/// cannot swallow the closing brace. Not reported: a command that sets its own
-/// `EXIT` trap (it replaces this one), and an unterminated heredoc, which the
-/// closing brace turns into a syntax error.
+/// The command runs through `eval` on one single-quoted word, so the shell
+/// parses it a command at a time as it would unwrapped: a `shopt -s extglob`
+/// or an alias applies to the lines after it, a trailing `\` and an
+/// unterminated heredoc behave as they do in `bash -c`, and nothing the
+/// command contains can reach the wrapper's own syntax. The cost is that
+/// `$LINENO` and the shell's `line N:` errors count from the line the quoted
+/// word ends on, so in a multi-line command they run high by its line count
+/// less one; a one-line command still says line 1. Not reported: a command that sets its own
+/// `EXIT` trap (it replaces this one).
 fn posix_cwd_script(command: &str, start: Option<&Path>) -> String {
     // printf's own octal escape spells the separator, so the script stays ASCII.
     let marker = String::from_utf8_lossy(&CWD_MARKER[1..]);
@@ -1370,7 +1390,7 @@ fn posix_cwd_script(command: &str, start: Option<&Path>) -> String {
     );
     if let Some(dir) = start {
         let notice = format!(
-            "[shell cwd {} is not reachable; the command was NOT run. The shell is back in the \
+            "{SHELL_CWD_TAG} {} is not reachable; the command was NOT run. The shell is back in the \
              project root: re-run it from there]",
             dir.display()
         );
@@ -1380,9 +1400,7 @@ fn posix_cwd_script(command: &str, start: Option<&Path>) -> String {
             shell_quote(&notice)
         ));
     }
-    script.push_str("{ ");
-    script.push_str(command);
-    script.push_str("\n\n} 9>&-\n");
+    script.push_str(&format!("{{ eval {}\n}} 9>&-\n", shell_quote(command)));
     script
 }
 
@@ -1471,11 +1489,11 @@ fn settle_shell_cwd(
     *held = next.clone();
     Some(match next {
         Some(dir) => format!(
-            "\n[shell cwd is now {}: later bash calls start there. Other tools still resolve \
+            "\n{SHELL_CWD_TAG} is now {}: later bash calls start there. Other tools still resolve \
              relative paths against the project root]",
             dir.display()
         ),
-        None => format!("\n[shell cwd is back to the project root {}]", root.display()),
+        None => format!("\n{SHELL_CWD_TAG} is back to the project root {}]", root.display()),
     })
 }
 
@@ -1785,10 +1803,20 @@ pub fn exit_marker(line: &str) -> Option<Option<i32>> {
         .map(Some)
 }
 
-/// Opening words of the notes the harness adds to a shell result, which are
-/// not the command's own output: the sandbox hint, the escalation hint, the
-/// shell-cwd notes, a hook-config notice.
-const HARNESS_NOTE_PREFIXES: &[&str] = &["[sandbox:", "[If this command", "[shell cwd", "[hook config:"];
+/// How every shell-cwd note begins.
+const SHELL_CWD_TAG: &str = "[shell cwd";
+
+/// The lines the harness adds to a shell result, which are not the command's
+/// own output, matched by how each begins: the sandbox hint, the escalation
+/// hint, the shell-cwd notes, a hook-config notice. Taken from the constants
+/// that write them, so a reworded note cannot fall out of this list.
+fn is_harness_note(line: &str) -> bool {
+    let escalation = ESCALATION_HINT.trim_start_matches('\n');
+    line == escalation
+        || [jail::DENIAL_HINT_TAG, SHELL_CWD_TAG, crate::tools::hooks::NOTICE_TAG]
+            .iter()
+            .any(|tag| line.starts_with(tag))
+}
 
 /// A shell result as the model receives it: `[exit 0]` is left off when the
 /// command printed output, since the output already says it worked. Any other
@@ -1809,7 +1837,7 @@ pub fn model_shell_result(content: &str) -> String {
     let printed = lines.iter().enumerate().any(|(i, line)| {
         i != at
             && !line.trim().is_empty()
-            && !HARNESS_NOTE_PREFIXES.iter().any(|note| line.starts_with(note))
+            && !is_harness_note(line)
     });
     if !printed {
         return content.to_string();
@@ -4251,7 +4279,10 @@ mod tests {
         let cwd = crate::tools::ShellCwd::default();
         let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false);
         let out = run_in(&ctx, "echo a \\").await;
-        assert_eq!(out, "a\n[exit 0]", "a trailing backslash is not a syntax error");
+        assert_eq!(out, "a \\\n[exit 0]", "a trailing backslash prints as it does unwrapped");
+        let out = run_in(&ctx, "cat <<EOF\nbody").await;
+        // bash warns about it, as it does unwrapped, then runs it.
+        assert!(out.ends_with("body\n[exit 0]"), "an unterminated heredoc still runs: {out}");
         let out = run_in(&ctx, "set -eu; cd sub; echo $JAN_UNSET_VAR").await;
         assert!(out.contains("shell cwd is now"), "{out}");
         assert!(!out.contains("Bad file descriptor"), "{out}");
@@ -4260,6 +4291,52 @@ mod tests {
         let out = run_in(&ctx, &format!("cd ..; exec 9>{}; set -e; false", shell_quote(&lock.to_string_lossy()))).await;
         assert!(out.contains("back to the project root"), "{out}");
         assert_eq!(std::fs::read_to_string(&lock).unwrap(), "", "nothing written into the command's fd 9");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// Bash parses one command at a time, so a `shopt` or an alias set on one
+    /// line takes effect on the next. Parsing the whole command up front, as a
+    /// `{ ... }` wrapper does, breaks both.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn shell_cwd_wrapper_applies_shopt_and_aliases_to_later_lines() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("a")).unwrap();
+        std::fs::create_dir_all(root.join("b")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let scratch = unique_root();
+        let cwd = crate::tools::ShellCwd::default();
+        let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false);
+        let out = run_in(&ctx, "shopt -s extglob\nls -d !(a)").await;
+        assert_eq!(out, "b\n[exit 0]", "extglob across lines");
+        let out = run_in(&ctx, "shopt -s expand_aliases\nalias hi='echo alias-ok'\nhi").await;
+        assert_eq!(out, "alias-ok\n[exit 0]", "alias across lines");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// `/shells` and the background panel list the command the model wrote,
+    /// not the cwd wrapper it runs inside.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_wrapped_command_is_listed_as_written() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let scratch = unique_root();
+        let cwd = crate::tools::ShellCwd::default();
+        let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false);
+        run_in(&ctx, "cd sub").await;
+        let command = format!("sleep 30; echo listed-{}", std::process::id());
+        let args = json!({ "command": command, "timeout": 0 });
+        let out = super::execute_builtin(lookup("shell").unwrap(), &args, &ctx).await.0;
+        assert!(out.contains("still running in the background"), "{out}");
+        let listed = proc::snapshot().into_iter().find(|s| s.command == command);
+        if let Some(shell) = &listed {
+            proc::kill(shell.pid);
+        }
+        assert!(listed.is_some(), "listed under the command as written");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
     }
@@ -4406,8 +4483,18 @@ mod tests {
         let args = json!({ "command": "cd sub; sleep 0.3", "timeout": 0 });
         let out = super::execute_builtin(lookup("shell").unwrap(), &args, &ctx).await.0;
         assert!(out.contains("still running in the background"), "{out}");
+        let stays = format!("the shell stays in {}", root.display());
+        assert!(out.contains(&stays), "the hand-off says the cd is dropped: {out}");
         tokio::time::sleep(std::time::Duration::from_millis(800)).await;
         assert_eq!(*cwd.lock().unwrap(), None);
+        // A held directory is the one named, not the root.
+        run_in(&ctx, "cd sub").await;
+        let sub = std::fs::canonicalize(root.join("sub")).unwrap();
+        let args = json!({ "command": "cd ..; sleep 0.3", "timeout": 0 });
+        let out = super::execute_builtin(lookup("shell").unwrap(), &args, &ctx).await.0;
+        assert!(out.contains(&format!("the shell stays in {}", sub.display())), "{out}");
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        assert_eq!(*cwd.lock().unwrap(), Some(sub));
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
     }
@@ -4920,6 +5007,19 @@ mod tests {
         );
         let notes = "[shell cwd is now /x: later]\n[exit 0]";
         assert_eq!(model_shell_result(notes), notes, "notes alone are not output");
+        // Each note as its writer produces it, so a reworded one fails here.
+        let policy = jail::Policy::new(Path::new("/w"), true);
+        let written = [
+            jail::denial_hint(&policy),
+            ESCALATION_HINT.to_string(),
+            settle_shell_cwd(&std::sync::Arc::default(), Path::new("/w"), Some(PathBuf::from("/x")))
+                .unwrap(),
+            format!("\n{} renamed", crate::tools::hooks::NOTICE_TAG),
+        ];
+        for note in written {
+            let only = format!("{}\n[exit 0]", note.trim_start_matches('\n'));
+            assert_eq!(model_shell_result(&only), only, "{note:?} is not output");
+        }
         assert_eq!(
             model_shell_result("ok\n[shell cwd is now /x: later]\n[exit 0]"),
             "ok\n[shell cwd is now /x: later]"

@@ -1036,15 +1036,27 @@ pub fn unregister(thread: Option<&str>, pid: u32) {
     }
 }
 
-/// Flag a still-running command as backgrounded: it outran its `bash` call's
-/// timeout and is now detached, so `/shells` should list it. A no-op if the pid
-/// already finished (the detached task unregistered it in the race).
-pub fn mark_backgrounded(thread: Option<&str>, pid: u32) {
+/// Apply `change` to a registered shell; a no-op if the pid already finished
+/// (its task unregistered it in the race).
+fn update(thread: Option<&str>, pid: u32, change: impl FnOnce(&mut ShellProc)) {
     if let Some(set) = running().lock().unwrap().get_mut(thread.unwrap_or(NO_THREAD)) {
         if let Some(proc) = set.get_mut(&pid) {
-            proc.backgrounded = true;
+            change(proc);
         }
     }
+}
+
+/// List a registered shell under `command` instead of the script it was
+/// spawned with, for a caller that wraps what the user wrote (the shell-cwd
+/// wrapper) and wants `/shells` to show the original.
+pub fn relabel(thread: Option<&str>, pid: u32, command: &str) {
+    update(thread, pid, |proc| proc.command = command.to_string());
+}
+
+/// Flag a still-running command as backgrounded: it outran its `bash` call's
+/// timeout and is now detached, so `/shells` should list it.
+pub fn mark_backgrounded(thread: Option<&str>, pid: u32) {
+    update(thread, pid, |proc| proc.backgrounded = true);
 }
 
 /// Every currently-running bash command across all sessions, pid-sorted for a
@@ -1696,7 +1708,6 @@ mod tests {
         unregister(Some("sess-b"), b);
     }
 
-    #[cfg(unix)]
     /// Only shells known to speak POSIX sh run the cwd wrapper; fish and nu
     /// take `-c` but would reject its syntax.
     #[test]

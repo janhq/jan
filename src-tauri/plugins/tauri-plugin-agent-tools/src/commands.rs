@@ -91,7 +91,7 @@ fn with_renamed_tool_notices(
     for notice in hooks.renamed_notices(tool) {
         crate::tools::handlers::insert_before_exit_marker(
             &mut content,
-            &format!("\n[hook config: {notice}]"),
+            &format!("\n{} {notice}]", crate::tools::hooks::NOTICE_TAG),
         );
     }
     content

@@ -1037,6 +1037,10 @@ pub fn looks_denied(output: &str) -> bool {
     DENIAL_MARKERS.iter().any(|m| lower.contains(m))
 }
 
+/// How every [`denial_hint`] begins (after its newline), so a reader can tell
+/// the note from the command's own output.
+pub const DENIAL_HINT_TAG: &str = "[sandbox:";
+
 /// Sentence appended to a denied command's output, telling the model the limits
 /// rather than leaving it to infer them from `Permission denied`.
 pub fn denial_hint(policy: &Policy) -> String {
@@ -1106,12 +1110,12 @@ pub fn denial_hint(policy: &Policy) -> String {
             format!("; writes are limited to {scratch}")
         };
         return format!(
-            "\n[sandbox: the workspace ({}) is read-only{writes}{home}.{net}{attached}]",
+            "\n{DENIAL_HINT_TAG} the workspace ({}) is read-only{writes}{home}.{net}{attached}]",
             policy.workspace.display()
         );
     }
     format!(
-        "\n[sandbox: writes are limited to the workspace ({}){scratch}{home}.{net}{attached}]",
+        "\n{DENIAL_HINT_TAG} writes are limited to the workspace ({}){scratch}{home}.{net}{attached}]",
         policy.workspace.display()
     )
 }
