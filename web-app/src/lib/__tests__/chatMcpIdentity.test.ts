@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MCPTool } from '@/types/completion'
-import { assertMcpIdentityAvailable, uniqueMcpTools, memoizeMcpValidation } from '../chatMcpIdentity'
+const toastMock = vi.hoisted(() => ({ warning: vi.fn() }))
+vi.mock('sonner', () => ({ toast: toastMock }))
+import {
+  assertMcpIdentityAvailable,
+  uniqueMcpTools,
+  memoizeMcpValidation,
+  warnWithheldMcpTools,
+  resetWithheldMcpToastsForTest,
+} from '../chatMcpIdentity'
 
 const tool = (name: string, server: string): MCPTool => ({
   name, server, description: `${server}/${name}`, inputSchema: { type: 'object' },
@@ -129,4 +137,30 @@ describe('chat MCP identity', () => {
 
 
 
+})
+
+describe('withheld MCP tools signal', () => {
+  const quiet = () => vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+  it('tells the user which colliding names were withheld, once per distinct set', () => {
+    resetWithheldMcpToastsForTest()
+    toastMock.warning.mockClear()
+    const spy = quiet()
+    const tools = [tool('read', 'alpha'), tool('read', 'beta'), tool('write', 'alpha')]
+    warnWithheldMcpTools(tools)
+    warnWithheldMcpTools(tools)
+    expect(toastMock.warning).toHaveBeenCalledTimes(1)
+    expect(String(toastMock.warning.mock.calls[0][0])).toContain('read')
+    expect(String(toastMock.warning.mock.calls[0][0])).not.toContain('write')
+    warnWithheldMcpTools([...tools, tool('list', 'alpha'), tool('list', 'gamma')])
+    expect(toastMock.warning).toHaveBeenCalledTimes(2)
+    spy.mockRestore()
+  })
+
+  it('stays silent when nothing collides', () => {
+    resetWithheldMcpToastsForTest()
+    toastMock.warning.mockClear()
+    warnWithheldMcpTools([tool('read', 'alpha'), tool('write', 'beta')])
+    expect(toastMock.warning).not.toHaveBeenCalled()
+  })
 })
