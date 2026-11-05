@@ -143,20 +143,31 @@ impl Policy {
     }
 
     /// The Jan cache root (`<cache>/jan`) holding every project's package
-    /// cache and scratch, hidden whenever a package cache is in force: with
-    /// `$HOME` readable (the CLI) another project's cache would otherwise be
-    /// readable too, and a tampered tarball could be read across projects.
-    /// This run's own scratch and cache are exposed again on top of it. A
-    /// workspace or attached root containing the cache root (running in
-    /// `$HOME`) would show it again, so there it is masked a second time after
-    /// those binds ([`Self::cache_under_a_bind`]).
-    fn cache_mask(&self) -> Option<&Path> {
-        self.pkg_cache.as_ref()?.root.parent()?.parent()
+    /// cache and scratch, hidden whenever this run has a folder in it (a
+    /// package cache, or a scratch under the real cache root): with `$HOME`
+    /// readable (the CLI), with an attached root containing `~/.cache` (the
+    /// desktop), or with `XDG_CACHE_HOME` outside `$HOME`, other sessions'
+    /// scratch and caches would otherwise be readable, and a tampered tarball
+    /// could be read across projects. This run's own scratch and cache are
+    /// exposed again on top of it. A workspace or attached root containing the
+    /// cache root (running in `$HOME`) would show it again, so there it is
+    /// masked a second time after those binds ([`Self::cache_under_a_bind`]).
+    fn cache_mask(&self) -> Option<PathBuf> {
+        if let Some(pkg) = &self.pkg_cache {
+            return pkg.root.parent()?.parent().map(Path::to_path_buf);
+        }
+        // Only the real cache root: a scratch elsewhere (a test's temp dir)
+        // has no ancestor that is safe to mask.
+        let root = crate::workspace::jan_cache_root();
+        self.scratch_root
+            .as_deref()
+            .is_some_and(|scratch| scratch.starts_with(&root) && scratch != root)
+            .then_some(root)
     }
 
     /// [`Self::cache_mask`] when a bind contains it and it must be masked
     /// again after that bind.
-    fn cache_under_a_bind(&self) -> Option<&Path> {
+    fn cache_under_a_bind(&self) -> Option<PathBuf> {
         self.cache_mask().filter(|cache| self.hide_under_a_bind(cache))
     }
 
@@ -683,6 +694,11 @@ struct SeatbeltPaths {
     cargo_config: Vec<PathBuf>,
     /// The Jan cache root ([`Policy::cache_mask`]), in every form it has.
     cache_mask: Vec<PathBuf>,
+    /// The folders between the cache root and this run's own scratch and
+    /// package cache, the root included, in every form. The root's read deny
+    /// covers their metadata too, so `mkdir -p` or `realpath` into the run's
+    /// own folders would fail; stat alone is given back, never a listing.
+    cache_ancestors: Vec<PathBuf>,
     /// The read-only checkout and read roots, each in every form it has.
     deny_write: Vec<PathBuf>,
 }
@@ -725,12 +741,29 @@ impl SeatbeltPaths {
                 all
             })
             .unwrap_or_default();
-        let cache_mask = policy.cache_mask().map(forms).unwrap_or_default();
+        let cache_mask = policy.cache_mask().map(|c| forms(&c)).unwrap_or_default();
+        let mut cache_ancestors: Vec<PathBuf> = Vec::new();
+        for dir in policy.own_path_dirs() {
+            for form in forms(dir) {
+                let Some(root) = cache_mask.iter().find(|root| form.starts_with(root)) else {
+                    continue;
+                };
+                for ancestor in form.ancestors().skip(1) {
+                    if !ancestor.starts_with(root) {
+                        break;
+                    }
+                    if !cache_ancestors.iter().any(|a| a == ancestor) {
+                        cache_ancestors.push(ancestor.to_path_buf());
+                    }
+                }
+            }
+        }
         Self {
             scratch_real: policy.scratch_root.as_deref().and_then(real_form),
             pkg_real: policy.pkg_cache.as_ref().and_then(|p| real_form(&p.root)),
             cargo_config,
             cache_mask,
+            cache_ancestors,
             deny_write,
         }
     }
@@ -871,6 +904,11 @@ fn seatbelt_profile(policy: &Policy, paths: &SeatbeltPaths) -> String {
 /// Allow the scratch and the package cache, then deny writes to cargo's
 /// config inside the latter (the later rule wins).
 fn push_own_dirs(p: &mut String, policy: &Policy, paths: &SeatbeltPaths) {
+    for i in 0..paths.cache_ancestors.len() {
+        p.push_str(&format!(
+            "(allow file-read-metadata (literal (param \"CACHE_ANCESTOR_{i}\")))\n"
+        ));
+    }
     // The session scratch by name, rather than trusting it to sit under TMPDIR:
     // a relocated scratch must stay usable, and it is read back after the home
     // denial above, which would otherwise cover a scratch inside $HOME. Emitted
@@ -956,6 +994,9 @@ pub fn seatbelt_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     }
     for (i, path) in paths.cache_mask.iter().enumerate() {
         args.push(format!("-DCACHE_MASK_{i}={}", path.to_string_lossy()));
+    }
+    for (i, path) in paths.cache_ancestors.iter().enumerate() {
+        args.push(format!("-DCACHE_ANCESTOR_{i}={}", path.to_string_lossy()));
     }
     if let Some(home) = home_dir() {
         args.push(format!("-DHOME_ROOT={}", home.to_string_lossy()));
@@ -1740,6 +1781,30 @@ mod tests {
         assert!(!joined(&bwrap_args(&policy(), &cfg())).contains("pkg"));
     }
 
+    /// With no package cache (desktop chat, the MCP server), a scratch under
+    /// the Jan cache root still masks the root: an attached folder holding
+    /// `~/.cache`, or an `XDG_CACHE_HOME` outside `$HOME`, would otherwise
+    /// show every other session's scratch. A scratch elsewhere masks nothing.
+    #[test]
+    fn bwrap_masks_the_cache_root_for_a_scratch_without_a_pkg_cache() {
+        let root = crate::workspace::jan_cache_root();
+        let root_s = root.to_string_lossy().to_string();
+        let scratch = root.join("chat/scratch/t1");
+        let scratch_s = scratch.to_string_lossy().to_string();
+        let p = Policy::new(Path::new("/w"), false)
+            .with_read_roots(vec![root.parent().unwrap().to_path_buf()])
+            .with_scratch_root(&scratch);
+        let text = joined(&bwrap_args(&p, &cfg()));
+        let mask = text.find(&format!("--tmpfs {root_s} ")).expect(&text);
+        let bind = text.rfind(&format!("--bind {scratch_s} {scratch_s}")).expect(&text);
+        assert!(mask < bind, "the run's own scratch is bound back: {text}");
+        assert_eq!(text.matches(&format!("--tmpfs {root_s} ")).count(), 2, "{text}");
+
+        let elsewhere = Policy::new(Path::new("/w"), false)
+            .with_scratch_root(Path::new("/var/tmp/s1"));
+        assert!(!joined(&bwrap_args(&elsewhere, &cfg())).contains(&root_s));
+    }
+
     /// A read-only workspace containing the package cache rebinds it, and the
     /// cargo config still lands read-only after that rebind.
     #[test]
@@ -1840,6 +1905,36 @@ mod tests {
 
         let apart = seatbelt_policy(&policy().with_pkg_cache(&pkg_cache(pkg, true)));
         assert!(!apart.contains("(deny file-write* (subpath (param \"CACHE_MASK_0\")))"), "{apart}");
+    }
+
+    /// The cache root's read deny would also refuse a `stat` of the folders
+    /// above the run's own package cache and scratch, which breaks `mkdir -p`
+    /// and `realpath` into them: their metadata alone is allowed back, after
+    /// the deny, by literal path (no listing of other projects' folders).
+    #[test]
+    fn seatbelt_lets_the_shell_stat_the_folders_above_its_own() {
+        let pkg = "/Users/u/Library/Caches/jan/p-1/pkg";
+        let p = policy()
+            .with_scratch_root(Path::new("/Users/u/Library/Caches/jan/p-1/scratch/s1"))
+            .with_pkg_cache(&pkg_cache(pkg, true));
+        let args = seatbelt_args(&p, &cfg());
+        let want = [
+            "/Users/u/Library/Caches/jan/p-1/scratch",
+            "/Users/u/Library/Caches/jan/p-1",
+            "/Users/u/Library/Caches/jan",
+        ];
+        let ancestors: Vec<&str> = args
+            .iter()
+            .filter_map(|a| a.strip_prefix("-DCACHE_ANCESTOR_"))
+            .map(|a| a.split_once('=').unwrap().1)
+            .collect();
+        assert_eq!(ancestors, want, "{args:?}");
+        let profile = &args[1];
+        let deny = profile.find("(deny file-read* (subpath (param \"CACHE_MASK_0\")))").unwrap();
+        for i in 0..want.len() {
+            let allow = format!("(allow file-read-metadata (literal (param \"CACHE_ANCESTOR_{i}\")))");
+            assert!(deny < profile.find(&allow).expect(profile), "{profile}");
+        }
     }
 
     /// Seatbelt grants the package cache by parameter and denies writes to

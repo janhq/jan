@@ -11555,7 +11555,11 @@ mod tests {
         assert!(confined.contains("Scratch:"), "{confined}");
         let scratch = scratch_root_for(Some("s1"), &root);
         assert!(
-            confined.contains(&format!("Scratch: `{}`", scratch.display())),
+            // The prompt names paths with forward slashes on every OS.
+            confined.contains(&format!(
+                "Scratch: `{}`",
+                scratch.to_string_lossy().replace('\\', "/")
+            )),
             "{confined}"
         );
         let bare = build_run_system_prompt(

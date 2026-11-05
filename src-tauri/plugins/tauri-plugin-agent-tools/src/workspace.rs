@@ -1024,6 +1024,27 @@ async fn remove_read_only_file(path: &Path) -> std::io::Result<()> {
 /// configures only sandboxed cargo and is rewritten every session. Seatbelt
 /// also denies writes to it by rule, and bubblewrap mounts the host file over
 /// it read-only.
+/// Write `bytes` to a new read-only file at `path`. The folder is writable by
+/// every sandboxed command of the project, so the name may hold a symlink
+/// planted after it was cleared: created exclusively and never through a
+/// symlink, the open fails instead of truncating whatever file the link
+/// names, and the mode is set through the handle, not the name.
+fn create_read_only_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut open = std::fs::OpenOptions::new();
+    open.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.mode(0o600).custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits());
+    }
+    let mut file = open.open(path)?;
+    file.write_all(bytes)?;
+    let mut perms = file.metadata()?.permissions();
+    perms.set_readonly(true);
+    file.set_permissions(perms)
+}
+
 async fn write_read_only(bytes: &[u8], dst: &Path) -> std::io::Result<()> {
     if let Ok(meta) = tokio::fs::symlink_metadata(dst).await {
         if meta.is_file()
@@ -1039,10 +1060,10 @@ async fn write_read_only(bytes: &[u8], dst: &Path) -> std::io::Result<()> {
     let n = COPIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let tmp = dst.with_extension(format!("tmp-{}-{n}", std::process::id()));
     remove_read_only_file(&tmp).await?;
-    tokio::fs::write(&tmp, bytes).await?;
-    let mut perms = tokio::fs::metadata(&tmp).await?.permissions();
-    perms.set_readonly(true);
-    tokio::fs::set_permissions(&tmp, perms).await?;
+    let (path, owned) = (tmp.clone(), bytes.to_vec());
+    tokio::task::spawn_blocking(move || create_read_only_new(&path, &owned))
+        .await
+        .map_err(std::io::Error::other)??;
     // Replaced in one step where the OS allows it, so a sibling session's
     // bubblewrap never finds its mount point missing. Windows refuses to
     // rename over a read-only file; there the old copy goes first.
@@ -2076,6 +2097,28 @@ mod tests {
         let r = create_private_dirs_owned(&parent, yes, yes).await;
         assert!(r.is_ok(), "{r:?}");
         assert!(parent.is_dir());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A symlink planted at the temp copy's name is refused, never followed:
+    /// the file it names keeps its contents and stays writable.
+    #[cfg(unix)]
+    #[test]
+    fn the_read_only_copy_never_writes_through_a_planted_symlink() {
+        let base = unique_data_folder();
+        std::fs::create_dir_all(&base).unwrap();
+        let victim = base.join("victim");
+        std::fs::write(&victim, "mine").unwrap();
+        let planted = base.join("config.tmp-1-0");
+        std::os::unix::fs::symlink(&victim, &planted).unwrap();
+        assert!(create_read_only_new(&planted, b"[net]").is_err());
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "mine");
+        assert!(!std::fs::metadata(&victim).unwrap().permissions().readonly());
+
+        let fresh = base.join("config.tmp-1-1");
+        create_read_only_new(&fresh, b"[net]").unwrap();
+        assert_eq!(std::fs::read(&fresh).unwrap(), b"[net]");
+        assert!(std::fs::metadata(&fresh).unwrap().permissions().readonly());
         let _ = std::fs::remove_dir_all(&base);
     }
 
