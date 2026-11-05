@@ -1931,9 +1931,9 @@ const ChatInput = memo(function ChatInput({
         audio: audioSupported,
         video: videoSupported,
       })
-      if (routed.imagesAsDocuments > 0) {
-        toast.info("This model can't see images", {
-          description: 'They are attached as files instead.',
+      if (routed.rejected.length > 0) {
+        toast.error("This model can't see images", {
+          description: 'Choose a vision-capable model to attach images.',
         })
       }
       const toFiles = async (list: string[], mimeFor: (ext: string) => string) => {
