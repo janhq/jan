@@ -235,10 +235,6 @@
       "cancel": "Abbrechen",
       "changeLocation": "Speicherort ändern"
     },
-    "deleteAllThreads": {
-      "title": "Alle Threads löschen",
-      "description": "Alle Threads werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
-    },
     "deleteThread": {
       "description": "Bist Du sicher, daß Du diesen Thread löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden."
     },

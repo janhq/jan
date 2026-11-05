@@ -247,10 +247,6 @@
       "cancel": "취소",
       "changeLocation": "위치 변경"
     },
-    "deleteAllThreads": {
-      "title": "모든 스레드 삭제",
-      "description": "모든 스레드가 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
-    },
     "deleteAllThreadsInProject": {
       "title": "모든 대화 삭제",
       "description": "\"{{projectName}}\"의 대화 {{count}}개가 삭제됩니다. 이 작업은 되돌릴 수 없습니다."

@@ -248,10 +248,6 @@
       "cancel": "रद्द करें",
       "changeLocation": "स्थान बदलें"
     },
-    "deleteAllThreads": {
-      "title": "सभी थ्रेड हटाएं",
-      "description": "सभी थ्रेड हटा दिए जाएंगे। यह कार्रवाई वापस नहीं ली जा सकती।"
-    },
     "deleteAllThreadsInProject": {
       "title": "सभी वार्तालाप हटाएं",
       "description": "\"{{projectName}}\" में {{count}} वार्तालाप हटा दिए जाएंगे। यह कार्रवाई वापस नहीं ली जा सकती।"

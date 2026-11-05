@@ -261,10 +261,6 @@
       "cancel": "Annulla",
       "changeLocation": "Modifica posizione"
     },
-    "deleteAllThreads": {
-      "title": "Elimina tutte le conversazioni",
-      "description": "Tutte le conversazioni saranno eliminate. Questa azione non può essere annullata."
-    },
     "deleteAllThreadsInProject": {
       "title": "Elimina tutte le conversazioni",
       "description": "{{count}} conversazioni in \"{{projectName}}\" saranno eliminate. Questa azione non può essere annullata."

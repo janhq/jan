@@ -235,10 +235,6 @@
       "cancel": "Annuler",
       "changeLocation": "Changer l'emplacement"
     },
-    "deleteAllThreads": {
-      "title": "Supprimer toutes les discussions",
-      "description": "Toutes les discussions seront supprimées. Cette action ne peut pas être annulée."
-    },
     "deleteThread": {
       "description": "Êtes-vous sûr de vouloir supprimer cette discussion ? Cette action ne peut pas être annulée."
     },

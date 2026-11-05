@@ -236,10 +236,6 @@
       "cancel": "Zrušit",
       "changeLocation": "Změnit umístění"
     },
-    "deleteAllThreads": {
-      "title": "Smazat všechna vlákna",
-      "description": "Všechna vlákna budou smazána. Tuto akci nelze vrátit zpět."
-    },
     "deleteThread": {
       "description": "Opravdu chcete smazat toto vlákno? Tuto akci nelze vrátit zpět."
     },

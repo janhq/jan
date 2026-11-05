@@ -385,9 +385,9 @@
       "cancel": "Cancel",
       "changeLocation": "Change Location"
     },
-    "deleteAllThreads": {
-      "title": "Delete All Threads",
-      "description": "All threads will be deleted. This action cannot be undone."
+    "deleteAllChats": {
+      "title": "Delete Conversations Outside Projects",
+      "description": "This deletes conversations that are not in a project. Project conversations, starred conversations and tasks are kept. This action cannot be undone."
     },
     "deleteAllThreadsInProject": {
       "title": "Delete All Conversations",
@@ -504,6 +504,10 @@
     "deleteAllThreads": {
       "title": "Delete All Threads",
       "description": "All threads have been permanently deleted."
+    },
+    "deleteAllChats": {
+      "title": "Conversations deleted",
+      "description": "Conversations outside projects were deleted. Project conversations and tasks were kept."
     },
     "renameThread": {
       "title": "Rename Thread",
