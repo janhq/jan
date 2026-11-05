@@ -259,7 +259,6 @@
     "createNewProject": "建立新專案",
     "deleteProjectDialog": {
       "title": "刪除專案",
-      "permanentDelete": "這將永久刪除所有執行緒。",
       "permanentDeleteWarning": "此操作將永久刪除專案內的所有執行緒！",
       "deleteEmptyProject": "此操作將刪除專案「{{projectName}}」。",
       "saveThreadsAdvice": "要儲存執行緒，請在刪除前將它們移至您的執行緒清單或另一個專案。",

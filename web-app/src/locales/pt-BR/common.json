@@ -261,7 +261,6 @@
     "projectNotFoundDesc": "O projeto que você está procurando não existe ou foi removido.",
     "deleteProjectDialog": {
       "title": "Remover Projeto",
-      "permanentDelete": "ThiIsso removerá permanentemente todas as conversas.",
       "permanentDeleteWarning": "Esta ação removerá permanentemente TODAS as conversas dentro do projeto!",
       "deleteEmptyProject": "Esta ação removerá o projeto \"{{projectName}}\".",
       "saveThreadsAdvice": "Para salvar conversas, mova-as para sua lista de conversas ou outro projeto antes de remover.",

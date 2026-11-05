@@ -259,7 +259,7 @@
     "createNewProject": "创建新项目",
     "deleteProjectDialog": {
       "title": "删除项目",
-      "permanentDelete": "这将永久删除所有线程。",
+      "permanentDelete": "这将永久删除“{{projectName}}”及其所有对话。此操作无法撤销。",
       "permanentDeleteWarning": "此操作将永久删除项目内的所有线程！",
       "deleteEmptyProject": "此操作将删除项目\"{{projectName}}\"。",
       "saveThreadsAdvice": "要保存线程，请在删除前将它们移动到您的线程列表或另一个项目中。",

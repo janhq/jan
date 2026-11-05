@@ -357,7 +357,6 @@
     "projectNotFoundDesc": "Proyek yang Anda cari tidak ada atau telah dihapus.",
     "deleteProjectDialog": {
       "title": "Hapus Proyek",
-      "permanentDelete": "Ini akan menghapus semua utas secara permanen.",
       "permanentDeleteWarning": "Tindakan ini akan menghapus SEMUA utas dalam proyek secara permanen!",
       "deleteEmptyProject": "Tindakan ini akan menghapus proyek \"{{projectName}}\".",
       "saveThreadsAdvice": "Untuk menyimpan utas, pindahkan ke daftar utas Anda atau proyek lain sebelum menghapus.",

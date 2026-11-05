@@ -311,7 +311,6 @@
     "uploadingFiles": "Caricamento file in corso…",
     "deleteProjectDialog": {
       "title": "Elimina progetto",
-      "permanentDelete": "Questo eliminerà definitivamente tutte le conversazioni.",
       "permanentDeleteWarning": "Questa azione eliminerà definitivamente TUTTE le conversazioni all'interno del progetto!",
       "deleteEmptyProject": "Questa azione eliminerà il progetto \"{{projectName}}\".",
       "saveThreadsAdvice": "Per salvare le conversazioni, spostale nell'elenco delle conversazioni o in un altro progetto prima di procedere con l'eliminazione.",
