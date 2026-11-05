@@ -473,6 +473,9 @@ pub struct SpawnAdmission {
     pub thread_id: String,
     /// The generation the surrounding poll was authorized at.
     pub generation: u64,
+    /// Whether the poll's sandbox grants network, sampled when it was built.
+    /// Re-checked against the app-wide switch at each spawn.
+    pub network: bool,
 }
 
 /// [`run_hooks`] with spawn admission for a revocable owner; `None` is exactly
@@ -544,7 +547,11 @@ async fn run_one(
         let _admitted = match admission {
             Some(a) => {
                 let guard = crate::thread_capabilities::admission().lock().await;
-                if crate::thread_capabilities::generation(&a.thread_id) != a.generation {
+                if !crate::thread_capabilities::spawn_authorized(
+                    &a.thread_id,
+                    a.generation,
+                    a.network,
+                ) {
                     return Err(
                         "not started: this conversation's permissions changed".to_string()
                     );

@@ -98,13 +98,17 @@ pub fn get_chat_permissions() -> GlobalGrants {
 /// so the settings screen never shows a state the host is not enforcing.
 #[cfg(not(feature = "cli"))]
 #[tauri::command]
-pub fn set_chat_permissions<R: tauri::Runtime>(
+pub async fn set_chat_permissions<R: tauri::Runtime>(
     app_handle: tauri::AppHandle<R>,
     value: GlobalGrants,
 ) -> Result<GlobalGrants, String> {
     let data_folder = crate::core::app::commands::get_jan_data_folder_path(app_handle);
     save(&data_folder, value)?;
     set_global_grants(value);
+    // Fence: a monitor poll admitted before the switch moved is mid-spawn under
+    // the admission guard. Waiting for the guard here means that, once this
+    // returns, every later spawn admission observes the new value.
+    drop(tauri_plugin_agent_tools::thread_capabilities::admission().lock().await);
     Ok(value)
 }
 

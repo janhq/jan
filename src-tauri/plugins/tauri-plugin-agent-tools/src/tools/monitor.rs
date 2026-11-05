@@ -735,10 +735,13 @@ async fn eval_script(
 ) -> PollVerdict {
     // Re-read on EVERY poll, including legacy Session monitors whose context
     // otherwise stays fixed. A requested/start-time false is a permanent ceiling.
-    let tool_ctx = ctx.as_tool_context().with_network(poll_network_allowed(
+    // Sampled here, but only a sample: it is re-checked under the admission
+    // guard at every spawn below (the poll's hooks may run for a long time).
+    let network = poll_network_allowed(
         ctx.allow_network,
         crate::thread_capabilities::get_global_grants().shell_network,
-    ));
+    );
+    let tool_ctx = ctx.as_tool_context().with_network(network);
     // Thread-only PreToolUse gate, fired for the poll script exactly as the
     // `shell` tool would fire it, BEFORE any spawn. Only the thread-owned
     // resolver populates `ctx.hooks` (re-resolved each poll); the Session
@@ -765,6 +768,7 @@ async fn eval_script(
             owner: auth.owner.clone(),
             thread_id: auth.thread_id.clone(),
             generation,
+            network,
         });
         let outcome = crate::tools::hooks::run_hooks_admitted(
             hooks,
@@ -796,9 +800,10 @@ async fn eval_script(
         let _admitted = match barrier {
             Some((auth, token)) => {
                 let guard = crate::thread_capabilities::admission().lock().await;
-                if crate::thread_capabilities::generation(&auth.thread_id) != token {
-                    // Consent moved under us. Skip this poll; the next one
-                    // re-resolves and reports the revocation terminally.
+                if !crate::thread_capabilities::spawn_authorized(&auth.thread_id, token, network) {
+                    // Consent moved under us (this thread's barrier, or the
+                    // app-wide network switch). Skip this poll; the next one
+                    // re-resolves and reports a revocation terminally.
                     return PollVerdict::NotYet;
                 }
                 Some(guard)
