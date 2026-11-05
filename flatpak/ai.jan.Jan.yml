@@ -116,8 +116,8 @@ modules:
       # (PINNED_TAG / PINNED_COMMIT), where build.rs looks for it by default;
       # this replaces the network clone in fetch-engine-source.sh
       - type: archive
-        url: https://github.com/ggml-org/llama.cpp/archive/refs/tags/b11669.tar.gz
-        sha256: e06ba4fa263e30fdb9f0e65f00a8965202ddaa0c51f548a67e1f9b2164d04efc
+        url: https://github.com/ggml-org/llama.cpp/archive/refs/tags/b12110.tar.gz
+        sha256: 442a8ec2c5e8b8895175abfcede851964572370f0a56b33166c94905260da008
         dest: src-tauri/plugins/tauri-plugin-llamacpp/vendor/llama.cpp
       - type: file
         url: https://repo.yarnpkg.com/4.5.3/packages/yarnpkg-cli/bin/yarn.js
