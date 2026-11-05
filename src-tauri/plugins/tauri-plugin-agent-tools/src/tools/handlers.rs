@@ -216,9 +216,8 @@ async fn execute_text(
     let project_root = ctx.project_root;
     let scratch = ctx.scratch_root;
     match tool.name {
-        // Read tools consult the attached read-only roots; `write`/`edit`
-        // deliberately do not, which is what keeps an attached folder
-        // readable and unwritable.
+        // Read tools reach attached read roots. Only the writable subset
+        // widens write/edit access; read-only attached roots are refused.
         "read" => read(args, project_root, scratch, ctx.attached()).await.0,
         "ls" => ls(args, project_root, scratch, ctx.attached(), ctx.hidden_root).await,
         "write" if ctx.workspace_readonly
