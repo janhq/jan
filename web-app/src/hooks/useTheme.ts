@@ -13,6 +13,19 @@ export const checkOSDarkMode = (): boolean => {
   )
 }
 
+// System dark preference for the first render. Prefers the value the Tauri
+// backend injected before page load: on Linux, WebKitGTK's matchMedia does not
+// follow the XDG portal, so it would start light and flash once
+// ThemeProvider's async portal read lands. Later changes come from
+// ThemeProvider's listeners.
+export const getInitialSystemDark = (): boolean => {
+  const injected =
+    typeof window !== 'undefined' ? window.__JAN_INITIAL_THEME__ : undefined
+  return typeof injected?.systemDark === 'boolean'
+    ? injected.systemDark
+    : checkOSDarkMode()
+}
+
 export type ThemeState = {
   activeTheme: AppTheme
   setTheme: (theme: AppTheme) => void
@@ -26,7 +39,7 @@ export const useTheme = create<ThemeState>()(
       // Initialize isDark based on OS preference if theme is auto
       const initialState = {
         activeTheme: 'auto' as AppTheme,
-        isDark: checkOSDarkMode(),
+        isDark: getInitialSystemDark(),
         setTheme: async (activeTheme: AppTheme) => {
           // Commit first so the theme-changed listener (which gates on
           // activeTheme) ignores any portal/WindowEvent fired by the native
@@ -47,7 +60,7 @@ export const useTheme = create<ThemeState>()(
 
       // Check if we should initialize with dark mode
       if (initialState.activeTheme === 'auto') {
-        initialState.isDark = checkOSDarkMode()
+        initialState.isDark = getInitialSystemDark()
       } else {
         initialState.isDark = initialState.activeTheme === 'dark'
       }
@@ -66,7 +79,7 @@ export const useTheme = create<ThemeState>()(
       // Linux where matchMedia is unreliable.
       onRehydrateStorage: () => (state) => {
         if (!state) return
-        if (state.activeTheme === 'auto') state.isDark = checkOSDarkMode()
+        if (state.activeTheme === 'auto') state.isDark = getInitialSystemDark()
         else state.isDark = state.activeTheme === 'dark'
       },
     }

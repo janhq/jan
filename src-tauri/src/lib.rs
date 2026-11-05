@@ -285,6 +285,13 @@ pub fn run() {
     let mut app_builder = builder
         // First, so no other plugin's hook sees a navigation it refuses.
         .plugin(core::navigation::init())
+        // Resolve the effective theme before the webview loads so the boot
+        // splash paints in it instead of flashing light first.
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry, ()>::new("jan-initial-theme")
+                .js_init_script(setup::initial_theme_init_script())
+                .build(),
+        )
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
