@@ -83,10 +83,33 @@ fn closed() -> GlobalGrants {
 /// the rename itself is on disk. Platforms without directory sync (Windows)
 /// keep the file flush and the atomic replace.
 fn save(data_folder: &Path, grants: GlobalGrants) -> Result<(), String> {
+    save_with(data_folder, grants, sync_dir).map_err(|e| match e {
+        SaveError::NotPersisted(m) | SaveError::RenamedUnsynced(m) => m,
+    })
+}
+
+/// Where a failed [`save_with`] stopped, which decides what is on disk.
+#[derive(Debug)]
+enum SaveError {
+    /// The write, flush or rename failed: the file still holds the old value.
+    NotPersisted(String),
+    /// The rename succeeded and only the directory sync failed: the file holds
+    /// the requested value, but its crash-durability is uncertain.
+    RenamedUnsynced(String),
+}
+
+/// [`save`] with the directory sync injectable, so tests can fail exactly that
+/// stage without relying on filesystem permissions.
+fn save_with(
+    data_folder: &Path,
+    grants: GlobalGrants,
+    sync: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<(), SaveError> {
     use std::io::Write;
     use std::sync::atomic::{AtomicU64, Ordering};
     static SEQ: AtomicU64 = AtomicU64::new(0);
-    let bytes = serde_json::to_vec_pretty(&grants).map_err(|e| e.to_string())?;
+    let bytes = serde_json::to_vec_pretty(&grants)
+        .map_err(|e| SaveError::NotPersisted(e.to_string()))?;
     let target = path(data_folder);
     let temp = data_folder.join(format!(
         "{FILE_NAME}.{}.{}.tmp",
@@ -105,9 +128,9 @@ fn save(data_folder: &Path, grants: GlobalGrants) -> Result<(), String> {
     })();
     if let Err(error) = written {
         let _ = std::fs::remove_file(&temp);
-        return Err(error.to_string());
+        return Err(SaveError::NotPersisted(error.to_string()));
     }
-    sync_dir(data_folder)
+    sync(data_folder).map_err(SaveError::RenamedUnsynced)
 }
 
 #[cfg(unix)]
@@ -150,9 +173,24 @@ fn setter_lock() -> &'static tokio::sync::Mutex<()> {
 /// an unrecorded revocation is still a revocation. Only after the file is
 /// durably written is anything enabled or widened, so the live value never
 /// grants more than the disk records. A persistence failure is returned.
+///
+/// One exception keeps live state equal to disk: if the rename succeeded and
+/// only the directory sync failed, the file already holds the requested value
+/// (and a restart would load it), so the whole request is applied live. A
+/// request that only widens or changes nothing is then reported as success
+/// with a warning; one that narrows anything also returns the error, because
+/// the durability of that revocation is uncertain.
 async fn apply_chat_permissions(
     data_folder: &Path,
     value: GlobalGrants,
+) -> Result<GlobalGrants, String> {
+    apply_chat_permissions_with(data_folder, value, sync_dir).await
+}
+
+async fn apply_chat_permissions_with(
+    data_folder: &Path,
+    value: GlobalGrants,
+    sync: impl FnOnce(&Path) -> Result<(), String>,
 ) -> Result<GlobalGrants, String> {
     let _transaction = setter_lock().lock().await;
     let live = tauri_plugin_agent_tools::thread_capabilities::get_global_grants();
@@ -167,9 +205,27 @@ async fn apply_chat_permissions(
         // value is narrowed, every later spawn admission observes it.
         drop(tauri_plugin_agent_tools::thread_capabilities::admission().lock().await);
     }
-    save(data_folder, value)?;
-    set_global_grants(value);
-    Ok(value)
+    match save_with(data_folder, value, sync) {
+        Ok(()) => {
+            set_global_grants(value);
+            Ok(value)
+        }
+        Err(SaveError::NotPersisted(error)) => Err(error),
+        Err(SaveError::RenamedUnsynced(error)) => {
+            // The disk already says `value`, so the live value must too.
+            set_global_grants(value);
+            drop(tauri_plugin_agent_tools::thread_capabilities::admission().lock().await);
+            if narrowed != live {
+                Err(error)
+            } else {
+                log::warn!(
+                    "Chat permissions were saved but the directory sync failed; \
+                     durability of the rename is uncertain: {error}"
+                );
+                Ok(value)
+            }
+        }
+    }
 }
 
 #[cfg(not(feature = "cli"))]
@@ -470,6 +526,81 @@ mod tests {
 
     fn get_live() -> GlobalGrants {
         tauri_plugin_agent_tools::thread_capabilities::get_global_grants()
+    }
+
+    fn dir_sync_fails(_: &Path) -> Result<(), String> {
+        Err("injected directory sync failure".to_string())
+    }
+
+    /// Rename done, directory sync failed: the file holds the request, so the
+    /// live value must too. Widening-only is a success with a warning.
+    #[tokio::test]
+    async fn a_dir_sync_failure_after_a_widening_applies_it_and_succeeds() {
+        let _g = live_grants_guard();
+        let dir = temp_dir("sync-fail-widen");
+        let off = GlobalGrants { shell_network: false, memory_write: false };
+        let on = GlobalGrants { shell_network: true, memory_write: true };
+        set_global_grants(off);
+        let out = apply_chat_permissions_with(&dir, on, dir_sync_fails).await;
+        let (live, disk) = (get_live(), load(&dir));
+        set_global_grants(on);
+        assert_eq!(out, Ok(on));
+        assert_eq!(live, on);
+        assert_eq!(live, disk, "live state must equal the file");
+        // A no-op request is also a success.
+        set_global_grants(on);
+        assert_eq!(apply_chat_permissions_with(&dir, on, dir_sync_fails).await, Ok(on));
+    }
+
+    /// A narrowing whose rename is not known durable reports the error, with
+    /// the revocation already live and equal to the file.
+    #[tokio::test]
+    async fn a_dir_sync_failure_after_a_narrowing_errors_with_live_equal_to_disk() {
+        let _g = live_grants_guard();
+        let dir = temp_dir("sync-fail-narrow");
+        let on = GlobalGrants { shell_network: true, memory_write: true };
+        let off = GlobalGrants { shell_network: false, memory_write: false };
+        set_global_grants(on);
+        let out = apply_chat_permissions_with(&dir, off, dir_sync_fails).await;
+        let (live, disk) = (get_live(), load(&dir));
+        set_global_grants(on);
+        assert!(out.is_err());
+        assert_eq!(live, off);
+        assert_eq!(live, disk);
+    }
+
+    /// Mixed: one field narrows, one widens. Both apply live (disk has both),
+    /// and the narrowing makes the result an error.
+    #[tokio::test]
+    async fn a_dir_sync_failure_after_a_mixed_request_applies_both_and_errors() {
+        let _g = live_grants_guard();
+        let dir = temp_dir("sync-fail-mixed");
+        let before = GlobalGrants { shell_network: true, memory_write: false };
+        let request = GlobalGrants { shell_network: false, memory_write: true };
+        set_global_grants(before);
+        let out = apply_chat_permissions_with(&dir, request, dir_sync_fails).await;
+        let (live, disk) = (get_live(), load(&dir));
+        set_global_grants(GlobalGrants::default());
+        assert!(out.is_err());
+        assert_eq!(live, request);
+        assert_eq!(live, disk);
+    }
+
+    /// A failure before the rename leaves the disk alone and applies no
+    /// widening (the injected sync is never reached). Works as root too.
+    #[tokio::test]
+    async fn a_failed_rename_widens_nothing_even_without_filesystem_permissions() {
+        let _g = live_grants_guard();
+        let dir = temp_dir("rename-fail-widen");
+        std::fs::create_dir(path(&dir)).unwrap(); // rename cannot replace a directory
+        let off = GlobalGrants { shell_network: false, memory_write: false };
+        let on = GlobalGrants { shell_network: true, memory_write: true };
+        set_global_grants(off);
+        let out = apply_chat_permissions_with(&dir, on, |_| panic!("sync must not run")).await;
+        let live = get_live();
+        set_global_grants(on);
+        assert!(out.is_err());
+        assert_eq!(live, off);
     }
 
     /// E2: overlapping setters leave the live value and the file in agreement.
