@@ -102,7 +102,8 @@
     "resetCodeBlockStyle": "Codeblockstil zurücksetzen",
     "resetCodeBlockStyleDesc": "Codeblockstil auf Standard zurücksetzen.",
     "resetCodeBlockSuccess": "Codeblockstil erfolgreich zurückgesetzt",
-    "resetCodeBlockSuccessDesc": "Der Codeblockstil wurde auf die Standardeinstellung zurückgesetzt."
+    "resetCodeBlockSuccessDesc": "Der Codeblockstil wurde auf die Standardeinstellung zurückgesetzt.",
+    "themeDescFixed": "Dieses Design immer verwenden. Wähle „System“, um dem Betriebssystem zu folgen."
   },
   "hardware": {
     "os": "Betriebssystem",

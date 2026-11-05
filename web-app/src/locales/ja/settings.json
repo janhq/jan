@@ -126,7 +126,8 @@
     "resetCodeBlockStyle": "コードブロックスタイルをリセット",
     "resetCodeBlockStyleDesc": "コードブロックスタイルをデフォルトにリセットします。",
     "resetCodeBlockSuccess": "コードブロックスタイルが正常にリセットされました",
-    "resetCodeBlockSuccessDesc": "コードブロックスタイルがデフォルトに復元されました。"
+    "resetCodeBlockSuccessDesc": "コードブロックスタイルがデフォルトに復元されました。",
+    "themeDescFixed": "常にこのテーマを使用します。OSに合わせるには「システム」を選択してください。"
   },
   "hardware": {
     "os": "オペレーティングシステム",

@@ -281,7 +281,8 @@
       "createSuccess": "项目\"{{projectName}}\"创建成功",
       "renameSuccess": "项目从\"{{oldName}}\"重命名为\"{{newName}}\""
     },
-    "viewProject": "查看项目"
+    "viewProject": "查看项目",
+    "sendMessageToStart": "在上方发送消息即可开始。"
   },
   "dialogs": {
     "changeDataFolder": {
@@ -300,6 +301,10 @@
     },
     "messageMetadata": {
       "title": "消息元数据"
+    },
+    "deleteAllChats": {
+      "title": "删除项目外的对话",
+      "description": "这将删除不在任何项目中的对话。项目中的对话、已加星标的对话和任务将被保留。此操作无法撤销。"
     }
   },
   "errorDialog": {
@@ -394,6 +399,10 @@
     "threadRemovedFromProject": {
       "title": "线程已移除",
       "description": "线程已成功从\"{{projectName}}\"中移除"
+    },
+    "deleteAllChats": {
+      "title": "对话已删除",
+      "description": "已删除项目外的对话，项目中的对话和任务已保留。"
     }
   },
   "llamacppBusyOnExit": {
@@ -501,5 +510,10 @@
     "navigation": "导航",
     "navigationDescription": "跳转到聊天、项目、产物、技能和设置。",
     "more": "更多"
-  }
+  },
+  "overview": {
+    "description": "此对话的进度、文件和后台任务。"
+  },
+  "askToolPending": "正在等待您的回答",
+  "askToolAsked": "已向您提问"
 }

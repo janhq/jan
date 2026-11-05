@@ -102,7 +102,8 @@
     "resetCodeBlockStyle": "重置代码块样式",
     "resetCodeBlockStyleDesc": "将代码块样式重置为默认值。",
     "resetCodeBlockSuccess": "代码块样式重置成功",
-    "resetCodeBlockSuccessDesc": "代码块样式已恢复为默认值。"
+    "resetCodeBlockSuccessDesc": "代码块样式已恢复为默认值。",
+    "themeDescFixed": "始终使用此主题。选择“系统”可跟随操作系统。"
   },
   "hardware": {
     "os": "操作系统",

@@ -243,6 +243,10 @@
     },
     "messageMetadata": {
       "title": "Nachricht Metadaten"
+    },
+    "deleteAllChats": {
+      "title": "Unterhaltungen außerhalb von Projekten löschen",
+      "description": "Dadurch werden Unterhaltungen gelöscht, die nicht in einem Projekt liegen. Projektunterhaltungen, markierte Unterhaltungen und Aufgaben bleiben erhalten. Diese Aktion kann nicht rückgängig gemacht werden."
     }
   },
   "projects": {
@@ -300,7 +304,8 @@
     "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff",
     "uploadingFiles": "Dateien werden verarbeitet…",
     "processButton": "Hinzufügen",
-    "viewProject": "Projekt ansehen"
+    "viewProject": "Projekt ansehen",
+    "sendMessageToStart": "Sende oben eine Nachricht, um eine zu beginnen."
   },
   "errorDialog": {
     "titleFallback": "Etwas ist schiefgelaufen",
@@ -394,6 +399,10 @@
     "downloadAndVerificationComplete": {
       "title": "Download abgeschlossen",
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
+    },
+    "deleteAllChats": {
+      "title": "Unterhaltungen gelöscht",
+      "description": "Unterhaltungen außerhalb von Projekten wurden gelöscht. Projektunterhaltungen und Aufgaben wurden behalten."
     }
   },
   "llamacppBusyOnExit": {
@@ -501,5 +510,10 @@
     "navigation": "Navigation",
     "navigationDescription": "Zu Chats, Projekten, Artefakten, Skills und Einstellungen springen.",
     "more": "Mehr"
-  }
+  },
+  "overview": {
+    "description": "Fortschritt, Dateien und Hintergrundaufgaben dieser Unterhaltung."
+  },
+  "askToolPending": "Warte auf deine Antwort",
+  "askToolAsked": "Hat dir eine Frage gestellt"
 }
