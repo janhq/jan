@@ -356,6 +356,10 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
               todos: todosFromTurns(x.turns.slice(0, turnIndex)) ?? { phases: [] },
               turns: x.turns.slice(0, turnIndex),
               messages: x.messages.slice(0, cut),
+              // Emptying a used session is the same end state as /clear: keep
+              // it listed, reachable and persisted. (A valid cut means the
+              // session had a turn, so it is never a blank placeholder.)
+              ...(turnIndex === 0 ? { cleared: true as const } : {}),
               updated: now(),
             }
           }),
