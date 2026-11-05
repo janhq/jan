@@ -93,6 +93,7 @@ export const ToolCallCard = memo(
           type={`tool-${toolName}` as `tool-${string}`}
           state={part.state}
           origin={originLabel}
+          builtin={origin?.kind !== 'mcp'}
           // The widget's bar already shows the arguments; previewing them in
           // the header too prints the same text twice, one line apart.
           input={bar ? undefined : part.input}

@@ -74,6 +74,9 @@ describe('Cowork has no entry point of its own', () => {
     await pushRoute('/artifacts')
     await waitForPath('/artifacts')
 
+    // A positive control: the library's own heading rendered, so this is the
+    // Artifacts page and not a blank shell that merely lacks a Cowork surface.
+    await $('h1=Artifacts').waitForDisplayed({ timeout: 30_000 })
     expect(await $('[data-testid="cowork-surface"]').isExisting()).toBe(false)
   })
 
