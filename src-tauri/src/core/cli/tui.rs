@@ -5510,6 +5510,12 @@ struct SubagentPanel {
     /// request -- no completed tool call yet, so a stats line frozen at
     /// "0 tools" and an activity line stuck on "starting…".
     active: Option<StartingCall>,
+    /// Calls the child has issued whose results have not come back, oldest
+    /// first, as `(tool-call id, present-tense label)`. One request can issue
+    /// several calls that run in parallel and answer in any order, so each is
+    /// retired by its own id: the activity line follows what is still running
+    /// and says how many are out, instead of the newest call's label alone.
+    in_flight: Vec<(String, String)>,
     /// True while the dispatch is parked on the parent run's
     /// `max_parallel_subagents` cap (reported via `SubagentQueued`); flipped
     /// off when the child's `SubagentStart` arrives. Queued panels render
@@ -5593,6 +5599,7 @@ impl SubagentPanel {
             total_cached_tokens: 0,
             cache_reported: false,
             active: None,
+            in_flight: Vec::new(),
             queued: false,
             waiting: 0,
             pending: false,
@@ -5674,6 +5681,7 @@ impl SubagentPanel {
             .is_some_and(|m| m.status == session_log::RunStatus::Finished);
         t.settle(!finished);
         self.active = None;
+        self.in_flight.clear();
     }
 
     /// A finished child rebuilt from its journal entry, which keeps only the
@@ -5878,13 +5886,28 @@ fn agent_name_spans(panel: &SubagentPanel) -> Vec<Span<'static>> {
 }
 
 /// What a running subagent is doing, verb-first like a transcript row: the call
-/// it is building, else the last call it made with a dim ` ×N` for a short run
-/// of the same call. A run of `STUCK_REPEAT_THRESHOLD` reads as a loop and is
-/// flagged as one, even while the newest copy is still streaming. Empty for a
-/// child that has not started.
+/// it is building, else the newest call still running (led by `N in flight`
+/// while a parallel batch has several out), else the last call it made with a
+/// dim repeat count for a short run of the same call. A run of
+/// `STUCK_REPEAT_THRESHOLD` reads as a loop and is flagged as one, even while
+/// the newest copy is still streaming. Empty for a child that has not started.
 fn agent_activity(panel: &mut SubagentPanel) -> Vec<Span<'static>> {
+    let mut parts = agent_activity_parts(panel);
+    let mut out = parts.remove(0);
+    for part in parts {
+        out.push(Span::styled(" \u{b7} ", Style::new().fg(theme::muted())));
+        out.extend(part);
+    }
+    out
+}
+
+/// `agent_activity` as separate facts, for the background-work block: a
+/// parallel batch is its `N in flight` count, then the newest call still
+/// running. Apart, a row too narrow for a long command drops the command and
+/// keeps the count, where one fact dropped whole left a busy child blank.
+fn agent_activity_parts(panel: &mut SubagentPanel) -> Vec<Vec<Span<'static>>> {
     if panel.queued || panel.pending {
-        return Vec::new();
+        return vec![Vec::new()];
     }
     let dim = Style::new().fg(theme::muted());
     let repeats = panel.repeats;
@@ -5897,22 +5920,30 @@ fn agent_activity(panel: &mut SubagentPanel) -> Vec<Span<'static>> {
         if let Some(last) = last {
             out.push(Span::styled(format!(" \u{b7} {last}"), dim));
         }
-        return out;
+        return vec![out];
     }
     if let Some(call) = panel.active.as_mut() {
-        return vec![Span::styled(
+        return vec![vec![Span::styled(
             call.activity_label(),
             Style::new().fg(theme::accent()).dim(),
-        )];
+        )]];
     }
-    match last {
+    if let Some((_, label)) = panel.in_flight.last() {
+        let accent = Style::new().fg(theme::accent()).dim();
+        let running = vec![Span::styled(single_line(label), accent)];
+        return match panel.in_flight.len() {
+            1 => vec![running],
+            n => vec![vec![Span::styled(format!("{n} in flight"), dim)], running],
+        };
+    }
+    vec![match last {
         Some(last) if repeats > 1 => vec![
             Span::styled(last, dim),
             Span::styled(format!(" \u{d7}{repeats}"), dim),
         ],
         Some(last) => vec![Span::styled(last, dim)],
         None => vec![Span::styled("starting\u{2026}", dim)],
-    }
+    }]
 }
 
 /// The name compaction is listed under in `/agents`.
@@ -6629,6 +6660,7 @@ impl App {
             .transcript
             .settle(outcome != SubagentOutcome::Finished);
         panel.active = None;
+        panel.in_flight.clear();
         // Jan's own agent reports in its own one-line note (`memory tidied:`),
         // so it gets no row here and is kept for `/agents` alone.
         if panel.internal {
@@ -9211,6 +9243,7 @@ impl App {
                     }
                     // Stored untruncated; the dock clamps it to the draw width.
                     panel.record_call(&tool, &args, tool_finished(&tool, &args));
+                    panel.in_flight.push((id.clone(), tool_activity(&tool, &args)));
                     panel.transcript.tool_call(id, &tool, &args);
                     panel.transcript.cap_rows(CHILD_ROWS_MAX);
                 }
@@ -9233,6 +9266,7 @@ impl App {
                 diff,
             } => {
                 if let Some(panel) = panel {
+                    panel.in_flight.retain(|(call, _)| *call != id);
                     truncate_head(&mut content, CHILD_RESULT_MAX);
                     panel.transcript.tool_result(id, content, is_error, diff);
                     panel.transcript.cap_rows(CHILD_ROWS_MAX);
@@ -9290,6 +9324,10 @@ impl App {
                 if let Some(panel) = panel {
                     // A request is the child working again, so a park is over.
                     panel.parked = false;
+                    // A request only goes out once every call of the last batch
+                    // has answered, so a call still listed lost its result and
+                    // would otherwise read as running for the rest of the run.
+                    panel.in_flight.clear();
                     panel.requests += 1;
                     panel.transcript.step();
                     panel.transcript.cap_rows(CHILD_ROWS_MAX);
@@ -26732,8 +26770,12 @@ fn subagent_group(panels: &mut [SubagentPanel], now: Instant) -> Option<WorkGrou
                 let secs = now.saturating_duration_since(started).as_secs();
                 vec![Span::styled(format_elapsed(secs), dim)]
             });
-            let activity = running.then(|| agent_activity(panel));
-            let facts = word.into_iter().chain(elapsed).chain(activity).collect();
+            let activity = running.then(|| agent_activity_parts(panel));
+            let facts = word
+                .into_iter()
+                .chain(elapsed)
+                .chain(activity.into_iter().flatten())
+                .collect();
             WorkChild {
                 name: panel.name.clone(),
                 facts,

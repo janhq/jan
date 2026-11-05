@@ -614,6 +614,67 @@ fn subagents_running_after_the_turn() {
     assert_buffer("subagents_idle_one_finished", &background_rows_buffer(&mut app, 80, now));
 }
 
+/// A child that issues several calls in one request, as its stream delivers
+/// them: every call announced before any runs, then the results out of order.
+/// While more than one call is out the row says how many, so it does not go
+/// blank when the newest call's label is too long for it; each result retires
+/// its own call by id, so the row follows whatever is still running.
+#[test]
+fn subagent_parallel_calls_stay_visible_until_the_last_result() {
+    let now = Instant::now();
+    let mut app = idle_fan_out(now);
+    app.subagents.truncate(1);
+    let child = |event: StreamEvent| StreamEvent::Subagent {
+        run_id: "sub-kv-review-1".into(),
+        name: "kv-review".into(),
+        event: Box::new(event),
+    };
+    let cmd = "cargo test --locked --no-default-features --features cli --lib tui";
+    let calls = [
+        ("a", "read", json!({ "path": "src/a.rs" })),
+        ("b", "read", json!({ "path": "src/b.rs" })),
+        ("c", "bash", json!({ "command": cmd })),
+    ];
+    for (id, tool, args) in calls {
+        app.apply(child(StreamEvent::ToolCall {
+            id: id.into(),
+            name: tool.into(),
+            args,
+        }));
+    }
+    let row = |app: &mut App, w: u16| {
+        let text = render_snapshot(&background_rows_buffer(app, w, now));
+        text.lines().nth(1).unwrap_or_default().to_string()
+    };
+    // The newest call's whole command does not fit beside the count, so the
+    // row drops the command and keeps the count rather than going blank.
+    for w in [80, 50] {
+        let shown = row(&mut app, w);
+        assert!(shown.contains("3 in flight"), "@{w}: {shown}");
+    }
+    assert!(row(&mut app, 120).contains("3 in flight \u{b7} Running cargo test"));
+    assert_buffer("subagents_idle_parallel", &background_rows_buffer(&mut app, 80, now));
+    let result = |id: &str| {
+        child(StreamEvent::ToolResult {
+            id: id.into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        })
+    };
+    app.apply(result("c"));
+    let shown = row(&mut app, 80);
+    assert!(shown.contains("2 in flight") && shown.contains("Reading b.rs"), "{shown}");
+    app.apply(result("b"));
+    let shown = row(&mut app, 80);
+    assert!(!shown.contains("in flight") && shown.contains("Reading a.rs"), "{shown}");
+    // The batch is done: back to the last call made, past tense.
+    app.apply(result("a"));
+    assert!(app.subagents[0].in_flight.is_empty());
+    let shown = row(&mut app, 120);
+    assert!(shown.contains("Ran cargo test"), "{shown}");
+}
+
 /// Where the block sits: over the rule, subagents over shells, the rule on
 /// the input.
 #[test]

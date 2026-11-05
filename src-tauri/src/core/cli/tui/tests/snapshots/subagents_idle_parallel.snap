@@ -1,0 +1,14 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 165
+expression: render_snapshot(buf)
+---
+| 1 subagent running · /agents to view or stop                                   |
+|  └ kv-review · 1m 05s · 3 in flight                                            |
+
+ 0 0..22 fg=#808080
+ 0 22..29 fg=#56B6C2
+ 0 29..45 fg=#808080
+ 1 0..4 fg=DarkGray
+ 1 4..13 fg=#56B6C2 mod=BOLD
+ 1 13..36 fg=#808080
