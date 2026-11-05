@@ -1002,6 +1002,15 @@ impl Pending {
             vec![Span::styled(lead, dim)],
             vec![Span::raw("  ")],
         ));
+        // A command's path is the directory a `cd` left the shell in: the
+        // command runs there, so it is approved with it in view.
+        if let (Some(_), Some(dir)) = (&self.command, &self.path) {
+            out.extend(gutter_lines(
+                wrap_text(dir, Style::new().yellow(), max.saturating_sub(3).max(1)),
+                vec![Span::styled("in ", dim)],
+                vec![Span::raw("   ")],
+            ));
+        }
         // The model's own words, set apart from the command so it is read as
         // its claim rather than as part of what will run.
         if let Some(why) = &self.justification {
@@ -5252,6 +5261,9 @@ struct App {
     /// at the next step rather than after the command ends (see
     /// `OrchestrationArgs::shell_detach`). Kept in step by `sync_shell_detach`.
     shell_detach: tokio::sync::watch::Sender<bool>,
+    /// The conversation's shell directory (`OrchestrationArgs::shell_cwd`),
+    /// cleared when the conversation is replaced.
+    shell_cwd: tauri_plugin_agent_tools::tools::ShellCwd,
     /// The session-owned background-subagent registry, on the same terms as
     /// `shell_set`. Children outlive the run that dispatched them, so their
     /// panels survive a run end and a completion between runs starts a turn.
@@ -6129,6 +6141,7 @@ impl App {
             monitor_set: Arc::new(MonitorSet::new()),
             shell_set: Arc::new(crate::core::agent::bg_shell::BackgroundShells::default()),
             shell_detach: tokio::sync::watch::Sender::default(),
+            shell_cwd: Default::default(),
             subagent_set: Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
                 crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
             )),
@@ -6293,6 +6306,8 @@ impl App {
         self.stop_monitors();
         // Pings for work whose conversation is gone have no turn to join.
         self.shell_set.take_notices();
+        // A new conversation starts in the project root, as its prompt says.
+        *self.shell_cwd.lock().unwrap() = None;
         self.transcript.expanded.clear();
         self.transcript.reveal = None;
         self.find = None;
@@ -13933,6 +13948,10 @@ pub async fn run(
     // typed message is not held until a long build ends.
     let (shell_detach, detach_signal) = tokio::sync::watch::channel(false);
     args.shell_detach = Some(detach_signal);
+    // The shell's directory is the conversation's too: a `cd` holds into the
+    // next turn, and a new conversation starts back in the project root.
+    let shell_cwd = tauri_plugin_agent_tools::tools::ShellCwd::default();
+    args.shell_cwd = Some(shell_cwd.clone());
     let subagent_set = Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
         args.max_parallel_subagents,
     ));
@@ -14027,6 +14046,7 @@ pub async fn run(
     app.send_reasoning = send_reasoning;
     app.monitor_set = monitor_set;
     app.shell_set = shell_set;
+    app.shell_cwd = shell_cwd;
     app.shell_detach = shell_detach;
     app.subagent_set = subagent_set;
     // Weak, so exit's drain never waits on a startup sweep still fetching.
@@ -14083,6 +14103,10 @@ pub async fn run(
     // or a CLAUDE.md is what loaded; an AGENTS.md project hears nothing.
     if let Some(note) = project_instructions_note(&app.project_root) {
         app.note(&note);
+    }
+    let instructions = crate::core::agent::context::project_context_files(&app.project_root);
+    if let Some(warning) = instructions_size_warning(&instructions) {
+        app.system(Level::Warn, &warning);
     }
     // A modified key the terminal is dropping looks like a bug in the composer,
     // so say so once, and only where a config file proves it is unconfigured
@@ -17446,7 +17470,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/init",
         hint: "",
-        description: "Study the project, then write AGENTS.md, skills, and memory",
+        description: "Study the project, then write or update AGENTS.md",
         alias_of: None,
     },
     SlashCommand {
@@ -18075,30 +18099,56 @@ fn parse_usage_mode(arg: &str) -> UsageMode {
 }
 
 
-/// The `/init` prompt. Onboarding a project means producing the three things a
-/// later session reads back: the root instructions file (ingested as project
-/// context), skills for repeatable workflows, and memory for durable facts.
-/// Phrased as a task for the model rather than executed here -- only the model
-/// can read the project and judge what is worth writing down. `{file}` is the
-/// file [`init_plan`] chose.
+/// The `/init` prompt. `/init` writes or updates the root instructions file and
+/// nothing else: skills and memory are the model's to grow as it works, and an
+/// onboarding pass that also invents them fills both with guesswork. Phrased as
+/// a task for the model rather than executed here -- only the model can read the
+/// project and judge what is worth writing down. `{file}` is the file
+/// [`init_plan`] chose.
 fn init_prompt(file: &str) -> String {
+    let budget = INSTRUCTIONS_WARN_CHARS / 1000;
     format!(
-        "Onboard yourself to this project so future sessions start informed.\n\n\
+        "Onboard yourself to this project so future sessions start informed. Your only output is \
+`{file}` in the project root: do not write skills, memory notes, or any other file.\n\n\
 1. Study the project first. Read the README and any contributor docs, map the directory layout, and \
 find the real build, test, lint, and type-check commands (from the manifests and CI config, not from \
 guesswork). Note the conventions the code actually follows.\n\n\
-2. Write `{file}` in the project root. It is loaded into your system prompt every session, so it \
-must earn its tokens: the commands to build/test/lint, the architecture a newcomer cannot infer from \
-the tree, and the conventions worth enforcing. Skip anything obvious from a directory listing, and \
-do not pad it. If `{file}` already exists, read it and correct what has drifted instead of rewriting \
-it wholesale.\n\n\
-3. Write skills with `skill_write` for the project's repeatable procedures -- releasing, running \
-migrations, adding a module, debugging a subsystem -- one skill per procedure, only where a real \
-multi-step recipe exists. Do not invent skills to fill space.\n\n\
-4. Record durable project facts with the `memory` tool (search first, update rather than duplicate): decisions, constraints, and gotchas that are \
-true beyond this session and not already stated in the code.\n\n\
+2. Write `{file}`. It is loaded into your system prompt every session, so it must earn its tokens: \
+the commands to build/test/lint, the architecture a newcomer cannot infer from the tree, and the \
+conventions worth enforcing. Skip anything obvious from a directory listing, and do not pad it. Keep \
+it well under {budget}K characters. If `{file}` already exists, read it and correct what has drifted \
+instead of rewriting it wholesale; if it has grown past that size, tighten it -- drop what is stale \
+or obvious and fold long step-by-step recipes into a line each.\n\n\
 Then report what you wrote and why, briefly."
     )
+}
+
+/// Loaded instructions above this many characters draw a startup warning. They
+/// sit in the system prompt of every turn, so past a few thousand tokens they
+/// crowd the window and dilute the rules that matter; the `/init` prompt asks
+/// for a file well under it.
+const INSTRUCTIONS_WARN_CHARS: usize = 20_000;
+
+/// The startup warning for instructions that have grown too large: the loaded
+/// files together, since that total is what every turn pays for, naming each
+/// file so the user knows what to trim. `None` while under the limit.
+fn instructions_size_warning(
+    files: &[crate::core::agent::context::ContextFile],
+) -> Option<String> {
+    let total: usize = files.iter().map(|f| f.content.chars().count()).sum();
+    if total <= INSTRUCTIONS_WARN_CHARS {
+        return None;
+    }
+    // Exact counts: rounded to K, a total just past the limit reads as equal to it.
+    let names: Vec<String> = files
+        .iter()
+        .map(|f| format!("{} ({} chars)", f.path.display(), f.content.chars().count()))
+        .collect();
+    Some(format!(
+        "project instructions are {total} characters, past the {INSTRUCTIONS_WARN_CHARS} that keeps \
+         them cheap to load every turn: trim {} or run /init to tighten it",
+        names.join(", ")
+    ))
 }
 
 /// The startup note about project instructions: an invitation to `/init` when
@@ -18182,15 +18232,11 @@ fn init_command(app: &mut App) {
     let plan = init_plan(&app.project_root);
     let file = plan.file;
     match (plan.seed, plan.existing) {
-        (_, true) => app.note(&format!(
-            "◈ init · reviewing {file}, skills, and memory for this project"
-        )),
+        (_, true) => app.note(&format!("◈ init · reviewing {file} for this project")),
         (Some(seed), false) => app.note(&format!(
-            "◈ init · writing {file} from this project's {seed}, plus skills and memory"
+            "◈ init · writing {file} from this project's {seed}"
         )),
-        (None, false) => app.note(&format!(
-            "◈ init · studying the project to write {file}, skills, and memory"
-        )),
+        (None, false) => app.note(&format!("◈ init · studying the project to write {file}")),
     }
     let mut prompt = init_prompt(file);
     if let Some(seed) = plan.seed {
@@ -34625,15 +34671,15 @@ fn a() {}
     }
 
     #[test]
-    fn init_starts_a_turn_covering_all_three_artifacts() {
+    fn init_starts_a_turn_writing_only_the_instructions_file() {
         let mut app = test_app();
         super::init_command(&mut app);
         assert!(app.want_start, "/init must start a turn");
         let sent = app.history.last().expect("user message").to_string();
         assert!(sent.contains("Write `AGENTS.md`"), "{sent}");
         assert!(!sent.contains("JAN.md"), "a new project never hears of JAN.md: {sent}");
-        assert!(sent.contains("skill_write"), "{sent}");
-        assert!(sent.contains("`memory` tool"), "{sent}");
+        assert!(sent.contains("do not write skills, memory notes"), "{sent}");
+        assert!(!sent.contains("skill_write"), "/init writes only the instructions file: {sent}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
@@ -35186,6 +35232,7 @@ fn a() {}
             subagent_bg: Some(app.subagent_set.clone()),
             parent_link: None,
             shell_detach: None,
+            shell_cwd: None,
             compaction: None,
             session_start: None,
             memory_change_budget: None,
@@ -52174,6 +52221,40 @@ fn a() {}
             assert!(legacy.contains("JAN.md (legacy JAN.md)"), "{legacy}");
             let _ = std::fs::remove_dir_all(&root);
         });
+    }
+
+    /// A new conversation starts its shell back in the project root, as its
+    /// prompt says, whatever the last one `cd`ed into.
+    #[test]
+    fn reset_session_returns_the_shell_to_the_project_root() {
+        let mut app = test_app();
+        *app.shell_cwd.lock().unwrap() = Some(std::path::PathBuf::from("/somewhere"));
+        app.reset_session();
+        assert_eq!(*app.shell_cwd.lock().unwrap(), None);
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// Instructions past the budget warn, summed over every loaded file and
+    /// naming each; at or under it nothing is said.
+    #[test]
+    fn instructions_size_warning_fires_only_past_the_budget() {
+        let file = |path: &str, chars: usize| crate::core::agent::context::ContextFile {
+            path: path.into(),
+            content: "x".repeat(chars),
+            fallback: true,
+        };
+        let limit = super::INSTRUCTIONS_WARN_CHARS;
+        assert_eq!(super::instructions_size_warning(&[]), None);
+        assert_eq!(super::instructions_size_warning(&[file("/r/AGENTS.md", limit)]), None);
+        let warning = super::instructions_size_warning(&[
+            file("/r/AGENTS.md", limit / 2 + 1),
+            file("/r/pkg/AGENTS.md", limit / 2),
+        ])
+        .expect("the total is past the budget");
+        assert!(warning.contains("/r/AGENTS.md"), "{warning}");
+        assert!(warning.contains("/r/pkg/AGENTS.md"), "{warning}");
+        assert!(warning.contains("/init"), "{warning}");
+        assert!(warning.contains(&format!("{} characters", limit + 1)), "{warning}");
     }
 
     /// `/context` lists the files the project context holds, labelling a legacy

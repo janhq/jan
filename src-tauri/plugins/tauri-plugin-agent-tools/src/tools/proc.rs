@@ -630,6 +630,14 @@ where
     out
 }
 
+/// Whether `bash` can carry its working directory between calls here: a POSIX
+/// shell on unix, whose `pwd -P` names the path the next call can `cd` to.
+/// git-bash on Windows prints `/c/...` instead, and PowerShell and cmd have no
+/// `EXIT` trap to report from.
+pub fn shell_cwd_supported() -> bool {
+    cfg!(unix) && shell().kind == ShellKind::Posix
+}
+
 pub async fn spawn(
     cfg: &ShellConfig,
     command: &str,

@@ -30,6 +30,33 @@ pub fn bash_description(kind: super::proc::ShellKind) -> String {
 /// Appended to the shell description when the run offers escalation.
 const ESCALATE_NOTE: &str = " Commands run inside an OS sandbox. If a command that matters to the task fails because of the sandbox (a read-only file system or permission error outside the project, such as a package manager writing its cache, or a blocked download), rerun the same command with `escalate: true` and a one-line `justification`: the user is asked to approve running it outside the sandbox. Never escalate pre-emptively, and never to work around a denial the user gave.";
 
+/// Appended to the shell description when the caller rings a completion
+/// doorbell (`ToolContext::shell_done_sink`), so the model learns up front --
+/// not only from a hand-off result -- that a backgrounded command needs no polling.
+const BACKGROUND_NOTE: &str = " A command that outlives its `timeout` keeps running in the background and you are notified automatically when it finishes, with where its output was written: do not poll, sleep, or re-run it to check; carry on with other work or end your turn.";
+
+/// Appended when the caller carries the shell's directory across calls
+/// (`ToolContext::shell_cwd`), so the model stops prefixing every command with
+/// `cd <path> &&`.
+const CWD_NOTE: &str = " The working directory persists between calls: after `cd dir`, later calls start in `dir` until you `cd` elsewhere, and a note in the result tells you whenever it changes. Do not repeat `cd <path> &&` in every command. Other tools still resolve relative paths against the project root.";
+
+/// Add the agent session's shell notes to the `shell` schema in `schemas`:
+/// [`BACKGROUND_NOTE`] always, [`CWD_NOTE`] with `persistent_cwd`. An MCP
+/// client served the same schemas gets neither behaviour, so it keeps the plain
+/// description.
+pub fn offer_session_shell(schemas: &mut [Value], persistent_cwd: bool) {
+    for schema in schemas.iter_mut() {
+        let function = &mut schema["function"];
+        if function["name"] != super::SHELL_TOOL {
+            continue;
+        }
+        if let Some(description) = function["description"].as_str() {
+            let cwd = if persistent_cwd { CWD_NOTE } else { "" };
+            function["description"] = Value::String(format!("{description}{BACKGROUND_NOTE}{cwd}"));
+        }
+    }
+}
+
 /// Add the escalation arguments to the `shell` schema in `schemas`, for a run
 /// whose shell is sandboxed and whose user can be asked to lift it. Applied
 /// once per run by the caller, so the array stays byte-identical across turns;
@@ -315,6 +342,31 @@ pub fn search_tool_schemas() -> Vec<Value> {
 mod tests {
     use super::*;
     use crate::tools::BUILTIN_TOOLS;
+
+    /// The plain array (what an MCP client is served) promises neither a
+    /// completion notice nor a persistent directory; offering them touches only
+    /// the shell entry, and the directory note only when asked for.
+    #[test]
+    fn session_shell_notes_are_offered_only_on_request_and_only_on_the_shell() {
+        let plain = builtin_tool_schemas();
+        let plain_text = serde_json::to_string(&plain).unwrap();
+        assert!(!plain_text.contains("notified automatically"));
+        assert!(!plain_text.contains("directory persists"));
+        for persistent_cwd in [false, true] {
+            let mut offered = plain.clone();
+            offer_session_shell(&mut offered, persistent_cwd);
+            for (before, after) in plain.iter().zip(&offered) {
+                if before["function"]["name"] == crate::tools::SHELL_TOOL {
+                    let text = after["function"]["description"].as_str().unwrap();
+                    assert!(text.contains("notified automatically when it finishes"), "{text}");
+                    assert!(text.contains("do not poll"), "{text}");
+                    assert_eq!(text.contains("directory persists"), persistent_cwd, "{text}");
+                } else {
+                    assert_eq!(before, after);
+                }
+            }
+        }
+    }
 
     /// The plain array never mentions escalation; offering it touches only the
     /// shell entry, adding both arguments and the when-to-use note.

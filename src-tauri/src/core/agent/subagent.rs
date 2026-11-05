@@ -2280,6 +2280,9 @@ async fn run_subagent(
     // A message the user types is for the main agent, so it must not hurry a
     // child's shell into the background.
     child_args.shell_detach = None;
+    // The child's own, so its shell starts in its workspace root rather than
+    // wherever the parent last `cd`ed, and keeps its `cd` across its own calls.
+    child_args.shell_cwd = Some(Default::default());
     // A child cannot dispatch subagents at all (`subagents_enabled = false`
     // above), so it has no registry to share; clearing this keeps it from
     // inheriting the parent session's by accident.
@@ -5460,6 +5463,7 @@ pub(crate) mod tests {
             subagent_bg: None,
             parent_link: None,
             shell_detach: None,
+            shell_cwd: None,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
             sandbox: None,

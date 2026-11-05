@@ -243,7 +243,10 @@ that could pull in a lot of file content or tool output (broad codebase search, 
 multi-step research), prefer `dispatch_subagent` over doing it inline: the subagent absorbs that context \
 in its own window and returns only the distilled answer. For read-only codebase questions set `agent: \"explore\"` \
 and for web lookups `agent: \"research\"`: both run on a cheaper model; use `agent: \"general\"` when no \
-other agent fits. Dispatch independent subagents in parallel when \
+other agent fits. A difficult task -- a change spanning several subsystems, a hard bug, a large \
+refactor or migration -- is where subagents pay off most: split it into independent parts and hand them \
+out (parallel investigations up front, a `debug` agent on a failure, a `review` of the finished change) \
+instead of carrying the whole task in one context. Dispatch independent subagents in parallel when \
 their work doesn't depend on each other; each returns in the background and a note carries its answer when \
 it finishes. Once you delegate a task it belongs to that subagent -- do not do the same work yourself; \
 spend the wait on other steps, and only `await_subagent` when nothing else is left to do. Do inline work \
@@ -345,7 +348,9 @@ fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> Str
     // name it too.
     let scratch_line = match scratch {
         Some(scratch) => format!(
-            "\nScratch: `{}` is a writable scratch space for temporary work; it persists for this session.",
+            "\nScratch: `{}` is a writable scratch space for temporary work; it persists for this session. \
+Put temporary files, clones and worktrees there, not in `/tmp`: under the sandbox `/tmp` can be \
+private to a single command and gone once it exits.",
             display_path(scratch)
         ),
         None => String::new(),

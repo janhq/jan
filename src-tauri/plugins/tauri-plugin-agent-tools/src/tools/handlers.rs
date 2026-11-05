@@ -1134,9 +1134,20 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
+    // Start where the last call's `cd` left the shell (see `posix_cwd_script`).
+    // The held path is never checked or read on the host: whether it can be
+    // entered is decided inside the sandbox, so holding a path discloses
+    // nothing the sandbox would not.
+    let persist = ctx.shell_cwd.as_ref().filter(|_| proc::shell_cwd_supported());
+    let start = persist.and_then(|cwd| cwd.lock().unwrap().clone());
+    let script = match persist {
+        Some(_) => posix_cwd_script(command, start.as_deref()),
+        None => command.to_string(),
+    };
+    let reports_cwd = persist.is_some();
     let child = match proc::spawn(
         &shell,
-        command,
+        &script,
         root,
         sandbox_env.as_ref(),
         ctx.shell_env(),
@@ -1173,7 +1184,8 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // backgrounded still shows what it printed before the timeout.
     let tail = pid.and_then(proc::output_handle);
     tokio::spawn(async move {
-        let mut out = collect_and_format(child, spill_scratch, sink, tail).await;
+        let (mut out, landed) =
+            collect_and_format(child, spill_scratch, sink, tail, reports_cwd).await;
         // Appended inside the task so a backgrounded job carries the hint too.
         if sandboxed {
             let note = sandbox_denial_note(&out, &policy, escalation);
@@ -1182,11 +1194,19 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         if let Some(pid) = pid {
             proc::unregister(thread_owned.as_deref(), pid);
         }
-        let _ = tx.send(out);
+        let _ = tx.send((out, landed));
     });
 
     tokio::select! {
-        res = &mut rx => res.unwrap_or_else(|_| "ERROR: background command ended without producing output".to_string()),
+        res = &mut rx => {
+            let (mut out, landed) = res.unwrap_or_else(|_| {
+                ("ERROR: background command ended without producing output".to_string(), None)
+            });
+            if let Some(note) = persist.and_then(|cwd| settle_shell_cwd(cwd, root, landed)) {
+                insert_before_exit_marker(&mut out, &note);
+            }
+            out
+        }
         by_user = hand_off_after(timeout_secs, ctx.detach_signal.clone()) => {
             // The command outran its timeout, or the user wants the agent back
             // sooner. Rather than killing it or blocking this call, let it keep
@@ -1226,7 +1246,10 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                 (Some(path), Some(display)) => {
                     let done_display = display.clone();
                     tokio::spawn(async move {
-                        let out = rx.await.unwrap_or_else(|_| {
+                        // A backgrounded command's `cd` is not carried over: it
+                        // would move the shell under later calls at a moment
+                        // the model cannot see.
+                        let out = rx.await.map(|(out, _)| out).unwrap_or_else(|_| {
                             "ERROR: background command ended without producing output".to_string()
                         });
                         // The file is published before the doorbell rings, so a
@@ -1262,7 +1285,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                     // No file, but the completion is still worth reporting: the
                     // model otherwise has no way to learn the command ended.
                     tokio::spawn(async move {
-                        let out = rx.await.unwrap_or_default();
+                        let out = rx.await.map(|(out, _)| out).unwrap_or_default();
                         if let Some(sink) = done_sink {
                             sink(crate::tools::ShellEvent::Finished(crate::tools::ShellDone {
                                 id,
@@ -1307,6 +1330,130 @@ async fn hand_off_after(
         _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)) => false,
         _ = requested => true,
     }
+}
+
+/// Starts the line a wrapped command reports its final directory on. The
+/// record separator keeps it off any line a command prints by accident; a
+/// command that prints one on purpose only picks where its own next call
+/// starts, which `cd` already lets it do.
+const CWD_MARKER: &[u8] = b"\x1eJAN_CWD ";
+
+/// `command` for a POSIX shell that starts in `start` (the project root when
+/// `None`) and reports its final directory as a [`CWD_MARKER`] line on stdout
+/// as it exits, however it exits. The report goes through fd 9, a copy of
+/// stdout the command itself runs without, so a command that redirects its
+/// own stdout still reports. A `start` the sandbox cannot enter refuses the
+/// command rather than running it somewhere it was not written for; the report
+/// then names the project root, which resets the held directory.
+///
+/// The command keeps line 1 so `$LINENO` and the shell's `line N:` errors
+/// match what the model wrote. A command that sets its own `EXIT` trap
+/// replaces this one and reports nothing, which leaves the held directory as
+/// it was.
+fn posix_cwd_script(command: &str, start: Option<&Path>) -> String {
+    // printf's own octal escape spells the separator, so the script stays ASCII.
+    let marker = String::from_utf8_lossy(&CWD_MARKER[1..]);
+    let mut script = format!(
+        "exec 9>&1; trap '{{ __jan_rc=$?; set +x; }} 2>/dev/null; \
+         printf \"\\036{marker}%s\\n\" \"$(pwd -P)\" >&9 2>/dev/null; exit $__jan_rc' EXIT; "
+    );
+    if let Some(dir) = start {
+        let notice = format!(
+            "[shell cwd {} is not reachable; the command was NOT run. The shell is back in the \
+             project root: re-run it from there]",
+            dir.display()
+        );
+        script.push_str(&format!(
+            "cd -- {} 2>/dev/null || {{ printf '%s\\n' {} >&2; exit 1; }}; ",
+            shell_quote(&dir.to_string_lossy()),
+            shell_quote(&notice)
+        ));
+    }
+    script.push_str("{ ");
+    script.push_str(command);
+    script.push_str("\n} 9>&-\n");
+    script
+}
+
+/// Splits [`CWD_MARKER`] lines out of a command's stdout as it streams, so
+/// neither the result nor the live view shows them, and keeps the last one.
+#[derive(Default)]
+struct CwdReport {
+    held: Vec<u8>,
+    landed: Option<Vec<u8>>,
+}
+
+impl CwdReport {
+    /// A marker longer than this is not one: flushed as ordinary output rather
+    /// than held back without bound.
+    const MAX_LINE: usize = 8192;
+
+    /// The bytes of `chunk` (after any held back from earlier) that are
+    /// ordinary output. A trailing partial marker is held for the next chunk.
+    fn feed(&mut self, chunk: &[u8]) -> Vec<u8> {
+        self.held.extend_from_slice(chunk);
+        let mut out = Vec::new();
+        loop {
+            let Some(at) = self.held.iter().position(|&b| b == CWD_MARKER[0]) else {
+                out.append(&mut self.held);
+                return out;
+            };
+            out.extend(self.held.drain(..at));
+            let rest = &self.held[..];
+            let n = rest.len().min(CWD_MARKER.len());
+            if rest[..n] != CWD_MARKER[..n] {
+                out.push(self.held.remove(0));
+                continue;
+            }
+            match rest.iter().position(|&b| b == b'\n') {
+                Some(nl) if n == CWD_MARKER.len() => {
+                    self.landed = Some(rest[CWD_MARKER.len()..nl].to_vec());
+                    self.held.drain(..=nl);
+                }
+                _ if rest.len() > Self::MAX_LINE => out.append(&mut self.held),
+                _ => return out,
+            }
+        }
+    }
+
+    /// What is still held once the stream ends, and the directory last
+    /// reported, if it reads as one: an absolute, single-line path.
+    fn finish(mut self) -> (Vec<u8>, Option<PathBuf>) {
+        let rest = std::mem::take(&mut self.held);
+        let landed = self
+            .landed
+            .and_then(|raw| String::from_utf8(raw).ok())
+            .filter(|path| path.starts_with('/') && !path.chars().any(char::is_control))
+            .map(PathBuf::from);
+        (rest, landed)
+    }
+}
+
+/// Hold the directory a command ended in for the next call, and say so when it
+/// moved: the model cannot otherwise tell that a later relative command runs
+/// somewhere else. Silent when nothing changed, so a plain command carries no
+/// note. The project root is held as `None`.
+fn settle_shell_cwd(
+    cwd: &crate::tools::ShellCwd,
+    root: &Path,
+    landed: Option<PathBuf>,
+) -> Option<String> {
+    let landed = landed?;
+    let canonical_root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let next = (landed != canonical_root).then_some(landed);
+    let mut held = cwd.lock().unwrap();
+    if *held == next {
+        return None;
+    }
+    *held = next.clone();
+    Some(match next {
+        Some(dir) => format!(
+            "\n[shell cwd is now {}: later bash calls start there. Other tools still resolve \
+             relative paths against the project root]",
+            dir.display()
+        ),
+        None => format!("\n[shell cwd is back to the project root {}]", root.display()),
+    })
 }
 
 /// Serial number for one backgrounded command, so a completion can be paired
@@ -1355,8 +1502,10 @@ async fn collect_and_format(
     scratch: Option<PathBuf>,
     sink: Option<crate::tools::OutputSink>,
     tail: Option<proc::OutputTail>,
-) -> String {
+    reports_cwd: bool,
+) -> (String, Option<PathBuf>) {
     use tokio::io::AsyncReadExt;
+    let mut report = reports_cwd.then(CwdReport::default);
     let mut stdout = child.stdout.take();
     let mut stderr = child.stderr.take();
     let mut cap = BashCapture::new(scratch);
@@ -1389,7 +1538,14 @@ async fn collect_and_format(
         tokio::select! {
             r = stdout.as_mut().unwrap().read(&mut bo), if out_open => match r {
                 Ok(0) | Err(_) => out_open = false,
-                Ok(n) => { cap.push(&bo[..n]); tee(&bo[..n], &mut carry); }
+                Ok(n) => {
+                    let shown = match report.as_mut() {
+                        Some(report) => report.feed(&bo[..n]),
+                        None => bo[..n].to_vec(),
+                    };
+                    cap.push(&shown);
+                    tee(&shown, &mut carry);
+                }
             },
             r = stderr.as_mut().unwrap().read(&mut be), if err_open => match r {
                 Ok(0) | Err(_) => err_open = false,
@@ -1397,16 +1553,23 @@ async fn collect_and_format(
             },
         }
     }
+    let landed = report.and_then(|report| {
+        let (rest, landed) = report.finish();
+        cap.push(&rest);
+        tee(&rest, &mut carry);
+        landed
+    });
     // Whatever is left was never completed: emit it lossily rather than losing it.
     if !carry.is_empty() {
         if let Some(sink) = sink.as_ref() {
             sink(String::from_utf8_lossy(&carry).into_owned());
         }
     }
-    match child.wait().await {
+    let out = match child.wait().await {
         Ok(status) => cap.finish(status.code()),
         Err(e) => format!("ERROR: failed to run command: {e}"),
-    }
+    };
+    (out, landed)
 }
 
 /// Bounded, tail-preserving accumulator for a command's combined output.
@@ -3932,6 +4095,239 @@ mod tests {
             streamed.contains("late"),
             "a backgrounded job must keep reporting: {streamed:?}"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A context whose shell carries its directory, the way an agent session's
+    /// does: sandboxed with a scratch, or unsandboxed.
+    #[cfg(unix)]
+    fn cwd_ctx<'a>(
+        root: &'a Path,
+        store: &'a Path,
+        scratch: &'a Path,
+        cwd: &crate::tools::ShellCwd,
+        sandbox: bool,
+    ) -> ToolContext<'a> {
+        ToolContext::new(root, store, &[])
+            .with_sandbox(sandbox)
+            .with_scratch_root(scratch)
+            .with_shell_cwd(cwd.clone())
+    }
+
+    #[cfg(unix)]
+    async fn run_in(ctx: &ToolContext<'_>, command: &str) -> String {
+        let args = json!({ "command": command });
+        super::execute_builtin(lookup("shell").unwrap(), &args, ctx).await.0
+    }
+
+    /// A `cd` holds for the next call, the result says so each time the
+    /// directory moves (and never when it does not), and `cd` back to the root
+    /// says that too. The report line itself never reaches the result.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn shell_cwd_persists_across_calls_and_is_announced() {
+        for sandbox in [true, false] {
+            let root = unique_root();
+            std::fs::create_dir_all(root.join("sub/deep")).unwrap();
+            let store = crate::workspace::project_store(&root);
+            let scratch = unique_root();
+            let cwd = crate::tools::ShellCwd::default();
+            let ctx = cwd_ctx(&root, &store, &scratch, &cwd, sandbox);
+            let sub = std::fs::canonicalize(root.join("sub")).unwrap();
+
+            let out = run_in(&ctx, "echo hi").await;
+            assert_eq!(out, "hi\n[exit 0]", "nothing moved, nothing added");
+
+            let out = run_in(&ctx, "cd sub").await;
+            assert!(out.contains(&format!("shell cwd is now {}", sub.display())), "{out}");
+            assert!(out.ends_with("[exit 0]"), "the note sits above the marker: {out}");
+            assert!(!out.contains("JAN_CWD"), "{out}");
+
+            let out = run_in(&ctx, "pwd -P").await;
+            assert_eq!(out, format!("{}\n[exit 0]", sub.display()), "unchanged, so silent");
+
+            // A failing command still reports where it ended.
+            let out = run_in(&ctx, "cd deep && false").await;
+            assert!(out.contains("shell cwd is now"), "{out}");
+            assert!(out.ends_with("[exit 1]"), "{out}");
+
+            let out = run_in(&ctx, &format!("cd {}", shell_quote(&root.to_string_lossy()))).await;
+            assert!(out.contains("back to the project root"), "{out}");
+            assert_eq!(*cwd.lock().unwrap(), None);
+            let _ = std::fs::remove_dir_all(&root);
+            let _ = std::fs::remove_dir_all(&scratch);
+        }
+    }
+
+    /// The wrapper keeps the command's own exit code however it ends, and the
+    /// report survives a command that redirects its stdout or traces itself.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn shell_cwd_wrapper_keeps_exit_codes_and_reports_through_redirects() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let scratch = unique_root();
+        let cwd = crate::tools::ShellCwd::default();
+        let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false);
+        assert!(run_in(&ctx, "exit 3").await.ends_with("[exit 3]"));
+        assert!(run_in(&ctx, "set -e; false; echo no").await.ends_with("[exit 1]"));
+        let out = run_in(&ctx, "cd sub; exec >/dev/null; echo hidden").await;
+        assert!(out.contains("shell cwd is now"), "{out}");
+        assert!(!out.contains("hidden"), "{out}");
+        let out = run_in(&ctx, "set -x; cd ..").await;
+        assert!(out.contains("back to the project root"), "{out}");
+        assert!(!out.contains("__jan_rc"), "the trap does not trace itself: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A held directory the shell can no longer enter refuses the command
+    /// instead of running it in the root it was not written for, and resets.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_unreachable_shell_cwd_refuses_the_command_and_resets() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let scratch = unique_root();
+        let cwd = crate::tools::ShellCwd::default();
+        let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false);
+        run_in(&ctx, "cd sub").await;
+        std::fs::remove_dir_all(root.join("sub")).unwrap();
+        let out = run_in(&ctx, "touch ran-here").await;
+        assert!(out.contains("NOT run"), "{out}");
+        assert!(out.contains("back to the project root"), "{out}");
+        assert!(out.ends_with("[exit 1]"), "{out}");
+        assert!(!root.join("ran-here").exists(), "the command must not run in the root");
+        assert_eq!(*cwd.lock().unwrap(), None);
+        assert!(run_in(&ctx, "touch ran-here").await.ends_with("[exit 0]"));
+        assert!(root.join("ran-here").exists());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The report is the only thing the host takes from it: a forged one that
+    /// is not a single absolute path is dropped, nothing is ever read from a
+    /// file the shell names, and a held path is never opened on the host.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_forged_cwd_report_discloses_nothing() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let scratch = unique_root();
+        let secret = unique_root().join("secret.txt");
+        std::fs::write(&secret, "TOP-SECRET").unwrap();
+        let cwd = crate::tools::ShellCwd::default();
+        let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false);
+        for forged in ["relative/path", "/a\\tb"] {
+            let out = run_in(&ctx, &format!("printf '\\036JAN_CWD {forged}\\n'; trap - EXIT")).await;
+            assert!(!out.contains("shell cwd"), "{forged}: {out}");
+            assert_eq!(*cwd.lock().unwrap(), None, "{forged}");
+        }
+        // A file path is held as a path, never read: the next call fails to
+        // enter it inside the shell, and its contents appear nowhere.
+        let target = secret.to_string_lossy().into_owned();
+        let out = run_in(&ctx, &format!("printf '\\036JAN_CWD %s\\n' {}; trap - EXIT", shell_quote(&target))).await;
+        assert!(!out.contains("TOP-SECRET"), "{out}");
+        let out = run_in(&ctx, "true").await;
+        assert!(out.contains("NOT run"), "{out}");
+        assert!(!out.contains("TOP-SECRET"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(secret.parent().unwrap());
+    }
+
+    /// A test dir outside the host temp dir, as the real project and scratch
+    /// are, so a `/tmp` path inside the sandbox names something else.
+    #[cfg(target_os = "linux")]
+    fn outside_tmp_root() -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("handlers-tests")
+            .join(format!("{}_{n}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create test root");
+        dir
+    }
+
+    /// Inside bubblewrap `/tmp` is a private tmpfs, so a directory there that
+    /// also exists on the host is still one the next call cannot enter: it is
+    /// refused there, not run in the root.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_sandboxed_cd_into_private_tmp_is_refused_on_the_next_call() {
+        if !jail::backend().enforces() {
+            eprintln!("skipping: no sandbox backend on this host");
+            return;
+        }
+        let root = outside_tmp_root();
+        let store = crate::workspace::project_store(&root);
+        let scratch = outside_tmp_root();
+        let host_twin = std::env::temp_dir().join(format!("jan_cwd_twin_{}", std::process::id()));
+        std::fs::create_dir_all(&host_twin).unwrap();
+        let cwd = crate::tools::ShellCwd::default();
+        let ctx = cwd_ctx(&root, &store, &scratch, &cwd, true);
+        let make = format!("mkdir -p {0} && cd {0}", shell_quote(&host_twin.to_string_lossy()));
+        let out = run_in(&ctx, &make).await;
+        assert!(out.contains("shell cwd is now"), "{out}");
+        let out = run_in(&ctx, "touch ran-here").await;
+        assert!(out.contains("NOT run"), "{out}");
+        assert!(!root.join("ran-here").exists());
+        assert_eq!(*cwd.lock().unwrap(), None);
+        let _ = std::fs::remove_dir_all(&host_twin);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The report line is split out wherever a read boundary falls, and a
+    /// stray separator is passed through as output.
+    #[test]
+    fn cwd_report_splits_the_marker_across_chunks() {
+        let stream = b"one\n\x1eJAN_CWD /tmp/x\ntwo\x1e\n";
+        for cut in 0..stream.len() {
+            let mut report = CwdReport::default();
+            let mut shown = report.feed(&stream[..cut]);
+            shown.extend(report.feed(&stream[cut..]));
+            let (rest, landed) = report.finish();
+            shown.extend(rest);
+            assert_eq!(shown, b"one\ntwo\x1e\n", "cut at {cut}");
+            assert_eq!(landed, Some(PathBuf::from("/tmp/x")), "cut at {cut}");
+        }
+    }
+
+    /// A backgrounded command's `cd` is not carried: it would move the shell
+    /// under later calls at a moment the model cannot see.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_backgrounded_cd_is_not_carried() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let scratch = unique_root();
+        let cwd = crate::tools::ShellCwd::default();
+        let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false);
+        let args = json!({ "command": "cd sub; sleep 0.3", "timeout": 0 });
+        let out = super::execute_builtin(lookup("shell").unwrap(), &args, &ctx).await.0;
+        assert!(out.contains("still running in the background"), "{out}");
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        assert_eq!(*cwd.lock().unwrap(), None);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// Without a carried directory (the MCP server) every call starts in the
+    /// root and nothing is announced, exactly as before.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn shell_cwd_is_not_carried_without_a_holder() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let out = execute_builtin(lookup("shell").unwrap(), &json!({"command": "cd sub"}), &root).await;
+        assert_eq!(out, "[exit 0]");
+        let out = execute_builtin(lookup("shell").unwrap(), &json!({"command": "pwd -P"}), &root).await;
+        let canonical_root = std::fs::canonicalize(&root).unwrap();
+        assert!(out.starts_with(&canonical_root.display().to_string()), "{out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

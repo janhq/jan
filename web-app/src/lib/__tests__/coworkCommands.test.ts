@@ -83,6 +83,13 @@ describe('runSlashCommand', () => {
     expect(openRail).toHaveBeenNthCalledWith(2, 'tasks')
   })
 
+  it('/init asks for the instructions file only, never skills or memory', () => {
+    expect(INIT_PROMPT).toContain('AGENTS.md')
+    expect(INIT_PROMPT).toContain('JAN.md')
+    expect(INIT_PROMPT).toContain('Do not write skills, memory notes')
+    expect(INIT_PROMPT).not.toContain('skill_write')
+  })
+
   it('/init submits the onboarding prompt when idle, refuses mid-run', () => {
     const submitTurn = vi.fn()
     runSlashCommand('/init', makeDeps({ submitTurn }))

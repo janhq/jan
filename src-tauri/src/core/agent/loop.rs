@@ -201,6 +201,13 @@ pub(crate) struct OrchestrationArgs {
     /// `bg_shells`, which reports the command's end as a turn of its own.
     /// Never inherited by a child run, which the user's message is not for.
     pub shell_detach: Option<tokio::sync::watch::Receiver<bool>>,
+    /// The session's shell directory, so a `cd` holds across turns (see
+    /// `ToolContext::shell_cwd`). `None` carries nothing: every call starts in
+    /// the root, which is right for a caller that cannot keep one across its
+    /// turns (the API server starts a fresh run per request). A child run gets
+    /// a fresh one of its own: it works in its own workspace, not wherever the
+    /// parent last `cd`ed.
+    pub shell_cwd: Option<tauri_plugin_agent_tools::tools::ShellCwd>,
     /// When this run compacts ahead of dispatching: the route's context window,
     /// the share of it a prompt may fill, and any explicitly configured reserve.
     ///
@@ -896,6 +903,8 @@ struct CompositeToolInvoker {
     parent_link: Option<crate::core::agent::subagent::ParentLink>,
     /// See [`OrchestrationArgs::shell_detach`].
     shell_detach: Option<tokio::sync::watch::Receiver<bool>>,
+    /// See [`OrchestrationArgs::shell_cwd`].
+    shell_cwd: Option<tauri_plugin_agent_tools::tools::ShellCwd>,
     /// The session's memory snapshot, for a mid-run `# Memory Changes`
     /// block. `None` where the run's tail carries none (a child run, a
     /// host-owned prompt, no snapshot).
@@ -1352,6 +1361,10 @@ impl CompositeToolInvoker {
         )
         .with_shell_done_sink(self.shell_done_sink())
         .with_thread_id(self.shell_owner.as_deref());
+        let ctx = match &self.shell_cwd {
+            Some(cwd) => ctx.with_shell_cwd(cwd.clone()),
+            None => ctx,
+        };
         match &self.shell_detach {
             Some(signal) => ctx.with_detach_signal(signal.clone()),
             None => ctx,
@@ -1414,6 +1427,21 @@ impl CompositeToolInvoker {
     /// combined stdout/stderr through the sink as it reads. A send failure is
     /// ignored -- the receiver is gone only when the run is over, and a dead
     /// display must not stop the command.
+    /// The directory the next `shell` call starts in, when a `cd` has moved it
+    /// off the project root; `None` for every other tool.
+    fn held_shell_cwd(
+        &self,
+        tool: &tauri_plugin_agent_tools::tools::BuiltinTool,
+    ) -> Option<String> {
+        if tool.name != tauri_plugin_agent_tools::tools::SHELL_TOOL
+            || !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported()
+        {
+            return None;
+        }
+        let held = self.shell_cwd.as_ref()?.lock().unwrap().clone()?;
+        Some(held.display().to_string())
+    }
+
     fn streaming_tool_context(&self, id: &str) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         self.tool_context()
             .with_output_sink(output_sink(&self.events, id))
@@ -1483,7 +1511,12 @@ impl CompositeToolInvoker {
         if !approved {
             return escalation_denied_msg(name);
         }
-        let ctx = self.streaming_tool_context(id).with_sandbox(false);
+        let mut ctx = self.streaming_tool_context(id).with_sandbox(false);
+        // An escalated command runs in the project root and its `cd` is not
+        // kept: the prompt the user approved shows only the command, and a
+        // directory reached outside the sandbox would be one the next,
+        // confined call cannot enter.
+        ctx.shell_cwd = None;
         tauri_plugin_agent_tools::tools::handlers::execute_builtin_with_diff(tool, args, &ctx)
             .await
             .0
@@ -2944,12 +2977,16 @@ impl ToolInvoker for CompositeToolInvoker {
                         // Settled by `escalate` above; labelled for completeness.
                         PromptKind::Escalate => "escalate",
                     };
+                    // An exec has no path argument; where it runs stands in,
+                    // once a `cd` has moved the shell off the project root, so
+                    // the user does not approve a command for the wrong tree.
                     let path = tool
                         .path_args
                         .first()
                         .and_then(|k| args.get(*k))
                         .and_then(|v| v.as_str())
-                        .map(String::from);
+                        .map(String::from)
+                        .or_else(|| self.held_shell_cwd(tool));
                     let command = matches!(tool.capability, Capability::Exec)
                         .then(|| args.get("command").and_then(|v| v.as_str()))
                         .flatten()
@@ -3129,6 +3166,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         parent_link: None,
         // Nobody can type into a proxy run.
         shell_detach: None,
+        shell_cwd: None,
         // Sized inside the run once the model is picked (see
         // `proxy_budget`): the body may name none, and the choice is the
         // loop's.
@@ -3850,6 +3888,7 @@ async fn orchestrate_inner(
         // invoker), so this stays a plain destructure of the rest.
         parent_link: _,
         shell_detach: _,
+        shell_cwd: _,
         sandbox,
         allow_escalation,
         compaction,
@@ -4137,6 +4176,14 @@ async fn orchestrate_inner(
         host_tools,
         args.parent_link.is_some(),
     );
+    // Every agent run rings the shell doorbell (`shell_done_sink`), and one
+    // with a session-owned directory carries it where the shell can (see
+    // `bash`), so its shell description says exactly that. Both inputs are
+    // fixed for the run, so the array stays byte-identical across its turns.
+    tauri_plugin_agent_tools::tools::schema::offer_session_shell(
+        &mut openai_tools,
+        args.shell_cwd.is_some() && tauri_plugin_agent_tools::tools::proc::shell_cwd_supported(),
+    );
     // Resolved once per run, so the array is byte-identical across its turns.
     if settings.as_ref().is_some_and(|s| s.escalation.offered()) {
         tauri_plugin_agent_tools::tools::schema::offer_escalation(&mut openai_tools);
@@ -4367,6 +4414,7 @@ async fn orchestrate_inner(
             // command's end except a park, which holds the message just the
             // same; so the signal only applies where the session owns shells.
             shell_detach: args.shell_detach.clone().filter(|_| session_bg_shells.is_some()),
+            shell_cwd: args.shell_cwd.clone(),
             memory_changes,
             memory_change_budget: args.memory_change_budget.clone(),
             workspace: RunWorkspace::resolve(child_scope.as_ref(), root),
@@ -10225,6 +10273,7 @@ mod tests {
             ),
             parent_link: None,
             shell_detach: None,
+            shell_cwd: None,
             memory_changes: None,
             memory_change_budget: None,
             shell_owner: None,
@@ -12703,6 +12752,69 @@ mod tests {
         assert!(out[0].content.contains("[exit 0]"), "{}", out[0].content);
         assert!(marker.exists(), "the approved command ran on the host");
         let _ = std::fs::remove_file(&marker);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An escalated command runs in the project root whatever a `cd` left the
+    /// shell in, and its own `cd` is not kept: the user approved a command,
+    /// not a directory, and one reached outside the sandbox may be one the
+    /// next confined call cannot enter. A gated confined exec names the held
+    /// directory in its prompt instead.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", unix))]
+    async fn escalation_ignores_and_keeps_no_held_shell_cwd() {
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
+            return;
+        }
+        let root = unique_project_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let canonical_sub = std::fs::canonicalize(root.join("sub")).unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry.clone());
+        invoker.auto_approve = true;
+        invoker.escalation = Escalation::Allow;
+        let cwd = tauri_plugin_agent_tools::tools::ShellCwd::default();
+        *cwd.lock().unwrap() = Some(canonical_sub.clone());
+        invoker.shell_cwd = Some(cwd.clone());
+        let call = |id: &str, args: serde_json::Value| {
+            json!({
+                "id": id,
+                "type": "function",
+                "function": { "name": "shell", "arguments": args.to_string() }
+            })
+        };
+        let escalated = json!({ "command": "pwd -P; cd /", "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[call("esc", escalated)]).await.unwrap();
+        let canonical_root = std::fs::canonicalize(&root).unwrap();
+        assert!(
+            out[0].content.starts_with(&canonical_root.display().to_string()),
+            "ran in the root: {}",
+            out[0].content
+        );
+        assert!(!out[0].content.contains("shell cwd"), "{}", out[0].content);
+        assert_eq!(*cwd.lock().unwrap(), Some(canonical_sub.clone()), "its cd is not kept");
+
+        // A gated confined exec shows where it will run.
+        invoker.auto_approve = false;
+        let responder = tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Some(StreamEvent::PermissionRequest { request_id, path, command, .. }) => {
+                        if let Some(tx) = registry.lock().await.remove(&request_id) {
+                            let _ = tx.send(PermissionDecision::Deny);
+                        }
+                        return (path, command);
+                    }
+                    Some(_) => continue,
+                    None => panic!("no prompt was sent"),
+                }
+            }
+        });
+        invoker.invoke(&[call("plain", json!({ "command": "rm -rf build" }))]).await.unwrap();
+        let (path, command) = responder.await.unwrap();
+        assert_eq!(command.as_deref(), Some("rm -rf build"));
+        assert_eq!(path, Some(canonical_sub.display().to_string()));
         let _ = std::fs::remove_dir_all(&root);
     }
 

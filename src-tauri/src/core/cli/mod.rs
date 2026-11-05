@@ -1590,6 +1590,9 @@ fn build_cli_orchestration_args(
         parent_link: None,
         // Headless: nobody types mid-run. The TUI installs its own.
         shell_detach: None,
+        // Kept on `args`, which a multi-turn caller reuses, so a `cd` holds
+        // into the next turn. The TUI installs its own per conversation.
+        shell_cwd: Some(Default::default()),
         // `--sandbox` only when passed; unset falls through to the project's
         // `[tools].sandbox` and then the user's global `sandbox`.
         sandbox,
@@ -3652,10 +3655,13 @@ fn permission_detail(
     path: Option<String>,
     justification: Option<String>,
 ) -> String {
-    let target = command
-        .map(|c| format!(" ({c})"))
-        .or_else(|| path.map(|p| format!(" on {p}")))
-        .unwrap_or_default();
+    // A command's path is the directory it runs in (a `cd` moved the shell).
+    let target = match (command, path) {
+        (Some(c), Some(dir)) => format!(" ({c}) in {dir}"),
+        (Some(c), None) => format!(" ({c})"),
+        (None, Some(p)) => format!(" on {p}"),
+        (None, None) => String::new(),
+    };
     match justification {
         Some(why) => format!("{target} because: {why}"),
         None => target,
@@ -3708,6 +3714,10 @@ mod tests {
             " (cargo build) because: fetch crates"
         );
         assert_eq!(permission_detail(None, None, None), "");
+        assert_eq!(
+            permission_detail(s("rm -rf build"), s("/repo/pkg"), None),
+            " (rm -rf build) in /repo/pkg"
+        );
     }
 
     /// A prompt a subagent raised, as the printer receives it: wrapped in
