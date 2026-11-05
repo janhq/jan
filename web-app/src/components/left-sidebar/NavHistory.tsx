@@ -105,6 +105,7 @@ const CoworkRow = memo(function CoworkRow({
 export function NavHistory() {
   const { t } = useTranslation()
   const { isMobile } = useSidebar()
+  const navigate = useNavigate()
   const threads = useThreads((s) => s.threads)
   const isLoadingThreads = useThreads((s) => s.isLoadingThreads)
   const deleteAllThreads = useThreads((s) => s.deleteAllThreads)
@@ -136,9 +137,12 @@ export function NavHistory() {
       dropMonitorLane(sid)
       useCoworkRun.getState().clearMonitors(sid)
       useCoworkSessions.getState().deleteSession(sid)
+      // Deleting the conversation on screen must leave its route, as deleting a
+      // chat thread does; otherwise the page sits on a dead id.
+      if (sid === activeSessionId) navigate({ to: route.home })
     }
     setPendingDelete(null)
-  }, [pendingDelete])
+  }, [pendingDelete, activeSessionId, navigate])
 
   if (rows.length === 0) {
     if (!isLoadingThreads) return null

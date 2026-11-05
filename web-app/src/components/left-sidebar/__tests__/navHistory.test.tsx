@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import type { ComponentProps, ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 
 const router = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -78,6 +78,7 @@ vi.mock('@/components/ui/sidebar', () => {
 
 import { NavHistory } from '../NavHistory'
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
+import { route } from '@/constants/routes'
 
 const session = (id: string, title: string): CoworkSession =>
   ({
@@ -88,6 +89,14 @@ const session = (id: string, title: string): CoworkSession =>
     messages: [],
     updated: Date.now(),
   }) as unknown as CoworkSession
+
+const ids = () => useCoworkSessions.getState().sessions.map((s) => s.id)
+
+function deleteRow(id: string) {
+  const row = screen.getByTestId(`history-cowork-${id}`).closest('li') as HTMLElement
+  fireEvent.click(within(row).getByRole('menuitem'))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'common:delete' }))
+}
 
 beforeEach(() => {
   router.navigate.mockClear()
@@ -102,5 +111,25 @@ describe('NavHistory legacy Cowork sessions', () => {
     render(<NavHistory />)
     expect(screen.getByTestId('history-cowork-open')).toBeInTheDocument()
     expect(screen.getByTestId('history-cowork-other')).toBeInTheDocument()
+  })
+})
+
+describe('NavHistory delete Cowork session', () => {
+  it('leaves the route and removes the session when the open conversation is deleted', () => {
+    router.sessionId = 'open'
+    render(<NavHistory />)
+    deleteRow('open')
+    expect(router.navigate).toHaveBeenCalledTimes(1)
+    expect(router.navigate).toHaveBeenCalledWith({ to: route.home })
+    expect(route.home).toBe('/')
+    expect(ids()).toEqual(['other'])
+  })
+
+  it('stays on the current route when a different conversation is deleted', () => {
+    router.sessionId = 'open'
+    render(<NavHistory />)
+    deleteRow('other')
+    expect(router.navigate).not.toHaveBeenCalled()
+    expect(ids()).toEqual(['open'])
   })
 })
