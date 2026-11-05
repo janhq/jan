@@ -635,7 +635,11 @@ it.each(['groq', 'anthropic', 'google', 'openai'])(
     await drain(await send(transport, [initial, reloaded]))
     expect(streamTextCalls[1].messages).toEqual(streamTextCalls[0].messages)
     const wire = JSON.stringify(streamTextCalls[0].messages)
-    expect(wire).toContain(name === 'groq' ? '__JAN_TOOL_IMAGE__data:image/png;base64,iVBORw0KGgo=' : 'image-data')
+    if (name === 'groq') {
+      expect(wire).toMatch(/__JAN_TOOL_IMAGE__[0-9a-f]{32}:data:image\/png;base64,iVBORw0KGgo=/)
+    } else {
+      expect(wire).toContain('image-data')
+    }
     expect(wire).toContain('retrieved fixture')
     // Losing uiParts would corrupt falsy tool outcomes/wave boundaries.
     const legacy = convertThreadMessageToUIMessage({ ...record, metadata: {} })
