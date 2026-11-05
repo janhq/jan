@@ -385,6 +385,11 @@ pub struct HookOutcome {
     pub context: Vec<String>,
     /// One entry per hook that failed.
     pub notices: Vec<HookNotice>,
+    /// A hook's spawn admission was refused: the owner's authority changed
+    /// (revoked, or the global network switch moved) after the caller resolved
+    /// it. Not a misbehaving hook -- the gate did NOT run, so the caller must
+    /// not proceed as though it had; it re-resolves authority and hooks first.
+    pub admission_refused: bool,
 }
 
 /// What a fired event has to tell the run, for a [`crate::tools::HookSink`].
@@ -516,6 +521,10 @@ pub async fn run_hooks_admitted(
                     return outcome;
                 }
             }
+            Err(detail) if detail == ADMISSION_REFUSED => {
+                outcome.admission_refused = true;
+                return outcome;
+            }
             Err(detail) => outcome.notices.push(HookNotice {
                 event,
                 command: hook.command.clone(),
@@ -524,6 +533,34 @@ pub async fn run_hooks_admitted(
         }
     }
     outcome
+}
+
+/// `run_one`'s error for a spawn admission refusal (see
+/// [`HookOutcome::admission_refused`]).
+const ADMISSION_REFUSED: &str = "not started: this conversation's permissions changed";
+
+/// Unregisters and reaps a revocable owner's hook tree if the hook future is
+/// dropped before it finishes (an individual monitor stop aborts its task
+/// mid-hook). `kill_on_drop` alone kills only the immediate child, leaving
+/// backgrounded descendants running and the registered pid stale.
+struct OwnedHookChild<'a> {
+    owner: Option<&'a str>,
+    pid: Option<u32>,
+}
+
+impl OwnedHookChild<'_> {
+    fn disarm(&mut self) {
+        self.pid = None;
+    }
+}
+
+impl Drop for OwnedHookChild<'_> {
+    fn drop(&mut self) {
+        if let (Some(_), Some(pid)) = (self.owner, self.pid) {
+            crate::tools::proc::unregister(self.owner, pid);
+            crate::tools::proc::kill_tree(pid);
+        }
+    }
 }
 
 /// Run one hook command to completion. `Err` carries the one-line detail a
@@ -552,9 +589,7 @@ async fn run_one(
                     a.generation,
                     a.network,
                 ) {
-                    return Err(
-                        "not started: this conversation's permissions changed".to_string()
-                    );
+                    return Err(ADMISSION_REFUSED.to_string());
                 }
                 Some(guard)
             }
@@ -573,6 +608,7 @@ async fn run_one(
         .map_err(|e| format!("could not start: {e}"))?
     };
     let pid = child.id();
+    let mut guard = OwnedHookChild { owner, pid };
     let timeout = Duration::from_secs(hook.timeout_secs.max(1));
     let collected = tokio::time::timeout(timeout, async {
         let stdout = child.stdout.take();
@@ -619,6 +655,7 @@ async fn run_one(
             crate::tools::proc::kill_tree(pid);
         }
     }
+    guard.disarm();
     let (status, head) = match collected {
         Ok(pair) => pair,
         Err(_) => {

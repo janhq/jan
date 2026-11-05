@@ -782,6 +782,12 @@ async fn eval_script(
         if let Some(reason) = outcome.denied {
             return PollVerdict::Denied(reason);
         }
+        // A hook that was refused admission never ran: its gate did not answer.
+        // Skip the whole poll (the script must not run ungated) and let the
+        // next tick re-resolve authority and hooks.
+        if outcome.admission_refused {
+            return PollVerdict::NotYet;
+        }
     }
     let Ok((shell, sandbox_env, _policy)) = crate::tools::handlers::confined_shell(&tool_ctx)
     else {
@@ -1387,6 +1393,88 @@ mod tests {
         set.stop_all();
         assert!(!hook_marker.exists(), "a hook started under a stale generation");
         assert!(!script_marker.exists(), "the poll script started under a stale generation");
+    }
+
+    /// C: stopping ONE monitor aborts its task mid-hook; the hook's whole tree
+    /// (a backgrounded sleeper with redirected stdio) must go with it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stopping_a_monitor_mid_hook_reaps_the_hooks_descendants() {
+        let dir = unique_root();
+        let id = "tm-hook-stop";
+        let pidfile = dir.join("bg.pid");
+        let mut ctx = ctx_for(&dir);
+        ctx.hooks = Some(sleeping_hook_set(&format!(
+            "(sleep 30 >/dev/null 2>&1 </dev/null & echo $! > {}); sleep 30",
+            pidfile.display()
+        )));
+        let (ctx, authority) = thread_authority_with(
+            ctx,
+            id,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(id))),
+        );
+        let set = Arc::new(MonitorSet::new());
+        let (mid, _) = set
+            .start_owned_with_id(spec("watch", "false", 30), ctx, Some(authority))
+            .unwrap();
+        let mut pid = None;
+        for _ in 0..400 {
+            if let Some(p) = std::fs::read_to_string(&pidfile).ok().and_then(|s| s.trim().parse::<i32>().ok()) {
+                pid = Some(p);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let pid = nix::unistd::Pid::from_raw(pid.expect("the hook never started"));
+        assert!(nix::sys::signal::kill(pid, None).is_ok());
+        set.stop(&mid);
+        let mut dead = false;
+        for _ in 0..500 {
+            if nix::sys::signal::kill(pid, None).is_err() {
+                dead = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(dead, "the hook's background descendant survived the monitor's stop");
+        assert!(
+            crate::tools::proc::take_thread_pids(&format!("thread-monitor:{id}")).is_empty(),
+            "the aborted hook's pid is still registered"
+        );
+    }
+
+    /// D: a refused hook admission is not a hook error. The gate did not run,
+    /// so the outcome says so (and later hooks do not run either).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_refused_hook_admission_is_reported_not_swallowed_as_a_notice() {
+        let dir = unique_root();
+        let marker = dir.join("hook-ran");
+        let hooks = sleeping_hook_set(&format!("touch {}", marker.display()));
+        let ctx = ctx_for(&dir);
+        let tool_ctx = ctx.as_tool_context();
+        let stale = crate::tools::hooks::SpawnAdmission {
+            owner: "thread-monitor:tm-refused".into(),
+            thread_id: "tm-refused".into(),
+            generation: crate::thread_capabilities::generation("tm-refused") + 7,
+            network: false,
+        };
+        let payload = crate::tools::hooks::HookPayload {
+            tool_name: Some(crate::tools::SHELL_TOOL.to_string()),
+            ..Default::default()
+        };
+        let outcome = crate::tools::hooks::run_hooks_admitted(
+            &hooks,
+            crate::tools::hooks::HookEvent::PreToolUse,
+            &payload,
+            &tool_ctx,
+            false,
+            Some(&stale),
+        )
+        .await;
+        assert!(outcome.admission_refused);
+        assert!(outcome.notices.is_empty(), "{:?}", outcome.notices);
+        assert!(!marker.exists());
     }
 
     /// A thread monitor's poll children are owned, so a revocation reaps
