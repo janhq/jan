@@ -1343,22 +1343,30 @@ const CWD_MARKER: &[u8] = b"\x1eJAN_CWD ";
 
 /// `command` for a POSIX shell that starts in `start` (the project root when
 /// `None`) and reports its final directory as a [`CWD_MARKER`] line on stdout
-/// as it exits, however it exits. The report goes through fd 9, a copy of
-/// stdout the command itself runs without, so a command that redirects its
-/// own stdout still reports. A `start` the sandbox cannot enter refuses the
-/// command rather than running it somewhere it was not written for; the report
-/// then names the project root, which resets the held directory.
+/// when it exits normally, by `exit`, or on an error (not when a signal kills
+/// it). The report goes through fd 9, a copy of stdout the command itself runs
+/// without, so a command that redirects its own stdout still reports. Only a
+/// pipe is written to: after a fatal error bash runs the trap with the
+/// command's own fd 9 (closed, or a lock file it opened), so the report falls
+/// back to stdout when that is still the pipe, and is skipped otherwise rather
+/// than written into the command's file. A `start` the sandbox cannot enter
+/// refuses the command rather than running it somewhere it was not written
+/// for; the report then names the project root, which resets the held
+/// directory.
 ///
 /// The command keeps line 1 so `$LINENO` and the shell's `line N:` errors
-/// match what the model wrote. A command that sets its own `EXIT` trap
-/// replaces this one and reports nothing, which leaves the held directory as
-/// it was.
+/// match what the model wrote, and ends on a blank line so a trailing `\`
+/// cannot swallow the closing brace. Not reported: a command that sets its own
+/// `EXIT` trap (it replaces this one), and an unterminated heredoc, which the
+/// closing brace turns into a syntax error.
 fn posix_cwd_script(command: &str, start: Option<&Path>) -> String {
     // printf's own octal escape spells the separator, so the script stays ASCII.
     let marker = String::from_utf8_lossy(&CWD_MARKER[1..]);
     let mut script = format!(
         "exec 9>&1; trap '{{ __jan_rc=$?; set +x; }} 2>/dev/null; \
-         printf \"\\036{marker}%s\\n\" \"$(pwd -P)\" >&9 2>/dev/null; exit $__jan_rc' EXIT; "
+         __jan_cwd=$(pwd -P); {{ if [ -p /dev/fd/9 ]; then \
+         printf \"\\036{marker}%s\\n\" \"$__jan_cwd\" >&9; elif [ -p /dev/fd/1 ]; then \
+         printf \"\\036{marker}%s\\n\" \"$__jan_cwd\"; fi; }} 2>/dev/null; exit $__jan_rc' EXIT; "
     );
     if let Some(dir) = start {
         let notice = format!(
@@ -1374,7 +1382,7 @@ fn posix_cwd_script(command: &str, start: Option<&Path>) -> String {
     }
     script.push_str("{ ");
     script.push_str(command);
-    script.push_str("\n} 9>&-\n");
+    script.push_str("\n\n} 9>&-\n");
     script
 }
 
@@ -1405,7 +1413,9 @@ impl CwdReport {
             let rest = &self.held[..];
             let n = rest.len().min(CWD_MARKER.len());
             if rest[..n] != CWD_MARKER[..n] {
-                out.push(self.held.remove(0));
+                // A stray separator: output, like everything up to the next one.
+                let next = rest[1..].iter().position(|&b| b == CWD_MARKER[0]).map_or(rest.len(), |i| i + 1);
+                out.extend(self.held.drain(..next));
                 continue;
             }
             match rest.iter().position(|&b| b == b'\n') {
@@ -1426,10 +1436,20 @@ impl CwdReport {
         let landed = self
             .landed
             .and_then(|raw| String::from_utf8(raw).ok())
-            .filter(|path| path.starts_with('/') && !path.chars().any(char::is_control))
+            .filter(|path| path.starts_with('/') && !path.chars().any(unsafe_in_a_note))
             .map(PathBuf::from);
         (rest, landed)
     }
+}
+
+/// Whether `c` must not reach a note or an approval prompt: a control
+/// character, or a format character that reorders or hides text (bidi
+/// overrides and isolates, zero-width marks), which could make a path read as
+/// another one.
+fn unsafe_in_a_note(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{061C}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{2069}' | '\u{FEFF}')
 }
 
 /// Hold the directory a command ended in for the next call, and say so when it
@@ -1770,18 +1790,22 @@ pub fn exit_marker(line: &str) -> Option<Option<i32>> {
 /// shell-cwd notes, a hook-config notice.
 const HARNESS_NOTE_PREFIXES: &[&str] = &["[sandbox:", "[If this command", "[shell cwd", "[hook config:"];
 
-/// A shell result as the model receives it: the exit marker only when the
-/// command printed nothing, so a result that has output is just that output
-/// (and any harness notes). The full result, marker included, is what failure
-/// detection ([`tool_result_failed`]) and the UIs read; call this only where
-/// the text is handed to a model. A backgrounded hand-off and an `ERROR`
-/// result carry no marker and come back unchanged.
+/// A shell result as the model receives it: `[exit 0]` is left off when the
+/// command printed output, since the output already says it worked. Any other
+/// marker -- a nonzero exit, a signal -- is kept: a `diff` or `test` that
+/// prints and fails, or a command killed partway, has no other failure signal,
+/// and compaction reads failures back from the recorded message. A
+/// backgrounded hand-off and an `ERROR` result carry no marker and come back
+/// unchanged.
 pub fn model_shell_result(content: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
     // The last one is ours: a command can print `[exit 0]` itself.
     let Some(at) = lines.iter().rposition(|line| exit_marker(line).is_some()) else {
         return content.to_string();
     };
+    if exit_marker(lines[at]) != Some(Some(0)) {
+        return content.to_string();
+    }
     let printed = lines.iter().enumerate().any(|(i, line)| {
         i != at
             && !line.trim().is_empty()
@@ -4215,6 +4239,45 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
+    /// Commands the wrapper used to break still run, and a fatal `set -eu`
+    /// error still reports its `cd` without writing into the command's own fd 9.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn shell_cwd_wrapper_survives_awkward_commands() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let scratch = unique_root();
+        let cwd = crate::tools::ShellCwd::default();
+        let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false);
+        let out = run_in(&ctx, "echo a \\").await;
+        assert_eq!(out, "a\n[exit 0]", "a trailing backslash is not a syntax error");
+        let out = run_in(&ctx, "set -eu; cd sub; echo $JAN_UNSET_VAR").await;
+        assert!(out.contains("shell cwd is now"), "{out}");
+        assert!(!out.contains("Bad file descriptor"), "{out}");
+        assert!(!out.ends_with("[exit 0]"), "{out}");
+        let lock = scratch.join("lock");
+        let out = run_in(&ctx, &format!("cd ..; exec 9>{}; set -e; false", shell_quote(&lock.to_string_lossy()))).await;
+        assert!(out.contains("back to the project root"), "{out}");
+        assert_eq!(std::fs::read_to_string(&lock).unwrap(), "", "nothing written into the command's fd 9");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A reported path carrying text-reordering characters is refused, so a
+    /// note or an approval prompt cannot be made to show another path.
+    #[test]
+    fn a_cwd_report_with_bidi_characters_is_dropped() {
+        for path in ["/a\u{202E}b", "/a\u{2066}b", "/a\u{200B}b", "/a\tb"] {
+            let mut report = CwdReport::default();
+            report.feed(format!("\x1eJAN_CWD {path}\n").as_bytes());
+            assert_eq!(report.finish().1, None, "{path:?}");
+        }
+        let mut report = CwdReport::default();
+        report.feed("\x1eJAN_CWD /caf\u{e9}\n".as_bytes());
+        assert_eq!(report.finish().1, Some(PathBuf::from("/caf\u{e9}")), "plain non-ASCII is fine");
+    }
+
     /// A held directory the shell can no longer enter refuses the command
     /// instead of running it in the root it was not written for, and resets.
     #[cfg(unix)]
@@ -4840,37 +4903,45 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
-    /// The sandbox hint is spliced in above the exit marker, so the marker
-    /// stays the final line.
-    /// The model sees the exit marker only when the command printed nothing;
-    /// harness notes do not count as output, and a marker the command printed
-    /// itself is kept as output.
+    /// `[exit 0]` is left off only when the command printed output; harness
+    /// notes do not count as output, a failure or a signal is always kept, and
+    /// a marker the command printed itself stays as output.
     #[test]
-    fn model_shell_result_keeps_the_marker_only_for_empty_output() {
+    fn model_shell_result_drops_only_a_clean_exit_after_output() {
         assert_eq!(model_shell_result("hi\n[exit 0]"), "hi");
-        assert_eq!(model_shell_result("boom\n[exit 1]"), "boom");
+        assert_eq!(model_shell_result("boom\n[exit 1]"), "boom\n[exit 1]");
         assert_eq!(model_shell_result("[exit 0]"), "[exit 0]");
         assert_eq!(model_shell_result("[exit 3]"), "[exit 3]");
         assert_eq!(model_shell_result("\n[exit 0]"), "\n[exit 0]");
         assert_eq!(model_shell_result("[terminated by signal]"), "[terminated by signal]");
-        assert_eq!(model_shell_result("partial\n[terminated by signal]"), "partial");
-        let notes = "[sandbox: writes are limited]\n[shell cwd is now /x: later]\n[exit 1]";
+        assert_eq!(
+            model_shell_result("partial\n[terminated by signal]"),
+            "partial\n[terminated by signal]"
+        );
+        let notes = "[shell cwd is now /x: later]\n[exit 0]";
         assert_eq!(model_shell_result(notes), notes, "notes alone are not output");
         assert_eq!(
-            model_shell_result("Permission denied\n[sandbox: writes are limited]\n[exit 1]"),
-            "Permission denied\n[sandbox: writes are limited]"
+            model_shell_result("ok\n[shell cwd is now /x: later]\n[exit 0]"),
+            "ok\n[shell cwd is now /x: later]"
+        );
+        assert_eq!(
+            model_shell_result("x\n[exit 0]\n[output truncated at 10 of 99 bytes]"),
+            "x\n[output truncated at 10 of 99 bytes]"
         );
         assert_eq!(
             model_shell_result("x\n[exit 2]\n[output truncated at 10 of 99 bytes]"),
-            "x\n[output truncated at 10 of 99 bytes]"
+            "x\n[exit 2]\n[output truncated at 10 of 99 bytes]"
         );
         assert_eq!(model_shell_result("echoed [exit 0]\n[exit 0]"), "echoed [exit 0]");
-        assert_eq!(model_shell_result("[exit 0]\n[exit 4]"), "[exit 0]", "the last is ours");
+        assert_eq!(model_shell_result("[exit 0]\n[exit 4]"), "[exit 0]\n[exit 4]", "the last is ours");
+        assert_eq!(model_shell_result("[exit 4]\n[exit 0]"), "[exit 4]", "the last is ours");
         let handoff = "Command exceeded 5s and is still running in the background.";
         assert_eq!(model_shell_result(handoff), handoff);
         assert_eq!(model_shell_result("ERROR: missing"), "ERROR: missing");
     }
 
+    /// The sandbox hint is spliced in above the exit marker, so the marker
+    /// stays the final line.
     #[test]
     fn notes_are_inserted_above_the_exit_marker() {
         let mut out = "touch: x: Read-only file system\n[exit 1]".to_string();

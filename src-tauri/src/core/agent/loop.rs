@@ -1420,13 +1420,6 @@ impl CompositeToolInvoker {
         )
     }
 
-    /// A tool context whose output streams to the run's event channel as
-    /// [`StreamEvent::ToolOutputDelta`], tagged with the call's `id`.
-    ///
-    /// Only exec-capable tools produce anything here: `bash` tees its child's
-    /// combined stdout/stderr through the sink as it reads. A send failure is
-    /// ignored -- the receiver is gone only when the run is over, and a dead
-    /// display must not stop the command.
     /// The directory the next `shell` call starts in, when a `cd` has moved it
     /// off the project root; `None` for every other tool.
     fn held_shell_cwd(
@@ -1442,6 +1435,13 @@ impl CompositeToolInvoker {
         Some(held.display().to_string())
     }
 
+    /// A tool context whose output streams to the run's event channel as
+    /// [`StreamEvent::ToolOutputDelta`], tagged with the call's `id`.
+    ///
+    /// Only exec-capable tools produce anything here: `bash` tees its child's
+    /// combined stdout/stderr through the sink as it reads. A send failure is
+    /// ignored -- the receiver is gone only when the run is over, and a dead
+    /// display must not stop the command.
     fn streaming_tool_context(&self, id: &str) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         self.tool_context()
             .with_output_sink(output_sink(&self.events, id))
@@ -2378,7 +2378,7 @@ impl ToolInvoker for CompositeToolInvoker {
             git_status: crate::core::agent::git::workspace_status(&self.project_root),
             ..Default::default()
         };
-        let mut workspace = workspace_lines(&self.project_root);
+        let mut workspace = workspace_lines(&self.project_root, self.shell_cwd.as_ref());
         if self.workspace.read_only {
             workspace.push_str("\nThe working directory is read-only for this run.");
         }
@@ -4786,7 +4786,7 @@ async fn between_turn_harness(
     let mut harness = crate::core::agent::continuation::HarnessContext::default();
     if let Some(root) = args.project_root.as_deref() {
         harness.git_status = crate::core::agent::git::workspace_status(root);
-        harness.push("Workspace", workspace_lines(root));
+        harness.push("Workspace", workspace_lines(root, args.shell_cwd.as_ref()));
     }
     if let Some(bg) = &args.subagent_bg {
         harness.push("Subagents", bg.roster_lines().join("\n"));
@@ -5140,12 +5140,19 @@ impl CompactionScope<'_> {
     }
 }
 
-/// The `Workspace` section's opening lines: where the run works, and on which
-/// branch.
-fn workspace_lines(root: &std::path::Path) -> String {
+/// The `Workspace` section's opening lines: where the run works, on which
+/// branch, and where a `cd` left the shell. A compaction drops the call whose
+/// result announced that `cd`, so this is where the model finds it again.
+fn workspace_lines(
+    root: &std::path::Path,
+    shell_cwd: Option<&tauri_plugin_agent_tools::tools::ShellCwd>,
+) -> String {
     let mut workspace = format!("Working directory: {}", root.display());
     if let Some(branch) = crate::core::agent::git::current_branch(root) {
         workspace.push_str(&format!("\nBranch: {branch}"));
+    }
+    if let Some(dir) = shell_cwd.and_then(|cwd| cwd.lock().unwrap().clone()) {
+        workspace.push_str(&format!("\nShell cwd: {} (later bash calls start there)", dir.display()));
     }
     workspace
 }
@@ -12823,6 +12830,19 @@ mod tests {
         let (path, command) = responder.await.unwrap();
         assert_eq!(command.as_deref(), Some("rm -rf build"));
         assert_eq!(path, Some(canonical_sub.display().to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// After a compaction the call that announced a `cd` is gone, so the
+    /// workspace section names where the shell is.
+    #[test]
+    fn workspace_lines_name_a_held_shell_cwd() {
+        let root = unique_project_root();
+        let cwd = tauri_plugin_agent_tools::tools::ShellCwd::default();
+        assert!(!workspace_lines(&root, Some(&cwd)).contains("Shell cwd"));
+        *cwd.lock().unwrap() = Some(root.join("sub"));
+        let lines = workspace_lines(&root, Some(&cwd));
+        assert!(lines.contains(&format!("Shell cwd: {}", root.join("sub").display())), "{lines}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

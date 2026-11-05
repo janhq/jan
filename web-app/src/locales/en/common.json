@@ -61,7 +61,7 @@
   "cmdPlanOff": "Plan mode off: normal execution",
   "cmdTodo": "Open the progress panel",
   "cmdTasks": "Open the background tasks panel",
-  "cmdInit": "Study the project and write or update AGENTS.md",
+  "cmdInit": "Study the project and write skills and memory",
   "cmdInitRunning": "Onboarding this project",
   "skills": "Skills",
   "skillsInContext": "Skills available to the agent this run",

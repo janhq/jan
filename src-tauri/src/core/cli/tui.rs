@@ -23823,6 +23823,10 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     app.end_conversation_worktrees();
     app.stop_monitors();
     app.shell_set.take_notices();
+    // The loaded thread's shell starts in the project root, like a new one;
+    // its saved history may still announce an old `cd`, which the first
+    // command's result corrects.
+    *app.shell_cwd.lock().unwrap() = None;
     app.transcript.expanded.clear();
     app.transcript.reveal = None;
     app.find = None;
@@ -41466,6 +41470,18 @@ fn a() {}
             "{:?}",
             app.subagent_set.roster_lines()
         );
+    }
+
+    /// `/resume` starts the loaded thread's shell in the project root, not
+    /// wherever the replaced conversation last `cd`ed.
+    #[tokio::test]
+    async fn a_resumed_thread_starts_its_shell_in_the_project_root() {
+        let mut app = test_app();
+        *app.shell_cwd.lock().unwrap() = Some(std::path::PathBuf::from("/somewhere"));
+        let history = vec![json!({ "role": "user", "content": "first" })];
+        let id = super::super::cli_save_thread(&app.agent_dir, None, "m", &history, None).unwrap();
+        super::load_thread(&mut app, &json!({ "id": id }), "resumed").await;
+        assert_eq!(*app.shell_cwd.lock().unwrap(), None);
     }
 
     /// `/new` keeps the checkout: it belongs to the invocation, not the thread.

@@ -35,10 +35,10 @@ const ESCALATE_NOTE: &str = " Commands run inside an OS sandbox. If a command th
 /// not only from a hand-off result -- that a backgrounded command needs no polling.
 const BACKGROUND_NOTE: &str = " A command that outlives its `timeout` keeps running in the background and you are notified automatically when it finishes, with where its output was written: do not poll, sleep, or re-run it to check; carry on with other work or end your turn.";
 
-/// Appended for an agent run, which reports the exit code only when a command
-/// printed nothing (see `handlers::model_shell_result`): replaces the plain
-/// description's marker promise, which an MCP client still gets in full.
-const EXIT_NOTE: &str = " In this session the `[exit N]` line appears only when the command printed nothing; when there is output it is left off, so read success or failure from the output itself.";
+/// Appended for an agent run, which leaves off `[exit 0]` after output (see
+/// `handlers::model_shell_result`). An MCP client keeps every marker, as the
+/// plain description promises.
+const EXIT_NOTE: &str = " In this session `[exit 0]` is left off when the command printed output: output with no exit line means it succeeded. A nonzero exit or a signal is always reported.";
 
 /// Appended when the caller carries the shell's directory across calls
 /// (`ToolContext::shell_cwd`), so the model stops prefixing every command with
@@ -366,7 +366,7 @@ mod tests {
                     let text = after["function"]["description"].as_str().unwrap();
                     assert!(text.contains("notified automatically when it finishes"), "{text}");
                     assert!(text.contains("do not poll"), "{text}");
-                    assert!(text.contains("appears only when the command printed nothing"), "{text}");
+                    assert!(text.contains("output with no exit line means it succeeded"), "{text}");
                     assert_eq!(text.contains("directory persists"), persistent_cwd, "{text}");
                 } else {
                     assert_eq!(before, after);

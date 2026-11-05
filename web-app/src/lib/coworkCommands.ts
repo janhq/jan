@@ -4,17 +4,17 @@ import { useCoworkRun } from '@/hooks/useCoworkRun'
 
 /**
  * Canned onboarding prompt for `/init`. Sent as a normal user turn so the agent
- * runs it with the regular toolset. Like the TUI's version it writes only the
- * project instructions file, which every later run loads into its prompt; a
- * legacy JAN.md wins over AGENTS.md in the same folder, so one is kept. The
- * 20K budget matches the CLI's `INSTRUCTIONS_WARN_CHARS` (src-tauri
- * `core/cli/tui.rs`), past which it warns at startup.
+ * runs it with the regular toolset; unlike the TUI's version it writes no
+ * JAN.md — this surface loads no project instructions file, so durable output
+ * goes to skills and memory, which every later run does read.
  */
-export const INIT_PROMPT = `Onboard yourself to this project so future sessions start informed. Your only output is the project instructions file in the project root: \`AGENTS.md\`, or \`JAN.md\` if the root already has one (it takes precedence; keep editing it and do not rename it). Do not write skills, memory notes, or any other file.
+export const INIT_PROMPT = `Onboard yourself to this project so future sessions start informed.
 
 1. Study the project first. Read the README and any contributor docs, map the directory layout, and find the real build, test, lint, and type-check commands (from the manifests and CI config, not from guesswork). Note the conventions the code actually follows.
 
-2. Write the instructions file. It is loaded into your system prompt every session, so it must earn its tokens: the commands to build/test/lint, the architecture a newcomer cannot infer from the tree, and the conventions worth enforcing. Skip anything obvious from a directory listing, and do not pad it. Keep it well under 20K characters. If the file already exists, read it and correct what has drifted instead of rewriting it wholesale; if it has grown past that size, tighten it. If the project has a \`CLAUDE.md\` but no instructions file, start from it, drop anything aimed at that specific agent, and leave \`CLAUDE.md\` unchanged.
+2. Write skills with skill_write for the project's repeatable procedures - releasing, running migrations, adding a module, debugging a subsystem - one skill per procedure, only where a real multi-step recipe exists. Do not invent skills to fill space.
+
+3. Record durable project facts with the memory tool (search first; update rather than duplicate): decisions, constraints, and gotchas that are true beyond this session and not already stated in the code.
 
 Then report what you wrote and why, briefly.`
 

@@ -877,6 +877,23 @@ mod tests {
 
     /// (#13) Recent errors are read back, so failures from before the last
     /// compaction are still listed after the next one.
+    /// A shell call reaches the record as the model saw it: a clean exit
+    /// after output has no marker, a failure keeps one, so compaction still
+    /// lists a command that printed and failed.
+    #[test]
+    fn gather_lists_a_shell_failure_that_printed_output() {
+        use tauri_plugin_agent_tools::tools::handlers::model_shell_result;
+        let recorded = vec![
+            call("ok", "shell", "{}"),
+            result("ok", &model_shell_result("built\n[exit 0]")),
+            call("bad", "shell", "{}"),
+            result("bad", &model_shell_result("error: E0308\n[exit 101]")),
+        ];
+        let gathered = gather(&recorded);
+        assert_eq!(gathered.errors.len(), 1, "{:?}", gathered.errors);
+        assert!(gathered.errors[0].contains("E0308"), "{:?}", gathered.errors);
+    }
+
     #[test]
     fn recent_errors_survive_a_recompaction() {
         let first = gather(&[

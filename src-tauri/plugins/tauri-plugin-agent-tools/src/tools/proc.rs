@@ -630,12 +630,21 @@ where
     out
 }
 
-/// Whether `bash` can carry its working directory between calls here: a POSIX
-/// shell on unix, whose `pwd -P` names the path the next call can `cd` to.
+/// Whether `bash` can carry its working directory between calls here: a known
+/// POSIX shell on unix, whose `pwd -P` names the path the next call can `cd` to.
 /// git-bash on Windows prints `/c/...` instead, and PowerShell and cmd have no
 /// `EXIT` trap to report from.
 pub fn shell_cwd_supported() -> bool {
-    cfg!(unix) && shell().kind == ShellKind::Posix
+    cfg!(unix) && speaks_posix(&shell().program)
+}
+
+/// Whether `program` is a shell the cwd wrapper's POSIX syntax runs in.
+/// [`kind_of`] calls anything not PowerShell or cmd POSIX, which is right for
+/// handing it `-c`; a `JAN_AGENT_SHELL` of fish or nu takes `-c` too but would
+/// reject the wrapper, so only names known to speak POSIX sh qualify.
+fn speaks_posix(program: &Path) -> bool {
+    let name = program.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    matches!(name, "sh" | "bash" | "dash" | "zsh" | "ksh" | "mksh" | "ash" | "busybox")
 }
 
 pub async fn spawn(
@@ -1688,6 +1697,18 @@ mod tests {
     }
 
     #[cfg(unix)]
+    /// Only shells known to speak POSIX sh run the cwd wrapper; fish and nu
+    /// take `-c` but would reject its syntax.
+    #[test]
+    fn only_known_posix_shells_carry_the_cwd() {
+        for posix in ["/bin/sh", "/usr/bin/bash", "/bin/dash", "/bin/zsh", "/bin/busybox"] {
+            assert!(speaks_posix(Path::new(posix)), "{posix}");
+        }
+        for other in ["/usr/bin/fish", "/usr/bin/nu", "/usr/bin/xonsh", "pwsh"] {
+            assert!(!speaks_posix(Path::new(other)), "{other}");
+        }
+    }
+
     #[tokio::test]
     async fn confine_limits_caps_child_resource_limits() {
         // The rlimit mounting must reach the spawned child before its shell runs.
