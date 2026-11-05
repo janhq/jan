@@ -365,21 +365,20 @@ fn tmp_relative(raw: &str) -> Option<String> {
 /// shell, so it must not be forwarded into the scratch.
 ///
 /// Decided on the lexically normalized path (`..` resolved, so `/tmp/ws/../x`
-/// is judged as `/tmp/x` and stays scratch). Each root named under `/tmp` counts
-/// under both of its spellings: the one the policy names (the mount is laid
-/// there, so a root that no longer exists still shadows -- failing safe, since
-/// the root checks grant nothing for it and the mount itself fails loudly) and
-/// its canonical one (a link on the way resolves to it). Roots named outside
-/// `/tmp` are skipped, so a `/` root does not turn the whole scratch off.
+/// is judged as `/tmp/x` and stays scratch). Each root counts under the one
+/// spelling the policy names, because that is the only place the mount is laid
+/// (`--bind ROOT ROOT`): if `/tmp/a` is a link to `/tmp/b`, the shell sees
+/// `/tmp/a` as the folder and `/tmp/b` as scratch, so the file tools must too.
+/// A root that no longer exists still shadows -- failing safe, since the root
+/// checks grant nothing for it and the mount itself fails loudly. Roots named
+/// outside `/tmp` are skipped, so a `/` root does not turn the whole scratch off.
 fn shadows_scratch(project_root: &Path, attached: Attached<'_>, raw: &str) -> bool {
     let target = lexical_normalize(Path::new(raw));
     std::iter::once(project_root)
         .chain(attached.read.iter().map(PathBuf::as_path))
         .chain(attached.write.iter().map(PathBuf::as_path))
         .filter(|root| root.starts_with("/tmp"))
-        .flat_map(|root| [Some(lexical_normalize(root)), root.canonicalize().ok()])
-        .flatten()
-        .any(|root| target.starts_with(root))
+        .any(|root| target.starts_with(lexical_normalize(root)))
 }
 
 /// True iff `real`, the link-free path a `write`/`edit` is about to open, is in
@@ -405,6 +404,27 @@ pub fn in_attached_read_only_root(
         return false;
     }
     attached.read.iter().any(|r| inside(r))
+}
+
+/// True iff a `write`/`edit` of `raw` would land in an attached folder the
+/// caller did not make writable: the gate's form of the handlers' refusal, built
+/// from the same pieces (`resolve_path`, `landing` over the write roots, then
+/// [`in_attached_read_only_root`]) so the gate refuses exactly what the handler
+/// would, and a writable override, the project and the scratch keep their
+/// exemptions. A path that escapes every root is left to the escape check.
+pub fn write_hits_read_only_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    attached: Attached<'_>,
+    raw: &str,
+) -> bool {
+    let target = resolve_path(project_root, scratch, attached, raw);
+    match landing(project_root, scratch, attached.write, &target) {
+        Landing::Inside(real) | Landing::Outside(Some(real)) => {
+            in_attached_read_only_root(project_root, scratch, attached, &real)
+        }
+        Landing::Escapes | Landing::Outside(None) => false,
+    }
 }
 
 /// True iff a write to `raw` would land in a read-only `project_root`: inside
@@ -1243,5 +1263,84 @@ mod tests {
         std::fs::create_dir_all(&other).unwrap();
         assert_eq!(hidden_under(&other, &jan), None);
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The scratch is shadowed under the spelling the policy names, because the
+    /// mount is laid there only: with `/tmp/a -> /tmp/b` and `/tmp/a` attached,
+    /// the shell sees the folder at `/tmp/a` and `/tmp/b` is plain scratch.
+    #[test]
+    #[cfg(unix)]
+    fn shadows_scratch_by_the_named_spelling_only() {
+        let tag = format!("jan_shadow_{}", std::process::id());
+        let real = PathBuf::from(format!("/tmp/{tag}_real"));
+        let link = PathBuf::from(format!("/tmp/{tag}_link"));
+        let _ = std::fs::remove_dir_all(&real);
+        let _ = std::fs::remove_file(&link);
+        std::fs::create_dir_all(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let project = unique_root();
+        let named_link = vec![link.clone()];
+        let named_real = vec![real.clone()];
+        let via_link = Attached::new(&named_link, &[]);
+        let via_real = Attached::new(&named_real, &[]);
+        let at = |p: &Path, f: &str| p.join(f).to_string_lossy().into_owned();
+
+        // Named by the link: the link spelling shadows, the canonical one does not.
+        assert!(shadows_scratch(&project, via_link, &at(&link, "x")));
+        assert!(!shadows_scratch(&project, via_link, &at(&real, "x")));
+        // Named canonically: the link spelling is only scratch.
+        assert!(shadows_scratch(&project, via_real, &at(&real, "x")));
+        assert!(!shadows_scratch(&project, via_real, &at(&link, "x")));
+        // `..` is resolved first, so climbing out of the named root is scratch.
+        assert!(!shadows_scratch(&project, via_link, &format!("{}/../x", link.display())));
+        // A root that does not exist still shadows (fail safe), by name.
+        let gone = vec![PathBuf::from(format!("/tmp/{tag}_gone"))];
+        assert!(shadows_scratch(&project, Attached::new(&gone, &[]), &format!("/tmp/{tag}_gone/x")));
+
+        let _ = std::fs::remove_file(&link);
+        let _ = std::fs::remove_dir_all(&real);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    /// The gate's predicate refuses exactly what the handlers refuse: a write
+    /// into a read-only attached folder, not one a writable root overrides, nor
+    /// the project, the scratch, or a path that escapes every root.
+    #[test]
+    fn write_hits_read_only_root_matches_the_handler_refusal() {
+        let project = unique_root();
+        let scratch = unique_root();
+        let ro = unique_root();
+        let rw = unique_root();
+        let elsewhere = unique_root();
+        std::fs::create_dir_all(ro.join("sub")).unwrap();
+        let roots = vec![ro.clone(), rw.clone()];
+        let writable = vec![rw.clone()];
+        let a = Attached::new(&roots, &writable);
+        let hits = |raw: &str| write_hits_read_only_root(&project, Some(&scratch), a, raw);
+        let p = |base: &Path, f: &str| base.join(f).to_string_lossy().into_owned();
+
+        assert!(hits(&p(&ro, "new.txt")));
+        assert!(hits(&p(&ro, "sub/deep/new.txt")), "a not yet existing path still counts");
+        assert!(hits(&format!("{}/sub/../new.txt", ro.display())));
+        assert!(!hits(&p(&rw, "new.txt")), "a writable root is not read-only");
+        assert!(!hits("notes.md"), "the project is the run's own area");
+        assert!(!hits(&p(&project, "notes.md")));
+        assert!(!hits(&p(&scratch, "out.txt")));
+        assert!(!hits(&p(&elsewhere, "x.txt")), "an escape is the escape check's");
+        // With nothing attached nothing is read-only.
+        assert!(!write_hits_read_only_root(&project, Some(&scratch), Attached::NONE, &p(&ro, "x")));
+
+        // A writable folder nested in a read-only one wins; its sibling does not.
+        let nested = ro.join("rw_inside");
+        std::fs::create_dir_all(&nested).unwrap();
+        let nested_roots = vec![ro.clone(), nested.clone()];
+        let nested_writable = vec![nested.clone()];
+        let n = Attached::new(&nested_roots, &nested_writable);
+        assert!(!write_hits_read_only_root(&project, Some(&scratch), n, &p(&nested, "ok.txt")));
+        assert!(write_hits_read_only_root(&project, Some(&scratch), n, &p(&ro, "no.txt")));
+
+        for d in [&project, &scratch, &ro, &rw, &elsewhere] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 }
