@@ -1,5 +1,6 @@
 {
   "addProvider": "Anbieter hinzufügen",
   "addOpenAIProvider": "OpenAI Anbieter hinzufügen",
-  "enterNameForProvider": "Namen für Anbieter eingeben"
+  "enterNameForProvider": "Namen für Anbieter eingeben",
+  "nameLabel": "Name"
 }

@@ -284,6 +284,10 @@
     },
     "messageMetadata": {
       "title": "メッセージメタデータ"
+    },
+    "deleteAllChats": {
+      "title": "プロジェクト外の会話を削除",
+      "description": "プロジェクトに属していない会話を削除します。プロジェクト内の会話、スター付きの会話、タスクは残ります。この操作は元に戻せません。"
     }
   },
   "errorDialog": {
@@ -366,7 +370,8 @@
     "searchProjects": "プロジェクトを検索...",
     "noProjectsFound": "プロジェクトが見つかりません",
     "tryDifferentSearch": "別の検索語をお試しください",
-    "viewProject": "プロジェクトを表示"
+    "viewProject": "プロジェクトを表示",
+    "sendMessageToStart": "上でメッセージを送信すると会話を始められます。"
   },
   "attachmentsIngestion": {
     "title": "添付ファイルの取り込み方法を選択",
@@ -504,6 +509,10 @@
     "attachmentsDisabledInfo": {
       "title": "添付ファイルが無効です",
       "description": "添付ファイルは設定で無効になっています"
+    },
+    "deleteAllChats": {
+      "title": "会話を削除しました",
+      "description": "プロジェクト外の会話を削除しました。プロジェクト内の会話とタスクは残しています。"
     }
   },
   "errors": {
@@ -618,5 +627,10 @@
     "navigation": "ナビゲーション",
     "navigationDescription": "チャット、プロジェクト、アーティファクト、スキル、設定に移動します。",
     "more": "その他"
-  }
+  },
+  "overview": {
+    "description": "この会話の進捗、ファイル、バックグラウンドタスク。"
+  },
+  "askToolPending": "回答を待っています",
+  "askToolAsked": "質問しました"
 }

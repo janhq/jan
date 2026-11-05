@@ -243,6 +243,10 @@
     },
     "messageMetadata": {
       "title": "Métadonnées du message"
+    },
+    "deleteAllChats": {
+      "title": "Supprimer les conversations hors projets",
+      "description": "Cela supprime les conversations qui ne sont pas dans un projet. Les conversations de projet, les conversations favorites et les tâches sont conservées. Cette action est irréversible."
     }
   },
   "projects": {
@@ -299,7 +303,8 @@
     "tryDifferentSearch": "Essayez un autre terme de recherche",
     "uploadingFiles": "Traitement des fichiers…",
     "processButton": "Ajouter",
-    "viewProject": "Afficher le projet"
+    "viewProject": "Afficher le projet",
+    "sendMessageToStart": "Envoyez un message ci-dessus pour en démarrer une."
   },
   "errorDialog": {
     "titleFallback": "Une erreur s'est produite",
@@ -393,6 +398,10 @@
     "threadRemovedFromProject": {
       "title": "Discussion retirée",
       "description": "Discussion retirée de \"{{projectName}}\" avec succès"
+    },
+    "deleteAllChats": {
+      "title": "Conversations supprimées",
+      "description": "Les conversations hors projets ont été supprimées. Les conversations de projet et les tâches ont été conservées."
     }
   },
   "attachmentInjectedIndicator": "Injecté dans la discussion",
@@ -504,5 +513,10 @@
     "navigation": "Navigation",
     "navigationDescription": "Accéder aux discussions, projets, artefacts, compétences et paramètres.",
     "more": "Plus"
-  }
+  },
+  "overview": {
+    "description": "Progression, fichiers et tâches en arrière-plan de cette conversation."
+  },
+  "askToolPending": "En attente de votre réponse",
+  "askToolAsked": "Une question vous a été posée"
 }
