@@ -1084,8 +1084,8 @@ mod tests {
         assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
         let _ = std::fs::remove_dir_all(&root);
     }
-    // Reads reach an attached folder; writes into it are still an escape. These
-    // two together *are* the read-only mount at the gate layer.
+    // Reads reach a read-only attached folder; writes are hard-denied without
+    // an approval prompt, matching the read-only mount at the gate layer.
     #[test]
     fn read_in_an_attached_root_allows_and_write_is_denied() {
         let root = unique_root();
