@@ -87,7 +87,7 @@ describe('mergeHistory', () => {
     expect(rows.map((r) => r.id)).toEqual(['cleared'])
   })
 
-  it('keeps an unavailable project session listed: its mirror thread is gone, so history is the only way to delete it', () => {
+  it('lists a project session whose mirror thread is gone: history is the only way to delete it', () => {
     const project = { id: 'p', name: 'p', updated_at: 1 }
     const rows = mergeHistory(
       [],
@@ -97,4 +97,18 @@ describe('mergeHistory', () => {
     )
     expect(rows.map((r) => r.id)).toEqual(['gone'])
   })
+
+  it.each(['missing-sidecar', 'unreadable-sidecar', 'id-collision'])(
+    'does not list a %s project session in history: its mirror thread is still listed under the project',
+    (unavailable) => {
+      const project = { id: 'p', name: 'p', updated_at: 1 }
+      const rows = mergeHistory(
+        [],
+        [session('s', 1_000_000_000_000, 1, { project, unavailable })],
+        {},
+        new Set(['p'])
+      )
+      expect(rows).toEqual([])
+    }
+  )
 })
