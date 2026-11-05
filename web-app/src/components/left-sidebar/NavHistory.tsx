@@ -28,7 +28,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
-import { useThreads } from '@/hooks/useThreads'
+import { isDeletedByDeleteAll, useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
 import { useCoworkRun, useIsSessionActive } from '@/hooks/useCoworkRun'
@@ -179,7 +179,10 @@ export function NavHistory() {
     )
   }
 
-  const chatThreadCount = rows.filter((r) => r.kind === 'chat').length
+  // Offer Delete All only when it would actually delete something.
+  const chatThreadCount = rows.filter(
+    (r) => r.kind === 'chat' && isDeletedByDeleteAll(r.thread)
+  ).length
 
   return (
     <SidebarGroup className="px-1 group-data-[collapsible=icon]:hidden">
