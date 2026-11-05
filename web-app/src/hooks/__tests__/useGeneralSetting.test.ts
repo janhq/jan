@@ -34,6 +34,7 @@ describe('useGeneralSetting', () => {
       currentLanguage: 'en',
       spellCheckChatInput: true,
       tokenCounterCompact: true,
+      enterKeyInsertsNewline: false,
       huggingfaceToken: undefined,
     })
   })
@@ -97,6 +98,24 @@ describe('useGeneralSetting', () => {
         result.current.setCurrentLanguage('en')
       })
       expect(result.current.currentLanguage).toBe('en')
+    })
+  })
+
+  // Off by default: Enter sends, as it always has.
+  describe('setEnterKeyInsertsNewline', () => {
+    it('starts off and can be turned on and back off', () => {
+      const { result } = renderHook(() => useGeneralSetting())
+      expect(result.current.enterKeyInsertsNewline).toBe(false)
+
+      act(() => {
+        result.current.setEnterKeyInsertsNewline(true)
+      })
+      expect(result.current.enterKeyInsertsNewline).toBe(true)
+
+      act(() => {
+        result.current.setEnterKeyInsertsNewline(false)
+      })
+      expect(result.current.enterKeyInsertsNewline).toBe(false)
     })
   })
 
