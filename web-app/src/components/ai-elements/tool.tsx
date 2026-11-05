@@ -35,6 +35,7 @@ import {
   useToolCallRuntime,
 } from '@/hooks/useToolCallRuntime'
 import { ToolElapsed } from './tool-runtime'
+import { ASK_TOOL_NAME } from '@/lib/coworkTools'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import { ShieldAlertIcon } from 'lucide-react'
@@ -154,6 +155,11 @@ const getStatusText = (
   if (awaitingApproval) {
     return t('tools:toolCall.awaitingApproval', { tool })
   }
+  // `ask` is a question put to the person, not work being scheduled: "Ask
+  // queued" read as a technical state. It is pending until they answer.
+  if (toolName === ASK_TOOL_NAME && !hasError) {
+    return t(isQueued || isRunning ? 'common:askToolPending' : 'common:askToolAsked')
+  }
   // Tools run one at a time, so a pending call is only "running" once the
   // executor has actually reached it.
   if (isQueued) {
@@ -176,7 +182,12 @@ export const ToolHeader = memo(
       toolCallId ? Boolean(s.pending[approvalKey(threadId ?? '', toolCallId)]) : false
     )
     const toolName = title ?? type.split('-').slice(1).join('-')
-    const summary = useMemo(() => summarizeToolInput(input), [input])
+    // The raw argument preview of an `ask` is `questions: [1]`; the question
+    // card already shows what was asked.
+    const summary = useMemo(
+      () => (toolName === ASK_TOOL_NAME ? '' : summarizeToolInput(input)),
+      [input, toolName]
+    )
     // Position in the pending queue, or -1 once the executor has reached it.
     const queuePosition = useToolCallRuntime((s) =>
       toolCallId ? queuePositionOf(s, toolCallId) : -1
