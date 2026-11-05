@@ -89,6 +89,8 @@ type CoworkSessionsState = {
   setModel: (id: string, model: ThreadModel) => void
   setPlanMode: (id: string, planMode: boolean) => void
   setTitle: (id: string, title: string) => void
+  /** Auto-title: applies only while the latest stored title is still the default, so a rename made in the meantime wins. */
+  setTitleIfDefault: (id: string, title: string) => void
   setMessages: (id: string, messages: UIMessage[]) => void
   setGoal: (id: string, goal: CoworkGoal | null) => void
   setTodos: (id: string, todos: TodoList) => void
@@ -268,6 +270,15 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
         set((s) => ({
           sessions: s.sessions.map((x) =>
             x.id === id ? { ...x, title, updated: now() } : x
+          ),
+        })),
+
+      setTitleIfDefault: (id, title) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === id && x.title === 'New session'
+              ? { ...x, title, updated: now() }
+              : x
           ),
         })),
 

@@ -653,10 +653,11 @@ export function CoworkPage() {
             return
           }
         }
-        if (text && current?.title === 'New session')
+        if (text)
           // Collapse newlines/runs of whitespace so a pasted multi-line prompt
-          // doesn't become an unreadable sidebar title.
-          store.setTitle(sid, text.trim().replace(/\s+/g, ' ').slice(0, 40))
+          // doesn't become an unreadable sidebar title. Conditional on the
+          // latest stored title: the user may have renamed during the awaits.
+          store.setTitleIfDefault(sid, text.trim().replace(/\s+/g, ' ').slice(0, 40))
 
         runTurns = text
           ? [userTurn(text, attachments?.media, attachments?.files)]
