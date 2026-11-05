@@ -1333,10 +1333,10 @@ mod tests {
         assert_eq!(decide("notes.md".into(), &none), Decision::Prompt(PromptKind::Write));
         assert_eq!(decide(at(&scratch, "a.txt"), &none), Decision::Prompt(PromptKind::Write));
         // Linux maps an unrelated absolute /tmp path into private scratch.
-        // Other platforms treat this temporary sibling as a host escape.
+        // A custom TMPDIR outside /tmp, like other platforms, remains an escape.
         assert_eq!(
             decide(at(&elsewhere, "a.txt"), &none),
-            Decision::Prompt(if cfg!(target_os = "linux") {
+            Decision::Prompt(if cfg!(target_os = "linux") && elsewhere.starts_with("/tmp") {
                 PromptKind::Write
             } else {
                 PromptKind::WriteEscape
