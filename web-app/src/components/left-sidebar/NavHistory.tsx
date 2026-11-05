@@ -92,10 +92,14 @@ const CoworkRow = memo(function CoworkRow({
           side={isMobile ? 'bottom' : 'right'}
           align={isMobile ? 'end' : 'start'}
         >
-          <DropdownMenuItem onSelect={() => setRenameOpen(true)}>
-            <Pencil />
-            <span>{t('common:rename')}</span>
-          </DropdownMenuItem>
+          {/* Persistence refuses writes for an unavailable session, so a rename
+              would look saved and revert on restart. */}
+          {!session.unavailable && (
+            <DropdownMenuItem onSelect={() => setRenameOpen(true)}>
+              <Pencil />
+              <span>{t('common:rename')}</span>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             variant="destructive"
             onSelect={() => onRequestDelete({ id: session.id, title: session.title })}
