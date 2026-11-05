@@ -1751,6 +1751,10 @@ async fn execute_tool_inner(
         Decision::HardDeny(gate::DenyReason::Policy) => {
             return Err(format!("tool '{name}' is denied by policy").into());
         }
+        Decision::HardDeny(gate::DenyReason::ReadOnlyRoot) => {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or_default();
+            return Err(crate::tools::read_only_root_refusal(path).into());
+        }
         Decision::HardDeny(gate::DenyReason::Hidden) => {
             return Err(format!("tool '{name}' is denied: the Jan home (~/.jan) is hidden").into());
         }

@@ -1,13 +1,52 @@
 use std::path::{Path, PathBuf};
 
+/// The attached folders a tool call may reach besides the project: `read` is
+/// every attached root (readable), `write` the subset also writable (see
+/// [`super::ToolContext::write_roots`], always a subset of `read`).
+///
+/// Carried alongside the project root and scratch wherever a raw path is
+/// resolved, because on Linux they decide what an absolute `/tmp/...` path
+/// means: see [`resolve_path`].
+#[derive(Debug, Clone, Copy)]
+pub struct Attached<'a> {
+    pub read: &'a [PathBuf],
+    pub write: &'a [PathBuf],
+}
+
+impl<'a> Attached<'a> {
+    /// No attached folders: only the project root can shadow the scratch.
+    pub const NONE: Attached<'static> = Attached { read: &[], write: &[] };
+
+    pub fn new(read: &'a [PathBuf], write: &'a [PathBuf]) -> Self {
+        Self { read, write }
+    }
+
+    /// Readable roots only, for the read-side tools that never see `write_roots`.
+    pub fn reads(read: &'a [PathBuf]) -> Self {
+        Self { read, write: &[] }
+    }
+}
+
 /// True iff `raw` resolves to a path outside `project_root` and outside the
 /// session scratch. Relative paths are resolved against `project_root`.
 /// Canonicalizes (resolving `..` and symlinks) so string tricks and symlink
 /// escapes are caught. For a not-yet-existing leaf (new-file writes), the
 /// deepest existing ancestor is canonicalized and the remaining tail re-joined.
+///
+/// Knows no attached folders: a caller that has some uses
+/// [`escapes_read_roots`] / [`escapes_write_roots`], which share this check.
 pub fn escapes_project(
     project_root: &Path,
     scratch: Option<&Path>,
+    raw: &str,
+) -> Result<bool, String> {
+    escapes_project_with(project_root, scratch, Attached::NONE, raw)
+}
+
+fn escapes_project_with(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    attached: Attached<'_>,
     raw: &str,
 ) -> Result<bool, String> {
     // Absolute `/tmp` paths map into the session scratch (see [`resolve_path`]),
@@ -15,15 +54,21 @@ pub fn escapes_project(
     // against it. Clamping `..` happens lexically, so a symlink planted in the
     // scratch (the shell can make one: `/tmp` is the scratch bind) would
     // otherwise resolve straight back out to the host. Canonicalize what the
-    // clamp produced and require it to still be inside.
+    // clamp produced and require it to still be inside. A path the project or
+    // an attached folder is mounted over is not in the scratch at all, and
+    // falls through to the root checks below.
     if cfg!(target_os = "linux") {
         if let Some(scratch) = scratch {
-            if tmp_relative(raw).is_some() {
+            if tmp_relative(raw).is_some() && !shadows_scratch(project_root, attached, raw) {
                 let scratch_root = scratch
                     .canonicalize()
                     .map_err(|e| format!("scratch root {:?}: {e}", scratch))?;
-                let resolved =
-                    canonicalize_lenient(&resolve_path(project_root, Some(scratch), raw))?;
+                let resolved = canonicalize_lenient(&resolve_path(
+                    project_root,
+                    Some(scratch),
+                    attached,
+                    raw,
+                ))?;
                 return Ok(!resolved.starts_with(&scratch_root));
             }
         }
@@ -66,10 +111,11 @@ pub fn escapes_project(
 pub fn escapes_read_roots(
     project_root: &Path,
     scratch: Option<&Path>,
-    read_roots: &[PathBuf],
+    attached: Attached<'_>,
     raw: &str,
 ) -> Result<bool, String> {
-    if !escapes_project(project_root, scratch, raw)? {
+    let read_roots = attached.read;
+    if !escapes_project_with(project_root, scratch, attached, raw)? {
         return Ok(false);
     }
     if read_roots.is_empty() {
@@ -101,13 +147,18 @@ pub fn escapes_read_roots(
 /// for the same reason: a writable root can only ever widen what writes reach,
 /// and a caller that passes none keeps today's exact check. A root that cannot
 /// be canonicalized grants nothing.
+///
+/// `attached.read` matters here too, though it grants nothing: a path inside a
+/// read-only folder under `/tmp` must be judged where it really is (and refused),
+/// not remapped into the scratch where the write would "succeed" unseen.
 pub fn escapes_write_roots(
     project_root: &Path,
     scratch: Option<&Path>,
-    write_roots: &[PathBuf],
+    attached: Attached<'_>,
     raw: &str,
 ) -> Result<bool, String> {
-    if !escapes_project(project_root, scratch, raw)? {
+    let write_roots = attached.write;
+    if !escapes_project_with(project_root, scratch, attached, raw)? {
         return Ok(false);
     }
     if write_roots.is_empty() {
@@ -140,11 +191,23 @@ pub fn escapes_write_roots(
 /// The scratch is treated like a chroot: no `..` component may climb above the
 /// scratch root, matching how the sandbox's `/tmp` mount behaves (it is a mount
 /// point, so `..` above it stays inside `/tmp`).
-pub fn resolve_path(project_root: &Path, scratch: Option<&Path>, raw: &str) -> PathBuf {
+///
+/// The one exception mirrors the mount table (`jail::bwrap_args`): the project
+/// and every attached folder are bound at their own absolute path *after* the
+/// scratch is bound over `/tmp`, so a path inside one of them under `/tmp` names
+/// the real folder in the shell and must name it here too. See [`shadows_scratch`].
+pub fn resolve_path(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    attached: Attached<'_>,
+    raw: &str,
+) -> PathBuf {
     if cfg!(target_os = "linux") {
         if let Some(rel) = tmp_relative(raw) {
             if let Some(scratch) = scratch {
-                return clamp_scratch(scratch, &rel);
+                if !shadows_scratch(project_root, attached, raw) {
+                    return clamp_scratch(scratch, &rel);
+                }
             }
         }
     }
@@ -296,11 +359,84 @@ fn tmp_relative(raw: &str) -> Option<String> {
     Some(raw.strip_prefix("/tmp/")?.to_string())
 }
 
+/// True iff `raw`, an absolute `/tmp/...` path, lies inside the project or an
+/// attached folder that is itself under `/tmp`, i.e. a mount the sandbox lays
+/// over the scratch-backed `/tmp`. Such a path is the real host path in the
+/// shell, so it must not be forwarded into the scratch.
+///
+/// Decided on the lexically normalized path (`..` resolved, so `/tmp/ws/../x`
+/// is judged as `/tmp/x` and stays scratch). Each root counts under the one
+/// spelling the policy names, because that is the only place the mount is laid
+/// (`--bind ROOT ROOT`): if `/tmp/a` is a link to `/tmp/b`, the shell sees
+/// `/tmp/a` as the folder and `/tmp/b` as scratch, so the file tools must too.
+/// A root that no longer exists still shadows -- failing safe, since the root
+/// checks grant nothing for it and the mount itself fails loudly. Roots named
+/// outside `/tmp` are skipped, so a `/` root does not turn the whole scratch off.
+fn shadows_scratch(project_root: &Path, attached: Attached<'_>, raw: &str) -> bool {
+    let target = lexical_normalize(Path::new(raw));
+    std::iter::once(project_root)
+        .chain(attached.read.iter().map(PathBuf::as_path))
+        .chain(attached.write.iter().map(PathBuf::as_path))
+        .filter(|root| root.starts_with("/tmp"))
+        .any(|root| target.starts_with(lexical_normalize(root)))
+}
+
+/// True iff `real`, the link-free path a `write`/`edit` is about to open, is in
+/// an attached folder the caller did not make writable. Independent of write
+/// confinement: an unconfined run may reach unrelated paths it has been
+/// approved for, but an attached read-only folder stays read-only.
+///
+/// A writable root wins when it contains `real` too (a writable folder nested
+/// in a read-only one), and the project and the scratch are never refused here
+/// -- they are the run's own area even if a read-only folder encloses them.
+/// A root that cannot be canonicalized contains nothing.
+pub fn in_attached_read_only_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    attached: Attached<'_>,
+    real: &Path,
+) -> bool {
+    let inside = |root: &Path| root.canonicalize().is_ok_and(|r| real.starts_with(r));
+    if inside(project_root) || scratch.is_some_and(inside) {
+        return false;
+    }
+    if attached.write.iter().any(|r| inside(r)) {
+        return false;
+    }
+    attached.read.iter().any(|r| inside(r))
+}
+
+/// True iff a `write`/`edit` of `raw` would land in an attached folder the
+/// caller did not make writable: the gate's form of the handlers' refusal, built
+/// from the same pieces (`resolve_path`, `landing` over the write roots, then
+/// [`in_attached_read_only_root`]) so the gate refuses exactly what the handler
+/// would, and a writable override, the project and the scratch keep their
+/// exemptions. A path that escapes every root is left to the escape check.
+pub fn write_hits_read_only_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    attached: Attached<'_>,
+    raw: &str,
+) -> bool {
+    let target = resolve_path(project_root, scratch, attached, raw);
+    match landing(project_root, scratch, attached.write, &target) {
+        Landing::Inside(real) | Landing::Outside(Some(real)) => {
+            in_attached_read_only_root(project_root, scratch, attached, &real)
+        }
+        Landing::Escapes | Landing::Outside(None) => false,
+    }
+}
+
 /// True iff a write to `raw` would land in a read-only `project_root`: inside
 /// it and not in the session scratch (which a read-only subagent still writes
 /// to). Fails closed: a path that cannot be resolved counts as inside.
-pub fn in_read_only_root(project_root: &Path, scratch: Option<&Path>, raw: &str) -> bool {
-    let target = resolve_path(project_root, scratch, raw);
+pub fn in_read_only_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    attached: Attached<'_>,
+    raw: &str,
+) -> bool {
+    let target = resolve_path(project_root, scratch, attached, raw);
     let Ok(resolved) = canonicalize_lenient(&target) else {
         return true;
     };
@@ -322,11 +458,18 @@ pub fn in_read_only_root(project_root: &Path, scratch: Option<&Path>, raw: &str)
 /// One exception: a project that itself lives under `hidden` (a Jan worktree in
 /// `~/.jan/worktrees/`) is the agent's working tree, so paths inside it stay
 /// reachable. The home itself as the project grants nothing.
-pub fn in_hidden_root(project_root: &Path, scratch: Option<&Path>, hidden: &Path, raw: &str) -> bool {
+pub fn in_hidden_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    attached: Attached<'_>,
+    hidden: &Path,
+    raw: &str,
+) -> bool {
     let Ok(hidden) = canonicalize_lenient(hidden) else {
         return false;
     };
-    let Ok(resolved) = canonicalize_lenient(&resolve_path(project_root, scratch, raw)) else {
+    let Ok(resolved) = canonicalize_lenient(&resolve_path(project_root, scratch, attached, raw))
+    else {
         return false;
     };
     if !resolved.starts_with(&hidden) {
@@ -360,13 +503,15 @@ pub fn hidden_tokens(hidden: &Path, command: &str) -> Vec<String> {
 pub fn in_attached_root(
     project_root: &Path,
     scratch: Option<&Path>,
+    attached: Attached<'_>,
     roots: &[PathBuf],
     raw: &str,
 ) -> bool {
     if roots.is_empty() || !Path::new(raw).is_absolute() {
         return false;
     }
-    let Ok(resolved) = canonicalize_lenient(&resolve_path(project_root, scratch, raw)) else {
+    let Ok(resolved) = canonicalize_lenient(&resolve_path(project_root, scratch, attached, raw))
+    else {
         return false;
     };
     roots
@@ -827,7 +972,7 @@ mod tests {
         assert_eq!(escapes_project(&root, None, "d/x.txt"), Ok(true));
         assert_eq!(escapes_project(&root, None, "sub/rel.md"), Ok(true));
         assert_eq!(escapes_project(&root, None, "missing/../notes.md"), Ok(true));
-        assert_eq!(escapes_write_roots(&root, None, &[], "notes.md"), Ok(true));
+        assert_eq!(escapes_write_roots(&root, None, Attached::NONE, "notes.md"), Ok(true));
         assert!(symlink_escapes_root(&root, None, &root.join("notes.md")));
         assert!(symlink_escapes_root(&root, None, &root.join("d/x.txt")));
         let _ = std::fs::remove_dir_all(&root);
@@ -934,7 +1079,7 @@ mod tests {
 
         // Without the root it is an escape; with it, a legitimate read.
         assert!(escapes_project(&ws, None, &target).unwrap());
-        assert!(!escapes_read_roots(&ws, None, &roots, &target).unwrap());
+        assert!(!escapes_read_roots(&ws, None, Attached::reads(&roots), &target).unwrap());
 
         let _ = std::fs::remove_dir_all(&ws);
         let _ = std::fs::remove_dir_all(&repo);
@@ -959,7 +1104,7 @@ mod tests {
         let other = unique_root_outside_tmp();
         let roots = vec![repo.clone()];
         let target = other.join("secret").to_string_lossy().into_owned();
-        assert!(escapes_read_roots(&ws, None, &roots, &target).unwrap());
+        assert!(escapes_read_roots(&ws, None, Attached::reads(&roots), &target).unwrap());
         for d in [&ws, &repo, &other] {
             let _ = std::fs::remove_dir_all(d);
         }
@@ -973,7 +1118,7 @@ mod tests {
         let target = gone.join("x").to_string_lossy().into_owned();
         std::fs::remove_dir_all(&gone).unwrap();
         let roots = vec![gone];
-        assert!(escapes_read_roots(&ws, None, &roots, &target).unwrap());
+        assert!(escapes_read_roots(&ws, None, Attached::reads(&roots), &target).unwrap());
         let _ = std::fs::remove_dir_all(&ws);
     }
 
@@ -985,7 +1130,7 @@ mod tests {
         let repo = unique_root_outside_tmp();
         std::fs::write(repo.join("only-in-repo.txt"), b"x").unwrap();
         let roots = vec![repo.clone()];
-        assert!(escapes_read_roots(&ws, None, &roots, "only-in-repo.txt").is_ok());
+        assert!(escapes_read_roots(&ws, None, Attached::reads(&roots), "only-in-repo.txt").is_ok());
         let _ = std::fs::remove_dir_all(&ws);
         let _ = std::fs::remove_dir_all(&repo);
     }
@@ -1043,15 +1188,15 @@ mod tests {
         let jan = home.join(".jan");
         std::fs::create_dir_all(jan.join("projects/p-1/memory")).unwrap();
         std::fs::write(jan.join("config.toml"), b"k").unwrap();
-        assert!(in_hidden_root(&home, None, &jan, ".jan/config.toml"));
-        assert!(in_hidden_root(&home, None, &jan, "./.jan/../.jan/config.toml"));
-        assert!(in_hidden_root(&home, None, &jan, jan.join("config.toml").to_str().unwrap()));
-        assert!(in_hidden_root(&home, None, &jan, ".jan"));
-        assert!(in_hidden_root(&home, None, &jan, ".jan/projects/p-1/agent.toml"));
+        assert!(in_hidden_root(&home, None, Attached::NONE, &jan, ".jan/config.toml"));
+        assert!(in_hidden_root(&home, None, Attached::NONE, &jan, "./.jan/../.jan/config.toml"));
+        assert!(in_hidden_root(&home, None, Attached::NONE, &jan, jan.join("config.toml").to_str().unwrap()));
+        assert!(in_hidden_root(&home, None, Attached::NONE, &jan, ".jan"));
+        assert!(in_hidden_root(&home, None, Attached::NONE, &jan, ".jan/projects/p-1/agent.toml"));
         // Not yet existing files are hidden too, so a write cannot create one.
-        assert!(in_hidden_root(&home, None, &jan, ".jan/hooks.toml"));
-        assert!(!in_hidden_root(&home, None, &jan, "JAN.md"));
-        assert!(!in_hidden_root(&home, None, &jan, ".janitor"));
+        assert!(in_hidden_root(&home, None, Attached::NONE, &jan, ".jan/hooks.toml"));
+        assert!(!in_hidden_root(&home, None, Attached::NONE, &jan, "JAN.md"));
+        assert!(!in_hidden_root(&home, None, Attached::NONE, &jan, ".janitor"));
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -1064,10 +1209,10 @@ mod tests {
         let wt = jan.join("worktrees/repo-1/feature");
         std::fs::create_dir_all(&wt).unwrap();
         std::fs::write(jan.join("config.toml"), b"k").unwrap();
-        assert!(!in_hidden_root(&wt, None, &jan, "src/main.rs"));
-        assert!(!in_hidden_root(&wt, None, &jan, wt.to_str().unwrap()));
-        assert!(in_hidden_root(&wt, None, &jan, "../../../config.toml"));
-        assert!(in_hidden_root(&wt, None, &jan, jan.join("config.toml").to_str().unwrap()));
+        assert!(!in_hidden_root(&wt, None, Attached::NONE, &jan, "src/main.rs"));
+        assert!(!in_hidden_root(&wt, None, Attached::NONE, &jan, wt.to_str().unwrap()));
+        assert!(in_hidden_root(&wt, None, Attached::NONE, &jan, "../../../config.toml"));
+        assert!(in_hidden_root(&wt, None, Attached::NONE, &jan, jan.join("config.toml").to_str().unwrap()));
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -1079,7 +1224,7 @@ mod tests {
     ) -> bool {
         hidden_tokens(hidden, cmd)
             .iter()
-            .any(|t| in_hidden_root(project, scratch, hidden, t))
+            .any(|t| in_hidden_root(project, scratch, Attached::NONE, hidden, t))
     }
 
     #[test]
@@ -1118,5 +1263,84 @@ mod tests {
         std::fs::create_dir_all(&other).unwrap();
         assert_eq!(hidden_under(&other, &jan), None);
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The scratch is shadowed under the spelling the policy names, because the
+    /// mount is laid there only: with `/tmp/a -> /tmp/b` and `/tmp/a` attached,
+    /// the shell sees the folder at `/tmp/a` and `/tmp/b` is plain scratch.
+    #[test]
+    #[cfg(unix)]
+    fn shadows_scratch_by_the_named_spelling_only() {
+        let tag = format!("jan_shadow_{}", std::process::id());
+        let real = PathBuf::from(format!("/tmp/{tag}_real"));
+        let link = PathBuf::from(format!("/tmp/{tag}_link"));
+        let _ = std::fs::remove_dir_all(&real);
+        let _ = std::fs::remove_file(&link);
+        std::fs::create_dir_all(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let project = unique_root();
+        let named_link = vec![link.clone()];
+        let named_real = vec![real.clone()];
+        let via_link = Attached::new(&named_link, &[]);
+        let via_real = Attached::new(&named_real, &[]);
+        let at = |p: &Path, f: &str| p.join(f).to_string_lossy().into_owned();
+
+        // Named by the link: the link spelling shadows, the canonical one does not.
+        assert!(shadows_scratch(&project, via_link, &at(&link, "x")));
+        assert!(!shadows_scratch(&project, via_link, &at(&real, "x")));
+        // Named canonically: the link spelling is only scratch.
+        assert!(shadows_scratch(&project, via_real, &at(&real, "x")));
+        assert!(!shadows_scratch(&project, via_real, &at(&link, "x")));
+        // `..` is resolved first, so climbing out of the named root is scratch.
+        assert!(!shadows_scratch(&project, via_link, &format!("{}/../x", link.display())));
+        // A root that does not exist still shadows (fail safe), by name.
+        let gone = vec![PathBuf::from(format!("/tmp/{tag}_gone"))];
+        assert!(shadows_scratch(&project, Attached::new(&gone, &[]), &format!("/tmp/{tag}_gone/x")));
+
+        let _ = std::fs::remove_file(&link);
+        let _ = std::fs::remove_dir_all(&real);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    /// The gate's predicate refuses exactly what the handlers refuse: a write
+    /// into a read-only attached folder, not one a writable root overrides, nor
+    /// the project, the scratch, or a path that escapes every root.
+    #[test]
+    fn write_hits_read_only_root_matches_the_handler_refusal() {
+        let project = unique_root();
+        let scratch = unique_root();
+        let ro = unique_root();
+        let rw = unique_root();
+        let elsewhere = unique_root();
+        std::fs::create_dir_all(ro.join("sub")).unwrap();
+        let roots = vec![ro.clone(), rw.clone()];
+        let writable = vec![rw.clone()];
+        let a = Attached::new(&roots, &writable);
+        let hits = |raw: &str| write_hits_read_only_root(&project, Some(&scratch), a, raw);
+        let p = |base: &Path, f: &str| base.join(f).to_string_lossy().into_owned();
+
+        assert!(hits(&p(&ro, "new.txt")));
+        assert!(hits(&p(&ro, "sub/deep/new.txt")), "a not yet existing path still counts");
+        assert!(hits(&format!("{}/sub/../new.txt", ro.display())));
+        assert!(!hits(&p(&rw, "new.txt")), "a writable root is not read-only");
+        assert!(!hits("notes.md"), "the project is the run's own area");
+        assert!(!hits(&p(&project, "notes.md")));
+        assert!(!hits(&p(&scratch, "out.txt")));
+        assert!(!hits(&p(&elsewhere, "x.txt")), "an escape is the escape check's");
+        // With nothing attached nothing is read-only.
+        assert!(!write_hits_read_only_root(&project, Some(&scratch), Attached::NONE, &p(&ro, "x")));
+
+        // A writable folder nested in a read-only one wins; its sibling does not.
+        let nested = ro.join("rw_inside");
+        std::fs::create_dir_all(&nested).unwrap();
+        let nested_roots = vec![ro.clone(), nested.clone()];
+        let nested_writable = vec![nested.clone()];
+        let n = Attached::new(&nested_roots, &nested_writable);
+        assert!(!write_hits_read_only_root(&project, Some(&scratch), n, &p(&nested, "ok.txt")));
+        assert!(write_hits_read_only_root(&project, Some(&scratch), n, &p(&ro, "no.txt")));
+
+        for d in [&project, &scratch, &ro, &rw, &elsewhere] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 }
