@@ -384,6 +384,23 @@ describe('real ChatInput + real stores + production restoreSubmittedDraft', () =
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
+  it('refuses a second submit (Enter or button) while the first onSubmit is pending', async () => {
+    seedComposer('original draft')
+    const parent = makeParent()
+    render(<ChatInput onSubmit={parent.onSubmit} />)
+    await send()
+    await waitFor(() => expect(parent.onSubmit).toHaveBeenCalledTimes(1))
+    // Held send: the draft is still in the box and Enter / the button are live.
+    await act(async () => {
+      fireEvent.keyDown(textarea(), { key: 'Enter' })
+      fireEvent.click(screen.getByTestId('send-message-button'))
+    })
+    expect(parent.onSubmit).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('send-message-button')).toBeDisabled()
+    await act(async () => parent.settle('accepted'))
+    await waitFor(() => expect(textarea()).toHaveValue(''))
+  })
+
   it('control: an accepted send clears the prompt and attachments', async () => {
     seedComposer('original draft')
     const parent = makeParent()
