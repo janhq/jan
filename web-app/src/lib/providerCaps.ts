@@ -91,6 +91,20 @@ const MINIMAX: ProviderCaps = {
   maybe: new Set(),
 }
 
+/**
+ * Measured against the live FlexAI endpoint (2026-10-03, 12 chat models).
+ * `top_k`, `repetition_penalty` and `frequency_penalty`/`presence_penalty` are
+ * accepted on every model probed and are in the endpoint's advertised sampler
+ * list. `min_p` is rejected ("not yet supported with speculative decoding") on
+ * the models served that way and accepted on the rest; strict `json_schema` is
+ * rejected by some models; `typical_p` is accepted but is not advertised, so
+ * its effect is unverified. Those three are per-model, hence "may be ignored".
+ */
+const FLEXAI: ProviderCaps = {
+  supported: set('penalties', 'top_k', 'repetition'),
+  maybe: new Set(['min_p', 'typical_p', 'json_schema']),
+}
+
 const LLAMACPP: ProviderCaps = {
   supported: set(
     'penalties',
@@ -159,6 +173,7 @@ const BUILTIN_CAPS: Record<string, ProviderCaps> = {
   huggingface: HUGGINGFACE,
   nvidia: NVIDIA,
   minimax: MINIMAX,
+  flexai: FLEXAI,
   llamacpp: LLAMACPP,
   mlx: MLX,
 }
