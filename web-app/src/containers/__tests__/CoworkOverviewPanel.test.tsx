@@ -4,7 +4,8 @@ import '@testing-library/jest-dom/vitest'
 import { useTitlebarLayout, TITLEBAR_HEIGHT } from '@/stores/titlebar-layout-store'
 import { CoworkOverviewPanel } from '../CoworkOverviewPanel'
 
-vi.mock('@/hooks/useMediaQuery', () => ({ useMediaQuery: () => true }))
+const media = vi.hoisted(() => ({ desktop: true }))
+vi.mock('@/hooks/useMediaQuery', () => ({ useMediaQuery: () => media.desktop }))
 vi.mock('@/i18n/react-i18next-compat', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 
 const props = () => ({
@@ -17,6 +18,17 @@ const props = () => ({
 })
 
 describe('CoworkOverviewPanel', () => {
+  it('describes the narrow-width sheet so Radix has an accessible description', () => {
+    media.desktop = false
+    try {
+      render(<CoworkOverviewPanel {...props()} />)
+      const dialog = screen.getByRole('dialog')
+      expect(dialog).toHaveAccessibleName('common:overview.title')
+      expect(dialog).toHaveAccessibleDescription('common:overview.description')
+    } finally {
+      media.desktop = true
+    }
+  })
   it('shows progress, files and change counts together', () => {
     render(<CoworkOverviewPanel {...props()} />)
     expect(screen.getByLabelText('common:overview.title')).toHaveClass('z-(--layer-panel)')
