@@ -854,6 +854,14 @@ async fn eval_script(
     registered.disarm();
     if let Some(pid) = pid {
         crate::tools::proc::unregister(owner, pid);
+        // The leader is done, but whatever it left running in its process group
+        // (`(sleep 30; touch marker) &`) is not: once unregistered, a later
+        // revocation could no longer find it. Reap the group on every
+        // completed-poll path, a match included. Windows cannot enumerate the
+        // descendants of an exited parent, so only the timeout arm below
+        // (leader still alive) reaps there.
+        #[cfg(unix)]
+        crate::tools::proc::kill_tree(pid);
     }
     match result {
         Ok((Ok(exit), head)) if exit.success() => {
@@ -1467,6 +1475,26 @@ mod tests {
             .unwrap();
         assert_eq!(notices.len(), 1);
         assert!(notices[0].text.contains("a hit at last"));
+    }
+
+    // R5: a poll that completes normally must not leave its background
+    // descendants running (and, once unregistered, beyond a revocation's reach).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_completed_poll_does_not_leave_descendants_running() {
+        let dir = unique_root();
+        let marker = dir.join("late-marker");
+        let script = format!(
+            "(sleep 1; touch '{}') >/dev/null 2>&1 & exit 0",
+            marker.display()
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start(spec("bg", &script, 30), ctx_for(&dir)).unwrap();
+        let update = next_notice(&set).await;
+        assert!(update.matched, "the poll itself must still match");
+        tokio::time::sleep(Duration::from_millis(1700)).await;
+        assert!(!marker.exists(), "a surviving descendant of a completed poll wrote its marker");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // R8: two monitors started on one thread must each deliver to the sink
