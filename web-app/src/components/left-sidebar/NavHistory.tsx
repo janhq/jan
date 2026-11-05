@@ -32,7 +32,8 @@ import { isDeletedByDeleteAll, useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
 import { useCoworkRun, useIsSessionActive } from '@/hooks/useCoworkRun'
-import { stopAgentSessionMonitors } from '@/lib/agentTools'
+import { cancelAgentThreadBash, stopAgentSessionMonitors } from '@/lib/agentTools'
+import { abortRun } from '@/lib/coworkRunner'
 import { dropMonitorLane } from '@/lib/coworkMonitor'
 import { ThreadItem } from '@/containers/ThreadList'
 import { RenameThreadDialog } from '@/containers/dialogs/RenameThreadDialog'
@@ -155,6 +156,10 @@ export function NavHistory() {
   const confirmDelete = useCallback(() => {
     if (pendingDelete) {
       const sid = pendingDelete.id
+      // A run still in flight would keep calling the model and recreate the
+      // workspace after the delete; stop it first, as project deletion does.
+      abortRun(sid)
+      void cancelAgentThreadBash(sid)
       // Watchers belong to the session, so they go with it.
       void stopAgentSessionMonitors(sid)
       dropMonitorLane(sid)
