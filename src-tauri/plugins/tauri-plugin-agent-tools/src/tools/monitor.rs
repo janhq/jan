@@ -758,12 +758,21 @@ async fn eval_script(
             tool_input: Some(serde_json::json!({ "command": script })),
             ..Default::default()
         };
-        let outcome = crate::tools::hooks::run_hooks(
+        // Hooks are spawned under the same admission as the poll itself: a
+        // revocation either finds the hook registered under the monitor's
+        // owner or stops it from starting (see `SpawnAdmission`).
+        let admission = barrier.map(|(auth, generation)| crate::tools::hooks::SpawnAdmission {
+            owner: auth.owner.clone(),
+            thread_id: auth.thread_id.clone(),
+            generation,
+        });
+        let outcome = crate::tools::hooks::run_hooks_admitted(
             hooks,
             crate::tools::hooks::HookEvent::PreToolUse,
             &payload,
             &tool_ctx,
             false,
+            admission.as_ref(),
         )
         .await;
         if let Some(reason) = outcome.denied {
@@ -1271,6 +1280,108 @@ mod tests {
         let update = next_notice(&set).await;
         assert!(update.matched, "{}", update.text);
         assert!(marker.exists(), "control failed to spawn");
+    }
+
+    fn sleeping_hook_set(command: &str) -> crate::tools::hooks::HookSet {
+        let mut hooks = crate::tools::hooks::HookSet::new();
+        hooks.extend_from(
+            vec![crate::tools::hooks::HookEntry {
+                event: "PreToolUse".into(),
+                matcher: Some(crate::tools::SHELL_TOOL.into()),
+                command: command.into(),
+                timeout_secs: None,
+            }],
+            Path::new("test-hooks"),
+        );
+        assert_eq!(hooks.len(), 1, "the test hook must have loaded");
+        hooks
+    }
+
+    /// R4: a poll's PreToolUse hook is part of the monitor's authority. It
+    /// registers under the monitor's owner so a revocation's reap finds it and
+    /// its descendants, instead of an ownerless bucket nothing sweeps.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_poll_hook_is_owned_and_reaped_by_a_revocation() {
+        let dir = unique_root();
+        let id = "tm-hook-owned";
+        let owner = format!("thread-monitor:{id}");
+        let pidfile = dir.join("hook-sleeper.pid");
+        let mut ctx = ctx_for(&dir);
+        // The sleeper is the hook shell's grandchild, so liveness can be probed
+        // without a zombie (same pattern as the owned-children test).
+        ctx.hooks = Some(sleeping_hook_set(&format!(
+            "sleep 30 & echo $! > {}; wait",
+            pidfile.display()
+        )));
+        let (ctx, authority) = thread_authority_with(
+            ctx,
+            id,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(id))),
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start_owned(spec("watch", "false", 30), ctx, Some(authority))
+            .unwrap();
+        let mut pid = None;
+        for _ in 0..400 {
+            if let Some(parsed) = std::fs::read_to_string(&pidfile)
+                .ok()
+                .and_then(|s| s.trim().parse::<i32>().ok())
+            {
+                pid = Some(parsed);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let pid = nix::unistd::Pid::from_raw(pid.expect("the hook never started"));
+        assert!(nix::sys::signal::kill(pid, None).is_ok(), "hook sleeper must be alive");
+        // What a revocation does: drain the owner's bucket and kill its trees.
+        let pids = crate::tools::proc::take_thread_pids(&owner);
+        assert!(!pids.is_empty(), "the hook child is not registered under the monitor's owner");
+        for p in pids {
+            crate::tools::proc::kill_tree(p);
+        }
+        let mut dead = false;
+        for _ in 0..500 {
+            if nix::sys::signal::kill(pid, None).is_err() {
+                dead = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        set.stop_all();
+        assert!(dead, "the revocation's reap did not take the hook's process tree");
+    }
+
+    /// R4: hook spawning is admitted against the generation like the poll's own
+    /// spawn. A poll authorized at a generation that has since moved starts no
+    /// hook (and so, with the hook refused, no script either).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_poll_hook_does_not_start_after_the_generation_moved() {
+        let dir = unique_root();
+        let id = "tm-hook-stale";
+        let hook_marker = dir.join("hook-ran");
+        let script_marker = dir.join("script-ran");
+        let mut ctx = ctx_for(&dir);
+        ctx.hooks = Some(sleeping_hook_set(&format!("touch {}", hook_marker.display())));
+        // The poll was authorized at a token the thread has already moved past.
+        let (ctx, authority) = thread_authority_with(
+            ctx,
+            id,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(id) + 1_000_000)),
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start_owned(
+            spec("watch", &format!("touch {}", script_marker.display()), 30),
+            ctx,
+            Some(authority),
+        )
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        set.stop_all();
+        assert!(!hook_marker.exists(), "a hook started under a stale generation");
+        assert!(!script_marker.exists(), "the poll script started under a stale generation");
     }
 
     /// A thread monitor's poll children are owned, so a revocation reaps

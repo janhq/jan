@@ -456,6 +456,35 @@ pub async fn run_hooks(
     ctx: &ToolContext<'_>,
     plan_mode: bool,
 ) -> HookOutcome {
+    run_hooks_admitted(set, event, payload, ctx, plan_mode, None).await
+}
+
+/// Who a hook runs on behalf of when that owner can be revoked mid-flight (a
+/// thread-owned monitor poll). Each hook spawn is then admitted like the poll's
+/// own spawn: the thread's generation is re-checked under the global admission
+/// guard, the child registers under the owner's process bucket (so a
+/// revocation's reap finds it), and its whole process tree is reaped when the
+/// hook is done. The guard is released as soon as the child is registered,
+/// never held across the hook running.
+#[derive(Debug, Clone)]
+pub struct SpawnAdmission {
+    /// Process-registry bucket the hook child registers under.
+    pub owner: String,
+    pub thread_id: String,
+    /// The generation the surrounding poll was authorized at.
+    pub generation: u64,
+}
+
+/// [`run_hooks`] with spawn admission for a revocable owner; `None` is exactly
+/// [`run_hooks`].
+pub async fn run_hooks_admitted(
+    set: &HookSet,
+    event: HookEvent,
+    payload: &HookPayload,
+    ctx: &ToolContext<'_>,
+    plan_mode: bool,
+    admission: Option<&SpawnAdmission>,
+) -> HookOutcome {
     let mut outcome = HookOutcome::default();
     if plan_mode && event.inert_in_plan_mode() {
         return outcome;
@@ -467,7 +496,7 @@ pub async fn run_hooks(
     let body = serde_json::to_string(&payload.to_json(event, ctx.project_root))
         .unwrap_or_else(|_| "{}".to_string());
     for hook in hooks {
-        match run_one(hook, &body, ctx).await {
+        match run_one(hook, &body, ctx, admission).await {
             Ok(mut response) => {
                 if let Some(context) = response.context.take().filter(|c| !c.trim().is_empty()) {
                     outcome.context.push(context);
@@ -496,23 +525,46 @@ pub async fn run_hooks(
 
 /// Run one hook command to completion. `Err` carries the one-line detail a
 /// [`HookNotice`] reports; it never propagates as a run failure.
-async fn run_one(hook: &Hook, body: &str, ctx: &ToolContext<'_>) -> Result<HookResponse, String> {
+async fn run_one(
+    hook: &Hook,
+    body: &str,
+    ctx: &ToolContext<'_>,
+    admission: Option<&SpawnAdmission>,
+) -> Result<HookResponse, String> {
     let (shell, sandbox_env, _policy) = crate::tools::handlers::confined_shell(ctx)
         .map_err(|e| format!("could not start: {}", e.trim_start_matches("ERROR: ")))?;
-    // A hook child is short-lived and belongs to the run rather than to a
-    // cancellable tool call, so it registers in the process-wide bucket the
-    // monitor poll children use.
-    let mut child = crate::tools::proc::spawn_with_stdin(
-        &shell,
-        &hook.command,
-        ctx.project_root,
-        sandbox_env.as_ref(),
-        ctx.shell_env(),
-        None,
-        Some(body),
-    )
-    .await
-    .map_err(|e| format!("could not start: {e}"))?;
+    // A hook child is short-lived. Without an owner it belongs to the run and
+    // registers in the process-wide bucket; one run for a revocable owner
+    // registers under that owner so a revocation can find and reap it.
+    let owner = admission.map(|a| a.owner.as_str());
+    let mut child = {
+        // Re-check the owner's generation and register the child under one
+        // guard, so a revocation can neither miss a hook it raced with nor
+        // see one start after it. Released once the child is registered.
+        let _admitted = match admission {
+            Some(a) => {
+                let guard = crate::thread_capabilities::admission().lock().await;
+                if crate::thread_capabilities::generation(&a.thread_id) != a.generation {
+                    return Err(
+                        "not started: this conversation's permissions changed".to_string()
+                    );
+                }
+                Some(guard)
+            }
+            None => None,
+        };
+        crate::tools::proc::spawn_with_stdin(
+            &shell,
+            &hook.command,
+            ctx.project_root,
+            sandbox_env.as_ref(),
+            ctx.shell_env(),
+            owner,
+            Some(body),
+        )
+        .await
+        .map_err(|e| format!("could not start: {e}"))?
+    };
     let pid = child.id();
     let timeout = Duration::from_secs(hook.timeout_secs.max(1));
     let collected = tokio::time::timeout(timeout, async {
@@ -550,7 +602,15 @@ async fn run_one(hook: &Hook, body: &str, ctx: &ToolContext<'_>) -> Result<HookR
     })
     .await;
     if let Some(pid) = pid {
-        crate::tools::proc::unregister(None, pid);
+        crate::tools::proc::unregister(owner, pid);
+        // A revocable owner's hook must leave nothing behind it: once
+        // unregistered, a descendant it backgrounded is beyond a revocation's
+        // reach. (Windows cannot enumerate an exited parent's tree; the
+        // timeout arm below reaps there while the leader is alive.)
+        #[cfg(unix)]
+        if owner.is_some() {
+            crate::tools::proc::kill_tree(pid);
+        }
     }
     let (status, head) = match collected {
         Ok(pair) => pair,
