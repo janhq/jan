@@ -15,8 +15,9 @@ use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::nofollow;
 use crate::tools::sandbox::{
-    escapes_write_roots, hidden_under, in_attached_read_only_root, in_read_only_root, Attached, in_scratch, landing, lexical_normalize,
-    refuse_windows_name, resolve_path, symlink_escapes_any_root, Landing,
+    escapes_write_roots, hidden_under, in_attached_read_only_root, in_read_only_root, in_scratch,
+    landing, lexical_normalize, refuse_windows_name, resolve_path, symlink_escapes_any_root,
+    Attached, Landing,
 };
 use crate::screenshot_pages::PageScope;
 use crate::tools::{BuiltinTool, ImageContentPart, ScreenshotBackend, ToolContext};
@@ -921,7 +922,7 @@ async fn write(
     // Unconfined, `landing` lets a target outside every root through (the gate
     // put it to the user), which includes a read-only attached folder.
     if in_attached_read_only_root(root, scratch, attached, &real) {
-        return format!("ERROR: {path} is in a read-only attached folder; it cannot be changed.");
+        return crate::tools::read_only_root_refusal(path);
     }
     let content = content.to_string();
     let outcome = tokio::task::spawn_blocking(move || {
@@ -1049,7 +1050,7 @@ async fn edit(
         return format!("ERROR: refused to edit through a symlink out of the workspace: {path}");
     };
     if in_attached_read_only_root(root, scratch, attached, &real) {
-        return format!("ERROR: {path} is in a read-only attached folder; it cannot be changed.");
+        return crate::tools::read_only_root_refusal(path);
     }
     let read_path = real.clone();
     let read = tokio::task::spawn_blocking(move || nofollow::read(&read_path)).await;

@@ -837,6 +837,12 @@ pub fn hidden_home_refusal(name: &str, refused: &str, offered: &[&str]) -> Strin
     format!("{head} For memory and skills use: {}.", offered.join(", "))
 }
 
+/// The refusal for a `write`/`edit` into a folder attached read-only. One text
+/// for the handlers and for the gate's hard deny.
+pub fn read_only_root_refusal(path: &str) -> String {
+    format!("ERROR: {path} is in a read-only attached folder; copy the file into the workspace and edit it there.")
+}
+
 /// The shell tool's name. Not `bash`: on Windows it runs PowerShell or cmd
 /// (janhq/jan#9128).
 pub const SHELL_TOOL: &str = "shell";

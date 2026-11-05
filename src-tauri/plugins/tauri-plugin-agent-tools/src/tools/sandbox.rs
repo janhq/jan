@@ -260,6 +260,27 @@ pub fn in_attached_read_only_root(
     attached.read.iter().any(|r| inside(r))
 }
 
+/// True iff a `write`/`edit` of `raw` would land in an attached folder the
+/// caller did not make writable: the gate's form of the handlers' refusal, built
+/// from the same pieces (`resolve_path`, `landing` over the write roots, then
+/// [`in_attached_read_only_root`]) so the gate refuses exactly what the handler
+/// would, and a writable override, the project and the scratch keep their
+/// exemptions. A path that escapes every root is left to the escape check.
+pub fn write_hits_read_only_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    attached: Attached<'_>,
+    raw: &str,
+) -> bool {
+    let target = resolve_path(project_root, raw);
+    match landing(project_root, scratch, attached.write, &target) {
+        Landing::Inside(real) | Landing::Outside(Some(real)) => {
+            in_attached_read_only_root(project_root, scratch, attached, &real)
+        }
+        Landing::Escapes | Landing::Outside(None) => false,
+    }
+}
+
 /// True iff a write to `raw` would land in a read-only `project_root`: inside
 /// it and not in the session scratch (which a read-only subagent still writes
 /// to). Fails closed: a path that cannot be resolved counts as inside.
@@ -1032,5 +1053,47 @@ mod tests {
         std::fs::create_dir_all(&other).unwrap();
         assert_eq!(hidden_under(&other, &jan), None);
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The gate's predicate refuses exactly what the handlers refuse: a write
+    /// into a read-only attached folder, not one a writable root overrides, nor
+    /// the project, the scratch, or a path that escapes every root.
+    #[test]
+    fn write_hits_read_only_root_matches_the_handler_refusal() {
+        let project = unique_root();
+        let scratch = unique_root();
+        let ro = unique_root();
+        let rw = unique_root();
+        let elsewhere = unique_root();
+        std::fs::create_dir_all(ro.join("sub")).unwrap();
+        let roots = vec![ro.clone(), rw.clone()];
+        let writable = vec![rw.clone()];
+        let a = Attached::new(&roots, &writable);
+        let hits = |raw: &str| write_hits_read_only_root(&project, Some(&scratch), a, raw);
+        let p = |base: &Path, f: &str| base.join(f).to_string_lossy().into_owned();
+
+        assert!(hits(&p(&ro, "new.txt")));
+        assert!(hits(&p(&ro, "sub/deep/new.txt")), "a not yet existing path still counts");
+        assert!(hits(&format!("{}/sub/../new.txt", ro.display())));
+        assert!(!hits(&p(&rw, "new.txt")), "a writable root is not read-only");
+        assert!(!hits("notes.md"), "the project is the run's own area");
+        assert!(!hits(&p(&project, "notes.md")));
+        assert!(!hits(&p(&scratch, "out.txt")));
+        assert!(!hits(&p(&elsewhere, "x.txt")), "an escape is the escape check's");
+        // With nothing attached nothing is read-only.
+        assert!(!write_hits_read_only_root(&project, Some(&scratch), Attached::NONE, &p(&ro, "x")));
+
+        // A writable folder nested in a read-only one wins; its sibling does not.
+        let nested = ro.join("rw_inside");
+        std::fs::create_dir_all(&nested).unwrap();
+        let nested_roots = vec![ro.clone(), nested.clone()];
+        let nested_writable = vec![nested.clone()];
+        let n = Attached::new(&nested_roots, &nested_writable);
+        assert!(!write_hits_read_only_root(&project, Some(&scratch), n, &p(&nested, "ok.txt")));
+        assert!(write_hits_read_only_root(&project, Some(&scratch), n, &p(&ro, "no.txt")));
+
+        for d in [&project, &scratch, &ro, &rw, &elsewhere] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 }

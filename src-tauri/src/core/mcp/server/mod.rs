@@ -258,6 +258,13 @@ impl JanToolServer {
             Decision::HardDeny(DenyReason::Policy) => {
                 return (format!("ERROR: tool '{name}' is denied by policy"), Vec::new())
             }
+            Decision::HardDeny(DenyReason::ReadOnlyRoot) => {
+                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or_default();
+                return (
+                    tauri_plugin_agent_tools::tools::read_only_root_refusal(path),
+                    Vec::new(),
+                );
+            }
             Decision::HardDeny(DenyReason::Hidden) => {
                 let offered: Vec<&str> = tauri_plugin_agent_tools::tools::JAN_HOME_TOOLS
                     .into_iter()
