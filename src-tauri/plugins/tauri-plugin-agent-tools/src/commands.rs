@@ -147,18 +147,19 @@ pub async fn thread_workspace_delete(
 /// were removed. Called once at startup: sandboxes are ephemeral, but a crash or
 /// a thread deleted while the app was closed would otherwise leave one behind.
 ///
-/// Abandoned host-temp scratch directories are collected in the same pass. They
-/// need their own sweep because they are keyed to ids the caller holds (a run,
-/// a thread, a CLI session), so unlike a thread sandbox there is no `keep` list
-/// to compare against -- see [`workspace::sweep_stale_scratch_dirs`]. Their
-/// count is not added to the return value, which names thread sandboxes.
+/// Abandoned scratch directories in the cache are collected in the same pass,
+/// with `keep` as the live set so no surviving thread's scratch goes. The
+/// sweep covers every project's folder, so a CLI session's scratch is only
+/// ever collected once it is a week stale -- see
+/// [`workspace::sweep_stale_scratch_dirs`]. Their count is not added to the
+/// return value, which names thread sandboxes.
 #[tauri::command]
 pub async fn thread_workspace_sweep(
     data_folder: String,
     keep: Vec<String>,
 ) -> Result<usize, AgentToolsError> {
     let data_folder = workspace::host_data_folder(&data_folder);
-    workspace::sweep_stale_scratch_dirs().await;
+    workspace::sweep_stale_scratch_dirs(&keep).await;
     workspace::sweep_thread_workspaces(Path::new(&data_folder), &keep)
         .await
         .map_err(Into::into)
@@ -447,7 +448,7 @@ pub async fn subagent_result_reserve(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned(),
-            path: crate::tools::sandbox::scratch_display_path(Some(&scratch), &p),
+            path: p.to_string_lossy().into_owned(),
         })
     })
     .await
@@ -502,7 +503,7 @@ pub async fn blackboard_write(
                 AgentToolsError::from("could not claim a blackboard file".to_string())
             })?;
         if crate::tools::spill::fill_subagent_result(&path, &content) {
-            Ok(crate::tools::sandbox::scratch_display_path(Some(&scratch), &path))
+            Ok(path.to_string_lossy().into_owned())
         } else {
             Err(AgentToolsError::from(
                 "could not write the blackboard file".to_string(),
@@ -616,6 +617,8 @@ pub async fn start_monitor(
     let ctx = monitor::MonitorCtx {
         project_root: root,
         scratch_root: Some(scratch),
+        // Desktop chat and Cowork have no filesystem project to key one on.
+        pkg_cache: None,
         mask_root: Some(PathBuf::from(&data_folder)),
         hidden_root: workspace::hidden_root(true),
         read_roots,
@@ -1192,9 +1195,9 @@ mod tests {
         std::env::temp_dir().join(format!("jan_cmd_test_{}_{}", std::process::id(), n))
     }
 
-    /// A folder that is *not* under the host temp dir. On Linux an absolute
-    /// `/tmp/...` path is remapped into the session scratch, which would route
-    /// an attached-folder test through the wrong branch entirely.
+    /// A folder that is *not* under the host temp dir, where these tests'
+    /// data folders (and so their thread sandboxes) and scratch live, so an
+    /// attached folder is never mistaken for either.
     fn repo_outside_tmp(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1388,8 +1391,7 @@ mod tests {
     /// A write that escapes the sandbox (absolute or `..`) must be refused on
     /// the desktop surface, just like an escaping read -- it could reach host
     /// files. The session scratch is the exception: it is the agent's own area,
-    /// spelled `/tmp/...` where it is bound over the sandbox's `/tmp` and by its
-    /// real path where nothing is mounted there.
+    /// reached by its real path on every platform.
     #[tokio::test]
     async fn escaping_writes_are_refused() {
         let data = unique_data_folder();
@@ -1418,21 +1420,16 @@ mod tests {
             );
         }
 
-        // A scratch write is not a host escape and succeeds, under whichever
-        // spelling reaches the scratch on this platform. The scratch outlives the
-        // test process, so the name is per-run: a leftover file would answer
-        // "No change" instead of "Created".
+        // A scratch write is not a host escape and succeeds, at the scratch's
+        // real path. The scratch outlives the test process, so the name is
+        // per-run: a leftover file would answer "No change" instead of
+        // "Created".
         let scratch = crate::workspace::ensure_scratch_dir(T_SCRATCH)
             .await
             .unwrap();
         let name = format!("jan_cmd_scratch_{}.txt", std::process::id());
-        let (requested, expected) = if cfg!(target_os = "linux") {
-            let p = format!("/tmp/{name}");
-            (p.clone(), p)
-        } else {
-            let p = scratch.join(&name).to_string_lossy().into_owned();
-            (p.clone(), p)
-        };
+        let requested = scratch.join(&name).to_string_lossy().into_owned();
+        let expected = requested.clone();
         let res = execute_tool(
             df.clone(),
             T_SCRATCH.into(),
@@ -1704,15 +1701,12 @@ mod tests {
             err.message
         );
 
-        // The tool-visible scratch path follows the shell: `/tmp` on Linux,
-        // the real per-thread directory on macOS and Windows.
+        // Each thread's scratch is its own directory: t2 naming the file at
+        // its own scratch finds nothing of t1's.
         let one_scratch = crate::workspace::ensure_scratch_dir(t1).await.unwrap();
         std::fs::write(one_scratch.join("secret.txt"), b"classified").unwrap();
         let two_scratch = crate::workspace::ensure_scratch_dir(t2).await.unwrap();
-        let requested = crate::tools::sandbox::scratch_display_path(
-            Some(&two_scratch),
-            &two_scratch.join("secret.txt"),
-        );
+        let requested = two_scratch.join("secret.txt").to_string_lossy().into_owned();
         let out = execute_tool(
             df.clone(),
             t2.into(),

@@ -22,14 +22,17 @@ import { join } from 'node:path'
  * inherited, a run DELETES the developer's real ~/.config/Jan/settings.json.
  * Confirmed against a decoy: the file did not survive one run.
  *
- * The scratch directory is pinned on every platform, not just Linux.
- * `std::env::temp_dir()` reads TMPDIR on Unix and TMP/TEMP on Windows, and
- * tauri-plugin-agent-tools puts agent scratch at `temp_dir()/jan-agent-<session>`
- * -- then sweep_stale_scratch_dirs() (workspace.rs) DELETES every `jan-agent-*`
- * older than 24h it finds there. The current smoke suite never reaches that
- * sweep (it is gated on an existing thread, and a fresh profile has none), so
- * this is pre-emptive rather than a live bug. It stops being pre-emptive the
- * moment a spec creates a thread.
+ * The temp directory is pinned on every platform, not just Linux.
+ * `std::env::temp_dir()` reads TMPDIR on Unix and TMP/TEMP on Windows. Agent
+ * scratch now lives under the OS cache dir (`<cache>/jan/<project>/scratch/`,
+ * which XDG_CACHE_HOME and the Windows profile redirect below move too), but
+ * sweep_stale_scratch_dirs() (workspace.rs) still DELETES the legacy
+ * `jan-agent-*` and `jan-trash-*` entries older than 7 days it finds in
+ * `temp_dir()`, and with no cache dir at all the cache root itself falls back
+ * to `temp_dir()/jan-<uid>`. The current smoke suite never reaches that sweep
+ * (it is gated on an existing thread, and a fresh profile has none), so this
+ * is pre-emptive rather than a live bug. It stops being pre-emptive the moment
+ * a spec creates a thread.
  *
  * On Windows the lever is `JAN_DATA_ROOT`, which is Jan's own rather than
  * something `dirs` provides: `dirs` asks the known-folder API for

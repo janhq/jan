@@ -16,7 +16,7 @@ use crate::tools::proc;
 use crate::tools::nofollow;
 use crate::tools::sandbox::{
     escapes_write_roots, hidden_under, in_read_only_root, in_scratch, landing, lexical_normalize,
-    refuse_windows_name, resolve_path, scratch_display_path, symlink_escapes_any_root, Landing,
+    refuse_windows_name, resolve_path, symlink_escapes_any_root, Landing,
 };
 use crate::screenshot_pages::PageScope;
 use crate::tools::{BuiltinTool, ImageContentPart, ScreenshotBackend, ToolContext};
@@ -73,10 +73,10 @@ fn rel_to(base: &Path, path: &Path) -> String {
 /// How a mutated path is named back to the model: relative inside the project,
 /// absolute once it escapes. Normalizes first, since `root/../x` strips to a
 /// misleading `../x` against an un-normalized root. A target inside the session
-/// scratch is named by whichever spelling the shell can also use there.
+/// scratch is named by its full real path, which the shell can use too.
 fn display_path(root: &Path, scratch: Option<&Path>, target: &Path) -> String {
     if in_scratch(scratch, target) {
-        return scratch_display_path(scratch, target);
+        return lexical_normalize(target).to_string_lossy().into_owned();
     }
     rel_to(&lexical_normalize(root), &lexical_normalize(target))
 }
@@ -282,7 +282,6 @@ pub async fn preview_diff(
     ctx: &ToolContext<'_>,
 ) -> Option<String> {
     let project_root = ctx.project_root;
-    let scratch = ctx.scratch_root;
     match tool.name {
         "edit" => {
             let edits = args.get("edits").and_then(|v| v.as_array())?;
@@ -290,7 +289,7 @@ pub async fn preview_diff(
                 return None;
             }
             let prior = match arg_str(args, "path") {
-                Some(p) => tokio::fs::read_to_string(resolve_path(project_root, scratch, p))
+                Some(p) => tokio::fs::read_to_string(resolve_path(project_root, p))
                     .await
                     .unwrap_or_default(),
                 None => String::new(),
@@ -300,7 +299,7 @@ pub async fn preview_diff(
         }
         "write" => {
             let prior = match arg_str(args, "path") {
-                Some(p) => tokio::fs::read_to_string(resolve_path(project_root, scratch, p))
+                Some(p) => tokio::fs::read_to_string(resolve_path(project_root, p))
                     .await
                     .ok(),
                 None => None,
@@ -682,7 +681,7 @@ async fn read(
     };
     let offset = arg_u64(args, "offset").map(|v| v as usize);
     let limit = arg_u64(args, "limit").map(|v| v as usize);
-    let target = resolve_path(root, scratch, path);
+    let target = resolve_path(root, path);
     // Fail closed: a component swapped to a symlink after the gate validated
     // the path must not redirect the open out of the workspace.
     if symlink_escapes_any_root(root, scratch, read_roots, &target) {
@@ -804,7 +803,7 @@ async fn ls(
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(LS_DEFAULT_LIMIT);
-    let target = resolve_path(root, scratch, path);
+    let target = resolve_path(root, path);
     // Names are content too: a symlinked directory would list a host directory.
     if symlink_escapes_any_root(root, scratch, read_roots, &target) {
         return format!("ERROR: refused to list through a symlink out of the workspace: {path}");
@@ -863,7 +862,7 @@ async fn write(
     // canonical root (not the raw argument) so `..` and absolute paths are
     // caught even if the gate's decision was made against a stale view.
     // `write_roots` widen the confinement exactly as they widened the gate.
-    let target = resolve_path(root, scratch, path);
+    let target = resolve_path(root, path);
     if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to write outside the agent workspace: {path}");
     }
@@ -995,7 +994,7 @@ async fn edit(
     if let Some((name, why)) = refuse_windows_name(path) {
         return format!("ERROR: refused to edit '{name}' in {path}: the name {why}");
     }
-    let target = resolve_path(root, scratch, path);
+    let target = resolve_path(root, path);
     if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
@@ -1037,22 +1036,23 @@ async fn edit(
 
 /// The refusal a `write`/`edit` gets for a path in a read-only root. Refused
 /// here rather than left to the prompt, which auto-approval would answer.
-/// Names the scratch only where there is one, by the spelling the tools use.
+/// Names the scratch only where there is one.
 fn read_only_refusal(args: &serde_json::Value, scratch: Option<&Path>) -> String {
     let path = arg_str(args, "path").unwrap_or_default();
     let head = format!("ERROR: {path} is in a read-only checkout; this run cannot change it.");
     match scratch {
         Some(s) => format!(
             "{head} Write temporary files under {} instead.",
-            scratch_display_path(Some(s), s)
+            s.display()
         ),
         None => head,
     }
 }
 
 /// The shell a confined command launches with: the (possibly jail-wrapped)
-/// shell config, the path the sandbox exposes as its temp dir, and the policy
-/// itself (which `denial_hint` reads even when the shell runs unconfined).
+/// shell config, the env that names the scratch and package cache at their
+/// real paths (`None` unconfined), and the policy itself (which `denial_hint`
+/// reads even when the shell runs unconfined).
 ///
 /// With the sandbox off the shell is spawned bare, the way the user's own
 /// terminal would run it: no wrapper, no policy mounts, the real `$HOME` and
@@ -1063,7 +1063,7 @@ fn read_only_refusal(args: &serde_json::Value, scratch: Option<&Path>) -> String
 /// call would.
 pub(crate) fn confined_shell(
     ctx: &ToolContext<'_>,
-) -> Result<(proc::ShellConfig, Option<PathBuf>, jail::Policy), String> {
+) -> Result<(proc::ShellConfig, Option<proc::SandboxEnv>, jail::Policy), String> {
     let root = ctx.project_root;
     let mut policy =
         jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
@@ -1076,6 +1076,9 @@ pub(crate) fn confined_shell(
     if let Some(scratch) = ctx.scratch_root {
         policy = policy.with_scratch_root(scratch);
     }
+    if let Some(pkg) = ctx.pkg_cache {
+        policy = policy.with_pkg_cache(pkg);
+    }
     if !ctx.read_roots.is_empty() {
         policy = policy.with_read_roots(ctx.read_roots.to_vec());
     }
@@ -1085,7 +1088,7 @@ pub(crate) fn confined_shell(
     policy = policy.with_workspace_readonly(ctx.workspace_readonly);
     // A read-only root is only read-only inside the sandbox, so it is never
     // run without one, whatever the surface chose.
-    let confined = ctx.sandbox || ctx.workspace_readonly;
+    let confined = ctx.shell_confined();
     let shell = if confined {
         // No confinement available means no shell: running unsandboxed would give
         // the command the whole machine, which is never what the caller asked for.
@@ -1100,12 +1103,16 @@ pub(crate) fn confined_shell(
     } else {
         proc::shell().clone()
     };
-    let sandbox_tmp = if confined {
-        jail::scratch_env_path(jail::backend(), &policy)
-    } else {
-        None
-    };
-    Ok((shell, sandbox_tmp, policy))
+    // Every backend exposes the scratch and the package cache at their real
+    // paths, so those are what the shell's env names. Unconfined, there is no
+    // sandbox env at all: the host's own values stand.
+    let sandbox_env = confined.then(|| {
+        proc::SandboxEnv::new(
+            policy.scratch_root.as_deref(),
+            policy.pkg_cache.as_ref().map(|p| p.root.as_path()),
+        )
+    });
+    Ok((shell, sandbox_env, policy))
 }
 
 async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
@@ -1123,7 +1130,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         );
     }
 
-    let (shell, sandbox_tmp, policy) = match confined_shell(ctx) {
+    let (shell, sandbox_env, policy) = match confined_shell(ctx) {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -1131,7 +1138,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         &shell,
         command,
         root,
-        sandbox_tmp.as_deref(),
+        sandbox_env.as_ref(),
         ctx.shell_env(),
         ctx.thread_id,
     )
@@ -1160,7 +1167,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let sink = ctx.on_output.clone();
     // A read-only root is confined even in an unsandboxed session, so its
     // denials get the note too.
-    let sandboxed = ctx.sandbox || ctx.workspace_readonly;
+    let sandboxed = ctx.shell_confined();
     let escalation = ctx.escalation;
     // Fed from the first byte, so a command the user opens in `/shells` after it
     // backgrounded still shows what it printed before the timeout.
@@ -1207,9 +1214,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
             let command_owned = command.to_string();
             let id = next_background_id();
             let temp = new_temp_path(ctx.scratch_root);
-            let display = temp
-                .as_ref()
-                .map(|p| crate::tools::sandbox::scratch_display_path(ctx.scratch_root, p));
+            let display = temp.as_ref().map(|p| p.to_string_lossy().into_owned());
             // Raised before this call returns, so the caller is already owed a
             // result by the time the turn that made the call can end.
             if let Some(sink) = &done_sink {
@@ -1492,7 +1497,7 @@ impl BashCapture {
                 Some(p) => Some(p),
                 None => write_temp_output(&collapsed, self.scratch.as_deref()),
             }
-            .map(|p| crate::tools::sandbox::scratch_display_path(self.scratch.as_deref(), &p));
+            .map(|p| p.to_string_lossy().into_owned());
             match path {
                 Some(p) => body.push_str(&format!(
                     "[output truncated at {shown} of {} bytes; full output written \
@@ -1675,7 +1680,7 @@ fn tail_cap(s: &str, max_lines: usize, max_bytes: usize) -> String {
 
 /// Directory holding bash-output spill files: inside the session scratch when
 /// there is one, so the file the truncation note points at is reachable by the
-/// same `/tmp/jan-bash/...` name from both the filesystem tools and the shell,
+/// same real path from both the filesystem tools and the shell,
 /// and is reclaimed when the session's scratch is removed.
 ///
 /// The directory is validated as a real, non-symlink directory before use: the
@@ -1977,7 +1982,7 @@ async fn screenshot(
     };
     let width = arg_u64(args, "width").unwrap_or(1280).clamp(320, 4096);
     let height = arg_u64(args, "height").unwrap_or(960).clamp(240, 4096);
-    let target = resolve_path(root, scratch, path);
+    let target = resolve_path(root, path);
     // A page the user approved outside the trusted roots gets no neighbours:
     // its directory was never part of what they approved.
     let scope = match landing(root, scratch, read_roots, &target) {
@@ -2023,7 +2028,7 @@ async fn find(
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(FIND_DEFAULT_LIMIT);
-    let base = resolve_path(root, scratch, &path);
+    let base = resolve_path(root, &path);
     if symlink_escapes_any_root(root, scratch, read_roots, &base) {
         return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
     }
@@ -2097,7 +2102,7 @@ async fn grep(
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(GREP_DEFAULT_LIMIT);
-    let base = resolve_path(root, scratch, &path);
+    let base = resolve_path(root, &path);
     if symlink_escapes_any_root(root, scratch, read_roots, &base) {
         return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
     }
@@ -2608,7 +2613,7 @@ mod tests {
             assert!(out.starts_with("ERROR") && out.contains("read-only"), "{tool}: {out}");
             // The host checkout path is not the model's business.
             assert!(!out.contains(&*root.to_string_lossy()), "{tool}: {out}");
-            let shown = crate::tools::sandbox::scratch_display_path(Some(&scratch), &scratch);
+            let shown = scratch.display();
             assert!(out.ends_with(&format!("Write temporary files under {shown} instead.")), "{out}");
         }
         // No scratch, no pointer at one.
@@ -2625,12 +2630,8 @@ mod tests {
         let (read, _) =
             super::execute_builtin(lookup("read").unwrap(), &json!({"path": "a.txt"}), &ctx).await;
         assert_eq!(read, "one");
-        // `/tmp/...` names the scratch on Linux; elsewhere its real path does.
-        let in_scratch = if cfg!(target_os = "linux") {
-            "/tmp/note.txt".to_string()
-        } else {
-            scratch.join("note.txt").to_string_lossy().into_owned()
-        };
+        // The scratch is named by its real path on every platform.
+        let in_scratch = scratch.join("note.txt").to_string_lossy().into_owned();
         let (out, _) = super::execute_builtin(
             lookup("write").unwrap(),
             &json!({"path": in_scratch, "content": "ok"}),
@@ -3334,8 +3335,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// `find` from a legitimate `/tmp` base must not walk *out* through a
-    /// symlinked directory inside the scratch. Pins `WalkBuilder`'s
+    /// `find` from the scratch as its base must not walk *out* through a
+    /// symlinked directory inside it. Pins `WalkBuilder`'s
     /// no-follow default, which is what the containment check cannot cover:
     /// the base path here is honest, only the recursion would escape.
     #[tokio::test]
@@ -3350,7 +3351,7 @@ mod tests {
         let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
         let out = super::execute_builtin(
             lookup("find").unwrap(),
-            &json!({"pattern": "*.txt", "path": "/tmp"}),
+            &json!({"pattern": "*.txt", "path": scratch.to_string_lossy()}),
             &ctx,
         )
         .await
@@ -3500,12 +3501,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
-    /// The write escape the scratch clamp is there to stop, spelled with a
-    /// symlink instead of `..`: a confined `write` through `/tmp/esc` must be
-    /// refused and must leave nothing behind outside the scratch.
+    /// A confined `write` through a symlink the shell planted in the scratch
+    /// must be refused and must leave nothing behind outside the scratch.
     #[tokio::test]
-    #[cfg(target_os = "linux")]
-    async fn confined_write_refuses_a_tmp_symlink_escape() {
+    #[cfg(unix)]
+    async fn confined_write_refuses_a_scratch_symlink_escape() {
         let root = unique_root();
         let scratch = unique_root();
         let outside = unique_root();
@@ -3516,7 +3516,7 @@ mod tests {
             .with_confined_writes(true);
         let out = super::execute_builtin(
             lookup("write").unwrap(),
-            &json!({"path": "/tmp/esc/pwned.txt", "content": "x"}),
+            &json!({"path": scratch.join("esc/pwned.txt").to_string_lossy(), "content": "x"}),
             &ctx,
         )
         .await
@@ -3590,111 +3590,98 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
-    /// A `write` to `/tmp/x` lands in the session scratch, and a `read` of the
-    /// same path sees it: every fs tool shares the one `/tmp` the shell sees.
+    /// A `write` into the scratch by its real path lands there, a `read` of the
+    /// same path sees it, and the result names that same path.
     #[tokio::test]
-    #[cfg(target_os = "linux")]
-    async fn write_then_read_via_tmp_persists_in_scratch() {
+    async fn write_then_read_in_the_scratch_uses_its_real_path() {
         let root = unique_root();
         let scratch = unique_root();
+        let file = scratch.join("scratch.txt");
+        let shown = file.to_string_lossy().into_owned();
         let store = crate::workspace::project_store(&root);
         let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
         let out = super::execute_builtin(
             lookup("write").unwrap(),
-            &json!({"path": "/tmp/scratch.txt", "content": "persist"}),
+            &json!({"path": shown, "content": "persist"}),
             &ctx,
         )
         .await
         .0;
-        assert!(out.starts_with("Created /tmp/scratch.txt"), "got: {out}");
-        assert!(scratch.join("scratch.txt").exists(), "wrote into scratch");
+        assert!(out.starts_with(&format!("Created {shown}")), "got: {out}");
+        assert!(file.exists(), "wrote into scratch");
 
-        let out = super::execute_builtin(
-            lookup("read").unwrap(),
-            &json!({"path": "/tmp/scratch.txt"}),
-            &ctx,
-        )
-        .await
-        .0;
+        let out =
+            super::execute_builtin(lookup("read").unwrap(), &json!({"path": shown}), &ctx).await.0;
         assert_eq!(out, "persist");
-
-        // No stray file on the real host /tmp.
-        assert!(!Path::new("/tmp/scratch.txt").exists());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
-    /// The bare `/tmp` dir resolves to the scratch root; files written there by
-    /// the shell (or a sibling tool) are listable through the file tools.
-    #[test]
+    /// The point of the real path: a file sandboxed `bash` writes through
+    /// `$TMPDIR` is at that same absolute path on the host, so the filesystem
+    /// tools (and an escalated, unconfined command) find it by the name the
+    /// shell printed. Linux, where the scratch used to be mounted over `/tmp`.
+    #[tokio::test]
     #[cfg(target_os = "linux")]
-    fn resolve_path_maps_tmp_into_scratch() {
+    async fn a_file_bash_writes_to_the_scratch_is_at_the_same_path_on_the_host() {
+        if !crate::tools::jail::backend().enforces() {
+            eprintln!("skipping: no sandbox backend on this host");
+            return;
+        }
         let root = unique_root();
         let scratch = unique_root();
-        assert_eq!(
-            crate::tools::sandbox::resolve_path(&root, Some(&scratch), "/tmp/a/b.txt"),
-            scratch.join("a/b.txt")
-        );
-        assert_eq!(
-            crate::tools::sandbox::resolve_path(&root, Some(&scratch), "/tmp"),
-            scratch
-        );
-        // Without a scratch, /tmp stays the host path (i.e. never the project).
-        assert_eq!(
-            crate::tools::sandbox::resolve_path(&root, None, "/tmp/a.txt"),
-            Path::new("/tmp/a.txt")
-        );
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
+        let (out, _) = super::execute_builtin(
+            lookup("shell").unwrap(),
+            &json!({"command": "echo made-inside > \"$TMPDIR/out.txt\" && echo \"$TMPDIR/out.txt\""}),
+            &ctx,
+        )
+        .await;
+        let named = scratch.join("out.txt");
+        assert!(out.contains(&*named.to_string_lossy()), "TMPDIR is the real path: {out}");
+        let (read, _) = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": named.to_string_lossy()}),
+            &ctx,
+        )
+        .await;
+        assert_eq!(read.trim(), "made-inside");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
-    /// A `..` climb inside `/tmp` must NOT escape the session scratch: an
-    /// absolute path maps into the scratch, and a `..` is clamped back to the
-    /// scratch root (chroot semantics, matching the `/tmp` bind mount), so it
-    /// can never reach the host temp.
+    /// The gate treats a write into the scratch, by its real path, as an
+    /// in-project write rather than an escape, and the host `/tmp` as an
+    /// escape now that nothing maps it into the scratch.
     #[test]
-    #[cfg(target_os = "linux")]
-    fn tmp_path_cannot_climb_out_with_dotdot() {
+    #[cfg(unix)]
+    fn gate_allows_a_scratch_write_and_treats_tmp_as_an_escape() {
         let root = unique_root();
         let scratch = unique_root();
-        // `/tmp/../evil.txt` clamps inside the scratch, never the host parent.
-        let out = crate::tools::sandbox::resolve_path(&root, Some(&scratch), "/tmp/../evil.txt");
-        assert!(
-            out.starts_with(&scratch),
-            "must stay inside the scratch, got: {out:?}"
-        );
-        assert_eq!(out, scratch.join("evil.txt"));
-        // Even a deeper climb stays clamped at the scratch root.
-        let deep =
-            crate::tools::sandbox::resolve_path(&root, Some(&scratch), "/tmp/../../deep.txt");
-        assert_eq!(deep, scratch.join("deep.txt"));
-        let _ = std::fs::remove_dir_all(&root);
-        let _ = std::fs::remove_dir_all(&scratch);
-    }
-
-    /// The gate treats a scratch-backed `/tmp` write as inside, not an escape.
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn gate_allows_tmp_write_when_scratch_is_set() {
-        let root = unique_root();
-        let scratch = unique_root();
-        let d = crate::tools::gate::resolve_decision(
-            lookup("write").unwrap(),
-            &json!({"path": "/tmp/x.txt", "content": "y"}),
-            &crate::tools::gate::GateContext {
-                project_root: &root,
-                scratch: Some(&scratch),
-                read_roots: &[],
-                write_roots: &[],
-                hidden_root: None,
-            },
-            &crate::permissions::ToolPermissions::default(),
-            &crate::tools::gate::SessionGrants::default(),
-        );
+        let gate = |path: String| {
+            crate::tools::gate::resolve_decision(
+                lookup("write").unwrap(),
+                &json!({"path": path, "content": "y"}),
+                &crate::tools::gate::GateContext {
+                    project_root: &root,
+                    scratch: Some(&scratch),
+                    read_roots: &[],
+                    write_roots: &[],
+                    hidden_root: None,
+                },
+                &crate::permissions::ToolPermissions::default(),
+                &crate::tools::gate::SessionGrants::default(),
+            )
+        };
         assert_eq!(
-            d,
+            gate(scratch.join("x.txt").to_string_lossy().into_owned()),
             crate::tools::gate::Decision::Prompt(crate::tools::gate::PromptKind::Write),
             "in-scratch write is an in-project write, not an escape"
+        );
+        assert_eq!(
+            gate(format!("/tmp/jan-not-the-scratch-{}.txt", std::process::id())),
+            crate::tools::gate::Decision::Prompt(crate::tools::gate::PromptKind::WriteEscape)
         );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
@@ -3704,15 +3691,15 @@ mod tests {
     /// scratch is an escape, so it takes the escape prompt (refused outright on
     /// the desktop) rather than the ordinary in-project one.
     #[test]
-    #[cfg(target_os = "linux")]
-    fn gate_treats_a_tmp_symlink_escape_as_an_escape() {
+    #[cfg(unix)]
+    fn gate_treats_a_scratch_symlink_escape_as_an_escape() {
         let root = unique_root();
         let scratch = unique_root();
         let outside = unique_root();
         std::os::unix::fs::symlink(&outside, scratch.join("esc")).unwrap();
         let d = crate::tools::gate::resolve_decision(
             lookup("write").unwrap(),
-            &json!({"path": "/tmp/esc/x.txt", "content": "y"}),
+            &json!({"path": scratch.join("esc/x.txt").to_string_lossy(), "content": "y"}),
             &crate::tools::gate::GateContext {
                 project_root: &root,
                 scratch: Some(&scratch),
@@ -4478,9 +4465,8 @@ mod tests {
     }
 
     /// The same overflow with a session scratch set: the spill must land in the
-    /// scratch and be advertised by the one name that works from both the fs
-    /// tools and the shell, so the `read` the note asks for actually finds it.
-    /// The no-scratch case above cannot catch this -- there `/tmp` is not remapped.
+    /// scratch and be advertised by its real path, which works from both the
+    /// fs tools and the shell, so the `read` the note asks for finds it.
     // POSIX command text: Windows runs PowerShell.
     #[cfg(unix)]
     #[tokio::test]
@@ -4501,12 +4487,10 @@ mod tests {
             .next()
             .and_then(|s| s.split(". Use the read tool").next())
             .unwrap_or("");
-        if cfg!(target_os = "linux") {
-            assert!(
-                path.starts_with("/tmp/"),
-                "must be advertised as the /tmp name the shell also sees: {out}"
-            );
-        }
+        assert!(
+            Path::new(path).starts_with(&scratch),
+            "must be advertised by its real path in the scratch: {out}"
+        );
         let full = super::execute_builtin(
             lookup("read").unwrap(),
             &json!({"path": path, "offset": 15999, "limit": 1}),
@@ -4550,8 +4534,8 @@ mod tests {
     }
 
     /// Dropping the sandbox drops the scratch with it, in either builder order.
-    /// A scratch that outlived the sandbox would leave the fs tools rewriting
-    /// `/tmp/...` into a directory the unconfined shell never looks at.
+    /// Unconfined, the shell writes wherever the user can with the host's
+    /// own `TMPDIR`, so a scratch would only widen what the fs tools reach.
     #[test]
     fn unsandboxed_context_has_no_scratch() {
         let root = unique_root();
@@ -4574,8 +4558,50 @@ mod tests {
                 .scratch_root,
             Some(scratch.as_path())
         );
+        // The package cache goes with it, in either order: an escalated
+        // command (the sandbox cleared for one call) keeps the host's caches.
+        let pkg = crate::workspace::PkgCache { root: scratch.join("pkg"), cargo_config: None };
+        assert!(ToolContext::new(&root, &store, &[])
+            .with_pkg_cache(Some(&pkg))
+            .with_sandbox(false)
+            .pkg_cache
+            .is_none());
+        assert!(ToolContext::new(&root, &store, &[])
+            .with_sandbox(false)
+            .with_pkg_cache(Some(&pkg))
+            .pkg_cache
+            .is_none());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A read-only root runs its shell confined even with the sandbox off (a
+    /// reader under the CLI default), so it keeps the package cache: its
+    /// `$HOME` is read-only in there and the host caches are unwritable.
+    /// Clearing the sandbox for one call does not unconfine it either, so it
+    /// keeps the cache then too; only clearing both drops it.
+    #[test]
+    fn a_read_only_root_keeps_its_pkg_cache_with_the_sandbox_off() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let pkg = crate::workspace::PkgCache { root: root.join("pkg"), cargo_config: None };
+        let reader = || {
+            ToolContext::new(&root, &store, &[])
+                .with_sandbox(false)
+                .with_workspace_readonly(true)
+                .with_pkg_cache(Some(&pkg))
+        };
+        assert_eq!(reader().pkg_cache, Some(&pkg));
+        assert_eq!(reader().with_sandbox(false).pkg_cache, Some(&pkg));
+        assert!(reader().with_workspace_readonly(false).pkg_cache.is_none());
+        // And the shell it builds names the cache.
+        let (_, env, _) = match confined_shell(&reader()) {
+            Ok(v) => v,
+            Err(_) => return, // no backend here: no shell at all
+        };
+        let env = env.expect("a read-only root is always confined");
+        assert!(env.vars().iter().any(|(k, v)| *k == "CARGO_HOME" && v.starts_with(&pkg.root)));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     // POSIX command text: Windows runs PowerShell.

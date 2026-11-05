@@ -36,6 +36,9 @@ pub fn set_plugin_env(root: &Path, vars: BTreeMap<String, String>) {
 pub fn is_reserved_env_key(key: &str) -> bool {
     SANDBOX_ENV_ALLOW.contains(&key)
         || TEMP_ENV_KEYS.contains(&key)
+        // Case-blind: npm reads `NPM_CONFIG_CACHE` as readily as the lowercase
+        // spelling, and Windows env names have no case at all.
+        || PKG_CACHE_ENV.iter().any(|(name, _)| name.eq_ignore_ascii_case(key))
         || key.starts_with("LD_")
         || key.starts_with("DYLD_")
         || key.starts_with("SUDO_")
@@ -407,6 +410,75 @@ const SANDBOX_ENV_ALLOW: &[&str] = &[
 /// All are pointed at the scratch together so no tool falls back to the host.
 const TEMP_ENV_KEYS: &[&str] = &["TMPDIR", "TMP", "TEMP"];
 
+/// Where package managers keep their caches and homes in a sandboxed command:
+/// each name, and the folder under the project's package cache
+/// (`<cache>/jan/<slug>/pkg`, see [`crate::workspace::pkg_dir_in`]) it points
+/// at. Their defaults (`~/.cargo`, `~/.npm`, `~/.cache/...`, `~/go`,
+/// `~/.gradle`) sit in a `$HOME` the sandbox masks or makes read-only, so
+/// without these an ordinary build fails and the model escalates for it.
+/// Unconfined commands keep the host's own values: the user's real caches are
+/// never written from a sandbox, so a tampered download cannot reach a later
+/// unsandboxed build, and one project's cache never feeds another's.
+///
+/// pnpm: `PNPM_HOME` moves its store on every version (`$PNPM_HOME/store`);
+/// v11+ reads only `pnpm_config_*`, which also names the store and cache
+/// explicitly. `npm_config_store_dir` is left out: npm warns about it on every
+/// run as an unknown key.
+pub const PKG_CACHE_ENV: &[(&str, &str)] = &[
+    // XDG-aware tools (pip, uv, pnpm's cache, and many more) on Linux, where it
+    // is the standard. macOS and Windows tools do not read it.
+    #[cfg(target_os = "linux")]
+    ("XDG_CACHE_HOME", "xdg-cache"),
+    ("npm_config_cache", "npm"),
+    ("YARN_CACHE_FOLDER", "yarn-cache"),
+    ("YARN_GLOBAL_FOLDER", "yarn-global"),
+    ("COREPACK_HOME", "corepack"),
+    ("PNPM_HOME", "pnpm-home"),
+    ("pnpm_config_store_dir", "pnpm-store"),
+    ("pnpm_config_cache_dir", "pnpm-cache"),
+    ("PIP_CACHE_DIR", "pip"),
+    ("UV_CACHE_DIR", "uv"),
+    ("GOCACHE", "go-build"),
+    ("GOMODCACHE", "go-mod"),
+    ("GOPATH", "go-path"),
+    ("GRADLE_USER_HOME", "gradle"),
+    ("CCACHE_DIR", "ccache"),
+    ("SCCACHE_DIR", "sccache"),
+    ("DENO_DIR", "deno"),
+    ("BUN_INSTALL_CACHE_DIR", "bun-cache"),
+    // The whole `CARGO_HOME`, not just `registry/` and `git/`: cargo keeps its
+    // lock files at its top. See `workspace::prepare_pkg_cache` for what it
+    // holds of the user's own.
+    ("CARGO_HOME", crate::workspace::PKG_CARGO_HOME),
+];
+
+/// The env a confined command gets over the allowlist, naming folders its
+/// sandbox makes writable: the temp keys at the session scratch and
+/// [`PKG_CACHE_ENV`] under the project's package cache. Built only by the
+/// caller that also built the sandbox (`handlers::confined_shell`), so an
+/// unconfined spawn, which has none, keeps the host's values for all of them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SandboxEnv {
+    vars: Vec<(&'static str, PathBuf)>,
+}
+
+impl SandboxEnv {
+    pub fn new(scratch: Option<&Path>, pkg: Option<&Path>) -> Self {
+        let mut vars = Vec::new();
+        if let Some(scratch) = scratch {
+            vars.extend(TEMP_ENV_KEYS.iter().map(|key| (*key, scratch.to_path_buf())));
+        }
+        if let Some(pkg) = pkg {
+            vars.extend(PKG_CACHE_ENV.iter().map(|(key, dir)| (*key, pkg.join(dir))));
+        }
+        Self { vars }
+    }
+
+    pub fn vars(&self) -> &[(&'static str, PathBuf)] {
+        &self.vars
+    }
+}
+
 /// Soft limits the sandboxed child runs under, each capped by the host's hard
 /// limit. `NOFILE` and `FSIZE` are deliberately generous: toolchains (linkers,
 /// node, cargo) routinely want tens of thousands of descriptors, and a debug
@@ -562,11 +634,11 @@ pub async fn spawn(
     cfg: &ShellConfig,
     command: &str,
     cwd: &Path,
-    scratch: Option<&Path>,
+    sandbox: Option<&SandboxEnv>,
     env: ShellEnv<'_>,
     thread: Option<&str>,
 ) -> std::io::Result<Child> {
-    spawn_with_stdin(cfg, command, cwd, scratch, env, thread, None).await
+    spawn_with_stdin(cfg, command, cwd, sandbox, env, thread, None).await
 }
 
 /// `path` without the `\\?\` verbatim prefix `canonicalize` adds on Windows:
@@ -622,7 +694,7 @@ pub async fn spawn_with_stdin(
     cfg: &ShellConfig,
     command: &str,
     cwd: &Path,
-    scratch: Option<&Path>,
+    sandbox: Option<&SandboxEnv>,
     env: ShellEnv<'_>,
     thread: Option<&str>,
     stdin_payload: Option<&str>,
@@ -658,15 +730,32 @@ pub async fn spawn_with_stdin(
             cmd.envs(vars);
         }
     }
-    // Point the shell's temp env at the session scratch, overriding the host
-    // values the allowlist just copied in. Without this a command that writes
-    // through `mktemp`/`$TMPDIR` lands in the host temp dir -- unreachable to
-    // the filesystem tools, and on the backends that confine by path, not
-    // writable at all. `scratch` is what the sandbox exposes, which is not
-    // always the host path (see `jail::scratch_env_path`).
-    if let Some(scratch) = scratch {
-        for key in TEMP_ENV_KEYS {
-            cmd.env(key, scratch);
+    // Point the shell's temp env at the session scratch and its package caches
+    // at the project's, overriding the host values copied in above. Without
+    // this a command that writes through `mktemp`/`$TMPDIR` or downloads a
+    // dependency targets the host's dirs -- unreachable to the filesystem
+    // tools, and on the backends that confine by path, not writable at all.
+    // Every backend exposes both at their real paths, so those are the values.
+    if let Some(sandbox) = sandbox {
+        // A case variant copied in above (`NPM_CONFIG_CACHE` from the host,
+        // `Tmpdir` from `env_set`) would sit beside the exact name set here,
+        // and tools that read either spelling (npm) would get two answers.
+        // Only on Unix: Windows env names have no case, so the set below
+        // already replaces any spelling.
+        #[cfg(unix)]
+        {
+            let names: Vec<std::ffi::OsString> =
+                cmd.as_std().get_envs().map(|(name, _)| name.to_owned()).collect();
+            for name in names {
+                let Some(text) = name.to_str() else { continue };
+                let variant = |(key, _): &(&str, PathBuf)| key.eq_ignore_ascii_case(text) && *key != text;
+                if sandbox.vars().iter().any(variant) {
+                    cmd.env_remove(&name);
+                }
+            }
+        }
+        for (key, dir) in sandbox.vars() {
+            cmd.env(key, dir);
         }
     }
     cmd.current_dir(without_verbatim_prefix(cwd))
@@ -1024,6 +1113,85 @@ mod env_allowlist_tests {
             );
         }
     }
+
+    /// Every package-manager name the issue lists is set, each to its own
+    /// folder inside the package cache, so no two tools share one and none
+    /// lands outside what the sandbox makes writable.
+    #[test]
+    fn every_pkg_cache_name_is_set_under_the_package_cache() {
+        let pkg = Path::new("/c/jan/p-1/pkg");
+        let env = SandboxEnv::new(None, Some(pkg));
+        let mut expected = vec![
+            "npm_config_cache", "YARN_CACHE_FOLDER", "YARN_GLOBAL_FOLDER", "COREPACK_HOME",
+            "PNPM_HOME", "pnpm_config_store_dir", "pnpm_config_cache_dir", "PIP_CACHE_DIR",
+            "UV_CACHE_DIR", "GOCACHE", "GOMODCACHE", "GOPATH", "GRADLE_USER_HOME",
+            "CCACHE_DIR", "SCCACHE_DIR", "DENO_DIR", "BUN_INSTALL_CACHE_DIR", "CARGO_HOME",
+        ];
+        if cfg!(target_os = "linux") {
+            expected.push("XDG_CACHE_HOME");
+        }
+        let names: Vec<&str> = env.vars().iter().map(|(k, _)| *k).collect();
+        for name in &expected {
+            assert!(names.contains(name), "{name} missing from {names:?}");
+            assert!(is_reserved_env_key(name), "{name} must be reserved");
+        }
+        assert_eq!(names.len(), expected.len(), "{names:?}");
+        let mut dirs: Vec<&PathBuf> = env.vars().iter().map(|(_, v)| v).collect();
+        for dir in &dirs {
+            assert_eq!(dir.parent(), Some(pkg), "{dir:?} is not directly under pkg/");
+        }
+        dirs.sort();
+        dirs.dedup();
+        assert_eq!(dirs.len(), expected.len(), "two tools share a folder");
+        let cargo = env.vars().iter().find(|(k, _)| *k == "CARGO_HOME").unwrap();
+        assert_eq!(cargo.1, pkg.join("cargo"));
+    }
+
+    /// A plugin must not redirect a sandboxed cache, in either spelling npm
+    /// accepts.
+    #[test]
+    fn pkg_cache_names_are_reserved_in_any_case() {
+        assert!(is_reserved_env_key("NPM_CONFIG_CACHE"));
+        assert!(is_reserved_env_key("cargo_home"));
+        assert!(!is_reserved_env_key("CARGO_TARGET_DIR"));
+    }
+
+    /// A host `NPM_CONFIG_CACHE` copied in by passthrough (or set) must not
+    /// sit beside the sandbox's `npm_config_cache`: npm reads both spellings,
+    /// so the shell would get two answers to one key. Any case variant of a
+    /// name the sandbox env sets is dropped; unconfined, it is kept.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_case_variant_of_a_sandbox_env_name_is_dropped() {
+        let pkg = std::env::temp_dir().join(format!("jan_proc_case_{}", std::process::id()));
+        let set = vec![
+            ("NPM_CONFIG_CACHE".to_string(), "/host/npm".to_string()),
+            ("Tmpdir".to_string(), "/host/tmp".to_string()),
+            ("KEEP_ME".to_string(), "yes".to_string()),
+        ];
+        let env = ShellEnv { passthrough: &[], set: &set };
+        let run = |sandbox: Option<SandboxEnv>| async move {
+            let child = spawn(shell(), "env", Path::new("/"), sandbox.as_ref(), env, None)
+                .await
+                .unwrap();
+            let out = child.wait_with_output().await.unwrap();
+            String::from_utf8_lossy(&out.stdout).into_owned()
+        };
+        let out = run(Some(SandboxEnv::new(Some(&pkg), Some(&pkg)))).await;
+        assert!(!out.contains("/host/"), "{out}");
+        assert!(out.contains("npm_config_cache=") && out.contains("KEEP_ME=yes"), "{out}");
+        let bare = run(None).await;
+        assert!(bare.contains("NPM_CONFIG_CACHE=/host/npm"), "{bare}");
+    }
+
+    /// No scratch and no package cache: nothing is overridden.
+    #[test]
+    fn an_empty_sandbox_env_sets_nothing() {
+        assert!(SandboxEnv::new(None, None).vars().is_empty());
+        let temp = SandboxEnv::new(Some(Path::new("/s")), None);
+        let names: Vec<&str> = temp.vars().iter().map(|(k, _)| *k).collect();
+        assert_eq!(names, TEMP_ENV_KEYS);
+    }
 }
 
 #[cfg(test)]
@@ -1280,7 +1448,7 @@ mod tests {
             shell(),
             "echo \"$TMPDIR $TMP $TEMP\"",
             &tmp(),
-            Some(&scratch),
+            Some(&SandboxEnv::new(Some(&scratch), None)),
             ShellEnv::default(),
             None,
         )
@@ -1295,6 +1463,30 @@ mod tests {
             format!("{s} {s} {s}")
         );
         let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A spawn with a package cache names it; one without (unconfined, or an
+    /// escalated command) passes none of the redirect names through, so the
+    /// host's own caches and `CARGO_HOME` stand.
+    #[tokio::test]
+    async fn pkg_cache_env_is_set_only_for_a_sandbox_env() {
+        let probe = "echo \"${CARGO_HOME-unset} ${npm_config_cache-unset}\"";
+        let pkg = tmp().join("jan_proc_pkg_env");
+        let run = |env: Option<SandboxEnv>| async move {
+            let child = spawn(shell(), probe, &tmp(), env.as_ref(), ShellEnv::default(), None)
+                .await
+                .unwrap();
+            let pid = child.id().unwrap();
+            let out = child.wait_with_output().await.unwrap();
+            unregister(None, pid);
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        let p = pkg.to_string_lossy();
+        assert_eq!(
+            run(Some(SandboxEnv::new(None, Some(&pkg)))).await,
+            format!("{p}/cargo {p}/npm")
+        );
+        assert_eq!(run(None).await, "unset unset");
     }
 
     /// With no scratch the shell keeps whatever the host allowlist passed

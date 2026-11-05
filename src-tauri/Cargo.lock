@@ -7972,6 +7972,7 @@ dependencies = [
  "base64 0.22.1",
  "block2",
  "cairo-rs",
+ "dirs 6.0.0",
  "fs4",
  "gio",
  "glib 0.18.5",

@@ -13937,7 +13937,10 @@ pub async fn run(
         args.max_parallel_subagents,
     ));
     args.subagent_bg = Some(subagent_set.clone());
-    let session_scratch = args.session_id.clone();
+    // The project cache folder the run keys its scratch under, with the id.
+    let session_scratch = args.session_id.clone().zip(
+        args.project_root.as_deref().map(crate::core::agent::project::project_cache_dir),
+    );
     let args = Arc::new(args);
 
     // Resolve the colour theme before anything highlights: `warm` below caches
@@ -14032,6 +14035,7 @@ pub async fn run(
     if let Some(reports) = app.cleanup_reports.as_ref().map(mpsc::UnboundedSender::downgrade) {
         crate::core::agent::child_workspace::spawn_startup_sweep(
             app.project_root.clone(),
+            args.session_id.clone(),
             move |kept| reports.upgrade().is_some_and(|reports| reports.send(kept).is_ok()),
         );
     }
@@ -14157,15 +14161,15 @@ pub async fn run(
     // holds its worktree, which would otherwise outlive the process even
     // when empty.
     app.subagent_set.abort_all();
-    // Then the persistent bash `/tmp` scratch its turns shared and its
+    // Then the persistent bash scratch its turns shared and its
     // subagents' worktrees that hold nothing go, together (both are renames
     // into trash); the rest are named on the real terminal, since they are
     // what is left to merge. The worktrees on the blocking pool, as every
     // worktree sweep is: it runs git per worktree.
     let workspaces = app.subagent_set.workspaces.clone();
     let scratch = async {
-        if let Some(session) = session_scratch.as_deref() {
-            let _ = workspace::trash_scratch_dir(session).await;
+        if let Some((session, cache)) = &session_scratch {
+            let _ = workspace::trash_scratch_dir_in(cache, session).await;
         }
     };
     let ((), kept) = tokio::join!(
@@ -21707,7 +21711,9 @@ fn agent_picker_items(
 /// unreadable file, or a file another run of the same name left behind keeps
 /// the rows as they are.
 fn replay_finished_agent(app: &mut App, run_id: &str) {
-    let Some(session) = app.args.as_ref().and_then(|a| a.session_id.clone()) else {
+    let Some(scratch) = app.args.as_ref().and_then(|a| {
+        Some(crate::core::agent::project::scratch_dir(a.project_root.as_deref()?, a.session_id.as_deref()?))
+    }) else {
         return;
     };
     let Some(block) = app
@@ -21718,7 +21724,6 @@ fn replay_finished_agent(app: &mut App, run_id: &str) {
     else {
         return;
     };
-    let scratch = tauri_plugin_agent_tools::workspace::scratch_dir(&session);
     match crate::core::agent::subagent_session::load(&scratch, &block.panel.name) {
         Ok(loaded) if loaded.record.meta.as_ref().is_some_and(|m| m.run_id == run_id) => {
             block.panel.replay_record(&loaded.record);
@@ -40866,7 +40871,8 @@ fn a() {}
             name: "alpha".into(),
             error: None,
         });
-        let scratch = tauri_plugin_agent_tools::workspace::scratch_dir(&session);
+        let root = app.args.as_ref().and_then(|a| a.project_root.clone()).expect("a project");
+        let scratch = crate::core::agent::project::scratch_dir(&root, &session);
         std::fs::create_dir_all(scratch.join("subagents")).unwrap();
         let dir = tauri_plugin_agent_tools::tools::spill::validated_subdir(
             &scratch,
@@ -49045,6 +49051,7 @@ fn a() {}
         tauri_plugin_agent_tools::tools::monitor::MonitorCtx {
             project_root: root.to_path_buf(),
             scratch_root: None,
+            pkg_cache: None,
             mask_root: None,
             hidden_root: None,
             read_roots: Vec::new(),

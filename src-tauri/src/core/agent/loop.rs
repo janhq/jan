@@ -148,7 +148,7 @@ pub(crate) struct OrchestrationArgs {
     /// stronger than auto-approval's prompt suppression (it cannot override this).
     pub run_mode: crate::core::agent::plan::RunMode,
     /// Stable identity for this run's session, used to key the persistent
-    /// `bash` `/tmp` scratch directory (`<temp>/jan-agent-<session_id>`) and
+    /// `bash` scratch directory (`<cache>/jan/<project slug>/scratch/<session_id>`),
     /// wiped at the session boundary specific to each surface. `None` on
     /// code paths with no session (server proxy runs) keeps the default
     /// throwaway per-command tmpfs.
@@ -812,9 +812,13 @@ struct CompositeToolInvoker {
     /// with it, so the two cannot disagree.
     hidden_root: Option<std::path::PathBuf>,
     /// Session-scoped scratch directory the shell and the filesystem tools share
-    /// (see `workspace::scratch_dir`), so `bash` scratch files persist across
+    /// (see [`scratch_root_for`]), so `bash` scratch files persist across
     /// calls for the whole run. Created at run start and wiped at run end.
     scratch_root: std::path::PathBuf,
+    /// The project's package cache, for a sandboxed run (see
+    /// [`crate::core::agent::project::prepare_pkg_cache`]); `None` unconfined,
+    /// where the shell keeps the host's own caches.
+    pkg_cache: Option<tauri_plugin_agent_tools::workspace::PkgCache>,
     /// Host env-var names/globs the shell may inherit beyond the base allowlist,
     /// and explicit key=value overrides. Resolved once per run by merging
     /// `~/.jan/config.toml` with the project's `[tools]` section.
@@ -1337,6 +1341,7 @@ impl CompositeToolInvoker {
         .with_escalation(self.escalation.offered())
         .with_hidden_root(self.hidden_root.as_deref())
         .with_scratch_root(&self.scratch_root)
+        .with_pkg_cache(self.pkg_cache.as_ref())
         .with_env_passthrough(&self.env_passthrough)
         .with_env_set(&self.env_set)
         .with_web_search(self.web_search.as_ref())
@@ -2869,6 +2874,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 let sandbox = self.sandbox;
                 let hidden = self.hidden_root.clone();
                 let scratch = self.scratch_root.clone();
+                let pkg_cache = self.pkg_cache.clone();
                 let web_search = self.web_search.clone();
                 let read_roots = self.workspace.read_roots.clone();
                 // Hooks come along: a read is still a tool call, and a
@@ -2895,6 +2901,7 @@ impl ToolInvoker for CompositeToolInvoker {
                         .with_sandbox(sandbox)
                         .with_hidden_root(hidden.as_deref())
                         .with_scratch_root(&scratch)
+                        .with_pkg_cache(pkg_cache.as_ref())
                         .with_read_roots(&read_roots)
                         .with_web_search(web_search.as_ref())
                         .with_hooks(&hooks, planning, Some(hook_sink));
@@ -3535,9 +3542,9 @@ fn build_run_system_prompt(
     let base = override_prompt.or(assistant_instructions);
     match project_root {
         Some(root) => {
-            // No sandbox, no scratch: unconfined, the shell already has the
-            // real `/tmp`, and advertising a scratch nothing binds would send
-            // the model to a directory only the filesystem tools can see.
+            // No sandbox, no scratch: unconfined, the shell already writes
+            // wherever the user can with the host's own temp dir, and nothing
+            // would create or clean up a scratch the prompt advertised.
             let scratch = sandbox.then(|| scratch_root_for(session_id, root));
             // A subagent (the run with an override prompt) has no memory, so
             // its prompt carries no memory index or memory instructions.
@@ -3669,29 +3676,65 @@ pub(crate) async fn context_advertised_tools(
     tools
 }
 
-/// Where this run's scratch lives. Session-keyed so it persists across turns in
-/// the interactive TUI (and across calls in a one-shot run), then is wiped at the
-/// session boundary. Pure path math -- [`ensure_scratch_dir`] is what creates it
-/// -- so the system prompt can name the scratch before the tools are built.
+/// Where this run's scratch lives: `<cache>/jan/<project slug>/scratch/<session>`
+/// (see [`crate::core::agent::project::scratch_dir`]). Session-keyed so it
+/// persists across turns in the interactive TUI (and across calls in a
+/// one-shot run), then is wiped at the session boundary. Pure path math --
+/// [`ensure_scratch_dir_path`] is what creates it -- so the system prompt can
+/// name the scratch before the tools are built.
 ///
-/// A session-less run gets a throwaway in the host temp dir, never a directory
+/// A session-less run gets a throwaway beside the sessions', never a directory
 /// inside the project: a project-level scratch is shared by every session
 /// working that checkout, accumulates spill files with no owner to remove them,
 /// and fails outright on a read-only checkout. Nothing wipes a throwaway at run
 /// end (there is no session boundary to hang it on), so it is left to the
 /// startup sweep -- which is why it must live where that sweep looks.
+///
+/// [`ensure_scratch_dir_path`]: tauri_plugin_agent_tools::workspace::ensure_scratch_dir_path
 fn scratch_root_for(
     session_id: Option<&str>,
-    _project_root: &std::path::Path,
+    project_root: &std::path::Path,
 ) -> std::path::PathBuf {
     static ANONYMOUS_RUN: AtomicUsize = AtomicUsize::new(0);
-    match session_id {
-        Some(session) => tauri_plugin_agent_tools::workspace::scratch_dir(session),
-        None => tauri_plugin_agent_tools::workspace::scratch_dir(&format!(
+    let session = match session_id {
+        Some(session) => session.to_string(),
+        None => format!(
             "anon-{}-{}",
             std::process::id(),
             ANONYMOUS_RUN.fetch_add(1, Ordering::Relaxed)
-        )),
+        ),
+    };
+    crate::core::agent::project::scratch_dir(project_root, &session)
+}
+
+/// The run's package cache: prepared whenever its shell runs confined --
+/// sandboxed, or a read-only child, which is confined even with the sandbox
+/// off and whose read-only `$HOME` leaves the host caches unwritable. `None`
+/// unconfined, where the shell keeps the host's own caches and nothing would
+/// bind one.
+///
+/// A sandboxed run whose cache cannot be prepared (an unreadable
+/// `~/.cargo/config.toml`, a cache folder another user owns) runs without one,
+/// with a warning: the cache only spares downloads, and the run's scratch still
+/// masks the Jan cache root, so losing it must not cost the user the run. A
+/// read-only child with the sandbox off has no scratch, and the package cache
+/// is the only thing masking that root from its readable `$HOME`, so there the
+/// error stands rather than exposing every project's scratch.
+async fn pkg_cache_for(
+    sandbox: bool,
+    workspace_readonly: bool,
+    project_root: &std::path::Path,
+) -> Result<Option<tauri_plugin_agent_tools::workspace::PkgCache>, String> {
+    if !(sandbox || workspace_readonly) {
+        return Ok(None);
+    }
+    match crate::core::agent::project::prepare_pkg_cache(project_root).await {
+        Ok(pkg) => Ok(Some(pkg)),
+        Err(e) if sandbox => {
+            log::warn!("agent: running without a package cache: {e}");
+            Ok(None)
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -4246,10 +4289,22 @@ async fn orchestrate_inner(
         // directory as its sanctioned scratch. Skipped entirely when the shell
         // is unconfined: nothing binds it, so creating it would only leave an
         // empty directory behind.
+        //
+        // Claimed for as long as this turn runs, and freshened each turn, so
+        // another Jan process's startup sweep (whose keep list cannot name
+        // this session) leaves it alone; see `claim_scratch_dir`.
         let scratch_root = scratch_root_for(session_id.as_deref(), root);
-        if settings.sandbox {
-            tauri_plugin_agent_tools::workspace::ensure_scratch_dir_path(&scratch_root).await?;
-        }
+        let _scratch_claim = if settings.sandbox {
+            Some(tauri_plugin_agent_tools::workspace::claim_scratch_dir(&scratch_root).await?)
+        } else {
+            None
+        };
+        let pkg_cache = pkg_cache_for(
+            settings.sandbox,
+            child_scope.as_ref().is_some_and(|scope| scope.read_only),
+            root,
+        )
+        .await?;
         let (store_root, memory_home, cross_project) =
             crate::core::agent::project::memory_roots(root);
         let tool_notices = settings.tool_notices;
@@ -4265,6 +4320,7 @@ async fn orchestrate_inner(
             escalation: settings.escalation,
             hidden_root: crate::core::agent::project::hidden_root(settings.sandbox),
             scratch_root: scratch_root.clone(),
+            pkg_cache,
             env_passthrough: settings.env_passthrough,
             // A child's workspace adds its build and cache dirs on top.
             env_set: merge_env_set(
@@ -6647,26 +6703,63 @@ mod tests {
     #[test]
     fn scratch_root_is_session_keyed_and_never_lands_in_the_project() {
         let root = unique_project_root();
-        assert_eq!(
-            scratch_root_for(Some("sess-1"), &root),
-            tauri_plugin_agent_tools::workspace::scratch_dir("sess-1")
-        );
+        // Under the project's own cache folder, whose slug is its store's.
+        let store = tauri_plugin_agent_tools::workspace::project_store_in(std::path::Path::new("/h"), &root);
+        let cache = crate::core::agent::project::jan_cache_root().join(store.file_name().unwrap());
+        assert_eq!(scratch_root_for(Some("sess-1"), &root), cache.join("scratch/sess-1"));
         // Two sessions never share one scratch.
         assert_ne!(
             scratch_root_for(Some("sess-1"), &root),
             scratch_root_for(Some("sess-2"), &root)
         );
-        // A session-less run still needs a scratch to bind, but it belongs in
-        // the host temp dir: a directory inside the project would be shared by
-        // every session on that checkout and never collected.
+        // A session-less run still needs a scratch to bind, but it belongs
+        // where the startup sweep looks: a directory inside the project would
+        // be shared by every session on that checkout and never collected.
         let anon = scratch_root_for(None, &root);
         assert!(!anon.starts_with(&root), "scratch leaked into the project");
-        assert!(anon.starts_with(std::env::temp_dir()));
+        assert!(anon.starts_with(cache.join("scratch")), "{anon:?}");
         assert_ne!(
             anon,
             scratch_root_for(None, &root),
             "two session-less runs must not share a scratch"
         );
+    }
+
+    /// A confined run gets its project's package cache under the project's
+    /// cache folder, beside the scratch; an unconfined one gets none, and
+    /// creates nothing. A read-only child is confined with the sandbox off
+    /// (the CLI default), so it gets one too.
+    #[tokio::test]
+    async fn pkg_cache_is_prepared_only_for_a_confined_run() {
+        let root = unique_project_root();
+        let cache = crate::core::agent::project::project_cache_dir(&root);
+        assert_eq!(pkg_cache_for(false, false, &root).await.unwrap(), None);
+        assert!(!cache.join("pkg").exists());
+        let reader = pkg_cache_for(false, true, &root).await.unwrap().expect("read-only");
+        assert_eq!(reader.root, cache.join("pkg"));
+        let pkg = pkg_cache_for(true, false, &root).await.unwrap().expect("sandboxed");
+        assert_eq!(pkg.root, cache.join("pkg"));
+        assert!(pkg.root.join("cargo").is_dir());
+        assert_ne!(
+            pkg.root,
+            pkg_cache_for(true, false, &unique_project_root()).await.unwrap().unwrap().root,
+            "two projects never share a package cache"
+        );
+    }
+
+    /// A sandboxed run whose cache cannot be prepared runs without one; a
+    /// read-only child with the sandbox off, which only the package cache
+    /// masks the Jan cache root for, still refuses. Here the package folder's
+    /// name is taken by a file.
+    #[tokio::test]
+    async fn an_unpreparable_pkg_cache_leaves_the_run_without_one() {
+        let root = unique_project_root();
+        let cache = crate::core::agent::project::project_cache_dir(&root);
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("pkg"), "not a folder").unwrap();
+        assert_eq!(pkg_cache_for(true, false, &root).await, Ok(None));
+        assert_eq!(pkg_cache_for(true, true, &root).await, Ok(None));
+        assert!(pkg_cache_for(false, true, &root).await.is_err());
     }
 
     #[test]
@@ -10093,7 +10186,8 @@ mod tests {
             enabled_skills: Vec::new(),
             allow_network: DEFAULT_ALLOW_NETWORK,
             allow_home_read: DEFAULT_ALLOW_HOME_READ,
-            scratch_root: tauri_plugin_agent_tools::workspace::scratch_dir("test-session"),
+            scratch_root: std::env::temp_dir().join("jan-loop-test-scratch"),
+            pkg_cache: None,
             env_passthrough: Vec::new(),
             env_set: Vec::new(),
             web_search: None,
@@ -11468,9 +11562,10 @@ mod tests {
         assert_eq!(run_session_start(None, None), SessionStart::capture(None));
     }
 
-    /// An unconfined run has no scratch, so the prompt must not name one: the
-    /// shell sees the real `/tmp` and would never find the directory the
-    /// scratch line points at.
+    /// An unconfined run has no scratch, so the prompt must not name one:
+    /// nothing would create or clean up the directory the line points at. A
+    /// confined run names the real path, the same one an escalated command
+    /// would find.
     #[test]
     fn unsandboxed_prompt_does_not_advertise_a_scratch() {
         let root = unique_project_root();
@@ -11488,6 +11583,15 @@ mod tests {
         .expect("project prompt")
         .as_prompt();
         assert!(confined.contains("Scratch:"), "{confined}");
+        let scratch = scratch_root_for(Some("s1"), &root);
+        assert!(
+            // The prompt names paths with forward slashes on every OS.
+            confined.contains(&format!(
+                "Scratch: `{}`",
+                scratch.to_string_lossy().replace('\\', "/")
+            )),
+            "{confined}"
+        );
         let bare = build_run_system_prompt(
             None,
             Some("do things"),

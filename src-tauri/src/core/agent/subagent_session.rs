@@ -509,10 +509,10 @@ mod tests {
 
     #[test]
     fn a_subagent_session_lives_under_the_scratch_subagents_dir() {
-        let scratch = Path::new("/tmp/jan-agent-s");
+        let scratch = Path::new("/c/jan/p-1/scratch/s");
         assert_eq!(
             session_path(scratch, "explore-2"),
-            Path::new("/tmp/jan-agent-s/subagents/explore-2-session.jsonl")
+            Path::new("/c/jan/p-1/scratch/s/subagents/explore-2-session.jsonl")
         );
     }
 
@@ -550,12 +550,20 @@ mod tests {
         assert_eq!(loaded.record, session_log::SessionRecord::default());
     }
 
-    /// The session file is in the scratch, so ending the session deletes it.
+    /// The session file is in the scratch, so ending the session takes it
+    /// away with the scratch (the CLI/TUI exit path: into trash).
     #[tokio::test]
     async fn a_subagent_session_file_is_deleted_with_the_session_scratch() {
-        use tauri_plugin_agent_tools::workspace::{ensure_scratch_dir, remove_scratch_dir};
+        use tauri_plugin_agent_tools::workspace::{ensure_scratch_dir_path, trash_scratch_dir_in};
+        let project = tmp();
         let session = format!("subagent-session-exit-{}", std::process::id());
-        let scratch = ensure_scratch_dir(&session).await.unwrap();
+        let cache = crate::core::agent::project::project_cache_dir(project.path());
+        let scratch = ensure_scratch_dir_path(&crate::core::agent::project::scratch_dir(
+            project.path(),
+            &session,
+        ))
+        .await
+        .unwrap();
         let dir = tauri_plugin_agent_tools::tools::spill::validated_subdir(
             &scratch,
             tauri_plugin_agent_tools::tools::spill::SUBAGENT_DIR,
@@ -567,8 +575,9 @@ mod tests {
             load(&scratch, "w").unwrap().record.meta.unwrap().status,
             RunStatus::Finished
         );
-        remove_scratch_dir(&session).await.unwrap();
+        trash_scratch_dir_in(&cache, &session).await.unwrap();
         assert!(!path.exists());
         assert!(!session_log::lock_path(&path).exists());
+        let _ = std::fs::remove_dir_all(&cache);
     }
 }

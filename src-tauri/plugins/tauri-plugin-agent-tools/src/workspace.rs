@@ -234,6 +234,94 @@ pub fn project_meta(store: &Path) -> Option<String> {
     value.get("path")?.as_str().map(str::to_string)
 }
 
+/// The folder under the Jan cache root for sessions with no filesystem
+/// project: desktop chat threads and Cowork sessions.
+const CHAT_CACHE: &str = "chat";
+
+/// `<project cache>/scratch`, the parent of every session scratch.
+const SCRATCH: &str = "scratch";
+
+/// The Jan cache root, `<OS cache dir>/jan` (`$XDG_CACHE_HOME` or `~/.cache`
+/// on Linux, `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows).
+///
+/// Not the system temp dir: a scratch there is invisible at its own path to
+/// anything outside a sandbox that mounts it elsewhere, and per-project
+/// siblings here keep one project's files out of another's. With no cache dir
+/// at all it falls back to the temp dir so the scratch still works (see
+/// [`temp_cache_root_in`]).
+///
+/// Test builds of this crate resolve a per-process temp directory instead, so
+/// no test writes into the developer's real cache.
+pub fn jan_cache_root() -> PathBuf {
+    #[cfg(test)]
+    {
+        std::env::temp_dir().join(format!("jan-test-cache-{}", std::process::id()))
+    }
+    #[cfg(not(test))]
+    {
+        match dirs::cache_dir() {
+            Some(cache) => cache.join("jan"),
+            None => temp_cache_root_in(&std::env::temp_dir()),
+        }
+    }
+}
+
+/// The cache root under the temp dir `temp`, for a machine with no OS cache
+/// dir (no `HOME`). A shared `/tmp` is writable by every local user, so a
+/// fixed `jan` there could have been made by another user, who would then
+/// see every slug and could swap folders under it. Named per user instead
+/// (`jan-<uid>`), and a name already taken by anything but a directory this
+/// user owns is passed over for the next one. A name planted between this
+/// check and its creation is caught there: [`ensure_scratch_dir_path`]
+/// refuses a directory this user does not own, the root and every other
+/// folder it creates on the way included. Windows keeps a plain `jan`:
+/// its temp dir is already per user.
+pub fn temp_cache_root_in(temp: &Path) -> PathBuf {
+    #[cfg(unix)]
+    {
+        let base = format!("jan-{}", nix::unistd::getuid());
+        let names = std::iter::once(base.clone()).chain((1..16).map(|n| format!("{base}-{n}")));
+        let mut last = temp.join(&base);
+        for name in names {
+            last = temp.join(name);
+            match std::fs::symlink_metadata(&last) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return last,
+                Ok(meta) if meta.is_dir() && owned_by_me(&meta) => return last,
+                _ => {}
+            }
+        }
+        // Every candidate taken: the last one, which the ownership check at
+        // creation refuses, so the scratch fails closed.
+        last
+    }
+    #[cfg(not(unix))]
+    {
+        temp.join("jan")
+    }
+}
+
+/// Whether `meta` (from `symlink_metadata`) belongs to this process's user.
+#[cfg(unix)]
+fn owned_by_me(meta: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    meta.uid() == nix::unistd::getuid().as_raw()
+}
+
+/// A project's folder under `cache_root`: `<cache_root>/<slug>`, with the
+/// same slug as its store (`~/.jan/projects/<slug>`), so the two always name
+/// one project the same way. `<cache_root>/chat` with no project.
+pub fn project_cache_dir_in(cache_root: &Path, project_root: Option<&Path>) -> PathBuf {
+    match project_root {
+        Some(root) => cache_root.join(path_slug(&project_key(root))),
+        None => cache_root.join(CHAT_CACHE),
+    }
+}
+
+/// [`project_cache_dir_in`] under the real [`jan_cache_root`].
+pub fn project_cache_dir(project_root: Option<&Path>) -> PathBuf {
+    project_cache_dir_in(&jan_cache_root(), project_root)
+}
+
 /// Where a project kept its store before the move: `<project_root>/.jan/agent`.
 pub fn legacy_project_store(project_root: &Path) -> PathBuf {
     project_root.join(LEGACY_DIR).join("agent")
@@ -491,38 +579,48 @@ pub fn validate_write_root(
     Ok(())
 }
 
-/// The session-scoped scratch directory: a subdirectory of the host temp dir
-/// (e.g. `/tmp/jan-agent-<session>` on Linux), where `bash` scratch files
-/// persist across calls for one session and the filesystem tools may write.
+/// The session-scoped scratch directory: `<project cache>/scratch/<session>`,
+/// where `<project cache>` is [`project_cache_dir_in`] (`<cache>/jan/<slug>`,
+/// or `<cache>/jan/chat` for a desktop thread). `bash` scratch files persist
+/// there across calls for one session and the filesystem tools may write it.
 ///
-/// Every backend exposes it, but not the same way. Bubblewrap binds it over the
-/// sandbox's `/tmp` -- only this session subdir, not the whole host `/tmp`, so
-/// the shell sees its own scratch and none of the machine's other temp files --
-/// and the tools remap `/tmp/...` back onto it. Seatbelt and AppContainer have
-/// no mount, so it is reached by this real path and made writable by a policy
-/// rule and an ACE respectively. Either way `TMPDIR`/`TMP`/`TEMP` point at it
-/// (see `tools::jail::scratch_env_path`) and it is cleaned up with the session.
+/// Every backend exposes it at this same real path (bubblewrap binds it onto
+/// itself, Seatbelt grants it by rule, AppContainer by ACE), and
+/// `TMPDIR`/`TMP`/`TEMP` name it too. One spelling works inside the sandbox,
+/// in the filesystem tools and in an escalated command that runs unconfined;
+/// a scratch mounted somewhere else inside the sandbox would not exist at that
+/// name outside it.
 ///
 /// Pure path arithmetic: `session` is not checked here. Anything that reaches
-/// the filesystem with an id from outside goes through [`ensure_scratch_dir`] or
-/// [`remove_scratch_dir`] / [`trash_scratch_dir`], which accept only a valid
+/// the filesystem with an id from outside goes through [`ensure_scratch_dir`],
+/// [`remove_scratch_dir`] or [`trash_scratch_dir`], which accept only a valid
 /// [`thread_segment`].
-pub fn scratch_dir(session: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("jan-agent-{session}"))
+pub fn scratch_dir_in(project_cache: &Path, session: &str) -> PathBuf {
+    project_cache.join(SCRATCH).join(session)
 }
 
-/// [`scratch_dir`] for an id that must first pass [`thread_segment`], so a
-/// separator or `..` in it can never move the scratch out of `jan-agent-*`.
-fn checked_scratch_dir(session: &str) -> Result<PathBuf, String> {
-    Ok(scratch_dir(&thread_segment(session)?))
+/// [`scratch_dir_in`] for an id that must first pass [`thread_segment`], so a
+/// separator or a parent-dir component in it can never move the scratch out
+/// of `scratch/`.
+fn checked_scratch_dir(project_cache: &Path, session: &str) -> Result<PathBuf, String> {
+    Ok(scratch_dir_in(project_cache, &thread_segment(session)?))
 }
 
-/// Create the session-scoped scratch directory (idempotent) and return it.
-/// Must exist before the Linux sandbox binds it over `/tmp`. The caller owns
-/// its teardown: thread deletion on the desktop, run end on the CLI, and
-/// session end in the TUI.
-pub async fn ensure_scratch_dir(session: &str) -> Result<PathBuf, String> {
-    ensure_scratch_dir_path(&checked_scratch_dir(session)?).await
+/// A desktop thread's scratch, `<cache>/jan/chat/scratch/<thread>`, checked.
+fn thread_scratch_dir(thread_id: &str) -> Result<PathBuf, String> {
+    checked_scratch_dir(&project_cache_dir(None), thread_id)
+}
+
+/// Create a desktop thread's scratch (idempotent) and return it.
+///
+/// Always under `<cache>/jan/chat`: a desktop thread has no filesystem
+/// project (desktop projects are UI folders), and every command that reaches
+/// a thread's scratch (subagent results, the blackboard, monitors, tool
+/// calls, thread delete) knows only the thread id, so this is the one place
+/// they all agree on. Must exist before a sandbox binds it. Thread deletion
+/// owns its teardown.
+pub async fn ensure_scratch_dir(thread_id: &str) -> Result<PathBuf, String> {
+    ensure_scratch_dir_path(&thread_scratch_dir(thread_id)?).await
 }
 
 /// Create a scratch directory at an explicit path, hardening it against a
@@ -530,13 +628,21 @@ pub async fn ensure_scratch_dir(session: &str) -> Result<PathBuf, String> {
 /// attacker-selected directory as its sanctioned scratch. Refuses (fail
 /// closed) when the target already exists as a symlink or is not a real
 /// directory, and applies restrictive 0700 permissions on Unix so no other
-/// local user can read the session's scratch files. `create_dir` (not
-/// `create_dir_all`) is used so the final component is created directly and a
-/// parent symlink cannot redirect it.
+/// local user can read the session's scratch files. Missing parents are
+/// created one at a time, owner-only too: the cache root may be the temp-dir
+/// fallback, where a world-readable `jan/` would list every project's slug.
+/// The final component is made with a plain create (never "all") and
+/// re-checked, so a parent symlink cannot redirect it unnoticed. On Unix it
+/// must also belong to this user: one another user made (a shared temp dir)
+/// is theirs to read and swap, whatever its mode.
 pub async fn ensure_scratch_dir_path(dir: &Path) -> Result<PathBuf, String> {
+    #[cfg(unix)]
+    let mine = owned_by_me;
+    #[cfg(not(unix))]
+    let mine = |_: &std::fs::Metadata| true;
     match tokio::fs::symlink_metadata(dir).await {
         Ok(meta) => {
-            if !meta.file_type().is_symlink() && meta.is_dir() {
+            if !meta.file_type().is_symlink() && meta.is_dir() && mine(&meta) {
                 // Already a real directory; keep it.
             } else {
                 return Err(format!(
@@ -547,14 +653,11 @@ pub async fn ensure_scratch_dir_path(dir: &Path) -> Result<PathBuf, String> {
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             if let Some(parent) = dir.parent() {
-                tokio::fs::create_dir_all(parent)
-                    .await
-                    .map_err(|e| format!("ERROR: {e}"))?;
+                create_private_dirs(parent).await?;
             }
-            // `create_dir` (not `create_dir_all`) so the final component is made
-            // directly and a parent symlink cannot redirect it. A concurrent
-            // creator is fine: re-verify the existing node is a real directory.
-            if let Err(e) = tokio::fs::create_dir(dir).await {
+            // A concurrent creator is fine: re-verify the existing node is a
+            // real directory.
+            if let Err(e) = private_dir_builder().create(dir).await {
                 if e.kind() != std::io::ErrorKind::AlreadyExists {
                     return Err(format!("ERROR: {e}"));
                 }
@@ -562,7 +665,7 @@ pub async fn ensure_scratch_dir_path(dir: &Path) -> Result<PathBuf, String> {
             // Re-verify after creation: a concurrent swap could have replaced
             // the freshly made directory with a symlink.
             match tokio::fs::symlink_metadata(dir).await {
-                Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => {}
+                Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() && mine(&meta) => {}
                 _ => {
                     return Err(format!(
                         "ERROR: scratch path {:?} is not a real directory",
@@ -581,31 +684,508 @@ pub async fn ensure_scratch_dir_path(dir: &Path) -> Result<PathBuf, String> {
     Ok(dir.to_path_buf())
 }
 
-/// How long a scratch directory may sit untouched before the startup sweep
-/// treats it as abandoned. Age-based rather than "remove every scratch at
-/// startup" so a second Jan instance cannot wipe the first one's live scratch.
-const SCRATCH_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+/// Prefix of a scratch's lease file, `scratch/.lease-<session>`, beside the
+/// scratch rather than in it: the sandbox can write the scratch but not its
+/// parent, so a command cannot remove or lock its own lease. The leading dot
+/// keeps it from ever reading as a session id.
+const SCRATCH_LEASE_PREFIX: &str = ".lease-";
 
-/// Delete abandoned scratch directories in the host temp dir, returning how many
-/// were removed.
-///
-/// Every scratch has an owner that removes it (run end, thread deletion, session
-/// end), but a kill -9 or a power loss leaves one behind with nobody left to
-/// claim it: the id it is keyed to lives in the caller's state, not on disk, so
-/// no `keep` list can be reconstructed the way [`sweep_thread_workspaces`] does
-/// it. Age is the only signal available, so anything untouched for
-/// [`SCRATCH_STALE_AFTER`] is collected. Called once at startup. A scratch
-/// already moved into trash by [`trash_scratch_dir`] goes once it is
-/// [`TRASH_KEPT_FOR`] old.
-///
-/// Failures are silent per entry: another user's `jan-agent-*` in a shared
-/// `/tmp` is not ours to delete and simply fails the unlink.
-pub async fn sweep_stale_scratch_dirs() -> usize {
-    sweep_scratch_older_than(&std::env::temp_dir(), SCRATCH_STALE_AFTER).await
+/// A run's hold on its scratch, which the startup sweep of every Jan process
+/// respects: dropping it releases the lock.
+#[derive(Debug)]
+pub struct ScratchClaim {
+    _lease: Option<std::fs::File>,
 }
 
-/// Sweep an explicit directory so tests never collect another session's scratch.
-async fn sweep_scratch_older_than(root: &Path, max_age: std::time::Duration) -> usize {
+/// The lease file for the scratch at `dir`.
+fn lease_path(dir: &Path) -> Option<PathBuf> {
+    let name = dir.file_name()?.to_str()?;
+    Some(dir.with_file_name(format!("{SCRATCH_LEASE_PREFIX}{name}")))
+}
+
+/// Open (creating it owner-only) the lease file at `path`, never through a
+/// symlink planted there.
+fn open_lease(path: &Path) -> Option<std::fs::File> {
+    if std::fs::symlink_metadata(path).is_ok_and(|m| !m.is_file()) {
+        return None;
+    }
+    let mut open = std::fs::OpenOptions::new();
+    open.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.mode(0o600).custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits());
+    }
+    open.open(path).ok()
+}
+
+/// Create the scratch at `dir` ([`ensure_scratch_dir_path`]) and claim it for
+/// a run, so no Jan process's startup sweep deletes it while the run is live.
+///
+/// The keep list a sweep is given names only its own process's sessions, and
+/// a scratch's own mtime does not change when files are written in its
+/// subfolders, so another CLI/TUI session working for a week would otherwise
+/// look abandoned. Two signals, because each covers what the other cannot:
+/// - a shared advisory lock on the scratch's lease file (flock/LockFileEx via
+///   `fs4`, already used for the memory store), held until the claim drops;
+///   the OS releases it when the process dies, so a crashed session leaves
+///   nothing that looks live. Shared, so a run's subagents can hold it too.
+/// - the scratch's mtime, set to now, so an interactive session idle between
+///   turns (no claim held) still reads as recently used for a week.
+///
+/// The lock is taken before the scratch is made or touched, and the sweep
+/// re-reads the mtime after taking it exclusively, so a sweep can never
+/// delete a scratch claimed while it was deciding. Both are best effort: a
+/// filesystem without locks or times still gets its scratch.
+pub async fn claim_scratch_dir(dir: &Path) -> Result<ScratchClaim, String> {
+    if let Some(parent) = dir.parent() {
+        create_private_dirs(parent).await?;
+    }
+    // Blocking: waits out a sweep deleting a stale scratch of the same name.
+    let lease = match lease_path(dir) {
+        Some(path) => tokio::task::spawn_blocking(move || lock_lease_shared(&path))
+            .await
+            .ok()
+            .flatten(),
+        None => None,
+    };
+    ensure_scratch_dir_path(dir).await?;
+    touch_dir(dir);
+    Ok(ScratchClaim { _lease: lease })
+}
+
+/// The lease at `path`, share-locked. A sweep unlinks a lease once it has
+/// deleted the scratch, so a claim that waited behind it may hold a lock on a
+/// file no longer there; it then retries on the one at the path now.
+fn lock_lease_shared(path: &Path) -> Option<std::fs::File> {
+    for _ in 0..3 {
+        let file = open_lease(path)?;
+        fs4::FileExt::lock_shared(&file).ok()?;
+        if std::fs::symlink_metadata(path).is_ok() {
+            return Some(file);
+        }
+    }
+    None
+}
+
+/// The lease at `path`, exclusively locked without waiting, for a sweep about
+/// to delete its scratch. `Err` while a live run holds it; `Ok(None)` when it
+/// cannot be locked at all (no file, a filesystem without locks), which
+/// leaves the mtime as the only signal, as before leases existed.
+fn try_lock_lease(path: &Path) -> Result<Option<std::fs::File>, ()> {
+    if std::fs::symlink_metadata(path).is_err() {
+        return Ok(None);
+    }
+    let Some(file) = open_lease(path) else {
+        return Ok(None);
+    };
+    match fs4::FileExt::try_lock(&file) {
+        Ok(()) => Ok(Some(file)),
+        Err(fs4::TryLockError::WouldBlock) => Err(()),
+        Err(fs4::TryLockError::Error(_)) => Ok(None),
+    }
+}
+
+/// Set `dir`'s mtime to now, ignoring failure (see [`claim_scratch_dir`]).
+fn touch_dir(dir: &Path) {
+    let mut open = std::fs::OpenOptions::new();
+    open.read(true);
+    // Windows opens a directory only with backup semantics
+    // (FILE_FLAG_BACKUP_SEMANTICS), and setting its times needs write access.
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        open.write(true).custom_flags(0x0200_0000);
+    }
+    if let Ok(file) = open.open(dir) {
+        let _ = file.set_modified(std::time::SystemTime::now());
+    }
+}
+
+/// A builder for directories only their owner may enter (Unix; elsewhere the
+/// profile directory's inherited ACL already is).
+#[cfg(unix)]
+fn private_dir_builder() -> tokio::fs::DirBuilder {
+    let mut builder = tokio::fs::DirBuilder::new();
+    builder.mode(0o700);
+    builder
+}
+
+#[cfg(not(unix))]
+fn private_dir_builder() -> tokio::fs::DirBuilder {
+    tokio::fs::DirBuilder::new()
+}
+
+/// Create `dir` and any missing ancestors owner-only, leaving ancestors that
+/// already exist (`~/.cache` itself) exactly as they are.
+async fn create_private_dirs(dir: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    let trusted = |_: &Path, meta: &std::fs::Metadata| {
+        use std::os::unix::fs::MetadataExt;
+        owned_by_me(meta) || meta.uid() == 0
+    };
+    #[cfg(not(unix))]
+    let trusted = |_: &Path, _: &std::fs::Metadata| true;
+    #[cfg(unix)]
+    let mine = |_: &Path, meta: &std::fs::Metadata| owned_by_me(meta);
+    #[cfg(not(unix))]
+    let mine = |_: &Path, _: &std::fs::Metadata| true;
+    create_private_dirs_owned(dir, trusted, mine).await
+}
+
+/// [`create_private_dirs`] with its ownership tests. In a shared temp dir
+/// another user can plant `/tmp/jan-<uid>` (before the walk, or between it
+/// and the create) and would then own, and could swap, everything under it.
+/// So the nearest ancestor that already exists must belong to a `trusted`
+/// owner (this user, or root for `/tmp` and `/home` themselves), and each
+/// ancestor this call had to create must be a real directory that is `mine`,
+/// including one that turned out to exist already.
+async fn create_private_dirs_owned(
+    dir: &Path,
+    trusted: impl Fn(&Path, &std::fs::Metadata) -> bool,
+    mine: impl Fn(&Path, &std::fs::Metadata) -> bool,
+) -> Result<(), String> {
+    let mut missing = Vec::new();
+    for ancestor in dir.ancestors() {
+        match tokio::fs::symlink_metadata(ancestor).await {
+            Ok(meta) if trusted(ancestor, &meta) => break,
+            Ok(_) => {
+                return Err(format!(
+                    "ERROR: scratch path {:?} belongs to another user",
+                    ancestor
+                ))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => missing.push(ancestor),
+            Err(e) => return Err(format!("ERROR: {e}")),
+        }
+    }
+    for ancestor in missing.into_iter().rev() {
+        if let Err(e) = private_dir_builder().create(ancestor).await {
+            if e.kind() != std::io::ErrorKind::AlreadyExists {
+                return Err(format!("ERROR: {e}"));
+            }
+        }
+        match tokio::fs::symlink_metadata(ancestor).await {
+            Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() && mine(ancestor, &meta) => {}
+            _ => {
+                return Err(format!(
+                    "ERROR: scratch path {:?} is not a real directory",
+                    ancestor
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `<project cache>/pkg`, the project's package cache.
+const PKG: &str = "pkg";
+
+/// `CARGO_HOME` inside the package cache.
+pub const PKG_CARGO_HOME: &str = "cargo";
+
+/// A project's package cache, `<cache>/jan/<slug>/pkg`. Only for a project:
+/// desktop chat has no network to fill one.
+pub fn pkg_dir_in(project_cache: &Path) -> PathBuf {
+    project_cache.join(PKG)
+}
+
+/// A prepared package cache: the folder a sandboxed command may write and
+/// whose subfolders its package-manager env names (`proc::PKG_CACHE_ENV`),
+/// plus the cargo config offered in it. `cargo_config` is `None` only for a
+/// hand-built cache (tests); [`prepare_pkg_cache_in`] always offers one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PkgCache {
+    pub root: PathBuf,
+    pub cargo_config: Option<CargoConfig>,
+}
+
+/// The cargo config offered read-only at `<CARGO_HOME>/config.toml`: the
+/// user's, or an empty one when they have none, so the name is always taken
+/// by a read-only file rather than left free for a sandbox to plant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CargoConfig {
+    /// The source: `config.toml`, or legacy `config`, in the host's
+    /// `CARGO_HOME`, or an empty file in the project's cache folder (outside
+    /// the package cache, so no sandbox can write it). Bubblewrap binds it
+    /// read-only over [`Self::copy`] and over [`Self::legacy`].
+    pub host: PathBuf,
+    /// `<pkg>/cargo/config.toml`. A read-only copy made at session start,
+    /// which is what Seatbelt and AppContainer expose (they cannot mount), and
+    /// bubblewrap's mount point.
+    pub copy: PathBuf,
+}
+
+impl CargoConfig {
+    /// `<pkg>/cargo/config`, the legacy name cargo prefers over
+    /// `config.toml` when both exist, so it must not be writable either.
+    pub fn legacy(&self) -> PathBuf {
+        self.copy.with_file_name("config")
+    }
+}
+
+/// The empty stand-in config's name in the project's cache folder.
+const EMPTY_CARGO_CONFIG: &str = "cargo-config-empty.toml";
+
+/// The host's cargo config: `config.toml` (or the legacy `config`) in
+/// `cargo_home`, the host's `CARGO_HOME` or `~/.cargo`.
+fn host_cargo_config(cargo_home: &Path) -> Option<PathBuf> {
+    ["config.toml", "config"]
+        .iter()
+        .map(|name| cargo_home.join(name))
+        .find(|path| path.is_file())
+}
+
+/// The host's `CARGO_HOME`, honoring an explicit one. `None` without a home.
+fn host_cargo_home() -> Option<PathBuf> {
+    match std::env::var_os("CARGO_HOME").filter(|v| !v.is_empty()) {
+        Some(dir) => Some(PathBuf::from(dir)),
+        None => user_home().map(|home| home.join(".cargo")),
+    }
+}
+
+/// [`prepare_pkg_cache_in`] with the host's own cargo home.
+pub async fn prepare_pkg_cache(project_cache: &Path) -> Result<PkgCache, String> {
+    prepare_pkg_cache_in(project_cache, host_cargo_home().as_deref()).await
+}
+
+/// Create a project's package cache owner-only and symlink-hardened (as
+/// [`ensure_scratch_dir_path`] does a scratch), and refresh its cargo config.
+///
+/// The sandbox's `CARGO_HOME` is `<pkg>/cargo`, never the user's: a sandbox
+/// that could write `~/.cargo/registry/src` could tamper with sources a later
+/// unsandboxed build compiles. So nothing else of the host's comes in: not
+/// `credentials.toml` (a sandboxed command must not publish with the user's
+/// token) and not `bin/` (installed tools stay on the host `PATH`). The user's
+/// config does (mirrors, registries, `net.offline`), read-only, because cargo
+/// config can name programs to run (`build.rustc-wrapper`,
+/// `target.<triple>.runner`). It is copied afresh every session so host edits
+/// apply; with no host config an empty one takes its place, so a copy left by
+/// an earlier session (or written by its sandbox) never outlives the user's.
+/// Toolchains are untouched: rustup keeps them in `RUSTUP_HOME`.
+pub async fn prepare_pkg_cache_in(
+    project_cache: &Path,
+    host_cargo_home: Option<&Path>,
+) -> Result<PkgCache, String> {
+    let root = ensure_scratch_dir_path(&pkg_dir_in(project_cache)).await?;
+    let cargo = ensure_scratch_dir_path(&root.join(PKG_CARGO_HOME)).await?;
+    let copy = cargo.join("config.toml");
+    let refresh_error = |path: &Path, e: std::io::Error| {
+        format!("ERROR: cannot refresh {}: {e}", path.display())
+    };
+    // Cargo reads the legacy name too, so one a sandbox planted would apply.
+    // An empty one is what bubblewrap leaves as the mount point it binds the
+    // config over; it is kept, since deleting a file another live sandbox
+    // has mounted over detaches that mount (Linux 3.18+) and would free the
+    // name inside it. Empty, it holds nothing a planter could want.
+    let legacy = cargo.join("config");
+    let empty_file = |m: &std::fs::Metadata| m.is_file() && m.len() == 0;
+    if !tokio::fs::symlink_metadata(&legacy).await.is_ok_and(|m| empty_file(&m)) {
+        remove_read_only_file(&legacy).await.map_err(|e| refresh_error(&legacy, e))?;
+    }
+    let host = match host_cargo_home.and_then(host_cargo_config) {
+        Some(host) => host,
+        None => {
+            let empty = project_cache.join(EMPTY_CARGO_CONFIG);
+            write_read_only(&[], &empty).await.map_err(|e| refresh_error(&empty, e))?;
+            empty
+        }
+    };
+    let bytes = tokio::fs::read(&host).await.map_err(|e| refresh_error(&host, e))?;
+    write_read_only(&bytes, &copy).await.map_err(|e| refresh_error(&copy, e))?;
+    Ok(PkgCache { root, cargo_config: Some(CargoConfig { host, copy }) })
+}
+
+/// Remove `path` if it is there, whatever it is: the copy is read-only, and a
+/// sandbox may have left a directory or symlink in its place. A read-only file
+/// goes too: on Unix only the folder's mode matters, and std deletes one on
+/// Windows since Rust 1.86.
+async fn remove_read_only_file(path: &Path) -> std::io::Result<()> {
+    match tokio::fs::symlink_metadata(path).await {
+        Ok(meta) if meta.is_dir() => tokio::fs::remove_dir_all(path).await,
+        Ok(_) => tokio::fs::remove_file(path).await,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Write `bytes` to a new read-only file at `path`. The folder is writable by
+/// every sandboxed command of the project, so the name may hold a symlink
+/// planted after it was cleared: created exclusively and never through a
+/// symlink, the open fails instead of truncating whatever file the link
+/// names, and the mode is set through the handle, not the name.
+fn create_read_only_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut open = std::fs::OpenOptions::new();
+    open.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.mode(0o600).custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits());
+    }
+    let mut file = open.open(path)?;
+    file.write_all(bytes)?;
+    let mut perms = file.metadata()?.permissions();
+    perms.set_readonly(true);
+    file.set_permissions(perms)
+}
+
+/// Write `bytes` to `dst` and mark it read-only. Through a fresh file and a
+/// rename, so a concurrent session never reads a half-written config, and so
+/// a symlink planted at `dst` is replaced rather than followed. Skipped when
+/// `dst` already is a read-only regular file holding exactly `bytes` (every
+/// session but the first after an edit): replacing a file a live sibling
+/// sandbox has mounted over detaches that mount inside it (Linux 3.18+).
+/// That still happens when the host config changes mid-session; the sibling
+/// then sees the new, read-only-moded copy until its next session.
+///
+/// The read-only mark is the whole protection on AppContainer, which grants
+/// by ACE and has no deny: the container holds full access on the package
+/// cache, so it could clear the mark or replace the file. Accepted: the copy
+/// configures only sandboxed cargo and is rewritten every session. Seatbelt
+/// also denies writes to it by rule, and bubblewrap mounts the host file over
+/// it read-only.
+async fn write_read_only(bytes: &[u8], dst: &Path) -> std::io::Result<()> {
+    if let Ok(meta) = tokio::fs::symlink_metadata(dst).await {
+        if meta.is_file()
+            && meta.permissions().readonly()
+            && tokio::fs::read(dst).await.is_ok_and(|have| have == bytes)
+        {
+            return Ok(());
+        }
+    }
+    // Unique per call: a parent run and its subagents share a process and may
+    // prepare the same project's cache at once.
+    static COPIES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = COPIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = dst.with_extension(format!("tmp-{}-{n}", std::process::id()));
+    remove_read_only_file(&tmp).await?;
+    let (path, owned) = (tmp.clone(), bytes.to_vec());
+    tokio::task::spawn_blocking(move || create_read_only_new(&path, &owned))
+        .await
+        .map_err(std::io::Error::other)??;
+    // Replaced in one step where the OS allows it, so a sibling session's
+    // bubblewrap never finds its mount point missing. Windows refuses to
+    // rename over a read-only file; there the old copy goes first.
+    if tokio::fs::rename(&tmp, dst).await.is_err() {
+        remove_read_only_file(dst).await?;
+        tokio::fs::rename(&tmp, dst).await?;
+    }
+    Ok(())
+}
+
+/// How long a scratch directory may sit untouched, with no live session
+/// claiming it, before the startup sweep treats it as abandoned. A week
+/// rather than a day: the live check is only as good as the caller's `keep`
+/// list, and another Jan instance's live session is never in it.
+const SCRATCH_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
+/// Delete abandoned scratch directories, returning how many were removed.
+///
+/// Every scratch has an owner that removes it (run end, thread deletion,
+/// session end), but a kill -9 or a power loss leaves one behind with nobody
+/// left to claim it, and unlike a temp dir the OS cache dir is never cleaned
+/// for us. Scans every `<cache>/jan/*/scratch/`: an entry goes when its id is
+/// not in `keep` (the caller's live sessions: the desktop's surviving thread
+/// ids, a CLI run's own session) and it was last modified
+/// [`SCRATCH_STALE_AFTER`] ago. Trash goes once it is [`TRASH_KEPT_FOR`] old.
+///
+/// Also collects the `jan-agent-*` scratches and `jan-trash-*` trash older
+/// versions left in the system temp dir: nothing else would ever remove them
+/// from a temp dir the OS does not clean (Windows, a persistent `/tmp`).
+/// Failures are silent per entry: another user's `jan-agent-*` in a shared
+/// `/tmp` is not ours to delete and simply fails the unlink.
+pub async fn sweep_stale_scratch_dirs(keep: &[String]) -> usize {
+    sweep_stale_scratch_dirs_in(&jan_cache_root(), keep).await
+}
+
+/// [`sweep_stale_scratch_dirs`] under an explicit Jan cache root, for callers
+/// that resolve the root themselves (the app substitutes a temp root in its
+/// tests).
+pub async fn sweep_stale_scratch_dirs_in(cache_root: &Path, keep: &[String]) -> usize {
+    sweep_scratch_in(cache_root, keep, SCRATCH_STALE_AFTER).await
+        + sweep_legacy_scratch_in(&std::env::temp_dir(), SCRATCH_STALE_AFTER).await
+}
+
+/// [`sweep_stale_scratch_dirs`] over an explicit cache root, so tests never
+/// collect another session's scratch.
+async fn sweep_scratch_in(cache_root: &Path, keep: &[String], max_age: std::time::Duration) -> usize {
+    let keep: std::collections::HashSet<&str> = keep.iter().map(String::as_str).collect();
+    let Ok(mut projects) = tokio::fs::read_dir(cache_root).await else {
+        return 0;
+    };
+    let mut removed = 0;
+    while let Ok(Some(project)) = projects.next_entry().await {
+        // `symlink_metadata` throughout: a symlink planted where a folder is
+        // expected must not lead the sweep into deleting what it points at.
+        let scratch = project.path().join(SCRATCH);
+        match tokio::fs::symlink_metadata(&scratch).await {
+            Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {}
+            _ => continue,
+        }
+        let Ok(mut entries) = tokio::fs::read_dir(&scratch).await else {
+            continue;
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if let Some(session) = name.strip_prefix(SCRATCH_LEASE_PREFIX) {
+                remove_orphan_lease(&entry.path(), &scratch.join(session));
+                continue;
+            }
+            let trash = name.starts_with(SCRATCH_TRASH_PREFIX);
+            // Only names this module makes: anything else was not made here.
+            if !trash && (keep.contains(name) || thread_segment(name).is_err()) {
+                continue;
+            }
+            if trash {
+                if remove_if_stale(&entry.path(), name, true, max_age).await {
+                    removed += 1;
+                }
+                continue;
+            }
+            // Held exclusively across the age check and the delete, so a run
+            // claiming this scratch meanwhile waits rather than losing it.
+            let Some(lease) = lease_path(&entry.path()) else { continue };
+            let Ok(lock) = try_lock_lease(&lease) else {
+                continue; // a live run, in some Jan process, holds it
+            };
+            if remove_if_stale(&entry.path(), name, false, max_age).await {
+                removed += 1;
+                if lock.is_some() {
+                    let _ = std::fs::remove_file(&lease);
+                }
+            }
+        }
+    }
+    removed
+}
+
+/// Remove the lease at `lease` once its scratch is gone (trashed at session
+/// end, or deleted by hand) and no run holds it.
+fn remove_orphan_lease(lease: &Path, scratch: &Path) {
+    if std::fs::symlink_metadata(scratch).is_ok() {
+        return;
+    }
+    match std::fs::symlink_metadata(lease) {
+        // Not something `open_lease` would make: unlink it, never follow it.
+        Ok(meta) if !meta.is_file() => {
+            if meta.file_type().is_symlink() {
+                let _ = std::fs::remove_file(lease);
+            }
+        }
+        Ok(_) => {
+            if let Ok(Some(_lock)) = try_lock_lease(lease) {
+                let _ = std::fs::remove_file(lease);
+            }
+        }
+        Err(_) => {}
+    }
+}
+
+/// The legacy layout: `jan-agent-<session>` and `jan-trash-*` directly in the
+/// system temp dir. Age is the only signal there, as it always was.
+async fn sweep_legacy_scratch_in(root: &Path, max_age: std::time::Duration) -> usize {
     let Ok(mut entries) = tokio::fs::read_dir(root).await else {
         return 0;
     };
@@ -613,44 +1193,53 @@ async fn sweep_scratch_older_than(root: &Path, max_age: std::time::Duration) -> 
     while let Ok(Some(entry)) = entries.next_entry().await {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
-        let trash = name.starts_with(SCRATCH_TRASH_PREFIX);
-        if !name.starts_with("jan-agent-") && !trash {
+        let trash = name.starts_with(LEGACY_TRASH_PREFIX);
+        if !name.starts_with(LEGACY_SCRATCH_PREFIX) && !trash {
             continue;
         }
-        // `symlink_metadata`: a symlink named like a scratch is not one, and
-        // following it would delete whatever it points at.
-        let Ok(meta) = tokio::fs::symlink_metadata(entry.path()).await else {
-            continue;
-        };
-        if trash && meta.file_type().is_symlink() {
-            let _ = tokio::fs::remove_file(entry.path()).await;
-            continue;
-        }
-        if meta.file_type().is_symlink() || !meta.is_dir() {
-            continue;
-        }
-        // A trashed scratch is never in use (the rename that made it is
-        // atomic), but it holds the session's subagent results, kept a while
-        // in case the user wants one back.
-        let stale = if trash {
-            trash_expired(name, &meta)
-        } else {
-            meta.modified()
-                .ok()
-                .and_then(|m| m.elapsed().ok())
-                .is_some_and(|age| age >= max_age)
-        };
-        if stale && tokio::fs::remove_dir_all(entry.path()).await.is_ok() {
+        if remove_if_stale(&entry.path(), name, trash, max_age).await {
             removed += 1;
         }
     }
     removed
 }
 
-/// Prefix of a scratch moved aside for deletion. Deliberately not `jan-agent-`:
-/// a session id is any `thread_segment`, so `jan-agent-trash-*` could be a live
-/// scratch that the any-age trash sweep would wipe.
-const SCRATCH_TRASH_PREFIX: &str = "jan-trash-";
+/// Delete the scratch or trash entry at `path` when it is stale, returning
+/// whether it went. A symlink named like trash is unlinked (never followed);
+/// one named like a scratch is not ours and is left alone.
+async fn remove_if_stale(path: &Path, name: &str, trash: bool, max_age: std::time::Duration) -> bool {
+    let Ok(meta) = tokio::fs::symlink_metadata(path).await else {
+        return false;
+    };
+    if trash && meta.file_type().is_symlink() {
+        let _ = tokio::fs::remove_file(path).await;
+        return false;
+    }
+    if meta.file_type().is_symlink() || !meta.is_dir() {
+        return false;
+    }
+    // A trashed scratch is never in use (the rename that made it is atomic),
+    // but it holds the session's subagent results, kept a while in case the
+    // user wants one back.
+    let stale = if trash {
+        trash_expired(name, &meta)
+    } else {
+        meta.modified()
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .is_some_and(|age| age >= max_age)
+    };
+    stale && tokio::fs::remove_dir_all(path).await.is_ok()
+}
+
+/// Prefix of a scratch moved aside for deletion, next to the live ones in
+/// `scratch/`. It starts with a dot, which [`thread_segment`] never accepts,
+/// so no session id can ever be mistaken for trash and swept at any age.
+const SCRATCH_TRASH_PREFIX: &str = ".trash-";
+
+/// What older versions named a scratch and its trash in the system temp dir.
+const LEGACY_SCRATCH_PREFIX: &str = "jan-agent-";
+const LEGACY_TRASH_PREFIX: &str = "jan-trash-";
 
 /// How long Jan's trash (a removed scratch, a subagent worktree that read as
 /// empty) is kept before a startup sweep deletes it: long enough for a user
@@ -684,11 +1273,11 @@ pub fn trash_expired(name: &str, meta: &std::fs::Metadata) -> bool {
         .is_some_and(|age| age >= TRASH_KEPT_FOR)
 }
 
-/// Delete a session's scratch directory now. Idempotent: a missing scratch is
+/// Delete a desktop thread's scratch now. Idempotent: a missing scratch is
 /// Ok. For an explicit delete (a thread or session the user removed): its
 /// results and caches must not outlive it in the trash.
-pub async fn remove_scratch_dir(session: &str) -> Result<(), String> {
-    let dir = checked_scratch_dir(session)?;
+pub async fn remove_scratch_dir(thread_id: &str) -> Result<(), String> {
+    let dir = thread_scratch_dir(thread_id)?;
     match tokio::fs::remove_dir_all(&dir).await {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -696,22 +1285,26 @@ pub async fn remove_scratch_dir(session: &str) -> Result<(), String> {
     }
 }
 
-/// Move a finished session's scratch into trash, for the exit path only.
-/// Idempotent: a missing scratch is Ok.
+/// Move a finished CLI/TUI session's scratch, under the project cache folder
+/// `project_cache` ([`project_cache_dir_in`]), into trash. For the exit path
+/// only. Idempotent: a missing scratch is Ok.
 ///
 /// Read-only subagents keep package caches there, so deleting it can walk
 /// tens of thousands of files while the user waits to exit. A rename is
 /// instant, and a startup sweep empties the trash once it is old.
-pub async fn trash_scratch_dir(session: &str) -> Result<(), String> {
-    let dir = checked_scratch_dir(session)?;
-    trash_dir_in(&std::env::temp_dir(), &dir, session).await
+pub async fn trash_scratch_dir_in(project_cache: &Path, session: &str) -> Result<(), String> {
+    trash_dir(&checked_scratch_dir(project_cache, session)?, session).await
 }
 
-/// Move `dir` into `root` under a trash name made from `stem`, deleting it in
-/// place when the rename fails (another volume, a handle still open on
-/// Windows). A missing `dir` is Ok.
-async fn trash_dir_in(root: &Path, dir: &Path, stem: &str) -> Result<(), String> {
-    let trash = root.join(trash_name(&format!(
+/// Move `dir` into trash beside it, in its own `scratch/` folder: the same
+/// filesystem, so the rename is atomic and instant, and the folder the sweep
+/// already scans. Deleted in place when the rename fails (a handle still open
+/// on Windows). A missing `dir` is Ok.
+async fn trash_dir(dir: &Path, stem: &str) -> Result<(), String> {
+    let Some(parent) = dir.parent() else {
+        return Err(format!("ERROR: scratch path {dir:?} has no parent"));
+    };
+    let trash = parent.join(trash_name(&format!(
         "{SCRATCH_TRASH_PREFIX}{stem}-{}",
         std::process::id()
     )));
@@ -787,7 +1380,7 @@ async fn remove_workspace_at(dir: PathBuf, id: &str) -> Result<(), String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(format!("ERROR: {e}")),
     }
-    // Wipe the host-temp scratch keyed to the same id.
+    // Wipe the cache scratch keyed to the same id.
     let _ = remove_scratch_dir(id).await;
     Ok(())
 }
@@ -847,7 +1440,7 @@ async fn sweep_workspaces_in(dir: PathBuf, keep: &[String]) -> Result<usize, Str
         crate::tools::appcontainer::release(&entry.path());
         if tokio::fs::remove_dir_all(entry.path()).await.is_ok() {
             removed += 1;
-            // Wipe the host-temp scratch keyed to this id.
+            // Wipe the cache scratch keyed to this id.
             let _ = remove_scratch_dir(&name).await;
         }
     }
@@ -1033,90 +1626,293 @@ mod tests {
         assert!(!store_dir(&permanent_store(data), "memory").starts_with(&thread));
     }
 
-    #[tokio::test]
-    async fn scratch_dir_lifecycle_is_session_keyed_and_removable() {
-        let session = "t1";
-        let scratch = scratch_dir(session);
-        assert!(!scratch.exists());
-
-        let created = ensure_scratch_dir(session).await.unwrap();
-        assert_eq!(created, scratch);
-        assert!(scratch.is_dir());
-
-        std::fs::write(scratch.join("f"), b"x").unwrap();
-        remove_scratch_dir(session).await.unwrap();
-        assert!(!scratch.exists());
-        // Idempotent.
-        remove_scratch_dir(session).await.unwrap();
+    /// The cache layout: one folder per project under the Jan cache root,
+    /// named with the very slug the project's store uses, so `~/.jan/projects/<slug>`
+    /// and `<cache>/jan/<slug>` always name one project the same way.
+    #[test]
+    fn a_project_cache_uses_the_store_slug() {
+        let home = Path::new("/home/u/.jan");
+        let cache = Path::new("/home/u/.cache/jan");
+        let project = unique_data_folder();
+        std::fs::create_dir_all(&project).unwrap();
+        let dir = project_cache_dir_in(cache, Some(&project));
+        let store = project_store_in(home, &project);
+        assert_eq!(dir.parent(), Some(cache));
+        assert_eq!(dir.file_name(), store.file_name());
+        assert_eq!(
+            scratch_dir_in(&dir, "s1"),
+            cache.join(store.file_name().unwrap()).join("scratch/s1")
+        );
+        let _ = std::fs::remove_dir_all(&project);
     }
 
-    /// A scratch whose owner died (kill -9, power loss) has nobody left to
-    /// remove it and no `keep` list to rebuild, so the startup sweep collects it
-    /// by age. Nothing else in the temp dir is touched, and a fresh scratch
-    /// survives the real 24h threshold.
+    /// A linked worktree of a project shares its cache folder, as it shares
+    /// its store.
+    #[test]
+    fn a_linked_worktree_shares_its_main_checkouts_cache() {
+        let base = unique_data_folder();
+        let main = base.join("main");
+        std::fs::create_dir_all(main.join(".git/worktrees/w1")).unwrap();
+        let wt = base.join("wt");
+        std::fs::create_dir_all(&wt).unwrap();
+        let gitdir = main.canonicalize().unwrap().join(".git/worktrees/w1");
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).unwrap();
+        let cache = Path::new("/c/jan");
+        assert_eq!(
+            project_cache_dir_in(cache, Some(&wt)),
+            project_cache_dir_in(cache, Some(&main))
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// No filesystem project (a desktop thread): the fixed `chat` sibling.
+    #[test]
+    fn a_session_with_no_project_uses_the_chat_folder() {
+        let cache = Path::new("/c/jan");
+        assert_eq!(project_cache_dir_in(cache, None), Path::new("/c/jan/chat"));
+        assert_eq!(
+            scratch_dir_in(&project_cache_dir_in(cache, None), "t1"),
+            Path::new("/c/jan/chat/scratch/t1")
+        );
+        // The real helpers agree with the explicit-root ones.
+        assert_eq!(project_cache_dir(None), jan_cache_root().join("chat"));
+        assert_eq!(
+            thread_scratch_dir("t1").unwrap(),
+            jan_cache_root().join("chat/scratch/t1")
+        );
+    }
+
+    /// A desktop thread's scratch is created, keyed by its id under `chat/`,
+    /// and removed with it.
     #[tokio::test]
-    async fn stale_scratch_dirs_are_swept_and_fresh_ones_are_not() {
-        let root = tmp_root("scratch_sweep");
+    async fn scratch_dir_lifecycle_is_session_keyed_and_removable() {
+        let session = format!("t1-{}", std::process::id());
+        let scratch = thread_scratch_dir(&session).unwrap();
+        assert!(!scratch.exists());
+
+        let created = ensure_scratch_dir(&session).await.unwrap();
+        assert_eq!(created, scratch);
+        assert!(scratch.is_dir());
+        assert!(scratch.starts_with(jan_cache_root().join("chat").join("scratch")));
+
+        std::fs::write(scratch.join("f"), b"x").unwrap();
+        remove_scratch_dir(&session).await.unwrap();
+        assert!(!scratch.exists());
+        // Idempotent.
+        remove_scratch_dir(&session).await.unwrap();
+    }
+
+    /// Backdate `path`'s mtime by `age`, so the real 7-day threshold can be
+    /// exercised without waiting a week.
+    fn age_by(path: &Path, age: std::time::Duration) {
+        let when = std::time::SystemTime::now() - age;
+        let mut open = std::fs::OpenOptions::new();
+        open.read(true);
+        // Windows opens a directory only with backup semantics, and setting
+        // its times needs write access.
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            open.write(true).custom_flags(0x0200_0000);
+        }
+        open.open(path).unwrap().set_modified(when).unwrap();
+    }
+
+    const EIGHT_DAYS: std::time::Duration = std::time::Duration::from_secs(8 * 24 * 60 * 60);
+
+    /// A scratch whose owner died (kill -9, power loss) is collected at the
+    /// next start once it is a week old and no live session claims it, in
+    /// every project's folder. A live one (in `keep`) and a fresh one stay,
+    /// whatever their age; anything not named like a scratch is left alone.
+    #[tokio::test]
+    async fn the_startup_sweep_removes_only_stale_scratch_no_session_claims() {
+        let cache = tmp_root("scratch_sweep");
+        let a = project_cache_dir_in(&cache, None);
+        let b = cache.join("proj-1234abcd");
+        let crashed = scratch_dir_in(&a, "crashed");
+        let live = scratch_dir_in(&a, "live");
+        let fresh = scratch_dir_in(&b, "fresh");
+        let other_crashed = scratch_dir_in(&b, "gone");
+        for dir in [&crashed, &live, &fresh, &other_crashed] {
+            ensure_scratch_dir_path(dir).await.unwrap();
+            std::fs::write(dir.join("spill.txt"), b"x").unwrap();
+        }
+        let bystander = a.join("scratch").join("not.a.scratch");
+        std::fs::create_dir_all(&bystander).unwrap();
+        for dir in [&crashed, &live, &other_crashed, &bystander] {
+            age_by(dir, EIGHT_DAYS);
+        }
+
+        let keep = vec!["live".to_string()];
+        assert_eq!(sweep_scratch_in(&cache, &keep, SCRATCH_STALE_AFTER).await, 2);
+        assert!(!crashed.exists() && !other_crashed.exists(), "stale scratch goes");
+        assert!(live.join("spill.txt").is_file(), "a live session's scratch stays");
+        assert!(fresh.join("spill.txt").is_file(), "a fresh scratch stays");
+        assert!(bystander.is_dir(), "swept a directory that is not a scratch");
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    /// With no OS cache dir the cache root falls back to the shared temp dir,
+    /// so it is named per user, and a name already taken by something that is
+    /// not this user's own directory (planted by another local user, or a
+    /// symlink) is passed over rather than trusted.
+    #[cfg(unix)]
+    #[test]
+    fn the_temp_fallback_is_per_user_and_skips_what_is_not_ours() {
+        let temp = tmp_root("temp_fallback");
+        std::fs::create_dir_all(&temp).unwrap();
+        let uid = nix::unistd::getuid();
+        let first = temp_cache_root_in(&temp);
+        assert_eq!(first, temp.join(format!("jan-{uid}")));
+        // Ours already: reused.
+        std::fs::create_dir(&first).unwrap();
+        assert_eq!(temp_cache_root_in(&temp), first);
+        // Not a directory of ours: skipped.
+        std::fs::remove_dir(&first).unwrap();
+        std::os::unix::fs::symlink(&temp, &first).unwrap();
+        let next = temp_cache_root_in(&temp);
+        assert_ne!(next, first);
+        assert!(next.file_name().unwrap().to_string_lossy().starts_with(&format!("jan-{uid}-")));
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    /// Another live session's scratch (another CLI/TUI process, so not in this
+    /// one's `keep`) survives the sweep while its run holds a claim, however
+    /// old its mtime; once released it goes, lease file and all.
+    #[tokio::test]
+    async fn a_claimed_scratch_survives_the_sweep() {
+        let cache = tmp_root("scratch_sweep_claim");
+        let scratch = scratch_dir_in(&project_cache_dir_in(&cache, None), "other-live");
+        ensure_scratch_dir_path(&scratch).await.unwrap();
+        let claim = claim_scratch_dir(&scratch).await.unwrap();
+        // A run that has gone on for over a week, writing only in subfolders.
+        age_by(&scratch, EIGHT_DAYS);
+        assert_eq!(sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await, 0);
+        assert!(scratch.is_dir(), "a claimed scratch must survive");
+        drop(claim);
+        assert_eq!(sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await, 1);
+        assert!(!scratch.exists());
+        let leftovers: Vec<_> = std::fs::read_dir(scratch.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert!(leftovers.is_empty(), "the lease goes with its scratch: {leftovers:?}");
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    /// Claiming a scratch at the start of each turn marks it fresh, so an
+    /// interactive session idle between turns is not swept for a week after
+    /// its last one; a lease left by a scratch that is gone is collected.
+    #[tokio::test]
+    async fn claiming_a_scratch_marks_it_fresh() {
+        let cache = tmp_root("scratch_sweep_touch");
+        let project = project_cache_dir_in(&cache, None);
+        let scratch = scratch_dir_in(&project, "idle");
+        ensure_scratch_dir_path(&scratch).await.unwrap();
+        age_by(&scratch, EIGHT_DAYS);
+        drop(claim_scratch_dir(&scratch).await.unwrap());
+        assert_eq!(sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await, 0);
+        assert!(scratch.is_dir(), "a scratch claimed just now is fresh");
+
+        let gone = scratch_dir_in(&project, "gone");
+        ensure_scratch_dir_path(&gone).await.unwrap();
+        drop(claim_scratch_dir(&gone).await.unwrap());
+        std::fs::remove_dir_all(&gone).unwrap();
+        sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await;
+        let names: Vec<String> = std::fs::read_dir(project.join(SCRATCH))
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.iter().all(|n| !n.contains("gone")), "{names:?}");
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    /// The sweep must not follow a symlink planted where a project's
+    /// `scratch/` folder or a scratch would be.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_startup_sweep_never_follows_a_symlink() {
+        let cache = tmp_root("scratch_sweep_link");
+        let victim = tmp_root("scratch_sweep_victim");
+        std::fs::create_dir_all(victim.join("old")).unwrap();
+        age_by(&victim.join("old"), EIGHT_DAYS);
+        std::fs::create_dir_all(cache.join("p-1")).unwrap();
+        std::os::unix::fs::symlink(&victim, cache.join("p-1").join("scratch")).unwrap();
+        let scratch = cache.join("p-2").join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        std::os::unix::fs::symlink(victim.join("old"), scratch.join("linked")).unwrap();
+        assert_eq!(sweep_scratch_in(&cache, &[], std::time::Duration::ZERO).await, 0);
+        assert!(victim.join("old").is_dir());
+        let _ = std::fs::remove_dir_all(&cache);
+        let _ = std::fs::remove_dir_all(&victim);
+    }
+
+    /// Older versions kept the scratch in the system temp dir; those are still
+    /// collected by age so an upgrade does not leak them.
+    #[tokio::test]
+    async fn legacy_temp_scratch_is_still_swept() {
+        let root = tmp_root("legacy_sweep");
         let orphan = root.join("jan-agent-orphan");
-        ensure_scratch_dir_path(&orphan).await.unwrap();
-        std::fs::write(orphan.join("spill.txt"), b"leaked").unwrap();
+        let recent = root.join("jan-agent-recent");
+        for dir in [&orphan, &recent] {
+            ensure_scratch_dir_path(dir).await.unwrap();
+        }
+        age_by(&orphan, EIGHT_DAYS);
+        let old_trash = root.join("jan-trash-old-1-1000000000000000000");
+        std::fs::create_dir_all(&old_trash).unwrap();
         let bystander = root.join("not-a-scratch");
         std::fs::create_dir_all(&bystander).unwrap();
-
-        assert_eq!(
-            sweep_scratch_older_than(&root, SCRATCH_STALE_AFTER).await,
-            0,
-            "a fresh scratch is live"
-        );
-        assert!(orphan.is_dir());
-
-        assert_eq!(
-            sweep_scratch_older_than(&root, std::time::Duration::ZERO).await,
-            1
-        );
-        assert!(!orphan.exists(), "an abandoned scratch must be collected");
-        assert!(
-            bystander.is_dir(),
-            "swept a directory that is not a scratch"
-        );
-
+        age_by(&bystander, EIGHT_DAYS);
+        assert_eq!(sweep_legacy_scratch_in(&root, SCRATCH_STALE_AFTER).await, 2);
+        assert!(!orphan.exists() && !old_trash.exists());
+        assert!(recent.is_dir() && bystander.is_dir());
         let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Exit must not wait for a scratch full of package caches to be deleted:
-    /// it is moved aside, whole, next to where it was.
+    /// it is moved aside, whole, beside where it was (same `scratch/` folder,
+    /// so the same filesystem).
     #[tokio::test]
-    async fn removing_a_scratch_moves_it_to_trash_in_the_temp_dir() {
-        let root = tmp_root("scratch_trash");
-        let scratch = root.join("jan-agent-s1");
+    async fn trashing_a_scratch_moves_it_beside_itself() {
+        let cache = tmp_root("scratch_trash");
+        let scratch = scratch_dir_in(&cache.join("p-1"), "s1");
         ensure_scratch_dir_path(&scratch).await.unwrap();
         std::fs::write(scratch.join("cache.bin"), b"x").unwrap();
-        trash_dir_in(&root, &scratch, "s1").await.unwrap();
+        trash_dir(&scratch, "s1").await.unwrap();
         assert!(!scratch.exists());
-        let trashed: Vec<PathBuf> = std::fs::read_dir(&root)
+        let trashed: Vec<PathBuf> = std::fs::read_dir(scratch.parent().unwrap())
             .unwrap()
             .map(|e| e.unwrap().path())
             .collect();
         assert_eq!(trashed.len(), 1, "{trashed:?}");
         let name = trashed[0].file_name().unwrap().to_string_lossy().into_owned();
         assert!(name.starts_with(SCRATCH_TRASH_PREFIX), "{name}");
+        assert!(thread_segment(&name).is_err(), "trash can never pass for a session id");
         assert!(trashed[0].join("cache.bin").is_file());
         // Idempotent: a scratch already gone is Ok.
-        trash_dir_in(&root, &scratch, "s1").await.unwrap();
-        let _ = std::fs::remove_dir_all(&root);
+        trash_dir(&scratch, "s1").await.unwrap();
+        let _ = std::fs::remove_dir_all(&cache);
     }
 
-    /// A rename can fail (another volume, a handle still open on Windows);
-    /// the scratch is then deleted in place, as before.
+    /// The real exit path: a CLI session's scratch under its project's folder
+    /// goes to trash there.
     #[tokio::test]
-    async fn a_scratch_that_cannot_be_renamed_is_deleted() {
-        let root = tmp_root("scratch_norename");
-        let scratch = root.join("jan-agent-s2");
-        ensure_scratch_dir_path(&scratch).await.unwrap();
-        std::fs::write(scratch.join("f"), b"x").unwrap();
-        trash_dir_in(&root.join("missing"), &scratch, "s2").await.unwrap();
+    async fn a_cli_session_scratch_is_trashed_in_its_project_folder() {
+        let project = unique_data_folder();
+        std::fs::create_dir_all(&project).unwrap();
+        let session = format!("cli-exit-{}", std::process::id());
+        let cache = project_cache_dir(Some(&project));
+        let scratch = ensure_scratch_dir_path(&scratch_dir_in(&cache, &session))
+            .await
+            .unwrap();
+        trash_scratch_dir_in(&cache, &session).await.unwrap();
         assert!(!scratch.exists());
-        let _ = std::fs::remove_dir_all(&root);
+        let parent = scratch.parent().unwrap();
+        assert_eq!(std::fs::read_dir(parent).unwrap().count(), 1);
+        let _ = std::fs::remove_dir_all(&cache);
+        let _ = std::fs::remove_dir_all(&project);
     }
 
     /// A trashed scratch is kept a week (it holds the session's subagent
@@ -1125,33 +1921,39 @@ mod tests {
     /// following it.
     #[tokio::test]
     async fn trash_is_kept_a_week_then_emptied_by_the_startup_sweep() {
-        let root = tmp_root("scratch_trash_sweep");
-        let live = root.join("jan-agent-live");
+        let cache = tmp_root("scratch_trash_sweep");
+        let project = cache.join("p-1");
+        let live = scratch_dir_in(&project, "live");
         ensure_scratch_dir_path(&live).await.unwrap();
-        let ended = root.join("jan-agent-ended");
+        let ended = scratch_dir_in(&project, "ended");
         ensure_scratch_dir_path(&ended).await.unwrap();
-        trash_dir_in(&root, &ended, "ended").await.unwrap();
-        let trash = root.join("jan-trash-old-1-1000000000000000000");
+        trash_dir(&ended, "ended").await.unwrap();
+        let root = project.join("scratch");
+        let trash = root.join(format!("{SCRATCH_TRASH_PREFIX}old-1-1000000000000000000"));
         std::fs::create_dir_all(trash.join("deep")).unwrap();
         std::fs::write(trash.join("deep/f"), b"x").unwrap();
-        let bystander = root.join("not-a-scratch");
+        let bystander = cache.join("not-a-scratch");
         std::fs::create_dir_all(&bystander).unwrap();
         std::fs::write(bystander.join("keep"), b"x").unwrap();
+        let link = root.join(format!("{SCRATCH_TRASH_PREFIX}link"));
         #[cfg(unix)]
-        std::os::unix::fs::symlink(&bystander, root.join("jan-trash-link")).unwrap();
+        std::os::unix::fs::symlink(&bystander, &link).unwrap();
 
-        assert_eq!(sweep_scratch_older_than(&root, SCRATCH_STALE_AFTER).await, 1);
+        assert_eq!(sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await, 1);
         assert!(!trash.exists(), "week-old trash goes");
         let fresh = std::fs::read_dir(&root)
             .unwrap()
-            .filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().starts_with("jan-trash-ended-"))
+            .filter(|e| {
+                let name = e.as_ref().unwrap().file_name();
+                name.to_string_lossy().starts_with(&format!("{SCRATCH_TRASH_PREFIX}ended-"))
+            })
             .count();
         assert_eq!(fresh, 1, "fresh trash is kept");
         assert!(live.is_dir(), "a fresh scratch is live");
         assert!(bystander.join("keep").is_file(), "nothing outside trash is touched");
         #[cfg(unix)]
-        assert!(std::fs::symlink_metadata(root.join("jan-trash-link")).is_err());
-        let _ = std::fs::remove_dir_all(&root);
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        let _ = std::fs::remove_dir_all(&cache);
     }
 
     /// A session scratch as subagents leave it: session files under
@@ -1173,7 +1975,7 @@ mod tests {
         let session = format!("sub-exit-{}", std::process::id());
         let scratch = ensure_scratch_dir(&session).await.unwrap();
         let files = seed_subagent_files(&scratch);
-        trash_scratch_dir(&session).await.unwrap();
+        trash_scratch_dir_in(&project_cache_dir(None), &session).await.unwrap();
         assert!(files.iter().all(|f| !f.exists()) && !scratch.exists());
     }
 
@@ -1202,7 +2004,7 @@ mod tests {
         std::fs::write(scratch.join("f"), b"x").unwrap();
         remove_thread_workspace(&data, &thread).await.unwrap();
         let trashed = format!("{SCRATCH_TRASH_PREFIX}{thread}-");
-        let left: Vec<_> = std::fs::read_dir(std::env::temp_dir())
+        let left: Vec<_> = std::fs::read_dir(scratch.parent().unwrap())
             .unwrap()
             .filter_map(Result::ok)
             .filter(|e| e.file_name().to_string_lossy().starts_with(&trashed))
@@ -1212,26 +2014,24 @@ mod tests {
     }
 
     /// Crash: a scratch nobody removed is collected by the stale sweep with its
-    /// subagent files, and a live one keeps them.
+    /// subagent files, and a fresh one keeps them.
     #[tokio::test]
     async fn subagent_files_in_an_abandoned_scratch_are_swept() {
-        let root = tmp_root("subagent_sweep");
-        let orphan = root.join("jan-agent-crashed");
+        let cache = tmp_root("subagent_sweep");
+        let orphan = scratch_dir_in(&cache.join("chat"), "crashed");
         ensure_scratch_dir_path(&orphan).await.unwrap();
         let files = seed_subagent_files(&orphan);
-        assert_eq!(sweep_scratch_older_than(&root, SCRATCH_STALE_AFTER).await, 0);
-        assert!(files.iter().all(|f| f.exists()), "a live scratch keeps its files");
-        assert_eq!(
-            sweep_scratch_older_than(&root, std::time::Duration::ZERO).await,
-            1
-        );
+        assert_eq!(sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await, 0);
+        assert!(files.iter().all(|f| f.exists()), "a fresh scratch keeps its files");
+        age_by(&orphan, EIGHT_DAYS);
+        assert_eq!(sweep_scratch_in(&cache, &[], SCRATCH_STALE_AFTER).await, 1);
         assert!(files.iter().all(|f| !f.exists()) && !orphan.exists());
-        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&cache);
     }
 
     /// The scratch root must never be a pre-planted symlink to another
-    /// directory: the sandbox binds it as `/tmp`, so trusting a redirect would
-    /// sanction an attacker-selected directory as the session's scratch.
+    /// directory: the sandbox binds it writable at its own path, so trusting a
+    /// redirect would sanction an attacker-selected directory as the scratch.
     #[cfg(unix)]
     #[tokio::test]
     async fn scratch_root_refuses_a_pre_planted_symlink() {
@@ -1244,19 +2044,181 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
-    /// A freshly created scratch root is a real, restrictive directory.
+    /// A freshly created scratch root is a real, restrictive directory, and
+    /// the parents Jan had to create for it (`jan/<slug>/scratch`) are
+    /// owner-only too; a parent that already existed keeps its mode.
     #[cfg(unix)]
     #[tokio::test]
     async fn scratch_root_creation_is_a_real_private_dir() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = unique_data_folder();
+        let base = unique_data_folder();
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let dir = scratch_dir_in(&base.join("jan").join("p-1"), "s1");
         let r = ensure_scratch_dir_path(&dir).await;
         assert_eq!(r.unwrap(), dir);
         let meta = std::fs::symlink_metadata(&dir).unwrap();
         assert!(!meta.file_type().is_symlink());
         assert!(meta.is_dir());
-        assert_eq!(meta.permissions().mode() & 0o777, 0o700);
-        let _ = std::fs::remove_dir_all(&dir);
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        for created in [dir.as_path(), dir.parent().unwrap(), &base.join("jan/p-1"), &base.join("jan")] {
+            assert_eq!(mode(created), 0o700, "{created:?}");
+        }
+        assert_eq!(mode(&base), 0o755, "an existing parent is left alone");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A folder on the way to the scratch that is not this user's is refused,
+    /// even when it is one Jan meant to create: a `/tmp/jan-<uid>` another
+    /// user planted just before the create reads as "already exists", and
+    /// adopting it would let them swap everything under it. Another user's
+    /// node cannot be made without root, so `mine` stands in for ownership.
+    #[tokio::test]
+    async fn a_created_parent_that_is_not_mine_is_refused() {
+        let base = unique_data_folder();
+        std::fs::create_dir_all(&base).unwrap();
+        let root = base.join("jan-1000");
+        let parent = root.join("p-1").join("scratch");
+
+        let yes = |_: &Path, _: &std::fs::Metadata| true;
+        let not_root = |p: &Path, _: &std::fs::Metadata| p != root;
+
+        // Planted between the walk and the create: refused once created.
+        let r = create_private_dirs_owned(&parent, yes, not_root).await;
+        assert!(r.is_err(), "another user's root was adopted");
+        assert!(!root.join("p-1").exists(), "nothing created under a refused root");
+
+        // Planted before the walk: the existing root is refused as found.
+        let r = create_private_dirs_owned(&parent, not_root, yes).await;
+        assert!(r.is_err(), "an existing root of another user's was adopted");
+        assert!(!root.join("p-1").exists(), "nothing created under a refused root");
+
+        // Mine, the same tree is accepted, the root now existing included.
+        let r = create_private_dirs_owned(&parent, yes, yes).await;
+        assert!(r.is_ok(), "{r:?}");
+        assert!(parent.is_dir());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A symlink planted at the temp copy's name is refused, never followed:
+    /// the file it names keeps its contents and stays writable.
+    #[cfg(unix)]
+    #[test]
+    fn the_read_only_copy_never_writes_through_a_planted_symlink() {
+        let base = unique_data_folder();
+        std::fs::create_dir_all(&base).unwrap();
+        let victim = base.join("victim");
+        std::fs::write(&victim, "mine").unwrap();
+        let planted = base.join("config.tmp-1-0");
+        std::os::unix::fs::symlink(&victim, &planted).unwrap();
+        assert!(create_read_only_new(&planted, b"[net]").is_err());
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "mine");
+        assert!(!std::fs::metadata(&victim).unwrap().permissions().readonly());
+
+        let fresh = base.join("config.tmp-1-1");
+        create_read_only_new(&fresh, b"[net]").unwrap();
+        assert_eq!(std::fs::read(&fresh).unwrap(), b"[net]");
+        assert!(std::fs::metadata(&fresh).unwrap().permissions().readonly());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The package cache is `<project cache>/pkg`, private, with a cargo home
+    /// that holds a read-only copy of the user's config and nothing else of
+    /// theirs: no credentials, no installed binaries.
+    #[tokio::test]
+    async fn pkg_cache_holds_only_a_read_only_cargo_config() {
+        let base = unique_data_folder();
+        let host = base.join("host-cargo");
+        std::fs::create_dir_all(host.join("bin")).unwrap();
+        std::fs::write(host.join("config.toml"), "[net]\noffline = true\n").unwrap();
+        std::fs::write(host.join("credentials.toml"), "token = \"secret\"\n").unwrap();
+        std::fs::write(host.join("bin/tool"), "").unwrap();
+        let project = base.join("cache/jan/p-1");
+
+        let pkg = prepare_pkg_cache_in(&project, Some(&host)).await.unwrap();
+        assert_eq!(pkg.root, project.join("pkg"));
+        let cargo = pkg.root.join("cargo");
+        let config = pkg.cargo_config.clone().expect("config offered");
+        assert_eq!(config.host, host.join("config.toml"));
+        assert_eq!(config.copy, cargo.join("config.toml"));
+        assert_eq!(std::fs::read_to_string(&config.copy).unwrap(), "[net]\noffline = true\n");
+        assert!(std::fs::metadata(&config.copy).unwrap().permissions().readonly());
+        let names: Vec<_> = std::fs::read_dir(&cargo)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["config.toml".to_string()], "{names:?}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for dir in [&pkg.root, &cargo] {
+                let mode = std::fs::metadata(dir).unwrap().permissions().mode() & 0o777;
+                assert_eq!(mode, 0o700, "{dir:?}");
+            }
+        }
+
+        // Re-copied each session, so a host edit applies; a host with no config
+        // gets an empty one (so the sandbox finds both names read-only rather
+        // than free to plant), outside the package cache, where no sandbox
+        // can write it; and a planted legacy `config` is cleared.
+        std::fs::write(host.join("config.toml"), "[net]\noffline = false\n").unwrap();
+        let again = prepare_pkg_cache_in(&project, Some(&host)).await.unwrap();
+        let copy = again.cargo_config.unwrap().copy;
+        assert_eq!(std::fs::read_to_string(&copy).unwrap(), "[net]\noffline = false\n");
+        std::fs::write(cargo.join("config"), "planted").unwrap();
+        std::fs::remove_file(host.join("config.toml")).unwrap();
+        for host_home in [Some(host.as_path()), None] {
+            let none = prepare_pkg_cache_in(&project, host_home).await.unwrap();
+            let empty = none.cargo_config.expect("an empty config stands in");
+            assert!(!empty.host.starts_with(&none.root), "{:?}", empty.host);
+            assert!(empty.host.starts_with(&project), "{:?}", empty.host);
+            assert_eq!(std::fs::read(&empty.host).unwrap(), b"");
+            assert_eq!(std::fs::read(&copy).unwrap(), b"");
+            assert!(!cargo.join("config").exists());
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A host with only the legacy `config` name still gets it offered, under
+    /// the name cargo prefers.
+    #[tokio::test]
+    async fn pkg_cache_offers_a_legacy_cargo_config() {
+        let base = unique_data_folder();
+        let host = base.join("host-cargo");
+        std::fs::create_dir_all(&host).unwrap();
+        std::fs::write(host.join("config"), "legacy").unwrap();
+        let pkg = prepare_pkg_cache_in(&base.join("p"), Some(&host)).await.unwrap();
+        let config = pkg.cargo_config.unwrap();
+        assert_eq!(config.host, host.join("config"));
+        assert_eq!(config.copy.file_name().unwrap(), "config.toml");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Two projects never share a package cache.
+    #[test]
+    fn projects_get_distinct_pkg_dirs() {
+        let cache = Path::new("/c/jan");
+        let a = unique_data_folder();
+        let b = unique_data_folder();
+        let pa = pkg_dir_in(&project_cache_dir_in(cache, Some(&a)));
+        let pb = pkg_dir_in(&project_cache_dir_in(cache, Some(&b)));
+        assert_ne!(pa, pb);
+        assert!(pa.starts_with(cache) && pa.ends_with("pkg"));
+    }
+
+    /// A symlink planted where the package cache goes is refused, as for the
+    /// scratch: the sandbox must never bind an attacker-chosen folder.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pkg_cache_refuses_a_pre_planted_symlink() {
+        let base = unique_data_folder();
+        let outside = unique_data_folder();
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, base.join("pkg")).unwrap();
+        assert!(prepare_pkg_cache_in(&base, None).await.is_err());
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 
     #[test]
@@ -1300,7 +2262,7 @@ mod tests {
         for bad in ["../x", "..", "a/b", "a\\b", "", "nul"] {
             assert!(ensure_scratch_dir(bad).await.is_err(), "{bad:?}");
             assert!(remove_scratch_dir(bad).await.is_err(), "{bad:?}");
-            assert!(trash_scratch_dir(bad).await.is_err(), "{bad:?}");
+            assert!(trash_scratch_dir_in(Path::new("/c"), bad).await.is_err(), "{bad:?}");
         }
     }
 

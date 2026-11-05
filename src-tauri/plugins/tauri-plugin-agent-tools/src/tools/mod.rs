@@ -129,10 +129,16 @@ pub struct ToolContext<'a> {
     /// A session-scoped host directory the shell and the filesystem tools share
     /// for temporary work, so scratch files persist across `bash` calls in the
     /// run. See [`Policy::scratch_root`] for how each backend exposes it, and
-    /// [`crate::workspace::scratch_dir`] for where it lives. `None` keeps the
+    /// [`crate::workspace::scratch_dir_in`] for where it lives. `None` keeps the
     /// default throwaway per-command tmpfs. Cleaned up with the session (run end
     /// on the CLI, thread teardown on the desktop).
     pub scratch_root: Option<&'a Path>,
+    /// The project's package cache, which the confined shell's package
+    /// managers write to (see [`crate::tools::proc::PKG_CACHE_ENV`]). Only on a
+    /// confined run (sandboxed, or a read-only root) with a filesystem project;
+    /// `None` keeps the host's caches (unconfined) or none at all (desktop
+    /// chat, which has no network).
+    pub pkg_cache: Option<&'a crate::workspace::PkgCache>,
     /// Whether `bash` runs under OS confinement. On by default, and the desktop
     /// keeps it that way: there, `bash` is either sandboxed or withheld.
     ///
@@ -249,6 +255,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("hidden_root", &self.hidden_root)
             .field("home_readonly", &self.home_readonly)
             .field("scratch_root", &self.scratch_root)
+            .field("pkg_cache", &self.pkg_cache)
             .field("sandbox", &self.sandbox)
             .field("escalation", &self.escalation)
             .field("on_output", &self.on_output.is_some())
@@ -408,6 +415,7 @@ impl<'a> ToolContext<'a> {
             hidden_root: None,
             home_readonly: false,
             scratch_root: None,
+            pkg_cache: None,
             sandbox: true,
             escalation: false,
             on_output: None,
@@ -429,9 +437,20 @@ impl<'a> ToolContext<'a> {
     }
 
     /// Make `project_root` read-only. See [`Self::workspace_readonly`].
+    /// Lifting it from an unsandboxed context drops the package cache, as
+    /// [`Self::with_sandbox`] does: the shell is no longer confined.
     pub fn with_workspace_readonly(mut self, readonly: bool) -> Self {
         self.workspace_readonly = readonly;
+        if !self.shell_confined() {
+            self.pkg_cache = None;
+        }
         self
+    }
+
+    /// Whether `bash` runs confined: sandboxed, or in a read-only root, which
+    /// is never run without a sandbox whatever the surface chose.
+    pub fn shell_confined(&self) -> bool {
+        self.sandbox || self.workspace_readonly
     }
 
     /// Route the web tools to the host's chosen backend. See
@@ -615,13 +634,26 @@ impl<'a> ToolContext<'a> {
         self
     }
 
-    /// Bind `scratch_root` over the sandbox's `/tmp` so scratch files survive
-    /// across `bash` calls. See [`Self::scratch_root`].
+    /// Make `scratch_root` writable to the sandboxed shell at its real path so
+    /// scratch files survive across `bash` calls. See [`Self::scratch_root`].
     /// Ignored when the sandbox is off, so the two builders commute (see
     /// [`Self::with_sandbox`] for why an unconfined run has no scratch).
     pub fn with_scratch_root(mut self, scratch_root: &'a Path) -> Self {
         if self.sandbox {
             self.scratch_root = Some(scratch_root);
+        }
+        self
+    }
+
+    /// Point the confined shell's package managers at `pkg`. See
+    /// [`Self::pkg_cache`]. Ignored when the shell runs unconfined. Unlike the
+    /// scratch it follows confinement rather than the sandbox setting: a
+    /// read-only root is confined with the sandbox off, and its read-only
+    /// `$HOME` leaves the host caches unwritable, so it needs one. Call after
+    /// [`Self::with_sandbox`] and [`Self::with_workspace_readonly`].
+    pub fn with_pkg_cache(mut self, pkg: Option<&'a crate::workspace::PkgCache>) -> Self {
+        if self.shell_confined() {
+            self.pkg_cache = pkg;
         }
         self
     }
@@ -634,15 +666,22 @@ impl<'a> ToolContext<'a> {
 
     /// Run `bash` under OS confinement (the default). See [`Self::sandbox`].
     ///
-    /// Turning it off also drops the scratch: the scratch only makes sense as
-    /// the thing bound over the sandbox's `/tmp`. Unconfined, the shell sees the
-    /// real `/tmp`, and leaving the scratch set would have the filesystem tools
-    /// still rewriting `/tmp/...` into a directory the shell never looks at --
-    /// two tools disagreeing about what one path means.
+    /// Turning it off also drops the scratch: it is the sandbox's sanctioned
+    /// writable area, and unconfined the shell already writes wherever the
+    /// user can, with the host's own `TMPDIR`. Keeping it would only grant the
+    /// filesystem tools a directory outside the project for no reason.
+    ///
+    /// The package cache goes too unless the root is read-only: that shell
+    /// stays confined (see [`Self::shell_confined`]), which is also why an
+    /// escalated command there keeps it, while an escalated command anywhere
+    /// else runs with the host's own caches.
     pub fn with_sandbox(mut self, sandbox: bool) -> Self {
         self.sandbox = sandbox;
         if !sandbox {
             self.scratch_root = None;
+        }
+        if !self.shell_confined() {
+            self.pkg_cache = None;
         }
         self
     }

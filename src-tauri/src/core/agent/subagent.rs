@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use tauri_plugin_agent_tools::permissions::ToolPermissions;
-use tauri_plugin_agent_tools::tools::sandbox::scratch_display_path;
 use tauri_plugin_agent_tools::tools::spill::{
     compose_subagent_result, fill_subagent_result, reserve_blackboard_result,
     SUBAGENT_INLINE_MAX_BYTES,
@@ -2553,10 +2552,6 @@ async fn assign_dispatch(
     // a ref possibly a network fetch, and placing the child reads its branch,
     // which would otherwise stall every other task on this runtime worker
     // until git returns.
-    let scratch = parent_args
-        .session_id
-        .as_deref()
-        .map(tauri_plugin_agent_tools::workspace::scratch_dir);
     let (workspace, placement, lease) = {
         let scope = scope.clone();
         let root = project_root.clone();
@@ -2577,7 +2572,7 @@ async fn assign_dispatch(
                 return Err(SubagentError::Cancelled);
             }
             let placement =
-                crate::core::agent::child_workspace::place(&ws, &root, scratch.as_deref());
+                crate::core::agent::child_workspace::place(&ws, &root);
             Ok((ws, placement, lease))
         })
         .await
@@ -2627,7 +2622,7 @@ fn start_dispatch(
     let run_id = next_subagent_run_id(&name);
     let (tx, rx) = tokio::sync::oneshot::channel();
     let result_file = scratch.and_then(|s| {
-        reserve_blackboard_result(s, &name).map(|path| (scratch_display_path(Some(s), &path), path))
+        reserve_blackboard_result(s, &name).map(|path| (path.to_string_lossy().into_owned(), path))
     });
     let display_path = result_file.as_ref().map(|(display, _)| display.clone());
 
@@ -2697,12 +2692,11 @@ fn start_dispatch(
             tauri_plugin_agent_tools::tools::spill::SUBAGENT_DIR,
         )
     });
-    // The session file the blackboard entry links to, in the model's spelling.
+    // The session file the blackboard entry links to, by its real path.
     let session_display = transcript_dir.as_ref().map(|dir| {
-        scratch_display_path(
-            scratch,
-            &crate::core::agent::subagent_session::session_file(dir, &name),
-        )
+        crate::core::agent::subagent_session::session_file(dir, &name)
+            .to_string_lossy()
+            .into_owned()
     });
     let slot = ChildSlot::new();
     let slot_task = slot.clone();
@@ -2902,6 +2896,8 @@ pub(crate) async fn spawn_memory_tidy(
         ..parent.clone()
     };
     let args = memory_tidy_args(parent_args, budget);
+    // No scratch: its answer comes back through `await_subagent`, not the
+    // blackboard.
     let prepared = assign_dispatch(scope, &args, resolved, req, parent).await?;
     start_dispatch(scope, &args, prepared, events, None, false)
 }
@@ -3143,7 +3139,7 @@ pub(crate) async fn spawn_dispatch_plan(
     let phase_count = plan.phases.len();
     let total_subagents = plan.phases.iter().map(|p| p.subagents.len()).sum();
     let names = plan.names.clone();
-    let blackboard_dir = scratch.map(|s| scratch_display_path(Some(s), &blackboard_dir_path(s)));
+    let blackboard_dir = scratch.map(|s| blackboard_dir_path(s).to_string_lossy().into_owned());
 
     let multi = phase_count > 1;
     if multi {
@@ -3328,7 +3324,7 @@ async fn run_phase_plan(
         // Only read when there is a scratch, which `inputs` being non-empty implies.
         let dir = scratch
             .as_deref()
-            .map(|s| scratch_display_path(Some(s), &blackboard_dir_path(s)))
+            .map(|s| blackboard_dir_path(s).to_string_lossy().into_owned())
             .unwrap_or_default();
         let mut ids = Vec::with_capacity(phase.subagents.len());
         let mut names = Vec::with_capacity(phase.subagents.len());
@@ -5586,10 +5582,9 @@ pub(crate) mod tests {
 
         let entry = tauri_plugin_agent_tools::tools::spill::read_blackboard_result(&scratch, "reviewer")
             .expect("blackboard entry");
-        let session = scratch_display_path(
-            Some(&scratch),
-            &crate::core::agent::subagent_session::session_path(&scratch, "reviewer"),
-        );
+        let session = crate::core::agent::subagent_session::session_path(&scratch, "reviewer")
+            .to_string_lossy()
+            .into_owned();
         assert!(entry.starts_with("ERROR: "), "the result leads: {entry}");
         assert!(entry.ends_with(&session_link(&session)), "{entry}");
         let _ = std::fs::remove_dir_all(&root);

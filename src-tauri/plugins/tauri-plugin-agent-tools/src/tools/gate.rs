@@ -150,7 +150,7 @@ pub enum Decision {
 pub struct GateContext<'a> {
     /// The project root: paths inside it are the agent's own workspace.
     pub project_root: &'a Path,
-    /// The session scratch, bound over `/tmp` in the sandbox where it is mounted.
+    /// The session scratch, writable at its real path on every backend.
     pub scratch: Option<&'a Path>,
     /// Folders the user attached read-only: reads may reach them, writes may not.
     pub read_roots: &'a [PathBuf],
@@ -196,16 +196,16 @@ pub fn resolve_decision(
             && !requests_escalation(tool, args);
         let carved = |p: &str| match tool.capability {
             Capability::Read => {
-                in_attached_root(ctx.project_root, ctx.scratch, ctx.read_roots, p)
+                in_attached_root(ctx.project_root, ctx.read_roots, p)
             }
             Capability::Exec if shell_reads_only => {
-                in_attached_root(ctx.project_root, ctx.scratch, ctx.read_roots, p)
-                    && !in_attached_root(ctx.project_root, ctx.scratch, ctx.write_roots, p)
+                in_attached_root(ctx.project_root, ctx.read_roots, p)
+                    && !in_attached_root(ctx.project_root, ctx.write_roots, p)
             }
             _ => false,
         };
         let hidden_hit = |p: &str| {
-            in_hidden_root(ctx.project_root, ctx.scratch, hidden, p) && !carved(p)
+            in_hidden_root(ctx.project_root, hidden, p) && !carved(p)
         };
         let hits_path = tool.path_args.iter().any(|key| {
             args.get(key)

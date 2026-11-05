@@ -497,7 +497,7 @@ pub async fn run_hooks(
 /// Run one hook command to completion. `Err` carries the one-line detail a
 /// [`HookNotice`] reports; it never propagates as a run failure.
 async fn run_one(hook: &Hook, body: &str, ctx: &ToolContext<'_>) -> Result<HookResponse, String> {
-    let (shell, sandbox_tmp, _policy) = crate::tools::handlers::confined_shell(ctx)
+    let (shell, sandbox_env, _policy) = crate::tools::handlers::confined_shell(ctx)
         .map_err(|e| format!("could not start: {}", e.trim_start_matches("ERROR: ")))?;
     // A hook child is short-lived and belongs to the run rather than to a
     // cancellable tool call, so it registers in the process-wide bucket the
@@ -506,7 +506,7 @@ async fn run_one(hook: &Hook, body: &str, ctx: &ToolContext<'_>) -> Result<HookR
         &shell,
         &hook.command,
         ctx.project_root,
-        sandbox_tmp.as_deref(),
+        sandbox_env.as_ref(),
         ctx.shell_env(),
         None,
         Some(body),

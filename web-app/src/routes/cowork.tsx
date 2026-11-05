@@ -107,12 +107,10 @@ import {
   getSandboxStatus,
   sandboxEnforces,
   writeBlackboard,
-  BLACKBOARD_DIR_DISPLAY,
   importAttachment,
   cancelAgentThreadBash,
   activeAgentMonitorIds,
 } from '@/lib/agentTools'
-import { isPlatformTauri } from '@/lib/platform'
 import { monitorLaneFor, type MonitorLane } from '@/lib/coworkMonitor'
 import { CoworkParkedNotice } from '@/containers/CoworkParkedNotice'
 import type { MonitorView } from '@/types/coworkSession'
@@ -829,16 +827,11 @@ function CoworkPage() {
                   }
 
                   const model = transport.model
-                  // `BLACKBOARD_DIR_DISPLAY` (/tmp/blackboard) is only where the
-                  // scratch surfaces on Linux, where the sandbox binds it over
-                  // /tmp (`scratch_display_path`). On macOS/Windows the scratch
-                  // is a real host path we don't know up front, so advertise no
-                  // dir there and let each completion notice carry the exact
-                  // path `writeBlackboard` returns.
-                  const blackboardDir =
-                    isPlatformTauri() && environment.os === 'linux'
-                      ? BLACKBOARD_DIR_DISPLAY
-                      : null
+                  // The scratch is a real host path (in the OS cache dir) on
+                  // every platform, which this side does not know up front, so
+                  // no dir is advertised: each completion notice carries the
+                  // exact path `writeBlackboard` returns.
+                  const blackboardDir = null
 
                   // The plan hold keeps the run alive across the whole plan,
                   // including the gap between one phase finishing and the next

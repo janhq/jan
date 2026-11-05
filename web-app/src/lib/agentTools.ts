@@ -413,9 +413,8 @@ export async function cancelAgentThreadBash(sessionId: string): Promise<void> {
   }
 }
 
-/** A file claimed for a subagent's answer: the name to fill it by, and the
- * model-visible path (`/tmp/subagents/<id>.md`, where the scratch is mounted
- * over `/tmp`) the parent agent can `read`. */
+/** A file claimed for a subagent's answer: the name to fill it by, and its
+ * real path in the session scratch, which the parent agent can `read`. */
 export type SubagentResultFile = { file: string; path: string }
 
 /**
@@ -452,17 +451,6 @@ export async function fillSubagentResult(
     return false
   }
 }
-
-/**
- * The model-visible blackboard directory on Linux only, where the session
- * scratch is bound over `/tmp` (see `scratch_display_path`, whose `/tmp`
- * mapping is gated on `target_os = "linux"`), so a finished child's answer is
- * read from `/tmp/blackboard/<name>.md`. On macOS/Windows the scratch is a real
- * host path, so callers must not advertise this constant there. Reported up
- * front by the plan summary; each child's completion notice always carries the
- * exact path `writeBlackboard` returns.
- */
-export const BLACKBOARD_DIR_DISPLAY = '/tmp/blackboard'
 
 /**
  * Write a finished subagent's answer to `blackboard/<name>.md` in the session

@@ -73,13 +73,14 @@ pub fn moniker(workspace: &Path) -> String {
 
 /// argv for the helper re-exec. Shaped like the other backends -- fixed
 /// arguments, then the shell, with the command string appended by the caller --
-/// so the spawn path does not change per platform. The scratch travels with the
-/// workspace because both need an ACE, and only the helper holds the container
-/// SID to grant one with; an absent scratch is the empty string, since a
-/// positional slot cannot simply be omitted.
+/// so the spawn path does not change per platform. The scratch and the package
+/// cache travel with the workspace because all need an ACE, and only the helper
+/// holds the container SID to grant one with; an absent one is the empty
+/// string, since a positional slot cannot simply be omitted.
 pub fn helper_args(
     workspace: &Path,
     scratch: Option<&Path>,
+    pkg: Option<&Path>,
     allow_network: bool,
     program: &Path,
     args: &[String],
@@ -90,6 +91,8 @@ pub fn helper_args(
         workspace.to_string_lossy().to_string(),
         scratch
             .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        pkg.map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default(),
         "--".to_string(),
         program.to_string_lossy().to_string(),
@@ -157,6 +160,7 @@ fn command_line(program: &Path, args: &[String]) -> String {
 struct Request {
     workspace: PathBuf,
     scratch: Option<PathBuf>,
+    pkg: Option<PathBuf>,
     allow_network: bool,
     program: PathBuf,
     args: Vec<String>,
@@ -176,10 +180,12 @@ fn parse_request<I: IntoIterator<Item = String>>(argv: I) -> Option<Request> {
         _ => return None,
     };
     let workspace = PathBuf::from(it.next()?);
-    let scratch = match it.next()? {
-        s if s.is_empty() => None,
-        s => Some(PathBuf::from(s)),
+    let mut optional_dir = || match it.next()? {
+        s if s.is_empty() => Some(None),
+        s => Some(Some(PathBuf::from(s))),
     };
+    let scratch = optional_dir()?;
+    let pkg = optional_dir()?;
     if it.next()? != "--" {
         return None;
     }
@@ -187,6 +193,7 @@ fn parse_request<I: IntoIterator<Item = String>>(argv: I) -> Option<Request> {
     Some(Request {
         workspace,
         scratch,
+        pkg,
         allow_network,
         program,
         args: it.collect(),
@@ -621,9 +628,9 @@ mod win {
                 req.workspace.display()
             ));
         }
-        if let Some(scratch) = &req.scratch {
-            if !scratch.is_dir() {
-                return Err(format!("scratch does not exist: {}", scratch.display()));
+        for dir in req.scratch.iter().chain(&req.pkg) {
+            if !dir.is_dir() {
+                return Err(format!("directory does not exist: {}", dir.display()));
             }
         }
         reap_children_with_this_process();
@@ -633,6 +640,13 @@ mod win {
         // temp-file write in the container is denied.
         if let Some(scratch) = &req.scratch {
             grant_path(scratch, sid.0)?;
+        }
+        // The package cache is where `CARGO_HOME`, npm and the rest write. The
+        // cargo config copy inside it is only marked read-only: no deny ACE is
+        // used (see the module doc), so the container could clear the mark.
+        // See `workspace::write_read_only` for why that is accepted.
+        if let Some(pkg) = &req.pkg {
+            grant_path(pkg, sid.0)?;
         }
 
         let mut capability_sid = Vec::new();
@@ -801,6 +815,7 @@ mod tests {
         let args = helper_args(
             &ws(),
             None,
+            None,
             false,
             Path::new("bash.exe"),
             &["-c".to_string()],
@@ -815,10 +830,10 @@ mod tests {
 
     #[test]
     fn helper_args_carry_the_network_decision() {
-        let denied = helper_args(&ws(), None, false, Path::new("bash.exe"), &[]);
+        let denied = helper_args(&ws(), None, None, false, Path::new("bash.exe"), &[]);
         assert!(denied.contains(&NET_OFF.to_string()));
         assert!(!denied.contains(&NET_ON.to_string()));
-        let allowed = helper_args(&ws(), None, true, Path::new("bash.exe"), &[]);
+        let allowed = helper_args(&ws(), None, None, true, Path::new("bash.exe"), &[]);
         assert!(allowed.contains(&NET_ON.to_string()));
     }
 
@@ -827,6 +842,7 @@ mod tests {
         let args = helper_args(
             &ws(),
             Some(Path::new(r"C:\Temp\jan-agent-s1")),
+            Some(Path::new(r"C:\Cache\jan\p\pkg")),
             true,
             Path::new(r"C:\Program Files\Git\bin\bash.exe"),
             &["-c".to_string(), "echo hi".to_string()],
@@ -837,6 +853,7 @@ mod tests {
             req.scratch.as_deref(),
             Some(Path::new(r"C:\Temp\jan-agent-s1"))
         );
+        assert_eq!(req.pkg.as_deref(), Some(Path::new(r"C:\Cache\jan\p\pkg")));
         assert!(req.allow_network);
         assert_eq!(req.program, Path::new(r"C:\Program Files\Git\bin\bash.exe"));
         assert_eq!(req.args, vec!["-c".to_string(), "echo hi".to_string()]);
@@ -846,10 +863,11 @@ mod tests {
     /// writable can only be granted on the far side of the re-exec.
     #[test]
     fn the_helper_round_trips_an_absent_scratch() {
-        let args = helper_args(&ws(), None, false, Path::new("bash.exe"), &[]);
+        let args = helper_args(&ws(), None, None, false, Path::new("bash.exe"), &[]);
         let req = parse_request(args).expect("parsed");
         assert_eq!(req.workspace, ws());
         assert_eq!(req.scratch, None);
+        assert_eq!(req.pkg, None);
     }
 
     #[test]
