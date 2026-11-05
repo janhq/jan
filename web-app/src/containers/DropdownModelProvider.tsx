@@ -7,7 +7,6 @@ import {
 } from '@/components/ui/popover'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
-import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
 import { IconSettings, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
@@ -16,7 +15,6 @@ import { useThreads } from '@/hooks/useThreads'
 import { ModelSetting } from '@/containers/ModelSetting'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
-import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
@@ -38,7 +36,16 @@ interface SearchableModel {
   model: Model
   searchStr: string
   value: string
-  highlightedId?: string
+}
+
+// Every whitespace-separated term must appear verbatim (case-insensitive) in
+// the model's display name or id. Fuzzy subsequence matching let "gpt" match
+// ids such as "gemini-pro-turbo", which is not what users expect here.
+const matchesModelSearch = (model: Model, terms: string[]): boolean => {
+  const fields = [getModelDisplayName(model), model.id].map((field) =>
+    field.toLowerCase()
+  )
+  return terms.every((term) => fields.some((field) => field.includes(term)))
 }
 
 // Helper functions for localStorage
@@ -303,14 +310,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     return items
   }, [providers])
 
-  // Create Fzf instance for fuzzy search
-  const fzfInstance = useMemo(() => {
-    return new Fzf(searchableItems, {
-      selector: (item) =>
-        `${getModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
-    })
-  }, [searchableItems])
-
   // Get favorite models that are currently available
   const favoriteItems = useMemo(() => {
     return searchableItems.filter((item) =>
@@ -320,23 +319,13 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   // Filter models based on search value
   const filteredItems = useMemo(() => {
-    if (!searchValue) return searchableItems
+    const terms = searchValue.toLowerCase().split(/\s+/).filter(Boolean)
+    if (terms.length === 0) return searchableItems
 
-    return fzfInstance.find(searchValue.toLowerCase()).map((result) => {
-      const item = result.item
-      const positions = Array.from(result.positions) || []
-      const highlightedId = highlightFzfMatch(
-        item.model.id,
-        positions,
-        'text-accent'
-      )
-
-      return {
-        ...item,
-        highlightedId,
-      }
-    })
-  }, [searchableItems, searchValue, fzfInstance])
+    return searchableItems.filter((item) =>
+      matchesModelSearch(item.model, terms)
+    )
+  }, [searchableItems, searchValue])
 
   // Group filtered items by provider, excluding favorites when not searching
   const groupedItems = useMemo(() => {
