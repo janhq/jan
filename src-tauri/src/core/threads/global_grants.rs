@@ -491,9 +491,10 @@ mod tests {
     }
 
     /// Serializes the tests below, which drive the process-wide live grants.
-    fn live_grants_guard() -> std::sync::MutexGuard<'static, ()> {
-        static G: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        G.lock().unwrap_or_else(|e| e.into_inner())
+    /// Async-aware, so the guard may be held across the setters' `.await`s.
+    async fn live_grants_guard() -> tokio::sync::MutexGuard<'static, ()> {
+        static G: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        G.lock().await
     }
 
     /// E1: a revocation whose write fails is still applied to the live value
@@ -502,7 +503,7 @@ mod tests {
     #[tokio::test]
     async fn a_revocation_survives_a_failed_write_and_a_widening_does_not() {
         use std::os::unix::fs::PermissionsExt;
-        let _g = live_grants_guard();
+        let _g = live_grants_guard().await;
         let dir = temp_dir("narrow-on-failed-write");
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
         if std::fs::write(dir.join("probe"), b"x").is_ok() {
@@ -536,7 +537,7 @@ mod tests {
     /// live value must too. Widening-only is a success with a warning.
     #[tokio::test]
     async fn a_dir_sync_failure_after_a_widening_applies_it_and_succeeds() {
-        let _g = live_grants_guard();
+        let _g = live_grants_guard().await;
         let dir = temp_dir("sync-fail-widen");
         let off = GlobalGrants { shell_network: false, memory_write: false };
         let on = GlobalGrants { shell_network: true, memory_write: true };
@@ -556,7 +557,7 @@ mod tests {
     /// the revocation already live and equal to the file.
     #[tokio::test]
     async fn a_dir_sync_failure_after_a_narrowing_errors_with_live_equal_to_disk() {
-        let _g = live_grants_guard();
+        let _g = live_grants_guard().await;
         let dir = temp_dir("sync-fail-narrow");
         let on = GlobalGrants { shell_network: true, memory_write: true };
         let off = GlobalGrants { shell_network: false, memory_write: false };
@@ -573,7 +574,7 @@ mod tests {
     /// and the narrowing makes the result an error.
     #[tokio::test]
     async fn a_dir_sync_failure_after_a_mixed_request_applies_both_and_errors() {
-        let _g = live_grants_guard();
+        let _g = live_grants_guard().await;
         let dir = temp_dir("sync-fail-mixed");
         let before = GlobalGrants { shell_network: true, memory_write: false };
         let request = GlobalGrants { shell_network: false, memory_write: true };
@@ -590,7 +591,7 @@ mod tests {
     /// widening (the injected sync is never reached). Works as root too.
     #[tokio::test]
     async fn a_failed_rename_widens_nothing_even_without_filesystem_permissions() {
-        let _g = live_grants_guard();
+        let _g = live_grants_guard().await;
         let dir = temp_dir("rename-fail-widen");
         std::fs::create_dir(path(&dir)).unwrap(); // rename cannot replace a directory
         let off = GlobalGrants { shell_network: false, memory_write: false };
@@ -606,7 +607,7 @@ mod tests {
     /// E2: overlapping setters leave the live value and the file in agreement.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn overlapping_setters_leave_live_and_persisted_state_equal() {
-        let _g = live_grants_guard();
+        let _g = live_grants_guard().await;
         let dir = temp_dir("overlapping-setters");
         let on = GlobalGrants { shell_network: true, memory_write: true };
         let off = GlobalGrants { shell_network: false, memory_write: false };
