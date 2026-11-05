@@ -38,7 +38,16 @@ vi.mock('@/lib/coworkMonitor', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/coworkMonitor')>()),
   dropMonitorLane: vi.fn(),
 }))
-vi.mock('@/containers/ThreadList', () => ({ ThreadItem: () => null }))
+vi.mock('@/containers/ThreadList', () => ({
+  ThreadItem: ({ thread }: { thread: { id: string } }) => <li data-testid={`thread-${thread.id}`} />,
+}))
+const projects = vi.hoisted(() => ({
+  folders: [] as { id: string }[],
+  foldersLoaded: true,
+}))
+vi.mock('@/hooks/useThreadManagement', () => ({
+  useThreadManagement: () => projects,
+}))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/containers/dialogs/DeleteAllThreadsDialog', () => ({
   DeleteAllThreadsDialog: () => null,
@@ -82,6 +91,7 @@ vi.mock('@/components/ui/sidebar', () => {
 import { NavHistory } from '../NavHistory'
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
 import { route } from '@/constants/routes'
+import { useThreads } from '@/hooks/useThreads'
 
 const session = (id: string, title: string): CoworkSession =>
   ({
@@ -102,6 +112,9 @@ function deleteRow(id: string) {
 }
 
 beforeEach(() => {
+  projects.folders = []
+  projects.foldersLoaded = true
+  useThreads.setState({ threads: {} })
   router.navigate.mockClear()
   router.sessionId = undefined
   useCoworkSessions.setState({ sessions: [session('open', 'Open one'), session('other', 'Other one')] })
@@ -148,5 +161,36 @@ describe('NavHistory rename Cowork session', () => {
     const renamed = useCoworkSessions.getState().sessions.find((s) => s.id === 'open')
     expect(renamed?.title).toBe('Renamed one')
     expect(useCoworkSessions.getState().sessions.find((s) => s.id === 'other')?.title).toBe('Other one')
+  })
+})
+
+describe('NavHistory threads that point at a project', () => {
+  const thread = (id: string, projectId?: string) =>
+    ({ id, title: id, updated: 1, metadata: projectId ? { project: { id: projectId, name: 'P' } } : {} }) as never
+
+  beforeEach(() => {
+    useThreads.setState({
+      threads: {
+        plain: thread('plain'),
+        homed: thread('homed', 'p1'),
+        orphan: thread('orphan', 'missing'),
+      },
+    })
+  })
+
+  it('lists a thread whose project no longer exists, and hides one whose project does', () => {
+    projects.folders = [{ id: 'p1' }]
+    render(<NavHistory />)
+    expect(screen.getByTestId('thread-plain')).toBeInTheDocument()
+    expect(screen.getByTestId('thread-orphan')).toBeInTheDocument()
+    expect(screen.queryByTestId('thread-homed')).not.toBeInTheDocument()
+  })
+
+  it('hides project threads until the project list has loaded', () => {
+    projects.foldersLoaded = false
+    render(<NavHistory />)
+    expect(screen.queryByTestId('thread-orphan')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('thread-homed')).not.toBeInTheDocument()
+    expect(screen.getByTestId('thread-plain')).toBeInTheDocument()
   })
 })

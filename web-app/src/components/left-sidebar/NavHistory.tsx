@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
+import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
 import { useCoworkRun, useIsSessionActive } from '@/hooks/useCoworkRun'
 import { stopAgentSessionMonitors } from '@/lib/agentTools'
@@ -125,6 +126,7 @@ export function NavHistory() {
   const threads = useThreads((s) => s.threads)
   const isLoadingThreads = useThreads((s) => s.isLoadingThreads)
   const deleteAllThreads = useThreads((s) => s.deleteAllThreads)
+  const { folders, foldersLoaded } = useThreadManagement()
   const sessions = useCoworkSessions((s) => s.sessions)
   const runIds = useCoworkRun((s) => s.runId)
   // The active row follows the URL, not a lingering store selection.
@@ -140,9 +142,10 @@ export function NavHistory() {
       mergeHistory(
         Object.values(threads).filter((t) => t.id !== 'temporary-chat'),
         sessions,
-        runIds
+        runIds,
+        foldersLoaded ? new Set(folders.map((f) => f.id)) : null
       ),
-    [threads, sessions, runIds]
+    [threads, sessions, runIds, folders, foldersLoaded]
   )
 
   const confirmDelete = useCallback(() => {

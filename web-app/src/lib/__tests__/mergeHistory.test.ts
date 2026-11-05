@@ -38,6 +38,20 @@ describe('mergeHistory', () => {
     expect(rows.map((r) => r.id)).toEqual(['plain'])
   })
 
+  it('lists a chat whose project does not exist, and hides one whose project does', () => {
+    const threads = [
+      thread('orphan', 5, { project: { id: 'gone' } }),
+      thread('homed', 6, { project: { id: 'p' } }),
+      thread('plain', 7),
+    ]
+    expect(mergeHistory(threads, [], {}, new Set(['p'])).map((r) => r.id)).toEqual(['plain', 'orphan'])
+  })
+
+  it('hides every project chat until the project list has loaded', () => {
+    const threads = [thread('orphan', 5, { project: { id: 'gone' } }), thread('plain', 7)]
+    expect(mergeHistory(threads, [], {}, null).map((r) => r.id)).toEqual(['plain'])
+  })
+
   it('lists a Cowork session once it has messages, or while its first run is streaming', () => {
     const rows = mergeHistory(
       [],
