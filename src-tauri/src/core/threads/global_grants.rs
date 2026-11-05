@@ -133,8 +133,45 @@ pub fn get_chat_permissions() -> GlobalGrants {
     tauri_plugin_agent_tools::thread_capabilities::get_global_grants()
 }
 
-/// Persist first, then apply: a failed write leaves the live value as it was,
-/// so the settings screen never shows a state the host is not enforcing.
+/// One setter transaction at a time: narrow, persist, publish and fence are a
+/// unit. Two overlapping setters (enable saves and pauses; disable saves,
+/// publishes and fences; enable resumes and publishes) would otherwise leave
+/// the disk saying disabled while the live value says enabled.
+fn setter_lock() -> &'static tokio::sync::Mutex<()> {
+    static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(Default::default)
+}
+
+/// Apply a requested value to the live grants and the data folder.
+///
+/// Narrowing wins over persistence: any permission the request turns off is
+/// switched off in the live value (and fenced against in-flight spawn
+/// admissions) BEFORE the file is written, and stays off if the write fails --
+/// an unrecorded revocation is still a revocation. Only after the file is
+/// durably written is anything enabled or widened, so the live value never
+/// grants more than the disk records. A persistence failure is returned.
+async fn apply_chat_permissions(
+    data_folder: &Path,
+    value: GlobalGrants,
+) -> Result<GlobalGrants, String> {
+    let _transaction = setter_lock().lock().await;
+    let live = tauri_plugin_agent_tools::thread_capabilities::get_global_grants();
+    let narrowed = GlobalGrants {
+        shell_network: live.shell_network && value.shell_network,
+        memory_write: live.memory_write && value.memory_write,
+    };
+    if narrowed != live {
+        set_global_grants(narrowed);
+        // Fence: a monitor poll admitted before the switch moved is mid-spawn
+        // under the admission guard. Waiting for it here means that, once the
+        // value is narrowed, every later spawn admission observes it.
+        drop(tauri_plugin_agent_tools::thread_capabilities::admission().lock().await);
+    }
+    save(data_folder, value)?;
+    set_global_grants(value);
+    Ok(value)
+}
+
 #[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub async fn set_chat_permissions<R: tauri::Runtime>(
@@ -142,13 +179,7 @@ pub async fn set_chat_permissions<R: tauri::Runtime>(
     value: GlobalGrants,
 ) -> Result<GlobalGrants, String> {
     let data_folder = crate::core::app::commands::get_jan_data_folder_path(app_handle);
-    save(&data_folder, value)?;
-    set_global_grants(value);
-    // Fence: a monitor poll admitted before the switch moved is mid-spawn under
-    // the admission guard. Waiting for the guard here means that, once this
-    // returns, every later spawn admission observes the new value.
-    drop(tauri_plugin_agent_tools::thread_capabilities::admission().lock().await);
-    Ok(value)
+    apply_chat_permissions(&data_folder, value).await
 }
 
 #[cfg(test)]
@@ -401,5 +432,64 @@ mod tests {
         };
         save(&dir, flipped).unwrap();
         assert_eq!(load(&dir), flipped);
+    }
+
+    /// Serializes the tests below, which drive the process-wide live grants.
+    fn live_grants_guard() -> std::sync::MutexGuard<'static, ()> {
+        static G: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        G.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// E1: a revocation whose write fails is still applied to the live value
+    /// and the error is surfaced; a widening whose write fails is not.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_revocation_survives_a_failed_write_and_a_widening_does_not() {
+        use std::os::unix::fs::PermissionsExt;
+        let _g = live_grants_guard();
+        let dir = temp_dir("narrow-on-failed-write");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        if std::fs::write(dir.join("probe"), b"x").is_ok() {
+            let _ = std::fs::remove_file(dir.join("probe"));
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+            return; // the mode does not bind this user (root)
+        }
+        let on = GlobalGrants { shell_network: true, memory_write: true };
+        let off = GlobalGrants { shell_network: false, memory_write: false };
+        set_global_grants(on);
+        assert!(apply_chat_permissions(&dir, off).await.is_err());
+        let after_revoke = get_live();
+        // Widening while the write fails must not enable anything.
+        assert!(apply_chat_permissions(&dir, on).await.is_err());
+        let after_widen = get_live();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        set_global_grants(on);
+        assert_eq!(after_revoke, off, "an unpersisted revocation must still take effect");
+        assert_eq!(after_widen, off, "an unpersisted widening must not take effect");
+    }
+
+    fn get_live() -> GlobalGrants {
+        tauri_plugin_agent_tools::thread_capabilities::get_global_grants()
+    }
+
+    /// E2: overlapping setters leave the live value and the file in agreement.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn overlapping_setters_leave_live_and_persisted_state_equal() {
+        let _g = live_grants_guard();
+        let dir = temp_dir("overlapping-setters");
+        let on = GlobalGrants { shell_network: true, memory_write: true };
+        let off = GlobalGrants { shell_network: false, memory_write: false };
+        for round in 0..150 {
+            set_global_grants(on);
+            save(&dir, on).unwrap();
+            let (d1, d2) = (dir.clone(), dir.clone());
+            let (first, second) = if round % 2 == 0 { (on, off) } else { (off, on) };
+            let a = tokio::spawn(async move { apply_chat_permissions(&d1, first).await });
+            let b = tokio::spawn(async move { apply_chat_permissions(&d2, second).await });
+            a.await.unwrap().unwrap();
+            b.await.unwrap().unwrap();
+            assert_eq!(get_live(), load(&dir), "round {round}: live and persisted diverged");
+        }
+        set_global_grants(on);
     }
 }
