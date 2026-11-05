@@ -1,13 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
+const mockParams: { sessionId?: string } = {}
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (options: unknown) => options,
   redirect: (r: unknown) => Object.assign(new Error('redirect'), { redirect: r }),
-  useParams: () => ({}),
+  useParams: () => mockParams,
   useNavigate: () => vi.fn(),
 }))
 vi.mock('@/containers/CoworkPage', () => ({ CoworkPage: () => null }))
 
+import { act, render } from '@testing-library/react'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 
 type Opts = { beforeLoad: (a: { params?: Record<string, string> }) => void }
@@ -79,5 +81,27 @@ describe('/cowork/$sessionId', () => {
     const { Route } = (await import('../cowork/$sessionId')) as unknown as { Route: Opts }
     seed(['a'], null)
     expect(run(Route, { sessionId: 'nope' })).toMatchObject({ to: '/' })
+  })
+
+  it('selects the opened session in beforeLoad, after the existence check', async () => {
+    const { Route } = (await import('../cowork/$sessionId')) as unknown as { Route: Opts }
+    seed(['a', 'b'], 'b')
+    expect(run(Route, { sessionId: 'nope' })).toMatchObject({ to: '/' })
+    expect(useCoworkSessions.getState().currentId).toBe('b')
+    expect(run(Route, { sessionId: 'a' })).toBeNull()
+    expect(useCoworkSessions.getState().currentId).toBe('a')
+  })
+
+  it('does not re-select a session that was deleted while its route is still mounted', async () => {
+    const { Route } = (await import('../cowork/$sessionId')) as unknown as {
+      Route: Opts & { component: () => null }
+    }
+    seed(['a', 'b'], 'a')
+    mockParams.sessionId = 'a'
+    const Component = Route.component as unknown as () => null
+    render(<Component />)
+    act(() => useCoworkSessions.getState().deleteSession('a'))
+    expect(useCoworkSessions.getState().sessions.map((s) => s.id)).toEqual(['b'])
+    expect(useCoworkSessions.getState().currentId).toBe('b')
   })
 })

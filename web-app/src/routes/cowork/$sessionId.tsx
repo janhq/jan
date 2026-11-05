@@ -19,6 +19,9 @@ export const Route = createFileRoute('/cowork/$sessionId')({
         !useCoworkRun.getState().runId[sessionId] && !peekCoworkHandoff(sessionId)) {
       throw redirect({ to: route.home, replace: true })
     }
+    // Select here, not while rendering: a render-phase store write warns on
+    // every switch and re-selects a session deleted under the mounted route.
+    useCoworkSessions.getState().selectSession(sessionId)
   },
   component: CoworkSessionRoute,
 })
@@ -27,10 +30,11 @@ function CoworkSessionRoute() {
   const { sessionId } = useParams({ strict: false }) as { sessionId: string }
   // The URL is the source of truth: the page and every helper it calls read the
   // current session from the store, so keep the two in lockstep.
-  const currentId = useCoworkSessions((s) => s.currentId)
-  if (currentId !== sessionId) useCoworkSessions.getState().selectSession(sessionId)
+  // beforeLoad selects on navigation; this resyncs when only the param changes.
   useEffect(() => {
-    useCoworkSessions.getState().selectSession(sessionId)
+    if (useCoworkSessions.getState().sessions.some((s) => s.id === sessionId)) {
+      useCoworkSessions.getState().selectSession(sessionId)
+    }
   }, [sessionId])
   return <CoworkPage />
 }
