@@ -33,6 +33,16 @@ describe('startNewSession', () => {
     ])
   })
 
+  it('does not reuse an unavailable current session', () => {
+    const broken = useCoworkSessions.getState().createSession()
+    useCoworkSessions.setState((s) => ({
+      sessions: s.sessions.map((x) => (x.id === broken ? { ...x, unavailable: 'missing-sidecar' as const } : x)),
+    }))
+    const fresh = useCoworkSessions.getState().createSession()
+    expect(fresh).not.toBe(broken)
+    expect(useCoworkSessions.getState().sessions.find((x) => x.id === fresh)?.unavailable).toBeUndefined()
+  })
+
   it('reuses an untouched current session', () => {
     const empty = useCoworkSessions.getState().createSession()
     expect(startNewSession([])).toBe(empty)

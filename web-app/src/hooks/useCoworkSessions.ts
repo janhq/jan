@@ -167,7 +167,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
         // up empty ones (e.g. from repeated clicks on "New session").
         const { currentId, sessions } = get()
         const current = sessions.find((s) => s.id === currentId)
-        if (current && current.turns.length === 0) return current.id
+        if (current && !current.unavailable && current.turns.length === 0) return current.id
 
         const id = crypto.randomUUID()
         const session: CoworkSession = {
