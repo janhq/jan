@@ -37,6 +37,10 @@ export function mergeHistory(
     })
   }
   for (const session of sessions) {
+    // Same rule as chat rows: a session in a real project is listed under
+    // that project (its mirror thread), not twice.
+    const sessionProject = session.project
+    if (sessionProject && (projectIds === null || projectIds.has(sessionProject.id))) continue
     // A session earns a row once it has messages. A first run's turns are
     // transient until committed, so a streaming session stays listed too.
     if (session.turns.length === 0 && runIds[session.id] == null && !session.unavailable) {

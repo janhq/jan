@@ -65,4 +65,16 @@ describe('mergeHistory', () => {
     const rows = mergeHistory([], [session('broken', 1, 0, { unavailable: 'unreadable-sidecar' })], {})
     expect(rows.map((r) => r.id)).toEqual(['broken'])
   })
+
+  it('lists a Cowork session of an existing project only under that project, but keeps an orphan-project one', () => {
+    const proj = (id: string) => ({ project: { id, name: id, updated_at: 1 } })
+    const sessions = [
+      session('homed', 1_000_000_000_000, 1, proj('p')),
+      session('orphan', 2_000_000_000_000, 1, proj('gone')),
+      session('plain', 3_000_000_000_000),
+    ]
+    expect(mergeHistory([], sessions, {}, new Set(['p'])).map((r) => r.id)).toEqual(['plain', 'orphan'])
+    // Project list not loaded yet: project rows stay hidden, as chat rows do.
+    expect(mergeHistory([], sessions, {}, null).map((r) => r.id)).toEqual(['plain'])
+  })
 })
