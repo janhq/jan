@@ -293,10 +293,6 @@
       "cancel": "Hủy",
       "changeLocation": "Thay đổi vị trí"
     },
-    "deleteAllThreads": {
-      "title": "Xóa tất cả các chủ đề",
-      "description": "Tất cả các chủ đề sẽ bị xóa. Hành động này không thể hoàn tác."
-    },
     "deleteThread": {
       "description": "Bạn có chắc chắn muốn xóa cuộc trò chuyện này không? Hành động này không thể hoàn tác."
     },

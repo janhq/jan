@@ -233,10 +233,6 @@
       "cancel": "Cancelar",
       "changeLocation": "Alterar Localização"
     },
-    "deleteAllThreads": {
-      "title": "Remover Todas as Conversas",
-      "description": "Todas as conversas serão removidas. Esta ação não pode ser desfeita."
-    },
     "deleteThread": {
       "description": "Tem certeza de que deseja remover esta conversa? Esta ação não pode ser desfeita."
     },

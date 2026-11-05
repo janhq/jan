@@ -248,10 +248,6 @@
       "cancel": "Cancelar",
       "changeLocation": "Cambiar ubicación"
     },
-    "deleteAllThreads": {
-      "title": "Eliminar todos los hilos",
-      "description": "Todos los hilos serán eliminados. Esta acción no se puede deshacer."
-    },
     "deleteAllThreadsInProject": {
       "title": "Eliminar todas las conversaciones",
       "description": "Se eliminarán {{count}} conversaciones en \"{{projectName}}\". Esta acción no se puede deshacer."

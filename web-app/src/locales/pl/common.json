@@ -229,10 +229,6 @@
       "cancel": "Anuluj",
       "changeLocation": "Zmień Położenie"
     },
-    "deleteAllThreads": {
-      "title": "Usuń Wszystkie Wątki",
-      "description": "Wszystkie wątki zostaną usunięte. Tej operacji nie można cofnąć."
-    },
     "deleteThread": {
       "description": "Na pewno chcesz usunąć ten wątek? Tej operacji nie można cofnąć."
     },

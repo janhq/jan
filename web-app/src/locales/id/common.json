@@ -235,10 +235,6 @@
       "cancel": "Batal",
       "changeLocation": "Ubah Lokasi"
     },
-    "deleteAllThreads": {
-      "title": "Hapus Semua Utas",
-      "description": "Semua utas akan dihapus. Tindakan ini tidak dapat dibatalkan."
-    },
     "deleteThread": {
       "description": "Apakah Anda yakin ingin menghapus thread ini? Tindakan ini tidak dapat dibatalkan."
     },

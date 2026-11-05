@@ -293,10 +293,6 @@
       "cancel": "取消",
       "changeLocation": "更改位置"
     },
-    "deleteAllThreads": {
-      "title": "删除所有会话",
-      "description": "所有会话将被删除。此操作无法撤销。"
-    },
     "deleteThread": {
       "description": "您确定要删除此对话吗？此操作无法撤销。"
     },

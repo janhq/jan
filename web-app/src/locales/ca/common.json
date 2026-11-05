@@ -229,10 +229,6 @@
       "cancel": "Cancel·la",
       "changeLocation": "Canvia la ubicació"
     },
-    "deleteAllThreads": {
-      "title": "Suprimeix tots els fils",
-      "description": "Se suprimiran tots els fils. Aquesta acció no es pot desfer."
-    },
     "deleteThread": {
       "description": "Segur que vols suprimir aquest fil? Aquesta acció no es pot desfer."
     },

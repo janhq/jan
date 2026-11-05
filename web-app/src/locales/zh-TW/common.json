@@ -293,10 +293,6 @@
       "cancel": "取消",
       "changeLocation": "變更位置"
     },
-    "deleteAllThreads": {
-      "title": "刪除所有對話",
-      "description": "所有對話將被刪除。此操作無法復原。"
-    },
     "deleteThread": {
       "description": "您確定要刪除此對話嗎？此操作無法復原。"
     },

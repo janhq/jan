@@ -272,10 +272,6 @@
       "cancel": "キャンセル",
       "changeLocation": "場所を変更"
     },
-    "deleteAllThreads": {
-      "title": "すべてのスレッドを削除",
-      "description": "すべてのスレッドが削除されます。この操作は元に戻せません。"
-    },
     "deleteAllThreadsInProject": {
       "title": "すべての会話を削除",
       "description": "「{{projectName}}」内の{{count}}件の会話が削除されます。この操作は元に戻せません。"
