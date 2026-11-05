@@ -5511,11 +5511,18 @@ struct SubagentPanel {
     /// "0 tools" and an activity line stuck on "starting…".
     active: Option<StartingCall>,
     /// Calls the child has issued whose results have not come back, oldest
-    /// first, as `(tool-call id, present-tense label)`. One request can issue
-    /// several calls that run in parallel and answer in any order, so each is
-    /// retired by its own id: the activity line follows what is still running
-    /// and says how many are out, instead of the newest call's label alone.
-    in_flight: Vec<(String, String)>,
+    /// first, as `(tool-call id, running label, done label)` from the same
+    /// `tool_activity`/`tool_finished` pair the transcript's rows use. One
+    /// request can issue several calls that run in parallel and answer in any
+    /// order, so each is retired by its own id: the activity line names the
+    /// newest call still running until the last sibling answers.
+    in_flight: Vec<(String, String, String)>,
+    /// The done label of the call that closed the latest batch, so the
+    /// activity line flips the verb of what it last named to the past tense
+    /// rather than jumping to whichever call happened to be issued last.
+    /// Cleared by a new call (or a batch that lost its results), which leaves
+    /// the last call made to speak for the child.
+    settled: Option<String>,
     /// True while the dispatch is parked on the parent run's
     /// `max_parallel_subagents` cap (reported via `SubagentQueued`); flipped
     /// off when the child's `SubagentStart` arrives. Queued panels render
@@ -5600,6 +5607,7 @@ impl SubagentPanel {
             cache_reported: false,
             active: None,
             in_flight: Vec::new(),
+            settled: None,
             queued: false,
             waiting: 0,
             pending: false,
@@ -5682,6 +5690,7 @@ impl SubagentPanel {
         t.settle(!finished);
         self.active = None;
         self.in_flight.clear();
+        self.settled = None;
     }
 
     /// A finished child rebuilt from its journal entry, which keeps only the
@@ -5886,28 +5895,15 @@ fn agent_name_spans(panel: &SubagentPanel) -> Vec<Span<'static>> {
 }
 
 /// What a running subagent is doing, verb-first like a transcript row: the call
-/// it is building, else the newest call still running (led by `N in flight`
-/// while a parallel batch has several out), else the last call it made with a
-/// dim repeat count for a short run of the same call. A run of
-/// `STUCK_REPEAT_THRESHOLD` reads as a loop and is flagged as one, even while
-/// the newest copy is still streaming. Empty for a child that has not started.
+/// it is building, else the newest call still running in the continuous tense
+/// (so a parallel batch reads as running until its last call answers), else
+/// the call it last finished in the past tense, with a dim repeat count for a
+/// short run of the same call. A run of `STUCK_REPEAT_THRESHOLD` reads as a
+/// loop and is flagged as one, even while the newest copy is still streaming.
+/// Empty for a child that has not started.
 fn agent_activity(panel: &mut SubagentPanel) -> Vec<Span<'static>> {
-    let mut parts = agent_activity_parts(panel);
-    let mut out = parts.remove(0);
-    for part in parts {
-        out.push(Span::styled(" \u{b7} ", Style::new().fg(theme::muted())));
-        out.extend(part);
-    }
-    out
-}
-
-/// `agent_activity` as separate facts, for the background-work block: a
-/// parallel batch is its `N in flight` count, then the newest call still
-/// running. Apart, a row too narrow for a long command drops the command and
-/// keeps the count, where one fact dropped whole left a busy child blank.
-fn agent_activity_parts(panel: &mut SubagentPanel) -> Vec<Vec<Span<'static>>> {
     if panel.queued || panel.pending {
-        return vec![Vec::new()];
+        return Vec::new();
     }
     let dim = Style::new().fg(theme::muted());
     let repeats = panel.repeats;
@@ -5920,30 +5916,27 @@ fn agent_activity_parts(panel: &mut SubagentPanel) -> Vec<Vec<Span<'static>>> {
         if let Some(last) = last {
             out.push(Span::styled(format!(" \u{b7} {last}"), dim));
         }
-        return vec![out];
+        return out;
     }
+    let accent = Style::new().fg(theme::accent()).dim();
     if let Some(call) = panel.active.as_mut() {
-        return vec![vec![Span::styled(
-            call.activity_label(),
-            Style::new().fg(theme::accent()).dim(),
-        )]];
+        return vec![Span::styled(call.activity_label(), accent)];
     }
-    if let Some((_, label)) = panel.in_flight.last() {
-        let accent = Style::new().fg(theme::accent()).dim();
-        let running = vec![Span::styled(single_line(label), accent)];
-        return match panel.in_flight.len() {
-            1 => vec![running],
-            n => vec![vec![Span::styled(format!("{n} in flight"), dim)], running],
-        };
+    if let Some((_, running, _)) = panel.in_flight.last() {
+        return vec![Span::styled(single_line(running), accent)];
     }
-    vec![match last {
-        Some(last) if repeats > 1 => vec![
-            Span::styled(last, dim),
+    // The repeat count belongs to the last call made, so it rides only on a
+    // settled label that is that call.
+    let settled = panel.settled.as_deref().map(single_line);
+    let repeated = repeats > 1 && (settled.is_none() || settled == last);
+    match settled.or(last) {
+        Some(done) if repeated => vec![
+            Span::styled(done, dim),
             Span::styled(format!(" \u{d7}{repeats}"), dim),
         ],
-        Some(last) => vec![Span::styled(last, dim)],
+        Some(done) => vec![Span::styled(done, dim)],
         None => vec![Span::styled("starting\u{2026}", dim)],
-    }]
+    }
 }
 
 /// The name compaction is listed under in `/agents`.
@@ -9242,8 +9235,10 @@ impl App {
                         panel.active = None;
                     }
                     // Stored untruncated; the dock clamps it to the draw width.
-                    panel.record_call(&tool, &args, tool_finished(&tool, &args));
-                    panel.in_flight.push((id.clone(), tool_activity(&tool, &args)));
+                    let done = tool_finished(&tool, &args);
+                    panel.record_call(&tool, &args, done.clone());
+                    panel.in_flight.push((id.clone(), tool_activity(&tool, &args), done));
+                    panel.settled = None;
                     panel.transcript.tool_call(id, &tool, &args);
                     panel.transcript.cap_rows(CHILD_ROWS_MAX);
                 }
@@ -9266,7 +9261,12 @@ impl App {
                 diff,
             } => {
                 if let Some(panel) = panel {
-                    panel.in_flight.retain(|(call, _)| *call != id);
+                    let at = panel.in_flight.iter().position(|(call, ..)| *call == id);
+                    if let Some((_, _, done)) = at.map(|i| panel.in_flight.remove(i)) {
+                        if panel.in_flight.is_empty() {
+                            panel.settled = Some(done);
+                        }
+                    }
                     truncate_head(&mut content, CHILD_RESULT_MAX);
                     panel.transcript.tool_result(id, content, is_error, diff);
                     panel.transcript.cap_rows(CHILD_ROWS_MAX);
@@ -26626,6 +26626,11 @@ struct WorkHead {
 struct WorkChild {
     name: String,
     facts: Vec<Vec<Span<'static>>>,
+    /// Whether the last fact is a verb-first label that is cut with `...`,
+    /// keeping at least its verb, before it is dropped whole. A subagent's activity is
+    /// often a long command, and dropped whole it left a busy child reading
+    /// as idle on any row narrower than the command.
+    cut_last: bool,
 }
 
 /// A group of the background-work block: monitors, subagents or shells.
@@ -26645,10 +26650,13 @@ struct WorkGroup {
 /// keeps the most meaning per column, so nothing is cut mid-word without a
 /// mark: the head drops its hint words, then its commands, then every count
 /// but the first; a child drops its facts from the last in (activity before
-/// elapsed before status); only then is the remaining text cut, with `...`.
-/// Under `BACKGROUND_CHILD_MIN_NAME` columns of name the group is its head
-/// alone, whatever `cap` allows.
+/// elapsed before status), except that a `cut_last` fact is first cut to what
+/// fits, so long as its verb survives; only then is the remaining text cut,
+/// with `...`. Under `BACKGROUND_CHILD_MIN_NAME` columns of name the group is
+/// its head alone, whatever `cap` allows.
 fn work_group_lines(group: &WorkGroup, cap: usize, max: usize) -> Vec<Line<'static>> {
+    use unicode_width::UnicodeWidthStr;
+
     let dim = Style::new().fg(theme::muted());
     let accent = Style::new().fg(theme::accent());
     let sep = || Span::styled(" \u{b7} ", dim);
@@ -26702,10 +26710,47 @@ fn work_group_lines(group: &WorkGroup, cap: usize, max: usize) -> Vec<Line<'stat
             }
             spans
         };
-        let spans = (0..=facts.len())
-            .rev()
-            .map(|kept| row(kept, child.name.clone()))
-            .find(|spans| spans_width(spans) <= max)
+        let full = row(facts.len(), child.name.clone());
+        let cut = || {
+            // The flag names the child's own last fact: an empty one was
+            // filtered out above, and the fact before it is not verb-first.
+            child.facts.last().filter(|f| !f.is_empty())?;
+            let fact = facts.last()?;
+            let mut spans = row(facts.len() - 1, child.name.clone());
+            let room = max.checked_sub(spans_width(&spans) + sep().width())?;
+            let verb = fact.first()?.content.split_whitespace().next()?;
+            if room < verb.width() + 3 {
+                return None;
+            }
+            spans.push(sep());
+            // Whole spans while they leave room for the mark, then the one
+            // that does not, cut to what is left in that span's style. The
+            // mark is part of what `ellipsize` measures, so a span that just
+            // fits without it is still cut; its trailing space is trimmed so
+            // the mark does not float off the word.
+            let mut left = room;
+            for span in fact.iter() {
+                if span.width() + 3 <= left {
+                    left -= span.width();
+                    spans.push(span.clone());
+                    continue;
+                }
+                let cut = ellipsize(&format!("{}...", span.content), left);
+                let head = cut.strip_suffix("...").unwrap_or(&cut).trim_end();
+                spans.push(Span::styled(format!("{head}..."), span.style));
+                break;
+            }
+            Some(spans)
+        };
+        let spans = Some(full)
+            .filter(|spans| spans_width(spans) <= max)
+            .or_else(|| child.cut_last.then(cut).flatten())
+            .or_else(|| {
+                (0..facts.len())
+                    .rev()
+                    .map(|kept| row(kept, child.name.clone()))
+                    .find(|spans| spans_width(spans) <= max)
+            })
             .unwrap_or_else(|| row(0, ellipsize(&child.name, max.saturating_sub(prefix_w))));
         out.push(Line::from(spans));
     }
@@ -26735,6 +26780,7 @@ fn monitor_group(monitors: &[MonitorSnapshot]) -> Option<WorkGroup> {
             .map(|m| WorkChild {
                 name: format!("{} {}", m.monitor_id, single_line(&m.name)),
                 facts: vec![vec![Span::styled(pluralize("poll", m.polls as usize), dim)]],
+                cut_last: false,
             })
             .collect(),
     })
@@ -26770,15 +26816,12 @@ fn subagent_group(panels: &mut [SubagentPanel], now: Instant) -> Option<WorkGrou
                 let secs = now.saturating_duration_since(started).as_secs();
                 vec![Span::styled(format_elapsed(secs), dim)]
             });
-            let activity = running.then(|| agent_activity_parts(panel));
-            let facts = word
-                .into_iter()
-                .chain(elapsed)
-                .chain(activity.into_iter().flatten())
-                .collect();
+            let activity = running.then(|| agent_activity(panel));
+            let facts = word.into_iter().chain(elapsed).chain(activity).collect();
             WorkChild {
                 name: panel.name.clone(),
                 facts,
+                cut_last: running,
             }
         })
         .collect();
@@ -26807,6 +26850,7 @@ fn shell_group(shells: &[tauri_plugin_agent_tools::tools::proc::ShellInfo]) -> O
             .map(|shell| WorkChild {
                 name: single_line(&shell.command),
                 facts: vec![vec![Span::styled(format_elapsed(shell.elapsed_secs), dim)]],
+                cut_last: false,
             })
             .collect(),
     })
@@ -48926,6 +48970,7 @@ fn a() {}
                     .iter()
                     .map(|f| vec![ratatui::text::Span::raw(f.to_string())])
                     .collect(),
+                cut_last: false,
             }],
         }
     }

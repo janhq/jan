@@ -616,9 +616,10 @@ fn subagents_running_after_the_turn() {
 
 /// A child that issues several calls in one request, as its stream delivers
 /// them: every call announced before any runs, then the results out of order.
-/// While more than one call is out the row says how many, so it does not go
-/// blank when the newest call's label is too long for it; each result retires
-/// its own call by id, so the row follows whatever is still running.
+/// The row names the newest call still running, in continuous tense, and a
+/// label too long for the row is cut after its verb rather than dropped; each
+/// result retires its own call by id, so the row follows whatever is still
+/// running and flips to the past tense only once the last one answers.
 #[test]
 fn subagent_parallel_calls_stay_visible_until_the_last_result() {
     let now = Instant::now();
@@ -646,13 +647,15 @@ fn subagent_parallel_calls_stay_visible_until_the_last_result() {
         let text = render_snapshot(&background_rows_buffer(app, w, now));
         text.lines().nth(1).unwrap_or_default().to_string()
     };
-    // The newest call's whole command does not fit beside the count, so the
-    // row drops the command and keeps the count rather than going blank.
-    for w in [80, 50] {
+    // The newest call's whole command does not fit, so the row keeps its verb
+    // and cuts the rest with a visible mark rather than going blank.
+    for w in [80, 50, 36] {
         let shown = row(&mut app, w);
-        assert!(shown.contains("3 in flight"), "@{w}: {shown}");
+        assert!(shown.contains("1m 05s \u{b7} Running"), "@{w}: {shown}");
+        assert!(shown.trim_end_matches([' ', '|']).ends_with("..."), "@{w}: {shown}");
+        assert!(!shown.contains("in flight"), "@{w}: {shown}");
     }
-    assert!(row(&mut app, 120).contains("3 in flight \u{b7} Running cargo test"));
+    assert!(row(&mut app, 120).contains(&format!("1m 05s \u{b7} Running {cmd}")));
     assert_buffer("subagents_idle_parallel", &background_rows_buffer(&mut app, 80, now));
     let result = |id: &str| {
         child(StreamEvent::ToolResult {
@@ -664,15 +667,16 @@ fn subagent_parallel_calls_stay_visible_until_the_last_result() {
     };
     app.apply(result("c"));
     let shown = row(&mut app, 80);
-    assert!(shown.contains("2 in flight") && shown.contains("Reading b.rs"), "{shown}");
+    assert!(shown.contains("1m 05s \u{b7} Reading b.rs "), "{shown}");
     app.apply(result("b"));
     let shown = row(&mut app, 80);
-    assert!(!shown.contains("in flight") && shown.contains("Reading a.rs"), "{shown}");
-    // The batch is done: back to the last call made, past tense.
+    assert!(shown.contains("1m 05s \u{b7} Reading a.rs "), "{shown}");
+    // The batch is done: the call the row last named stays, its verb now in
+    // the past tense.
     app.apply(result("a"));
     assert!(app.subagents[0].in_flight.is_empty());
     let shown = row(&mut app, 120);
-    assert!(shown.contains("Ran cargo test"), "{shown}");
+    assert!(shown.contains("1m 05s \u{b7} Read a.rs "), "{shown}");
 }
 
 /// Where the block sits: over the rule, subagents over shells, the rule on
