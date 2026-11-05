@@ -66,6 +66,10 @@ export type CoworkSession = {
   todos?: TodoList
   /** Plan mode: the agent reads and proposes, without writing. Absent means off. */
   planMode?: boolean
+  /** The user had a conversation here and cleared it (/clear). Unlike a
+   * never-used blank placeholder, the empty session stays listed, reachable and
+   * persisted, so the record does not become a hidden thread on disk. */
+  cleared?: true
   updated: number
   /** Set when the session's stored data cannot be used (missing/corrupt
    * transcript, or its id collides with another conversation). It is shown but
@@ -167,7 +171,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
         // up empty ones (e.g. from repeated clicks on "New session").
         const { currentId, sessions } = get()
         const current = sessions.find((s) => s.id === currentId)
-        if (current && !current.unavailable && current.turns.length === 0) return current.id
+        if (current && !current.unavailable && !current.cleared && current.turns.length === 0) return current.id
 
         const id = crypto.randomUUID()
         const session: CoworkSession = {
@@ -368,6 +372,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
                   todos: { phases: [] },
                   subagents: [],
                   lastUsage: undefined,
+                  cleared: true as const,
                   updated: now(),
                 }
               : x
@@ -378,7 +383,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
         set((s) => {
           const keep = new Set(keepIds)
           const sessions = s.sessions.filter(
-            (x) => x.turns.length > 0 || x.id === s.currentId || keep.has(x.id)
+            (x) => x.turns.length > 0 || x.cleared || x.id === s.currentId || keep.has(x.id)
           )
           return sessions.length === s.sessions.length ? {} : { sessions }
         }),

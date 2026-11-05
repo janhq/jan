@@ -132,6 +132,22 @@ describe('coworkPersistence write protocol', () => {
     expect(b.extras.get('a').turns).toHaveLength(0)
   })
 
+  it('a cleared session is a used session: written even if never persisted, and it rehydrates as cleared and listed', async () => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
+    // Used then cleared inside the debounce window: no prior write exists.
+    p.schedule(session('a', { title: 'Kept title', turns: [], messages: [], cleared: true }))
+    await p.flush()
+    expect(p.isPersisted('a')).toBe(true)
+    expect(b.threads.get('a')!.title).toBe('Kept title')
+    expect(b.threads.get('a')!.metadata.cleared).toBe(true)
+    const back = sessionFromThread(b.threads.get('a'), b.extras.get('a'))
+    expect(back).toMatchObject({ id: 'a', title: 'Kept title', cleared: true, turns: [], messages: [] })
+    // A blank placeholder carries no marker and is still not written.
+    p.schedule(session('blank', { turns: [], messages: [] }))
+    await p.flush()
+    expect(b.threads.has('blank')).toBe(false)
+  })
+
   it('explicitly writes an empty new session only when allowEmpty is set', async () => {
     const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
     p.schedule(session('a', { turns: [], messages: [] }), { allowEmpty: false })

@@ -77,4 +77,13 @@ describe('mergeHistory', () => {
     // Project list not loaded yet: project rows stay hidden, as chat rows do.
     expect(mergeHistory([], sessions, {}, null).map((r) => r.id)).toEqual(['plain'])
   })
+
+  it('lists a cleared session (used, then emptied) but not a never-used blank placeholder', () => {
+    const rows = mergeHistory(
+      [],
+      [session('cleared', 2_000_000_000_000, 0, { cleared: true }), session('blank', 3_000_000_000_000, 0)],
+      {}
+    )
+    expect(rows.map((r) => r.id)).toEqual(['cleared'])
+  })
 })

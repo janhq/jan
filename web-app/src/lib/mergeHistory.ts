@@ -43,7 +43,7 @@ export function mergeHistory(
     if (sessionProject && (projectIds === null || projectIds.has(sessionProject.id))) continue
     // A session earns a row once it has messages. A first run's turns are
     // transient until committed, so a streaming session stays listed too.
-    if (session.turns.length === 0 && runIds[session.id] == null && !session.unavailable) {
+    if (session.turns.length === 0 && runIds[session.id] == null && !session.unavailable && !session.cleared) {
       continue
     }
     rows.push({

@@ -77,6 +77,15 @@ describe('/cowork/$sessionId', () => {
     expect(useCoworkSessions.getState().sessions).toHaveLength(1)
   })
 
+  it('keeps a cleared session reachable instead of redirecting it home', async () => {
+    const { Route } = (await import('../cowork/$sessionId')) as unknown as { Route: Opts }
+    useCoworkSessions.setState({
+      sessions: [{ id: 'cl', title: 'Kept', folder: null, turns: [], messages: [], updated: 1, cleared: true }],
+      currentId: null,
+    })
+    expect(run(Route, { sessionId: 'cl' })).toBeNull()
+  })
+
   it('redirects an unknown id home', async () => {
     const { Route } = (await import('../cowork/$sessionId')) as unknown as { Route: Opts }
     seed(['a'], null)

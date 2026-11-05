@@ -15,7 +15,7 @@ export const Route = createFileRoute('/cowork/$sessionId')({
     if (!session) throw redirect({ to: route.home, replace: true })
     // An untouched session is not a different start surface. Keep the unified
     // composer unless its first prompt is being handed off or a run is active.
-    if (!session.unavailable && !session.turns.length && !session.messages.length &&
+    if (!session.unavailable && !session.cleared && !session.turns.length && !session.messages.length &&
         !useCoworkRun.getState().runId[sessionId] && !peekCoworkHandoff(sessionId)) {
       throw redirect({ to: route.home, replace: true })
     }

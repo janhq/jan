@@ -43,6 +43,18 @@ describe('startNewSession', () => {
     expect(useCoworkSessions.getState().sessions.find((x) => x.id === fresh)?.unavailable).toBeUndefined()
   })
 
+  it('does not reuse a cleared session as a new one, and pruning keeps it', () => {
+    const store = useCoworkSessions.getState()
+    const used = store.createSession()
+    store.commitTurns(used, [{ role: 'user', content: 'hi' }], [], [])
+    store.clearSession(used)
+    const fresh = useCoworkSessions.getState().createSession()
+    expect(fresh).not.toBe(used)
+    useCoworkSessions.getState().selectSession(fresh)
+    useCoworkSessions.getState().pruneEmptySessions([])
+    expect(useCoworkSessions.getState().sessions.map((x) => x.id)).toEqual([fresh, used])
+  })
+
   it('reuses an untouched current session', () => {
     const empty = useCoworkSessions.getState().createSession()
     expect(startNewSession([])).toBe(empty)
