@@ -9,6 +9,8 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
+import { useNavigate, useParams } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -30,6 +32,11 @@ export function DeleteProjectDialog({
   const deleteButtonRef = useRef<HTMLButtonElement>(null)
   const threads = useThreads((state) => state.threads)
   const { deleteFolderWithThreads } = useThreadManagement()
+  const navigate = useNavigate()
+  const viewedProjectId = useParams({
+    strict: false,
+    select: (params) => (params as { projectId?: string }).projectId,
+  })
 
   const threadCount = useMemo(() => {
     if (!projectId) return 0
@@ -50,6 +57,10 @@ export function DeleteProjectDialog({
           : t('projects.deleteProjectDialog.successWithoutName')
       )
       onOpenChange(false)
+      // Deleting the project on screen must leave its route, or the page is
+      // left on "Project Not Found". Deleting from the sidebar while viewing
+      // anything else stays where the user is.
+      if (viewedProjectId === projectId) navigate({ to: route.home })
     } catch (error) {
       toast.error(t('projects.deleteProjectDialog.error'))
       console.error('Delete project error:', error)
