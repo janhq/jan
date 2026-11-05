@@ -75,12 +75,51 @@ fn closed() -> GlobalGrants {
     }
 }
 
+/// Persist durably before the caller acknowledges. A revocation that is
+/// acknowledged and then lost (power failure between the rename and the disk
+/// catching up) would be silently undone by the enabled-by-default path on the
+/// next start, so: write to a temp file no concurrent save shares, flush its
+/// contents to disk, atomically replace the target, then flush the directory so
+/// the rename itself is on disk. Platforms without directory sync (Windows)
+/// keep the file flush and the atomic replace.
 fn save(data_folder: &Path, grants: GlobalGrants) -> Result<(), String> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let bytes = serde_json::to_vec_pretty(&grants).map_err(|e| e.to_string())?;
     let target = path(data_folder);
-    let temp = target.with_extension("json.tmp");
-    std::fs::write(&temp, bytes).map_err(|e| e.to_string())?;
-    std::fs::rename(&temp, &target).map_err(|e| e.to_string())
+    let temp = data_folder.join(format!(
+        "{FILE_NAME}.{}.{}.tmp",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    let written = (|| -> std::io::Result<()> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&temp, &target)
+    })();
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(&temp);
+        return Err(error.to_string());
+    }
+    sync_dir(data_folder)
+}
+
+#[cfg(unix)]
+fn sync_dir(dir: &Path) -> Result<(), String> {
+    std::fs::File::open(dir)
+        .and_then(|d| d.sync_all())
+        .map_err(|e| format!("could not sync {}: {e}", dir.display()))
+}
+
+#[cfg(not(unix))]
+fn sync_dir(_dir: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 /// Load the stored value into the plugin. Called once at startup.
@@ -220,22 +259,86 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn failed_migration_write_still_enforces_legacy_opt_out() {
+        use std::os::unix::fs::PermissionsExt;
         let dir = temp_dir("legacy-write-failure");
         write_legacy(
             &dir,
             serde_json::json!(r#"{"state":{"networkEnabled":false},"version":0}"#),
         );
-        std::fs::create_dir(path(&dir).with_extension("json.tmp")).unwrap();
+        // Read-only folder: the settings can be read but nothing can be created.
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let probe = dir.join("probe");
+        let can_write = std::fs::write(&probe, b"x").is_ok();
+        if can_write {
+            // Running as a user the mode does not bind (root): nothing to test.
+            let _ = std::fs::remove_file(&probe);
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+            return;
+        }
+        let loaded = load(&dir);
+        let exists = path(&dir).exists();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(
-            load(&dir),
+            loaded,
             GlobalGrants {
                 shell_network: false,
                 memory_write: true,
             }
         );
-        assert!(!path(&dir).exists());
+        assert!(!exists);
+    }
+
+    /// R7: concurrent saves must neither fail on a shared temp file nor leave
+    /// one behind, and the survivor is always one complete saved value.
+    #[test]
+    fn concurrent_saves_use_distinct_temp_files_and_leave_no_residue() {
+        let dir = temp_dir("concurrent-save");
+        let values = [
+            GlobalGrants { shell_network: true, memory_write: true },
+            GlobalGrants { shell_network: false, memory_write: true },
+            GlobalGrants { shell_network: true, memory_write: false },
+            GlobalGrants { shell_network: false, memory_write: false },
+        ];
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let dir = dir.clone();
+                std::thread::spawn(move || {
+                    for n in 0..50 {
+                        save(&dir, values[(i + n) % values.len()])
+                            .unwrap_or_else(|e| panic!("save {i}/{n} failed: {e}"));
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert!(values.contains(&load(&dir)));
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp files left behind: {leftovers:?}");
+    }
+
+    /// A failed save removes its temp file and reports the error, so the
+    /// caller never acknowledges a revocation that is not on disk.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_save_reports_the_error_and_leaves_no_temp_file() {
+        let dir = temp_dir("failed-save");
+        // A directory at the target: the final rename cannot replace it.
+        std::fs::create_dir(path(&dir)).unwrap();
+        assert!(save(&dir, GlobalGrants::default()).is_err());
+        let leftovers = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().ends_with(".tmp"))
+            .count();
+        assert_eq!(leftovers, 0);
     }
 
     #[test]
