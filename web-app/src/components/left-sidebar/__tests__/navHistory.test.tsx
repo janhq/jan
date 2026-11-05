@@ -15,8 +15,10 @@ vi.mock('@tanstack/react-router', () => ({
     return select ? select(params) : params
   },
 }))
+// A stable `t`: RenameThreadDialog re-seeds its input whenever `t` changes.
+const t = (key: string) => key
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t }),
 }))
 vi.mock('@/lib/backendStorage', () => {
   const store = {
@@ -37,6 +39,7 @@ vi.mock('@/lib/coworkMonitor', async (importOriginal) => ({
   dropMonitorLane: vi.fn(),
 }))
 vi.mock('@/containers/ThreadList', () => ({ ThreadItem: () => null }))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/containers/dialogs/DeleteAllThreadsDialog', () => ({
   DeleteAllThreadsDialog: () => null,
 }))
@@ -94,7 +97,7 @@ const ids = () => useCoworkSessions.getState().sessions.map((s) => s.id)
 
 function deleteRow(id: string) {
   const row = screen.getByTestId(`history-cowork-${id}`).closest('li') as HTMLElement
-  fireEvent.click(within(row).getByRole('menuitem'))
+  fireEvent.click(within(row).getByRole('menuitem', { name: 'common:deleteSession' }))
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'common:delete' }))
 }
 
@@ -131,5 +134,19 @@ describe('NavHistory delete Cowork session', () => {
     deleteRow('other')
     expect(router.navigate).not.toHaveBeenCalled()
     expect(ids()).toEqual(['open'])
+  })
+})
+
+describe('NavHistory rename Cowork session', () => {
+  it('renames a session through the session store', () => {
+    render(<NavHistory />)
+    const row = screen.getByTestId('history-cowork-open').closest('li') as HTMLElement
+    fireEvent.click(within(row).getByRole('menuitem', { name: 'common:rename' }))
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, { target: { value: '  Renamed one  ' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'common:rename' }))
+    const renamed = useCoworkSessions.getState().sessions.find((s) => s.id === 'open')
+    expect(renamed?.title).toBe('Renamed one')
+    expect(useCoworkSessions.getState().sessions.find((s) => s.id === 'other')?.title).toBe('Other one')
   })
 })
