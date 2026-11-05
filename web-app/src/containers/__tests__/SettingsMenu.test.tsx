@@ -5,13 +5,7 @@ import SettingsMenu from '../SettingsMenu'
 import { useNavigate, useMatches } from '@tanstack/react-router'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
-vi.mock('@/lib/version', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/version')>()),
-  isCoworkEnabled: () => channel.cowork,
-}))
-
 // Mock global platform constants - simulate desktop (Tauri) environment
-const channel = vi.hoisted(() => ({ cowork: true }))
 
 Object.defineProperty(global, 'IS_IOS', { value: false, writable: true })
 Object.defineProperty(global, 'IS_ANDROID', { value: false, writable: true })
@@ -90,7 +84,6 @@ describe('SettingsMenu', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    channel.cowork = true
 
     vi.mocked(useNavigate).mockReturnValue(mockNavigate)
     vi.mocked(useMatches).mockReturnValue(mockMatches)
@@ -119,16 +112,10 @@ describe('SettingsMenu', () => {
     expect(screen.getByText('common:privacy')).toBeInTheDocument()
   })
 
-  it('lists the Cowork settings entry where Cowork ships', () => {
+  it('lists the Agent settings entry', () => {
     render(<SettingsMenu />)
-    expect(screen.getByText('common:cowork')).toBeInTheDocument()
-  })
-
-  it('omits the Cowork settings entry on builds that do not ship Cowork', () => {
-    channel.cowork = false
-    render(<SettingsMenu />)
+    expect(screen.getByText('common:agentSettings')).toBeInTheDocument()
     expect(screen.queryByText('common:cowork')).not.toBeInTheDocument()
-    expect(screen.getByText('common:general')).toBeInTheDocument()
   })
 
   it('links to the Extensions settings page', () => {

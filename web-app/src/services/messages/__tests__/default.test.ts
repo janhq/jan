@@ -66,11 +66,10 @@ describe('DefaultMessagesService', () => {
       expect(result).toEqual({ ...msg, created: true })
     })
 
-    it('returns original message on backend error', async () => {
+    it('propagates backend write errors', async () => {
       const msg = { thread_id: 'thread-1', id: 'msg1' } as any
       mockCreateMessage.mockRejectedValue(new Error('fail'))
-      const result = await svc.createMessage(msg)
-      expect(result).toBe(msg)
+      await expect(svc.createMessage(msg)).rejects.toThrow('fail')
     })
   })
 
@@ -89,11 +88,10 @@ describe('DefaultMessagesService', () => {
       expect(result).toEqual({ ...msg, modified: true })
     })
 
-    it('returns original message on backend error', async () => {
+    it('propagates backend write errors', async () => {
       const msg = { thread_id: 'thread-1', id: 'msg1' } as any
       mockModifyMessage.mockRejectedValue(new Error('fail'))
-      const result = await svc.modifyMessage(msg)
-      expect(result).toBe(msg)
+      await expect(svc.modifyMessage(msg)).rejects.toThrow('fail')
     })
   })
 

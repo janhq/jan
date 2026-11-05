@@ -592,6 +592,24 @@ pub async fn start_monitor(
     scope: Option<WorkspaceScope>,
     on_update: tauri::ipc::Channel<crate::tools::monitor::MonitorUpdate>,
 ) -> Result<String, AgentToolsError> {
+    if !matches!(scope, Some(WorkspaceScope::Session)) {
+        return Err("monitor is unavailable for Chat threads".to_string().into());
+    }
+    // Same host-kind guard as `execute_tool`: an elevated Session monitor
+    // (network, attached folder, or writable project) needs a host-verified
+    // Cowork identity, and the check runs before any setup side effect.
+    guard_caller_session(
+        scope,
+        &thread_id,
+        crate::tools::monitor::MONITOR_TOOL_NAME,
+        &args,
+        allow_network,
+        read_only_project.as_deref(),
+        project_writable,
+    )
+    .await?;
+    let SessionFolder { folder: read_only_project, writable: project_writable, .. } =
+        clamp_cowork_session(scope, &thread_id, None, read_only_project, project_writable).await?;
     let data_folder = workspace::host_data_folder(&data_folder);
     use crate::tools::monitor;
     if !jail::backend().enforces() {
@@ -614,7 +632,21 @@ pub async fn start_monitor(
         writable,
     )?;
     let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
+    // What this monitor may ever use: the clamped start-time values. Every poll
+    // re-derives its authority from the host and intersects it with this, so a
+    // later detach or read-only change takes effect without a restart.
+    let ceiling_folder = read_only_project.clone();
+    let ceiling_writable = writable;
+    let ceiling_network = allow_network.unwrap_or(false);
     let ctx = monitor::MonitorCtx {
+        // Session monitors register under their own owner so a folder revoke can
+        // reap exactly their poll children (the ownerless bucket is only
+        // reachable by kill_all).
+        owner: Some(session_monitor_owner(&thread_id)),
+        // And its polls keep bypassing PreToolUse hooks, as they always have:
+        // the hook gate is thread-only. Gating Cowork too is a behavior change
+        // that wants its own reviewed task.
+        hooks: None,
         project_root: root,
         scratch_root: Some(scratch),
         // Desktop chat and Cowork have no filesystem project to key one on.
@@ -623,14 +655,15 @@ pub async fn start_monitor(
         hidden_root: workspace::hidden_root(true),
         read_roots,
         write_roots,
-        allow_network: allow_network.unwrap_or(false),
+        allow_network: allow_network.unwrap_or(false)
+            && crate::thread_capabilities::get_global_grants().shell_network,
         home_readonly: false,
         sandbox: true,
         workspace_readonly: false,
     };
     let set = {
         let mut sets = session_monitors().lock().unwrap();
-        let entry = sets.entry(thread_id).or_insert_with(|| {
+        let entry = sets.entry(thread_id.clone()).or_insert_with(|| {
             let slot: MonitorChannelSlot = std::sync::Arc::new(std::sync::Mutex::new(None));
             let subscriber_slot = slot.clone();
             SessionMonitors {
@@ -647,7 +680,100 @@ pub async fn start_monitor(
         *entry.channel.lock().unwrap() = Some(on_update);
         entry.set.clone()
     };
-    set.start(spec, ctx).map_err(AgentToolsError::from)
+    let authority = session_authority(&thread_id, ceiling_folder, ceiling_writable, ceiling_network);
+    set.start_owned(spec, ctx, Some(authority))
+        .map_err(AgentToolsError::from)
+}
+
+/// Process-registry bucket for one Cowork session's monitor poll children.
+/// Distinct from the thread-monitor and raw buckets (`:` is not a legal id char).
+fn session_monitor_owner(thread_id: &str) -> String {
+    format!("session-monitor:{thread_id}")
+}
+
+/// Per-poll authority for a Cowork session monitor. Re-reads the host's folder
+/// record before every poll and intersects it with the start-time ceiling, so
+/// nothing captured at start authorizes a later poll. With no host record there
+/// is no folder authority (a folder is refused); a record that no longer grants
+/// the folder is terminal, reported as a revoked monitor.
+async fn resolve_session_monitor_ctx(
+    thread_id: &str,
+    folder: Option<&str>,
+    writable: bool,
+    network: bool,
+) -> Result<(crate::tools::monitor::MonitorCtx, u64), String> {
+    if !jail::backend().enforces() {
+        return Err("no OS sandbox could be established on this system".into());
+    }
+    let (data_folder, host, generation) =
+        crate::thread_capabilities::authorize_cowork(thread_id).await?;
+    let (folder, writable) = match host {
+        Some(host) => {
+            let (f, w) = crate::thread_capabilities::clamp_session_folder(
+                &host,
+                folder,
+                Some(writable),
+            )?;
+            (f, w.unwrap_or(false))
+        }
+        None => {
+            let (f, w) = crate::thread_capabilities::bind_legacy_session(
+                thread_id,
+                folder,
+                Some(writable),
+            )
+            .await?;
+            (f, w.unwrap_or(false))
+        }
+    };
+    let sandbox = WorkspaceScope::Session
+        .ensure(&data_folder, thread_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let scratch = workspace::ensure_scratch_dir(thread_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let attached = attach_folder(folder.as_deref(), &sandbox, &data_folder, writable)
+        .map_err(|e| e.to_string())?;
+    let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
+    Ok((
+        crate::tools::monitor::MonitorCtx {
+            owner: Some(session_monitor_owner(thread_id)),
+            hooks: None,
+            project_root: root,
+            scratch_root: Some(scratch),
+            // Desktop chat and Cowork have no filesystem project to key one on.
+            pkg_cache: None,
+            mask_root: Some(data_folder),
+            hidden_root: workspace::hidden_root(true),
+            read_roots,
+            write_roots,
+            allow_network: network && crate::thread_capabilities::get_global_grants().shell_network,
+            home_readonly: false,
+            sandbox: true,
+            workspace_readonly: false,
+        },
+        generation,
+    ))
+}
+
+fn session_authority(
+    thread_id: &str,
+    folder: Option<String>,
+    writable: bool,
+    network: bool,
+) -> crate::tools::monitor::ThreadAuthority {
+    let id = thread_id.to_string();
+    crate::tools::monitor::ThreadAuthority {
+        thread_id: id.clone(),
+        owner: session_monitor_owner(thread_id),
+        resolve: std::sync::Arc::new(move || {
+            let (id, folder) = (id.clone(), folder.clone());
+            Box::pin(async move {
+                resolve_session_monitor_ctx(&id, folder.as_deref(), writable, network).await
+            })
+        }),
+    }
 }
 
 /// Stop one monitor. The result string is model-facing, so an unknown id comes
@@ -719,6 +845,350 @@ pub async fn cancel_thread_bash(thread_id: String) -> Result<(), AgentToolsError
     Ok(())
 }
 
+/// Live monitors per Chat thread.
+///
+/// Deliberately a *separate* map from [`session_monitors`], which is keyed by
+/// raw session id. Sharing one map behind a namespaced key would make
+/// Thread/Session non-collision a naming convention; two maps make it
+/// structural, so nothing on this surface can address a Cowork session's
+/// monitors even if the ids were identical.
+struct ThreadMonitors {
+    /// Each monitor's updates go to the channel it was started with: a thread
+    /// holds several at once, and one shared "latest channel" slot handed the
+    /// earlier monitor's update to the later start's listener.
+    monitors: crate::tools::monitor::RoutedMonitors,
+}
+
+fn thread_monitors(
+) -> &'static std::sync::Mutex<std::collections::HashMap<String, ThreadMonitors>> {
+    static SETS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, ThreadMonitors>>,
+    > = std::sync::OnceLock::new();
+    SETS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Process-registry bucket for one thread's monitor poll children. A thread id
+/// is `[A-Za-z0-9_-]` only (`validate_thread_id`), so the `:` here means this
+/// key can never equal the raw-thread-id bucket `cancel_thread_bash` reaps,
+/// nor any Cowork session's. Per thread rather than per monitor, so one
+/// `kill_thread` reaps everything a revocation must stop.
+fn monitor_owner(thread_id: &str) -> String {
+    format!("thread-monitor:{thread_id}")
+}
+
+/// The authority for one poll: freshly read stored consent intersected with
+/// the current host confirmation, canonical roots rebuilt from the result and
+/// the jail re-verified. Returns the generation the spawn is admitted against.
+///
+/// This is re-run immediately before *every* poll, so a start-time grant
+/// authorizes nothing on its own, and it reuses the same `attach_folder` /
+/// `resolve_workspace_root` / mask construction as scoped Chat tool dispatch
+/// rather than introducing a second policy path.
+async fn resolve_thread_monitor_ctx(
+    thread_id: &str,
+    ceiling: &crate::thread_capabilities::ThreadCapabilities,
+) -> Result<(crate::tools::monitor::MonitorCtx, u64), String> {
+    if !jail::backend().enforces() {
+        return Err("no OS sandbox could be established on this system".into());
+    }
+    let (data_folder, grant, generation) =
+        crate::thread_capabilities::authorize(thread_id).await?;
+    let grant = grant.intersect(ceiling.clone())?;
+    let Some(scope) = grant.folder_scope.clone() else {
+        return Err("folder access for this conversation is no longer granted".into());
+    };
+    let writable = scope.access == "write";
+    let sandbox = WorkspaceScope::Thread
+        .ensure(&data_folder, thread_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let scratch = workspace::ensure_scratch_dir(thread_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let attached = attach_folder(Some(scope.path.as_str()), &sandbox, &data_folder, writable)
+        .map_err(|e| e.to_string())?;
+    let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
+    Ok((
+        crate::tools::monitor::MonitorCtx {
+            owner: Some(monitor_owner(thread_id)),
+            // Re-resolved with the rest of the poll's authority, so a hook the
+            // user adds or removes applies from the next poll. Chat has no
+            // project, so these are the user's global hooks, exactly what
+            // one-shot Chat dispatch resolves in `execute_tool_inner`.
+            hooks: Some(crate::tools::hooks::resolve_for(None)),
+            project_root: root,
+            scratch_root: Some(scratch),
+            // Desktop chat has no filesystem project to key a cache on.
+            pkg_cache: None,
+            mask_root: Some(data_folder),
+            hidden_root: workspace::hidden_root(true),
+            read_roots,
+            write_roots,
+            allow_network: grant.shell_network,
+            home_readonly: false,
+            sandbox: true,
+            workspace_readonly: false,
+        },
+        generation,
+    ))
+}
+
+fn thread_authority(
+    thread_id: &str,
+    ceiling: crate::thread_capabilities::ThreadCapabilities,
+) -> crate::tools::monitor::ThreadAuthority {
+    let resolver_id = thread_id.to_string();
+    crate::tools::monitor::ThreadAuthority {
+        thread_id: thread_id.to_string(),
+        owner: monitor_owner(thread_id),
+        resolve: std::sync::Arc::new(move || {
+            let id = resolver_id.clone();
+            let ceiling = ceiling.clone();
+            Box::pin(async move { resolve_thread_monitor_ctx(&id, &ceiling).await })
+        }),
+    }
+}
+
+/// The most a Chat monitor may ever do: the host's current authority for the
+/// thread, narrowed to the grant the run captured when it classified (and had
+/// the user approve) the start, exactly as ordinary scoped dispatch does for
+/// one call. Without this a turn that began read-only/no-network could start a
+/// monitor that picked up folder-write or network the user granted later.
+///
+/// `plan_mode` is the run's effective, latched Plan state: a monitor is an
+/// arbitrary shell script polled on a timer, and Plan is read-only with shell
+/// disabled, so a start under Plan is refused (nothing is polled to carry the
+/// state forward).
+fn monitor_start_ceiling(
+    host: crate::thread_capabilities::ThreadCapabilities,
+    effective: crate::thread_capabilities::ThreadCapabilities,
+    plan_mode: bool,
+) -> Result<crate::thread_capabilities::ThreadCapabilities, String> {
+    if plan_mode {
+        return Err("tool 'monitor' is disabled in Plan mode, which is read-only. Stage changes \
+             in the plan and ask the user to leave Plan mode before starting a monitor."
+            .into());
+    }
+    host.intersect(effective)
+}
+
+/// Start a monitor owned by a Chat thread.
+///
+/// Unlike [`start_monitor`] there is no caller-supplied data folder, scope,
+/// network or writability flag to forge: the host derives every one of them
+/// from the thread's own consent, and re-derives them on each poll. The only
+/// caller input is `effective_grant` -- the run's captured grant -- and it can
+/// only narrow: the monitor's ceiling is its intersection with the host's
+/// current authority, kept for every poll.
+#[tauri::command]
+pub async fn start_thread_monitor(
+    thread_id: String,
+    args: serde_json::Value,
+    effective_grant: crate::thread_capabilities::ThreadCapabilities,
+    plan_mode: bool,
+    on_update: tauri::ipc::Channel<crate::tools::monitor::MonitorUpdate>,
+) -> Result<String, AgentToolsError> {
+    let spec =
+        crate::tools::monitor::parse_start_args(&args).map_err(AgentToolsError::from)?;
+    // Authorize once up front so an unauthorized start fails loudly, rather
+    // than starting a monitor whose only possible output is a revoked notice.
+    let (_, host, _) = crate::thread_capabilities::authorize(&thread_id)
+        .await
+        .map_err(AgentToolsError::from)?;
+    let ceiling =
+        monitor_start_ceiling(host, effective_grant, plan_mode).map_err(AgentToolsError::from)?;
+    let (ctx, _) = resolve_thread_monitor_ctx(&thread_id, &ceiling)
+        .await
+        .map_err(AgentToolsError::from)?;
+    let authority = thread_authority(&thread_id, ceiling);
+    // The map lock is held across `start_owned`, so a revoke or stop that
+    // removes this thread's entry cannot interleave between publishing the set
+    // and starting the monitor. Otherwise the monitor would belong to a set no
+    // longer in the map: invisible to list, unstoppable by id, and never
+    // aborted by a later revocation.
+    {
+        let mut sets = thread_monitors().lock().unwrap();
+        let entry = sets
+            .entry(thread_id)
+            .or_insert_with(|| ThreadMonitors {
+                monitors: crate::tools::monitor::RoutedMonitors::new(),
+            });
+        entry
+            .monitors
+            .start(
+                spec,
+                ctx,
+                Some(authority),
+                std::sync::Arc::new(move |update| {
+                    let _ = on_update.send(update);
+                }),
+            )
+            .map_err(AgentToolsError::from)
+    }
+}
+
+/// Stop one of a thread's monitors. Scoped to the calling thread's own set, so
+/// a monitor id from another conversation is simply unknown here.
+#[tauri::command]
+pub async fn stop_thread_monitor(
+    thread_id: String,
+    monitor_id: String,
+) -> Result<String, AgentToolsError> {
+    let stopped = thread_monitors()
+        .lock()
+        .unwrap()
+        .get(&thread_id)
+        .map(|entry| entry.monitors.stop(&monitor_id));
+    Ok(match stopped {
+        Some(result) => result,
+        None => format!("ERROR: unknown or already-stopped monitor '{monitor_id}'"),
+    })
+}
+
+#[tauri::command]
+pub async fn list_thread_monitors(thread_id: String) -> Result<String, AgentToolsError> {
+    let set = thread_monitors()
+        .lock()
+        .unwrap()
+        .get(&thread_id)
+        .map(|entry| entry.monitors.set().clone());
+    Ok(match set {
+        Some(set) => set.list(),
+        None => "No active monitors.".to_string(),
+    })
+}
+
+/// Stop every monitor a thread still has, and reap their poll children.
+#[tauri::command]
+pub async fn stop_all_thread_monitors(thread_id: String) -> Result<(), AgentToolsError> {
+    stop_thread_monitors_and_children(&thread_id).await;
+    Ok(())
+}
+
+/// Advance the barrier (`advance` is [`crate::thread_capabilities::deny_in_memory`]
+/// for a revocation, [`crate::thread_capabilities::bump_generation`] for a
+/// plain stop) and empty this thread's process bucket under the admission
+/// guard, then reap outside it. Returns the new generation token.
+///
+/// The barrier move and the bucket drain are what must be atomic against a
+/// poll's {check generation, spawn, register}: a poll that got the guard first
+/// has already registered, so its pid is in the returned list; a poll that
+/// gets it afterwards sees the new generation and refuses to spawn. Reaping
+/// outside keeps the blocking Windows `taskkill` off the global mutex (and off
+/// the per-thread consent lock the setter holds above it).
+async fn reap_thread_monitor_children(thread_id: &str, advance: fn(&str) -> u64) -> u64 {
+    let (token, pids) = {
+        let _admitted = crate::thread_capabilities::admission().lock().await;
+        let token = advance(thread_id);
+        let mut pids = crate::tools::proc::take_thread_pids(&monitor_owner(thread_id));
+        pids.extend(crate::tools::proc::take_thread_pids(&session_monitor_owner(thread_id)));
+        (token, pids)
+    };
+    for pid in pids {
+        crate::tools::proc::kill_tree(pid);
+    }
+    token
+}
+
+/// Stop-all is not a revocation: the barrier bump keeps an already-resolved
+/// poll from spawning after the reap, while the confirmed grant survives for
+/// the next start. Only `narrow` (the setter, revoke, delete) denies.
+async fn stop_thread_monitors_and_children(thread_id: &str) {
+    let set = thread_monitors()
+        .lock()
+        .unwrap()
+        .remove(thread_id)
+        .map(|entry| entry.monitors.set().clone());
+    reap_thread_monitor_children(thread_id, crate::thread_capabilities::bump_generation).await;
+    if let Some(set) = set {
+        set.stop_all();
+    }
+}
+
+/// Narrow a thread's host confirmation immediately, ahead of any queued
+/// persistence.
+///
+/// Narrow-only: it can deny but never grant, so exposing it to the webview
+/// cannot widen authority. The frontend calls it the moment a revocation is
+/// requested, because its own save queue may hold an earlier in-flight write;
+/// without this the native mirror would keep authorizing polls until that
+/// queue drained. The strict setter narrows again when it runs, which is what
+/// covers callers that never go through the frontend.
+#[tauri::command]
+pub async fn revoke_thread_capabilities(thread_id: String) -> Result<(), AgentToolsError> {
+    revoke_thread_consent(&thread_id).await;
+    crate::thread_capabilities::denial_persisted(&thread_id).map_err(AgentToolsError::from)?;
+    Ok(())
+}
+
+/// Narrow a thread's host confirmation and stop everything running under it,
+/// returning the generation token a subsequent confirm must present.
+///
+/// The strict consent setter calls this BEFORE the write, for every caller
+/// rather than only the frontend, so a write that fails or is lost can never
+/// leave an earlier confirmation live. (Input validation runs first: a
+/// rejected request writes nothing and narrows nothing.) The mirror is never
+/// restored on failure; it is re-confirmed only by a successful write.
+pub async fn revoke_thread_consent(thread_id: &str) -> u64 {
+    let token = deny_thread_and_stop_monitors(
+        thread_id, crate::thread_capabilities::deny_in_memory,
+    ).await;
+    crate::thread_capabilities::persist_denial_async(thread_id.to_string(), token).await;
+    token
+}
+
+async fn deny_thread_and_stop_monitors(thread_id: &str, advance: fn(&str) -> u64) -> u64 {
+    let token = reap_thread_monitor_children(thread_id, advance).await;
+    let set = thread_monitors()
+        .lock()
+        .unwrap()
+        .remove(thread_id)
+        .map(|entry| entry.monitors.set().clone());
+    if let Some(set) = set {
+        set.stop_all();
+    }
+    // A Cowork session id's monitors answer to the same folder authority.
+    let session = session_monitors()
+        .lock()
+        .unwrap()
+        .remove(thread_id)
+        .map(|entry| entry.set.clone());
+    if let Some(set) = session {
+        set.stop_all();
+    }
+    token
+}
+
+/// Kill every shell tree registered under a thread's RAW process bucket (the
+/// one the Stop button's `cancel_thread_bash` drains), which is disjoint from
+/// the `thread-monitor:` bucket a revocation reaps.
+///
+/// Called at the delete/rollback boundary, where the conversation itself is
+/// going away, so nothing it started may outlive it. A consent *revocation*
+/// deliberately does not call this: revocation narrows what the next dispatch
+/// may run, while an in-flight shell stays the UI Stop button's to cancel.
+pub fn cancel_thread_shells(thread_id: &str) {
+    crate::tools::proc::kill_thread(thread_id);
+}
+
+/// Finalize deletion after the host acknowledged a durable revoke and removed
+/// the record. Preserve that denial without any further fallible marker I/O;
+/// invalidate stale polls and drain monitors under the same admission barrier.
+pub async fn forget_thread_consent(thread_id: &str) {
+    deny_thread_and_stop_monitors(thread_id, crate::thread_capabilities::clear).await;
+}
+
+/// Confirm elevations after the strict setter actually wrote them. Returns
+/// false when a newer narrow intervened, in which case the thread stays
+/// denied -- fail closed.
+pub async fn confirm_thread_consent(
+    thread_id: &str,
+    grant: crate::thread_capabilities::ThreadCapabilities,
+    token: u64,
+) -> bool {
+    crate::thread_capabilities::confirm_async(thread_id.to_string(), grant, token).await
+}
+
 /// Validate the folder a surface asked to attach (Cowork's shared folder, chat's
 /// read-only attachment): plural from the outset so attaching a second folder
 /// later is not another signature change. A writable attach must also pass
@@ -773,6 +1243,11 @@ fn resolve_workspace_root(
 /// are refused here regardless of what the frontend asks for, until a permission
 /// round-trip exists; a read that escapes the project root prompts too. `bash`
 /// runs only under an enforcing sandbox (see the module docs).
+///
+/// `plan_mode` is the Cowork run's effective Plan state at dispatch. It is
+/// required (a caller that predates it fails closed at IPC deserialization, it
+/// is never defaulted to `false`) and only tightens: tool hooks go inert and the
+/// mutating tools are refused, exactly as for scoped Chat.
 #[tauri::command]
 // `read_only_project` is a folder the user attached read-only. It is validated
 // here rather than trusted: an unusable one is an error, never a silent drop,
@@ -791,7 +1266,21 @@ pub async fn execute_tool<R: tauri::Runtime>(
     project_writable: Option<bool>,
     scope: Option<WorkspaceScope>,
     call_id: Option<String>,
+    plan_mode: bool,
 ) -> Result<ToolResult, AgentToolsError> {
+    guard_caller_session(
+        scope,
+        &thread_id,
+        &name,
+        &args,
+        allow_network,
+        read_only_project.as_deref(),
+        project_writable,
+    )
+    .await?;
+    let SessionFolder { project, folder: read_only_project, writable: project_writable } =
+        clamp_cowork_session(scope, &thread_id, project, read_only_project, project_writable)
+            .await?;
     execute_tool_inner(
         screenshot_backend(&app),
         data_folder,
@@ -806,6 +1295,118 @@ pub async fn execute_tool<R: tauri::Runtime>(
         scope,
         call_id,
         None,
+        ToolRun {
+            plan_mode,
+            folder_skills: false,
+        },
+    )
+    .await
+}
+
+/// Chat-only execution: both persisted consent and the caller's narrower
+/// effective limits must authorize each capability. Legacy Cowork is separate.
+///
+/// `plan_mode` is the caller's *effective, run-latched* Plan state at dispatch
+/// (enabled mid-run stays on; a later toggle-off cannot widen the active turn;
+/// the reviewed Execute transition sends `false`). It is required, so a caller
+/// that predates it fails closed at IPC deserialization rather than silently
+/// running tool hooks in Plan. It can only tighten: native honors it by making
+/// tool hooks inert (a hook is a shell command with the folder's write grant)
+/// and by refusing mutating tools outright.
+#[tauri::command]
+pub async fn execute_thread_tool<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    thread_id: String,
+    tool_name: String,
+    args: serde_json::Value,
+    effective_grant: crate::thread_capabilities::ThreadCapabilities,
+    plan_mode: bool,
+) -> Result<ToolResult, AgentToolsError> {
+    let (data_folder, stored) = crate::thread_capabilities::snapshot(thread_id.clone()).await?;
+    execute_thread_tool_inner(
+        screenshot_backend(&app),
+        data_folder,
+        thread_id,
+        tool_name,
+        args,
+        stored,
+        effective_grant,
+        plan_mode,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_thread_tool_inner(
+    backend: Option<crate::tools::ScreenshotBackend>,
+    data_folder: PathBuf,
+    thread_id: String,
+    name: String,
+    args: serde_json::Value,
+    stored: serde_json::Value,
+    effective: crate::thread_capabilities::ThreadCapabilities,
+    plan_mode: bool,
+) -> Result<ToolResult, AgentToolsError> {
+    // No loop-dispatched monitor/subagent tools, management commands, legacy
+    // aliases or unknown tools can enter this narrow surface.
+    if !matches!(
+        name.as_str(),
+        "read"
+            | "ls"
+            | "find"
+            | "grep"
+            | "write"
+            | "edit"
+            | "shell"
+            | "memory"
+            | "skill_list"
+            | "skill_read"
+            | "skill_write"
+    ) || lookup(&name).is_none()
+    {
+        return Err(format!("unknown Chat tool '{name}'").into());
+    }
+    let stored: crate::thread_capabilities::ThreadCapabilities = serde_json::from_value(stored)
+        .map_err(|e| AgentToolsError::from(format!("Invalid stored consent: {e}")))?;
+    // Folder access requires process-local confirmation too: a stale disk
+    // grant or a revoke whose disk write is still in flight cannot restore it.
+    // Network/memory are instead host-owned app-wide settings (see below).
+    let (mirror, _) = crate::thread_capabilities::current(&thread_id);
+    // Global settings supply persistent Chat authority, never temporary Chat
+    // authority or permission to widen a frozen run ceiling. A forged effective
+    // grant cannot elevate temporary Chat. Confirmation controls folders only.
+    let grant = stored
+        .with_global(&thread_id)
+        .intersect(effective)?
+        .intersect(mirror.with_global(&thread_id))?;
+    if is_durable_mutation(&name, &args) && !grant.memory_write {
+        return Err(
+            format!("tool '{name}' mutation is not authorized for this conversation").into(),
+        );
+    }
+    let folder = grant.folder_scope.as_ref().map(|f| f.path.clone());
+    let writable = grant
+        .folder_scope
+        .as_ref()
+        .is_some_and(|f| f.access == "write");
+    execute_tool_inner(
+        backend,
+        data_folder.to_string_lossy().into_owned(),
+        thread_id,
+        None,
+        name,
+        args,
+        None,
+        Some(grant.shell_network),
+        folder,
+        Some(writable),
+        Some(WorkspaceScope::Thread),
+        None,
+        None,
+        ToolRun {
+            plan_mode,
+            folder_skills: true,
+        },
     )
     .await
 }
@@ -853,8 +1454,22 @@ pub async fn execute_tool_streaming<R: tauri::Runtime>(
     scope: Option<WorkspaceScope>,
     call_id: Option<String>,
     on_output: tauri::ipc::Channel<ToolOutputChunk>,
+    plan_mode: bool,
 ) -> Result<ToolResult, AgentToolsError> {
     let sink = output_sink(on_output, call_id.clone());
+    guard_caller_session(
+        scope,
+        &thread_id,
+        &name,
+        &args,
+        allow_network,
+        read_only_project.as_deref(),
+        project_writable,
+    )
+    .await?;
+    let SessionFolder { project, folder: read_only_project, writable: project_writable } =
+        clamp_cowork_session(scope, &thread_id, project, read_only_project, project_writable)
+            .await?;
     execute_tool_inner(
         screenshot_backend(&app),
         data_folder,
@@ -869,8 +1484,210 @@ pub async fn execute_tool_streaming<R: tauri::Runtime>(
         scope,
         call_id,
         Some(sink),
+        ToolRun {
+            plan_mode,
+            folder_skills: false,
+        },
     )
     .await
+}
+
+// Both legacy IPC entry points share these guards. `scope=Session` is a
+// caller-chosen IPC argument, so it is never identity: an elevated Session call
+// proceeds only when the host itself classifies the thread id as Cowork (see
+// `thread_capabilities::thread_kind`). Only the dedicated Chat command may
+// supply authority for a Chat thread. The private executor is not an IPC surface.
+
+/// Whether a call asks for anything beyond unprivileged scratch tools:
+/// network, an attached folder, folder writes, memory/skill mutation, or an
+/// outbound (renderer/net) tool.
+fn requests_elevation(
+    name: &str,
+    args: &serde_json::Value,
+    network: Option<bool>,
+    folder: Option<&str>,
+    writable: Option<bool>,
+) -> bool {
+    let mutation = is_durable_mutation(name, args);
+    // Renderers may fetch remote subresources outside the shell jail. Native
+    // web tools have their separate approved frontend path, not this legacy
+    // thread executor. Neither can bypass scoped Chat via old IPC dispatch.
+    let outbound = name == "screenshot"
+        || lookup(name).is_some_and(|tool| matches!(tool.capability, crate::tools::Capability::Net));
+    network == Some(true) || writable == Some(true) || folder.is_some() || mutation || outbound
+}
+
+fn is_durable_mutation(name: &str, args: &serde_json::Value) -> bool {
+    name == "skill_write"
+        || (name == crate::tools::MEMORY_TOOL
+            && !matches!(
+                args.get("op").and_then(|v| v.as_str()),
+                Some("view" | "search")
+            ))
+}
+
+/// Shared by both legacy IPC variants and scoped Chat dispatch. Management
+/// commands are intentionally separate: this gates model-dispatched tools.
+fn enforce_global_tool_policy(
+    name: &str,
+    args: &serde_json::Value,
+    requested_network: Option<bool>,
+    global: crate::thread_capabilities::GlobalGrants,
+) -> Result<bool, AgentToolsError> {
+    if is_durable_mutation(name, args) && !global.memory_write {
+        return Err(format!("tool '{name}' mutation is not authorized by global settings").into());
+    }
+    Ok(requested_network.unwrap_or(false) && global.shell_network)
+}
+
+/// Pure decision for a legacy call: `scope=Session` elevation depends on the
+/// host-resolved kind, every other scope may never elevate.
+fn legacy_elevation_decision(
+    scope: Option<WorkspaceScope>,
+    kind: crate::thread_capabilities::ThreadKind,
+    elevated: bool,
+) -> Result<(), AgentToolsError> {
+    if !elevated {
+        return Ok(());
+    }
+    if !matches!(scope, Some(WorkspaceScope::Session)) {
+        return Err("Chat capability access requires execute_thread_tool"
+            .to_string()
+            .into());
+    }
+    if kind.allows_elevated_session() {
+        Ok(())
+    } else {
+        Err("Elevated Session access requires a host-verified Cowork session"
+            .to_string()
+            .into())
+    }
+}
+
+/// Test-only model of the pre-host-kind guard (`scope=Session` always passes,
+/// every other scope is judged with an `Unknown` kind). Production dispatch
+/// goes through [`guard_caller_session`].
+#[cfg(test)]
+fn reject_legacy_thread_elevation(
+    scope: Option<WorkspaceScope>,
+    name: &str,
+    args: &serde_json::Value,
+    network: Option<bool>,
+    folder: Option<&str>,
+    writable: Option<bool>,
+) -> Result<(), AgentToolsError> {
+    if matches!(scope, Some(WorkspaceScope::Session)) {
+        return Ok(());
+    }
+    legacy_elevation_decision(
+        scope,
+        crate::thread_capabilities::ThreadKind::Unknown,
+        requests_elevation(name, args, network, folder, writable),
+    )
+}
+
+/// Runs before any setup side effect. The host kind is consulted only for an
+/// elevated Session call; scratch-only calls keep their existing contract.
+async fn guard_caller_session(
+    scope: Option<WorkspaceScope>,
+    thread_id: &str,
+    name: &str,
+    args: &serde_json::Value,
+    network: Option<bool>,
+    folder: Option<&str>,
+    writable: Option<bool>,
+) -> Result<(), AgentToolsError> {
+    let elevated = requests_elevation(name, args, network, folder, writable);
+    let kind = if elevated && matches!(scope, Some(WorkspaceScope::Session)) {
+        crate::thread_capabilities::thread_kind(thread_id).await
+    } else {
+        crate::thread_capabilities::ThreadKind::Unknown
+    };
+    legacy_elevation_decision(scope, kind, elevated)
+}
+
+/// The hooks for one call. Tests substitute a per-thread set, because the real
+/// resolver is a process-wide `OnceLock` shared by every test in the binary.
+fn resolve_hooks(project: Option<&Path>, thread_id: &str) -> crate::tools::hooks::HookSet {
+    #[cfg(test)]
+    if let Some(set) = tests::test_hooks(thread_id) {
+        return set;
+    }
+    #[cfg(not(test))]
+    let _ = thread_id;
+    crate::tools::hooks::resolve_for(project)
+}
+
+/// Per-call execution policy. `plan_mode` comes from the caller's run-latched
+/// policy and can only tighten execution. `folder_skills` is host-only: only
+/// [`execute_thread_tool_inner`] enables host-derived authorized folder skills.
+#[derive(Debug, Clone, Copy, Default)]
+struct ToolRun {
+    /// Effective run-latched Plan: tool hooks are inert (they are shell commands
+    /// running with the folder's grant, so a Plan-allowed read must not fire one).
+    plan_mode: bool,
+    /// Derive skill roots and the enabled whitelist from the effective authorized
+    /// folder (the validated `read_only_project`), never from a caller path.
+    folder_skills: bool,
+}
+
+/// Host-owned folder authority for legacy `scope=Session` dispatch. A migrated
+/// Cowork conversation keeps its folder grant in its thread record, so the
+/// caller's folder, skill project and `project_writable` are clamped to it:
+/// they may narrow, never widen. With no host record (a legacy session, or one
+/// never confirmed) there is NO folder authority: a caller folder is refused
+/// until the user confirms it through the strict setter. A dropped or changed
+/// folder is an error rather than a silent drop.
+struct SessionFolder {
+    project: Option<String>,
+    folder: Option<String>,
+    writable: Option<bool>,
+}
+
+async fn clamp_cowork_session(
+    scope: Option<WorkspaceScope>,
+    thread_id: &str,
+    project: Option<String>,
+    folder: Option<String>,
+    writable: Option<bool>,
+) -> Result<SessionFolder, AgentToolsError> {
+    if !matches!(scope, Some(WorkspaceScope::Session)) {
+        // Legacy caller-supplied project paths must not inject skill roots or
+        // project hooks into Thread/default scope. Scoped Chat derives its
+        // overlay separately from the host-authorized effective grant.
+        if project.is_some() {
+            return Err("A project overlay requires an authorized Session folder grant".to_string().into());
+        }
+        return Ok(SessionFolder { project, folder, writable });
+    }
+    if folder.is_none() && project.is_none() {
+        return Ok(SessionFolder { project, folder, writable });
+    }
+    let (_, host, _) = crate::thread_capabilities::authorize_cowork(thread_id)
+        .await
+        .map_err(AgentToolsError::from)?;
+    let Some(host) = host else {
+        // No host grant record. `metadata.folder` and the legacy `code-sessions`
+        // blob are renderer-writable, so they are never folder authority: a
+        // folder is refused until the user confirms it through the strict
+        // setter (which creates the record). The id must still be host-verified
+        // Cowork. A skill-overlay project with no authority is dropped.
+        let (bound, writable) = crate::thread_capabilities::bind_legacy_session(
+            thread_id,
+            folder.as_deref(),
+            writable,
+        )
+        .await
+        .map_err(AgentToolsError::from)?;
+        return Ok(SessionFolder { project: None, folder: bound, writable });
+    };
+    let (folder, writable) =
+        crate::thread_capabilities::clamp_session_folder(&host, folder.as_deref(), writable)
+            .map_err(AgentToolsError::from)?;
+    // The skill overlay is keyed on the same folder: a detached or changed
+    // folder must not keep contributing its skills.
+    let project = project.filter(|p| folder.as_deref() == Some(p.as_str()));
+    Ok(SessionFolder { project, folder, writable })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -888,7 +1705,24 @@ async fn execute_tool_inner(
     scope: Option<WorkspaceScope>,
     call_id: Option<String>,
     sink: Option<crate::tools::OutputSink>,
+    run: ToolRun,
 ) -> Result<ToolResult, AgentToolsError> {
+    // Plan is read-only. Callers already refuse these, but the host does not
+    // rely on that: the latched bit it was handed refuses them here too, on
+    // every entry point (scoped Chat and legacy Cowork, streaming included).
+    if run.plan_mode && matches!(name.as_str(), "write" | "edit" | "shell" | "skill_write") {
+        return Err(format!(
+            "tool '{name}' is disabled in Plan mode, which is read-only. Stage changes in the \
+             plan and ask the user to leave Plan mode before implementation."
+        )
+        .into());
+    }
+    let allow_network = enforce_global_tool_policy(
+        &name,
+        &args,
+        allow_network,
+        crate::thread_capabilities::get_global_grants(),
+    )?;
     let data_folder = workspace::host_data_folder(&data_folder);
     // Created here rather than trusted to exist: `escapes_project` canonicalizes
     // the sandbox root and treats a missing one as an escape, so every tool call
@@ -911,8 +1745,6 @@ async fn execute_tool_inner(
         .map(str::trim)
         .filter(|p| !p.is_empty())
         .map(PathBuf::from);
-    let skill_project: Option<PathBuf> =
-        project_dir.as_deref().map(workspace::project_store);
     let writable = project_writable.unwrap_or(false);
     let attached = attach_folder(
         read_only_project.as_deref(),
@@ -920,6 +1752,15 @@ async fn execute_tool_inner(
         &data_folder,
         writable,
     )?;
+    // Scoped Chat: the skill overlay and whitelist belong to the folder the host
+    // just validated from the effective grant, exactly what the composer
+    // discovers from. Legacy callers keep the project they passed (Cowork).
+    let skill_folder: Option<PathBuf> = if run.folder_skills {
+        attached.first().cloned()
+    } else {
+        project_dir.clone()
+    };
+    let skill_project: Option<PathBuf> = skill_folder.as_deref().map(workspace::project_store);
     let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
     let tool = lookup(&name)
         .ok_or_else(|| AgentToolsError::from(format!("unknown built-in tool '{name}'")))?;
@@ -943,6 +1784,10 @@ async fn execute_tool_inner(
         Decision::Allow => {}
         Decision::HardDeny(gate::DenyReason::Policy) => {
             return Err(format!("tool '{name}' is denied by policy").into());
+        }
+        Decision::HardDeny(gate::DenyReason::ReadOnlyRoot) => {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or_default();
+            return Err(crate::tools::read_only_root_refusal(path).into());
         }
         Decision::HardDeny(gate::DenyReason::Hidden) => {
             return Err(format!("tool '{name}' is denied: the Jan home (~/.jan) is hidden").into());
@@ -1019,7 +1864,10 @@ async fn execute_tool_inner(
         }
     }
 
-    let enabled = enabled_skills.unwrap_or_default();
+    let enabled = match (run.folder_skills, skill_folder.as_deref()) {
+        (true, Some(folder)) => skills::enabled_for_project(folder),
+        _ => enabled_skills.unwrap_or_default(),
+    };
     // The hooks that apply to this call, resolved through the app-installed
     // resolver (`hooks::set_resolver`): this command is handed one tool call
     // with no run around it, so unlike the CLI loop it has no run-start
@@ -1029,10 +1877,10 @@ async fn execute_tool_inner(
     // `project` is the attached folder Cowork passes, which is the only project
     // this surface knows about; chat has none and gets the user's global hooks
     // alone.
-    let hooks = crate::tools::hooks::resolve_for(project_dir.as_deref());
+    let hooks = resolve_hooks(project_dir.as_deref(), &thread_id);
     let mut ctx = ToolContext::new(&root, &store, &enabled)
-        .with_hooks(&hooks, false, None)
-        .with_network(allow_network.unwrap_or(false))
+        .with_hooks(&hooks, run.plan_mode, None)
+        .with_network(allow_network)
         .with_confined_writes(true)
         .with_mask_root(Path::new(&data_folder))
         .with_scratch_root(&scratch)
@@ -1186,10 +2034,1019 @@ mod tests {
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+    /// Per-thread hook sets: the production resolver is a process-wide
+    /// `OnceLock`, so tests cannot each install their own.
+    fn hook_map() -> &'static Mutex<std::collections::HashMap<String, crate::tools::hooks::HookSet>> {
+        static MAP: std::sync::OnceLock<
+            Mutex<std::collections::HashMap<String, crate::tools::hooks::HookSet>>,
+        > = std::sync::OnceLock::new();
+        MAP.get_or_init(Default::default)
+    }
+    pub(super) fn test_hooks(thread_id: &str) -> Option<crate::tools::hooks::HookSet> {
+        hook_map().lock().unwrap().get(thread_id).cloned()
+    }
+
     /// Chunks recorded by [`test_sink`]: monotonic `(seq, call_id, text)`.
     type SeenChunks = Arc<Mutex<Vec<(u64, Option<String>, String)>>>;
 
     /// A temp dir standing in for the Jan data folder.
+    #[test]
+    fn legacy_thread_entry_points_cannot_supply_capability_authority() {
+        for scope in [None, Some(WorkspaceScope::Thread)] {
+            for (name, args, network, folder, writable) in [
+                ("read", serde_json::json!({}), Some(true), None, None),
+                ("read", serde_json::json!({}), None, Some("/forged"), None),
+                ("write", serde_json::json!({}), None, None, Some(true)),
+                (
+                    "memory",
+                    serde_json::json!({"op":"write"}),
+                    None,
+                    None,
+                    None,
+                ),
+                ("skill_write", serde_json::json!({}), None, None, None),
+                ("screenshot", serde_json::json!({}), None, None, None),
+                ("web_fetch", serde_json::json!({}), None, None, None),
+                ("web_search", serde_json::json!({}), None, None, None),
+            ] {
+                assert!(reject_legacy_thread_elevation(
+                    scope, name, &args, network, folder, writable
+                )
+                .is_err());
+                assert!(reject_legacy_thread_elevation(
+                    Some(WorkspaceScope::Session),
+                    name,
+                    &args,
+                    network,
+                    folder,
+                    writable
+                )
+                .is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn session_elevation_matrix_follows_host_kind() {
+        use crate::thread_capabilities::ThreadKind::{self, *};
+        let none = serde_json::json!({});
+        type SessionCase<'a> = (&'a str, serde_json::Value, Option<bool>, Option<&'a str>, Option<bool>);
+        let cases: [SessionCase<'_>; 6] = [
+            ("shell", none.clone(), Some(true), None, None),
+            ("read", none.clone(), None, Some("/folder"), None),
+            ("write", none.clone(), None, Some("/folder"), Some(true)),
+            ("memory", serde_json::json!({"op":"write"}), None, None, None),
+            ("skill_write", none.clone(), None, None, None),
+            ("web_fetch", none.clone(), None, None, None),
+        ];
+        for (name, args, net, folder, writable) in cases {
+            assert!(requests_elevation(name, &args, net, folder, writable), "{name}");
+            for kind in [Chat, Unknown, Cowork, LegacyCowork] {
+                let allowed = legacy_elevation_decision(Some(WorkspaceScope::Session), kind, true).is_ok();
+                assert_eq!(allowed, matches!(kind, Cowork | LegacyCowork), "{name} {kind:?}");
+                for scope in [None, Some(WorkspaceScope::Thread)] {
+                    assert!(legacy_elevation_decision(scope, kind, true).is_err(), "{name} {kind:?}");
+                }
+            }
+        }
+        // Unelevated scratch calls never consult the kind.
+        let scratch = serde_json::json!({"op":"view"});
+        assert!(!requests_elevation("memory", &scratch, None, None, Some(false)));
+        for kind in [Chat, Unknown, Cowork, LegacyCowork] {
+            let _: ThreadKind = kind;
+            assert!(legacy_elevation_decision(Some(WorkspaceScope::Session), kind, false).is_ok());
+        }
+    }
+
+    #[test]
+    fn legacy_global_policy_blocks_mutations_and_caps_requested_network() {
+        use crate::thread_capabilities::GlobalGrants;
+        let off = GlobalGrants {
+            shell_network: false,
+            memory_write: false,
+        };
+        for (name, args) in [
+            ("memory", json!({"op":"write"})),
+            ("memory", json!({"op":"delete"})),
+            ("memory", json!({"op":"rename"})),
+            ("memory", json!({})),
+            ("skill_write", json!({})),
+        ] {
+            assert!(enforce_global_tool_policy(name, &args, Some(true), off).is_err());
+            assert!(enforce_global_tool_policy(name, &args, Some(true), GlobalGrants::default()).unwrap());
+        }
+        for op in ["view", "search"] {
+            assert!(!enforce_global_tool_policy("memory", &json!({"op":op}), Some(true), off).unwrap());
+        }
+        assert!(!enforce_global_tool_policy("shell", &json!({}), Some(true), off).unwrap());
+        assert!(!enforce_global_tool_policy("shell", &json!({}), Some(false), GlobalGrants::default()).unwrap());
+    }
+
+    #[tokio::test]
+    async fn unconfirmed_session_elevation_fails_before_any_setup() {
+        let data = unique_data_folder();
+        let id = format!("session-elev-{}", data.file_name().unwrap().to_string_lossy());
+        assert!(!data.exists());
+        // No kind resolver is installed in this binary, so the kind is Unknown.
+        let err = guard_caller_session(
+            Some(WorkspaceScope::Session), &id, "shell", &json!({}), Some(true), None, None,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.message.contains("host-verified Cowork"), "{}", err.message);
+        guard_caller_session(
+            Some(WorkspaceScope::Session), &id, "shell", &json!({}), None, None, None,
+        )
+        .await
+        .unwrap();
+        assert!(!data.exists());
+        assert!(!workspace::scratch_dir_in(&workspace::project_cache_dir(None), &id).exists());
+    }
+
+    #[test]
+    fn legacy_thread_guard_preserves_unprivileged_scratch_tools() {
+        for scope in [None, Some(WorkspaceScope::Thread)] {
+            for (name, args) in [
+                ("read", json!({"path":"scratch.txt"})),
+                ("write", json!({"path":"scratch.txt","content":"scratch"})),
+                ("shell", json!({"command":"printf scratch"})),
+            ] {
+                for disabled in [None, Some(false)] {
+                    assert!(reject_legacy_thread_elevation(
+                        scope, name, &args, disabled, None, disabled
+                    )
+                    .is_ok(), "{name} with {scope:?} and {disabled:?}");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn monitor_requires_session_scope_before_any_setup() {
+        let data = unique_data_folder();
+        let id = format!("monitor-scope-{}", data.file_name().unwrap().to_string_lossy());
+        assert!(!data.exists());
+        assert!(!workspace::scratch_dir_in(&workspace::project_cache_dir(None), &id).exists());
+        for scope in [None, Some(WorkspaceScope::Thread)] {
+            let channel = tauri::ipc::Channel::new(|_| {
+                panic!("a refused monitor must not emit updates")
+            });
+            let err = start_monitor(
+                data.to_string_lossy().into_owned(),
+                id.clone(),
+                json!({}), // Invalid arguments must never reach monitor parsing.
+                None,
+                None,
+                None,
+                scope,
+                channel,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(err.message, "monitor is unavailable for Chat threads");
+            assert!(!data.exists(), "refusal must not create a workspace");
+            assert!(!workspace::scratch_dir_in(&workspace::project_cache_dir(None), &id).exists(), "refusal must not create scratch");
+            assert!(!session_monitors().lock().unwrap().contains_key(&id));
+        }
+    }
+
+    #[tokio::test]
+    async fn elevated_session_monitor_requires_host_verified_cowork_before_setup() {
+        let data = unique_data_folder();
+        let id = format!("monitor-elev-{}", data.file_name().unwrap().to_string_lossy());
+        let folder = data.join("attached");
+        for (network, folder, writable) in [
+            (Some(true), None, None),
+            (None, Some(folder.to_string_lossy().into_owned()), None),
+            (None, None, Some(true)),
+        ] {
+            let channel = tauri::ipc::Channel::new(|_| {
+                panic!("a refused monitor must not emit updates")
+            });
+            let err = start_monitor(
+                data.to_string_lossy().into_owned(),
+                id.clone(),
+                json!({}), // Must be refused before argument parsing.
+                network,
+                folder,
+                writable,
+                Some(WorkspaceScope::Session),
+                channel,
+            )
+            .await
+            .unwrap_err();
+            assert!(err.message.contains("host-verified Cowork"), "{}", err.message);
+            assert!(!data.exists(), "refusal must not create a workspace");
+            assert!(!workspace::scratch_dir_in(&workspace::project_cache_dir(None), &id).exists(), "refusal must not create scratch");
+            assert!(!session_monitors().lock().unwrap().contains_key(&id));
+        }
+    }
+
+    /// "Stop my monitors" is not "revoke my consent": stop-all advances the
+    /// TOCTOU barrier (an in-flight poll must not spawn after the reap) but
+    /// must leave the host confirmation exactly as the strict setter left it.
+    #[tokio::test]
+    async fn stop_all_thread_monitors_keeps_the_confirmed_grant() {
+        let id = "stop-all-keeps-grant";
+        let token = crate::thread_capabilities::narrow(id);
+        let grant = crate::thread_capabilities::ThreadCapabilities {
+            version: 1,
+            folder_scope: None,
+            shell_network: true,
+            memory_write: true,
+        };
+        assert!(confirm_thread_consent(id, grant, token).await);
+        let confirmed_at = crate::thread_capabilities::generation(id);
+        stop_all_thread_monitors(id.to_string()).await.unwrap();
+        let (caps, generation) = crate::thread_capabilities::current(id);
+        assert!(
+            caps.shell_network && caps.memory_write,
+            "stopping monitors must not revoke consent"
+        );
+        assert_ne!(generation, confirmed_at, "but the barrier must advance");
+        assert_ne!(generation, 0);
+    }
+
+    #[tokio::test]
+    async fn forget_thread_consent_serializes_final_barrier_with_monitor_admission() {
+        let id = "forget-final-admission";
+        let revoked_at = revoke_thread_consent(id).await;
+        let admission = crate::thread_capabilities::admission().lock().await;
+        let finalize = tokio::spawn(forget_thread_consent(id));
+        tokio::task::yield_now().await;
+        assert!(!finalize.is_finished(), "finalization must wait for admitted spawns");
+        assert_eq!(crate::thread_capabilities::generation(id), revoked_at);
+        drop(admission);
+        finalize.await.unwrap();
+        let (grant, finalized_at) = crate::thread_capabilities::current(id);
+        assert_ne!(finalized_at, revoked_at, "invalidate pre-finalization polls");
+        assert!(!grant.shell_network && !grant.memory_write && grant.folder_scope.is_none());
+        assert!(!confirm_thread_consent(id, crate::thread_capabilities::denied(), revoked_at).await);
+        assert!(!thread_monitors().lock().unwrap().contains_key(id));
+    }
+
+    #[test]
+    fn raw_network_intersection_requires_both_inputs() {
+        use crate::thread_capabilities::ThreadCapabilities;
+        for stored in [false, true] {
+            for effective in [false, true] {
+                let stored: ThreadCapabilities =
+                    serde_json::from_value(consent(None, false, stored, false)).unwrap();
+                let effective: ThreadCapabilities =
+                    serde_json::from_value(consent(None, false, effective, false)).unwrap();
+                let expected = stored.shell_network && effective.shell_network;
+                assert_eq!(stored.intersect(effective).unwrap().shell_network, expected);
+            }
+        }
+    }
+
+    fn consent(
+        folder: Option<&Path>,
+        writable: bool,
+        network: bool,
+        memory: bool,
+    ) -> serde_json::Value {
+        serde_json::json!({"version":1,"folderScope":folder.map(|p| serde_json::json!({"path":p,"access":if writable {"write"} else {"read"}})),"shellNetwork":network,"memoryWrite":memory})
+    }
+
+    async fn chat_call(
+        data: &Path,
+        name: &str,
+        args: serde_json::Value,
+        stored: serde_json::Value,
+        effective: serde_json::Value,
+    ) -> Result<ToolResult, AgentToolsError> {
+        chat_call_in(data, name, args, stored, effective, false).await
+    }
+
+    async fn chat_call_in(
+        data: &Path,
+        name: &str,
+        args: serde_json::Value,
+        stored: serde_json::Value,
+        effective: serde_json::Value,
+        plan_mode: bool,
+    ) -> Result<ToolResult, AgentToolsError> {
+        // One thread id per data folder, so concurrently running tests cannot
+        // see each other's host confirmation.
+        let id = format!(
+            "chat-boundary-{}",
+            data.file_name().unwrap().to_string_lossy()
+        );
+        // The strict setter confirms exactly what it persisted, so these
+        // boundary tests model host confirmation as "mirror == stored". The
+        // unconfirmed (restart) case is exercised separately in
+        // `one_shot_chat_elevation_requires_host_confirmation`.
+        if let Ok(grant) =
+            serde_json::from_value::<crate::thread_capabilities::ThreadCapabilities>(stored.clone())
+        {
+            let token = crate::thread_capabilities::narrow(&id);
+            crate::thread_capabilities::confirm_if_current(&id, grant, token);
+        }
+        let result = execute_thread_tool_inner(
+            None,
+            data.to_path_buf(),
+            id.clone(),
+            name.into(),
+            args,
+            stored,
+            serde_json::from_value(effective).unwrap(),
+            plan_mode,
+        )
+        .await;
+        crate::thread_capabilities::clear(&id);
+        result
+    }
+
+    #[tokio::test]
+    #[cfg_attr(
+        windows,
+        ignore = "re-execs the test binary as the AppContainer helper; covered by tests/sandbox_spawn.rs"
+    )]
+    async fn temporary_chat_keeps_scratch_without_accepting_forged_authority() {
+        let data = unique_data_folder();
+        let folder = repo_outside_tmp("temporary-chat-forged-folder");
+        let outside = folder.join("private.txt");
+        std::fs::write(&outside, "private folder content").unwrap();
+        let denied = consent(None, false, false, false);
+        let forged = consent(Some(&folder), true, true, true);
+        // Deliberately bypass chat_call's persistent ID: this is the exact
+        // temporary Chat dispatch with every elevated permission forged by the UI.
+        // Global ON must not supply host authority to temporary Chat.
+        let call = |name: &str, args| {
+            execute_thread_tool_inner(
+                None,
+                data.clone(),
+                "temporary-chat".into(),
+                name.into(),
+                args,
+                denied.clone(),
+                serde_json::from_value(forged.clone()).unwrap(),
+                false,
+            )
+        };
+        let shell = call("shell", json!({"command":"printf temporary-chat-shell"}))
+            .await
+            .expect("shell returns a result, including explicit sandbox refusal");
+        if jail::backend().enforces() {
+            assert!(!shell.is_error, "{}", shell.content);
+            assert!(shell.content.contains("temporary-chat-shell"), "{}", shell.content);
+        } else {
+            assert!(shell.is_error);
+            assert!(shell.content.contains("no OS sandbox"), "{}", shell.content);
+        }
+
+        let scratch = workspace::scratch_dir_in(&workspace::project_cache_dir(None), "temporary-chat")
+            .join(format!("temporary-verifier-{}.txt", data.file_name().unwrap().to_string_lossy()));
+        let write = call("write", json!({"path":scratch,"content":"temporary scratch"}))
+            .await.unwrap();
+        assert!(!write.is_error, "{}", write.content);
+        let read = call("read", json!({"path":scratch})).await.unwrap();
+        assert!(!read.is_error, "{}", read.content);
+        assert!(read.content.contains("temporary scratch"), "{}", read.content);
+
+        for (name, args) in [
+            ("memory", json!({"op":"write","name":"forged","content":"no"})),
+            ("skill_write", json!({"name":"forged","content":"no"})),
+        ] {
+            let err = call(name, args).await.unwrap_err();
+            assert!(err.message.contains("not authorized"), "{}", err.message);
+        }
+        let err = call("read", json!({"path":outside})).await.unwrap_err();
+        assert!(err.message.contains("ReadEscape"), "{}", err.message);
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "private folder content");
+        assert!(!workspace::permanent_store(&data).join("memory/forged.md").exists());
+        assert!(!workspace::permanent_store(&data).join("skills/forged").exists());
+        // The fixed temporary ID can be shared: remove only our scratch file.
+        let _ = std::fs::remove_file(scratch);
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+
+    // ---- Plan / hooks (QA01) ------------------------------------------------
+
+    fn chat_id(data: &Path) -> String {
+        format!("chat-boundary-{}", data.file_name().unwrap().to_string_lossy())
+    }
+
+    fn hook_for(event: &str, matcher: &str, command: &str) -> crate::tools::hooks::HookSet {
+        let mut set = crate::tools::hooks::HookSet::new();
+        set.extend_from(
+            vec![crate::tools::hooks::HookEntry {
+                event: event.into(),
+                matcher: Some(matcher.into()),
+                command: command.into(),
+                timeout_secs: Some(20),
+            }],
+            Path::new("config.toml"),
+        );
+        set
+    }
+
+    /// A writable attached folder holding `known.txt`, a mutating hook on
+    /// `event` matching `read`, and the call run with the given latched Plan.
+    /// Returns (read result, whether the hook's marker appeared).
+    async fn read_with_marker_hook(event: &str, plan_mode: bool) -> (ToolResult, bool) {
+        let data = unique_data_folder();
+        let folder = repo_outside_tmp("plan-hook");
+        std::fs::write(folder.join("known.txt"), "known content").unwrap();
+        hook_map().lock().unwrap().insert(
+            chat_id(&data),
+            hook_for(event, "read", "printf ran > plan-hook-marker.txt"),
+        );
+        let write = consent(Some(&folder), true, false, false);
+        let out = chat_call_in(
+            &data,
+            "read",
+            json!({"path": "known.txt"}),
+            write.clone(),
+            write,
+            plan_mode,
+        )
+        .await
+        .expect("read is a Plan-allowed tool and must run");
+        let marker = folder.join("plan-hook-marker.txt").exists();
+        hook_map().lock().unwrap().remove(&chat_id(&data));
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+        (out, marker)
+    }
+
+    /// The positive control proves the hook and the enforcing sandbox really ran
+    /// the mutation; without it "marker absent in Plan" would also be what a hook
+    /// that never starts looks like.
+    #[tokio::test]
+    async fn plan_read_keeps_tool_hooks_inert_while_normal_read_runs_them() {
+        if !jail::backend().enforces() {
+            eprintln!("skipping: no enforcing OS sandbox, so hooks cannot start here");
+            return;
+        }
+        for event in ["PreToolUse", "PostToolUse"] {
+            let (normal, marker) = read_with_marker_hook(event, false).await;
+            assert!(!normal.is_error, "{}", normal.content);
+            assert!(marker, "{event}: control — a normal read must run the mutating hook");
+
+            let (planned, marker) = read_with_marker_hook(event, true).await;
+            assert!(!planned.is_error, "{}", planned.content);
+            assert!(planned.content.contains("known content"), "{}", planned.content);
+            assert!(!marker, "{event}: a Plan read must not run a mutating hook");
+        }
+    }
+
+    #[tokio::test]
+    async fn plan_mode_refuses_mutating_thread_tools_at_the_host() {
+        let data = unique_data_folder();
+        let folder = repo_outside_tmp("plan-refuse");
+        let write = consent(Some(&folder), true, true, true);
+        for (name, args) in [
+            ("write", json!({"path": "x.txt", "content": "no"})),
+            ("edit", json!({"path": "x.txt", "old_string": "a", "new_string": "b"})),
+            ("shell", json!({"command": "touch shell-ran.txt"})),
+            ("skill_write", json!({"name": "planned", "content": "no"})),
+        ] {
+            let err = chat_call_in(&data, name, args, write.clone(), write.clone(), true)
+                .await
+                .unwrap_err();
+            assert!(err.message.contains("Plan mode"), "{name}: {}", err.message);
+        }
+        let err = chat_call_in(
+            &data,
+            "memory",
+            json!({"op": "write", "name": "planned", "content": "no"}),
+            write.clone(),
+            write.clone(),
+            true,
+        )
+        .await
+        .unwrap();
+        assert!(err.is_error, "Plan memory mutation must be refused: {}", err.content);
+        assert!(
+            err.content.contains("plan_mode_read_only"),
+            "Memory write must fail specifically because of Plan: {}",
+            err.content
+        );
+        assert!(!workspace::permanent_store(&data).join("memory/planned.md").exists());
+        assert!(!folder.join("x.txt").exists() && !folder.join("shell-ran.txt").exists());
+        assert!(!workspace::permanent_store(&data).join("skills/planned").exists());
+        // Plan reads (incl. skills and memory view) still work.
+        for (name, args) in [
+            ("ls", json!({"path": "."})),
+            ("skill_list", json!({})),
+            ("memory", json!({"op": "view"})),
+        ] {
+            let out = chat_call_in(&data, name, args, write.clone(), write.clone(), true)
+                .await
+                .unwrap();
+            if name == "memory" {
+                assert!(
+                    !out.content.contains("plan_mode_read_only"),
+                    "Plan must not refuse memory view: {}",
+                    out.content
+                );
+            } else {
+                assert!(!out.is_error, "{name}: {}", out.content);
+            }
+        }
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    // ---- Legacy Cowork IPC carries the run-latched Plan (QA01) --------------
+
+    /// The legacy entry points' shared inner path, as `execute_tool` /
+    /// `execute_tool_streaming` build it from their required `plan_mode`
+    /// argument. `streaming` supplies an output sink like the streaming command.
+    async fn legacy_call(
+        data: &Path,
+        thread: &str,
+        folder: &Path,
+        name: &str,
+        args: serde_json::Value,
+        plan_mode: bool,
+        streaming: bool,
+    ) -> Result<ToolResult, AgentToolsError> {
+        let sink = streaming
+            .then(|| test_sink(Arc::new(Mutex::new(Vec::new())), Some("call-1".into())));
+        execute_tool_inner(
+            None,
+            data.to_string_lossy().into_owned(),
+            thread.into(),
+            Some(folder.to_string_lossy().into_owned()),
+            name.into(),
+            args,
+            None,
+            None,
+            Some(folder.to_string_lossy().into_owned()),
+            Some(true),
+            None,
+            Some("call-1".into()),
+            sink,
+            ToolRun {
+                plan_mode,
+                folder_skills: false,
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn legacy_plan_read_keeps_tool_hooks_inert_streaming_or_not() {
+        if !jail::backend().enforces() {
+            eprintln!("skipping: no enforcing OS sandbox, so hooks cannot start here");
+            return;
+        }
+        for streaming in [false, true] {
+            for event in ["PreToolUse", "PostToolUse"] {
+                for plan_mode in [false, true] {
+                    let data = unique_data_folder();
+                    let folder = repo_outside_tmp("legacy-plan-hook");
+                    std::fs::write(folder.join("known.txt"), "known content").unwrap();
+                    let thread = format!("legacy-plan-{}", data.file_name().unwrap().to_string_lossy());
+                    hook_map().lock().unwrap().insert(
+                        thread.clone(),
+                        hook_for(event, "read", "printf ran > plan-hook-marker.txt"),
+                    );
+                    let out = legacy_call(
+                        &data, &thread, &folder, "read", json!({"path": "known.txt"}), plan_mode, streaming,
+                    )
+                    .await
+                    .expect("read is Plan-allowed");
+                    assert!(!out.is_error, "{}", out.content);
+                    let marker = folder.join("plan-hook-marker.txt").exists();
+                    // Control (plan off) proves the hook really runs here; Plan must not.
+                    assert_eq!(
+                        marker, !plan_mode,
+                        "streaming={streaming} {event} plan={plan_mode}: hook marker"
+                    );
+                    hook_map().lock().unwrap().remove(&thread);
+                    let _ = std::fs::remove_dir_all(folder);
+                    let _ = std::fs::remove_dir_all(data);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_plan_refuses_mutating_tools_but_unplanned_runs_them() {
+        for streaming in [false, true] {
+            let data = unique_data_folder();
+            let folder = repo_outside_tmp("legacy-plan-refuse");
+            let thread = format!("legacy-refuse-{}", data.file_name().unwrap().to_string_lossy());
+            for (name, args) in [
+                ("write", json!({"path": "x.txt", "content": "no"})),
+                ("edit", json!({"path": "x.txt", "old_string": "a", "new_string": "b"})),
+                ("shell", json!({"command": "touch shell-ran.txt"})),
+                ("skill_write", json!({"name": "planned", "content": "no"})),
+            ] {
+                let err = legacy_call(&data, &thread, &folder, name, args, true, streaming)
+                    .await
+                    .unwrap_err();
+                assert!(err.message.contains("Plan mode"), "{name}: {}", err.message);
+            }
+            assert!(!folder.join("x.txt").exists() && !folder.join("shell-ran.txt").exists());
+            // Control: the same write is allowed once Plan is off.
+            let ok = legacy_call(
+                &data, &thread, &folder, "write", json!({"path": "x.txt", "content": "yes"}), false, streaming,
+            )
+            .await
+            .unwrap();
+            assert!(!ok.is_error, "{}", ok.content);
+            assert!(folder.join("x.txt").exists());
+            let _ = std::fs::remove_dir_all(folder);
+            let _ = std::fs::remove_dir_all(data);
+        }
+    }
+
+    // ---- Folder skills (QA05) -----------------------------------------------
+
+    /// Distinct bodies so a result proves which layer answered.
+    fn seed_skill(root: &Path, name: &str, body: &str) {
+        skills::write(root, name, &format!("---\nname: {name}\ndescription: {body} skill\n---\n{body}"))
+            .unwrap();
+    }
+
+    async fn skill_call(
+        data: &Path,
+        name: &str,
+        args: serde_json::Value,
+        folder: Option<&Path>,
+    ) -> ToolResult {
+        let grant = consent(folder, false, false, false);
+        chat_call(data, name, args, grant.clone(), grant).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn chat_skill_tools_follow_the_authorized_folder() {
+        let data = unique_data_folder();
+        let folder = repo_outside_tmp("skills-folder");
+        let global = workspace::permanent_store(&data);
+        let project = workspace::project_store(&folder.canonicalize().unwrap());
+        seed_skill(&global, "audit-demo", "GLOBAL");
+        seed_skill(&project, "audit-demo", "PROJECT");
+        seed_skill(&project, "folder-only", "FOLDERONLY");
+        seed_skill(&global, "global-only", "GLOBALONLY");
+        skills::test_support::set_enabled(&folder, &[]);
+
+        // Folder skill overrides the same-named global one, like slash expansion.
+        let read = skill_call(&data, "skill_read", json!({"name": "audit-demo"}), Some(&folder)).await;
+        assert!(read.content.contains("PROJECT") && !read.content.contains("GLOBAL"), "{}", read.content);
+        // A folder-only skill is discoverable and readable.
+        let list = skill_call(&data, "skill_list", json!({}), Some(&folder)).await;
+        assert!(list.content.contains("folder-only") && list.content.contains("global-only"), "{}", list.content);
+        let only = skill_call(&data, "skill_read", json!({"name": "folder-only"}), Some(&folder)).await;
+        assert!(only.content.contains("FOLDERONLY"), "{}", only.content);
+
+        // No folder: skill-only/override layers are absent, global answers.
+        let list = skill_call(&data, "skill_list", json!({}), None).await;
+        assert!(!list.content.contains("folder-only"), "{}", list.content);
+        let read = skill_call(&data, "skill_read", json!({"name": "audit-demo"}), None).await;
+        assert!(read.content.contains("GLOBAL") && !read.content.contains("PROJECT"), "{}", read.content);
+        let _ = std::fs::remove_dir_all(project);
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[tokio::test]
+    async fn chat_skill_whitelist_comes_from_the_folder_not_the_caller() {
+        let data = unique_data_folder();
+        let folder = repo_outside_tmp("skills-whitelist");
+        let global = workspace::permanent_store(&data);
+        let project = workspace::project_store(&folder.canonicalize().unwrap());
+        seed_skill(&global, "blocked-global", "BLOCKED");
+        seed_skill(&global, "allowed-global", "ALLOWED");
+        seed_skill(&project, "allowed-folder", "FOLDERALLOWED");
+        skills::test_support::set_enabled(&folder, &["allowed-global", "allowed-folder"]);
+
+        let list = skill_call(&data, "skill_list", json!({}), Some(&folder)).await;
+        assert!(!list.content.contains("blocked-global"), "{}", list.content);
+        assert!(list.content.contains("allowed-global") && list.content.contains("allowed-folder"), "{}", list.content);
+        let blocked = skill_call(&data, "skill_read", json!({"name": "blocked-global"}), Some(&folder)).await;
+        assert!(blocked.is_error || blocked.content.contains("disabled") || blocked.content.contains("not found"), "{}", blocked.content);
+        assert!(!blocked.content.contains("BLOCKED"), "{}", blocked.content);
+        // Without the folder grant the folder's whitelist and overlay do not apply.
+        let list = skill_call(&data, "skill_list", json!({}), None).await;
+        assert!(list.content.contains("blocked-global") && !list.content.contains("allowed-folder"), "{}", list.content);
+        let _ = std::fs::remove_dir_all(project);
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    /// The forged caller overlay is not an authority: an effective grant naming
+    /// a different folder than the stored consent cannot select its skills.
+    #[tokio::test]
+    async fn chat_skill_overlay_cannot_be_selected_by_an_unconsented_folder() {
+        let data = unique_data_folder();
+        let granted = repo_outside_tmp("skills-granted");
+        let forged = repo_outside_tmp("skills-forged");
+        seed_skill(&workspace::project_store(&forged.canonicalize().unwrap()), "forged-only", "FORGED");
+        skills::test_support::set_enabled(&granted, &[]);
+        skills::test_support::set_enabled(&forged, &[]);
+        let stored = consent(Some(&granted), false, false, false);
+        let overlay = consent(Some(&forged), false, false, false);
+        let list = chat_call(&data, "skill_list", json!({}), stored, overlay).await.unwrap();
+        assert!(!list.content.contains("forged-only"), "{}", list.content);
+        let _ = std::fs::remove_dir_all(workspace::project_store(&forged.canonicalize().unwrap()));
+        let _ = std::fs::remove_dir_all(granted);
+        let _ = std::fs::remove_dir_all(forged);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[test]
+    fn unresolved_folder_whitelist_fails_closed() {
+        // No resolver override for this path and none installed in unit tests.
+        let missing = std::env::temp_dir().join("jan-no-whitelist-resolver");
+        assert_eq!(skills::enabled_for_project(&missing), vec![String::new()]);
+    }
+
+    #[tokio::test]
+    async fn postfix_verifier_chat_rejects_outbound_aliases_before_setup() {
+        let data = unique_data_folder();
+        let on = consent(None, false, true, true);
+        for name in [
+            "web_search", "web_fetch", "screenshot", "Screenshot", "screenshotx",
+            "WEB_FETCH", "WEB_SEARCH", "webfetch", "websearch", "bash", "memory_write",
+            "not_a_tool",
+        ] {
+            let err = chat_call(&data, name, json!({}), on.clone(), on.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(err.message, format!("unknown Chat tool '{name}'"));
+            assert!(!data.exists(), "{name} must fail before workspace setup");
+        }
+    }
+
+    #[tokio::test]
+    async fn postfix_verifier_legacy_unknown_aliases_cannot_dispatch() {
+        let data = unique_data_folder();
+        let id = format!("postfix-alias-{}", data.file_name().unwrap().to_string_lossy());
+        for scope in [None, Some(WorkspaceScope::Thread)] {
+            for name in ["Screenshot", "screenshotx", "WEB_FETCH", "WEB_SEARCH", "webfetch", "websearch"] {
+                assert!(lookup(name).is_none(), "{name} must not resolve as an alias");
+                // Unknown names need not trip the elevation guard: the exact
+                // lookup in the executor must still prevent dispatch.
+                reject_legacy_thread_elevation(scope, name, &json!({}), None, None, None)
+                    .unwrap();
+                let err = execute_tool_inner(
+                    None, data.to_string_lossy().into_owned(), id.clone(), None,
+                    name.into(), json!({}), None, None, None, None, scope, None, None,
+                    ToolRun::default(),
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(err.message, format!("unknown built-in tool '{name}'"));
+            }
+        }
+        let _ = std::fs::remove_dir_all(workspace::scratch_dir_in(&workspace::project_cache_dir(None), &id));
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[tokio::test]
+    async fn postfix_verifier_overlay_parent_root_cannot_widen_attachment() {
+        let data = unique_data_folder();
+        let parent = repo_outside_tmp("postfix-overlay-parent");
+        let selected = parent.join("selected");
+        std::fs::create_dir_all(&selected).unwrap();
+        let outside = parent.join("outside.txt");
+        std::fs::write(&outside, "unchanged").unwrap();
+        let stored = consent(Some(&selected), true, true, true);
+        let overlay = consent(Some(&parent), true, true, true);
+        let err = chat_call(
+            &data, "read", json!({"path": outside}), stored, overlay,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.message.contains("ReadEscape"), "{}", err.message);
+        assert_eq!(std::fs::read_to_string(outside).unwrap(), "unchanged");
+        let _ = std::fs::remove_dir_all(parent);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    /// Folder access needs host confirmation; app-wide memory authority does
+    /// not. An ordinary unconfirmed Chat with effective true remains usable.
+    #[tokio::test]
+    async fn one_shot_chat_folder_requires_confirmation_but_app_grants_do_not() {
+        let data = unique_data_folder();
+        let id = "one-shot-mirror";
+        let folder = repo_outside_tmp("one-shot-mirror-folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("input.txt"), "original").unwrap();
+        let write = consent(Some(&folder), true, true, true);
+        let call = |name: &str, args: serde_json::Value| {
+            let (data, name, write) = (data.clone(), name.to_string(), write.clone());
+            async move {
+                execute_thread_tool_inner(
+                    None,
+                    data,
+                    id.into(),
+                    name,
+                    args,
+                    write.clone(),
+                    serde_json::from_value(write).unwrap(),
+                    false,
+                )
+                .await
+            }
+        };
+        // Unconfirmed: both disk and the caller say yes, the host does not.
+        assert!(
+            call("read", json!({"path": folder.join("input.txt")}))
+                .await
+                .is_err(),
+            "an unconfirmed grant must not reach an attached folder"
+        );
+        let memory = call("memory", json!({"op":"write","name":"m","content":"x"}))
+            .await
+            .unwrap();
+        assert!(!memory.is_error, "{}", memory.content);
+        // The scratch baseline needs no confirmation (temporary chat).
+        let baseline = call("write", json!({"path":"note.txt","content":"scratch"}))
+            .await
+            .unwrap();
+        assert!(!baseline.is_error, "{}", baseline.content);
+        // Confirmed by the strict setter: the same call now elevates.
+        let token = crate::thread_capabilities::narrow(id);
+        assert!(crate::thread_capabilities::confirm_if_current(
+            id,
+            serde_json::from_value(write.clone()).unwrap(),
+            token
+        ));
+        let out = call("read", json!({"path": folder.join("input.txt")}))
+            .await
+            .unwrap();
+        assert!(out.content.contains("original"), "{}", out.content);
+        crate::thread_capabilities::clear(id);
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[tokio::test]
+    async fn persistent_chat_global_on_allows_memory_with_stored_flags_off() {
+        let data = unique_data_folder();
+        let off = consent(None, false, false, false);
+        let on = consent(None, false, true, true);
+        let ordinary = chat_call(
+            &data,
+            "memory",
+            serde_json::json!({"op":"write","name":"global-on","content":"yes"}),
+            off.clone(),
+            on.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(!ordinary.is_error, "{}", ordinary.content);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[tokio::test]
+    async fn chat_consent_intersection_blocks_forged_and_locally_revoked_memory() {
+        let data = unique_data_folder();
+        let off = consent(None, false, false, false);
+        let on = consent(None, false, true, true);
+        assert!(chat_call(
+            &data,
+            "memory",
+            serde_json::json!({"op":"write","name":"forged","content":"no"}),
+            serde_json::Value::Null,
+            on.clone()
+        )
+        .await
+        .is_err());
+        for (stored, effective) in [(off.clone(), off.clone()), (on.clone(), off.clone())] {
+            let err = chat_call(
+                &data,
+                "memory",
+                serde_json::json!({"op":"write","name":"no","content":"no"}),
+                stored,
+                effective,
+            )
+            .await
+            .unwrap_err();
+            assert!(err.message.contains("not authorized"));
+        }
+        for name in [
+            "monitor",
+            "dispatch_subagent",
+            "task",
+            "bash",
+            "memory_write",
+            "web_fetch",
+            "screenshot",
+        ] {
+            assert!(
+                chat_call(&data, name, serde_json::json!({}), on.clone(), on.clone())
+                    .await
+                    .is_err(),
+                "{name}"
+            );
+        }
+        assert!(chat_call(
+            &data,
+            "skill_write",
+            serde_json::json!({}),
+            on.clone(),
+            off.clone()
+        )
+        .await
+        .is_err());
+        assert!(!workspace::permanent_store(&data).exists());
+    }
+
+    #[tokio::test]
+    async fn chat_folder_authority_is_intersected_and_canonicalized() {
+        let data = unique_data_folder();
+        let folder = repo_outside_tmp("chat-consent-folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("input.txt"), "original").unwrap();
+        let read = consent(Some(&folder), false, false, false);
+        let write = consent(Some(&folder), true, true, true);
+        let args = serde_json::json!({"path":folder.join("input.txt"),"content":"changed"});
+        for (stored, effective) in [(read.clone(), write.clone()), (write.clone(), read.clone())] {
+            assert!(chat_call(&data, "write", args.clone(), stored, effective)
+                .await
+                .is_err());
+        }
+        assert_eq!(
+            std::fs::read_to_string(folder.join("input.txt")).unwrap(),
+            "original"
+        );
+        let allowed = chat_call(&data, "write", args.clone(), write.clone(), write.clone())
+            .await
+            .unwrap();
+        assert!(!allowed.is_error);
+        assert_eq!(
+            std::fs::read_to_string(folder.join("input.txt")).unwrap(),
+            "changed"
+        );
+        std::fs::write(folder.join("input.txt"), "original").unwrap();
+        let memory = chat_call(
+            &data,
+            "memory",
+            serde_json::json!({"op":"write","name":"allowed","content":"remember"}),
+            write.clone(),
+            write.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(!memory.is_error, "{}", memory.content);
+        assert!(workspace::permanent_store(&data)
+            .join("memory/allowed.md")
+            .exists());
+        assert!(!folder.join("memory/allowed.md").exists());
+
+        let out = chat_call(
+            &data,
+            "read",
+            serde_json::json!({"path":folder.join("input.txt")}),
+            read.clone(),
+            read.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(out.content.contains("original"));
+        let off = consent(None, false, false, false);
+        assert!(chat_call(
+            &data,
+            "read",
+            serde_json::json!({"path":folder.join("input.txt")}),
+            off,
+            write.clone()
+        )
+        .await
+        .is_err());
+        #[cfg(unix)]
+        {
+            let outside = repo_outside_tmp("chat-outside");
+            std::fs::create_dir_all(&outside).unwrap();
+            std::os::unix::fs::symlink(&outside, folder.join("escape")).unwrap();
+            let escaped = chat_call(
+                &data,
+                "write",
+                serde_json::json!({"path":folder.join("escape/pwn.txt"),"content":"no"}),
+                write.clone(),
+                write.clone(),
+            )
+            .await;
+            assert!(escaped.is_err() || escaped.unwrap().is_error);
+            assert!(!outside.join("pwn.txt").exists());
+            let _ = std::fs::remove_dir_all(outside);
+            let link = folder.join("forbidden-link");
+            std::os::unix::fs::symlink(&data, &link).unwrap();
+            let grant = consent(Some(&link), true, false, false);
+            assert!(chat_call(
+                &data,
+                "read",
+                serde_json::json!({"path":"."}),
+                grant.clone(),
+                grant
+            )
+            .await
+            .is_err());
+        }
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
     fn unique_data_folder() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         std::env::temp_dir().join(format!("jan_cmd_test_{}_{}", std::process::id(), n))
@@ -1239,6 +3096,7 @@ mod tests {
             scope,
             call_id,
             None,
+            ToolRun::default(),
         )
         .await
     }
@@ -2059,6 +3917,350 @@ mod tests {
         let _ = std::fs::remove_dir_all(&data);
         let _ = std::fs::remove_dir_all(&repo);
     }
+    // ---- migrated Cowork: host-owned folder authority ----------------------
+
+    type CoworkRecords = Mutex<std::collections::HashMap<String, serde_json::Value>>;
+    fn cowork_records() -> &'static CoworkRecords {
+        static RECORDS: std::sync::OnceLock<CoworkRecords> = std::sync::OnceLock::new();
+        RECORDS.get_or_init(|| {
+            crate::thread_capabilities::set_cowork_resolver(Arc::new(|id| {
+                let value = cowork_records()
+                    .lock()
+                    .unwrap()
+                    .get(&id)
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                Box::pin(async move { Ok((std::env::temp_dir(), value)) })
+            }));
+            Mutex::new(Default::default())
+        })
+    }
+    /// Models the strict setter: it persists the record, then confirms exactly
+    /// that grant in the process mirror (the resolver's restore does the same
+    /// after a restart). A record alone never authorizes anything.
+    fn set_cowork_record(id: &str, folder: Option<(&str, &str)>) {
+        let record = json!({"version":1,"shellNetwork":false,"memoryWrite":false,
+            "folderScope": folder.map(|(path, access)| json!({"path":path,"access":access}))});
+        cowork_records().lock().unwrap().insert(id.to_string(), record.clone());
+        let token = crate::thread_capabilities::narrow(id);
+        assert!(crate::thread_capabilities::confirm_if_current(
+            id,
+            serde_json::from_value(record).unwrap(),
+            token
+        ));
+    }
+    async fn clamp(
+        id: &str,
+        project: Option<&str>,
+        folder: Option<&str>,
+        writable: Option<bool>,
+    ) -> Result<SessionFolder, AgentToolsError> {
+        let _ = cowork_records();
+        clamp_cowork_session(
+            Some(WorkspaceScope::Session),
+            id,
+            project.map(str::to_string),
+            folder.map(str::to_string),
+            writable,
+        )
+        .await
+    }
+    fn abs(name: &str) -> String {
+        std::env::temp_dir().join(name).to_string_lossy().into_owned()
+    }
+    use crate::thread_capabilities::ThreadKind;
+    fn legacy_identity(id: &str, kind: ThreadKind) {
+        crate::thread_capabilities::test_set_kind(id, kind);
+    }
+
+    #[tokio::test]
+    async fn non_session_scope_refuses_caller_project_overlays() {
+        let folder = abs("forged-project-overlay");
+        for scope in [None, Some(WorkspaceScope::Thread)] {
+            let error = clamp_cowork_session(
+                scope,
+                "overlay-forged",
+                Some(folder.clone()),
+                None,
+                Some(false),
+            )
+            .await
+            .err()
+            .expect("caller project overlay must be refused");
+            assert!(error.message.contains("authorized Session folder grant"));
+        }
+        // An explicit host-owned Session grant remains the positive control.
+        set_cowork_record("overlay-authorized", Some((&folder, "read")));
+        let allowed = clamp("overlay-authorized", Some(&folder), Some(&folder), Some(false))
+            .await
+            .unwrap();
+        assert_eq!(allowed.project.as_deref(), Some(folder.as_str()));
+    }
+
+    /// An old session with no host record has NO folder authority, whatever the
+    /// renderer-writable metadata says. Scratch-only calls still work. The
+    /// positive control is an explicit host grant (the strict setter's record).
+    #[tokio::test]
+    async fn legacy_cowork_without_a_host_record_refuses_a_folder() {
+        let folder = abs("legacy-folder");
+        legacy_identity("cw-legacy", ThreadKind::LegacyCowork);
+        assert!(clamp("cw-legacy", Some(&folder), Some(&folder), Some(true)).await.is_err());
+        assert!(clamp("cw-legacy", None, Some(&folder), Some(false)).await.is_err());
+        let got = clamp("cw-legacy", None, None, Some(true)).await.unwrap();
+        assert!(got.folder.is_none());
+        // Positive control: an explicit host write grant authorizes exactly that folder.
+        set_cowork_record("cw-legacy", Some((&folder, "write")));
+        let got = clamp("cw-legacy", Some(&folder), Some(&folder), Some(true)).await.unwrap();
+        assert_eq!(got.folder.as_deref(), Some(folder.as_str()));
+        assert_eq!(got.writable, Some(true));
+        assert_eq!(got.project.as_deref(), Some(folder.as_str()));
+    }
+
+    /// The reported bug: a persisted read-only grant beats the caller's
+    /// unconditional `projectWritable=true`, for every Session entry point.
+    #[tokio::test]
+    async fn persisted_read_only_clamps_a_caller_that_asks_for_write() {
+        let folder = abs("ro-folder");
+        set_cowork_record("cw-ro", Some((&folder, "read")));
+        let got = clamp("cw-ro", Some(&folder), Some(&folder), Some(true)).await.unwrap();
+        assert_eq!(got.folder.as_deref(), Some(folder.as_str()));
+        assert_eq!(got.writable, Some(false), "host read must clamp caller write");
+        // Narrow only: a host write grant never widens a caller's read.
+        set_cowork_record("cw-ro", Some((&folder, "write")));
+        assert_eq!(clamp("cw-ro", None, Some(&folder), Some(false)).await.unwrap().writable, Some(false));
+        assert_eq!(clamp("cw-ro", None, Some(&folder), Some(true)).await.unwrap().writable, Some(true));
+    }
+
+    /// A detach or a different folder is an error, never a silent fall back to
+    /// the old read+write, and a record never resurrects `metadata.folder`.
+    #[tokio::test]
+    async fn detach_or_changed_folder_is_refused_and_not_resurrected() {
+        let (old, other) = (abs("old-folder"), abs("other-folder"));
+        set_cowork_record("cw-detach", None);
+        assert!(clamp("cw-detach", Some(&old), Some(&old), Some(true)).await.is_err());
+        set_cowork_record("cw-detach", Some((&other, "write")));
+        assert!(clamp("cw-detach", Some(&old), Some(&old), Some(true)).await.is_err());
+        // Scratch-only calls (no folder) still work after a detach.
+        set_cowork_record("cw-detach", None);
+        let got = clamp("cw-detach", None, None, None).await.unwrap();
+        assert!(got.folder.is_none());
+    }
+
+    /// A revoke whose record write never landed (no record, but the process
+    /// narrowed) must fail closed rather than fall back to the legacy default.
+    #[tokio::test]
+    async fn a_revoked_session_without_a_record_never_falls_back_to_legacy() {
+        let folder = abs("revoked-folder");
+        let _ = cowork_records();
+        crate::thread_capabilities::narrow("cw-revoked");
+        assert!(clamp("cw-revoked", Some(&folder), Some(&folder), Some(true)).await.is_err());
+    }
+
+    /// Only legacy Session calls consult the host; a Thread-scope call is
+    /// untouched (it has its own scoped executor).
+    #[tokio::test]
+    async fn non_session_scopes_are_not_clamped_here() {
+        let folder = abs("scope-folder");
+        let got = clamp_cowork_session(
+            Some(WorkspaceScope::Thread),
+            "cw-scope",
+            None,
+            Some(folder.clone()),
+            Some(true),
+        )
+        .await
+        .unwrap();
+        assert_eq!(got.writable, Some(true));
+    }
+
+    /// R2: the monitor's ceiling is the run's captured grant, not whatever the
+    /// host allows at start. A run that began read-only/no-network cannot start
+    /// a monitor with folder-write or network the user granted afterwards.
+    #[test]
+    fn monitor_start_ceiling_is_narrowed_to_the_runs_captured_grant() {
+        use crate::thread_capabilities::{FolderScope, ThreadCapabilities};
+        let caps = |access: &str, network: bool| ThreadCapabilities {
+            version: 1,
+            folder_scope: Some(FolderScope {
+                path: std::env::temp_dir().to_string_lossy().into_owned(),
+                access: access.into(),
+            }),
+            shell_network: network,
+            memory_write: false,
+        };
+        // Host raised to write + network after the run captured read-only/off.
+        let got = monitor_start_ceiling(caps("write", true), caps("read", false), false).unwrap();
+        assert_eq!(got.folder_scope.unwrap().access, "read");
+        assert!(!got.shell_network);
+        // Positive control: captured grant equal to the host's keeps it.
+        let got = monitor_start_ceiling(caps("write", true), caps("write", true), false).unwrap();
+        assert_eq!(got.folder_scope.unwrap().access, "write");
+        assert!(got.shell_network);
+        // A captured grant wider than the host never widens it.
+        let got = monitor_start_ceiling(caps("read", false), caps("write", true), false).unwrap();
+        assert_eq!(got.folder_scope.unwrap().access, "read");
+        assert!(!got.shell_network);
+        // Plan is read-only with shell disabled: no monitor starts under it.
+        let refused = monitor_start_ceiling(caps("write", true), caps("write", true), true);
+        assert!(refused.unwrap_err().contains("Plan"));
+    }
+
+    /// Background captured ceiling: a monitor started read+write re-reads the
+    /// host before every poll, so a later narrow applies to the NEXT poll, and a
+    /// detach ends it; the start-time values can never widen a narrower record.
+    #[tokio::test]
+    async fn session_monitor_poll_authority_tracks_the_host_record() {
+        if !jail::backend().enforces() {
+            return;
+        }
+        let repo = repo_outside_tmp("cw-monitor");
+        let folder = repo.to_string_lossy().to_string();
+        let _ = cowork_records();
+        legacy_identity("cw-mon", ThreadKind::Cowork);
+        // No record: no folder authority, the start-time ceiling cannot supply it.
+        assert!(resolve_session_monitor_ctx("cw-mon", Some(&folder), true, false).await.is_err());
+        // Explicit host write grant (positive control): the captured ceiling stands.
+        set_cowork_record("cw-mon", Some((&folder, "write")));
+        let (ctx, _) = resolve_session_monitor_ctx("cw-mon", Some(&folder), true, false)
+            .await
+            .unwrap();
+        assert_eq!(ctx.owner.as_deref(), Some("session-monitor:cw-mon"));
+        assert!(!ctx.write_roots.is_empty());
+        // Narrowed to read: next poll has no write roots.
+        set_cowork_record("cw-mon", Some((&folder, "read")));
+        let (ctx, _) = resolve_session_monitor_ctx("cw-mon", Some(&folder), true, false)
+            .await
+            .unwrap();
+        assert!(ctx.write_roots.is_empty(), "narrowing must reach the next poll");
+        // Widening the record never widens a read-only ceiling.
+        set_cowork_record("cw-mon", Some((&folder, "write")));
+        let (ctx, _) = resolve_session_monitor_ctx("cw-mon", Some(&folder), false, false)
+            .await
+            .unwrap();
+        assert!(ctx.write_roots.is_empty(), "start-time ceiling must stay a ceiling");
+        // Detached: the poll is refused (terminal revoked notice).
+        set_cowork_record("cw-mon", None);
+        assert!(resolve_session_monitor_ctx("cw-mon", Some(&folder), true, false).await.is_err());
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    // ---- legacy (no host record) binding, adversarial -----------------------
+
+    #[tokio::test]
+    async fn legacy_unknown_or_chat_id_never_gets_a_folder_or_project() {
+        let f = abs("adv-folder");
+        for (id, kind) in [("adv-unknown", ThreadKind::Unknown), ("adv-chat", ThreadKind::Chat)] {
+            legacy_identity(id, kind);
+            assert!(clamp(id, None, Some(&f), Some(true)).await.is_err(), "{id} folder");
+            // Forged project alone: not an elevation trigger upstream, so the clamp must refuse.
+            assert!(clamp(id, Some(&f), None, None).await.is_err(), "{id} project");
+        }
+    }
+
+    /// Forged mode/folder/settings state classifies the id as Cowork but never
+    /// authorizes a folder, however exactly the caller echoes it. Only the host
+    /// record's path does, byte for byte.
+    #[tokio::test]
+    async fn legacy_forged_folder_is_refused_and_a_grant_matches_byte_for_byte() {
+        let rec = abs("adv-rec");
+        for kind in [ThreadKind::LegacyCowork, ThreadKind::Cowork] {
+            legacy_identity("adv-bind", kind);
+            assert!(clamp("adv-bind", Some(&rec), Some(&rec), Some(true)).await.is_err(), "{kind:?} echoed");
+            // A project-only overlay has no authority: dropped, never a folder.
+            let got = clamp("adv-bind", Some(&rec), None, None).await.unwrap();
+            assert!(got.project.is_none() && got.folder.is_none(), "{kind:?} project only");
+        }
+        set_cowork_record("adv-bind", Some((&rec, "write")));
+        for bad in [
+            abs("adv-other"),
+            format!("{rec}/"),
+            format!("{rec}/sub"),
+            format!("{rec}/../adv-other"),
+            format!("{rec}x"),
+            rec.to_uppercase(),
+            "relative/dir".to_string(),
+            String::new(),
+        ] {
+            assert!(clamp("adv-bind", None, Some(&bad), Some(true)).await.is_err(), "accepted {bad:?}");
+        }
+        assert!(clamp("adv-bind", None, Some(&rec), Some(true)).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn legacy_forged_project_never_survives_without_a_grant() {
+        let (rec, other) = (abs("adv-prec"), abs("adv-pother"));
+        legacy_identity("adv-proj", ThreadKind::Cowork);
+        assert!(clamp("adv-proj", Some(&other), Some(&rec), Some(true)).await.is_err());
+        let got = clamp("adv-proj", Some(&rec), None, None).await.unwrap();
+        assert!(got.project.is_none() && got.folder.is_none(), "no grant: overlay dropped");
+        // Positive control: with a host grant, only the granted folder's overlay survives.
+        set_cowork_record("adv-proj", Some((&rec, "write")));
+        let got = clamp("adv-proj", Some(&other), Some(&rec), Some(true)).await.unwrap();
+        assert_eq!(got.folder.as_deref(), Some(rec.as_str()));
+        assert!(got.project.is_none(), "foreign skill overlay must not survive");
+        assert_eq!(
+            clamp("adv-proj", Some(&rec), Some(&rec), None).await.unwrap().project.as_deref(),
+            Some(rec.as_str())
+        );
+    }
+
+    /// Whatever the legacy record is (missing, relative, or a read error), no
+    /// folder is authorized and scratch-only calls keep working.
+    #[tokio::test]
+    async fn legacy_unrecorded_or_odd_records_never_authorize() {
+        let f = abs("adv-f");
+        for id in ["adv-err", "adv-none", "adv-rel"] {
+            legacy_identity(id, ThreadKind::LegacyCowork);
+            assert!(clamp(id, None, Some(&f), Some(true)).await.is_err(), "{id}");
+            assert!(clamp(id, Some(&f), None, None).await.unwrap().project.is_none(), "{id} project");
+            assert!(clamp(id, None, Some("rel/dir"), Some(true)).await.is_err(), "{id} rel");
+            assert!(clamp(id, None, None, None).await.unwrap().folder.is_none(), "{id} scratch");
+        }
+    }
+
+    /// No resolver installed at all (ids with no test identity): fail closed.
+    #[tokio::test]
+    async fn legacy_without_any_resolver_fails_closed() {
+        let f = abs("adv-noresolver");
+        assert!(clamp("adv-no-resolver-id", None, Some(&f), Some(true)).await.is_err());
+        assert!(clamp("adv-no-resolver-id", Some(&f), None, None).await.is_err());
+        // Scratch-only still works.
+        assert!(clamp("adv-no-resolver-id", None, None, None).await.unwrap().folder.is_none());
+    }
+
+    #[tokio::test]
+    async fn legacy_monitor_poll_refuses_forged_or_detached_folder() {
+        if !jail::backend().enforces() {
+            return;
+        }
+        let repo = repo_outside_tmp("adv-mon");
+        let folder = repo.to_string_lossy().to_string();
+        let _ = cowork_records();
+        legacy_identity("adv-mon", ThreadKind::LegacyCowork);
+        // No host record: refused even for the exact "recorded" folder.
+        assert!(resolve_session_monitor_ctx("adv-mon", Some(&folder), true, false).await.is_err());
+        // Positive control: an explicit grant admits exactly that folder.
+        set_cowork_record("adv-mon", Some((&folder, "write")));
+        assert!(resolve_session_monitor_ctx("adv-mon", Some(&folder), true, false).await.is_ok());
+        assert!(resolve_session_monitor_ctx("adv-mon", Some(&abs("adv-elsewhere")), true, false).await.is_err());
+        // Detached by the host: next poll ends.
+        set_cowork_record("adv-mon", None);
+        assert!(resolve_session_monitor_ctx("adv-mon", Some(&folder), true, false).await.is_err());
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// The host grant record is the only authority; a stale kind or metadata
+    /// folder is irrelevant.
+    #[tokio::test]
+    async fn host_record_is_the_only_folder_authority() {
+        let (grant, stale) = (abs("adv-grant"), abs("adv-stale"));
+        set_cowork_record("adv-rec-wins", Some((&grant, "read")));
+        legacy_identity("adv-rec-wins", ThreadKind::Cowork);
+        assert!(clamp("adv-rec-wins", None, Some(&stale), Some(true)).await.is_err());
+        let got = clamp("adv-rec-wins", None, Some(&grant), Some(true)).await.unwrap();
+        assert_eq!(got.writable, Some(false));
+    }
+
     // ---- read-only attached folder, end to end ------------------------------
 
     /// The contract the workspace UI promises: the agent reads your folder and

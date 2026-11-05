@@ -1,5 +1,5 @@
 import { useKeyboardShortcut } from '@/hooks/useHotkeys'
-import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { useSidebar } from '@/components/ui/sidebar'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useRouter } from '@tanstack/react-router'
@@ -11,7 +11,8 @@ import { useMessageZoom } from '@/hooks/useMessageZoom'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 
 export function KeyboardShortcutsProvider() {
-  const { open, setLeftPanel } = useLeftPanel()
+  // The overlay on narrow windows and the docked sidebar toggle differently.
+  const { toggleSidebar } = useSidebar()
   const { setOpen: setSearchOpen } = useSearchDialog()
   const { setOpen: setProjectDialogOpen } = useProjectDialog()
   const router = useRouter()
@@ -29,7 +30,7 @@ export function KeyboardShortcutsProvider() {
   useKeyboardShortcut({
     ...sidebarShortcut,
     callback: () => {
-      setLeftPanel(!open)
+      toggleSidebar()
     },
   })
 

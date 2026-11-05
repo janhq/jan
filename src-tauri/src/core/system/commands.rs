@@ -1227,6 +1227,19 @@ mod tests {
     }
 
     #[test]
+    fn full_reset_removes_permission_preferences_but_partial_reset_preserves_them() {
+        for (keep_data, keep_models) in [(false, false), (true, false), (false, true), (true, true)] {
+            let tmp = tempdir().unwrap();
+            let file = tmp.path().join("chat-permissions.json");
+            std::fs::write(&file, r#"{"shellNetwork":false,"memoryWrite":false}"#).unwrap();
+            let trash = stage(tmp.path(), keep_data, keep_models);
+            let full_reset = !keep_data && !keep_models;
+            assert_eq!(file.exists(), !full_reset);
+            assert_eq!(trash.join("chat-permissions.json").exists(), full_reset);
+        }
+    }
+
+    #[test]
     fn full_wipe_stages_every_known_entry() {
         let tmp = tempdir().unwrap();
         let d = tmp.path();

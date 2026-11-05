@@ -229,10 +229,6 @@
       "cancel": "Cancel·la",
       "changeLocation": "Canvia la ubicació"
     },
-    "deleteAllThreads": {
-      "title": "Suprimeix tots els fils",
-      "description": "Se suprimiran tots els fils. Aquesta acció no es pot desfer."
-    },
     "deleteThread": {
       "description": "Segur que vols suprimir aquest fil? Aquesta acció no es pot desfer."
     },
@@ -260,7 +256,6 @@
     "projectNotFoundDesc": "El projecte que busques no existeix o s’ha suprimit.",
     "deleteProjectDialog": {
       "title": "Suprimeix el projecte",
-      "permanentDelete": "Això suprimirà definitivament tots els fils.",
       "permanentDeleteWarning": "Aquesta acció suprimirà TOTS els fils del projecte!",
       "deleteEmptyProject": "Aquesta acció suprimirà el projecte \"{{projectName}}\".",
       "saveThreadsAdvice": "Per conservar els fils, mou-los a la llista de fils o a un altre projecte abans de suprimir-lo.",
@@ -283,7 +278,6 @@
       "renameSuccess": "Projecte reanomenat de \"{{oldName}}\" a \"{{newName}}\""
     },
     "noConversationsIn": "No hi ha converses a {{projectName}}",
-    "startNewConversation": "Inicia una conversa nova amb {{projectName}} a continuació",
     "conversationsIn": "Converses a {{projectName}}",
     "conversationsDescription": "Fes clic a qualsevol conversa per continuar parlant o inicia’n una de nova a continuació.",
     "thread": "fil",
@@ -296,7 +290,8 @@
     "noProjectsFound": "No s’han trobat projectes",
     "tryDifferentSearch": "Prova amb un terme de cerca diferent",
     "uploadingFiles": "S’estan processant els fitxers…",
-    "processButton": "Afegeix"
+    "processButton": "Afegeix",
+    "viewProject": "Mostra el projecte"
   },
   "attachmentsIngestion": {
     "title": "Tria com ingerir els adjunts",
@@ -408,5 +403,98 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "web_search": "Cerca web",
+  "shell": "Shell",
+  "browse": "Explora",
+  "moreControls": "Més controls",
+  "artifacts": "Artefactes",
+  "skills": "Habilitats",
+  "deleteSession": "Suprimeix la sessió",
+  "deleteSessionTitle": "Vols suprimir la sessió?",
+  "deleteSessionBody": "«{{title}}» i la seva transcripció se suprimiran de manera permanent. Aquesta acció no es pot desfer.",
+  "chatsAndTasks": "Xats i tasques",
+  "artifactGroupCode": "Codi",
+  "artifactGroupImage": "Imatge",
+  "artifactGroupDocument": "Document",
+  "artifactGroupVideo": "Vídeo",
+  "artifactGroupAudio": "Àudio",
+  "artifactOpenPreview": "Obre la vista prèvia",
+  "artifactOpenExternal": "Obre",
+  "artifactMoreActions": "Més accions",
+  "artifactShowInFolder": "Mostra a la carpeta",
+  "artifactsAll": "Tots",
+  "artifactsEmpty": "Encara no s'ha generat res. Els fitxers creats a les teves converses apareixeran aquí.",
+  "artifactsNoMatch": "Cap artefacte coincideix.",
+  "artifactsLibraryDescription": "Els fitxers creats a les teves converses, tots en un sol lloc.",
+  "artifactsLibraryFiles": "fitxers",
+  "artifactsLibraryCount_one": "{{count}} fitxer",
+  "artifactsLibraryCount_other": "{{count}} fitxers",
+  "artifactsLibraryFilter": "Filtra per tipus de fitxer",
+  "artifactsLibraryReset": "Esborra els filtres",
+  "artifactsSearch": "Cerca artefactes",
+  "artifactsShowMore": "Mostra'n {{count}} més",
+  "workspace": {
+    "writable": "lectura i escriptura",
+    "readOnly": "només lectura",
+    "a11yWithFolderReadOnly": "Carpeta del projecte {{folder}}, adjuntada amb accés de només lectura. Canvia-la o desvincula-la.",
+    "footnoteEmpty": "Adjunta una carpeta perquè l'agent treballi en el teu projecte. Podrà llegir i editar els fitxers que conté.",
+    "attach": "Adjunta una carpeta",
+    "change": "Canvia la carpeta",
+    "detach": "Desvincula la carpeta",
+    "revealFolder": "Mostra {{folder}} al gestor de fitxers",
+    "changeAccess": "Accés a la carpeta: {{current}}. Canvia a {{next}}.",
+    "unavailable": "Espai de treball no disponible",
+    "missing": "La carpeta de l'espai de treball {{folder}} ja no està disponible. Tria una altra carpeta.",
+    "revealFailed": "No s'ha pogut mostrar l'espai de treball",
+    "a11yWithFolder": "Carpeta del projecte {{folder}}, adjuntada amb accés de lectura i escriptura. Canvia-la o desvincula-la.",
+    "a11yNoFolder": "No hi ha cap carpeta de projecte adjuntada. Adjunta'n una."
+  },
+  "conversationScope": {
+    "label": "Abast de la conversa",
+    "noToolsModel": "El model seleccionat no admet eines, així que aquests permisos no tindran efecte fins que triïs un model compatible.",
+    "noSandbox": "Aquest sistema no disposa d'un entorn aïllat del sistema operatiu, per això no s'ofereixen ordres de shell.",
+    "live": "Els canvis s'apliquen a aquesta conversa a l'instant. Un projecte de Jan no concedeix accés a carpetes.",
+    "draft": "S'apliquen quan enviïs el missatge. Un projecte de Jan no concedeix accés a carpetes.",
+    "writable": "Les eines de tasques poden llegir i escriure fitxers a la carpeta seleccionada. Els permisos de tasques existents continuen vigents.",
+    "optional": "Carpeta opcional per a l'accés de lectura i escriptura de les tasques. Sense carpeta, les tasques utilitzen el seu espai de treball gestionat.",
+    "permissions": "Triar una carpeta no canvia la configuració de xarxa ni de memòria persistent.",
+    "unsupported": "Aquest model no pot utilitzar eines, per això no hi ha accés a carpetes, shell ni memòria. El xat normal continua funcionant.",
+    "pendingKept": "L'esborrany de permisos pendent es conserva i estarà disponible quan triïs un model compatible amb eines.",
+    "pendingKeptTemporary": "L'esborrany de permisos pendent es conserva i estarà disponible quan iniciïs un xat normal amb un model compatible amb eines.",
+    "temporary": "Un xat temporal no conserva l'accés a carpetes.",
+    "temporaryPermissions": "Els xats temporals no poden utilitzar l'accés concedit a carpetes, a la xarxa del shell ni a la memòria persistent.",
+    "folderSelectModel": "Selecciona un model compatible amb eines abans d'afegir accés a una carpeta.",
+    "folderUnsupported": "Aquest model no pot utilitzar eines, per això no es pot afegir una carpeta. El xat normal continua funcionant.",
+    "invalidFolder": "Aquesta ruta de carpeta no és compatible. Tria una altra carpeta.",
+    "folderNeedsConfirmation": "Inactiva · cal confirmació",
+    "confirmFolder": "Confirma",
+    "removeFolder": "Elimina",
+    "hostRevokeUnconfirmed": "Jan no ha pogut confirmar aquest canvi de permisos. És possible que les tasques en segon pla encara tinguin l'accés anterior. Torna-ho a provar o tanca Jan per aturar-les.",
+    "saveFailed": "No s'ha pogut desar el canvi de permisos. L'accés ampliat continua desactivat fins que es desi correctament.",
+    "folderSelected": "Carpeta afegida",
+    "removeProject": "Elimina la selecció de projecte"
+  },
+  "homeMode": {
+    "addFolder": "Afegeix un projecte o una carpeta",
+    "removeFolder": "Elimina la selecció",
+    "addProject": "Afegeix un projecte",
+    "addToProject": "Afegeix a un projecte",
+    "newProject": "Projecte nou",
+    "noProjects": "Encara no hi ha projectes",
+    "addFolderAction": "Afegeix una carpeta"
+  },
+  "planMode": {
+    "label": "Pla",
+    "tooltipOff": "Planifica primer: l'agent llegeix i proposa, sense escriure.",
+    "tooltipOn": "Mode Pla",
+    "onAnnounce": "Mode Pla activat",
+    "placeholder": "Demana un pla. L'agent no modificarà cap fitxer."
+  },
+  "sidebar": {
+    "toggle": "Mostra o amaga la barra lateral",
+    "navigation": "Navegació",
+    "navigationDescription": "Ves a xats, projectes, artefactes, habilitats i configuració.",
+    "more": "Més"
   }
 }

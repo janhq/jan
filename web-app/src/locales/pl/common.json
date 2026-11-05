@@ -229,10 +229,6 @@
       "cancel": "Anuluj",
       "changeLocation": "Zmień Położenie"
     },
-    "deleteAllThreads": {
-      "title": "Usuń Wszystkie Wątki",
-      "description": "Wszystkie wątki zostaną usunięte. Tej operacji nie można cofnąć."
-    },
     "deleteThread": {
       "description": "Na pewno chcesz usunąć ten wątek? Tej operacji nie można cofnąć."
     },
@@ -262,7 +258,6 @@
     "deleteProjectDialog": {
       "title": "Usuń Projekt",
       "description": "Na pewno chcesz usunąć ten projekt? Tej operacji nie można cofnąć.",
-      "permanentDelete": "To spowoduje trwałe usunięcie wszystkich wątków.",
       "permanentDeleteWarning": "Ta operacja spowoduje trwałe usunięcie WSZYSTKICH wątków w projekcie!",
       "deleteEmptyProject": "Ta operacja usunie projekt \"{{projectName}}\".",
       "saveThreadsAdvice": "Aby zapisać wątki, przenieś je do listy wątków lub innego projektu przed usunięciem.",
@@ -285,7 +280,6 @@
       "renameSuccess": "Projekt zmieniono z \"{{oldName}}\" na \"{{newName}}\""
     },
     "noConversationsIn": "Brak Rozmów w {{projectName}}",
-    "startNewConversation": "Rozpocznij nową rozmowę z {{projectName}} poniżej",
     "conversationsIn": "Rozmowy w {{projectName}}",
     "conversationsDescription": "Kliknij na dowolną rozmowę aby kontynuować czat, lub rozpocznij nową poniżej.",
     "thread": "wątek",
@@ -298,7 +292,8 @@
     "noProjectsFound": "Nie znaleziono projektów",
     "tryDifferentSearch": "Spróbuj innego wyszukiwania",
     "uploadingFiles": "Przetwarzanie plików…",
-    "processButton": "Dodaj"
+    "processButton": "Dodaj",
+    "viewProject": "Wyświetl projekt"
   },
   "errorDialog": {
     "titleFallback": "Coś poszło nie tak",
@@ -343,7 +338,7 @@
     },
     "downloadComplete": {
       "title": "Ukończono Pobieranie",
-      "description": "Model {{modelId}} został pobrany."
+      "description": "{{item}} został pobrany"
     },
     "downloadCancelled": {
       "title": "Anulowano Pobieranie",
@@ -406,5 +401,98 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "web_search": "Wyszukiwanie w sieci",
+  "shell": "Powłoka",
+  "browse": "Przeglądaj",
+  "moreControls": "Więcej opcji",
+  "artifacts": "Artefakty",
+  "skills": "Umiejętności",
+  "deleteSession": "Usuń sesję",
+  "deleteSessionTitle": "Usunąć sesję?",
+  "deleteSessionBody": "„{{title}}” i jej transkrypcja zostaną trwale usunięte. Tej operacji nie można cofnąć.",
+  "chatsAndTasks": "Czaty i zadania",
+  "artifactGroupCode": "Kod",
+  "artifactGroupImage": "Obraz",
+  "artifactGroupDocument": "Dokument",
+  "artifactGroupVideo": "Wideo",
+  "artifactGroupAudio": "Audio",
+  "artifactOpenPreview": "Otwórz podgląd",
+  "artifactOpenExternal": "Otwórz",
+  "artifactMoreActions": "Więcej akcji",
+  "artifactShowInFolder": "Pokaż w folderze",
+  "artifactsAll": "Wszystkie",
+  "artifactsEmpty": "Nic jeszcze nie powstało. Pliki utworzone w Twoich rozmowach pojawią się tutaj.",
+  "artifactsNoMatch": "Brak pasujących artefaktów.",
+  "artifactsLibraryDescription": "Pliki utworzone we wszystkich Twoich rozmowach w jednym miejscu.",
+  "artifactsLibraryFiles": "plików",
+  "artifactsLibraryCount_one": "{{count}} plik",
+  "artifactsLibraryCount_other": "Pliki: {{count}}",
+  "artifactsLibraryFilter": "Filtruj według typu pliku",
+  "artifactsLibraryReset": "Wyczyść filtry",
+  "artifactsSearch": "Szukaj artefaktów",
+  "artifactsShowMore": "Pokaż jeszcze {{count}}",
+  "workspace": {
+    "writable": "odczyt i zapis",
+    "readOnly": "tylko odczyt",
+    "a11yWithFolderReadOnly": "Folder projektu {{folder}} dołączony z dostępem tylko do odczytu. Zmień go lub odłącz.",
+    "footnoteEmpty": "Dołącz folder, aby agent mógł pracować nad Twoim projektem. Będzie mógł czytać i edytować znajdujące się w nim pliki.",
+    "attach": "Dołącz folder",
+    "change": "Zmień folder",
+    "detach": "Odłącz folder",
+    "revealFolder": "Pokaż {{folder}} w menedżerze plików",
+    "changeAccess": "Dostęp do folderu: {{current}}. Przełącz na {{next}}.",
+    "unavailable": "Obszar roboczy niedostępny",
+    "missing": "Folder obszaru roboczego {{folder}} nie jest już dostępny. Wybierz inny folder.",
+    "revealFailed": "Nie można pokazać obszaru roboczego",
+    "a11yWithFolder": "Folder projektu {{folder}} dołączony z dostępem do odczytu i zapisu. Zmień go lub odłącz.",
+    "a11yNoFolder": "Brak dołączonego folderu projektu. Dołącz folder."
+  },
+  "conversationScope": {
+    "label": "Zakres rozmowy",
+    "noToolsModel": "Wybrany model nie obsługuje narzędzi, więc te uprawnienia nie działają, dopóki nie wybierzesz modelu z obsługą narzędzi.",
+    "noSandbox": "W tym systemie nie ma piaskownicy systemu operacyjnego, więc polecenia powłoki nie są dostępne.",
+    "live": "Zmiany obowiązują w tej rozmowie od razu. Projekt Jan nie przyznaje dostępu do folderów.",
+    "draft": "Zastosowane po wysłaniu wiadomości. Projekt Jan nie przyznaje dostępu do folderów.",
+    "writable": "Narzędzia zadań mogą czytać i zapisywać pliki w wybranym folderze. Dotychczasowe uprawnienia zadań nadal obowiązują.",
+    "optional": "Opcjonalny folder dla odczytu i zapisu w zadaniach. Bez folderu zadania korzystają z zarządzanego obszaru roboczego.",
+    "permissions": "Wybór folderu nie zmienia ustawień sieci ani pamięci trwałej.",
+    "unsupported": "Ten model nie może używać narzędzi, więc dostęp do folderów, powłoki i pamięci jest niedostępny. Zwykły czat nadal działa.",
+    "pendingKept": "Oczekujący szkic uprawnień został zachowany i będzie dostępny po wybraniu modelu z obsługą narzędzi.",
+    "pendingKeptTemporary": "Oczekujący szkic uprawnień został zachowany i będzie dostępny po rozpoczęciu zwykłego czatu z modelem z obsługą narzędzi.",
+    "temporary": "Czat tymczasowy nie zachowuje dostępu do folderów.",
+    "temporaryPermissions": "Czaty tymczasowe nie mogą korzystać z przyznanego dostępu do folderów, sieci powłoki ani pamięci trwałej.",
+    "folderSelectModel": "Przed dodaniem dostępu do folderu wybierz model z obsługą narzędzi.",
+    "folderUnsupported": "Ten model nie może używać narzędzi, więc nie można dodać folderu. Zwykły czat nadal działa.",
+    "invalidFolder": "Ta ścieżka folderu nie jest obsługiwana. Wybierz inny folder.",
+    "folderNeedsConfirmation": "Nieaktywne · wymaga potwierdzenia",
+    "confirmFolder": "Potwierdź",
+    "removeFolder": "Usuń",
+    "hostRevokeUnconfirmed": "Jan nie mógł potwierdzić tej zmiany uprawnień. Zadania w tle mogą nadal mieć poprzedni dostęp. Spróbuj ponownie lub zamknij Jan, aby je zatrzymać.",
+    "saveFailed": "Nie udało się zapisać zmiany uprawnień. Rozszerzony dostęp pozostaje wyłączony do czasu udanego zapisu.",
+    "folderSelected": "Dodano folder",
+    "removeProject": "Usuń wybór projektu"
+  },
+  "homeMode": {
+    "addFolder": "Dodaj projekt lub folder",
+    "removeFolder": "Usuń wybór",
+    "addProject": "Dodaj projekt",
+    "addToProject": "Dodaj do projektu",
+    "newProject": "Nowy projekt",
+    "noProjects": "Brak projektów",
+    "addFolderAction": "Dodaj folder"
+  },
+  "planMode": {
+    "label": "Plan",
+    "tooltipOff": "Najpierw plan: agent czyta i proponuje, nic nie zapisując.",
+    "tooltipOn": "Tryb planu",
+    "onAnnounce": "Tryb planu włączony",
+    "placeholder": "Poproś o plan. Agent nie zmieni żadnych plików."
+  },
+  "sidebar": {
+    "toggle": "Pokaż lub ukryj pasek boczny",
+    "navigation": "Nawigacja",
+    "navigationDescription": "Przejdź do czatów, projektów, artefaktów, umiejętności i ustawień.",
+    "more": "Więcej"
   }
 }

@@ -634,6 +634,24 @@ pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
     run_settings(project_root).enabled_skills
 }
 
+/// The whitelist for a *restricting* caller (scoped Chat's host-side skill
+/// gate). Unlike [`enabled_skills`], a config that exists but cannot be read or
+/// parsed never falls back to "every skill": the user's restriction is unknown,
+/// so nothing real is enabled (an empty-name sentinel, as skill names are never
+/// empty). A project with no agent.toml at all is unrestricted, as everywhere.
+#[cfg(any(not(feature = "cli"), test))]
+pub(crate) fn enabled_skills_fail_closed(project_root: &Path) -> Vec<String> {
+    let path = agent_toml_path(project_root);
+    match std::fs::read_to_string(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(_) => vec![String::new()],
+        Ok(raw) => match toml::from_str::<AgentToml>(&raw) {
+            Ok(cfg) => cfg.skills.enabled,
+            Err(_) => vec![String::new()],
+        },
+    }
+}
+
 /// The `[prompt]` placement policy for `project_root`, or the defaults when the
 /// project has no agent.toml. A thin read of [`run_settings`] for the callers
 /// that need only this: the status report and the `/context` sizing. Both are
@@ -921,6 +939,45 @@ mod tests {
         let dir = crate::core::agent::project::store_root(root);
         std::fs::create_dir_all(&dir).expect("create agent dir");
         std::fs::write(dir.join("agent.toml"), body).expect("write agent.toml");
+    }
+
+    #[test]
+    fn restricting_whitelist_fails_closed_on_unusable_config_but_not_on_absence() {
+        // Absent config: unrestricted, same as the permissive reader.
+        let bare = unique_root("wl_absent");
+        assert!(enabled_skills_fail_closed(&bare).is_empty());
+
+        // A valid whitelist is honored exactly.
+        let ok = unique_root("wl_ok");
+        write_agent_toml(&ok, "[skills]\nenabled = [\"a\", \"b\"]\n");
+        assert_eq!(enabled_skills_fail_closed(&ok), vec!["a".to_string(), "b".to_string()]);
+
+        // Malformed TOML and a wrong-typed whitelist must NOT widen to "all":
+        // the permissive reader returns [] (= all) for both, the strict one an
+        // un-matchable sentinel.
+        for (tag, body) in [
+            ("wl_syntax", "[skills\nenabled = [\"a\"\n"),
+            ("wl_type", "[skills]\nenabled = \"a\"\n"),
+            ("wl_other_section", "[skills]\nenabled = [\"a\"]\n[tools]\nallow_network = \"maybe\"\n"),
+        ] {
+            let root = unique_root(tag);
+            write_agent_toml(&root, body);
+            assert!(enabled_skills(&root).is_empty(), "{tag}: the permissive reader widens to all");
+            let strict = enabled_skills_fail_closed(&root);
+            assert_eq!(strict, vec![String::new()], "{tag}");
+            assert!(!tauri_plugin_agent_tools::skills::is_enabled(&strict, "a"), "{tag}");
+            let _ = std::fs::remove_dir_all(&root);
+        }
+
+        // Unreadable (a directory where the file should be) also fails closed.
+        let unreadable = unique_root("wl_dir");
+        let dir = crate::core::agent::project::store_root(&unreadable).join("agent.toml");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(enabled_skills_fail_closed(&unreadable), vec![String::new()]);
+
+        for r in [&bare, &ok, &unreadable] {
+            let _ = std::fs::remove_dir_all(r);
+        }
     }
 
     #[test]

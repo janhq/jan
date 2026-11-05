@@ -1,15 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-vi.mock('@/lib/backendStorage', () => ({
-  backendStorage: {
-    getItem: vi.fn().mockResolvedValue(null),
-    setItem: vi.fn().mockResolvedValue(undefined),
-    removeItem: vi.fn().mockResolvedValue(undefined),
-  },
-}))
-
+import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
 import { startNewSession, useCoworkSessions } from '../useCoworkSessions'
-import type { CoworkTurn, SubagentRun } from '@/types/coworkSession'
+import type { CoworkTurn, SubagentRun, TodoList } from '@/types/coworkSession'
 
 const reset = () =>
   useCoworkSessions.setState({ sessions: [], currentId: null })
@@ -38,6 +31,65 @@ describe('startNewSession', () => {
       fresh,
       used,
     ])
+  })
+
+  it('does not reuse an unavailable current session', () => {
+    const broken = useCoworkSessions.getState().createSession()
+    useCoworkSessions.setState((s) => ({
+      sessions: s.sessions.map((x) => (x.id === broken ? { ...x, unavailable: 'missing-sidecar' as const } : x)),
+    }))
+    const fresh = useCoworkSessions.getState().createSession()
+    expect(fresh).not.toBe(broken)
+    expect(useCoworkSessions.getState().sessions.find((x) => x.id === fresh)?.unavailable).toBeUndefined()
+  })
+
+  it('does not reuse a cleared session as a new one, and pruning keeps it', () => {
+    const store = useCoworkSessions.getState()
+    const used = store.createSession()
+    store.commitTurns(used, [{ role: 'user', content: 'hi' }], [], [])
+    store.clearSession(used)
+    const fresh = useCoworkSessions.getState().createSession()
+    expect(fresh).not.toBe(used)
+    useCoworkSessions.getState().selectSession(fresh)
+    useCoworkSessions.getState().pruneEmptySessions([])
+    expect(useCoworkSessions.getState().sessions.map((x) => x.id)).toEqual([fresh, used])
+  })
+
+  it('keeps a used session listed when deleting its first question empties it, but not a blank placeholder', () => {
+    const store = useCoworkSessions.getState()
+    const used = store.createSession()
+    store.commitTurns(
+      used,
+      [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'yo' }],
+      [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'yo' }] as never,
+      []
+    )
+    store.dropFromTurn(used, 0)
+    const after = useCoworkSessions.getState().sessions.find((x) => x.id === used)
+    expect(after?.turns).toEqual([])
+    expect(after?.cleared).toBe(true)
+    const blank = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().dropFromTurn(blank, 0)
+    expect(useCoworkSessions.getState().sessions.find((x) => x.id === blank)?.cleared).toBeUndefined()
+    const fresh = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().selectSession(fresh)
+    useCoworkSessions.getState().pruneEmptySessions([])
+    expect(useCoworkSessions.getState().sessions.map((x) => x.id)).toEqual([fresh, used])
+  })
+
+  it('does not mark a session cleared when a later question is dropped', () => {
+    const store = useCoworkSessions.getState()
+    const id = store.createSession()
+    const t: CoworkTurn[] = [
+      { role: 'user', content: 'a' }, { role: 'assistant', content: 'b' },
+      { role: 'user', content: 'c' }, { role: 'assistant', content: 'd' },
+    ]
+    store.commitTurns(id, t, [
+      { role: 'user', content: 'a' }, { role: 'assistant', content: 'b' },
+      { role: 'user', content: 'c' }, { role: 'assistant', content: 'd' },
+    ] as never, [])
+    store.dropFromTurn(id, 2)
+    expect(useCoworkSessions.getState().sessions.find((x) => x.id === id)?.cleared).toBeUndefined()
   })
 
   it('reuses an untouched current session', () => {
@@ -269,6 +321,34 @@ describe('useCoworkSessions', () => {
   })
 })
 
+describe('useCoworkSessions setFolder (unacknowledged)', () => {
+  beforeEach(reset)
+
+  it('drops any previous or legacy-default access when the folder changes', () => {
+    const st = useCoworkSessions.getState()
+    const id = st.createSession()
+    st.setFolderGrant(id, { path: '/a', access: 'write' })
+    st.setFolder(id, '/b')
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    expect(s.folder).toBe('/b')
+    expect(s.folderAccess).toBeNull()
+  })
+
+  it('a fresh local attach does not fall back to the undefined (write) default', () => {
+    const id = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().setFolder(id, '/b')
+    expect(useCoworkSessions.getState().sessions.find((x) => x.id === id)!.folderAccess).toBeNull()
+  })
+
+  it('re-setting the same folder keeps the host-acknowledged access', () => {
+    const st = useCoworkSessions.getState()
+    const id = st.createSession()
+    st.setFolderGrant(id, { path: '/a', access: 'read' })
+    st.setFolder(id, '/a')
+    expect(useCoworkSessions.getState().sessions.find((x) => x.id === id)!.folderAccess).toBe('read')
+  })
+})
+
 describe('useCoworkSessions createSession reuse', () => {
   beforeEach(reset)
 
@@ -350,49 +430,47 @@ describe('useCoworkSessions pruneEmptySessions', () => {
   })
 })
 
-describe('useCoworkSessions persist migration', () => {
-  // v0 sessions carry `turns` but no `messages`. Losing the tool turns on
-  // upgrade would leave the agent replaying a conversation with holes in it.
-  it('rebuilds messages from turns for a v0 session', () => {
-    const migrate = useCoworkSessions.persist.getOptions().migrate!
-    const out = migrate(
-      {
-        sessions: [
-          {
-            id: 's1',
-            turns: [
-              { role: 'user', content: 'build it' },
-              {
-                role: 'tool',
-                content: '',
-                name: 'write',
-                callId: 'c1',
-                args: { path: 'a.txt' },
-                result: 'Created a.txt (3 bytes)',
-                status: 'done',
-              },
-            ],
-          },
-        ],
-      },
-      0
-    ) as { sessions: Array<{ messages: unknown[] }> }
 
-    const parts = (out.sessions[0].messages as never[]).flatMap(
-      (m: { parts?: unknown[] }) => m.parts ?? []
-    )
-    expect(out.sessions[0].messages.length).toBeGreaterThan(0)
-    expect(parts.some((p: { type?: string }) => p.type === 'tool-write')).toBe(
-      true
-    )
-  })
-
-  it('leaves an already-migrated session alone', () => {
-    const migrate = useCoworkSessions.persist.getOptions().migrate!
-    const existing = [{ id: 's1', turns: [], messages: [{ id: 'keep' }] }]
-    const out = migrate({ sessions: existing }, 1) as {
-      sessions: Array<{ messages: Array<{ id: string }> }>
+describe('useCoworkSessions todo history cuts', () => {
+  beforeEach(reset)
+  const empty: TodoList = { phases: [] }
+  const earlier: TodoList = { phases: [{ name: 'Earlier', tasks: [{ content: 'Keep', status: 'pending' }] }] }
+  const stale: TodoList = { phases: [{ name: 'Later', tasks: [{ content: 'Discard', status: 'completed' }] }] }
+  const todo = (list: TodoList): CoworkTurn => ({ role: 'tool', name: 'todo', callId: 'todo', content: '', status: 'done', result: JSON.stringify(list) })
+  const seed = (prefix: CoworkTurn[]) => {
+    const id = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().commitTurns(id, [...prefix, { role: 'user', content: 'Last question' }, todo(stale), { role: 'assistant', content: 'Last answer' }], [], [])
+    useCoworkSessions.setState((state) => ({ sessions: state.sessions.map((session) => ({ ...session, messages: coworkTurnsToUIMessages(session.turns) })) }))
+    useCoworkSessions.getState().setTodos(id, stale)
+    return id
+  }
+  it.each(['rewind', 'drop'] as const)('%s canonicalizes the surviving snapshot, including an explicit empty one', (action) => {
+    for (const list of [earlier, empty]) {
+      reset()
+      const prefix: CoworkTurn[] = [{ role: 'user', content: 'First' }, todo(list)]
+      const id = seed(prefix)
+      const store = useCoworkSessions.getState()
+      if (action === 'rewind') store.rewindToLastUser(id)
+      else store.dropFromTurn(id, prefix.length)
+      const session = useCoworkSessions.getState().sessions[0]
+      expect(session.todos).toEqual(list)
+      expect(session.turns).toEqual(action === 'rewind' ? [...prefix, { role: 'user', content: 'Last question' }] : prefix)
     }
-    expect(out.sessions[0].messages[0].id).toBe('keep')
+  })
+  it.each(['rewind', 'drop', 'clear'] as const)('%s resets a legacy-only sidecar to explicit empty', (action) => {
+    const id = useCoworkSessions.getState().createSession()
+    const store = useCoworkSessions.getState()
+    store.commitTurns(id, [{ role: 'user', content: 'Legacy question' }, { role: 'assistant', content: 'Legacy answer' }], [], [])
+    useCoworkSessions.setState((state) => ({ sessions: state.sessions.map((session) => ({ ...session, messages: coworkTurnsToUIMessages(session.turns) })) }))
+    store.setTodos(id, stale)
+    if (action === 'rewind') store.rewindToLastUser(id)
+    else if (action === 'drop') store.dropFromTurn(id, 0)
+    else store.clearSession(id)
+    expect(useCoworkSessions.getState().sessions[0].todos).toEqual(empty)
+  })
+  it('clear removes transcript-owned and legacy todo state together', () => {
+    const id = seed([{ role: 'user', content: 'First' }, todo(earlier)])
+    useCoworkSessions.getState().clearSession(id)
+    expect(useCoworkSessions.getState().sessions[0]).toMatchObject({ turns: [], messages: [], todos: empty })
   })
 })

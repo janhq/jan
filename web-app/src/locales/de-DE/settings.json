@@ -102,7 +102,8 @@
     "resetCodeBlockStyle": "Codeblockstil zurücksetzen",
     "resetCodeBlockStyleDesc": "Codeblockstil auf Standard zurücksetzen.",
     "resetCodeBlockSuccess": "Codeblockstil erfolgreich zurückgesetzt",
-    "resetCodeBlockSuccessDesc": "Der Codeblockstil wurde auf die Standardeinstellung zurückgesetzt."
+    "resetCodeBlockSuccessDesc": "Der Codeblockstil wurde auf die Standardeinstellung zurückgesetzt.",
+    "themeDescFixed": "Dieses Design immer verwenden. Wähle „System“, um dem Betriebssystem zu folgen."
   },
   "hardware": {
     "os": "Betriebssystem",
@@ -215,6 +216,8 @@
     "checkForUpdates": "Auf Updates prüfen",
     "checkForUpdatesDesc": "Prüfe, ob eine neuere Version von Jan verfügbar ist.",
     "checkingForUpdates": "Suche nach Updates...",
+    "autoUpdateCheck": "Automatische Updateprüfung",
+    "autoUpdateCheckDesc": "Beim Start und danach regelmäßig automatisch nach Updates suchen.",
     "copied": "Kopiert",
     "copyPath": "Pfad kopieren",
     "changeLocation": "Ort ändern",
@@ -230,6 +233,9 @@
     "reset": "Zurücksetzen",
     "huggingfaceToken": "HuggingFace Token",
     "huggingfaceTokenDesc": "Dein HuggingFace API-Token für den Zugriff auf Modelle.",
+    "janCli": "Jan CLI",
+    "janCliDesc": "Führe den Jan-Agent in deinem Terminal aus. Folge der Anleitung, um ihn zu installieren und loszulegen.",
+    "janCliSetupGuide": "Einrichtungsanleitung",
     "resources": "Ressourcen",
     "documentation": "Dokumentation",
     "documentationDesc": "Erfahre, wie Du Jan verwenden und seine Funktionen erkunden kannst.",
@@ -264,5 +270,34 @@
     }
   },
   "backendInstallSuccess": "Backend erfolgreich installiert",
-  "backendInstallError": "Backend-Installation fehlgeschlagen"
+  "backendInstallError": "Backend-Installation fehlgeschlagen",
+  "cowork": {
+    "title": "Agent",
+    "description": "Was Jan auf deinem Computer tun kann: seine isolierte Shell sowie Erinnerungen und Fähigkeiten, die dauerhaft in deinem Jan-Datenordner gespeichert werden.",
+    "networkDesc": "Erlaube Shell-Befehlen den Netzwerkzugriff, etwa zum Installieren von Paketen oder Abrufen eines Repositorys. Standardmäßig aktiviert. Die Sandbox begrenzt weiterhin den Dateizugriff.",
+    "memoryWrite": "Speichern von Erinnerungen und Fähigkeiten erlauben",
+    "memoryWriteDesc": "Erlaube Modellen, Erinnerungen und Fähigkeiten über ein Gespräch hinaus zu speichern. Standardmäßig aktiviert. Du kannst unten alles prüfen und bearbeiten.",
+    "permissionSaveFailed": "Diese Einstellung konnte nicht gespeichert werden. Sie wurde nicht geändert.",
+    "shell": "Shell-Befehle",
+    "shellChecking": "Sandbox wird gesucht …",
+    "shellSandboxed": "Befehle werden durch {{backend}} eingeschränkt: Sie können nur im Sitzungsarbeitsbereich schreiben und keine Dateien in deinem Benutzerordner lesen.",
+    "shellUnavailable": "Auf diesem System ist keine Sandbox verfügbar. Daher wird das Shell-Werkzeug nicht angeboten. Befehle werden niemals ohne Isolation ausgeführt.",
+    "network": "Netzwerkzugriff erlauben",
+    "openFolder": "Ordner öffnen",
+    "memories": "Erinnerungen",
+    "noMemories": "Noch keine Erinnerungen. Modelle speichern mit dem Erinnerungswerkzeug Informationen, die sie für aufbewahrenswert halten.",
+    "skills": "Fähigkeiten",
+    "noSkills": "Noch keine Fähigkeiten. Eine Fähigkeit ist eine wiederverwendbare Anleitung, die ein Modell bei Bedarf laden kann.",
+    "add": "Hinzufügen",
+    "editMemory": "Erinnerung bearbeiten",
+    "editMemoryDesc": "Ein Thema pro Notiz. Modelle lesen diese Notizen mit dem Erinnerungswerkzeug.",
+    "editSkill": "Fähigkeit bearbeiten",
+    "editSkillDesc": "Anleitung in Markdown, optional mit einer Beschreibung im YAML-Frontmatter. Diese Beschreibung sehen Modelle, bevor sie die Fähigkeit laden.",
+    "namePlaceholder": "Name",
+    "contentPlaceholder": "Inhalt",
+    "loadFailed": "Der Agent-Arbeitsbereich konnte nicht geladen werden",
+    "saveFailed": "Speichern fehlgeschlagen",
+    "deleteFailed": "Löschen fehlgeschlagen",
+    "revealFailed": "Der Ordner konnte nicht geöffnet werden"
+  }
 }

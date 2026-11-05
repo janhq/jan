@@ -272,10 +272,6 @@
       "cancel": "キャンセル",
       "changeLocation": "場所を変更"
     },
-    "deleteAllThreads": {
-      "title": "すべてのスレッドを削除",
-      "description": "すべてのスレッドが削除されます。この操作は元に戻せません。"
-    },
     "deleteAllThreadsInProject": {
       "title": "すべての会話を削除",
       "description": "「{{projectName}}」内の{{count}}件の会話が削除されます。この操作は元に戻せません。"
@@ -288,6 +284,10 @@
     },
     "messageMetadata": {
       "title": "メッセージメタデータ"
+    },
+    "deleteAllChats": {
+      "title": "プロジェクト外の会話を削除",
+      "description": "プロジェクトに属していない会話を削除します。プロジェクト内の会話、スター付きの会話、タスクは残ります。この操作は元に戻せません。"
     }
   },
   "errorDialog": {
@@ -327,7 +327,7 @@
     "processButton": "追加",
     "deleteProjectDialog": {
       "title": "プロジェクトを削除",
-      "permanentDelete": "これにより、すべてのスレッドが完全に削除されます。",
+      "permanentDelete": "「{{projectName}}」とそのすべての会話が完全に削除されます。この操作は元に戻せません。",
       "permanentDeleteWarning": "この操作は、プロジェクト内のすべてのスレッドを完全に削除します！",
       "deleteEmptyProject": "この操作は、プロジェクト「{{projectName}}」を削除します。",
       "saveThreadsAdvice": "スレッドを残すには、削除する前にスレッドリストまたは別のプロジェクトに移動してください。",
@@ -354,7 +354,6 @@
       "updateSuccess": "プロジェクト「{{projectName}}」を正常に更新しました"
     },
     "noConversationsIn": "{{projectName}}には会話がありません",
-    "startNewConversation": "以下で{{projectName}}との新しい会話を開始します",
     "conversationsIn": "{{projectName}}での会話",
     "conversationsDescription": "会話をクリックしてチャットを続けるか、以下で新しい会話を開始してください。",
     "conversation": "会話",
@@ -370,7 +369,9 @@
     "update": "更新",
     "searchProjects": "プロジェクトを検索...",
     "noProjectsFound": "プロジェクトが見つかりません",
-    "tryDifferentSearch": "別の検索語をお試しください"
+    "tryDifferentSearch": "別の検索語をお試しください",
+    "viewProject": "プロジェクトを表示",
+    "sendMessageToStart": "上でメッセージを送信すると会話を始められます。"
   },
   "attachmentsIngestion": {
     "title": "添付ファイルの取り込み方法を選択",
@@ -508,6 +509,10 @@
     "attachmentsDisabledInfo": {
       "title": "添付ファイルが無効です",
       "description": "添付ファイルは設定で無効になっています"
+    },
+    "deleteAllChats": {
+      "title": "会話を削除しました",
+      "description": "プロジェクト外の会話を削除しました。プロジェクト内の会話とタスクは残しています。"
     }
   },
   "errors": {
@@ -523,5 +528,109 @@
     "forceQuit": "強制終了",
     "forcing": "強制終了しています…",
     "shuttingDown": "シャットダウンしています…"
-  }
+  },
+  "agentSettings": "エージェント",
+  "workspace": {
+    "readOnly": "読み取り専用",
+    "a11yWithFolderReadOnly": "プロジェクトフォルダー {{folder}} は読み取り専用で接続されています。変更または接続解除ができます。",
+    "writable": "読み取りと書き込み",
+    "footnoteEmpty": "フォルダーを接続すると、エージェントがプロジェクトで作業できます。フォルダー内のファイルを読み取り、編集できます。",
+    "attach": "フォルダーを接続",
+    "change": "フォルダーを変更",
+    "detach": "フォルダーの接続を解除",
+    "revealFolder": "{{folder}} をファイルマネージャーで表示",
+    "changeAccess": "フォルダーのアクセス: {{current}}。{{next}} に切り替えます。",
+    "unavailable": "ワークスペースを利用できません",
+    "missing": "ワークスペースのフォルダー {{folder}} は利用できなくなりました。別のフォルダーを選択してください。",
+    "revealFailed": "ワークスペースを表示できませんでした",
+    "a11yWithFolder": "プロジェクトフォルダー {{folder}} は読み取りと書き込みの権限で接続されています。変更または接続解除ができます。",
+    "a11yNoFolder": "プロジェクトフォルダーが接続されていません。フォルダーを接続してください。"
+  },
+  "conversationScope": {
+    "noToolsModel": "選択中のモデルはツールに対応していません。ツール対応モデルを選択するまで、これらの権限は適用されません。",
+    "noSandbox": "このシステムでは OS のサンドボックスを利用できないため、シェルコマンドは提供されません。",
+    "live": "変更はこの会話にすぐに適用されます。Jan のプロジェクトはフォルダーへのアクセスを許可するものではありません。",
+    "draft": "メッセージの送信時に適用されます。Jan のプロジェクトはフォルダーへのアクセスを許可するものではありません。",
+    "folderNeedsConfirmation": "無効 · 確認が必要",
+    "confirmFolder": "確認",
+    "removeFolder": "削除",
+    "hostRevokeUnconfirmed": "Jan はこの権限変更を確認できませんでした。バックグラウンドタスクには以前のアクセス権限が残っている可能性があります。再試行するか、Jan を終了してタスクを停止してください。",
+    "saveFailed": "権限の変更を保存できませんでした。保存に成功するまで、追加のアクセス権限は無効のままです。",
+    "label": "会話の範囲",
+    "writable": "タスクのツールは、選択したフォルダー内のファイルを読み書きできます。既存のタスク権限は引き続き適用されます。",
+    "optional": "タスクが読み書きできる任意のフォルダーです。フォルダーがない場合、タスクは管理されたワークスペースを使用します。",
+    "permissions": "フォルダーを選択しても、ネットワークや永続メモリの設定は変わりません。",
+    "unsupported": "このモデルはツールを使用できないため、フォルダー、シェル、メモリへのアクセスは利用できません。通常のチャットは引き続き使えます。",
+    "pendingKept": "保留中の権限の下書きは保持され、ツール対応モデルを選択すると利用できます。",
+    "pendingKeptTemporary": "保留中の権限の下書きは保持され、ツール対応モデルで通常のチャットを開始すると利用できます。",
+    "temporary": "一時チャットではフォルダーへのアクセスは保持されません。",
+    "temporaryPermissions": "一時チャットでは、付与されたフォルダー、シェルのネットワーク、永続メモリへのアクセスは使用できません。",
+    "folderSelectModel": "フォルダーへのアクセスを追加する前に、ツール対応モデルを選択してください。",
+    "folderUnsupported": "このモデルはツールを使用できないため、フォルダーを追加できません。通常のチャットは引き続き使えます。",
+    "invalidFolder": "このフォルダーのパスには対応していません。別のフォルダーを選択してください。",
+    "folderSelected": "フォルダーを追加しました",
+    "removeProject": "プロジェクトの選択を解除"
+  },
+  "memoryFeedback": {
+    "saved": "メモリを保存しました",
+    "inspect": "確認",
+    "inspectLabel": "保存したメモリを確認"
+  },
+  "web_search": "ウェブ検索",
+  "shell": "シェル",
+  "browse": "参照",
+  "moreControls": "その他の操作",
+  "artifacts": "アーティファクト",
+  "skills": "スキル",
+  "deleteSession": "セッションを削除",
+  "deleteSessionTitle": "セッションを削除しますか？",
+  "deleteSessionBody": "「{{title}}」とそのトランスクリプトは完全に削除されます。この操作は元に戻せません。",
+  "chatsAndTasks": "チャットとタスク",
+  "artifactGroupCode": "コード",
+  "artifactGroupImage": "画像",
+  "artifactGroupDocument": "ドキュメント",
+  "artifactGroupVideo": "動画",
+  "artifactGroupAudio": "音声",
+  "artifactOpenPreview": "プレビューを開く",
+  "artifactOpenExternal": "開く",
+  "artifactMoreActions": "その他の操作",
+  "artifactShowInFolder": "フォルダーで表示",
+  "artifactsAll": "すべて",
+  "artifactsEmpty": "まだ何も作成されていません。会話で作成したファイルがここに表示されます。",
+  "artifactsNoMatch": "一致するアーティファクトがありません。",
+  "artifactsLibraryDescription": "すべての会話で作成されたファイルを一か所にまとめて表示します。",
+  "artifactsLibraryFiles": "ファイル",
+  "artifactsLibraryCount_one": "{{count}} 件のファイル",
+  "artifactsLibraryCount_other": "{{count}} 件のファイル",
+  "artifactsLibraryFilter": "ファイルの種類で絞り込む",
+  "artifactsLibraryReset": "フィルターをクリア",
+  "artifactsSearch": "アーティファクトを検索",
+  "artifactsShowMore": "さらに {{count}} 件を表示",
+  "homeMode": {
+    "addFolder": "プロジェクトまたはフォルダーを追加",
+    "removeFolder": "選択を解除",
+    "addProject": "プロジェクトを追加",
+    "addToProject": "プロジェクトに追加",
+    "newProject": "新しいプロジェクト",
+    "noProjects": "プロジェクトはまだありません",
+    "addFolderAction": "フォルダーを追加"
+  },
+  "planMode": {
+    "label": "プラン",
+    "tooltipOff": "まず計画：エージェントは読み取りと提案のみを行い、書き込みはしません。",
+    "tooltipOn": "プランモード",
+    "onAnnounce": "プランモードをオンにしました",
+    "placeholder": "プランを依頼します。エージェントはファイルを変更しません。"
+  },
+  "sidebar": {
+    "toggle": "サイドバーの表示を切り替え",
+    "navigation": "ナビゲーション",
+    "navigationDescription": "チャット、プロジェクト、アーティファクト、スキル、設定に移動します。",
+    "more": "その他"
+  },
+  "overview": {
+    "description": "この会話の進捗、ファイル、バックグラウンドタスク。"
+  },
+  "askToolPending": "回答を待っています",
+  "askToolAsked": "質問しました"
 }

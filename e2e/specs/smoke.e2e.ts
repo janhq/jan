@@ -28,6 +28,21 @@ describe('Jan desktop app', () => {
     await $('[data-testid="setup-wizard"]').waitForDisplayed({ timeout: 60_000 })
   })
 
+  it('uses fresh browser storage that survives a webview reload', async function () {
+    // This regression targets WKWebView's ephemeral store on macOS.
+    if (process.platform !== 'darwin') this.skip()
+    // Intentionally left behind: running this smoke twice with the same QA
+    // profile proves the e2e browser store does not survive process restart.
+    const key = 'jan-e2e-ephemeral-store-probe'
+    const previous = await browser.execute((k) => localStorage.getItem(k), key)
+    expect(previous).toBeNull()
+    await browser.execute((k) => localStorage.setItem(k, 'probe'), key)
+    await browser.refresh()
+    await $('[data-testid="setup-wizard"]').waitForDisplayed({ timeout: 60_000 })
+    const current = await browser.execute((k) => localStorage.getItem(k), key)
+    expect(current).toBe('probe')
+  })
+
   it('shows a data folder resolved by Rust, inside the throwaway HOME', async () => {
     await goto('/settings/general')
 

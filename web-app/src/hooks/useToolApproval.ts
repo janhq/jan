@@ -5,15 +5,25 @@ import { backendStorage } from '@/lib/backendStorage'
 import { EXTENSION_SERVER_PREFIX } from '@/lib/extensions/tools'
 
 type ToolApprovalState = {
-  /** threadId -> tool names trusted for that conversation only. */
+  /** Legacy/no-server thread grants; never authorize server-qualified tools. */
   approvedTools: Record<string, string[]>
+  /** Exact identities, stored separately so legacy names cannot widen trust. */
+  approvedMCPTools: {
+    threadId: string
+    serverName: string
+    toolName: string
+  }[]
   /** MCP servers trusted in every conversation, tools included. */
   approvedServers: string[]
   /** Tools trusted in every conversation, for tools with no server. */
   approvedToolsGlobal: string[]
   allowAllMCPPermissions: boolean
 
-  approveToolForThread: (threadId: string, toolName: string) => void
+  approveToolForThread: (
+    threadId: string,
+    toolName: string,
+    serverName?: string
+  ) => void
   approveServer: (serverName: string) => void
   approveToolEverywhere: (toolName: string) => void
   isToolApproved: (
@@ -28,11 +38,30 @@ export const useToolApproval = create<ToolApprovalState>()(
   persist(
     (set, get) => ({
       approvedTools: {},
+      approvedMCPTools: [],
       approvedServers: [],
       approvedToolsGlobal: [],
       allowAllMCPPermissions: false,
 
-      approveToolForThread: (threadId: string, toolName: string) => {
+      approveToolForThread: (threadId, toolName, serverName) => {
+        if (serverName) {
+          set((state) =>
+            state.approvedMCPTools.some(
+              (grant) =>
+                grant.threadId === threadId &&
+                grant.serverName === serverName &&
+                grant.toolName === toolName
+            )
+              ? state
+              : {
+                  approvedMCPTools: [
+                    ...state.approvedMCPTools,
+                    { threadId, serverName, toolName },
+                  ],
+                }
+          )
+          return
+        }
         set((state) => ({
           approvedTools: {
             ...state.approvedTools,
@@ -66,16 +95,21 @@ export const useToolApproval = create<ToolApprovalState>()(
         serverName?: string
       ) => {
         const state = get()
-        if (state.approvedToolsGlobal.includes(toolName)) return true
-        // Never for an ext: name, even one an older build saved: it would
-        // cover every tool that extension has or later adds.
-        if (
-          serverName &&
-          !serverName.startsWith(EXTENSION_SERVER_PREFIX) &&
-          state.approvedServers.includes(serverName)
-        ) {
-          return true
+        if (serverName) {
+          return (
+            // Never for an ext: name, even one an older build saved: it would
+            // cover every tool that extension has or later adds.
+            (!serverName.startsWith(EXTENSION_SERVER_PREFIX) &&
+              state.approvedServers.includes(serverName)) ||
+            state.approvedMCPTools.some(
+              (grant) =>
+                grant.threadId === threadId &&
+                grant.serverName === serverName &&
+                grant.toolName === toolName
+            )
+          )
         }
+        if (state.approvedToolsGlobal.includes(toolName)) return true
         return state.approvedTools[threadId]?.includes(toolName) || false
       },
 
@@ -87,9 +121,10 @@ export const useToolApproval = create<ToolApprovalState>()(
       name: localStorageKey.toolApproval,
       storage: createJSONStorage(() => backendStorage),
       skipHydration: true,
-      // Only persist approved tools and global permission setting, not modal state
+      // Only persist grants and global permission setting, not modal state
       partialize: (state) => ({
         approvedTools: state.approvedTools,
+        approvedMCPTools: state.approvedMCPTools,
         approvedServers: state.approvedServers,
         approvedToolsGlobal: state.approvedToolsGlobal,
         allowAllMCPPermissions: state.allowAllMCPPermissions,

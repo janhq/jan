@@ -235,10 +235,6 @@
       "cancel": "Abbrechen",
       "changeLocation": "Speicherort ändern"
     },
-    "deleteAllThreads": {
-      "title": "Alle Threads löschen",
-      "description": "Alle Threads werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
-    },
     "deleteThread": {
       "description": "Bist Du sicher, daß Du diesen Thread löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden."
     },
@@ -247,6 +243,10 @@
     },
     "messageMetadata": {
       "title": "Nachricht Metadaten"
+    },
+    "deleteAllChats": {
+      "title": "Unterhaltungen außerhalb von Projekten löschen",
+      "description": "Dadurch werden Unterhaltungen gelöscht, die nicht in einem Projekt liegen. Projektunterhaltungen, markierte Unterhaltungen und Aufgaben bleiben erhalten. Diese Aktion kann nicht rückgängig gemacht werden."
     }
   },
   "projects": {
@@ -267,7 +267,7 @@
     "projectNotFoundDesc": "Das gesuchte Projekt existiert nicht oder wurde gelöscht.",
     "deleteProjectDialog": {
       "title": "Projekt löschen",
-      "permanentDelete": "Dies wird alle Threads permanent löschen.",
+      "permanentDelete": "Dadurch werden \"{{projectName}}\" und alle zugehörigen Unterhaltungen dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
       "permanentDeleteWarning": "Diese Aktion wird ALLE Threads innerhalb des Projekts permanent löschen!",
       "deleteEmptyProject": "Diese Aktion wird das Projekt \"{{projectName}}\" löschen.",
       "saveThreadsAdvice": "Um Threads zu speichern, verschiebe sie zu deiner Threadliste oder zu einem anderen Projekt, bevor du löschst.",
@@ -291,7 +291,6 @@
       "renameSuccess": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt"
     },
     "noConversationsIn": "Keine Gespräche in {{projectName}}",
-    "startNewConversation": "Starten Sie ein neues Gespräch mit {{projectName}} unten",
     "conversationsIn": "Gespräche in {{projectName}}",
     "conversationsDescription": "Klicken Sie auf ein Gespräch, um weiterzuchatten, oder starten Sie unten ein neues.",
     "thread": "Thread",
@@ -304,7 +303,9 @@
     "noProjectsFound": "Keine Projekte gefunden",
     "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff",
     "uploadingFiles": "Dateien werden verarbeitet…",
-    "processButton": "Hinzufügen"
+    "processButton": "Hinzufügen",
+    "viewProject": "Projekt ansehen",
+    "sendMessageToStart": "Sende oben eine Nachricht, um eine zu beginnen."
   },
   "errorDialog": {
     "titleFallback": "Etwas ist schiefgelaufen",
@@ -398,6 +399,10 @@
     "downloadAndVerificationComplete": {
       "title": "Download abgeschlossen",
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
+    },
+    "deleteAllChats": {
+      "title": "Unterhaltungen gelöscht",
+      "description": "Unterhaltungen außerhalb von Projekten wurden gelöscht. Projektunterhaltungen und Aufgaben wurden behalten."
     }
   },
   "llamacppBusyOnExit": {
@@ -406,5 +411,109 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
-  }
+  },
+  "agentSettings": "Agent",
+  "workspace": {
+    "readOnly": "nur lesen",
+    "a11yWithFolderReadOnly": "Projektordner {{folder}}, mit Lesezugriff angehängt. Ändern oder trennen.",
+    "writable": "lesen und schreiben",
+    "footnoteEmpty": "Hänge einen Ordner an, damit der Agent an deinem Projekt arbeiten kann. Er kann die darin enthaltenen Dateien lesen und bearbeiten.",
+    "attach": "Ordner anhängen",
+    "change": "Ordner ändern",
+    "detach": "Ordner trennen",
+    "revealFolder": "{{folder}} im Dateimanager anzeigen",
+    "changeAccess": "Ordnerzugriff: {{current}}. Zu {{next}} wechseln.",
+    "unavailable": "Arbeitsbereich nicht verfügbar",
+    "missing": "Der Arbeitsbereichsordner {{folder}} ist nicht mehr verfügbar. Wähle einen anderen Ordner.",
+    "revealFailed": "Arbeitsbereich konnte nicht angezeigt werden",
+    "a11yWithFolder": "Projektordner {{folder}}, mit Lese- und Schreibzugriff angehängt. Ändern oder trennen.",
+    "a11yNoFolder": "Kein Projektordner angehängt. Hänge einen an."
+  },
+  "conversationScope": {
+    "noToolsModel": "Das ausgewählte Modell unterstützt keine Werkzeuge. Diese Berechtigungen wirken erst, wenn du ein Modell mit Werkzeugunterstützung auswählst.",
+    "noSandbox": "Auf diesem System ist keine Betriebssystem-Sandbox verfügbar. Daher werden keine Shell-Befehle angeboten.",
+    "live": "Änderungen gelten sofort für dieses Gespräch. Ein Jan-Projekt gewährt keinen Ordnerzugriff.",
+    "draft": "Wird beim Senden deiner Nachricht angewendet. Ein Jan-Projekt gewährt keinen Ordnerzugriff.",
+    "folderNeedsConfirmation": "Inaktiv · Bestätigung erforderlich",
+    "confirmFolder": "Bestätigen",
+    "removeFolder": "Entfernen",
+    "hostRevokeUnconfirmed": "Jan konnte diese Berechtigungsänderung nicht bestätigen. Hintergrundaufgaben haben möglicherweise noch den bisherigen Zugriff. Versuche es erneut oder beende Jan, um sie zu stoppen.",
+    "saveFailed": "Die Berechtigungsänderung konnte nicht gespeichert werden. Erweiterter Zugriff bleibt bis zum erfolgreichen Speichern deaktiviert.",
+    "label": "Geltungsbereich der Unterhaltung",
+    "writable": "Aufgabenwerkzeuge können Dateien im ausgewählten Ordner lesen und schreiben. Deine bestehenden Aufgabenberechtigungen gelten weiterhin.",
+    "optional": "Optionaler Ordner für Lese- und Schreibzugriff der Aufgaben. Ohne Ordner nutzen Aufgaben ihren verwalteten Arbeitsbereich.",
+    "permissions": "Die Ordnerauswahl ändert weder Netzwerk- noch Speichereinstellungen.",
+    "unsupported": "Dieses Modell kann keine Werkzeuge nutzen, daher sind Ordner-, Shell- und Speicherzugriff nicht verfügbar. Normales Chatten funktioniert weiterhin.",
+    "pendingKept": "Dein ausstehender Berechtigungsentwurf bleibt erhalten und steht bereit, sobald du ein Modell mit Werkzeugunterstützung wählst.",
+    "pendingKeptTemporary": "Dein ausstehender Berechtigungsentwurf bleibt erhalten und steht bereit, sobald du einen normalen Chat mit einem Modell mit Werkzeugunterstützung startest.",
+    "temporary": "Ein temporärer Chat behält keinen Ordnerzugriff.",
+    "temporaryPermissions": "Temporäre Chats können keinen gewährten Ordner-, Shell-Netzwerk- oder dauerhaften Speicherzugriff nutzen.",
+    "folderSelectModel": "Wähle ein Modell mit Werkzeugunterstützung, bevor du Ordnerzugriff hinzufügst.",
+    "folderUnsupported": "Dieses Modell kann keine Werkzeuge nutzen, daher lässt sich kein Ordner hinzufügen. Normales Chatten funktioniert weiterhin.",
+    "invalidFolder": "Dieser Ordnerpfad wird nicht unterstützt. Wähle einen anderen Ordner.",
+    "folderSelected": "Ordner hinzugefügt",
+    "removeProject": "Projektauswahl entfernen"
+  },
+  "memoryFeedback": {
+    "saved": "Erinnerung gespeichert",
+    "inspect": "Ansehen",
+    "inspectLabel": "Gespeicherte Erinnerung ansehen"
+  },
+  "web_search": "Websuche",
+  "shell": "Shell",
+  "browse": "Durchsuchen",
+  "moreControls": "Weitere Steuerelemente",
+  "artifacts": "Artefakte",
+  "skills": "Skills",
+  "deleteSession": "Sitzung löschen",
+  "deleteSessionTitle": "Sitzung löschen?",
+  "deleteSessionBody": "„{{title}}“ und das zugehörige Protokoll werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.",
+  "chatsAndTasks": "Chats und Aufgaben",
+  "artifactGroupCode": "Code",
+  "artifactGroupImage": "Bild",
+  "artifactGroupDocument": "Dokument",
+  "artifactGroupVideo": "Video",
+  "artifactGroupAudio": "Audio",
+  "artifactOpenPreview": "Vorschau öffnen",
+  "artifactOpenExternal": "Öffnen",
+  "artifactMoreActions": "Weitere Aktionen",
+  "artifactShowInFolder": "Im Ordner anzeigen",
+  "artifactsAll": "Alle",
+  "artifactsEmpty": "Noch nichts erstellt. Dateien aus deinen Unterhaltungen erscheinen hier.",
+  "artifactsNoMatch": "Keine passenden Artefakte.",
+  "artifactsLibraryDescription": "Dateien aus all deinen Unterhaltungen an einem Ort.",
+  "artifactsLibraryFiles": "Dateien",
+  "artifactsLibraryCount_one": "{{count}} Datei",
+  "artifactsLibraryCount_other": "{{count}} Dateien",
+  "artifactsLibraryFilter": "Nach Dateityp filtern",
+  "artifactsLibraryReset": "Filter zurücksetzen",
+  "artifactsSearch": "Artefakte durchsuchen",
+  "artifactsShowMore": "{{count}} weitere anzeigen",
+  "homeMode": {
+    "addFolder": "Projekt oder Ordner hinzufügen",
+    "removeFolder": "Auswahl entfernen",
+    "addProject": "Projekt hinzufügen",
+    "addToProject": "Zu einem Projekt hinzufügen",
+    "newProject": "Neues Projekt",
+    "noProjects": "Noch keine Projekte",
+    "addFolderAction": "Ordner hinzufügen"
+  },
+  "planMode": {
+    "label": "Plan",
+    "tooltipOff": "Erst planen – der Agent liest und schlägt vor, ohne zu schreiben.",
+    "tooltipOn": "Planmodus",
+    "onAnnounce": "Planmodus aktiviert",
+    "placeholder": "Bitte um einen Plan. Der Agent ändert keine Dateien."
+  },
+  "sidebar": {
+    "toggle": "Seitenleiste ein- oder ausblenden",
+    "navigation": "Navigation",
+    "navigationDescription": "Zu Chats, Projekten, Artefakten, Skills und Einstellungen springen.",
+    "more": "Mehr"
+  },
+  "overview": {
+    "description": "Fortschritt, Dateien und Hintergrundaufgaben dieser Unterhaltung."
+  },
+  "askToolPending": "Warte auf deine Antwort",
+  "askToolAsked": "Hat dir eine Frage gestellt"
 }

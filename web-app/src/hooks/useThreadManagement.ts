@@ -1,11 +1,16 @@
 import { create } from 'zustand'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { updateThreadProject } from '@/lib/threadProject'
+import { isCoworkThread } from '@/lib/threadMode'
 import type { ThreadFolder } from '@/services/projects/types'
 import { useEffect } from 'react'
 
 type ThreadManagementState = {
   folders: ThreadFolder[]
+  /** True once the project list has been read; `folders` is not authoritative before that. */
+  foldersLoaded: boolean
   setFolders: (folders: ThreadFolder[]) => void
   addFolder: (name: string, assistantId?: string) => Promise<ThreadFolder>
   updateFolder: (id: string, name: string, assistantId?: string) => Promise<void>
@@ -17,9 +22,10 @@ type ThreadManagementState = {
 
 const useThreadManagementStore = create<ThreadManagementState>()((set, get) => ({
   folders: [],
+  foldersLoaded: false,
 
   setFolders: (folders) => {
-    set({ folders })
+    set({ folders, foldersLoaded: true })
   },
 
   addFolder: async (name, assistantId) => {
@@ -38,20 +44,19 @@ const useThreadManagementStore = create<ThreadManagementState>()((set, get) => (
   },
 
   deleteFolder: async (id) => {
-    // Remove project metadata from all threads that belong to this project
-    const threadsState = useThreads.getState()
-    const threadsToUpdate = Object.values(threadsState.threads).filter(
-      (thread) => thread.metadata?.project?.id === id
-    )
-
-    threadsToUpdate.forEach((thread) => {
-      threadsState.updateThread(thread.id, {
-        metadata: {
-          ...thread.metadata,
-          project: undefined,
-        },
-      })
-    })
+    // Sessions are authoritative, including while their mirrors lag persistence.
+    const threads = Object.values(useThreads.getState().threads)
+    const sessions = useCoworkSessions.getState().sessions
+    const sessionsById = new Map(sessions.map((session) => [session.id, session]))
+    const ids = new Set(threads.filter((thread) =>
+      (isCoworkThread(thread)
+        ? sessionsById.get(thread.id)?.project?.id
+        : thread.metadata?.project?.id) === id
+    ).map((thread) => thread.id))
+    for (const session of sessions) {
+      if (session.project?.id === id && !session.unavailable) ids.add(session.id)
+    }
+    ids.forEach((threadId) => updateThreadProject(threadId, undefined))
 
     const projectsService = getServiceHub().projects()
     await projectsService.deleteProject(id)
@@ -60,25 +65,11 @@ const useThreadManagementStore = create<ThreadManagementState>()((set, get) => (
   },
 
   deleteFolderWithThreads: async (id) => {
-    // Get all threads that belong to this project
-    const threadsState = useThreads.getState()
-    const projectThreads = Object.values(threadsState.threads).filter(
-      (thread) => thread.metadata?.project?.id === id
-    )
+    // Share the project deletion lifecycle, including authoritative Cowork
+    // session removal; direct backend deletes race Cowork's write-through sync.
+    await useThreads.getState().deleteAllThreadsByProject(id)
 
-    // Delete threads from backend first
-    const serviceHub = getServiceHub()
-    for (const thread of projectThreads) {
-      await serviceHub.threads().deleteThread(thread.id)
-    }
-
-    // Delete threads from frontend state
-    for (const thread of projectThreads) {
-      threadsState.deleteThread(thread.id)
-    }
-
-    // Delete the project from storage
-    const projectsService = serviceHub.projects()
+    const projectsService = getServiceHub().projects()
     await projectsService.deleteProject(id)
 
     const updatedProjects = await projectsService.getProjects()
@@ -104,7 +95,7 @@ export const useThreadManagement = () => {
       try {
         const projectsService = getServiceHub().projects()
         const projects = await projectsService.getProjects()
-        useThreadManagementStore.setState({ folders: projects })
+        useThreadManagementStore.setState({ folders: projects, foldersLoaded: true })
       } catch (error) {
         console.error('Error syncing projects:', error)
       }

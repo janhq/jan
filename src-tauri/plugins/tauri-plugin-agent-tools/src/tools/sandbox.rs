@@ -1,10 +1,40 @@
 use std::path::{Path, PathBuf};
 
+/// The attached folders a tool call may reach besides the project: `read` is
+/// every attached root (readable), `write` the subset also writable (see
+/// [`super::ToolContext::write_roots`], always a subset of `read`).
+///
+/// Carried alongside the project root and scratch wherever the attached
+/// folders' access matters: a path inside a read-only one must stay readable
+/// and unwritable.
+#[derive(Debug, Clone, Copy)]
+pub struct Attached<'a> {
+    pub read: &'a [PathBuf],
+    pub write: &'a [PathBuf],
+}
+
+impl<'a> Attached<'a> {
+    /// No attached folders.
+    pub const NONE: Attached<'static> = Attached { read: &[], write: &[] };
+
+    pub fn new(read: &'a [PathBuf], write: &'a [PathBuf]) -> Self {
+        Self { read, write }
+    }
+
+    /// Readable roots only, for the read-side tools that never see `write_roots`.
+    pub fn reads(read: &'a [PathBuf]) -> Self {
+        Self { read, write: &[] }
+    }
+}
+
 /// True iff `raw` resolves to a path outside `project_root` and outside the
 /// session scratch. Relative paths are resolved against `project_root`.
 /// Canonicalizes (resolving `..` and symlinks) so string tricks and symlink
 /// escapes are caught. For a not-yet-existing leaf (new-file writes), the
 /// deepest existing ancestor is canonicalized and the remaining tail re-joined.
+///
+/// Knows no attached folders: a caller that has some uses
+/// [`escapes_read_roots`] / [`escapes_write_roots`], which share this check.
 pub fn escapes_project(
     project_root: &Path,
     scratch: Option<&Path>,
@@ -48,9 +78,10 @@ pub fn escapes_project(
 pub fn escapes_read_roots(
     project_root: &Path,
     scratch: Option<&Path>,
-    read_roots: &[PathBuf],
+    attached: Attached<'_>,
     raw: &str,
 ) -> Result<bool, String> {
+    let read_roots = attached.read;
     if !escapes_project(project_root, scratch, raw)? {
         return Ok(false);
     }
@@ -83,12 +114,14 @@ pub fn escapes_read_roots(
 /// for the same reason: a writable root can only ever widen what writes reach,
 /// and a caller that passes none keeps today's exact check. A root that cannot
 /// be canonicalized grants nothing.
+///
 pub fn escapes_write_roots(
     project_root: &Path,
     scratch: Option<&Path>,
-    write_roots: &[PathBuf],
+    attached: Attached<'_>,
     raw: &str,
 ) -> Result<bool, String> {
+    let write_roots = attached.write;
     if !escapes_project(project_root, scratch, raw)? {
         return Ok(false);
     }
@@ -200,6 +233,52 @@ pub fn lexical_normalize(path: &Path) -> PathBuf {
         }
     }
     out
+}
+
+/// True iff `real`, the link-free path a `write`/`edit` is about to open, is in
+/// an attached folder the caller did not make writable. Independent of write
+/// confinement: an unconfined run may reach unrelated paths it has been
+/// approved for, but an attached read-only folder stays read-only.
+///
+/// A writable root wins when it contains `real` too (a writable folder nested
+/// in a read-only one), and the project and the scratch are never refused here
+/// -- they are the run's own area even if a read-only folder encloses them.
+/// A root that cannot be canonicalized contains nothing.
+pub fn in_attached_read_only_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    attached: Attached<'_>,
+    real: &Path,
+) -> bool {
+    let inside = |root: &Path| root.canonicalize().is_ok_and(|r| real.starts_with(r));
+    if inside(project_root) || scratch.is_some_and(inside) {
+        return false;
+    }
+    if attached.write.iter().any(|r| inside(r)) {
+        return false;
+    }
+    attached.read.iter().any(|r| inside(r))
+}
+
+/// True iff a `write`/`edit` of `raw` would land in an attached folder the
+/// caller did not make writable: the gate's form of the handlers' refusal, built
+/// from the same pieces (`resolve_path`, `landing` over the write roots, then
+/// [`in_attached_read_only_root`]) so the gate refuses exactly what the handler
+/// would, and a writable override, the project and the scratch keep their
+/// exemptions. A path that escapes every root is left to the escape check.
+pub fn write_hits_read_only_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    attached: Attached<'_>,
+    raw: &str,
+) -> bool {
+    let target = resolve_path(project_root, raw);
+    match landing(project_root, scratch, attached.write, &target) {
+        Landing::Inside(real) | Landing::Outside(Some(real)) => {
+            in_attached_read_only_root(project_root, scratch, attached, &real)
+        }
+        Landing::Escapes | Landing::Outside(None) => false,
+    }
 }
 
 /// True iff a write to `raw` would land in a read-only `project_root`: inside
@@ -366,24 +445,34 @@ pub fn landing(
     for r in roots {
         all.push(r.as_path());
     }
-    let normalized = lexical_normalize(target);
-    if !all
-        .iter()
-        .any(|r| normalized.starts_with(lexical_normalize(r)))
-    {
-        return Landing::Outside(canonicalize_lenient(&normalized).ok());
+    // Resolve the raw target once, with the kernel's semantics: every link is
+    // followed before the `..` after it. That is the identity the gate vetted
+    // (`canonicalize_lenient` of the same raw path), so it is the one to open.
+    // Collapsing `..` textually first would name a different file whenever a
+    // link precedes a `..` (`link/../..` is not `../`), one the gate never saw.
+    let resolved = canonicalize_lenient(target);
+    if let Ok(resolved) = &resolved {
+        if all
+            .iter()
+            .filter_map(|r| r.canonicalize().ok())
+            .any(|r| resolved.starts_with(r))
+        {
+            return Landing::Inside(resolved.clone());
+        }
     }
-    let Ok(resolved) = canonicalize_lenient(&normalized) else {
-        return Landing::Escapes;
-    };
-    if all
+    // Not inside any root once resolved. The lexical spelling only decides
+    // whether the caller *claimed* a trusted root (so a link that leaves it is
+    // an escape to refuse) or named somewhere else outright (the gate already
+    // put that to the user).
+    let normalized = lexical_normalize(target);
+    let claims_root = all
         .iter()
-        .filter_map(|r| r.canonicalize().ok())
-        .any(|r| resolved.starts_with(r))
-    {
-        Landing::Inside(resolved)
-    } else {
-        Landing::Escapes
+        .any(|r| normalized.starts_with(lexical_normalize(r)));
+    match resolved {
+        Ok(_) if claims_root => Landing::Escapes,
+        Ok(real) => Landing::Outside(Some(real)),
+        Err(_) if claims_root => Landing::Escapes,
+        Err(_) => Landing::Outside(None),
     }
 }
 
@@ -701,7 +790,7 @@ mod tests {
         assert_eq!(escapes_project(&root, None, "d/x.txt"), Ok(true));
         assert_eq!(escapes_project(&root, None, "sub/rel.md"), Ok(true));
         assert_eq!(escapes_project(&root, None, "missing/../notes.md"), Ok(true));
-        assert_eq!(escapes_write_roots(&root, None, &[], "notes.md"), Ok(true));
+        assert_eq!(escapes_write_roots(&root, None, Attached::NONE, "notes.md"), Ok(true));
         assert!(symlink_escapes_root(&root, None, &root.join("notes.md")));
         assert!(symlink_escapes_root(&root, None, &root.join("d/x.txt")));
         let _ = std::fs::remove_dir_all(&root);
@@ -795,7 +884,7 @@ mod tests {
 
         // Without the root it is an escape; with it, a legitimate read.
         assert!(escapes_project(&ws, None, &target).unwrap());
-        assert!(!escapes_read_roots(&ws, None, &roots, &target).unwrap());
+        assert!(!escapes_read_roots(&ws, None, Attached::reads(&roots), &target).unwrap());
 
         let _ = std::fs::remove_dir_all(&ws);
         let _ = std::fs::remove_dir_all(&repo);
@@ -820,7 +909,7 @@ mod tests {
         let other = unique_root_outside_tmp();
         let roots = vec![repo.clone()];
         let target = other.join("secret").to_string_lossy().into_owned();
-        assert!(escapes_read_roots(&ws, None, &roots, &target).unwrap());
+        assert!(escapes_read_roots(&ws, None, Attached::reads(&roots), &target).unwrap());
         for d in [&ws, &repo, &other] {
             let _ = std::fs::remove_dir_all(d);
         }
@@ -834,7 +923,7 @@ mod tests {
         let target = gone.join("x").to_string_lossy().into_owned();
         std::fs::remove_dir_all(&gone).unwrap();
         let roots = vec![gone];
-        assert!(escapes_read_roots(&ws, None, &roots, &target).unwrap());
+        assert!(escapes_read_roots(&ws, None, Attached::reads(&roots), &target).unwrap());
         let _ = std::fs::remove_dir_all(&ws);
     }
 
@@ -846,7 +935,7 @@ mod tests {
         let repo = unique_root_outside_tmp();
         std::fs::write(repo.join("only-in-repo.txt"), b"x").unwrap();
         let roots = vec![repo.clone()];
-        assert!(escapes_read_roots(&ws, None, &roots, "only-in-repo.txt").is_ok());
+        assert!(escapes_read_roots(&ws, None, Attached::reads(&roots), "only-in-repo.txt").is_ok());
         let _ = std::fs::remove_dir_all(&ws);
         let _ = std::fs::remove_dir_all(&repo);
     }
@@ -894,6 +983,45 @@ mod tests {
         assert!(!symlink_escapes_any_root(&ws, None, &roots, &link));
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    // R1: `landing` must classify and return the identity the gate saw
+    // (`canonicalize_lenient` of the raw path: each link followed before the
+    // next `..`), not a lexically collapsed spelling of it.
+    #[cfg(unix)]
+    #[test]
+    fn landing_follows_links_before_dotdot_like_the_gate() {
+        let home = unique_root_outside_tmp();
+        let project = home.join("project");
+        std::fs::create_dir_all(project.join("a/b")).unwrap();
+        std::fs::create_dir_all(project.join(".jan")).unwrap();
+        std::fs::create_dir_all(home.join(".jan")).unwrap();
+        std::fs::write(project.join(".jan/config.toml"), b"inside").unwrap();
+        std::fs::write(home.join(".jan/config.toml"), b"outside").unwrap();
+        std::os::unix::fs::symlink(project.join("a/b"), project.join("link")).unwrap();
+        let target = project.join("link/../../.jan/config.toml");
+        let gate_view = canonicalize_lenient(&target).unwrap();
+        assert_eq!(gate_view, project.canonicalize().unwrap().join(".jan/config.toml"));
+        assert_eq!(landing(&project, None, &[], &target), Landing::Inside(gate_view.clone()));
+        // The same holds when the project is only an attached read root.
+        let ws = unique_root_outside_tmp();
+        assert_eq!(
+            landing(&ws, None, std::slice::from_ref(&project), &target),
+            Landing::Inside(gate_view)
+        );
+        // Mirror image: lexically inside, really outside (link leaves the root,
+        // `..` returns beside its target): refused, not silently re-pointed.
+        let far = unique_root_outside_tmp();
+        std::fs::create_dir_all(far.join("deep")).unwrap();
+        std::fs::write(far.join("secret.txt"), b"s").unwrap();
+        std::os::unix::fs::symlink(far.join("deep"), project.join("out")).unwrap();
+        assert_eq!(
+            landing(&project, None, &[], &project.join("out/../secret.txt")),
+            Landing::Escapes
+        );
+        for d in [&home, &ws, &far] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 
     /// The home-as-project case from the #9065 review: the Jan home sits inside
@@ -974,5 +1102,47 @@ mod tests {
         std::fs::create_dir_all(&other).unwrap();
         assert_eq!(hidden_under(&other, &jan), None);
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The gate's predicate refuses exactly what the handlers refuse: a write
+    /// into a read-only attached folder, not one a writable root overrides, nor
+    /// the project, the scratch, or a path that escapes every root.
+    #[test]
+    fn write_hits_read_only_root_matches_the_handler_refusal() {
+        let project = unique_root();
+        let scratch = unique_root();
+        let ro = unique_root();
+        let rw = unique_root();
+        let elsewhere = unique_root();
+        std::fs::create_dir_all(ro.join("sub")).unwrap();
+        let roots = vec![ro.clone(), rw.clone()];
+        let writable = vec![rw.clone()];
+        let a = Attached::new(&roots, &writable);
+        let hits = |raw: &str| write_hits_read_only_root(&project, Some(&scratch), a, raw);
+        let p = |base: &Path, f: &str| base.join(f).to_string_lossy().into_owned();
+
+        assert!(hits(&p(&ro, "new.txt")));
+        assert!(hits(&p(&ro, "sub/deep/new.txt")), "a not yet existing path still counts");
+        assert!(hits(&format!("{}/sub/../new.txt", ro.display())));
+        assert!(!hits(&p(&rw, "new.txt")), "a writable root is not read-only");
+        assert!(!hits("notes.md"), "the project is the run's own area");
+        assert!(!hits(&p(&project, "notes.md")));
+        assert!(!hits(&p(&scratch, "out.txt")));
+        assert!(!hits(&p(&elsewhere, "x.txt")), "an escape is the escape check's");
+        // With nothing attached nothing is read-only.
+        assert!(!write_hits_read_only_root(&project, Some(&scratch), Attached::NONE, &p(&ro, "x")));
+
+        // A writable folder nested in a read-only one wins; its sibling does not.
+        let nested = ro.join("rw_inside");
+        std::fs::create_dir_all(&nested).unwrap();
+        let nested_roots = vec![ro.clone(), nested.clone()];
+        let nested_writable = vec![nested.clone()];
+        let n = Attached::new(&nested_roots, &nested_writable);
+        assert!(!write_hits_read_only_root(&project, Some(&scratch), n, &p(&nested, "ok.txt")));
+        assert!(write_hits_read_only_root(&project, Some(&scratch), n, &p(&ro, "no.txt")));
+
+        for d in [&project, &scratch, &ro, &rw, &elsewhere] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 }

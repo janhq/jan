@@ -38,6 +38,7 @@
   "keyboardShortcuts": "Shortcuts",
   "home": "Home",
   "cowork": "Cowork",
+  "agentSettings": "Agent",
   "newSession": "New session",
   "artifacts": "Artifacts",
   "customize": "Customize",
@@ -93,6 +94,7 @@
   "newChat": "New Chat",
   "newAgentChat": "New Agent Chat",
   "chats": "Chats",
+  "chatsAndTasks": "Chats and tasks",
   "favorites": "Favorites",
   "recents": "Recents",
   "hub": "Hub",
@@ -158,7 +160,7 @@
     "scriptErrors_other": "The page reported {{count}} errors. First: {{message}}"
   },
   "changes": {
-    "title": "Agent changes",
+    "title": "Changes",
     "empty": "Files the agent writes or edits will show up here.",
     "a11y": "Agent changes: {{files}} files, {{additions}} added, {{deletions}} removed"
   },
@@ -383,9 +385,9 @@
       "cancel": "Cancel",
       "changeLocation": "Change Location"
     },
-    "deleteAllThreads": {
-      "title": "Delete All Threads",
-      "description": "All threads will be deleted. This action cannot be undone."
+    "deleteAllChats": {
+      "title": "Delete Conversations Outside Projects",
+      "description": "This deletes conversations that are not in a project. Project conversations, starred conversations and tasks are kept. This action cannot be undone."
     },
     "deleteAllThreadsInProject": {
       "title": "Delete All Conversations",
@@ -438,7 +440,7 @@
     "processButton": "Add",
     "deleteProjectDialog": {
       "title": "Delete Project",
-      "permanentDelete": "This will permanently delete all threads.",
+      "permanentDelete": "This will permanently delete \"{{projectName}}\" and all of its conversations. This action cannot be undone.",
       "permanentDeleteWarning": "This action will permanently delete ALL threads within the project!",
       "deleteEmptyProject": "This action will delete project \"{{projectName}}\".",
       "saveThreadsAdvice": "To save threads, move them to your thread list or another project before deleting.",
@@ -465,7 +467,7 @@
       "updateSuccess": "Project \"{{projectName}}\" updated successfully"
     },
     "noConversationsIn": "No Conversations in {{projectName}}",
-    "startNewConversation": "Start a new conversation with {{projectName}} below",
+    "sendMessageToStart": "Send a message above to start one.",
     "conversationsIn": "Conversations in {{projectName}}",
     "conversationsDescription": "Click on any conversation to continue chatting, or start a new one below.",
     "conversation": "Conversation",
@@ -481,7 +483,8 @@
     "update": "Update",
     "searchProjects": "Search projects...",
     "noProjectsFound": "No projects found",
-    "tryDifferentSearch": "Try a different search term"
+    "tryDifferentSearch": "Try a different search term",
+    "viewProject": "View Project"
   },
   "attachmentsIngestion": {
     "title": "Choose how to ingest attachments",
@@ -501,6 +504,10 @@
     "deleteAllThreads": {
       "title": "Delete All Threads",
       "description": "All threads have been permanently deleted."
+    },
+    "deleteAllChats": {
+      "title": "Conversations deleted",
+      "description": "Conversations outside projects were deleted. Project conversations and tasks were kept."
     },
     "renameThread": {
       "title": "Rename Thread",
@@ -694,6 +701,9 @@
   "queued": "Queued",
   "waiting": "Waiting",
   "finished": "Finished",
+  "monitorFinished": "Monitor finished",
+  "monitorFinishedWithHeadline": "Monitor finished: {{headline}}",
+  "dismissMonitorNotice": "Dismiss monitor notice",
   "subagentPhase": "phase {{phase}}",
   "subagentWaiting": "waiting",
   "viewTranscript": "View transcript",
@@ -713,26 +723,81 @@
   "skillsUsedLabel": "Skills used",
   "skillsUsed": "Skills used: {{skills}}",
   "artifactsAll": "All",
-  "artifactsEmpty": "Nothing produced yet. Artifacts from Cowork runs show up here.",
+  "artifactsEmpty": "Nothing produced yet. Files created in your conversations show up here.",
   "artifactsNoMatch": "No artifacts match.",
+  "artifactsLibraryDescription": "Files created across your conversations, all in one place.",
+  "artifactsLibraryFiles": "files",
+  "artifactsLibraryCount_one": "{{count}} file",
+  "artifactsLibraryCount_other": "{{count}} files",
+  "artifactsLibraryFilter": "Filter by file type",
+  "artifactsLibraryReset": "Clear filters",
   "artifactsSearch": "Search artifacts",
   "artifactsShowMore": "Show {{count}} more",
   "workspace": {
-    "readsFrom": "Works in",
     "writable": "read & write",
-    "footnote": "The agent reads and edits this folder directly. Review what changed in the diff panel.",
+    "readOnly": "read only",
+    "a11yWithFolderReadOnly": "Project folder {{folder}}, attached with read-only access. Change or detach it.",
     "footnoteEmpty": "Attach a folder to let the agent work on your project. It can read and edit files inside it.",
     "attach": "Attach a folder",
     "change": "Change folder",
     "detach": "Detach folder",
-    "open": "Open",
-    "reveal": "Reveal",
+    "revealFolder": "Reveal {{folder}} in file manager",
+    "changeAccess": "Folder access: {{current}}. Switch to {{next}}.",
     "unavailable": "Workspace unavailable",
     "missing": "The workspace folder {{folder}} is no longer available. Choose a different folder.",
-    "openFailed": "Couldn't open workspace",
     "revealFailed": "Couldn't reveal workspace",
     "a11yWithFolder": "Project folder {{folder}}, attached with read and write access. Change or detach it.",
     "a11yNoFolder": "No project folder attached. Attach one."
+  },
+  "overview": {
+    "title": "Conversation overview",
+    "description": "Progress, files and background tasks for this conversation.",
+    "resize": "Resize side panel",
+    "close": "Hide conversation overview",
+    "progress": "Progress",
+    "files": "Files",
+    "agents": "Agent overview",
+    "activity": "Activity",
+    "backgroundTasks": "Background tasks",
+    "monitorCount_one": "{{count}} monitor",
+    "monitorCount_other": "{{count}} monitors",
+    "noProgress": "Steps will appear as Jan works.",
+    "noFiles": "Files will appear here.",
+    "agentCount": "{{count}} agents"
+  },
+  "conversationScope": {
+    "label": "Conversation scope",
+    "noToolsModel": "The selected model does not support tools, so these permissions have no effect until you choose a tool-capable model.",
+    "noSandbox": "No OS sandbox is available on this system, so shell commands are not offered.",
+    "live": "Changes apply to this conversation right away. A Jan project does not grant folder access.",
+    "draft": "Applied when you send your message. A Jan project does not grant folder access.",
+    "writable": "Task tools can read and write files in the selected folder. Your existing task permissions still apply.",
+    "optional": "Optional folder for read/write task access. Without a folder, tasks use their managed workspace.",
+    "permissions": "Folder selection does not change network or persistent memory settings.",
+    "unsupported": "This model can't use tools, so folder, shell and memory access aren't available. Regular chat still works.",
+    "pendingKept": "Your pending permission draft is kept and will be available when you select a tool-capable model.",
+    "pendingKeptTemporary": "Your pending permission draft is kept and will be available when you start a regular chat with a tool-capable model.",
+    "temporary": "A temporary chat keeps no folder access.",
+    "temporaryPermissions": "Temporary chats cannot use granted folder, shell network, or persistent memory access.",
+    "folderSelectModel": "Select a tool-capable model before adding folder access.",
+    "folderUnsupported": "This model can't use tools, so a folder can't be added. Regular chat still works.",
+    "invalidFolder": "This folder path is not supported. Choose another folder.",
+    "folderNeedsConfirmation": "Inactive · needs confirmation",
+    "confirmFolder": "Confirm",
+    "removeFolder": "Remove",
+    "hostRevokeUnconfirmed": "Jan could not confirm this permission change. Background tasks may still have the previous access. Retry, or quit Jan to stop them.",
+    "saveFailed": "Permission change could not be saved. Elevated access stays off until a save succeeds.",
+    "folderSelected": "Folder added",
+    "removeProject": "Remove project selection"
+  },
+  "homeMode": {
+    "addFolder": "Add project or folder",
+    "removeFolder": "Remove selection",
+    "addProject": "Add project",
+    "addToProject": "Add to a project",
+    "newProject": "New project",
+    "noProjects": "No projects yet",
+    "addFolderAction": "Add folder"
   },
   "coworkEmpty": {
     "title": "What are we working on?",
@@ -763,16 +828,16 @@
   "planMode": {
     "label": "Plan",
     "tooltipOff": "Plan first — the agent reads and proposes, without writing.",
-    "tooltipOn": "Planning. Turn this off to let the agent write files.",
+    "tooltipOn": "Plan mode",
     "onAnnounce": "Plan mode on",
     "placeholder": "Ask for a plan. The agent won't change any files."
   },
   "budget": {
     "stoppedSteps": "Stopped at {{max}} steps. The agent hasn’t finished.",
     "keepGoing": "Keep going",
-    "stoppedTokens": "Stopped — this session hit its token budget.",
+    "stoppedTokens": "Stopped — this conversation hit its token budget.",
     "compact": "Compact",
-    "newSession": "New session"
+    "newConversation": "New conversation"
   },
   "run": {
     "stopped": "Stopped.",
@@ -781,6 +846,8 @@
   },
   "modelNoTools": "{{model}} can’t call tools, so it can’t act as an agent. Pick a tool-calling model.",
   "coworkExtensionProvider": "Cowork cannot run on a provider added by an extension. Pick another model, or use it in a chat.",
+  "askToolPending": "Waiting for your answer",
+  "askToolAsked": "Asked you a question",
   "askContinue": "Continue",
   "askNext": "Next question",
   "askPageOf": "{{current}} of {{total}}",
@@ -789,5 +856,21 @@
   "askRecommended": "Recommended",
   "askSelectedCount": "{{count}} selected",
   "askSomethingElse": "Something else",
-  "submit": "Submit"
+  "submit": "Submit",
+  "skillsScopeLabel": "Scope",
+  "skillsDestination": "New skills and hub imports are saved to: {{destination}}",
+  "skillsDiscardTitle": "Discard unsaved changes?",
+  "skillsDiscardDescription": "Your unsaved skill changes will be lost.",
+  "skillsDiscard": "Discard changes",
+  "memoryFeedback": {
+    "saved": "Memory saved",
+    "inspect": "Inspect",
+    "inspectLabel": "Inspect saved memory"
+  },
+  "sidebar": {
+    "toggle": "Toggle sidebar",
+    "navigation": "Navigation",
+    "navigationDescription": "Jump to chats, projects, artifacts, skills and settings.",
+    "more": "More"
+  }
 }

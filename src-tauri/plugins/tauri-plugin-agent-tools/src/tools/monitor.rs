@@ -14,7 +14,9 @@
 //! path), or hands each one to a subscriber callback (the Tauri command layer,
 //! which forwards them to Cowork over an IPC channel).
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -67,11 +69,42 @@ pub struct MonitorCtx {
     pub home_readonly: bool,
     pub sandbox: bool,
     pub workspace_readonly: bool,
+    /// Process-registry owner for this monitor's poll children. `None` keeps
+    /// the historical ownerless bucket (Cowork sessions, tests), which only
+    /// `kill_all` reaps; a thread-owned monitor sets it so a revocation can
+    /// reap exactly its own pids via `proc::kill_thread`.
+    pub owner: Option<String>,
+    /// The user's hooks, re-resolved per poll alongside consent. Only the
+    /// thread-owned path populates this: a poll then fires `PreToolUse` for
+    /// its script before spawning, and a deny is terminal. `None` -- the
+    /// Session path and `from_tool_context` -- fires nothing, unchanged.
+    pub hooks: Option<crate::tools::hooks::HookSet>,
+}
+
+/// Re-resolved immediately before *every* poll of a thread-owned monitor, in
+/// place of a frozen start-time snapshot: fresh stored consent intersected
+/// with the current process confirmation, canonical roots rebuilt and the jail
+/// re-verified, plus the generation token that the spawn is admitted against.
+/// `Err` is terminal -- the monitor reports a revoked/err notice and stops,
+/// rather than retrying a policy failure forever as "not yet".
+pub type AuthorityFuture =
+    Pin<Box<dyn Future<Output = Result<(MonitorCtx, u64), String>> + Send>>;
+pub type AuthorityResolver = Arc<dyn Fn() -> AuthorityFuture + Send + Sync>;
+
+/// What makes a monitor thread-owned: whose consent it runs under, which
+/// process-registry bucket its children belong to, and how to re-authorize.
+#[derive(Clone)]
+pub struct ThreadAuthority {
+    pub thread_id: String,
+    pub owner: String,
+    pub resolve: AuthorityResolver,
 }
 
 impl MonitorCtx {
     pub fn from_tool_context(ctx: &ToolContext<'_>) -> Self {
         Self {
+            owner: None,
+            hooks: None,
             project_root: ctx.project_root.to_path_buf(),
             scratch_root: ctx.scratch_root.map(Path::to_path_buf),
             pkg_cache: ctx.pkg_cache.cloned(),
@@ -297,6 +330,31 @@ impl MonitorSet {
 
     /// Start a monitor, returning the model-facing result string.
     pub fn start(self: &Arc<Self>, spec: MonitorSpec, ctx: MonitorCtx) -> Result<String, String> {
+        self.start_owned(spec, ctx, None)
+    }
+
+    /// Start a monitor whose every poll is re-authorized against live thread
+    /// consent instead of the frozen `ctx` (see [`ThreadAuthority`]). With
+    /// `None` this is exactly [`MonitorSet::start`]: the Cowork session path
+    /// is unchanged.
+    pub fn start_owned(
+        self: &Arc<Self>,
+        spec: MonitorSpec,
+        ctx: MonitorCtx,
+        authority: Option<ThreadAuthority>,
+    ) -> Result<String, String> {
+        self.start_owned_with_id(spec, ctx, authority)
+            .map(|(_, message)| message)
+    }
+
+    /// [`MonitorSet::start_owned`], also returning the new monitor's id so a
+    /// caller can bind per-monitor state without parsing the result string.
+    pub fn start_owned_with_id(
+        self: &Arc<Self>,
+        spec: MonitorSpec,
+        ctx: MonitorCtx,
+        authority: Option<ThreadAuthority>,
+    ) -> Result<(String, String), String> {
         if self.inner.lock().unwrap().len() >= MAX_MONITORS {
             return Err(format!(
                 "at most {MAX_MONITORS} monitors may be active; stop one first"
@@ -318,7 +376,7 @@ impl MonitorSet {
         let id_task = monitor_id.clone();
         let status_task = status.clone();
         let handle = tokio::spawn(async move {
-            run_monitor(&set, &id_task, spec, ctx, status_task).await;
+            run_monitor(&set, &id_task, spec, ctx, status_task, authority).await;
             // The terminal update (queued inside run_monitor) precedes both the
             // entry removal and the count release.
             set.inner.lock().unwrap().remove(&id_task);
@@ -332,12 +390,13 @@ impl MonitorSet {
                 status,
             },
         );
-        Ok(format!(
+        let message = format!(
             "Monitor started (monitor_id={monitor_id}): '{name}' runs every {interval_secs}s. \
              When it exits 0 you get a <SYSTEM> note with its output and the monitor stops; it \
              also stops if you stop it or after {timeout_secs}s without a match. Keep working \
              meanwhile."
-        ))
+        );
+        Ok((monitor_id, message))
     }
 
     /// Stop one monitor. Its own tool result reports the state; no notice is
@@ -412,6 +471,68 @@ impl MonitorSet {
     }
 }
 
+/// Where one monitor's updates go.
+pub type UpdateSink = Arc<dyn Fn(MonitorUpdate) + Send + Sync>;
+
+/// A [`MonitorSet`] whose updates are routed to the sink each monitor was
+/// *started with*, by monitor id. One shared "latest subscriber" slot would
+/// hand monitor M1's update to the sink of the later-started M2, whose owner
+/// then treats M1's terminal update as M2's. Every update is terminal, so a
+/// route is dropped as soon as it has fired (or its monitor is stopped).
+pub struct RoutedMonitors {
+    set: Arc<MonitorSet>,
+    sinks: Arc<Mutex<std::collections::HashMap<String, UpdateSink>>>,
+}
+
+impl Default for RoutedMonitors {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RoutedMonitors {
+    pub fn new() -> Self {
+        let sinks: Arc<Mutex<std::collections::HashMap<String, UpdateSink>>> =
+            Arc::new(Mutex::new(std::collections::HashMap::new()));
+        let routed = sinks.clone();
+        let set = Arc::new(MonitorSet::subscribed(Arc::new(move |update| {
+            // Blocks while `start` is still binding the id below, so an update
+            // that fires immediately is never delivered to nobody.
+            let sink = routed.lock().unwrap().remove(&update.monitor_id);
+            if let Some(sink) = sink {
+                sink(update);
+            }
+        })));
+        Self { set, sinks }
+    }
+
+    pub fn set(&self) -> &Arc<MonitorSet> {
+        &self.set
+    }
+
+    /// Start a monitor whose updates (and only its updates) go to `sink`.
+    pub fn start(
+        &self,
+        spec: MonitorSpec,
+        ctx: MonitorCtx,
+        authority: Option<ThreadAuthority>,
+        sink: UpdateSink,
+    ) -> Result<String, String> {
+        // Held across the start so the subscriber cannot look the id up before
+        // it is bound.
+        let mut sinks = self.sinks.lock().unwrap();
+        let (id, message) = self.set.start_owned_with_id(spec, ctx, authority)?;
+        sinks.insert(id, sink);
+        Ok(message)
+    }
+
+    /// Stop one monitor and drop its route.
+    pub fn stop(&self, monitor_id: &str) -> String {
+        self.sinks.lock().unwrap().remove(monitor_id);
+        self.set.stop(monitor_id)
+    }
+}
+
 impl Drop for MonitorSet {
     fn drop(&mut self) {
         // Abort without touching the counters: the set is going away with its
@@ -436,13 +557,36 @@ async fn run_monitor(
     spec: MonitorSpec,
     ctx: MonitorCtx,
     status: Arc<Mutex<MonitorStatus>>,
+    authority: Option<ThreadAuthority>,
 ) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(spec.timeout_secs);
     loop {
         status.lock().unwrap().polls += 1;
-        if let Some(content) = eval_script(&ctx, &spec.script).await {
-            set.push_update(match_update(monitor_id, &spec.name, &content));
-            return;
+        // Re-authorize against live consent before every poll. The start-time
+        // context authorizes nothing on its own for a thread-owned monitor.
+        let (poll_ctx, barrier) = match &authority {
+            None => (None, None),
+            Some(auth) => match (auth.resolve)().await {
+                Ok((fresh, generation)) => (Some(fresh), Some((auth, generation))),
+                Err(reason) => {
+                    set.push_update(revoked_update(monitor_id, &spec.name, &reason));
+                    return;
+                }
+            },
+        };
+        let effective = poll_ctx.as_ref().unwrap_or(&ctx);
+        match eval_script(effective, &spec.script, barrier).await {
+            PollVerdict::Matched(content) => {
+                set.push_update(match_update(monitor_id, &spec.name, &content));
+                return;
+            }
+            // A policy deny is terminal, like a revocation: retrying it every
+            // interval would re-ask the user's hook the same question forever.
+            PollVerdict::Denied(reason) => {
+                set.push_update(hook_denied_update(monitor_id, &spec.name, &reason));
+                return;
+            }
+            PollVerdict::NotYet => {}
         }
         let now = tokio::time::Instant::now();
         if now >= deadline {
@@ -473,6 +617,48 @@ pub const MATCHED_OUTCOME: &str = "matched";
 /// Last words of a timed-out monitor's headline (see [`MATCHED_OUTCOME`]).
 pub const TIMED_OUT_OUTCOME: &str = "timed out";
 
+/// Last words of a monitor stopped because its thread's consent no longer
+/// authorizes it. A policy failure is terminal: without this a revoked monitor
+/// would read as "not yet" and retry forever (see [`eval_script`]).
+pub const REVOKED_OUTCOME: &str = "stopped: permission revoked";
+
+/// Last words of a monitor stopped because the user's own `PreToolUse` hook
+/// denied its poll script (see [`REVOKED_OUTCOME`]; equally terminal).
+pub const HOOK_DENIED_OUTCOME: &str = "stopped: denied by a PreToolUse hook";
+
+/// Terminal notice for a monitor that lost authorization mid-run. `matched` is
+/// false, so any display that already treats a non-match update as terminal
+/// closes it correctly.
+fn revoked_update(monitor_id: &str, name: &str, reason: &str) -> MonitorUpdate {
+    MonitorUpdate {
+        monitor_id: monitor_id.to_string(),
+        name: name.to_string(),
+        headline: format!("Monitor {monitor_id}: '{name}' {REVOKED_OUTCOME}"),
+        text: format!(
+            "Monitor '{monitor_id}' ('{name}') stopped because this conversation's \
+             permissions no longer allow it: {reason}. Re-grant folder access and \
+             start it again if you still want it."
+        ),
+        matched: false,
+    }
+}
+
+/// Terminal notice for a poll script a `PreToolUse` hook denied. `matched` is
+/// false, so displays close it like any other terminal update.
+fn hook_denied_update(monitor_id: &str, name: &str, reason: &str) -> MonitorUpdate {
+    MonitorUpdate {
+        monitor_id: monitor_id.to_string(),
+        name: name.to_string(),
+        headline: format!("Monitor {monitor_id}: '{name}' {HOOK_DENIED_OUTCOME}"),
+        text: format!(
+            "Monitor '{monitor_id}' ('{name}') stopped because a PreToolUse hook denied its \
+             poll script: {reason}. Adjust or remove the hook and start it again if you still \
+             want it."
+        ),
+        matched: false,
+    }
+}
+
 /// `Monitor mon-1: 'build' matched` (or `timed out`): the one producer of a
 /// monitor headline, so the display that styles it by outcome cannot drift.
 pub fn headline(monitor_id: &str, name: &str, matched: bool) -> String {
@@ -499,26 +685,158 @@ fn match_update(monitor_id: &str, name: &str, content: &str) -> MonitorUpdate {
     }
 }
 
-/// Run the script once under the same confinement `bash` gets. `Some(content)`
-/// when it exits 0 (its stdout, bounded); `None` for a nonzero exit, a spawn
-/// failure, or a script that outran [`EVAL_TIMEOUT`] -- all of which read as
-/// "not yet" and are retried on the next poll.
-async fn eval_script(ctx: &MonitorCtx, script: &str) -> Option<String> {
-    let tool_ctx = ctx.as_tool_context();
-    let (shell, sandbox_env, _policy) = crate::tools::handlers::confined_shell(&tool_ctx).ok()?;
-    // A poll child is short-lived and re-spawned each interval; it is not tied
-    // to a session's Stop, so it registers in the process-wide bucket.
-    let mut child = crate::tools::proc::spawn(
-        &shell,
-        script,
-        &ctx.project_root,
-        sandbox_env.as_ref(),
-        tool_ctx.shell_env(),
-        None,
-    )
-    .await
-    .ok()?;
+/// Reaps and deregisters a poll child if its task is aborted mid-poll. The
+/// normal path calls [`PollChild::disarm`] once the child has exited.
+///
+/// Shared lifecycle improvement, deliberately NOT thread-only: a Session
+/// (Cowork) monitor aborted mid-poll previously leaked its registered pid and
+/// the child ran to natural exit; with this guard both paths reap on abort.
+struct PollChild<'a> {
+    owner: Option<&'a str>,
+    pid: Option<u32>,
+}
+
+impl PollChild<'_> {
+    fn disarm(&mut self) {
+        self.pid = None;
+    }
+}
+
+impl Drop for PollChild<'_> {
+    fn drop(&mut self) {
+        if let Some(pid) = self.pid {
+            crate::tools::proc::unregister(self.owner, pid);
+            crate::tools::proc::kill_tree(pid);
+        }
+    }
+}
+
+/// One poll's answer. Only `Denied` is a policy stop; everything that merely
+/// did not match yet stays retryable.
+enum PollVerdict {
+    /// The script exited 0; its bounded stdout is the matched content.
+    Matched(String),
+    /// Nonzero exit, a spawn failure, a skipped admission, or a script that
+    /// outran [`EVAL_TIMEOUT`] -- all retried on the next poll.
+    NotYet,
+    /// A `PreToolUse` hook denied the script before it spawned. Terminal.
+    Denied(String),
+}
+
+fn poll_network_allowed(ceiling: bool, global: bool) -> bool {
+    ceiling && global
+}
+
+/// Run the script once under the same confinement `bash` gets.
+async fn eval_script(
+    ctx: &MonitorCtx,
+    script: &str,
+    barrier: Option<(&ThreadAuthority, u64)>,
+) -> PollVerdict {
+    // Re-read on EVERY poll, including legacy Session monitors whose context
+    // otherwise stays fixed. A requested/start-time false is a permanent ceiling.
+    // Sampled here, but only a sample: it is re-checked under the admission
+    // guard at every spawn below (the poll's hooks may run for a long time).
+    let network = poll_network_allowed(
+        ctx.allow_network,
+        crate::thread_capabilities::get_global_grants().shell_network,
+    );
+    let tool_ctx = ctx.as_tool_context().with_network(network);
+    // Thread-only PreToolUse gate, fired for the poll script exactly as the
+    // `shell` tool would fire it, BEFORE any spawn. Only the thread-owned
+    // resolver populates `ctx.hooks` (re-resolved each poll); the Session
+    // path carries `None` and fires nothing. Run before the admission guard,
+    // so a slow hook never holds the global mutex; a revocation landing after
+    // an allow is still caught by the generation re-check below.
+    //
+    // Only a hook that RAN and answered `{"decision":"deny"}` denies. A hook
+    // that crashes, times out or prints malformed JSON is 'misbehaved,
+    // proceed' -- deliberate parity with one-shot dispatch (`run_hooks`), and
+    // hooks here are defense-in-depth over host consent, never its source.
+    // On a poll that misbehavior repeats every interval with its notices
+    // dropped (there is no turn to attach them to); accepted and documented.
+    if let Some(hooks) = &ctx.hooks {
+        let payload = crate::tools::hooks::HookPayload {
+            tool_name: Some(crate::tools::SHELL_TOOL.to_string()),
+            tool_input: Some(serde_json::json!({ "command": script })),
+            ..Default::default()
+        };
+        // Hooks are spawned under the same admission as the poll itself: a
+        // revocation either finds the hook registered under the monitor's
+        // owner or stops it from starting (see `SpawnAdmission`).
+        let admission = barrier.map(|(auth, generation)| crate::tools::hooks::SpawnAdmission {
+            owner: auth.owner.clone(),
+            thread_id: auth.thread_id.clone(),
+            generation,
+            network,
+        });
+        let outcome = crate::tools::hooks::run_hooks_admitted(
+            hooks,
+            crate::tools::hooks::HookEvent::PreToolUse,
+            &payload,
+            &tool_ctx,
+            false,
+            admission.as_ref(),
+        )
+        .await;
+        if let Some(reason) = outcome.denied {
+            return PollVerdict::Denied(reason);
+        }
+        // A hook that was refused admission never ran: its gate did not answer.
+        // Skip the whole poll (the script must not run ungated) and let the
+        // next tick re-resolve authority and hooks.
+        if outcome.admission_refused {
+            return PollVerdict::NotYet;
+        }
+    }
+    let Ok((shell, sandbox_env, _policy)) = crate::tools::handlers::confined_shell(&tool_ctx)
+    else {
+        return PollVerdict::NotYet;
+    };
+    // A poll child is short-lived and re-spawned each interval. Without an
+    // owner it is not tied to any Stop and lands in the process-wide bucket;
+    // a thread-owned monitor registers under its own key so a revocation reaps
+    // exactly its pids.
+    let owner = ctx.owner.as_deref();
+    let mut child = {
+        // Admission guard: re-check the generation and let `proc::spawn`
+        // register the child under one lock, so a revocation can never sweep
+        // in the window between the check and the registration. Released
+        // before the shell actually runs -- never held across a poll.
+        let _admitted = match barrier {
+            Some((auth, token)) => {
+                let guard = crate::thread_capabilities::admission().lock().await;
+                if !crate::thread_capabilities::spawn_authorized(&auth.thread_id, token, network) {
+                    // Consent moved under us (this thread's barrier, or the
+                    // app-wide network switch). Skip this poll; the next one
+                    // re-resolves and reports a revocation terminally.
+                    return PollVerdict::NotYet;
+                }
+                Some(guard)
+            }
+            None => None,
+        };
+        match crate::tools::proc::spawn(
+            &shell,
+            script,
+            &ctx.project_root,
+            sandbox_env.as_ref(),
+            tool_ctx.shell_env(),
+            owner,
+        )
+        .await
+        {
+            Ok(child) => child,
+            Err(_) => return PollVerdict::NotYet,
+        }
+    };
     let pid = child.id();
+    // A monitor task can be aborted mid-poll (stop, revoke, delete, set drop).
+    // An abort drops this future without running the cleanup below, which
+    // would leave the pid in the registry forever -- and a later reap would
+    // then `killpg` a pid the OS may have recycled. The guard reaps and
+    // unregisters on an abort, and is disarmed on the normal path.
+    let mut registered = PollChild { owner, pid };
     let result = tokio::time::timeout(EVAL_TIMEOUT, async {
         let stdout = child.stdout.take();
         // Drained so a chatty script cannot block on a full pipe, discarded
@@ -553,20 +871,29 @@ async fn eval_script(ctx: &MonitorCtx, script: &str) -> Option<String> {
         (child.wait().await, head)
     })
     .await;
+    registered.disarm();
     if let Some(pid) = pid {
-        crate::tools::proc::unregister(None, pid);
+        crate::tools::proc::unregister(owner, pid);
+        // The leader is done, but whatever it left running in its process group
+        // (`(sleep 30; touch marker) &`) is not: once unregistered, a later
+        // revocation could no longer find it. Reap the group on every
+        // completed-poll path, a match included. Windows cannot enumerate the
+        // descendants of an exited parent, so only the timeout arm below
+        // (leader still alive) reaps there.
+        #[cfg(unix)]
+        crate::tools::proc::kill_tree(pid);
     }
     match result {
         Ok((Ok(exit), head)) if exit.success() => {
-            Some(String::from_utf8_lossy(&head).trim().to_string())
+            PollVerdict::Matched(String::from_utf8_lossy(&head).trim().to_string())
         }
-        Ok(_) => None,
+        Ok(_) => PollVerdict::NotYet,
         Err(_) => {
             // Timed out: reap the whole tree, or a wedged matcher leaks.
             if let Some(pid) = pid {
                 crate::tools::proc::kill_tree(pid);
             }
-            None
+            PollVerdict::NotYet
         }
     }
 }
@@ -610,8 +937,18 @@ mod tests {
         root
     }
 
+    #[test]
+    fn monitor_network_keeps_ceiling_and_observes_global_off_on_later_polls() {
+        assert!(poll_network_allowed(true, true));
+        assert!(!poll_network_allowed(true, false));
+        assert!(!poll_network_allowed(false, true));
+        assert!(!poll_network_allowed(false, false));
+    }
+
     fn ctx_for(root: &Path) -> MonitorCtx {
         MonitorCtx {
+            owner: None,
+            hooks: None,
             project_root: root.to_path_buf(),
             scratch_root: None,
             pkg_cache: None,
@@ -684,6 +1021,516 @@ mod tests {
         let spec = parse_start_args(&high).unwrap();
         assert_eq!(spec.timeout_secs, MAX_TIMEOUT_SECS);
         assert_eq!(spec.interval, Duration::from_secs(MAX_INTERVAL_SECS));
+    }
+
+    /// A thread-owned context plus an authority whose verdict the test drives.
+    /// `verdict` returning `Err` models consent having been revoked.
+    fn thread_authority_for(
+        id: &'static str,
+        root: &Path,
+        verdict: Arc<dyn Fn() -> Result<u64, String> + Send + Sync>,
+    ) -> (MonitorCtx, ThreadAuthority) {
+        thread_authority_with(ctx_for(root), id, verdict)
+    }
+
+    /// [`thread_authority_for`] over a caller-built context (e.g. one carrying
+    /// a hook set), so the per-poll resolved clone includes it.
+    fn thread_authority_with(
+        mut ctx: MonitorCtx,
+        id: &'static str,
+        verdict: Arc<dyn Fn() -> Result<u64, String> + Send + Sync>,
+    ) -> (MonitorCtx, ThreadAuthority) {
+        let owner = format!("thread-monitor:{id}");
+        ctx.owner = Some(owner.clone());
+        let resolved = ctx.clone();
+        let authority = ThreadAuthority {
+            thread_id: id.to_string(),
+            owner,
+            resolve: Arc::new(move || {
+                let ctx = resolved.clone();
+                let verdict = verdict.clone();
+                Box::pin(async move { verdict().map(|generation| (ctx, generation)) })
+            }),
+        };
+        (ctx, authority)
+    }
+
+    /// A policy failure is terminal. Without this the monitor would read a
+    /// revocation as "not yet" and retry it forever.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_revoked_thread_monitor_stops_with_a_terminal_notice() {
+        let dir = unique_root();
+        let id = "tm-revoke-notice";
+        let allowed = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let gate = allowed.clone();
+        let (ctx, authority) = thread_authority_for(
+            id,
+            &dir,
+            Arc::new(move || {
+                if gate.load(Ordering::SeqCst) {
+                    Ok(crate::thread_capabilities::generation(id))
+                } else {
+                    Err("folder access for this conversation is no longer granted".into())
+                }
+            }),
+        );
+        let set = Arc::new(MonitorSet::new());
+        // Never matches, so only a revocation can end it inside the timeout.
+        set.start_owned(spec("watch", "exit 1", 30), ctx, Some(authority))
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        allowed.store(false, Ordering::SeqCst);
+        let update = next_notice(&set).await;
+        assert!(!update.matched, "a revocation is not a match");
+        assert!(
+            update.headline.ends_with(REVOKED_OUTCOME),
+            "{}",
+            update.headline
+        );
+        assert!(update.text.contains("no longer allow it"), "{}", update.text);
+        assert!(set.snapshot().is_empty(), "the monitor must have retired");
+    }
+
+    /// The start-time context authorizes nothing: every poll re-resolves.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_thread_monitor_re_authorizes_on_every_poll() {
+        let dir = unique_root();
+        let id = "tm-reauthorize";
+        let polls = Arc::new(AtomicUsize::new(0));
+        let counter = polls.clone();
+        let (ctx, authority) = thread_authority_for(
+            id,
+            &dir,
+            Arc::new(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                Ok(crate::thread_capabilities::generation(id))
+            }),
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start_owned(spec("watch", "exit 1", 30), ctx, Some(authority))
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        set.stop_all();
+        assert!(
+            polls.load(Ordering::SeqCst) > 1,
+            "consent was resolved {} time(s); it must be re-read per poll",
+            polls.load(Ordering::SeqCst)
+        );
+    }
+
+    /// Revoke landing between resolve and spawn: the generation moves after
+    /// the authority is resolved, so the admission guard must refuse the spawn
+    /// rather than start a child under stale authority.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_revoke_between_resolve_and_spawn_prevents_the_spawn() {
+        let dir = unique_root();
+        let marker = dir.join("spawned");
+        let id = "tm-resolve-spawn-race";
+        let script = format!("touch {}", marker.display());
+        let (ctx, authority) = thread_authority_for(
+            id,
+            &dir,
+            Arc::new(move || {
+                // Resolve, then let a revocation land before the spawn: the
+                // token handed back is already stale by one generation.
+                let stale = crate::thread_capabilities::generation(id);
+                crate::thread_capabilities::narrow(id);
+                Ok(stale)
+            }),
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start_owned(spec("watch", &script, 10), ctx, Some(authority))
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        set.stop_all();
+        assert!(
+            !marker.exists(),
+            "a child was spawned under an authority that had already changed"
+        );
+
+        // Positive control: the identical script and context, differing only
+        // in that the handed-back generation stays current, must spawn. Without
+        // this the assertion above could pass for an unrelated reason.
+        let control = "tm-resolve-spawn-control";
+        let (ctx, authority) = thread_authority_for(
+            control,
+            &dir,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(control))),
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start_owned(spec("watch", &script, 10), ctx, Some(authority))
+            .unwrap();
+        let mut spawned = false;
+        for _ in 0..200 {
+            if marker.exists() {
+                spawned = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        set.stop_all();
+        assert!(
+            spawned,
+            "control failed to spawn, so the barrier assertion proves nothing"
+        );
+    }
+
+    /// The PollChild drop guard is a SHARED lifecycle improvement: a Session
+    /// monitor aborted mid-poll must reap its in-flight poll child rather
+    /// than leak it to run to natural exit (the pre-guard behavior).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_aborted_session_monitor_reaps_its_in_flight_poll_child() {
+        let dir = unique_root();
+        let pidfile = dir.join("poll-child.pid");
+        // The sleeper is the shell's own child (same process group), so after
+        // the kill it is reparented and fully reaped by the OS: liveness can
+        // be probed without the zombie ambiguity a direct child would have.
+        let script = format!("sleep 30 & echo $! > {}; wait", pidfile.display());
+        let set = Arc::new(MonitorSet::new());
+        // Session path: no authority, no owner, no hooks.
+        set.start(spec("watch", &script, 60), ctx_for(&dir)).unwrap();
+        let mut pid = None;
+        for _ in 0..400 {
+            if let Some(parsed) = std::fs::read_to_string(&pidfile)
+                .ok()
+                .and_then(|s| s.trim().parse::<i32>().ok())
+            {
+                pid = Some(parsed);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let pid = nix::unistd::Pid::from_raw(pid.expect("the poll child never started"));
+        // Abort mid-poll: the drop guard, not the normal exit path, must reap.
+        set.stop_all();
+        let mut dead = false;
+        for _ in 0..500 {
+            // Signal 0 probes liveness without delivering anything.
+            if nix::sys::signal::kill(pid, None).is_err() {
+                dead = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(dead, "the in-flight poll child survived the abort");
+    }
+
+    /// A user PreToolUse deny hook gates a thread-owned poll BEFORE its spawn,
+    /// and terminally -- a policy deny must never read as "not yet" and retry
+    /// forever. The Session path carries no hook set and is untouched.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_pre_tool_use_deny_hook_blocks_a_thread_poll_terminally() {
+        fn hook_set(command: &str) -> crate::tools::hooks::HookSet {
+            let mut hooks = crate::tools::hooks::HookSet::new();
+            hooks.extend_from(
+                vec![crate::tools::hooks::HookEntry {
+                    event: "PreToolUse".into(),
+                    matcher: Some(crate::tools::SHELL_TOOL.into()),
+                    command: command.into(),
+                    timeout_secs: None,
+                }],
+                Path::new("test-hooks"),
+            );
+            assert_eq!(hooks.len(), 1, "the test hook must have loaded");
+            hooks
+        }
+        let dir = unique_root();
+        let marker = dir.join("hook-gated-spawn");
+        let script = format!("touch {}", marker.display());
+
+        let id = "tm-hook-deny";
+        let mut ctx = ctx_for(&dir);
+        ctx.hooks = Some(hook_set(
+            r#"echo '{"decision":"deny","reason":"blocked by test hook"}'"#,
+        ));
+        let (ctx, authority) = thread_authority_with(
+            ctx,
+            id,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(id))),
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start_owned(spec("watch", &script, 30), ctx, Some(authority))
+            .unwrap();
+        let update = next_notice(&set).await;
+        assert!(!update.matched, "a hook deny is not a match");
+        assert!(
+            update.headline.ends_with(HOOK_DENIED_OUTCOME),
+            "{}",
+            update.headline
+        );
+        assert!(
+            update.text.contains("blocked by test hook"),
+            "{}",
+            update.text
+        );
+        assert!(
+            !marker.exists(),
+            "the poll script ran although a PreToolUse hook denied it"
+        );
+        assert!(set.snapshot().is_empty(), "a deny is terminal, not retried");
+
+        // Positive control: identical wiring, but the hook allows (empty
+        // stdout). The same script must then spawn and match, so the deny
+        // assertions above cannot be passing for an unrelated reason.
+        let control = "tm-hook-allow";
+        let mut ctx = ctx_for(&dir);
+        ctx.hooks = Some(hook_set("true"));
+        let (ctx, authority) = thread_authority_with(
+            ctx,
+            control,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(control))),
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start_owned(spec("watch", &script, 30), ctx, Some(authority))
+            .unwrap();
+        let update = next_notice(&set).await;
+        assert!(update.matched, "{}", update.text);
+        assert!(marker.exists(), "control failed to spawn");
+    }
+
+    fn sleeping_hook_set(command: &str) -> crate::tools::hooks::HookSet {
+        let mut hooks = crate::tools::hooks::HookSet::new();
+        hooks.extend_from(
+            vec![crate::tools::hooks::HookEntry {
+                event: "PreToolUse".into(),
+                matcher: Some(crate::tools::SHELL_TOOL.into()),
+                command: command.into(),
+                timeout_secs: None,
+            }],
+            Path::new("test-hooks"),
+        );
+        assert_eq!(hooks.len(), 1, "the test hook must have loaded");
+        hooks
+    }
+
+    /// R4: a poll's PreToolUse hook is part of the monitor's authority. It
+    /// registers under the monitor's owner so a revocation's reap finds it and
+    /// its descendants, instead of an ownerless bucket nothing sweeps.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_poll_hook_is_owned_and_reaped_by_a_revocation() {
+        let dir = unique_root();
+        let id = "tm-hook-owned";
+        let owner = format!("thread-monitor:{id}");
+        let pidfile = dir.join("hook-sleeper.pid");
+        let mut ctx = ctx_for(&dir);
+        // The sleeper is the hook shell's grandchild, so liveness can be probed
+        // without a zombie (same pattern as the owned-children test).
+        ctx.hooks = Some(sleeping_hook_set(&format!(
+            "sleep 30 & echo $! > {}; wait",
+            pidfile.display()
+        )));
+        let (ctx, authority) = thread_authority_with(
+            ctx,
+            id,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(id))),
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start_owned(spec("watch", "false", 30), ctx, Some(authority))
+            .unwrap();
+        let mut pid = None;
+        for _ in 0..400 {
+            if let Some(parsed) = std::fs::read_to_string(&pidfile)
+                .ok()
+                .and_then(|s| s.trim().parse::<i32>().ok())
+            {
+                pid = Some(parsed);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let pid = nix::unistd::Pid::from_raw(pid.expect("the hook never started"));
+        assert!(nix::sys::signal::kill(pid, None).is_ok(), "hook sleeper must be alive");
+        // What a revocation does: drain the owner's bucket and kill its trees.
+        let pids = crate::tools::proc::take_thread_pids(&owner);
+        assert!(!pids.is_empty(), "the hook child is not registered under the monitor's owner");
+        for p in pids {
+            crate::tools::proc::kill_tree(p);
+        }
+        let mut dead = false;
+        for _ in 0..500 {
+            if nix::sys::signal::kill(pid, None).is_err() {
+                dead = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        set.stop_all();
+        assert!(dead, "the revocation's reap did not take the hook's process tree");
+    }
+
+    /// R4: hook spawning is admitted against the generation like the poll's own
+    /// spawn. A poll authorized at a generation that has since moved starts no
+    /// hook (and so, with the hook refused, no script either).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_poll_hook_does_not_start_after_the_generation_moved() {
+        let dir = unique_root();
+        let id = "tm-hook-stale";
+        let hook_marker = dir.join("hook-ran");
+        let script_marker = dir.join("script-ran");
+        let mut ctx = ctx_for(&dir);
+        ctx.hooks = Some(sleeping_hook_set(&format!("touch {}", hook_marker.display())));
+        // The poll was authorized at a token the thread has already moved past.
+        let (ctx, authority) = thread_authority_with(
+            ctx,
+            id,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(id) + 1_000_000)),
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start_owned(
+            spec("watch", &format!("touch {}", script_marker.display()), 30),
+            ctx,
+            Some(authority),
+        )
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        set.stop_all();
+        assert!(!hook_marker.exists(), "a hook started under a stale generation");
+        assert!(!script_marker.exists(), "the poll script started under a stale generation");
+    }
+
+    /// C: stopping ONE monitor aborts its task mid-hook; the hook's whole tree
+    /// (a backgrounded sleeper with redirected stdio) must go with it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stopping_a_monitor_mid_hook_reaps_the_hooks_descendants() {
+        let dir = unique_root();
+        let id = "tm-hook-stop";
+        let pidfile = dir.join("bg.pid");
+        let mut ctx = ctx_for(&dir);
+        ctx.hooks = Some(sleeping_hook_set(&format!(
+            "(sleep 30 >/dev/null 2>&1 </dev/null & echo $! > {}); sleep 30",
+            pidfile.display()
+        )));
+        let (ctx, authority) = thread_authority_with(
+            ctx,
+            id,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(id))),
+        );
+        let set = Arc::new(MonitorSet::new());
+        let (mid, _) = set
+            .start_owned_with_id(spec("watch", "false", 30), ctx, Some(authority))
+            .unwrap();
+        let mut pid = None;
+        for _ in 0..400 {
+            if let Some(p) = std::fs::read_to_string(&pidfile).ok().and_then(|s| s.trim().parse::<i32>().ok()) {
+                pid = Some(p);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let pid = nix::unistd::Pid::from_raw(pid.expect("the hook never started"));
+        assert!(nix::sys::signal::kill(pid, None).is_ok());
+        set.stop(&mid);
+        let mut dead = false;
+        for _ in 0..500 {
+            if nix::sys::signal::kill(pid, None).is_err() {
+                dead = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(dead, "the hook's background descendant survived the monitor's stop");
+        assert!(
+            crate::tools::proc::take_thread_pids(&format!("thread-monitor:{id}")).is_empty(),
+            "the aborted hook's pid is still registered"
+        );
+    }
+
+    /// D: a refused hook admission is not a hook error. The gate did not run,
+    /// so the outcome says so (and later hooks do not run either).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_refused_hook_admission_is_reported_not_swallowed_as_a_notice() {
+        let dir = unique_root();
+        let marker = dir.join("hook-ran");
+        let hooks = sleeping_hook_set(&format!("touch {}", marker.display()));
+        let ctx = ctx_for(&dir);
+        let tool_ctx = ctx.as_tool_context();
+        let stale = crate::tools::hooks::SpawnAdmission {
+            owner: "thread-monitor:tm-refused".into(),
+            thread_id: "tm-refused".into(),
+            generation: crate::thread_capabilities::generation("tm-refused") + 7,
+            network: false,
+        };
+        let payload = crate::tools::hooks::HookPayload {
+            tool_name: Some(crate::tools::SHELL_TOOL.to_string()),
+            ..Default::default()
+        };
+        let outcome = crate::tools::hooks::run_hooks_admitted(
+            &hooks,
+            crate::tools::hooks::HookEvent::PreToolUse,
+            &payload,
+            &tool_ctx,
+            false,
+            Some(&stale),
+        )
+        .await;
+        assert!(outcome.admission_refused);
+        assert!(outcome.notices.is_empty(), "{:?}", outcome.notices);
+        assert!(!marker.exists());
+    }
+
+    /// A thread monitor's poll children are owned, so a revocation reaps
+    /// exactly its pids -- by registered id, never by process name. Probes
+    /// REAL process liveness by pid: registry membership alone is a
+    /// tautology, because `kill_thread` drains the bucket before it kills
+    /// anything, so `snapshot()` goes empty even if nothing was signalled.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn thread_monitor_children_are_owned_and_reaped_by_id() {
+        let dir = unique_root();
+        let id = "tm-owned-children";
+        let owner = format!("thread-monitor:{id}");
+        let pidfile = dir.join("owned-child.pid");
+        // The sleeper is the shell's own child (same process group), so after
+        // the kill it is reparented and reaped by the OS: liveness can be
+        // probed without the zombie ambiguity a direct child would have
+        // (same pattern as the session-abort test).
+        let script = format!("sleep 30 & echo $! > {}; wait", pidfile.display());
+        let (ctx, authority) = thread_authority_for(
+            id,
+            &dir,
+            Arc::new(move || Ok(crate::thread_capabilities::generation(id))),
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start_owned(spec("watch", &script, 30), ctx, Some(authority))
+            .unwrap();
+        let mut pid = None;
+        for _ in 0..400 {
+            if let Some(parsed) = std::fs::read_to_string(&pidfile)
+                .ok()
+                .and_then(|s| s.trim().parse::<i32>().ok())
+            {
+                pid = Some(parsed);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let pid = nix::unistd::Pid::from_raw(pid.expect("the poll child never started"));
+        // Positive control: genuinely alive before the kill, so the probe
+        // below cannot pass vacuously.
+        assert!(
+            nix::sys::signal::kill(pid, None).is_ok(),
+            "the sleeper must be alive before the revocation"
+        );
+        crate::tools::proc::kill_thread(&owner);
+        let mut dead = false;
+        for _ in 0..500 {
+            if nix::sys::signal::kill(pid, None).is_err() {
+                dead = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        set.stop_all();
+        assert!(dead, "kill_thread did not kill the owned poll child's tree");
     }
 
     // POSIX command text: Windows runs PowerShell.
@@ -832,6 +1679,77 @@ mod tests {
             .unwrap();
         assert_eq!(notices.len(), 1);
         assert!(notices[0].text.contains("a hit at last"));
+    }
+
+    // R5: a poll that completes normally must not leave its background
+    // descendants running (and, once unregistered, beyond a revocation's reach).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_completed_poll_does_not_leave_descendants_running() {
+        let dir = unique_root();
+        let marker = dir.join("late-marker");
+        let script = format!(
+            "(sleep 1; touch '{}') >/dev/null 2>&1 & exit 0",
+            marker.display()
+        );
+        let set = Arc::new(MonitorSet::new());
+        set.start(spec("bg", &script, 30), ctx_for(&dir)).unwrap();
+        let update = next_notice(&set).await;
+        assert!(update.matched, "the poll itself must still match");
+        tokio::time::sleep(Duration::from_millis(1700)).await;
+        assert!(!marker.exists(), "a surviving descendant of a completed poll wrote its marker");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // R8: two monitors started on one thread must each deliver to the sink
+    // they were started with, not to whichever subscribed last.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn each_monitor_delivers_to_its_own_sink() {
+        let dir = unique_root();
+        std::fs::write(dir.join("one.log"), "").unwrap();
+        std::fs::write(dir.join("two.log"), "").unwrap();
+        let routed = RoutedMonitors::new();
+        let (tx1, mut rx1) = tokio::sync::mpsc::unbounded_channel();
+        let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel();
+        let m1 = routed
+            .start(
+                spec("one", "grep hit one.log", 30),
+                ctx_for(&dir),
+                None,
+                Arc::new(move |u| {
+                    let _ = tx1.send(u);
+                }),
+            )
+            .unwrap();
+        routed
+            .start(
+                spec("two", "grep hit two.log", 30),
+                ctx_for(&dir),
+                None,
+                Arc::new(move |u| {
+                    let _ = tx2.send(u);
+                }),
+            )
+            .unwrap();
+        assert!(m1.contains("monitor_id=mon-1"), "{m1}");
+        // M1 matches while M2 (started later) is still polling.
+        std::fs::write(dir.join("one.log"), "hit\n").unwrap();
+        let first = tokio::time::timeout(Duration::from_secs(5), rx1.recv())
+            .await
+            .expect("M1's update never reached M1's sink")
+            .unwrap();
+        assert_eq!((first.monitor_id.as_str(), first.name.as_str()), ("mon-1", "one"));
+        assert!(rx2.try_recv().is_err(), "M1's update leaked into M2's sink");
+        std::fs::write(dir.join("two.log"), "hit\n").unwrap();
+        let second = tokio::time::timeout(Duration::from_secs(5), rx2.recv())
+            .await
+            .expect("M2's update never reached M2's sink")
+            .unwrap();
+        assert_eq!(second.monitor_id, "mon-2");
+        assert!(rx1.try_recv().is_err());
+        assert!(routed.sinks.lock().unwrap().is_empty(), "fired routes are dropped");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // POSIX command text: Windows runs PowerShell.

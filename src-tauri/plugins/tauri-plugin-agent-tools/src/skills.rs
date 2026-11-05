@@ -237,6 +237,34 @@ pub fn is_enabled(enabled: &[String], name: &str) -> bool {
     enabled.is_empty() || enabled.iter().any(|n| n == name)
 }
 
+/// Reads a folder's `[skills].enabled` whitelist. The toolset owns no config
+/// format (`agent.toml` belongs to the app), so the host installs this once.
+pub type EnabledResolver = std::sync::Arc<dyn Fn(&Path) -> Vec<String> + Send + Sync>;
+static ENABLED_RESOLVER: std::sync::OnceLock<EnabledResolver> = std::sync::OnceLock::new();
+
+/// Install the process-wide whitelist resolver. First call wins.
+pub fn set_enabled_resolver(resolver: EnabledResolver) {
+    let _ = ENABLED_RESOLVER.set(resolver);
+}
+
+/// A whitelist that enables no real skill: skill names are never empty (this is
+/// the web app's `SKILLS_NONE` sentinel).
+const NONE_ENABLED: &str = "";
+
+/// The `[skills].enabled` whitelist for an authorized folder, as the composer
+/// sees it. With no resolver installed the answer is "none enabled", never "all":
+/// an unknown policy must not widen what the model can discover or read.
+pub fn enabled_for_project(folder: &Path) -> Vec<String> {
+    #[cfg(test)]
+    if let Some(list) = test_support::enabled(folder) {
+        return list;
+    }
+    match ENABLED_RESOLVER.get() {
+        Some(resolve) => resolve(folder),
+        None => vec![NONE_ENABLED.to_string()],
+    }
+}
+
 /// A skill's summary line: the frontmatter `description`, or the first body line.
 fn describe(parsed: &ParsedSkill) -> String {
     parsed
@@ -450,6 +478,30 @@ pub fn delete(store: &Path, name: &str) -> Result<(), String> {
         std::fs::remove_file(&flat).map_err(|e| format!("ERROR: {e}"))
     } else {
         Ok(())
+    }
+}
+
+/// Per-folder whitelist overrides: the real resolver is a process-wide
+/// `OnceLock`, so tests in one binary cannot each install their own.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, OnceLock};
+
+    fn map() -> &'static Mutex<HashMap<PathBuf, Vec<String>>> {
+        static MAP: OnceLock<Mutex<HashMap<PathBuf, Vec<String>>>> = OnceLock::new();
+        MAP.get_or_init(Default::default)
+    }
+    fn key(folder: &Path) -> PathBuf {
+        folder.canonicalize().unwrap_or_else(|_| folder.to_path_buf())
+    }
+    pub(crate) fn set_enabled(folder: &Path, list: &[&str]) {
+        let list = list.iter().map(|s| s.to_string()).collect();
+        map().lock().unwrap().insert(key(folder), list);
+    }
+    pub(crate) fn enabled(folder: &Path) -> Option<Vec<String>> {
+        map().lock().unwrap().get(&key(folder)).cloned()
     }
 }
 

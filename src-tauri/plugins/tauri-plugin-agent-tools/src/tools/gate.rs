@@ -6,6 +6,7 @@ use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
     escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root, in_hidden_root,
+    write_hits_read_only_root, Attached,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -136,6 +137,10 @@ pub enum DenyReason {
     Policy,
     /// The call reaches the Jan home (`~/.jan`), hidden from every tool.
     Hidden,
+    /// A `write`/`edit` lands in a folder the user attached read-only. The
+    /// handlers refuse it whatever was approved, so prompting would only ask
+    /// the user to vouch for a call that cannot succeed.
+    ReadOnlyRoot,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -163,6 +168,14 @@ pub struct GateContext<'a> {
     /// project (running in `$HOME` puts it inside). See
     /// [`crate::tools::sandbox::in_hidden_root`] for the worktree exception.
     pub hidden_root: Option<&'a Path>,
+}
+
+impl<'a> GateContext<'a> {
+    /// The attached folders as the path helpers take them; see
+    /// [`crate::tools::sandbox::Attached`].
+    fn attached(&self) -> Attached<'a> {
+        Attached::new(self.read_roots, self.write_roots)
+    }
 }
 
 /// Decide how a built-in tool call should be gated, combining the static
@@ -225,6 +238,20 @@ pub fn resolve_decision(
     if requests_escalation(tool, args) {
         return Decision::Prompt(PromptKind::Escalate);
     }
+    // Also ahead of allow rules and grants, which approve a write, not changing
+    // a folder the user attached read-only: the handlers refuse it either way.
+    // Same predicate as theirs, so a writable root, the project and the scratch
+    // keep their exemptions; a path that escapes every root is left to the
+    // escape prompt below.
+    if tool.capability == Capability::Write
+        && tool.path_args.iter().any(|key| {
+            args.get(key).and_then(|v| v.as_str()).is_some_and(|p| {
+                write_hits_read_only_root(ctx.project_root, ctx.scratch, ctx.attached(), p)
+            })
+        })
+    {
+        return Decision::HardDeny(DenyReason::ReadOnlyRoot);
+    }
     if perms.is_allowed(tool.name) {
         return Decision::Allow;
     }
@@ -242,7 +269,7 @@ pub fn resolve_decision(
                 args.get(key)
                     .and_then(|v| v.as_str())
                     .map(|p| {
-                        escapes_read_roots(ctx.project_root, ctx.scratch, ctx.read_roots, p)
+                        escapes_read_roots(ctx.project_root, ctx.scratch, ctx.attached(), p)
                             .unwrap_or(true)
                     })
                     .unwrap_or(false)
@@ -270,7 +297,7 @@ pub fn resolve_decision(
                 args.get(key)
                     .and_then(|v| v.as_str())
                     .map(|p| {
-                        escapes_write_roots(ctx.project_root, ctx.scratch, ctx.write_roots, p)
+                        escapes_write_roots(ctx.project_root, ctx.scratch, ctx.attached(), p)
                             .unwrap_or(true)
                     })
                     .unwrap_or(false)
@@ -1057,10 +1084,10 @@ mod tests {
         assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
         let _ = std::fs::remove_dir_all(&root);
     }
-    // Reads reach an attached folder; writes into it are still an escape. These
-    // two together *are* the read-only mount at the gate layer.
+    // Reads reach a read-only attached folder; writes are hard-denied without
+    // an approval prompt, matching the read-only mount at the gate layer.
     #[test]
-    fn read_in_an_attached_root_allows_and_write_prompts_escape() {
+    fn read_in_an_attached_root_allows_and_write_is_denied() {
         let root = unique_root();
         let repo = unique_root();
         std::fs::write(repo.join("main.rs"), b"x").unwrap();
@@ -1097,7 +1124,7 @@ mod tests {
             &ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             &grants,
         );
-        assert_eq!(write, Decision::Prompt(PromptKind::WriteEscape));
+        assert_eq!(write, Decision::HardDeny(DenyReason::ReadOnlyRoot));
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
@@ -1186,6 +1213,143 @@ mod tests {
         );
         assert_eq!(in_writable, Decision::HardDeny(DenyReason::Hidden));
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A write or edit into a read-only attached folder is refused outright,
+    /// ahead of allow rules and session grants: the handlers refuse it whatever
+    /// was approved, so a prompt would only ask for an approval that changes
+    /// nothing.
+    #[test]
+    fn a_write_into_a_read_only_root_is_refused_even_when_approved() {
+        let root = unique_root();
+        let repo = unique_root();
+        std::fs::write(repo.join("main.rs"), b"x").unwrap();
+        let roots = vec![repo.clone()];
+        let ctx = GateContext {
+            project_root: &root,
+            scratch: None,
+            read_roots: &roots,
+            write_roots: &[],
+            hidden_root: None,
+        };
+        let mut granted = SessionGrants::default();
+        granted.grant(PromptKind::Write);
+        granted.grant(PromptKind::WriteEscape);
+        let default = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let allow_tool = ToolPermissions::allow_all();
+        let refused = Decision::HardDeny(DenyReason::ReadOnlyRoot);
+        let new_file = repo.join("new.txt").to_string_lossy().into_owned();
+        let existing = repo.join("main.rs").to_string_lossy().into_owned();
+        let dotdot = format!("{}/sub/../new.txt", repo.display());
+
+        for (perms, grants) in [
+            (&default, &SessionGrants::default()),
+            (&default, &granted),
+            (&allow_tool, &SessionGrants::default()),
+            (&allow_tool, &granted),
+        ] {
+            for args in [
+                json!({"path": new_file, "content": "y"}),
+                json!({"path": dotdot, "content": "y"}),
+            ] {
+                assert_eq!(
+                    resolve_decision(lookup("write").unwrap(), &args, &ctx, perms, grants),
+                    refused,
+                    "write {args}"
+                );
+            }
+            let edit = json!({"path": existing, "edits": []});
+            assert_eq!(
+                resolve_decision(lookup("edit").unwrap(), &edit, &ctx, perms, grants),
+                refused,
+                "edit"
+            );
+        }
+
+        // Reads stay allowed, and a matching explicit deny rule keeps its own reason.
+        assert_eq!(
+            resolve_decision(
+                lookup("read").unwrap(),
+                &json!({"path": existing}),
+                &ctx,
+                &default,
+                &SessionGrants::default()
+            ),
+            Decision::Allow
+        );
+        let denied = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &["write".to_string()], &[]);
+        assert_eq!(
+            resolve_decision(
+                lookup("write").unwrap(),
+                &json!({"path": new_file, "content": "y"}),
+                &ctx,
+                &denied,
+                &granted
+            ),
+            Decision::HardDeny(DenyReason::Policy)
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The refusal is exactly the handlers': a writable override (also nested
+    /// in a read-only folder), the project and the scratch keep their ordinary
+    /// prompts, and a path outside every root is still the escape prompt.
+    #[test]
+    fn read_only_refusal_leaves_overrides_and_normal_escapes_unchanged() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let ro = unique_root();
+        let rw = unique_root();
+        let elsewhere = unique_root();
+        let nested = ro.join("rw_inside");
+        std::fs::create_dir_all(&nested).unwrap();
+        let read_roots = vec![ro.clone(), rw.clone(), nested.clone()];
+        let write_roots = vec![rw.clone(), nested.clone()];
+        let ctx = GateContext {
+            project_root: &root,
+            scratch: Some(&scratch),
+            read_roots: &read_roots,
+            write_roots: &write_roots,
+            hidden_root: None,
+        };
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let none = SessionGrants::default();
+        let decide = |path: String, grants: &SessionGrants| {
+            resolve_decision(
+                lookup("write").unwrap(),
+                &json!({"path": path, "content": "y"}),
+                &ctx,
+                &perms,
+                grants,
+            )
+        };
+        let at = |base: &Path, f: &str| base.join(f).to_string_lossy().into_owned();
+
+        assert_eq!(decide(at(&ro, "a.txt"), &none), Decision::HardDeny(DenyReason::ReadOnlyRoot));
+        assert_eq!(decide(at(&rw, "a.txt"), &none), Decision::Prompt(PromptKind::Write));
+        assert_eq!(decide(at(&nested, "a.txt"), &none), Decision::Prompt(PromptKind::Write));
+        assert_eq!(decide("notes.md".into(), &none), Decision::Prompt(PromptKind::Write));
+        assert_eq!(decide(at(&scratch, "a.txt"), &none), Decision::Prompt(PromptKind::Write));
+        // A path outside every root is the escape prompt on every platform;
+        // the Linux /tmp-to-scratch mapping no longer exists.
+        assert_eq!(
+            decide(at(&elsewhere, "a.txt"), &none),
+            Decision::Prompt(PromptKind::WriteEscape)
+        );
+        assert_eq!(decide("../escape.txt".into(), &none), Decision::Prompt(PromptKind::WriteEscape));
+
+        let mut granted = SessionGrants::default();
+        granted.grant(PromptKind::Write);
+        granted.grant(PromptKind::WriteEscape);
+        assert_eq!(decide(at(&rw, "a.txt"), &granted), Decision::Allow);
+        assert_eq!(decide(at(&elsewhere, "a.txt"), &granted), Decision::Allow);
+        assert_eq!(decide(at(&ro, "a.txt"), &granted), Decision::HardDeny(DenyReason::ReadOnlyRoot));
+
+        for d in [&root, &scratch, &ro, &rw, &elsewhere] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 
     /// The Cowork opt-in at the gate layer: an attached root also passed as a

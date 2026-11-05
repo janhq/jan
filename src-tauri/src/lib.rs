@@ -11,6 +11,9 @@ compile_error!(
 
 pub mod core;
 
+#[cfg(all(feature = "e2e", not(feature = "cli")))]
+mod e2e_isolation;
+
 #[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
@@ -125,6 +128,12 @@ macro_rules! invoke_commands_with_extras {
         core::threads::commands::list_threads,
         core::threads::commands::create_thread,
         core::threads::commands::modify_thread,
+        core::threads::commands::set_thread_conversation_capabilities,
+        core::threads::global_grants::get_chat_permissions,
+        core::threads::global_grants::set_chat_permissions,
+        core::threads::commands::rollback_created_thread,
+        core::threads::commands::read_thread_extra,
+        core::threads::commands::write_thread_extra,
         core::threads::commands::delete_thread,
         core::threads::commands::list_messages,
         core::threads::commands::create_message,
@@ -266,6 +275,12 @@ pub fn run() {
         crate::core::agent::hooks_config::resolve_hooks_for(project)
     }));
 
+    // Scoped Chat derives a folder's skill whitelist host-side from the
+    // authorized folder; `agent.toml` is the app's format, so the app reads it.
+    tauri_plugin_agent_tools::skills::set_enabled_resolver(std::sync::Arc::new(|folder| {
+        crate::core::agent::project::enabled_skills_fail_closed(folder)
+    }));
+
     let builder = tauri::Builder::default();
     // Shadowed rather than mutated: under `e2e` the plugin below is the only
     // thing that touched `builder`, and a `mut` binding would then be unused --
@@ -342,6 +357,14 @@ pub fn run() {
         core::server::remote_provider_commands::abort_remote_stream,
     ]);
 
+    let context = tauri::generate_context!();
+    #[cfg(feature = "e2e")]
+    let context = {
+        let mut context = context;
+        e2e_isolation::configure(&mut context);
+        context
+    };
+
     let app = app_builder
         .manage(AppState {
             app_token: Some(generate_app_token()),
@@ -373,6 +396,48 @@ pub fn run() {
                 let handle = app.handle().clone();
                 tauri_plugin_agent_tools::workspace::set_data_folder_resolver(Arc::new(
                     move || get_jan_data_folder_path(handle.clone()),
+                ));
+                let handle = app.handle().clone();
+                core::threads::global_grants::install(&get_jan_data_folder_path(handle.clone()));
+                let consent_handle = handle.clone();
+                tauri_plugin_agent_tools::thread_capabilities::set_consent_root_resolver(Arc::new(
+                    move || get_jan_data_folder_path(consent_handle.clone()),
+                ));
+                let handle = app.handle().clone();
+                tauri_plugin_agent_tools::thread_capabilities::set_resolver(Arc::new(move |id| {
+                    let data_folder = get_jan_data_folder_path(handle.clone());
+                    Box::pin(async move {
+                        let value = core::threads::capabilities::read_conversation_capabilities(
+                            &data_folder,
+                            &id,
+                        )
+                        .await?;
+                        Ok((data_folder, value))
+                    })
+                }));
+                let handle = app.handle().clone();
+                tauri_plugin_agent_tools::thread_capabilities::set_cowork_resolver(Arc::new(
+                    move |id| {
+                        let data_folder = get_jan_data_folder_path(handle.clone());
+                        Box::pin(async move {
+                            let value = core::threads::capabilities::read_cowork_capabilities(
+                                &data_folder,
+                                &id,
+                            )
+                            .await?;
+                            Ok((data_folder, value))
+                        })
+                    },
+                ));
+                let handle = app.handle().clone();
+                tauri_plugin_agent_tools::thread_capabilities::set_kind_resolver(Arc::new(
+                    move |id| {
+                        let data_folder = get_jan_data_folder_path(handle.clone());
+                        Box::pin(async move {
+                            core::threads::capabilities::resolve_thread_kind(&data_folder, &id)
+                                .await
+                        })
+                    },
                 ));
             }
             app.handle().plugin(
@@ -500,7 +565,7 @@ pub fn run() {
             setup::setup_theme_listener(app)?;
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while running tauri application");
     // Handle app lifecycle events
     app.run(|app, event| {

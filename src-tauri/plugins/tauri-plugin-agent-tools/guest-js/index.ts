@@ -411,13 +411,16 @@ export async function executeTool(
   threadId: string,
   name: string,
   args: Record<string, unknown>,
-  project?: string,
-  enabledSkills?: string[],
-  allowNetwork?: boolean,
-  readOnlyProject?: string,
-  projectWritable?: boolean,
-  scope?: WorkspaceScope,
-  callId?: string
+  project: string | undefined,
+  enabledSkills: string[] | undefined,
+  allowNetwork: boolean | undefined,
+  readOnlyProject: string | undefined,
+  projectWritable: boolean | undefined,
+  scope: WorkspaceScope | undefined,
+  callId: string | undefined,
+  /** Cowork's effective, run-latched Plan state. Required, with no default: the
+   * host refuses a call without it rather than assuming Plan is off. */
+  planMode: boolean
 ): Promise<ToolResult> {
   return await invoke('plugin:agent-tools|execute_tool', {
     dataFolder,
@@ -431,6 +434,7 @@ export async function executeTool(
     projectWritable,
     scope,
     callId,
+    planMode,
   })
 }
 
@@ -447,6 +451,8 @@ export async function executeToolStreaming(
   name: string,
   args: Record<string, unknown>,
   onOutput: Channel<ToolOutputChunk>,
+  /** Required, no default: see `executeTool`'s `planMode`. */
+  planMode: boolean,
   options?: {
     project?: string
     enabledSkills?: string[]
@@ -470,6 +476,7 @@ export async function executeToolStreaming(
     projectWritable: options?.projectWritable,
     scope: options?.scope,
     callId: options?.callId,
+    planMode,
   })
 }
 
@@ -525,6 +532,76 @@ export async function listMonitors(threadId: string): Promise<string> {
 }
 
 /**
+ * Start a monitor owned by a Chat thread.
+ *
+ * Deliberately narrower than {@link startMonitor}: there is no data folder,
+ * scope, network or writability argument. The host derives all of them from
+ * the thread's own stored consent intersected with its confirmed in-process
+ * authority, and re-derives them before every poll, so nothing passed here can
+ * widen what the monitor may do. A monitor whose consent is withdrawn stops
+ * with a terminal `permission revoked` update rather than polling on.
+ *
+ * `effectiveGrant` is the run's captured grant (what it classified and had
+ * approved): the host intersects it with its current authority and keeps the
+ * result as the ceiling for every poll, so a grant raised after the run began
+ * cannot widen the monitor. `planMode` is the run's effective, latched Plan
+ * state; the host refuses to start a monitor under it. Both are required.
+ */
+export async function startThreadMonitor(
+  threadId: string,
+  args: Record<string, unknown>,
+  onUpdate: (update: MonitorUpdate) => void,
+  effectiveGrant: ThreadCapabilities,
+  planMode: boolean
+): Promise<string> {
+  const channel = new Channel<MonitorUpdate>()
+  channel.onmessage = onUpdate
+  return await invoke('plugin:agent-tools|start_thread_monitor', {
+    threadId,
+    args,
+    effectiveGrant,
+    planMode,
+    onUpdate: channel,
+  })
+}
+
+/** Stop one of a thread's monitors. Scoped to that thread's own set, so an id
+ * from another conversation is simply unknown here. */
+export async function stopThreadMonitor(
+  threadId: string,
+  monitorId: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|stop_thread_monitor', {
+    threadId,
+    monitorId,
+  })
+}
+
+/** One line per active monitor for a thread, for `monitor {op:"list"}`. */
+export async function listThreadMonitors(threadId: string): Promise<string> {
+  return await invoke('plugin:agent-tools|list_thread_monitors', { threadId })
+}
+
+/** Stop every monitor a thread still has and reap their poll children. */
+export async function stopAllThreadMonitors(threadId: string): Promise<void> {
+  await invoke('plugin:agent-tools|stop_all_thread_monitors', { threadId })
+}
+
+/**
+ * Drop a thread's confirmed elevations in the host process immediately, and
+ * stop anything still running under them.
+ *
+ * Narrow-only: it can deny but never grant. Call it the moment a revocation is
+ * requested, before persisting, so the revocation takes effect natively
+ * without waiting for an earlier queued save to finish. A rejection means the
+ * host could not be narrowed, so the caller must not continue as though the
+ * revocation had been applied.
+ */
+export async function revokeThreadCapabilities(threadId: string): Promise<void> {
+  await invoke('plugin:agent-tools|revoke_thread_capabilities', { threadId })
+}
+
+/**
  * The ids of a session's still-active monitors. Every monitor is one-shot, so a
  * monitor no longer listed here has ended; the UI reconciles its rail against
  * this so a row cannot stay 'running' after a missed terminal update.
@@ -545,4 +622,30 @@ export async function stopSessionMonitors(threadId: string): Promise<void> {
  */
 export async function cancelThreadBash(threadId: string): Promise<void> {
   await invoke('plugin:agent-tools|cancel_thread_bash', { threadId })
+}
+
+/** Persistent Chat only. The host intersects these effective (possibly locally
+ * revoked) limits with stored consent. No caller-selected root or scope.
+ * Wire mirror of existing version-1 conversation consent; no new grants. */
+export interface ThreadCapabilities {
+  version: 1
+  folderScope: { path: string; access: 'read' | 'write' } | null
+  shellNetwork: boolean
+  memoryWrite: boolean
+}
+/**
+ * `planMode` is the caller's effective, run-latched Plan state at dispatch. It is
+ * required (there is no default): native uses it to keep tool hooks inert and
+ * refuse mutating tools, and can only tighten.
+ */
+export async function executeThreadTool(
+  threadId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  effectiveGrant: ThreadCapabilities,
+  planMode: boolean
+): Promise<ToolResult> {
+  return await invoke('plugin:agent-tools|execute_thread_tool', {
+    threadId, toolName, args, effectiveGrant, planMode,
+  })
 }

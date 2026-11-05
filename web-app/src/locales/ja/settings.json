@@ -126,7 +126,8 @@
     "resetCodeBlockStyle": "コードブロックスタイルをリセット",
     "resetCodeBlockStyleDesc": "コードブロックスタイルをデフォルトにリセットします。",
     "resetCodeBlockSuccess": "コードブロックスタイルが正常にリセットされました",
-    "resetCodeBlockSuccessDesc": "コードブロックスタイルがデフォルトに復元されました。"
+    "resetCodeBlockSuccessDesc": "コードブロックスタイルがデフォルトに復元されました。",
+    "themeDescFixed": "常にこのテーマを使用します。OSに合わせるには「システム」を選択してください。"
   },
   "hardware": {
     "os": "オペレーティングシステム",
@@ -261,6 +262,9 @@
     "reset": "リセット",
     "huggingfaceToken": "HuggingFaceトークン",
     "huggingfaceTokenDesc": "モデルにアクセスするためのHuggingFace APIトークン。",
+    "janCli": "Jan CLI",
+    "janCliDesc": "ターミナルから Jan のエージェントを実行します。ガイドに従ってインストールし、使い始めましょう。",
+    "janCliSetupGuide": "セットアップガイド",
     "resources": "リソース",
     "documentation": "ドキュメント",
     "documentationDesc": "Janの使用方法を学び、その機能を探ります。",
@@ -327,5 +331,34 @@
     }
   },
   "backendInstallSuccess": "バックエンドは正常にインストールされました",
-  "backendInstallError": "バックエンドのインストールに失敗しました"
+  "backendInstallError": "バックエンドのインストールに失敗しました",
+  "cowork": {
+    "title": "エージェント",
+    "description": "Jan がコンピューター上でできることを設定します。サンドボックス内のシェルと、Jan のデータフォルダーに永続的に保存されるメモリやスキルが対象です。",
+    "networkDesc": "パッケージのインストールやリポジトリの取得など、シェルコマンドのネットワークアクセスを許可します。既定でオンです。コマンドがアクセスできるファイルは引き続きサンドボックスで制限されます。",
+    "memoryWrite": "メモリとスキルの保存を許可",
+    "memoryWriteDesc": "モデルが会話を超えて保持されるメモリやスキルを保存できるようにします。既定でオンです。保存内容はすべて以下で確認・編集できます。",
+    "permissionSaveFailed": "この設定を保存できませんでした。設定は変更されていません。",
+    "shell": "シェルコマンド",
+    "shellChecking": "サンドボックスを確認中…",
+    "shellSandboxed": "コマンドは {{backend}} によって制限されます。書き込みはセッションのワークスペース内のみ可能で、ホームフォルダー内のファイルは読み取れません。",
+    "shellUnavailable": "このシステムではサンドボックスを利用できないため、シェルツールは提供されません。コマンドが隔離されずに実行されることはありません。",
+    "network": "ネットワークアクセスを許可",
+    "openFolder": "フォルダーを開く",
+    "memories": "メモリ",
+    "noMemories": "メモリはまだありません。モデルは保存する価値のある情報を学ぶと、メモリツールで追加します。",
+    "skills": "スキル",
+    "noSkills": "スキルはまだありません。スキルとは、モデルが必要に応じて読み込める再利用可能な指示の集まりです。",
+    "add": "追加",
+    "editMemory": "メモリを編集",
+    "editMemoryDesc": "ノートごとに1つのトピックを記述します。モデルはメモリツールでこれらのノートを読み返します。",
+    "editSkill": "スキルを編集",
+    "editSkillDesc": "Markdown 形式の指示です。任意で YAML フロントマターに説明を追加できます。モデルはスキルを読み込む前にこの説明を確認します。",
+    "namePlaceholder": "名前",
+    "contentPlaceholder": "内容",
+    "loadFailed": "エージェントのワークスペースを読み込めませんでした",
+    "saveFailed": "保存できませんでした",
+    "deleteFailed": "削除できませんでした",
+    "revealFailed": "フォルダーを開けませんでした"
+  }
 }

@@ -1,6 +1,8 @@
 import { toast } from 'sonner'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
+import { cancelAgentThreadBash, stopAgentSessionMonitors } from '@/lib/agentTools'
+import { dropMonitorLane } from '@/lib/coworkMonitor'
 
 /**
  * Canned onboarding prompt for `/init`. Sent as a normal user turn so the agent
@@ -75,6 +77,12 @@ export function runSlashCommand(raw: string, deps: SlashCommandDeps): void {
         break
       }
       if (currentId) {
+        // Nothing may keep running against the transcript that was wiped:
+        // watchers and a background shell go, as when the session is deleted.
+        void cancelAgentThreadBash(currentId)
+        void stopAgentSessionMonitors(currentId)
+        dropMonitorLane(currentId)
+        useCoworkRun.getState().clearMonitors(currentId)
         useCoworkSessions.getState().clearSession(currentId)
         useCoworkRun.getState().clearCodeRun(currentId)
       }

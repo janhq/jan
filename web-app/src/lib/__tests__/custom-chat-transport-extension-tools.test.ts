@@ -104,6 +104,7 @@ describe('extension tools in the chat transport', () => {
         description: 'Echo the input',
         inputSchema: { type: 'object', properties: { text: { type: 'string' } } },
         server: 'ext:acme.one',
+        generation: 4,
       },
     ]
   })
@@ -112,8 +113,16 @@ describe('extension tools in the chat transport', () => {
     const transport = new CustomChatTransport('', 'thread-1')
     await transport.refreshTools()
     const tools = transport.getTools()
-    expect(Object.keys(tools)).toEqual(['x_acme_one__echo'])
+    expect(Object.keys(tools)).toContain('x_acme_one__echo')
     expect(tools.x_acme_one__echo.description).toBe('Echo the input')
+  })
+
+  it('freezes the handler generation with the advertised identity', async () => {
+    const transport = new CustomChatTransport('', 'thread-1')
+    await transport.refreshTools()
+    expect(transport.getMcpServerForTool('x_acme_one__echo')).toBe('ext:acme.one')
+    expect(transport.getExtensionGenerationForTool('x_acme_one__echo')).toBe(4)
+    expect(transport.getExtensionGenerationForTool('echo')).toBeUndefined()
   })
 
   it('offers tools to an extension provider model that declares them', async () => {
@@ -122,7 +131,7 @@ describe('extension tools in the chat transport', () => {
       selectedProvider: 'acme.llm/local',
       selectedModel: extensionModel(['completion', 'tools']),
     })
-    expect(Object.keys(transport.getTools())).toEqual(['x_acme_one__echo'])
+    expect(Object.keys(transport.getTools())).toContain('x_acme_one__echo')
   })
 
   it('offers no tools to an extension provider model without them', async () => {
@@ -138,6 +147,6 @@ describe('extension tools in the chat transport', () => {
     h.disabled = ['ext:acme.one::x_acme_one__echo']
     const transport = new CustomChatTransport('', 'thread-1')
     await transport.refreshTools()
-    expect(transport.getTools()).toEqual({})
+    expect(Object.keys(transport.getTools())).not.toContain('x_acme_one__echo')
   })
 })

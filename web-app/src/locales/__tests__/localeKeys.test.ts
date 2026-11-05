@@ -284,3 +284,168 @@ describe.each(COMPLETE_NAMESPACES)('translated %s locales', (namespace) => {
     ).toEqual([])
   })
 })
+
+/**
+ * The unified conversation surface (sidebar, Plan, workspace folder, conversation
+ * scope, home project menu, Artifacts) must read as one language in every shipped
+ * locale. `common` as a whole still has untranslated blocks, so these groups are
+ * guarded on their own: present, same placeholders, and not left as English.
+ */
+const UNIFIED_UI_GROUPS = [
+  'planMode',
+  'workspace',
+  'conversationScope',
+  'homeMode',
+  'sidebar',
+]
+const UNIFIED_UI_KEYS = [
+  'artifacts',
+  'skills',
+  'chatsAndTasks',
+  'deleteSession',
+  'deleteSessionTitle',
+  'deleteSessionBody',
+  'web_search',
+  'moreControls',
+  'browse',
+  'projects.viewProject',
+  ...[
+    'artifactGroupCode',
+    'artifactGroupImage',
+    'artifactGroupDocument',
+    'artifactGroupVideo',
+    'artifactGroupAudio',
+    'artifactOpenPreview',
+    'artifactOpenExternal',
+    'artifactMoreActions',
+    'artifactShowInFolder',
+    'artifactsAll',
+    'artifactsEmpty',
+    'artifactsNoMatch',
+    'artifactsLibraryDescription',
+    'artifactsLibraryFiles',
+    'artifactsLibraryCount_one',
+    'artifactsLibraryCount_other',
+    'artifactsLibraryFilter',
+    'artifactsLibraryReset',
+    'artifactsSearch',
+    'artifactsShowMore',
+  ],
+]
+/**
+ * Words that are genuinely identical to English in some languages (loanwords,
+ * product terms). Anything else equal to English is an untranslated copy.
+ */
+const SAME_AS_ENGLISH_OK: Record<string, string[]> = {
+  ca: ['shell', 'artifactGroupDocument'],
+  cs: ['shell', 'artifactGroupVideo', 'artifactGroupAudio'],
+  'de-DE': [
+    'shell',
+    'skills',
+    'artifactGroupCode',
+    'artifactGroupVideo',
+    'artifactGroupAudio',
+    'planMode.label',
+    'sidebar.navigation',
+  ],
+  es: ['shell', 'artifactGroupAudio', 'planMode.label'],
+  fr: [
+    'shell',
+    'artifactGroupCode',
+    'artifactGroupImage',
+    'artifactGroupDocument',
+    'artifactGroupAudio',
+    'planMode.label',
+    'sidebar.navigation',
+  ],
+  id: ['shell', 'artifactGroupVideo', 'artifactGroupAudio', 'artifactsLibraryCount_one'],
+  it: ['shell', 'artifactGroupVideo', 'artifactGroupAudio', 'artifactsLibraryCount_one'],
+  pl: ['artifactGroupAudio', 'planMode.label'],
+  'pt-BR': ['shell'],
+  vn: ['shell', 'artifactGroupVideo'],
+  'zh-CN': ['shell'],
+  'zh-TW': ['shell'],
+}
+
+describe('unified UI locale contract', () => {
+  const english = leaves(loadNamespace('common'))
+  const unifiedEnglish = english.filter(
+    ([key]) =>
+      UNIFIED_UI_GROUPS.some((group) => key.startsWith(`${group}.`)) ||
+      UNIFIED_UI_KEYS.includes(key)
+  )
+
+  it('covers the unified groups', () => {
+    for (const group of UNIFIED_UI_GROUPS) {
+      expect(unifiedEnglish.some(([key]) => key.startsWith(`${group}.`))).toBe(true)
+    }
+    for (const key of UNIFIED_UI_KEYS) {
+      expect(unifiedEnglish.map(([k]) => k)).toContain(key)
+    }
+  })
+
+  it('no longer describes Artifacts as Cowork runs', () => {
+    for (const locale of ['en', ...TRANSLATED_LOCALES]) {
+      const bundle = loadNamespace('common', locale)
+      expect(String(lookup(bundle, 'artifactsEmpty'))).not.toMatch(/cowork/i)
+    }
+  })
+
+  it.each(TRANSLATED_LOCALES)('%s translates every unified UI key', (locale) => {
+    const bundle = loadNamespace('common', locale)
+    const missing = unifiedEnglish
+      .map(([key]) => key)
+      .filter((key) => lookup(bundle, key) === undefined)
+    expect(missing, `missing from ${locale}/common.json`).toEqual([])
+
+    const mismatched = unifiedEnglish
+      .filter(
+        ([key, value]) =>
+          placeholders(lookup(bundle, key)).join() !== placeholders(value).join()
+      )
+      .map(([key]) => key)
+    expect(mismatched, `placeholders differ in ${locale}`).toEqual([])
+
+    const allowed = new Set(SAME_AS_ENGLISH_OK[locale] ?? [])
+    const copied = unifiedEnglish
+      .filter(([key, value]) => lookup(bundle, key) === value)
+      .map(([key]) => key)
+      .filter((key) => !allowed.has(key))
+    expect(copied, `English copied into ${locale}/common.json`).toEqual([])
+  })
+
+  it('keeps the non-tool warning short', () => {
+    for (const key of ['conversationScope.unsupported', 'conversationScope.folderUnsupported']) {
+      expect(String(lookup(loadNamespace('common'), key)).length).toBeLessThan(130)
+    }
+  })
+})
+
+describe('locale placeholder parity', () => {
+  const english = leaves(loadNamespace('common'))
+
+  it.each(TRANSLATED_LOCALES)(
+    '%s keeps the interpolation variables of every translated common key',
+    (locale) => {
+      const bundle = loadNamespace('common', locale)
+      const mismatched = english
+        .filter(([key]) => typeof lookup(bundle, key) === 'string')
+        .filter(
+          ([key, value]) =>
+            placeholders(lookup(bundle, key)).join() !== placeholders(value).join()
+        )
+        .map(([key]) => key)
+      expect(mismatched, `placeholders differ in ${locale}/common.json`).toEqual([])
+    }
+  )
+
+  it.each([
+    ['toast.modelValidationStarted.description', ['modelId']],
+    ['toast.downloadComplete.description', ['item']],
+  ])('%s uses %j in every locale', (key, expected) => {
+    for (const locale of ['en', ...TRANSLATED_LOCALES]) {
+      const value = lookup(loadNamespace('common', locale), key)
+      expect(placeholders(value), `${locale}: ${String(value)}`).toEqual(expected)
+    }
+  })
+})

@@ -205,8 +205,8 @@ Ensure that the following section information show up for hardware
 - [ ] User can delete an old thread, and it won't reappear even when app restart
 - [ ] Change the title of the thread should update its last modification date and re-organise its position in the correct chronological order on the left bar.
 - [ ] [0.8.5] New thread titles are AI-generated from conversation content (Auto-generate chat title toggle in Settings → Appearance). Verify titles are meaningful and the toggle works
-- [ ] Ensure that the search thread feature return accurate result based on thread titles and contents
-- [ ] `Delete All` should delete only threads in the `Recents` section
+- [ ] Ensure that the search thread feature return accurate result based on thread titles (search matches titles only, not message contents)
+- [ ] `Delete All` removes only conversations outside projects; project conversations and legacy Cowork sessions are kept, and the dialog and toast say so
 #### In a thread:
 - [ ] When `New Chat` is clicked, the assistant is set as the last selected assistant, the model selected is set as the last used model, and the user can immediately chat with the model. 
 - [ ] User can conduct multi-turn conversation in a single thread without lost of data (given that `Context Shift` is not enabled)
@@ -293,17 +293,39 @@ In `Settings -> General`:
 - [ ] Ensure that the fresh install of Jan launch
 - [ ] Do some basic check to see that all function still behaved as expected. To be extra careful, you can go through the whole list again. However, it is more advisable to just check to make sure that all the core functionality like `Thread` and `Model Providers` work as intended.
 
-## H. Channel gate (preview surfaces)
-Some surfaces ship in the `nightly` channel only — Cowork is one of them. The desktop e2e suite covers the stable half on every nightly run; this section is how a release candidate and its nightly build are checked by hand.
-On the stable build:
-- [ ] The left bar shows no `Cowork` tab, and no `Home` / `Cowork` switcher above the chat list
-- [ ] `Settings` has no `Cowork` entry
-- [ ] Opening `/cowork` or `/artifacts` lands on `Home`, and `/settings/cowork` lands on `Settings -> General`
-- [ ] A thread, a project and a chat turn still work — the gate must not take the app down with it
-- [ ] A profile whose last surface was `Cowork` opens on `Home` in the stable build
-On the nightly build of the same commit:
-- [ ] The `Cowork` tab and switcher are present, and `/cowork` opens the surface
-- [ ] `Settings -> Cowork` is present and lists memory, skills and subagents
+## H. Unified conversations and composer
+
+### Visual checks (repeat in Light and Dark)
+- [ ] Check home, a populated conversation, an empty project and a populated project at 1200, 900, 640 and 380px window widths.
+- [ ] Check icon colour, size and stroke; baseline alignment; row spacing; hover/focus states; contrast; text wrapping and clipping. Intentional ellipsis must expose the full value through a tooltip or accessible label.
+- [ ] No horizontal page overflow, off-screen menus, clipped footer controls or overlap with the macOS traffic lights.
+- [ ] The + menu has one **Upload files or photos** action, not separate image/audio/video/document rows. Leading icons are muted; active toggle checks are accent-coloured and right-aligned.
+- [ ] Folder/project actions are available from +. Existing conversations can attach their first folder without returning home.
+
+### Folder access
+- [ ] Choose a folder from +; a folder pill appears. Opening it shows the selected path and honest read-only/read-write status.
+- [ ] Newly selected folders allow read and write. Click the access badge to switch between **read only** and **read & write**; read-only access blocks writes targeting the attached folder while the private workspace remains writable. Click the folder name or path to reveal it in the file manager.
+- [ ] Change folder, cancel the picker and detach all behave correctly. Long and non-ASCII paths wrap or truncate without pushing actions out of view.
+- [ ] Restart with a saved folder grant: restore the saved access without a confirmation prompt. A revoked or failed-save grant must not return from stale disk data; verify durable denial survives restart.
+- [ ] Successful memory changes show one quiet **Memory saved** notice; **Inspect** opens memory management. Failed, denied and stopped calls do not claim success.
+- [ ] Check native file/folder pickers manually: WebDriver screenshots and synthetic input events do not prove the OS picker works.
+
+### Agent settings and permissions
+- [ ] **Settings → Agent** is reachable on every channel; no Chat/Cowork mode choice is required.
+- [ ] Network and memory/skill writes default to on for a fresh profile. Existing explicit restrictions survive restart.
+- [ ] Toggle network off; an actual shell network request is blocked. Filesystem confinement remains unchanged.
+- [ ] Toggle memory/skill writes off; actual native memory and skill mutations are blocked, while reading remains available.
+- [ ] Repeat restrictions for migrated legacy sessions and background monitor polls, not only newly started Chat calls.
+- [ ] A tool classified before a later permission increase cannot exceed its captured ceiling. Temporary conversations must not gain access beyond their displayed/approved scope.
+- [ ] Rapidly change both switches with saves pending; neither change is lost. A failed save leaves the screen truthful and a later retry succeeds.
+- [ ] Missing settings use first-run defaults. Damaged/unreadable persisted permission settings do not silently re-enable restricted access.
+
+### Other unified-flow checks
+- [ ] Existing legacy Cowork sessions (from a nightly profile) appear under **Chats and tasks** and in Artifacts on every channel, including stable, and open at their own URL; there is still no Cowork tab or mode switch.
+- [ ] Artifacts and Skills remain reachable without a Cowork tab. Sidebar icon sizes match the other rows.
+- [ ] Check multi-turn chat, Stop, regenerate, edit/version navigation, thread deletion/restart and project creation/deletion from section D.
+- [ ] Confirm Plan mode and skill commands are reachable and enforced before marking parity with the former Cowork surface complete.
+- [ ] Review non-English screens for raw translation keys, misleading old mode terminology and untranslated English blocks.
 
 
 # II. After release

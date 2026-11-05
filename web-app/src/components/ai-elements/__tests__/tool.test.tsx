@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within, act } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -13,10 +13,15 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 
 const approvalState: { pending: Record<string, unknown> } = { pending: {} }
 const resolveApproval = vi.fn()
-vi.mock('@/hooks/useToolApprovalRequests', () => ({
-  useToolApprovalRequests: (selector: (s: unknown) => unknown) =>
-    selector({ ...approvalState, resolveApproval }),
-}))
+let useRealApprovals = false
+vi.mock('@/hooks/useToolApprovalRequests', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/hooks/useToolApprovalRequests')>()
+  const hook = (selector: (s: unknown) => unknown) => useRealApprovals
+    ? actual.useToolApprovalRequests(selector)
+    : selector({ ...approvalState, resolveApproval })
+  hook.getState = actual.useToolApprovalRequests.getState
+  return { ...actual, useToolApprovalRequests: hook }
+})
 
 vi.mock('../code-block', () => ({
   CodeBlock: ({ code }: { code: string }) => (
@@ -38,11 +43,14 @@ import {
   ToolInput,
   ToolOutput,
 } from '../tool'
+import { approvalKey, useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 
 // The approval mock is module state; leaving a pending entry behind would make
 // every later header render as awaiting approval.
 beforeEach(() => {
+  useRealApprovals = false
   approvalState.pending = {}
   resolveApproval.mockClear()
 })
@@ -60,9 +68,9 @@ const renderHeader = (props: Partial<React.ComponentProps<typeof ToolHeader>> = 
   )
 
 const renderApproval = (pending: Record<string, unknown>) => {
-  approvalState.pending = pending
+  approvalState.pending = Object.fromEntries(Object.entries(pending).map(([id, entry]) => [JSON.stringify(['thread-a', id]), entry]))
   return render(
-    <Tool state="input-available" toolCallId="tc1" messageId="m1" defaultOpen>
+    <Tool state="input-available" toolCallId="tc1" messageId="m1" threadId="thread-a" defaultOpen>
       <ToolApprovalActions />
     </Tool>
   )
@@ -72,6 +80,44 @@ describe('ToolApprovalActions', () => {
   beforeEach(() => {
     resolveApproval.mockClear()
     approvalState.pending = {}
+  })
+
+  it('real same-ID prompts survive another thread decision and finally cleanup', async () => {
+    useRealApprovals = true
+    useToolApproval.setState({ approvedTools: {}, approvedMCPTools: [], approvedServers: [], approvedToolsGlobal: [], allowAllMCPPermissions: false })
+    const requests = useToolApprovalRequests.getState()
+    const a = requests.requestApproval('same-real', 'read', 'thread-a', 'alpha')
+    let bSettled = false
+    const b = requests.requestApproval('same-real', 'read', 'thread-b', 'beta')
+    void b.then(() => { bSettled = true })
+    render(<>
+      <section data-testid="real-a"><Tool state="input-available" toolCallId="same-real" threadId="thread-a" defaultOpen><ToolApprovalActions /></Tool></section>
+      <section data-testid="real-b"><Tool state="input-available" toolCallId="same-real" threadId="thread-b" defaultOpen><ToolApprovalActions /></Tool></section>
+    </>)
+    fireEvent.click(within(screen.getByTestId('real-a')).getByText('tools:toolApproval.allowOnce'))
+    await expect(a).resolves.toBe(true)
+    act(() => requests.cancelApproval('same-real', 'thread-a')) // route finally API
+    expect(bSettled).toBe(false)
+    expect(useToolApprovalRequests.getState().pending[approvalKey('thread-b', 'same-real')]).toBeDefined()
+    fireEvent.click(within(screen.getByTestId('real-b')).getByText('tools:toolApproval.allowOnce'))
+    await expect(b).resolves.toBe(true)
+  })
+
+  it('dispatches same-ID cards to their own thread only', () => {
+    approvalState.pending = {
+      [JSON.stringify(['thread-a', 'same'])]: { toolCallId: 'same', threadId: 'thread-a', serverName: 'alpha' },
+      [JSON.stringify(['thread-b', 'same'])]: { toolCallId: 'same', threadId: 'thread-b', serverName: 'beta' },
+    }
+    render(<>
+      <section data-testid="thread-a"><Tool state="input-available" toolCallId="same" threadId="thread-a" defaultOpen><ToolApprovalActions /></Tool></section>
+      <section data-testid="thread-b"><Tool state="input-available" toolCallId="same" threadId="thread-b" defaultOpen><ToolApprovalActions /></Tool></section>
+    </>)
+    fireEvent.click(within(screen.getByTestId('thread-a')).getByText('tools:toolApproval.allowOnce'))
+    expect(resolveApproval).toHaveBeenLastCalledWith('same', 'allow-once', 'thread-a')
+    fireEvent.click(within(screen.getByTestId('thread-b')).getByText('tools:toolApproval.deny'))
+    expect(resolveApproval).toHaveBeenLastCalledWith('same', 'deny', 'thread-b')
+    expect(within(screen.getByTestId('thread-a')).getByText('tools:toolApproval.allowServerAlways:alpha')).toBeInTheDocument()
+    expect(within(screen.getByTestId('thread-b')).getByText('tools:toolApproval.allowServerAlways:beta')).toBeInTheDocument()
   })
 
   it('renders nothing when no approval is pending', () => {
@@ -117,6 +163,39 @@ describe('ToolApprovalActions', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('keeps extension approvals session-scoped: no always button', () => {
+    const controls = (pending: Record<string, unknown>) => {
+      const view = renderApproval({ tc1: { toolCallId: 'tc1', ...pending } })
+      const labels = screen.getAllByRole('button').map((b) => b.textContent)
+      view.unmount()
+      return labels
+    }
+    expect(controls({ toolName: 'run', serverName: 'ext:acme', extension: true })).toEqual([
+      'tools:toolApproval.deny',
+      'tools:toolApproval.allowOnce',
+      'tools:toolApproval.allowInThread',
+    ])
+    expect(controls({ toolName: 'run', serverName: 'github' })).toEqual([
+      'tools:toolApproval.deny',
+      'tools:toolApproval.allowOnce',
+      'tools:toolApproval.allowInThread',
+      'tools:toolApproval.allowServerAlways:github',
+    ])
+    expect(controls({ toolName: 'do_thing' })).toEqual([
+      'tools:toolApproval.deny',
+      'tools:toolApproval.allowOnce',
+      'tools:toolApproval.allowInThread',
+      'tools:toolApproval.allowToolAlways:do_thing',
+    ])
+  })
+
+  it('still grants extension tools once or in thread', () => {
+    renderApproval({ tc1: { toolCallId: 'tc1', toolName: 'run', serverName: 'ext:acme', extension: true } })
+    fireEvent.click(screen.getByText('tools:toolApproval.allowOnce'))
+    fireEvent.click(screen.getByText('tools:toolApproval.allowInThread'))
+    expect(resolveApproval.mock.calls.map((c) => c[1])).toEqual(['allow-once', 'allow-thread'])
+  })
+
   it('grants each scope the reader picked', () => {
     renderApproval({
       tc1: { toolCallId: 'tc1', toolName: 'create_issue', serverName: 'github' },
@@ -127,6 +206,7 @@ describe('ToolApprovalActions', () => {
       screen.getByText('tools:toolApproval.allowServerAlways:github')
     )
     fireEvent.click(screen.getByText('tools:toolApproval.deny'))
+    expect(resolveApproval.mock.calls.every((c) => c[2] === 'thread-a')).toBe(true)
     expect(resolveApproval.mock.calls.map((c) => c[1])).toEqual([
       'allow-once',
       'allow-thread',
@@ -148,6 +228,32 @@ describe('ToolHeader runtime state', () => {
     renderHeader({ state: 'input-available' })
     expect(screen.getByText(/tools:toolCall.queued/)).toBeInTheDocument()
     expect(screen.queryByText(/tools:toolCall.running/)).not.toBeInTheDocument()
+  })
+
+  it('words a pending ask as waiting for the person, with no raw argument preview', () => {
+    useToolCallRuntime.getState().enqueue(['tc1'])
+    renderHeader({
+      title: 'ask',
+      type: 'tool-ask',
+      builtin: true,
+      state: 'input-available',
+      input: { questions: [{ question: 'Pick one' }] },
+    })
+    expect(screen.getByText('common:askToolPending')).toBeInTheDocument()
+    expect(screen.queryByText(/toolCall.queued/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/questions:/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the generic wording for an MCP tool that is merely named ask', () => {
+    useToolCallRuntime.getState().enqueue(['tc1'])
+    renderHeader({ title: 'ask', type: 'tool-ask', state: 'input-available', input: { q: 'x' } })
+    expect(screen.queryByText('common:askToolPending')).not.toBeInTheDocument()
+    expect(screen.getByText(/tools:toolCall.queued/)).toBeInTheDocument()
+  })
+
+  it('words a settled ask as a question that was asked', () => {
+    renderHeader({ title: 'ask', type: 'tool-ask', builtin: true, state: 'output-available' })
+    expect(screen.getByText('common:askToolAsked')).toBeInTheDocument()
   })
 
   it('counts the calls waiting ahead of it', () => {
@@ -206,7 +312,7 @@ describe('ToolHeader', () => {
 
 const renderInput = (input: unknown) =>
   render(
-    <Tool state="input-available" toolCallId="tc1" messageId="m1" defaultOpen>
+    <Tool state="input-available" toolCallId="tc1" messageId="m1" threadId="thread-a" defaultOpen>
       <ToolContent>
         <ToolInput input={input} />
       </ToolContent>
@@ -324,7 +430,7 @@ describe('ToolOutput', () => {
 
   it('renders nothing without output or error', () => {
     const { container } = render(
-      <Tool state="input-available" toolCallId="tc1" messageId="m1" defaultOpen>
+      <Tool state="input-available" toolCallId="tc1" messageId="m1" threadId="thread-a" defaultOpen>
         <ToolContent>
           <ToolOutput
             output={undefined}

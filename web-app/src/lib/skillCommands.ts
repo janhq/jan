@@ -28,7 +28,7 @@ export function filterSkillCommands(
   const normalized = query.toLowerCase()
   return skills.filter(
     (skill) =>
-      skill.user_invocable !== false && skill.name.toLowerCase().includes(normalized)
+      skill.user_invocable !== false && skill.name.toLowerCase().startsWith(normalized)
   )
 }
 

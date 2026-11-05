@@ -202,8 +202,17 @@ session.set_model("...")          # between turns; refused mid-turn with -32001
 session.fork()                    # a new session with this one's history and model
 session.archive()                 # drop it from the runtime
 runtime.close()                   # close stdin, then the process
-runtime.close(force=True)         # skip the grace period and kill
+runtime.close(force=True)         # kill at once; no grace for the process (see below)
 ```
+
+`close()` allows up to `shutdown_grace` seconds (default 5) to close stdin,
+then gives the process another `shutdown_grace` to exit before killing it, and
+waits up to `shutdown_grace` more for the pipe readers: about
+`3 * shutdown_grace` at most (plus a short cleanup wait if stdin stays blocked). `close(force=True)` kills first and
+waits at most 0.25s for the readers. A descendant that inherited the runtime's
+pipes can keep them open past either; the reader threads are daemons and release
+the pipes when it lets go. A callback passed as `on_stderr` that raises is
+disabled (a note goes to `runtime.stderr`) and stderr keeps being drained.
 
 `runtime.limits` is what the handshake advertised - `max_images`,
 `max_image_bytes`, `max_message_image_bytes` and the accepted `mime_types` - so

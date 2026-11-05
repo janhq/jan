@@ -29,12 +29,13 @@ import {
   summarizeToolInput,
 } from '@/lib/toolInputSummary'
 import { summarizeToolOutput } from '@/lib/toolOutputSummary'
-import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { approvalKey, useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import {
   queuePositionOf,
   useToolCallRuntime,
 } from '@/hooks/useToolCallRuntime'
 import { ToolElapsed } from './tool-runtime'
+import { ASK_TOOL_NAME } from '@/lib/coworkTools'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import { ShieldAlertIcon } from 'lucide-react'
@@ -49,6 +50,7 @@ type ToolContextValue = {
   setIsOpen: (open: boolean) => void
   state: ToolUIPart['state']
   toolCallId?: string
+  threadId?: string
   messageId?: string
 }
 
@@ -66,6 +68,7 @@ export type ToolProps = ComponentProps<typeof Collapsible> & {
   className?: string
   state: ToolUIPart['state']
   toolCallId?: string
+  threadId?: string
   messageId?: string
   open?: boolean
   defaultOpen?: boolean
@@ -78,6 +81,7 @@ export const Tool = memo(
     state,
     toolCallId,
     messageId,
+    threadId,
     open,
     defaultOpen = false,
     onOpenChange,
@@ -85,7 +89,7 @@ export const Tool = memo(
     ...props
   }: ToolProps) => {
     const isPending = useToolApprovalRequests((s) =>
-      toolCallId ? Boolean(s.pending[toolCallId]) : false
+      toolCallId ? Boolean(s.pending[approvalKey(threadId ?? '', toolCallId)]) : false
     )
     const [isOpen, setIsOpen] = useControllableState({
       prop: open,
@@ -109,7 +113,7 @@ export const Tool = memo(
 
     return (
       <ToolContext.Provider
-        value={{ isOpen, setIsOpen, state, toolCallId, messageId }}
+        value={{ isOpen, setIsOpen, state, toolCallId, messageId, threadId }}
       >
         <Collapsible
           className={cn('not-prose', className)}
@@ -131,6 +135,8 @@ export type ToolHeaderProps = {
   className?: string
   /** Where the tool came from (web provider, documents, MCP server name). */
   origin?: string
+  /** The call is one of Jan's built-in tools, not an MCP server's tool that happens to share a name. */
+  builtin?: boolean
   /** Arguments, previewed inline so a collapsed call still says what it did. */
   input?: ToolUIPart['input']
 }
@@ -142,7 +148,8 @@ const getStatusText = (
   status: ToolUIPart['state'],
   toolName: string,
   awaitingApproval: boolean,
-  isQueued: boolean
+  isQueued: boolean,
+  isBuiltinAsk: boolean
 ) => {
   const isRunning = status === 'input-streaming' || status === 'input-available'
   const hasError = status === 'output-error' || status === 'output-denied'
@@ -150,6 +157,11 @@ const getStatusText = (
 
   if (awaitingApproval) {
     return t('tools:toolCall.awaitingApproval', { tool })
+  }
+  // `ask` is a question put to the person, not work being scheduled: "Ask
+  // queued" read as a technical state. It is pending until they answer.
+  if (isBuiltinAsk && !hasError) {
+    return t(isQueued || isRunning ? 'common:askToolPending' : 'common:askToolAsked')
   }
   // Tools run one at a time, so a pending call is only "running" once the
   // executor has actually reached it.
@@ -166,14 +178,20 @@ const getStatusText = (
 }
 
 export const ToolHeader = memo(
-  ({ className, title, state, type, origin, input }: ToolHeaderProps) => {
+  ({ className, title, state, type, origin, builtin = false, input }: ToolHeaderProps) => {
     const { t } = useTranslation()
-    const { isOpen, toolCallId } = useTool()
+    const { isOpen, toolCallId, threadId } = useTool()
     const awaitingApproval = useToolApprovalRequests((s) =>
-      toolCallId ? Boolean(s.pending[toolCallId]) : false
+      toolCallId ? Boolean(s.pending[approvalKey(threadId ?? '', toolCallId)]) : false
     )
     const toolName = title ?? type.split('-').slice(1).join('-')
-    const summary = useMemo(() => summarizeToolInput(input), [input])
+    // The raw argument preview of an `ask` is `questions: [1]`; the question
+    // card already shows what was asked.
+    const isBuiltinAsk = builtin && toolName === ASK_TOOL_NAME
+    const summary = useMemo(
+      () => (isBuiltinAsk ? '' : summarizeToolInput(input)),
+      [input, isBuiltinAsk]
+    )
     // Position in the pending queue, or -1 once the executor has reached it.
     const queuePosition = useToolCallRuntime((s) =>
       toolCallId ? queuePositionOf(s, toolCallId) : -1
@@ -215,7 +233,8 @@ export const ToolHeader = memo(
             state,
             toolName,
             awaitingApproval,
-            queuePosition >= 0
+            queuePosition >= 0,
+            isBuiltinAsk
           )}
         </span>
         {origin && (
@@ -342,13 +361,16 @@ export const ToolInput = memo(
 
 export const ToolApprovalActions = memo(() => {
   const { t } = useTranslation()
-  const { toolCallId } = useTool()
+  const { toolCallId, threadId } = useTool()
   const pending = useToolApprovalRequests((s) =>
-    toolCallId ? s.pending[toolCallId] : undefined
+    toolCallId ? s.pending[approvalKey(threadId ?? '', toolCallId)] : undefined
   )
   const resolveApproval = useToolApprovalRequests((s) => s.resolveApproval)
 
   if (!pending || !toolCallId) return null
+  // Extension grants live in memory for one handler generation, so a
+  // persistent "always" would promise trust the host does not keep.
+  const extension = pending.extension
 
   return (
     <div className="mt-4 space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
@@ -357,17 +379,21 @@ export const ToolApprovalActions = memo(() => {
         <span>{t('tools:toolApproval.needsApproval')}</span>
       </div>
       <div className="flex flex-wrap gap-2">
+        {/* One accent per card: the persistent grant is the only filled
+            button. Deny stays quiet and turns red only on hover/focus. */}
         <Button
           size="sm"
-          variant="destructive"
-          onClick={() => resolveApproval(toolCallId, 'deny')}
+          variant="outline"
+          className="hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive focus-visible:border-destructive/60 focus-visible:text-destructive"
+          onClick={() => resolveApproval(toolCallId, 'deny', threadId ?? '')}
         >
           {t('tools:toolApproval.deny')}
         </Button>
         <Button
           size="sm"
           variant="outline"
-          onClick={() => resolveApproval(toolCallId, 'allow-once')}
+          autoFocus={extension || pending.strict}
+          onClick={() => resolveApproval(toolCallId, 'allow-once', threadId ?? '')}
         >
           {t('tools:toolApproval.allowOnce')}
         </Button>
@@ -378,24 +404,26 @@ export const ToolApprovalActions = memo(() => {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => resolveApproval(toolCallId, 'allow-thread')}
+              onClick={() => resolveApproval(toolCallId, 'allow-thread', threadId ?? '')}
             >
               {t('tools:toolApproval.allowInThread')}
             </Button>
-            <Button
-              size="sm"
-              autoFocus
-              onClick={() => resolveApproval(toolCallId, 'allow-always')}
-            >
-              {/* Trusting a server tool-by-tool is the same decision repeated. */}
-              {pending.serverName
-                ? t('tools:toolApproval.allowServerAlways', {
-                    server: pending.serverName,
-                  })
-                : t('tools:toolApproval.allowToolAlways', {
-                    tool: pending.toolName,
-                  })}
-            </Button>
+            {!extension && (
+              <Button
+                size="sm"
+                autoFocus
+                onClick={() => resolveApproval(toolCallId, 'allow-always', threadId ?? '')}
+              >
+                {/* Trusting a server tool-by-tool is the same decision repeated. */}
+                {pending.serverName
+                  ? t('tools:toolApproval.allowServerAlways', {
+                      server: pending.serverName,
+                    })
+                  : t('tools:toolApproval.allowToolAlways', {
+                      tool: pending.toolName,
+                    })}
+              </Button>
+            )}
           </>
         )}
       </div>

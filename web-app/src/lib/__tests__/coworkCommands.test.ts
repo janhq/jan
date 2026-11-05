@@ -7,6 +7,10 @@ vi.mock('sonner', () => ({
   }),
 }))
 
+vi.mock('@/lib/agentTools', () => ({
+  stopAgentSessionMonitors: vi.fn(),
+  cancelAgentThreadBash: vi.fn(),
+}))
 vi.mock('@/lib/backendStorage', () => ({
   backendStorage: {
     getItem: vi.fn().mockResolvedValue(null),
@@ -41,14 +45,20 @@ beforeEach(() => {
 })
 
 describe('runSlashCommand', () => {
-  it('/clear wipes the current session when idle', () => {
-    const id = useCoworkSessions.getState().createSession()
-    useCoworkSessions
-      .getState()
-      .commitTurns(id, [{ role: 'user', content: 'hi' }], [], [])
+  it('/clear wipes the transcript but keeps the session, its title, folder and model, and marks it cleared', async () => {
+    const { cancelAgentThreadBash, stopAgentSessionMonitors } = await import('@/lib/agentTools')
+    const store = useCoworkSessions.getState()
+    const id = store.createSession()
+    store.commitTurns(id, [{ role: 'user', content: 'hi' }], [], [])
+    store.setTitle(id, 'My task')
+    store.setFolder(id, '/work/proj')
+    store.setModel(id, { id: 'm1', provider: 'p1' })
     runSlashCommand('/clear', makeDeps({ currentId: id }))
     const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
-    expect(s.turns).toEqual([])
+    expect(s).toMatchObject({ title: 'My task', folder: '/work/proj', model: { id: 'm1', provider: 'p1' }, turns: [], messages: [], cleared: true })
+    expect(useCoworkSessions.getState().currentId).toBe(id)
+    expect(cancelAgentThreadBash).toHaveBeenCalledWith(id)
+    expect(stopAgentSessionMonitors).toHaveBeenCalledWith(id)
   })
 
   it('/clear refuses while a run is in flight', () => {

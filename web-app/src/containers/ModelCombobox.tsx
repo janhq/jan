@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { useFloatingLayer } from '@/components/ui/overlay-layer'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { IconChevronDown, IconLoader2, IconRefresh } from '@tabler/icons-react'
@@ -268,6 +269,7 @@ export function ModelCombobox({
   className,
   onOpenChange,
 }: ModelComboboxProps) {
+  const floatingLayer = useFloatingLayer()
   const [open, setOpen] = useState(false)
   const [inputValue, setInputValue] = useState(value)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
@@ -451,7 +453,7 @@ export function ModelCombobox({
           createPortal(
             <div
               ref={dropdownRef}
-              className="fixed z-9999 py-2 bg-background border rounded-md shadow-lg max-h-[300px] overflow-y-auto animate-in fade-in-0 zoom-in-95 duration-200 "
+              className={cn("fixed py-2 bg-background border rounded-md shadow-lg max-h-[300px] overflow-y-auto animate-in fade-in-0 zoom-in-95 duration-200", floatingLayer)}
               style={{
                 top: dropdownPosition.top,
                 left: dropdownPosition.left,

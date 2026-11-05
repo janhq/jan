@@ -1067,6 +1067,20 @@ pub fn kill(pid: u32) -> bool {
 /// Reap every bash tree a session started. The per-session counterpart of
 /// [`kill_all`]: the Stop button drives this so a running or backgrounded shell
 /// is terminated with the run rather than left to finish on the host.
+/// Take a bucket's pids without reaping them, so a caller holding a lock can
+/// release it before the reap -- [`kill_tree`] blocks on Windows (`taskkill`).
+/// Emptying the bucket is the part that must happen under the caller's lock;
+/// killing the pids afterwards is safe because nothing can re-enter the bucket
+/// without passing that lock again.
+pub fn take_thread_pids(thread: &str) -> Vec<u32> {
+    running()
+        .lock()
+        .unwrap()
+        .remove(thread)
+        .map(|set| set.into_keys().collect())
+        .unwrap_or_default()
+}
+
 pub fn kill_thread(thread: &str) {
     let pids: Vec<u32> = running()
         .lock()

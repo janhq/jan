@@ -242,7 +242,6 @@
     "addToProject": "加入專案",
     "removeFromProject": "從專案中移除",
     "noConversationsIn": "{{projectName}} 中尚無對話",
-    "startNewConversation": "在下方開始與 {{projectName}} 的新對話",
     "conversationsIn": "{{projectName}} 中的對話",
     "conversationsDescription": "點擊任何對話以繼續聊天，或在下方開始新的對話。",
     "thread": "執行緒",
@@ -260,7 +259,6 @@
     "createNewProject": "建立新專案",
     "deleteProjectDialog": {
       "title": "刪除專案",
-      "permanentDelete": "這將永久刪除所有執行緒。",
       "permanentDeleteWarning": "此操作將永久刪除專案內的所有執行緒！",
       "deleteEmptyProject": "此操作將刪除專案「{{projectName}}」。",
       "saveThreadsAdvice": "要儲存執行緒，請在刪除前將它們移至您的執行緒清單或另一個專案。",
@@ -281,7 +279,8 @@
       "alreadyExists": "專案「{{projectName}}」已存在",
       "createSuccess": "專案「{{projectName}}」已成功建立",
       "renameSuccess": "專案已從「{{oldName}}」重新命名為「{{newName}}」"
-    }
+    },
+    "viewProject": "檢視專案"
   },
   "dialogs": {
     "changeDataFolder": {
@@ -291,10 +290,6 @@
       "newLocation": "新位置：",
       "cancel": "取消",
       "changeLocation": "變更位置"
-    },
-    "deleteAllThreads": {
-      "title": "刪除所有對話",
-      "description": "所有對話將被刪除。此操作無法復原。"
     },
     "deleteThread": {
       "description": "您確定要刪除此對話嗎？此操作無法復原。"
@@ -406,5 +401,98 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "web_search": "網頁搜尋",
+  "shell": "Shell",
+  "browse": "瀏覽",
+  "moreControls": "更多控制項",
+  "artifacts": "成品",
+  "skills": "技能",
+  "deleteSession": "刪除工作階段",
+  "deleteSessionTitle": "要刪除工作階段嗎？",
+  "deleteSessionBody": "「{{title}}」及其紀錄將被永久刪除，此操作無法復原。",
+  "chatsAndTasks": "聊天與任務",
+  "artifactGroupCode": "程式碼",
+  "artifactGroupImage": "圖片",
+  "artifactGroupDocument": "文件",
+  "artifactGroupVideo": "影片",
+  "artifactGroupAudio": "音訊",
+  "artifactOpenPreview": "開啟預覽",
+  "artifactOpenExternal": "開啟",
+  "artifactMoreActions": "更多動作",
+  "artifactShowInFolder": "在資料夾中顯示",
+  "artifactsAll": "全部",
+  "artifactsEmpty": "尚未產生任何內容。你在對話中建立的檔案會顯示在這裡。",
+  "artifactsNoMatch": "沒有符合的成品。",
+  "artifactsLibraryDescription": "你在所有對話中建立的檔案，集中在同一處。",
+  "artifactsLibraryFiles": "個檔案",
+  "artifactsLibraryCount_one": "{{count}} 個檔案",
+  "artifactsLibraryCount_other": "{{count}} 個檔案",
+  "artifactsLibraryFilter": "依檔案類型篩選",
+  "artifactsLibraryReset": "清除篩選",
+  "artifactsSearch": "搜尋成品",
+  "artifactsShowMore": "再顯示 {{count}} 個",
+  "workspace": {
+    "writable": "可讀寫",
+    "readOnly": "唯讀",
+    "a11yWithFolderReadOnly": "專案資料夾 {{folder}}，已附加並授予唯讀權限。可變更或中斷附加。",
+    "footnoteEmpty": "附加一個資料夾，讓代理在你的專案中工作。它可以讀取並編輯其中的檔案。",
+    "attach": "附加資料夾",
+    "change": "變更資料夾",
+    "detach": "中斷附加資料夾",
+    "revealFolder": "在檔案管理員中顯示 {{folder}}",
+    "changeAccess": "資料夾存取權限：{{current}}。切換為{{next}}。",
+    "unavailable": "工作區無法使用",
+    "missing": "工作區資料夾 {{folder}} 已無法使用。請選擇其他資料夾。",
+    "revealFailed": "無法顯示工作區",
+    "a11yWithFolder": "專案資料夾 {{folder}}，已附加並授予讀寫權限。可變更或中斷附加。",
+    "a11yNoFolder": "尚未附加專案資料夾。請附加一個。"
+  },
+  "conversationScope": {
+    "label": "對話範圍",
+    "noToolsModel": "所選模型不支援工具，因此在你選擇支援工具的模型之前，這些權限不會生效。",
+    "noSandbox": "此系統沒有可用的作業系統沙箱，因此不提供 shell 指令。",
+    "live": "變更會立即套用到此對話。Jan 專案本身不會授予資料夾存取權。",
+    "draft": "將在傳送訊息時套用。Jan 專案本身不會授予資料夾存取權。",
+    "writable": "任務工具可以讀取並寫入所選資料夾中的檔案。你現有的任務權限仍然適用。",
+    "optional": "供任務讀寫的選用資料夾。沒有資料夾時，任務會使用其受管理的工作區。",
+    "permissions": "選擇資料夾不會變更網路或持久記憶設定。",
+    "unsupported": "此模型無法使用工具，因此無法存取資料夾、shell 與記憶。一般聊天仍可使用。",
+    "pendingKept": "待處理的權限草稿已保留，選擇支援工具的模型後即可使用。",
+    "pendingKeptTemporary": "待處理的權限草稿已保留，使用支援工具的模型開始一般聊天後即可使用。",
+    "temporary": "臨時聊天不會保留資料夾存取權。",
+    "temporaryPermissions": "臨時聊天無法使用已授予的資料夾、shell 網路或持久記憶存取權。",
+    "folderSelectModel": "新增資料夾存取權之前，請先選擇支援工具的模型。",
+    "folderUnsupported": "此模型無法使用工具，因此無法新增資料夾。一般聊天仍可使用。",
+    "invalidFolder": "不支援此資料夾路徑。請選擇其他資料夾。",
+    "folderNeedsConfirmation": "未啟用 · 需要確認",
+    "confirmFolder": "確認",
+    "removeFolder": "移除",
+    "hostRevokeUnconfirmed": "Jan 無法確認此權限變更。背景任務可能仍保有先前的存取權。請重試，或結束 Jan 以停止這些任務。",
+    "saveFailed": "無法儲存權限變更。在成功儲存之前，額外的存取權會維持關閉。",
+    "folderSelected": "已新增資料夾",
+    "removeProject": "取消選取專案"
+  },
+  "homeMode": {
+    "addFolder": "新增專案或資料夾",
+    "removeFolder": "取消選取",
+    "addProject": "新增專案",
+    "addToProject": "加入專案",
+    "newProject": "新專案",
+    "noProjects": "尚無專案",
+    "addFolderAction": "新增資料夾"
+  },
+  "planMode": {
+    "label": "計畫",
+    "tooltipOff": "先做計畫：代理只會讀取並提出建議，不會寫入。",
+    "tooltipOn": "計畫模式",
+    "onAnnounce": "計畫模式已開啟",
+    "placeholder": "請求一份計畫。代理不會變更任何檔案。"
+  },
+  "sidebar": {
+    "toggle": "切換側邊欄",
+    "navigation": "導覽",
+    "navigationDescription": "前往聊天、專案、成品、技能與設定。",
+    "more": "更多"
   }
 }

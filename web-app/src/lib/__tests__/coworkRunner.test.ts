@@ -84,6 +84,38 @@ const user = (text: string): UIMessage =>
   ({ id: 'u1', role: 'user', parts: [{ type: 'text', text }] }) as UIMessage
 
 describe('consumeStep', () => {
+  it('retains partial wire history after a deferred stream rejects on abort, without replaying completed tools', async () => {
+    const controller = new AbortController()
+    const d = deps([toolStep('write')])
+    let stream!: ReadableStreamDefaultController<UIMessageChunk>
+    let started!: () => void
+    const streaming = new Promise<void>((resolve) => { started = resolve })
+    let count = 0
+    d.sendStep.mockImplementation(async () => {
+      if (count++ === 0) return streamOf(toolStep('write'))
+      return new ReadableStream<UIMessageChunk>({
+        start(c) {
+          stream = c
+          c.enqueue({ type: 'text-delta', id: 't', delta: 'File written; next I' } as UIMessageChunk)
+          controller.signal.addEventListener('abort', () => c.error(new Error('Request cancelled')), { once: true })
+        },
+      })
+    })
+    d.sink.onText.mockImplementation(() => { started() })
+    const running = runTurn({ messages: [user('write it')], signal: controller.signal, deps: d })
+    await streaming
+    expect(stream).toBeDefined()
+    controller.abort()
+    const out = await running
+    expect(out.stoppedBy).toBe('aborted')
+    expect(d.dispatch).toHaveBeenCalledOnce()
+    expect(out.messages[0]).toEqual(user('write it'))
+    expect(out.messages[1].parts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ toolCallId: 'c1', state: 'output-available', output: 'ok' }),
+    ]))
+    expect(out.messages[2].parts).toContainEqual({ type: 'text', text: 'File written; next I' })
+  })
+
   /// Native reasoning arrives as its own chunk type and must neither be
   /// dropped (nothing on screen while the model thinks) nor folded into
   /// `text` (which goes back upstream as wire content).
@@ -389,6 +421,69 @@ describe('runTurn', () => {
     expect(out.stoppedBy).toBe('error')
     expect(out.errorText).toBe('boom')
     expect(d.sendStep).toHaveBeenCalledTimes(1)
+  })
+
+  describe('duplicate tool call ids', () => {
+    const dupWave = (): UIMessageChunk[] => [
+      ...toolStep('write', 'dup'),
+      {
+        type: 'tool-input-available',
+        toolCallId: 'dup',
+        toolName: 'write',
+        input: { path: 'b.txt' },
+      } as UIMessageChunk,
+    ]
+    const signal = () => new AbortController().signal
+
+    it('dispatches nothing from a step that repeats an id, and says so (default Cowork: no seenCallIds)', async () => {
+      const dispatch = vi.fn(async (): Promise<ToolOutcome> => ({ output: 'wrote' }))
+      const d = deps([dupWave(), textStep('done')], dispatch)
+      const out = await runTurn({ messages: [user('hi')], deps: d, signal: signal() })
+      expect(dispatch).toHaveBeenCalledTimes(0)
+      expect(out.stoppedBy).toBe('error')
+      expect(out.errorText).toContain('Duplicate tool call id: dup')
+      expect(d.sendStep).toHaveBeenCalledTimes(1)
+      // No phantom success and no orphaned tool part in the committed history.
+      const info = d.onStep.mock.calls[0][0]
+      expect(info.outcomes.size).toBe(0)
+      expect(info.turns.some((t: any) => t.role === 'tool')).toBe(false)
+      expect(JSON.stringify(out.messages)).not.toContain('wrote')
+      expect(JSON.stringify(out.messages)).not.toContain('tool-write')
+    })
+
+    it('fails a whole step closed even when the first call is valid', async () => {
+      const dispatch = vi.fn(async (): Promise<ToolOutcome> => ({ output: 'wrote' }))
+      const d = deps([[...toolStep('write', 'a'), ...dupWave()]], dispatch)
+      const out = await runTurn({ messages: [user('hi')], deps: d, signal: signal() })
+      expect(dispatch).not.toHaveBeenCalled()
+      expect(out.stoppedBy).toBe('error')
+    })
+
+    it('refuses an id seen in an earlier step of a shared set, keeping the earlier outcome', async () => {
+      const dispatch = vi.fn(async (): Promise<ToolOutcome> => ({ output: 'wrote' }))
+      const d = deps([toolStep('write', 'x'), toolStep('write', 'x'), textStep('done')], dispatch)
+      const out = await runTurn({
+        messages: [user('hi')],
+        deps: d,
+        signal: signal(),
+        seenCallIds: new Set(),
+      })
+      expect(dispatch).toHaveBeenCalledTimes(1)
+      expect(out.stoppedBy).toBe('error')
+      expect(out.errorText).toContain('Duplicate tool call id: x')
+      const toolParts = out.messages.flatMap((m: any) => m.parts).filter((p: any) => p.toolCallId === 'x')
+      expect(toolParts).toHaveLength(1)
+      expect(toolParts[0].state).toBe('output-available')
+      expect(toolParts[0].output).toBe('wrote')
+    })
+
+    it('keeps allowing a reused id across steps when no seen set is given (Cowork)', async () => {
+      const dispatch = vi.fn(async (): Promise<ToolOutcome> => ({ output: 'ok' }))
+      const d = deps([toolStep('read', 'x'), toolStep('read', 'x'), textStep('done')], dispatch)
+      const out = await runTurn({ messages: [user('hi')], deps: d, signal: signal() })
+      expect(dispatch).toHaveBeenCalledTimes(2)
+      expect(out.stoppedBy).toBe('done')
+    })
   })
 
   it('feeds each step tool results before the next one', async () => {

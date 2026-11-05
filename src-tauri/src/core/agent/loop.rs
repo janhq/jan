@@ -2238,8 +2238,11 @@ impl CompositeToolInvoker {
         denied_by_policy_msg(name, self.permissions.withholds(name))
     }
 
-    fn hard_deny_msg(&self, name: &str, reason: DenyReason) -> String {
+    fn hard_deny_msg(&self, name: &str, args: &serde_json::Value, reason: DenyReason) -> String {
         match reason {
+            DenyReason::ReadOnlyRoot => tauri_plugin_agent_tools::tools::read_only_root_refusal(
+                args.get("path").and_then(|v| v.as_str()).unwrap_or_default(),
+            ),
             DenyReason::Policy => self.policy_deny_msg(name),
             DenyReason::Hidden => {
                 let offered: Vec<&str> = tauri_plugin_agent_tools::tools::JAN_HOME_TOOLS
@@ -2919,7 +2922,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     execute_builtin_with_diff(tool, &args, &self.streaming_tool_context(&id)).await
                 }
                 Decision::HardDeny(reason) => {
-                    (self.hard_deny_msg(name, reason), None, None)
+                    (self.hard_deny_msg(name, &args, reason), None, None)
                 }
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
