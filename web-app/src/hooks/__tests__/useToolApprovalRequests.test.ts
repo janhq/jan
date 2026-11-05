@@ -713,6 +713,22 @@ describe('native elevated approvals (explicit native identity)', () => {
     expect(useToolApproval.getState().isToolApproved('thread-9', 'skill_write')).toBe(false)
   })
 
+  it('shell allow-always is sticky across calls, turns and threads under the same grant', async () => {
+    const req = useToolApprovalRequests.getState()
+    const first = req.requestApproval('s1', 'shell', 'thread-1', undefined, undefined, native('net-on'))
+    req.resolveApproval('s1', 'allow-always', 'thread-1')
+    await expect(first).resolves.toBe(true)
+    expect(useToolApproval.getState().approvedToolsGlobal).toEqual(['native:shell:net-on'])
+    // Later call, later turn, another thread: no prompt.
+    for (const [id, thread] of [['s2', 'thread-1'], ['s3', 'thread-7']] as const) {
+      await expect(req.requestApproval(id, 'shell', thread, undefined, undefined, native('net-on'))).resolves.toBe(true)
+      expect(useToolApprovalRequests.getState().pending[approvalKey(thread, id)]).toBeUndefined()
+    }
+    // A different grant (e.g. the user turned network off or picked a folder) asks again.
+    void req.requestApproval('s4', 'shell', 'thread-1', undefined, undefined, native('net-off'))
+    expect(useToolApprovalRequests.getState().pending[approvalKey('thread-1', 's4')]).toBeDefined()
+  })
+
   it('does not auto-approve extension tools when allowAllMCPPermissions is set', () => {
     useToolApproval.setState({ allowAllMCPPermissions: true })
     const { result } = renderHook(() => useToolApprovalRequests())
