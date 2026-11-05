@@ -15,6 +15,8 @@ pub mod child_workspace;
 pub mod commands;
 pub mod compaction;
 pub mod context;
+/// The continuation state a compaction leaves in place of the span it covers.
+pub mod continuation;
 pub mod correlation;
 pub mod events;
 pub mod genai_bridge;
@@ -40,13 +42,20 @@ pub mod host_schema;
 pub mod interaction;
 pub mod r#loop;
 pub mod memory;
+/// Pure per-model context-window resolution, for the compaction budget.
+pub mod model_window;
 pub mod otel;
 pub mod plan;
 pub mod plugin_commands;
 pub mod plugins;
 pub mod project;
 pub mod prompt;
+/// The compaction budget for the desktop API server's orchestration runs.
+#[cfg(not(feature = "cli"))]
+pub(crate) mod proxy_budget;
 pub mod provenance;
+/// Routes known to reject a resent `reasoning_content` field.
+pub mod reasoning_routes;
 pub mod reminder;
 pub mod request_headers;
 pub mod secrets;

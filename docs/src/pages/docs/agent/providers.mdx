@@ -99,6 +99,23 @@ window drives the header gauge and compaction, and the per-token prices drive th
 `/context` and `/usage`; the output cap is cached and echoed back by `jan cli models list`, but
 nothing reads it yet. That file is only a cache: delete it and the next refresh rebuilds it.
 
+The same file also records which models refused the `reasoning_content` field the agent sends
+back on earlier assistant turns. A strict OpenAI-compatible endpoint rejects the whole request
+when that field is present. The agent then retries without it and stores the route under
+`reasoning_rejected` (provider id -> model ids), so later runs, subagents and resumed sessions
+leave the field off from the first request. A refresh keeps these entries, and signing the
+provider out drops them.
+
+The entry is never retried on its own. If a model was recorded by mistake, or its endpoint now
+accepts the field, remove the entry and start a new session:
+
+- remove the model id from the provider's list under `reasoning_rejected` in
+  `~/.jan/model_catalog.json` (drop the provider key once its list is empty), or
+- delete `~/.jan/model_catalog.json` entirely. The cached context windows and prices are
+  rebuilt on the next refresh.
+
+A session that is already running keeps what it learned until it exits.
+
 ## Tokamak
 
 Signing in avoids managing a key yourself:

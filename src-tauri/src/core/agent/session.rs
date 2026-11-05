@@ -194,6 +194,11 @@ impl SessionBudget {
         self.ceiling.as_ref().map(|c| c.max_usd)
     }
 
+    /// The token ceiling, `None` when the run has none.
+    pub(crate) fn max_tokens(&self) -> Option<u64> {
+        self.max_tokens
+    }
+
     /// True only when a token ceiling is configured and has been reached or
     /// exceeded. Advisory: the run carries on past it.
     pub(crate) fn exhausted(&self) -> bool {

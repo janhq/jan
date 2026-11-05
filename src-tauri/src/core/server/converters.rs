@@ -1293,6 +1293,22 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                 }
             }
         }
+        // A rolling breakpoint on the final block caches the conversation so
+        // far, so the next turn reads it back instead of paying for it again.
+        // Anthropic looks back from each breakpoint for the longest cached
+        // prefix, so one marker at the end is enough: earlier turns need none.
+        // With the system and last-tool markers that is three of the four
+        // Anthropic allows per request.
+        if self.cache_capability() == CacheCapability::Explicit {
+            if let Some(block) = messages
+                .last_mut()
+                .and_then(|m| m.get_mut("content"))
+                .and_then(|c| c.as_array_mut())
+                .and_then(|blocks| blocks.last_mut())
+            {
+                block["cache_control"] = json!({ "type": "ephemeral" });
+            }
+        }
         out["messages"] = json!(messages);
         if !system.is_empty() {
             out["system"] = self.system_value(system);
@@ -2353,7 +2369,9 @@ mod anthropic_messages_tests {
         assert_eq!(out["max_tokens"], json!(ANTHROPIC_DEFAULT_MAX_TOKENS));
         assert_eq!(
             out["messages"],
-            json!([{"role": "user", "content": [{"type": "text", "text": "hi"}]}])
+            json!([{"role": "user", "content": [
+                {"type": "text", "text": "hi", "cache_control": {"type": "ephemeral"}}
+            ]}])
         );
     }
 
@@ -2421,7 +2439,8 @@ mod anthropic_messages_tests {
                     {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AAAA"}}
                 ]},
                 {"type": "text", "text": "what is this"},
-                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": "BBBB"}}
+                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": "BBBB"},
+                 "cache_control": {"type": "ephemeral"}}
             ])
         );
     }
@@ -2437,7 +2456,8 @@ mod anthropic_messages_tests {
         let msgs = conv().convert_request(&body)["messages"].clone();
         assert_eq!(
             msgs[0]["content"],
-            json!([{"type": "image", "source": {"type": "url", "url": "https://x.test/a.jpg"}}])
+            json!([{"type": "image", "source": {"type": "url", "url": "https://x.test/a.jpg"},
+                    "cache_control": {"type": "ephemeral"}}])
         );
     }
 
@@ -2474,7 +2494,8 @@ mod anthropic_messages_tests {
             msgs[2]["content"],
             json!([
                 {"type": "tool_result", "tool_use_id": "a", "content": "r1"},
-                {"type": "tool_result", "tool_use_id": "b", "content": "r2"}
+                {"type": "tool_result", "tool_use_id": "b", "content": "r2",
+                 "cache_control": {"type": "ephemeral"}}
             ])
         );
     }
@@ -2555,6 +2576,97 @@ mod anthropic_messages_tests {
             serde_json::to_string(&block2).unwrap()
         );
         assert_eq!(block1["cache_control"], json!({"type": "ephemeral"}));
+    }
+
+    /// Every `cache_control` marker anywhere in a converted request: Anthropic
+    /// rejects a request with more than four.
+    fn breakpoints(out: &Value) -> usize {
+        match out {
+            Value::Object(map) => {
+                usize::from(map.contains_key("cache_control"))
+                    + map.values().map(breakpoints).sum::<usize>()
+            }
+            Value::Array(items) => items.iter().map(breakpoints).sum(),
+            _ => 0,
+        }
+    }
+
+    #[test]
+    fn the_last_message_carries_a_rolling_breakpoint() {
+        // Without it only the system prompt and tools are cached, and every
+        // turn re-reads the whole conversation at full price.
+        let body = json!({
+            "model": "claude-sonnet-4",
+            "messages": [
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "reply"},
+                {"role": "user", "content": "second"}
+            ]
+        });
+        let msgs = conv().convert_request(&body)["messages"].clone();
+        let msgs = msgs.as_array().unwrap();
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[2]["content"][0]["text"], json!("second"));
+        assert_eq!(msgs[2]["content"][0]["cache_control"], json!({"type": "ephemeral"}));
+        assert!(msgs[0]["content"][0].get("cache_control").is_none());
+        assert!(msgs[1]["content"][0].get("cache_control").is_none());
+    }
+
+    #[test]
+    fn the_rolling_breakpoint_lands_on_the_last_block_of_merged_tool_results() {
+        let body = json!({
+            "model": "claude-sonnet-4",
+            "messages": [
+                {"role": "user", "content": "go"},
+                {"role": "assistant", "content": null, "tool_calls": [
+                    {"id": "a", "type": "function", "function": {"name": "f", "arguments": "{}"}},
+                    {"id": "b", "type": "function", "function": {"name": "f", "arguments": "{}"}}
+                ]},
+                {"role": "tool", "tool_call_id": "a", "content": "one"},
+                {"role": "tool", "tool_call_id": "b", "content": "two"}
+            ]
+        });
+        let msgs = conv().convert_request(&body)["messages"].clone();
+        let last = msgs.as_array().unwrap().last().unwrap().clone();
+        let blocks = last["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 2);
+        assert!(blocks[0].get("cache_control").is_none());
+        assert_eq!(blocks[1]["tool_use_id"], json!("b"));
+        assert_eq!(blocks[1]["cache_control"], json!({"type": "ephemeral"}));
+    }
+
+    #[test]
+    fn a_long_conversation_stays_within_four_breakpoints() {
+        let mut messages = vec![
+            json!({"role": "system", "content": big_system()}),
+            json!({"role": "system", "content": "volatile"}),
+        ];
+        for i in 0..60 {
+            messages.push(json!({"role": "user", "content": format!("turn {i}")}));
+            messages.push(json!({"role": "assistant", "content": "ok", "tool_calls": [
+                {"id": format!("c{i}"), "type": "function", "function": {"name": "f", "arguments": "{}"}}
+            ]}));
+            messages.push(json!({"role": "tool", "tool_call_id": format!("c{i}"), "content": "out"}));
+            messages.push(json!({"role": "assistant", "content": "done"}));
+        }
+        messages.push(json!({"role": "user", "content": "last"}));
+        let tools: Vec<Value> = (0..30)
+            .map(|i| json!({"type": "function", "function": {"name": format!("t{i}"), "parameters": {"type": "object"}}}))
+            .collect();
+        let body = json!({"model": "claude-sonnet-4", "messages": messages, "tools": tools});
+        for c in [conv(), AnthropicMessagesConverter::new_oauth()] {
+            let out = c.convert_request(&body);
+            // System, last tool, and the rolling one: all three, never more.
+            assert_eq!(breakpoints(&out), 3);
+            assert!(breakpoints(&out) <= 4);
+        }
+    }
+
+    #[test]
+    fn an_empty_conversation_gets_no_rolling_breakpoint() {
+        let body = json!({"model": "c", "messages": []});
+        let out = conv().convert_request(&body);
+        assert_eq!(breakpoints(&out), 0);
     }
 
     #[test]

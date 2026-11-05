@@ -242,6 +242,12 @@ pub(crate) trait ModelInvoker: Send + Sync {
     fn summarizer(&self) -> Option<(&str, &dyn ModelInvoker)> {
         None
     }
+
+    /// The route `model_id` is served on rejected a resent
+    /// `reasoning_content`. An invoker that knows its route records it, so no
+    /// later run on that route sends the field again. Nothing to record for one
+    /// that does not.
+    fn reasoning_rejected(&self, _model_id: &str) {}
 }
 
 /// One tool call's outcome: `content` is the model-facing result string,
@@ -388,6 +394,14 @@ pub(crate) trait ToolInvoker: Send + Sync {
     /// the default does nothing, which is right for every invoker that has no
     /// project and therefore no hook files to read.
     async fn pre_compact(&self, _message_count: usize) {}
+
+    /// The harness context this invoker can see, for a compaction's
+    /// continuation state: the workspace and its git status, background work
+    /// with its ids, and for a child its identity and tools. The default knows
+    /// nothing, which is right for an invoker with no workspace.
+    fn harness_context(&self) -> crate::core::agent::continuation::HarnessContext {
+        crate::core::agent::continuation::HarnessContext::default()
+    }
 
     /// The `# Memory Changes` block, when it differs from the one this run
     /// last sent: called after a batch with a successful `memory` call, so a
@@ -615,6 +629,10 @@ impl ModelInvoker for HttpModelInvoker {
         self.summarizer
             .as_deref()
             .map(|(id, model)| (id.as_str(), model as &dyn ModelInvoker))
+    }
+
+    fn reasoning_rejected(&self, model_id: &str) {
+        crate::core::agent::reasoning_routes::remember(self.provenance.provider.as_deref(), model_id);
     }
 
     async fn invoke(
@@ -2313,6 +2331,45 @@ impl ToolInvoker for CompositeToolInvoker {
         .await;
     }
 
+    fn harness_context(&self) -> crate::core::agent::continuation::HarnessContext {
+        use crate::core::agent::continuation::{HarnessContext, Role};
+        // A child is the run with a link back to the agent that dispatched it.
+        let role = if self.parent_link.is_some() { Role::Child } else { Role::Parent };
+        let mut out = HarnessContext {
+            role,
+            git_status: crate::core::agent::git::workspace_status(&self.project_root),
+            ..Default::default()
+        };
+        let mut workspace = workspace_lines(&self.project_root);
+        if self.workspace.read_only {
+            workspace.push_str("\nThe working directory is read-only for this run.");
+        }
+        for root in &self.workspace.write_roots {
+            workspace.push_str(&format!("\nWritable worktree: {}", root.display()));
+        }
+        out.push("Workspace", workspace);
+        if let Some(link) = &self.parent_link {
+            out.task_source = link.session().map(str::to_string);
+            let mut who = format!("You are the subagent {}.", link.identity());
+            if let Some(allowed) = &self.allowed_names {
+                let mut names: Vec<&str> = allowed.iter().map(String::as_str).collect();
+                names.sort_unstable();
+                who.push_str(&format!("\nAllowed tools: {}", names.join(", ")));
+            }
+            out.push("Subagent", who);
+        }
+        if let Some(ctx) = &self.subagents {
+            out.push("Subagents", ctx.bg.roster_lines().join("\n"));
+        }
+        // A child's own shells and monitors are its business too: it started
+        // them, and it is the one waiting on them.
+        out.push(
+            "Running in the background",
+            background_lines(Some(&self.bg_shells), Some(&self.monitors)),
+        );
+        out
+    }
+
     async fn await_background(&self) {
         // Each wait returns on a notice OR when its own side has nothing left,
         // so an exhausted side must not be selected over: it would win
@@ -3065,8 +3122,9 @@ pub(crate) async fn run_server_side_openai_orchestration(
         parent_link: None,
         // Nobody can type into a proxy run.
         shell_detach: None,
-        // Server-side runs take whatever window the proxy's route reports
-        // through its own path, so the loop has none to size against here.
+        // Sized inside the run once the model is picked (see
+        // `proxy_budget`): the body may name none, and the choice is the
+        // loop's.
         compaction: None,
         // Each proxy request is a session of one run: it snapshots its own.
         session_start: None,
@@ -3949,7 +4007,6 @@ async fn orchestrate_inner(
         transcript.record_prompt(&composed.prefix);
     }
     let volatile_projection: Option<String> = Some(volatile_system);
-    let send_reasoning = body_send_reasoning(json_body);
     // Paired with the addendum above: force the model's very first tool call
     // to actually be `todo` rather than leaving compliance up to a prompt it
     // could silently ignore.
@@ -4052,6 +4109,29 @@ async fn orchestrate_inner(
     )
     .await?;
 
+    // A desktop run arrives without a budget: its only Rust caller is the API
+    // server, which cannot size one before the model is picked above. Sized
+    // here instead, from the catalog or the loaded engine model's context, so
+    // the run compacts before dispatch rather than after a rejection. Still
+    // `None` when the window is unknown, which keeps it reactive.
+    #[cfg(not(feature = "cli"))]
+    let compaction = &match compaction {
+        Some(budget) => Some(*budget),
+        None => {
+            static ENGINE_CLIENT: std::sync::LazyLock<reqwest::Client> =
+                std::sync::LazyLock::new(tauri_plugin_llamacpp::engine::worker::loopback_client);
+            let pc = provider_configs.lock().await.clone();
+            crate::core::agent::proxy_budget::resolve(
+                &model_id,
+                &upstream_url,
+                &pc,
+                llama_state,
+                &ENGINE_CLIENT,
+            )
+            .await
+        }
+    };
+
     let max_turns = body_turn_cap(json_body);
     let cost_ceiling = body_cost_ceiling(json_body);
 
@@ -4060,6 +4140,15 @@ async fn orchestrate_inner(
         .api_type
         .as_deref()
         .and_then(|api_type| converter_for(Some(api_type), provenance.oauth));
+    // The user's opt-out, narrowed by what this route is already known to
+    // reject. A route that rejected the field in an earlier run (or process)
+    // starts without it, so its first request is the bytes it will keep
+    // accepting rather than one more rejection followed by a history rewrite.
+    let send_reasoning = body_send_reasoning(json_body)
+        && !crate::core::agent::reasoning_routes::rejects(
+            provenance.provider.as_deref(),
+            &model_id,
+        );
 
     let http_model = HttpModelInvoker {
         client: client.clone(),
@@ -4111,10 +4200,18 @@ async fn orchestrate_inner(
             .is_none()
             .then(|| crate::core::agent::subagent::AbortOnDrop::new(bg.clone(), events));
         let subagents = args.subagents_enabled.then(|| SubagentContext {
-            parent_args: args.clone(),
+            // With the budget this run resolved, so a child re-sizes from it
+            // (`CompactionBudget::for_model`) rather than starting reactive.
+            parent_args: OrchestrationArgs {
+                compaction: *compaction,
+                ..args.clone()
+            },
             model_id: model_id.clone(),
             max_session_tokens,
             cost_ceiling,
+            // The user's opt-out only, not this route's answer: a child may run
+            // on another model, and it checks its own route's known rejection
+            // when it starts (`reasoning_routes`), as every run does.
             send_reasoning: body_send_reasoning(json_body),
             tool_ceiling: allowed_names.as_ref().map(|names| {
                 let mut names: Vec<String> = names.iter().cloned().collect();
@@ -4530,7 +4627,8 @@ pub(crate) async fn compact_history(
     args: &OrchestrationArgs,
     model_id: &str,
     messages: &[serde_json::Value],
-    keep_recent: usize,
+    run_mode: crate::core::agent::plan::RunMode,
+    goal_active: bool,
 ) -> Result<
     (
         Vec<serde_json::Value>,
@@ -4555,8 +4653,72 @@ pub(crate) async fn compact_history(
     // than somewhere a client cannot read.
     let mut model = side_call_invoker(args, model_id, None).await?;
     model.summarizer = smol_summarizer(args, model_id, None).await;
-    crate::core::agent::compaction::compact_conversation(messages, model_id, &model, keep_recent)
-        .await
+    let harness = between_turn_harness(args, run_mode, goal_active).await;
+    let (sizing, keep_tokens) = between_turn_sizing(args.compaction, messages);
+    Ok(crate::core::agent::compaction::compact_conversation(
+        messages,
+        model_id,
+        &model,
+        keep_tokens,
+        &harness,
+        sizing,
+    )
+    .await)
+}
+
+/// The harness context a compaction between turns writes, built like a run's
+/// ([`CompactionScope::harness`]) from what the session owns: the workspace,
+/// its subagent roster, background shells and monitors (all session-owned in
+/// the TUI, so they outlive the run that started them), the todo list, mode
+/// and goal. No budget section: between turns no run is spending one.
+#[cfg(feature = "cli")]
+async fn between_turn_harness(
+    args: &OrchestrationArgs,
+    run_mode: crate::core::agent::plan::RunMode,
+    goal_active: bool,
+) -> crate::core::agent::continuation::HarnessContext {
+    // The main conversation is the parent; nothing compacts a child's
+    // history from outside its run.
+    let mut harness = crate::core::agent::continuation::HarnessContext::default();
+    if let Some(root) = args.project_root.as_deref() {
+        harness.git_status = crate::core::agent::git::workspace_status(root);
+        harness.push("Workspace", workspace_lines(root));
+    }
+    if let Some(bg) = &args.subagent_bg {
+        harness.push("Subagents", bg.roster_lines().join("\n"));
+    }
+    harness.push(
+        "Running in the background",
+        background_lines(args.bg_shells.as_deref(), args.monitors.as_deref()),
+    );
+    push_session_sections(&mut harness, args.todo_registry.as_ref(), run_mode, goal_active).await;
+    harness
+}
+
+/// The window a compaction between turns sizes against, and the tokens its
+/// kept tail may hold: the share of the trigger a run's own compaction keeps
+/// ([`crate::core::agent::compaction::tail_tokens`]). With no configured
+/// budget the conversation itself is the best measure of a window -- it fit,
+/// or the user would not be compacting it -- and the trigger is the default
+/// ratio of that.
+#[cfg(feature = "cli")]
+fn between_turn_sizing(
+    budget: Option<crate::core::agent::compaction::CompactionBudget>,
+    messages: &[serde_json::Value],
+) -> (crate::core::agent::compaction::Sizing, u64) {
+    use crate::core::agent::compaction::{
+        estimate_token_count, tail_tokens, trigger_tokens, Sizing, DEFAULT_COMPACTION_RATIO,
+    };
+    let (window, trigger) = match budget {
+        Some(budget) => (budget.context_window, budget.trigger_tokens()),
+        None => {
+            let window = estimate_token_count(messages).max(32_000);
+            (window, trigger_tokens(window, DEFAULT_COMPACTION_RATIO, None))
+        }
+    };
+    // One trigger sizes both the tail and the state's caps, so a configured
+    // ratio or reserve is honoured by `/compact` as it is by a run.
+    (Sizing { window, trigger, overhead: 0 }, tail_tokens(trigger))
 }
 
 /// Run one stateless `/goal` evaluation against `smol_model_id` (the session's
@@ -4829,36 +4991,139 @@ fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Valu
     dropped
 }
 
-/// Compact the run's record in place: summarize the span the plan names, and
-/// record the point that stands in for it. `Some(messages summarized)` when a
-/// compaction happened; `None` when there is nothing safe to drop, which is how
-/// the caller tells a no-op from a shrink instead of comparing lengths.
+/// What a compaction needs beyond the record: the window it sizes against,
+/// the request it may extend from cache, and where the harness context comes
+/// from.
+struct CompactionScope<'a> {
+    /// What to size the tail and the state against: the route's window and
+    /// trigger, or on a route with no window an estimate taken from the
+    /// request it just rejected.
+    sizing: crate::core::agent::compaction::Sizing,
+    /// The exact request the run was about to send, when the cached path may
+    /// extend it. Only the preflight has one: after a rejection that request
+    /// no longer fits, and extending it could only fail too.
+    cached: Option<&'a serde_json::Value>,
+    tools: &'a dyn ToolInvoker,
+    todo_registry: Option<&'a crate::core::agent::todo::TodoRegistry>,
+    run_mode: crate::core::agent::plan::RunMode,
+    json_body: &'a serde_json::Value,
+}
+
+impl CompactionScope<'_> {
+    /// The harness context for the continuation state, read now: the
+    /// invoker's (workspace, background work, subagent identity) plus what the
+    /// loop holds itself (todo list, mode, goal, budget).
+    async fn harness(
+        &self,
+        budget: &SessionBudget,
+    ) -> crate::core::agent::continuation::HarnessContext {
+        let mut out = self.tools.harness_context();
+        let goal_active = self
+            .json_body
+            .get("goal_mode")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        push_session_sections(&mut out, self.todo_registry, self.run_mode, goal_active).await;
+        let mut spend = format!("Tokens spent this run: {}", budget.spent());
+        if let Some(max) = budget.max_tokens() {
+            spend.push_str(&format!(" of {max}"));
+        }
+        if let (Some(spent), Some(max)) = (budget.spent_usd(), budget.max_usd()) {
+            spend.push_str(&format!("\nSpent ${spent:.4} of a ${max:.4} ceiling"));
+        }
+        out.push("Budget", spend);
+        out
+    }
+}
+
+/// The `Workspace` section's opening lines: where the run works, and on which
+/// branch.
+fn workspace_lines(root: &std::path::Path) -> String {
+    let mut workspace = format!("Working directory: {}", root.display());
+    if let Some(branch) = crate::core::agent::git::current_branch(root) {
+        workspace.push_str(&format!("\nBranch: {branch}"));
+    }
+    workspace
+}
+
+/// The `Running in the background` section: each backgrounded shell and
+/// monitor with its id. The call that started them is in the span a
+/// compaction drops, so this is the only place the model can find them again.
+fn background_lines(
+    shells: Option<&crate::core::agent::bg_shell::BackgroundShells>,
+    monitors: Option<&tauri_plugin_agent_tools::tools::monitor::MonitorSet>,
+) -> String {
+    let mut running = Vec::new();
+    for id in shells.map(|s| s.running_ids()).unwrap_or_default() {
+        running.push(format!("- background shell {id}"));
+    }
+    for monitor in monitors.map(|m| m.snapshot()).unwrap_or_default() {
+        running.push(format!(
+            "- monitor {} ({}): {}",
+            monitor.monitor_id, monitor.name, monitor.script
+        ));
+    }
+    running.join("\n")
+}
+
+/// The sections a session holds rather than a tool invoker: the todo list,
+/// plan mode and an active goal. Parent-only, which `push` enforces.
+async fn push_session_sections(
+    out: &mut crate::core::agent::continuation::HarnessContext,
+    todo_registry: Option<&crate::core::agent::todo::TodoRegistry>,
+    run_mode: crate::core::agent::plan::RunMode,
+    goal_active: bool,
+) {
+    if let Some(registry) = todo_registry {
+        if let Some(todo) = crate::core::agent::continuation::render_todo(&*registry.lock().await) {
+            out.push("Todo list", todo);
+        }
+    }
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        out.push(
+            "Mode",
+            "Plan mode (read-only): explore and plan, do not change anything.".to_string(),
+        );
+    }
+    if goal_active {
+        out.push(
+            "Goal",
+            "A /goal is active: keep working until its condition holds.".to_string(),
+        );
+    }
+}
+
+/// Compact the run's record in place: replace the span the plan names with a
+/// continuation state, and record the point that stands in for it.
+/// `Some(messages compacted)` when a compaction happened; `None` when there is
+/// nothing safe to drop, which is how the caller tells a no-op from a shrink
+/// instead of comparing lengths.
 ///
 /// The original span stays in the record - only the projection omits it - so a
-/// later turn, a different provider, or a changed `keep_recent` can still
-/// rebuild from it.
+/// later turn, a different provider, or a changed tail can still rebuild from
+/// it. Never fails: a model that cannot write its sections leaves the state
+/// with the code-built ones, which carry the task and the user's words.
 ///
-/// The summarizer's request is billed like any other, so its usage is folded
-/// into `budget` here. A turn can compact several times (the preflight plus the
+/// The side requests are billed like any other, so their usage is folded into
+/// `budget` here. A turn can compact several times (the preflight plus the
 /// overflow retries), and spend the budget never saw would make `/usage` and
 /// the money ceiling agree with each other while both undercounted.
 ///
 /// Every in-run compaction goes through here, so this is where it is reported:
-/// `Compaction { Started }` before the summarizer call and `Finished` (with
-/// the summarizer's report) or `Failed` after it. A plan with nothing to drop sends nothing, since no
-/// summarizer call was made.
+/// `Compaction { Started }` before the model call and `Finished` (with its
+/// report) after it. A plan with nothing to drop sends nothing.
 async fn compact(
     transcript: &mut Transcript,
-    keep_recent: usize,
     model_id: &str,
     model: &dyn ModelInvoker,
     budget: &mut SessionBudget,
     events: &mpsc::UnboundedSender<StreamEvent>,
     reason: CompactionReason,
-) -> Result<Option<usize>, String> {
-    let Some(plan) = transcript.compaction_plan(keep_recent) else {
-        return Ok(None);
-    };
+    scope: &CompactionScope<'_>,
+) -> Option<Compacted> {
+    let harness = scope.harness(budget).await;
+    let fitted = crate::core::agent::compaction::fit(transcript, scope.sizing, &harness)?;
+    let plan = fitted.plan;
     let summarized = plan.summarize.len();
     let announce = |phase, messages, report| {
         let _ = events.send(StreamEvent::Compaction {
@@ -4869,20 +5134,32 @@ async fn compact(
         });
     };
     announce(CompactionPhase::Started, None, None);
-    let (summary, report) =
-        match crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model)
-            .await
-        {
-            Ok(done) => done,
-            Err(error) => {
-                announce(CompactionPhase::Failed, None, None);
-                return Err(error);
-            }
-        };
+    let crate::core::agent::compaction::Continuation { state, report, reasoning_rejected } =
+        crate::core::agent::compaction::continuation_state(
+            &fitted.gathered,
+            &plan.summarize,
+            // A forced tool choice can only be answered with that tool call.
+            scope.cached.filter(|r| crate::core::agent::compaction::cacheable(r)),
+            &harness,
+            scope.sizing,
+            fitted.caps,
+            model_id,
+            model,
+        )
+        .await;
     budget.record_side_request(&report.usage);
-    transcript.record_compaction(summary, plan.covers);
+    transcript.record_compaction(state, plan.covers);
     announce(CompactionPhase::Finished, Some(summarized), Some(report));
-    Ok(Some(summarized))
+    Some(Compacted { messages: summarized, reasoning_rejected })
+}
+
+/// What [`compact`] did.
+struct Compacted {
+    /// Messages the continuation state stands in for.
+    messages: usize,
+    /// The cached side request learned that the route rejects a resent
+    /// `reasoning_content`; the run stops sending it from its next request.
+    reasoning_rejected: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5033,7 +5310,6 @@ async fn run_turn_cycle(
         // the loop gives up if a pass fails to shrink the message list. Kept as
         // the fallback, and the only path for a route whose window is unknown.
         let completion = {
-            let mut keep_recent = crate::core::agent::compaction::DEFAULT_KEEP_RECENT;
             let mut attempts = 0usize;
             loop {
                 let request_value = build_completion_request(
@@ -5054,24 +5330,51 @@ async fn run_turn_cycle(
                         let estimate =
                             crate::core::agent::compaction::estimate_request_tokens(&request_value);
                         if estimate > window.trigger_tokens() {
-                            if let Some(dropped) = compact(
+                            // The side request is invoked directly, never
+                            // through this loop, so it cannot re-enter the
+                            // preflight; `preflighted` already holds for the
+                            // retry below.
+                            let scope = CompactionScope {
+                                sizing: crate::core::agent::compaction::Sizing {
+                                    window: window.context_window,
+                                    trigger: window.trigger_tokens(),
+                                    overhead: crate::core::agent::compaction::request_overhead(
+                                        &request_value,
+                                        volatile_system.as_deref(),
+                                    ),
+                                },
+                                cached: Some(&request_value),
+                                tools,
+                                todo_registry,
+                                run_mode,
+                                json_body,
+                            };
+                            if let Some(done) = compact(
                                 &mut transcript,
-                                crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                                 model_id,
                                 model,
                                 budget,
                                 events,
                                 CompactionReason::Preflight,
+                                &scope,
                             )
-                            .await?
+                            .await
                             {
                                 log::info!(
                                     "agent: prompt estimated at {estimate} tokens against a {} \
-                                     token trigger on a {} token window, compacted {dropped} \
-                                     messages into a summary before dispatch",
+                                     token trigger on a {} token window, compacted {} \
+                                     messages into a continuation state before dispatch",
                                     window.trigger_tokens(),
-                                    window.context_window
+                                    window.context_window,
+                                    done.messages
                                 );
+                                // The side request already met the route's
+                                // refusal; the next request would carry the
+                                // same field. The prefix breaks here anyway,
+                                // so stripping now costs no cache.
+                                if done.reasoning_rejected {
+                                    send_reasoning = false;
+                                }
                                 // Published for the same reason the overflow
                                 // path below publishes: a client holding the
                                 // oversized history would send it again next turn.
@@ -5099,20 +5402,52 @@ async fn run_turn_cycle(
                                 send_reasoning,
                             ))
                             .await;
+                        // The request no longer fits, so the cached path is
+                        // out and the span is summarized instead. A route
+                        // with no known window sizes against the request it
+                        // just rejected, and each further attempt halves it:
+                        // the provider's maths and ours evidently differ.
+                        let window = compaction.map_or_else(
+                            || {
+                                crate::core::agent::compaction::estimate_request_tokens(
+                                    &request_value,
+                                )
+                            },
+                            |b| b.context_window,
+                        ) >> attempts;
+                        let ratio = compaction.map_or(
+                            crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+                            |b| b.ratio,
+                        );
+                        let scope = CompactionScope {
+                            sizing: crate::core::agent::compaction::Sizing {
+                                overhead: crate::core::agent::compaction::request_overhead(
+                                    &request_value,
+                                    volatile_system.as_deref(),
+                                ),
+                                ..crate::core::agent::compaction::Sizing::new(window, ratio)
+                            },
+                            cached: None,
+                            tools,
+                            todo_registry,
+                            run_mode,
+                            json_body,
+                        };
                         // Nothing safe left to drop: the request is smaller than the
                         // window only in the provider's own maths.
-                        let dropped =
-                            compact(
-                                &mut transcript,
-                                keep_recent,
-                                model_id,
-                                model,
-                                budget,
-                                events,
-                                CompactionReason::ContextOverflow,
-                            )
-                            .await?
-                            .ok_or(e)?;
+                        // No cached request here, so no reasoning verdict.
+                        let dropped = compact(
+                            &mut transcript,
+                            model_id,
+                            model,
+                            budget,
+                            events,
+                            CompactionReason::ContextOverflow,
+                            &scope,
+                        )
+                        .await
+                        .ok_or(e)?
+                        .messages;
                         log::info!(
                             "agent: context overflow, compacted {dropped} messages into a \
                              summary (attempt {})",
@@ -5125,7 +5460,6 @@ async fn run_turn_cycle(
                         let _ = events.send(StreamEvent::MessagesUpdated {
                             messages: client_history(&transcript, send_reasoning),
                         });
-                        keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
                     }
                     // This provider rejects `reasoning_content` outright rather
@@ -5149,6 +5483,11 @@ async fn run_turn_cycle(
                         log::info!(
                             "agent: upstream rejected reasoning_content, retrying without it"
                         );
+                        // The retry rewrites every earlier assistant turn, so
+                        // the cached prefix is lost once. Remembering the route
+                        // keeps it to once: later runs, resumes and same-route
+                        // children start without the field.
+                        model.reasoning_rejected(model_id);
                         send_reasoning = false;
                         let _ = events.send(StreamEvent::MessagesUpdated {
                             messages: client_history(&transcript, send_reasoning),
@@ -5276,8 +5615,9 @@ async fn run_turn_cycle(
             // then throws away live context and saves no spend. With a known
             // window, a history that really is oversized is compacted by the
             // preflight above, on the next request that would carry it. With
-            // none (`compaction` is `None`, only the desktop API-server proxy)
-            // nothing shrinks it proactively: the overflow path compacts once a
+            // none (`compaction` is `None`: a desktop API-server run on a model
+            // neither the catalog nor the loaded engine can size) nothing
+            // shrinks it proactively: the overflow path compacts once a
             // provider rejects a request. A pass here would not help that route
             // anyway, since its HTTP client owns the history and resends it.
             let _ = events.send(StreamEvent::MessagesUpdated {
@@ -6679,7 +7019,7 @@ mod tests {
                 // The summarizer call is tiny by construction; answer it.
                 let summarizing = request["messages"][0]["content"]
                     .as_str()
-                    .is_some_and(|c| c.starts_with("Summarize the AI agent"));
+                    .is_some_and(|c| c.starts_with("You condense part of an AI agent"));
                 if !summarizing {
                     self.requests.lock().unwrap().push(request.clone());
                     let estimate = crate::core::agent::compaction::estimate_request_tokens(request);
@@ -8090,6 +8430,627 @@ mod tests {
         );
     }
 
+    /// A model for the compaction tests: the preflight's cached side request
+    /// (it carries the compaction instruction) is answered with model
+    /// sections and recorded apart; every other request gets the next queued
+    /// answer.
+    struct CompactingModel {
+        answers: StdMutex<VecDeque<serde_json::Value>>,
+        turns: StdMutex<Vec<serde_json::Value>>,
+        side: StdMutex<Vec<serde_json::Value>>,
+    }
+    impl CompactingModel {
+        fn new(answers: Vec<serde_json::Value>) -> Self {
+            Self {
+                answers: StdMutex::new(answers.into_iter().collect()),
+                turns: StdMutex::new(Vec::new()),
+                side: StdMutex::new(Vec::new()),
+            }
+        }
+    }
+    #[async_trait]
+    impl ModelInvoker for CompactingModel {
+        async fn invoke(
+            &self,
+            request: &serde_json::Value,
+            _events: &mpsc::UnboundedSender<StreamEvent>,
+        ) -> Result<serde_json::Value, String> {
+            let last = request["messages"]
+                .as_array()
+                .and_then(|m| m.last())
+                .and_then(|m| m["content"].as_str())
+                .unwrap_or("");
+            let fallback = request["messages"][0]["content"]
+                .as_str()
+                .is_some_and(|c| c.starts_with("You condense part of an AI agent"));
+            if fallback {
+                return Ok(final_answer("## Progress\nFALLBACK\n## Current step\na\n## Next actions\nb"));
+            }
+            if last.contains("[Compaction request from the harness]") {
+                self.side.lock().unwrap().push(request.clone());
+                return Ok(final_answer(
+                    "## Progress\nread files\n## Current step\nreading\n## Next actions\nfix it",
+                ));
+            }
+            self.turns.lock().unwrap().push(request.clone());
+            self.answers
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| "mock exhausted".to_string())
+        }
+    }
+
+    /// A tool whose every result is `size` bytes, so a few calls cross a small
+    /// window's trigger.
+    struct BigResultTool(usize);
+    #[async_trait]
+    impl ToolInvoker for BigResultTool {
+        async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String> {
+            Ok(tool_calls
+                .iter()
+                .map(|tc| {
+                    let id = tc["id"].as_str().unwrap_or("").to_string();
+                    ToolOutcome::plain(id, "r".repeat(self.0))
+                })
+                .collect())
+        }
+    }
+
+    fn read_call(id: &str) -> serde_json::Value {
+        json!({ "choices": [{ "message": { "content": serde_json::Value::Null,
+            "tool_calls": [{ "id": id, "type": "function",
+                "function": { "name": "read", "arguments": "{\"path\":\"big.txt\"}" } }] } }] })
+    }
+
+    fn small_window() -> Option<crate::core::agent::compaction::CompactionBudget> {
+        Some(crate::core::agent::compaction::CompactionBudget {
+            context_window: 40_000,
+            ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            reserve_tokens: None,
+            window_pinned: false,
+        })
+    }
+
+    fn published_histories(rx: &mut mpsc::UnboundedReceiver<StreamEvent>) -> Vec<Vec<serde_json::Value>> {
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::MessagesUpdated { messages } => Some(messages),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// (f), (g) and the cached path end to end: a run of large tool results
+    /// crosses the trigger, the preflight asks the run model with the exact
+    /// next request plus the instruction, the state replaces the span, and
+    /// the tail -- the last complete tool call and its result -- keeps the
+    /// next request under the trigger instead of re-overflowing. The
+    /// instruction never reaches a turn request or the published history.
+    #[tokio::test]
+    async fn a_tail_of_large_results_compacts_once_and_stays_under_the_trigger() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut answers: Vec<serde_json::Value> =
+            (0..24).map(|i| read_call(&format!("c{i}"))).collect();
+        answers.push(final_answer("done"));
+        let model = CompactingModel::new(answers);
+        // ~3K tokens a result on a 40K window: the trigger (32K) is crossed
+        // after ten, and a tail of that many would be ~30K. The overshoot
+        // past the trigger is at most one result, so the cached request plus
+        // its reply still fits the window.
+        let tool = BigResultTool(12_000);
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "the task" })]),
+            Some("Today's date is 2026-11-04.".to_string()),
+            true,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            small_window(),
+        )
+        .await
+        .expect("run completes");
+
+        let side = model.side.lock().unwrap();
+        let turns = model.turns.lock().unwrap();
+        assert!(!side.is_empty(), "the preflight took the cached path");
+        // The side request extends the request the turn was about to send:
+        // the same messages, the last one -- the volatile tail -- with the
+        // instruction appended to its text so roles keep alternating.
+        let messages = side[0]["messages"].as_array().unwrap();
+        let last = messages.last().unwrap();
+        assert_eq!(last["role"], "user");
+        assert!(
+            crate::core::agent::reminder::is_reminder_only(&last["content"]),
+            "the instruction is a harness notice, not a user turn"
+        );
+        assert_ne!(messages[messages.len() - 2]["role"], "user", "no two user messages in a row");
+        // The held-back request is never sent: it is what got compacted.
+        let instruction = format!(
+            "\n\n{}",
+            crate::core::agent::reminder::wrap(
+                &crate::core::agent::compaction::compaction_instruction(
+                    crate::core::agent::continuation::Role::Parent
+                )
+            )
+        );
+        let mut held_back = messages.to_vec();
+        let last_text = last["content"].as_str().unwrap();
+        match last_text.strip_suffix(&instruction) {
+            // Folded into the volatile tail the turn was about to send.
+            Some(tail) => *held_back.last_mut().unwrap() = json!({ "role": "user", "content": tail }),
+            // A message of its own after a tool result, which it may not join.
+            None => {
+                held_back.pop();
+            }
+        }
+        assert!(
+            turns.iter().all(|t| t["messages"].as_array().unwrap()[..] != held_back[..]),
+            "the over-trigger request was sent anyway"
+        );
+        let trigger = small_window().unwrap().trigger_tokens();
+        for request in turns.iter() {
+            let estimate = crate::core::agent::compaction::estimate_request_tokens(request);
+            assert!(estimate <= trigger, "a request re-overflowed: {estimate} > {trigger}");
+            let body = serde_json::to_string(request).unwrap();
+            assert!(!body.contains("[Compaction request from the harness]"), "the instruction leaked");
+        }
+        assert!(
+            side.len() <= 3,
+            "a token-sized tail must not compact on every turn: {} compactions",
+            side.len()
+        );
+        let last = turns.last().unwrap()["messages"].as_array().unwrap();
+        let state = last
+            .iter()
+            .find(|m| crate::core::agent::continuation::is_state(m))
+            .expect("the request after compaction carries the state");
+        assert!(state["content"].as_str().unwrap().contains("the task"));
+        assert!(state["content"].as_str().unwrap().contains("## Next actions\nfix it"));
+        // The tail opens on the newest complete call before the last result.
+        let after: Vec<&serde_json::Value> =
+            last.iter().skip_while(|m| !crate::core::agent::continuation::is_state(m)).skip(1).collect();
+        assert_eq!(after[0]["role"], "assistant", "the tail opens on a call: {after:?}");
+        assert!(after[0].get("tool_calls").is_some());
+
+        for history in published_histories(&mut rx) {
+            let body = serde_json::to_string(&history).unwrap();
+            assert!(!body.contains("[Compaction request from the harness]"), "published the instruction");
+        }
+    }
+
+    /// `/compact` and the TUI's auto-compaction write the same harness context
+    /// a run's own compaction does: the session's roster, background shells,
+    /// todo list, mode and goal all live on `args`, not in a run.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_between_turn_compaction_carries_the_sessions_harness_context() {
+        let root = tempfile::tempdir().unwrap();
+        let mut args = crate::core::agent::subagent::tests::max_par_args(root.path());
+        let bg = Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        bg.roster_add("explore", "sub-explore-1", "map the repo", false, Some("blackboard/explore.md".into()));
+        args.subagent_bg = Some(bg);
+        let shells = Arc::new(crate::core::agent::bg_shell::BackgroundShells::default());
+        shells.start(tauri_plugin_agent_tools::tools::ShellBackgrounded { id: 7, timeout_secs: 30 });
+        args.bg_shells = Some(shells);
+        let todo = crate::core::agent::todo::new_registry();
+        todo.lock()
+            .await
+            .init(vec![crate::core::agent::todo::TodoPhase {
+                name: "Fix".into(),
+                tasks: vec![crate::core::agent::todo::TodoItem {
+                    content: "patch the parser".into(),
+                    status: crate::core::agent::todo::TodoStatus::Pending,
+                }],
+            }])
+            .unwrap();
+        args.todo_registry = Some(todo);
+
+        let harness =
+            between_turn_harness(&args, crate::core::agent::plan::RunMode::Plan, true).await;
+        let section = |heading: &str| {
+            harness
+                .sections
+                .iter()
+                .find(|(h, _)| h == heading)
+                .map(|(_, body)| body.clone())
+                .unwrap_or_else(|| panic!("no {heading} section: {:?}", harness.sections))
+        };
+        assert_eq!(harness.role, crate::core::agent::continuation::Role::Parent);
+        assert!(section("Workspace").contains(&root.path().display().to_string()));
+        assert!(section("Subagents").contains("explore (sub-explore-1)"));
+        assert!(section("Subagents").contains("blackboard/explore.md"));
+        assert!(section("Running in the background").contains("background shell 7"));
+        assert!(section("Todo list").contains("patch the parser"));
+        assert!(section("Mode").contains("Plan mode"));
+        assert!(section("Goal").contains("/goal"));
+
+        // Normal mode and no goal write neither section.
+        let quiet =
+            between_turn_harness(&args, crate::core::agent::plan::RunMode::Normal, false).await;
+        assert!(quiet.sections.iter().all(|(h, _)| h != "Mode" && h != "Goal"));
+    }
+
+    /// A between-turn compaction sizes its tail like a run's: by tokens, from
+    /// the trigger the configured budget gives, or the default ratio of an
+    /// estimated window when none is configured.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_between_turn_compaction_sizes_its_tail_from_the_trigger() {
+        use crate::core::agent::compaction::{
+            tail_tokens, trigger_tokens, CompactionBudget, DEFAULT_COMPACTION_RATIO,
+        };
+        let budget = CompactionBudget {
+            context_window: 200_000,
+            ratio: 0.5,
+            reserve_tokens: None,
+            window_pinned: false,
+        };
+        let messages = vec![json!({ "role": "user", "content": "hi" })];
+        let (sizing, keep) = between_turn_sizing(Some(budget), &messages);
+        assert_eq!((sizing.window, sizing.trigger), (200_000, budget.trigger_tokens()));
+        assert_eq!(keep, tail_tokens(budget.trigger_tokens()));
+        let default_trigger = trigger_tokens(32_000, DEFAULT_COMPACTION_RATIO, None);
+        let (sizing, keep) = between_turn_sizing(None, &messages);
+        assert_eq!((sizing.window, sizing.trigger), (32_000, default_trigger));
+        assert_eq!(keep, tail_tokens(default_trigger));
+    }
+
+    /// A cycle of `results` large reads, on a 40K window at `ratio`, starting
+    /// from `task`. Returns the model, so the requests it saw can be checked.
+    async fn run_large_reads(task: &str, ratio: f64, results: usize) -> CompactingModel {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut answers: Vec<serde_json::Value> =
+            (0..results).map(|i| read_call(&format!("c{i}"))).collect();
+        answers.push(final_answer("done"));
+        let model = CompactingModel::new(answers);
+        let tool = BigResultTool(12_000);
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": task })]),
+            Some("Today's date is 2026-11-04.".to_string()),
+            true,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            Some(crate::core::agent::compaction::CompactionBudget {
+                ratio,
+                ..small_window().unwrap()
+            }),
+        )
+        .await
+        .expect("run completes");
+        model
+    }
+
+    /// (#2) At ratio 0.3 with a task larger than the trigger itself, every
+    /// request after a compaction is under the trigger, and the run does not
+    /// compact on every turn: the shares come from the trigger, and the task
+    /// is clipped with its head and tail kept.
+    #[tokio::test]
+    async fn a_low_ratio_and_a_large_task_do_not_compact_every_turn() {
+        let task = format!("TASK-HEAD {} TASK-TAIL", "pasted ".repeat(8_000));
+        let model = run_large_reads(&task, 0.3, 24).await;
+        let trigger = crate::core::agent::compaction::trigger_tokens(40_000, 0.3, None);
+        let side = model.side.lock().unwrap();
+        let turns = model.turns.lock().unwrap();
+        let mut compacted = false;
+        for request in turns.iter() {
+            let messages = request["messages"].as_array().unwrap();
+            let Some(state) = messages.iter().find(|m| crate::core::agent::continuation::is_state(m))
+            else {
+                continue;
+            };
+            compacted = true;
+            let estimate = crate::core::agent::compaction::estimate_request_tokens(request);
+            assert!(estimate <= trigger, "a compacted request is over the trigger: {estimate} > {trigger}");
+            let text = state["content"].as_str().unwrap();
+            assert!(text.contains("TASK-HEAD") && text.contains("TASK-TAIL"), "the task's ends are kept");
+            assert!(text.contains("clipped to fit the context budget"));
+        }
+        assert!(compacted, "the run compacted");
+        // 24 results of ~3K tokens against a 12K trigger: each compaction
+        // keeps a tail, so the run goes several turns between them.
+        assert!(
+            side.len() * 2 <= turns.len(),
+            "{} compactions over {} turns",
+            side.len(),
+            turns.len()
+        );
+    }
+
+    /// The cached path's side request is a paid request: inside
+    /// `run_turn_cycle`, its usage reaches the run's budget.
+    #[tokio::test]
+    async fn the_cached_path_is_charged_to_the_run() {
+        struct Billed(CompactingModel);
+        #[async_trait]
+        impl ModelInvoker for Billed {
+            async fn invoke(
+                &self,
+                request: &serde_json::Value,
+                events: &mpsc::UnboundedSender<StreamEvent>,
+            ) -> Result<serde_json::Value, String> {
+                let mut completion = self.0.invoke(request, events).await?;
+                let side = serde_json::to_string(request)
+                    .unwrap()
+                    .contains("[Compaction request from the harness]");
+                // Only the side request reports usage, so whatever the budget
+                // holds came from it.
+                if side {
+                    completion["usage"] = json!({
+                        "prompt_tokens": 30_000,
+                        "completion_tokens": 777,
+                        "total_tokens": 30_777,
+                    });
+                }
+                Ok(completion)
+            }
+        }
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut answers: Vec<serde_json::Value> =
+            (0..12).map(|i| read_call(&format!("c{i}"))).collect();
+        answers.push(final_answer("done"));
+        let model = Billed(CompactingModel::new(answers));
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "the task" })]),
+            None,
+            true,
+            0,
+            &mut budget,
+            &model,
+            &BigResultTool(12_000),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            small_window(),
+        )
+        .await
+        .expect("run completes");
+        let compactions = model.0.side.lock().unwrap().len() as u64;
+        assert!(compactions > 0, "the preflight took the cached path");
+        assert_eq!(budget.spent(), 777 * compactions, "each side request is charged");
+    }
+
+    /// (#7) On a turn whose request forces a tool (the eager todo plan), the
+    /// cached path is skipped: the model would have to call that tool, so the
+    /// side request could never return the sections.
+    #[tokio::test]
+    async fn a_forced_tool_choice_skips_the_cached_path() {
+        // A history already over the trigger compacts on the first, forced
+        // turn.
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut history = Vec::new();
+        for i in 0..12 {
+            history.push(json!({ "role": "user", "content": format!("q{i} {}", "x".repeat(12_000)) }));
+            history.push(json!({ "role": "assistant", "content": format!("a{i}") }));
+        }
+        history.push(json!({ "role": "user", "content": "now plan it" }));
+        let model = CompactingModel::new(vec![final_answer("done")]);
+        let todo = [json!({ "type": "function", "function": { "name": "todo" } })];
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &todo,
+            Transcript::from_history(history),
+            None,
+            true,
+            0,
+            &mut SessionBudget::new(None),
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            Some("todo"),
+            None,
+            small_window(),
+        )
+        .await
+        .expect("run completes");
+        let turns = model.turns.lock().unwrap();
+        let side = model.side.lock().unwrap();
+        assert!(
+            turns[0]["tool_choice"]["function"]["name"] == "todo",
+            "the first turn forced the tool: {}",
+            turns[0]["tool_choice"]
+        );
+        assert!(
+            turns[0]["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(crate::core::agent::continuation::is_state),
+            "the first turn compacted"
+        );
+        assert!(side.is_empty(), "no side request under a forced tool choice");
+    }
+
+    /// (c) A child's task -- phase handoff included -- and its parent's
+    /// steering messages survive two compactions word for word.
+    #[tokio::test]
+    async fn a_childs_task_and_steering_survive_two_compactions_verbatim() {
+        let task = "Fix the parser.\n\n## Results from the previous phase\nexplore: the bug is in src/parse.rs:42";
+        let steer_one = "Correction: keep the public API unchanged.";
+        let steer_two = "Also add a regression test.";
+        let mut transcript =
+            Transcript::from_history(vec![json!({ "role": "user", "content": task })]);
+        let push_round = |t: &mut Transcript, i: usize| {
+            t.record_message(json!({ "role": "assistant", "content": serde_json::Value::Null,
+                "tool_calls": [{ "id": format!("c{i}"), "type": "function",
+                    "function": { "name": "read", "arguments": "{\"path\":\"a\"}" } }] }));
+            t.record_message(json!({ "role": "tool", "tool_call_id": format!("c{i}"),
+                "content": "x".repeat(1_500) }));
+        };
+        let model = MockModel::new(vec![
+            final_answer("## Progress\nfirst\n## Current step\na\n## Next actions\nb"),
+            final_answer("## Progress\nsecond\n## Current step\na\n## Next actions\nb"),
+        ]);
+        let tool = MockTool::default();
+        let scope = CompactionScope {
+            sizing: crate::core::agent::compaction::Sizing::new(
+                20_000,
+                crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            ),
+            cached: None,
+            tools: &tool,
+            todo_registry: None,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            json_body: &json!({}),
+        };
+        let mut budget = SessionBudget::new(None);
+        let (tx, _rx) = mpsc::unbounded_channel();
+        for i in 0..6 {
+            push_round(&mut transcript, i);
+        }
+        transcript.record_message(json!({ "role": "user", "content": steer_one }));
+        for i in 6..12 {
+            push_round(&mut transcript, i);
+        }
+        compact(&mut transcript, "m", &model, &mut budget, &tx, CompactionReason::Preflight, &scope)
+            .await
+            .expect("first compaction");
+        transcript.record_message(json!({ "role": "user", "content": steer_two }));
+        for i in 12..18 {
+            push_round(&mut transcript, i);
+        }
+        compact(&mut transcript, "m", &model, &mut budget, &tx, CompactionReason::Preflight, &scope)
+            .await
+            .expect("second compaction");
+
+        let projected = project(&transcript, None, true);
+        let states: Vec<&serde_json::Value> = projected
+            .iter()
+            .filter(|m| crate::core::agent::continuation::is_state(m))
+            .collect();
+        assert_eq!(states.len(), 1, "one state stands for everything compacted");
+        let back = crate::core::agent::continuation::parse(states[0]).unwrap();
+        assert_eq!(back.task.as_deref(), Some(task));
+        assert_eq!(back.user_messages, vec![steer_one.to_string(), steer_two.to_string()]);
+        assert!(back.model_sections.unwrap().contains("second"));
+    }
+
+    /// The parent's state lists its todo items verbatim with their statuses;
+    /// the per-turn addendum never does.
+    #[tokio::test]
+    async fn the_todo_items_appear_verbatim_in_the_state() {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
+        let registry = std::sync::Arc::new(tokio::sync::Mutex::new(TodoList {
+            phases: vec![TodoPhase {
+                name: "Ship".into(),
+                tasks: vec![
+                    TodoItem { content: "write the ledger".into(), status: TodoStatus::Completed },
+                    TodoItem { content: "wire the preflight".into(), status: TodoStatus::InProgress },
+                    TodoItem { content: "old idea".into(), status: TodoStatus::Abandoned },
+                ],
+            }],
+        }));
+        let mut transcript = Transcript::default();
+        for i in 0..12 {
+            transcript.record_message(json!({ "role": "user", "content": format!("turn {i}") }));
+            transcript.record_message(json!({ "role": "assistant", "content": "x".repeat(2_000) }));
+        }
+        let model = MockModel::new(vec![final_answer("## Current step\na\n## Next actions\nb")]);
+        let tool = MockTool::default();
+        let scope = CompactionScope {
+            sizing: crate::core::agent::compaction::Sizing::new(
+                10_000,
+                crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            ),
+            cached: None,
+            tools: &tool,
+            todo_registry: Some(&registry),
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            json_body: &json!({}),
+        };
+        let (tx, _rx) = mpsc::unbounded_channel();
+        compact(
+            &mut transcript,
+            "m",
+            &model,
+            &mut SessionBudget::new(None),
+            &tx,
+            CompactionReason::Preflight,
+            &scope,
+        )
+        .await
+        .unwrap();
+        let projected = project(&transcript, None, true);
+        let text = projected[0]["content"].as_str().unwrap();
+        assert!(text.contains("## Todo list (4 lines)\nPhase: Ship\n- [completed] write the ledger\n\
+                               - [in_progress] wire the preflight\n- [abandoned] old idea"), "{text}");
+    }
+
+    /// (h) Resume: the published history reloads into the same projection,
+    /// with the state recognized as condensed history rather than a turn.
+    #[tokio::test]
+    async fn a_compacted_history_round_trips_through_resume() {
+        let mut transcript = Transcript::from_history(vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "the task" }),
+        ]);
+        for i in 0..12 {
+            transcript.record_message(json!({ "role": "assistant", "content": "x".repeat(2_000) }));
+            transcript.record_message(json!({ "role": "user", "content": format!("more {i}") }));
+        }
+        let model = MockModel::new(vec![final_answer("## Current step\na\n## Next actions\nb")]);
+        let tool = MockTool::default();
+        let scope = CompactionScope {
+            sizing: crate::core::agent::compaction::Sizing::new(
+                10_000,
+                crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            ),
+            cached: None,
+            tools: &tool,
+            todo_registry: None,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            json_body: &json!({}),
+        };
+        let (tx, _rx) = mpsc::unbounded_channel();
+        compact(
+            &mut transcript,
+            "m",
+            &model,
+            &mut SessionBudget::new(None),
+            &tx,
+            CompactionReason::Preflight,
+            &scope,
+        )
+        .await
+        .unwrap();
+        let published = client_history(&transcript, true);
+        assert_eq!(published[0]["role"], "system");
+        assert!(crate::core::agent::continuation::is_state(&published[1]));
+        let resumed = Transcript::from_history(published.clone());
+        assert_eq!(project(&resumed, None, true), published);
+        assert!(crate::core::agent::reminder::is_reminder_only(&published[1]["content"]));
+    }
+
     /// A compaction is a paid request and has to reach the run's budget. It is
     /// not the metered dispatch, so nothing else charges it: a turn can make up
     /// to five of them (the preflight plus `MAX_COMPACTION_ATTEMPTS` overflow
@@ -8128,18 +9089,31 @@ mod tests {
         assert!(!budget.over_cost_ceiling(), "nothing spent yet");
 
         let (tx, _rx) = mpsc::unbounded_channel();
+        let tool = MockTool::default();
+        let scope = CompactionScope {
+            // A tail of a few short messages: the rest is compacted.
+            sizing: crate::core::agent::compaction::Sizing::new(
+                200,
+                crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            ),
+            cached: None,
+            tools: &tool,
+            todo_registry: None,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            json_body: &json!({}),
+        };
         let dropped = compact(
             &mut transcript,
-            4,
             "m",
             &model,
             &mut budget,
             &tx,
             CompactionReason::Preflight,
+            &scope,
         )
-            .await
-            .expect("the summarizer answered")
-            .expect("a long history has a span to compact");
+        .await
+        .expect("a long history has a span to compact")
+        .messages;
         assert!(dropped > 0);
 
         let spent = budget.spent_usd().expect("metered");
@@ -8635,6 +9609,89 @@ mod tests {
         );
     }
 
+    /// A strict route that first rejects `reasoning_content` on the cached
+    /// compaction's side request has told the run what the next request would
+    /// meet too. The strip lands at the compaction boundary, where the cache
+    /// breaks anyway, so the request after it carries no reasoning and is not
+    /// rejected a second time.
+    #[tokio::test]
+    async fn a_side_request_reasoning_rejection_strips_the_next_request() {
+        struct Strict {
+            side: StdMutex<Vec<serde_json::Value>>,
+            turns: StdMutex<Vec<serde_json::Value>>,
+            rejected_turns: StdMutex<usize>,
+        }
+        #[async_trait]
+        impl ModelInvoker for Strict {
+            async fn invoke(
+                &self,
+                request: &serde_json::Value,
+                _events: &mpsc::UnboundedSender<StreamEvent>,
+            ) -> Result<serde_json::Value, String> {
+                let body = serde_json::to_string(request).unwrap();
+                let reasoning = body.contains("reasoning_content");
+                let reject = || {
+                    Err("Upstream returned HTTP 400: property 'reasoning_content' is unsupported"
+                        .to_string())
+                };
+                if body.contains("[Compaction request from the harness]") {
+                    self.side.lock().unwrap().push(request.clone());
+                    if reasoning {
+                        return reject();
+                    }
+                    return Ok(final_answer("## Progress\np\n## Current step\na\n## Next actions\nb"));
+                }
+                self.turns.lock().unwrap().push(request.clone());
+                if reasoning {
+                    *self.rejected_turns.lock().unwrap() += 1;
+                    return reject();
+                }
+                Ok(final_answer("done"))
+            }
+        }
+        let model = Strict {
+            side: StdMutex::new(Vec::new()),
+            turns: StdMutex::new(Vec::new()),
+            rejected_turns: StdMutex::new(0),
+        };
+        let mut history = vec![json!({ "role": "user", "content": "the task" })];
+        for i in 0..10 {
+            history.push(json!({ "role": "assistant", "content": "x".repeat(13_600),
+                "reasoning_content": format!("thought {i}") }));
+            history.push(json!({ "role": "user", "content": format!("go on {i}") }));
+        }
+        history.push(json!({ "role": "assistant", "content": "hey", "reasoning_content": "thinking" }));
+        history.push(json!({ "role": "user", "content": "again" }));
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut budget = SessionBudget::new(None);
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(history),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            small_window(),
+        )
+        .await
+        .expect("the run completes");
+        assert_eq!(result["choices"][0]["message"]["content"], "done");
+        assert_eq!(model.side.lock().unwrap().len(), 2, "the side request was rejected, then retried");
+        assert_eq!(*model.rejected_turns.lock().unwrap(), 0, "the next request was rejected again");
+        let turns = model.turns.lock().unwrap();
+        assert_eq!(turns.len(), 1);
+        assert!(!serde_json::to_string(&turns[0]).unwrap().contains("reasoning_content"));
+    }
+
     /// A run that never recovers from overflow still has to hand its compacted
     /// conversation to the client: without it the session keeps the oversized
     /// history and every later turn re-overflows by construction.
@@ -8709,12 +9766,11 @@ mod tests {
         );
     }
 
-    /// When the *target-model summarizer* itself overflows, compaction must not
-    /// fabricate a fallback-note history (which could still overflow and would
-    /// silently drop the whole span). The turn exits with the summarizer error
-    /// and no `MessagesUpdated` is published for a made-up history.
+    /// (e) A summarizer that itself overflows does not fail the run: the span
+    /// is replaced by the code-built state, which still carries the task word
+    /// for word, and the retried request goes out.
     #[tokio::test]
-    async fn turn_cycle_surfaces_summarizer_overflow_without_fabricating_history() {
+    async fn a_summarizer_overflow_leaves_the_run_going_on_the_code_built_state() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let overflow = || {
             Err(format!(
@@ -8722,16 +9778,28 @@ mod tests {
                 crate::core::agent::upstream::CONTEXT_OVERFLOW_MARKER
             ))
         };
-        // 1) the main request overflows, 2) the summarizer it spawned overflows too.
+        // 1) the main request overflows, 2) the summarizer it spawned overflows
+        // too, 3) the retry on the code-built state succeeds.
         let model = ResultQueueModel {
-            results: StdMutex::new(vec![overflow(), overflow()].into_iter().collect()),
+            results: StdMutex::new(
+                vec![
+                    overflow(),
+                    overflow(),
+                    Ok(json!({ "choices": [{ "message": { "content": "final" }, "finish_reason": "stop" }] })),
+                ]
+                .into_iter()
+                .collect(),
+            ),
         };
         let tool = MockTool::default();
         let mut budget = SessionBudget::new(None);
-        let mut convo = vec![json!({ "role": "system", "content": "sys" })];
+        let mut convo = vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "THE VERBATIM TASK" }),
+        ];
         for i in 0..60 {
-            let r = if i % 2 == 0 { "user" } else { "assistant" };
-            convo.push(json!({ "role": r, "content": format!("m{i}") }));
+            let r = if i % 2 == 0 { "assistant" } else { "user" };
+            convo.push(json!({ "role": r, "content": format!("m{i} {}", "x".repeat(400)) }));
         }
 
         let result = run_turn_cycle(
@@ -8752,35 +9820,24 @@ mod tests {
             None,
             None,
         )
-        .await;
+        .await
+        .expect("a summarizer overflow must not fail the run");
+        assert_eq!(result["choices"][0]["message"]["content"], "final");
 
-        assert!(
-            result.is_err(),
-            "a summarizer context overflow must fail the turn"
-        );
-        assert!(
-            crate::core::agent::upstream::is_context_overflow_error(result.as_ref().unwrap_err()),
-            "the summarizer overflow must propagate, not be rewritten"
-        );
         drop(tx);
-        let mut published = false;
-        let mut failed = false;
+        let mut state = None;
         while let Ok(ev) = rx.try_recv() {
-            match ev {
-                StreamEvent::MessagesUpdated { .. } => published = true,
-                // The throbber a `Started` put up has to come down again.
-                StreamEvent::Compaction {
-                    phase: CompactionPhase::Failed,
-                    ..
-                } => failed = true,
-                _ => {}
+            if let StreamEvent::MessagesUpdated { messages } = ev {
+                state = messages
+                    .iter()
+                    .find(|m| crate::core::agent::continuation::is_state(m))
+                    .cloned();
             }
         }
-        assert!(
-            !published,
-            "no fabricated compacted history may be published"
-        );
-        assert!(failed, "a summarizer failure ends the compaction as Failed");
+        let state = state.expect("the compacted history carries a continuation state");
+        let text = state["content"].as_str().unwrap();
+        assert!(text.contains("THE VERBATIM TASK"), "{text}");
+        assert!(text.contains("summarizer could not run"), "{text}");
     }
 
     #[tokio::test]
@@ -12222,6 +13279,114 @@ mod tests {
         assert!(sent[1].contains("+ build_cmd"), "{}", tail(&sent[1]));
     }
 
+    /// A route that rejects `reasoning_content` pays the rejected round trip
+    /// once. The run that discovers it retries without the field; every later
+    /// run on the route (a new prompt, a resume, a subagent on the same model)
+    /// starts without it instead of being rejected again. A route that never
+    /// rejected the field keeps receiving it. Driven end to end against a stub
+    /// provider that refuses any body carrying the field.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_route_that_rejects_reasoning_is_only_rejected_once() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let root = unique_project_root();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = bodies.clone();
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                let body = String::from_utf8_lossy(&body).into_owned();
+                let strict = body.contains("\"model\":\"rr-strict\"");
+                let rejected = strict && body.contains("reasoning_content");
+                seen.lock().unwrap().push(body);
+                if rejected {
+                    let err = r#"{"error":{"message":"property 'reasoning_content' is unsupported","type":"invalid_request_error"}}"#;
+                    let _ = write!(stream, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{err}", err.len());
+                    continue;
+                }
+                let chunk = json!({"id": "s", "object": "chat.completion.chunk", "created": 1, "model": "m",
+                    "choices": [{"index": 0, "delta": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"}]});
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
+        args.session_start = None;
+        args.sandbox = Some(false);
+        args.subagents_enabled = false;
+        args.project_memory = false;
+        args.provider_configs = Arc::new(Mutex::new(
+            std::iter::once((
+                "rr-stub".to_string(),
+                ProviderConfig {
+                    provider: "rr-stub".into(),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    api_key: Some("k".into()),
+                    models: vec!["rr-strict".into(), "rr-lenient".into()],
+                    ..Default::default()
+                },
+            ))
+            .collect(),
+        ));
+        let body = |model: &str| {
+            json!({"model": model, "messages": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hey", "reasoning_content": "thinking"},
+                {"role": "user", "content": "again"},
+            ]})
+        };
+        let sent = |bodies: &Arc<std::sync::Mutex<Vec<String>>>| {
+            std::mem::take(&mut *bodies.lock().unwrap())
+        };
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        run_orchestration_streamed(&tx, &body("rr-strict"), &args)
+            .await
+            .expect("the discovering run recovers");
+        let first = sent(&bodies);
+        assert_eq!(first.len(), 2, "rejected once, then retried: {first:?}");
+        assert!(!first[1].contains("reasoning_content"), "{}", first[1]);
+
+        run_orchestration_streamed(&tx, &body("rr-strict"), &args)
+            .await
+            .expect("a later run on the route");
+        let second = sent(&bodies);
+        assert_eq!(second.len(), 1, "a known route is not rejected again: {second:?}");
+        assert!(!second[0].contains("reasoning_content"), "{}", second[0]);
+        assert_eq!(
+            first[1], second[0],
+            "the later run sends the bytes the retry did, so its prefix is cached"
+        );
+
+        run_orchestration_streamed(&tx, &body("rr-lenient"), &args)
+            .await
+            .expect("a route that accepts the field");
+        let lenient = sent(&bodies);
+        assert_eq!(lenient.len(), 1, "{lenient:?}");
+        assert!(
+            lenient[0].contains("\"reasoning_content\":\"thinking\""),
+            "another model on the same provider still gets reasoning: {}",
+            lenient[0]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A child that names `memory` anyway is refused at the gate.
     #[tokio::test]
     async fn a_child_calling_memory_is_refused() {
@@ -13414,5 +14579,91 @@ mod tests {
         assert!(worktrees.is_empty(), "{worktrees:?}");
         assert!(branches.is_empty(), "{branches}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The desktop API server's orchestration run compacts ahead of dispatch
+    /// when its route's window is knowable: a catalog model (200K) under a
+    /// provider ratio of 0.10 trips the preflight on a ~30K-token history, so
+    /// the first request upstream is the summary, not the oversized prompt a
+    /// provider would reject. Driven end to end against a stub provider.
+    #[cfg(not(feature = "cli"))]
+    #[tokio::test]
+    async fn the_proxy_orchestration_compacts_before_dispatch_on_a_known_window() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = bodies.clone();
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                seen.lock().unwrap().push(String::from_utf8_lossy(&body).into_owned());
+                let chunk = json!({"id": "s", "object": "chat.completion.chunk", "created": 1,
+                    "model": "claude-haiku-4-5", "choices": [{"index": 0,
+                    "delta": {"role": "assistant", "content": "brief"}, "finish_reason": "stop"}]});
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        let providers: HashMap<String, ProviderConfig> = std::iter::once((
+            "stub".to_string(),
+            ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["claude-haiku-4-5".into()],
+                compaction_ratio: Some(0.10),
+                ..Default::default()
+            },
+        ))
+        .collect();
+        let filler = "x".repeat(10_000);
+        let mut messages = Vec::new();
+        for i in 0..12 {
+            let role = if i % 2 == 0 { "user" } else { "assistant" };
+            messages.push(json!({"role": role, "content": format!("{i} {filler}")}));
+        }
+        messages.push(json!({"role": "user", "content": "and now?"}));
+        let body = json!({"model": "claude-haiku-4-5", "messages": messages});
+        let out = run_server_side_openai_orchestration(
+            &body,
+            &crate::core::agent::upstream::agent_http_client(),
+            Arc::new(Mutex::new(providers)),
+            Arc::new(LlamacppState::default()),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(crate::core::mcp::models::McpSettings::default())),
+            &std::env::temp_dir().to_string_lossy(),
+        )
+        .await;
+        out.expect("run completes");
+        let sent = bodies.lock().unwrap().clone();
+        assert_eq!(sent.len(), 2, "a summary, then the compacted request: {}", sent.len());
+        assert!(
+            sent[0].contains("[Compaction request from the harness]"),
+            "the first request is the cached preflight compaction"
+        );
+        // The tail is sized by tokens (a tenth of the window), not by message
+        // count, so the compacted request is measured against the original.
+        let original = body.to_string().len();
+        assert!(
+            sent[1].len() < original,
+            "the dispatched request is the compacted one: {} of {original}",
+            sent[1].len()
+        );
+        assert!(sent[1].contains("[Continuation state - compacted at turn "));
     }
 }
