@@ -8,7 +8,7 @@ import { type CoworkArtifact } from '@/lib/coworkArtifacts'
 import { DIFF_ADD_TEXT, DIFF_DEL_TEXT, type CoworkFileDiff } from '@/lib/coworkDiffs'
 import { cleanTaskLabel } from '@/lib/todoLabels'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { TITLEBAR_HEIGHT, useTitlebarLayout } from '@/stores/titlebar-layout-store'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -95,7 +95,10 @@ export function CoworkOverviewPanel({ todos, attachments, artifacts, files, suba
         const trigger = document.querySelector<HTMLButtonElement>('[data-testid="overview-toggle"]')
         if (trigger) { event.preventDefault(); trigger.focus() }
       }}>
-        <SheetHeader className="sr-only"><SheetTitle>{t('common:overview.title')}</SheetTitle></SheetHeader>
+        <SheetHeader className="sr-only">
+          <SheetTitle>{t('common:overview.title')}</SheetTitle>
+          <SheetDescription>{t('common:overview.description')}</SheetDescription>
+        </SheetHeader>
         {content}
       </SheetContent>
     </Sheet>

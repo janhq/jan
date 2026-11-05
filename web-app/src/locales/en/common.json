@@ -752,6 +752,7 @@
   },
   "overview": {
     "title": "Conversation overview",
+    "description": "Progress, files and background tasks for this conversation.",
     "resize": "Resize side panel",
     "close": "Hide conversation overview",
     "progress": "Progress",
