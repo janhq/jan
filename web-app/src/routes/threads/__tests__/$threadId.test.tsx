@@ -3271,6 +3271,25 @@ describe('ThreadDetail route', () => {
         expect(monitorHost.start.mock.calls[0][3]).toEqual(readOnly)
       })
 
+      it('is refused when the shell switch is turned off while the approval is pending', async () => {
+        setup()
+        let approve!: (allowed: boolean) => void
+        h.toolApprovalState.requestApproval = vi.fn(() => new Promise<boolean>((r) => { approve = r }))
+        try {
+          renderComponent()
+          const pending = dispatch(start('mon-off-late'))
+          await waitFor(() => expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1))
+          shell.enabled = false
+          let out: Awaited<typeof pending> | undefined
+          await act(async () => { approve(true); out = await pending })
+          expect(out).toMatchObject({ isError: true })
+          expect(out?.output).toMatch(/shell/i)
+          expect(monitorHost.start).not.toHaveBeenCalled()
+        } finally {
+          shell.enabled = true
+        }
+      })
+
       it('is refused outright while the shell switch is off', async () => {
         setup()
         shell.enabled = false

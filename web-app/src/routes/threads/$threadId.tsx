@@ -553,6 +553,9 @@ async function approveMonitorStart(
   }
   const approved = await untilAborted(pending.approved, signal)
   if (signal.aborted || isChatClosing()) return { output: CHAT_CLOSED_TOOL_ERROR, isError: true }
+  // The shell switch may have been turned off while the approval card was
+  // open; an allowed approval must not start native shell execution then.
+  if (chatShellRoute('shell') !== 'builtin') return { output: SHELL_DISABLED_TOOL_ERROR, isError: true }
   // Plan may have been enabled while the approval card was open.
   const planRefusal = useChatSessions.getState().sessions[threadId]?.transport.planToolRefusal('shell', input)
   if (planRefusal) return { output: planRefusal, isError: true }
