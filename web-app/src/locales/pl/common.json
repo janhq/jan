@@ -258,7 +258,6 @@
     "deleteProjectDialog": {
       "title": "Usuń Projekt",
       "description": "Na pewno chcesz usunąć ten projekt? Tej operacji nie można cofnąć.",
-      "permanentDelete": "To spowoduje trwałe usunięcie wszystkich wątków.",
       "permanentDeleteWarning": "Ta operacja spowoduje trwałe usunięcie WSZYSTKICH wątków w projekcie!",
       "deleteEmptyProject": "Ta operacja usunie projekt \"{{projectName}}\".",
       "saveThreadsAdvice": "Aby zapisać wątki, przenieś je do listy wątków lub innego projektu przed usunięciem.",

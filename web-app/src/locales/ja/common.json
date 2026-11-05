@@ -323,7 +323,7 @@
     "processButton": "追加",
     "deleteProjectDialog": {
       "title": "プロジェクトを削除",
-      "permanentDelete": "これにより、すべてのスレッドが完全に削除されます。",
+      "permanentDelete": "「{{projectName}}」とそのすべての会話が完全に削除されます。この操作は元に戻せません。",
       "permanentDeleteWarning": "この操作は、プロジェクト内のすべてのスレッドを完全に削除します！",
       "deleteEmptyProject": "この操作は、プロジェクト「{{projectName}}」を削除します。",
       "saveThreadsAdvice": "スレッドを残すには、削除する前にスレッドリストまたは別のプロジェクトに移動してください。",

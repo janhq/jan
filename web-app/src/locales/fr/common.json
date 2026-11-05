@@ -263,7 +263,7 @@
     "projectNotFoundDesc": "Le projet que vous recherchez n'existe pas ou a été supprimé.",
     "deleteProjectDialog": {
       "title": "Supprimer le projet",
-      "permanentDelete": "Cela supprimera définitivement toutes les discussions.",
+      "permanentDelete": "Cela supprimera définitivement « {{projectName}} » et toutes ses conversations. Cette action est irréversible.",
       "permanentDeleteWarning": "Cette action supprimera définitivement TOUTES les discussions au sein du projet !",
       "deleteEmptyProject": "Cette action supprimera le projet \"{{projectName}}\".",
       "saveThreadsAdvice": "Pour sauvegarder les discussions, déplacez-les vers votre liste de discussions ou un autre projet avant de les supprimer.",

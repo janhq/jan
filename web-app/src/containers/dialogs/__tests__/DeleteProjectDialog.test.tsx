@@ -5,35 +5,24 @@ import en from '@/locales/en/common.json'
 
 const h = vi.hoisted(() => ({
   navigate: vi.fn(),
-  viewedProjectId: undefined as string | undefined,
+  pathname: '/',
   deleteFolderWithThreads: vi.fn(),
-  threads: {} as Record<string, unknown>,
 }))
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => h.navigate,
-  useParams: ({ select }: { select?: (p: unknown) => unknown }) => {
-    const params = { projectId: h.viewedProjectId }
-    return select ? select(params) : params
-  },
+  useRouter: () => ({ state: { get location() { return { pathname: h.pathname } } } }),
 }))
 // Resolve against the real English bundle (with count plurals) so the copy is under test.
-const t = (key: string, opts: { count?: number; projectName?: string } = {}) => {
+const t = (key: string, opts: { projectName?: string } = {}) => {
   const dialog = en.projects.deleteProjectDialog as Record<string, string>
-  const leaf = key.replace('projects.deleteProjectDialog.', '')
-  const raw =
-    opts.count !== undefined && dialog[`${leaf}_${opts.count === 1 ? 'one' : 'other'}`] !== undefined
-      ? dialog[`${leaf}_${opts.count === 1 ? 'one' : 'other'}`]
-      : (dialog[leaf] ?? key)
+  const raw = dialog[key.replace('projects.deleteProjectDialog.', '')] ?? key
   return raw.replace(/\{\{(\w+)\}\}/g, (_, k) => String((opts as Record<string, unknown>)[k] ?? ''))
 }
 vi.mock('@/i18n/react-i18next-compat', () => ({ useTranslation: () => ({ t }) }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/hooks/useThreadManagement', () => ({
   useThreadManagement: () => ({ deleteFolderWithThreads: h.deleteFolderWithThreads }),
-}))
-vi.mock('@/hooks/useThreads', () => ({
-  useThreads: (select: (s: unknown) => unknown) => select({ threads: h.threads }),
 }))
 
 import { DeleteProjectDialog } from '../DeleteProjectDialog'
@@ -55,12 +44,12 @@ const confirm = async (projectId = 'p1') => {
 beforeEach(() => {
   h.navigate.mockClear()
   h.deleteFolderWithThreads.mockReset().mockResolvedValue(undefined)
-  h.viewedProjectId = undefined
+  h.pathname = '/'
 })
 
 describe('DeleteProjectDialog navigation', () => {
   it('leaves the project page when the viewed project is deleted', async () => {
-    h.viewedProjectId = 'p1'
+    h.pathname = '/project/p1'
     await confirm('p1')
     expect(h.deleteFolderWithThreads).toHaveBeenCalledWith('p1')
     expect(h.navigate).toHaveBeenCalledTimes(1)
@@ -68,19 +57,19 @@ describe('DeleteProjectDialog navigation', () => {
   })
 
   it('stays put when a project is deleted from the sidebar on another page', async () => {
-    h.viewedProjectId = undefined
+    h.pathname = '/threads/t1'
     await confirm('p1')
     expect(h.navigate).not.toHaveBeenCalled()
   })
 
   it('stays put when another project page is open', async () => {
-    h.viewedProjectId = 'p2'
+    h.pathname = '/project/p2'
     await confirm('p1')
     expect(h.navigate).not.toHaveBeenCalled()
   })
 
   it('does not navigate when the delete fails', async () => {
-    h.viewedProjectId = 'p1'
+    h.pathname = '/project/p1'
     h.deleteFolderWithThreads.mockRejectedValue(new Error('boom'))
     const onOpenChange = vi.fn()
     render(<DeleteProjectDialog open onOpenChange={onOpenChange} projectId="p1" projectName="Alpha" />)
@@ -91,22 +80,44 @@ describe('DeleteProjectDialog navigation', () => {
   })
 })
 
-describe('DeleteProjectDialog copy', () => {
-  it('names the project and its conversation count', () => {
-    h.threads = {
-      a: { metadata: { project: { id: 'p1' } } },
-      b: { metadata: { project: { id: 'p1' } } },
-      c: { metadata: { project: { id: 'other' } } },
-    }
-    render(<DeleteProjectDialog open onOpenChange={vi.fn()} projectId="p1" projectName="Alpha" />)
-    expect(screen.getByRole('dialog')).toHaveTextContent('permanently delete "Alpha" and its 2 conversations')
-    h.threads = {}
+describe('DeleteProjectDialog route read after the delete', () => {
+  const deferred = () => {
+    let resolve!: () => void
+    const promise = new Promise<void>((r) => (resolve = r))
+    return { promise, resolve }
+  }
+
+  it('does not navigate Home when the user left the deleted project while it ran', async () => {
+    h.pathname = '/project/p1'
+    const d = deferred()
+    h.deleteFolderWithThreads.mockReturnValue(d.promise)
+    const onOpenChange = vi.fn()
+    render(<DeleteProjectDialog open onOpenChange={onOpenChange} projectId="p1" projectName="Alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Alpha' }))
+    h.pathname = '/settings/general'
+    d.resolve()
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(h.navigate).not.toHaveBeenCalled()
   })
 
-  it('uses the singular for one conversation', () => {
-    h.threads = { a: { metadata: { project: { id: 'p1' } } } }
+  it('navigates Home when the user opened the deleted project while it ran', async () => {
+    h.pathname = '/threads/t1'
+    const d = deferred()
+    h.deleteFolderWithThreads.mockReturnValue(d.promise)
+    const onOpenChange = vi.fn()
+    render(<DeleteProjectDialog open onOpenChange={onOpenChange} projectId="p1" projectName="Alpha" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Alpha' }))
+    h.pathname = '/project/p1'
+    d.resolve()
+    await waitFor(() => expect(h.navigate).toHaveBeenCalledWith({ to: '/' }))
+  })
+})
+
+describe('DeleteProjectDialog copy', () => {
+  it('names the project and no conversation count', () => {
     render(<DeleteProjectDialog open onOpenChange={vi.fn()} projectId="p1" projectName="Alpha" />)
-    expect(screen.getByRole('dialog')).toHaveTextContent('"Alpha" and its 1 conversation.')
-    h.threads = {}
+    const text = screen.getByRole('dialog').textContent ?? ''
+    expect(text).toContain('permanently delete "Alpha" and all of its conversations')
+    expect(text).not.toMatch(/\d+ conversation/)
   })
 })

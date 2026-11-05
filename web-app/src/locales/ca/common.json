@@ -256,7 +256,6 @@
     "projectNotFoundDesc": "El projecte que busques no existeix o s’ha suprimit.",
     "deleteProjectDialog": {
       "title": "Suprimeix el projecte",
-      "permanentDelete": "Això suprimirà definitivament tots els fils.",
       "permanentDeleteWarning": "Aquesta acció suprimirà TOTS els fils del projecte!",
       "deleteEmptyProject": "Aquesta acció suprimirà el projecte \"{{projectName}}\".",
       "saveThreadsAdvice": "Per conservar els fils, mou-los a la llista de fils o a un altre projecte abans de suprimir-lo.",

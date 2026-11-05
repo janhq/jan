@@ -264,7 +264,6 @@
     "projectNotFoundDesc": "Projekt, který hledáte, neexistuje nebo byl smazán.",
     "deleteProjectDialog": {
       "title": "Smazat projekt",
-      "permanentDelete": "Tímto trvale smažete všechna vlákna.",
       "permanentDeleteWarning": "Tato akce trvale smaže VŠECHNA vlákna v rámci projektu!",
       "deleteEmptyProject": "Tato akce smaže projekt \"{{projectName}}\".",
       "saveThreadsAdvice": "Chcete-li uložit vlákna, přesuňte je do seznamu vláken nebo jiného projektu před smazáním.",

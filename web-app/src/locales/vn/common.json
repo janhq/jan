@@ -259,7 +259,6 @@
     "processButton": "Thêm",
     "deleteProjectDialog": {
       "title": "Xóa dự án",
-      "permanentDelete": "Điều này sẽ xóa vĩnh viễn tất cả các chủ đề.",
       "permanentDeleteWarning": "Hành động này sẽ xóa vĩnh viễn TẤT CẢ các chủ đề trong dự án!",
       "deleteEmptyProject": "Hành động này sẽ xóa dự án \"{{projectName}}\".",
       "saveThreadsAdvice": "Để lưu các chủ đề, hãy di chuyển chúng vào danh sách chủ đề của bạn hoặc dự án khác trước khi xóa.",
