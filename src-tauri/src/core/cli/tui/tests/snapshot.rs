@@ -931,6 +931,29 @@ fn agents_inspector_detail_for_a_richer_child() {
     );
 }
 
+/// The detail's input is the composer, aimed at the child: a parked child
+/// offers the placeholder addressed to it, and a draft shows with the main
+/// composer's prompt and cursor under the panel.
+#[test]
+fn agents_inspector_detail_takes_a_message() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    child(&mut app, StreamEvent::Step { index: 1, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Token {
+            text: "Waiting on the test run.".into(),
+        },
+    );
+    child(&mut app, StreamEvent::Parked);
+    open_kv_review_detail(&mut app);
+    assert_buffer("agents_inspector_detail_idle_input", &frame(&mut app, DARK, 80, 16));
+    app.input = "check the lock order too".into();
+    app.cursor = app.input.len();
+    assert_buffer("agents_inspector_detail_draft", &frame(&mut app, DARK, 80, 16));
+}
+
 // ---- Model picker -----------------------------------------------------------
 
 fn picker_app() -> TestApp {
