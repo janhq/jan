@@ -266,10 +266,43 @@ checkout (a clone) on its own branch, started from HEAD, so parallel writers nev
 your uncommitted changes are not in it; its branch is in your repository when it is done, to merge. \
 Any other subagent works in your checkout read-only. The dispatch result says where each one works. Override with `workspace`: \"new\", \
 \"shared\", the name of an earlier subagent to continue in its worktree, or `workspace: {\"ref\": \"<git \
-ref>\"}` to review or test a branch or pull request in a checkout of its own."
+ref>\"}` to review or test a branch or pull request in a checkout of its own. In a later phase, \
+`workspace` naming the agent of an earlier-phase subagent of the same plan (e.g. \"general\") means \
+that sibling's checkout, so a review phase checks exactly what the implementer wrote."
 } else {
     ""
 };
+
+/// How to split, coordinate and verify parallel work. Kept apart from
+/// [`SUBAGENT_GUIDE`] (when to delegate at all) because these are the failures
+/// seen once several children run at once: siblings editing the same file, a
+/// contract one changes that the others never hear of, and children that each
+/// verify only their own slice so nobody checks the combined result.
+const SUBAGENT_COORDINATION_GUIDE: &str = "\n\n## Parallel work\n\n\
+- Split by ownership, not by step: give each parallel subagent a disjoint set of files or \
+subsystems, say in its task which files it owns and which ones siblings are editing, and tell it \
+to change nothing else. Work that must follow other work goes in a later `phase` (implement, \
+then review), not in the same one.\n\
+- Write each task as a complete brief: the goal, the relevant paths and facts you already know, \
+the project rules that apply, the checks to run, and the shape of the report you want back \
+(what changed, commit, what was run and its result). A child that has to rediscover context \
+you already have wastes its window.\n\
+- You are the hub between siblings: they cannot talk to each other. When one reports a decision \
+another depends on (an event shape, a renamed function, a changed signature), relay it with \
+`message_subagent` at once instead of fixing the mismatch after both finish. A later-phase \
+subagent can be messaged before it starts.\n\
+- Read each answer as soon as it arrives and act on it while the others still run: relay, \
+merge, or correct a child heading the wrong way.\n\n\
+## Verification\n\n\
+- Ask every implementing subagent to prove its change: a failing test first where it fits, then \
+the project's checks for what it touched, reported with the exact commands, their results, and \
+what was not run and why.\n\
+- A child's report is evidence, not proof. Check claims that matter (a reported commit, a \
+passing suite) before you build on them.\n\
+- Each child sees only its slice. After merging parallel work, run the checks on the combined \
+result yourself, then hand the combined change to a fresh `review` subagent that wrote none of \
+it. Point it at the exact range or commit to review and at the risky parts, and verify each \
+finding before acting on it.";
 
 /// The `# Subagents` block: the guide, then the predefined agents the
 /// `dispatch_subagent` `agent` enum accepts, each with its model and purpose.
@@ -280,9 +313,10 @@ fn subagent_guide(project_root: &Path) -> String {
     let registry = crate::core::agent::subagent::SubagentRegistry::load(project_root);
     match crate::core::agent::subagent::agent_catalog(&registry) {
         Some(catalog) => format!(
-            "{SUBAGENT_GUIDE}{SUBAGENT_WORKSPACE_GUIDE}\n\nPredefined agents (`agent` field):\n{catalog}"
+            "{SUBAGENT_GUIDE}{SUBAGENT_WORKSPACE_GUIDE}{SUBAGENT_COORDINATION_GUIDE}\n\n\
+             Predefined agents (`agent` field):\n{catalog}"
         ),
-        None => format!("{SUBAGENT_GUIDE}{SUBAGENT_WORKSPACE_GUIDE}"),
+        None => format!("{SUBAGENT_GUIDE}{SUBAGENT_WORKSPACE_GUIDE}{SUBAGENT_COORDINATION_GUIDE}"),
     }
 }
 
@@ -1229,6 +1263,30 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // Parallel work fails at the seams: siblings editing the same file, a
+    // contract one changes that the other never hears of, and each child
+    // verifying only its own slice. The guide must cover all three, plus an
+    // independent review of the combined result.
+    #[test]
+    fn subagent_guide_covers_splitting_coordination_and_verification() {
+        let root = scratch_project("subagent-coordination");
+        let with = default_prompt(None, &root, None, true).expect("prompt");
+        for needle in [
+            "## Parallel work",
+            "which files it owns",
+            "relay it with `message_subagent`",
+            "## Verification",
+            "what was not run",
+            "combined result yourself",
+            "a fresh `review` subagent",
+        ] {
+            assert!(with.contains(needle), "missing {needle:?}");
+        }
+        let guide = with.find("## Parallel work").unwrap();
+        assert!(guide < with.find("Predefined agents").unwrap_or(usize::MAX));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     // Where a child works is decided at dispatch, and the CLI guide says so,
     // ahead of the agent catalog.
     #[cfg(feature = "cli")]
@@ -1240,6 +1298,7 @@ mod tests {
         assert!(with.contains("is in your repository"), "{with}");
         assert!(with.contains("read-only"), "{with}");
         assert!(with.contains("workspace: {\"ref\""), "{with}");
+        assert!(with.contains("means that sibling's checkout"), "{with}");
         let guide = with.find("Each subagent's workspace").expect("workspace paragraph");
         assert!(guide < with.find("Predefined agents").unwrap(), "{with}");
         let _ = std::fs::remove_dir_all(&root);
