@@ -276,14 +276,21 @@ pub fn in_hidden_root_from(project_root: &Path, base: &Path, hidden: &Path, raw:
 /// as written stays a token too: it may also be an ordinary relative path
 /// (a `proc/` directory in the project), and an extra token only adds a
 /// refusal.
-pub fn hidden_tokens(hidden: &Path, command: &str) -> Vec<String> {
+///
+/// `None` when the command is too complex to check in bounded time: more
+/// than [`MAX_TOKENS`] tokens or [`MAX_TOKEN_BYTES`] of them, or one token
+/// with more start-dir candidates than [`start_dir_past_links`] allows. The
+/// caller resolves every token (a syscall per component), so a scan without
+/// a bound would stall the agent in the gate; it refuses the command instead,
+/// failing closed, and the model can split or simplify it.
+pub fn hidden_tokens(hidden: &Path, command: &str) -> Option<Vec<String>> {
     let home = hidden.parent().map(|h| h.to_string_lossy().into_owned());
     let words = command.split(|c: char| c.is_whitespace() || ";|&><()\"'`=".contains(c));
     let joined = command
         .split(|c: char| c.is_whitespace() || ";|&><()`=".contains(c))
         .filter(|w| w.contains(['"', '\'']))
         .map(|w| w.replace(['"', '\''], ""));
-    words
+    let tokens = words
         .map(str::to_string)
         .chain(joined)
         .filter(|t| !t.is_empty())
@@ -294,14 +301,40 @@ pub fn hidden_tokens(hidden: &Path, command: &str) -> Vec<String> {
         .map(|t| match &home {
             Some(home) => expand_home(&t, home),
             None => t,
-        })
-        .flat_map(|t| {
-            let start = start_dir_relative(&t);
-            let linked = start_dir_past_links(&t);
-            std::iter::once(t).chain(start).chain(linked)
-        })
-        .collect()
+        });
+    let mut out = Vec::new();
+    let mut bytes = 0;
+    for t in tokens {
+        let start = start_dir_relative(&t);
+        let linked = start_dir_past_links(&t)?;
+        for t in std::iter::once(t).chain(start).chain(linked) {
+            bytes += t.len();
+            out.push(t);
+        }
+        if out.len() > MAX_TOKENS || bytes > MAX_TOKEN_BYTES {
+            return None;
+        }
+    }
+    Some(out)
 }
+
+/// The most tokens [`hidden_tokens`] hands back for one command. Each costs
+/// the gate a few syscalls to resolve; this is far more words than a command
+/// a model writes by hand, a long heredoc included.
+const MAX_TOKENS: usize = 100_000;
+
+/// The most bytes of tokens [`hidden_tokens`] hands back for one command:
+/// the gate resolves each component of each with a syscall. A few times the
+/// largest command a model plausibly writes, since quoted and escaped words
+/// are counted twice.
+const MAX_TOKEN_BYTES: usize = 4 << 20;
+
+/// The most candidates [`start_dir_past_links`] makes from one token. Each
+/// is as long as the rest of the token, so without a cap a token of repeated
+/// globs (`/proc/..` then `/*` many times, every glob a possible `cwd`)
+/// makes candidates quadratic in its length. An ordinary path has none or
+/// one or two.
+const MAX_LINKED: usize = 16;
 
 /// Words a POSIX shell expands to its current directory when it starts: the
 /// start dir. `~-` and `$OLDPWD` name the previous one, which the cwd
@@ -309,11 +342,19 @@ pub fn hidden_tokens(hidden: &Path, command: &str) -> Vec<String> {
 /// `handlers::posix_cwd_script`): after its `cd` the shell's own would name
 /// the project root it was spawned in.
 ///
-/// Only these literal words are mapped. `$(pwd)`, backticks and
-/// `${PWD%...}`-style expansions also spell the start dir and are not: the
-/// same gap as any other `$VAR` the gate cannot evaluate, which the OS
-/// sandbox masking the home covers for a confined run.
-const START_DIR_WORDS: [&str; 6] = ["$PWD", "${PWD}", "~+", "~-", "$OLDPWD", "${OLDPWD}"];
+/// `~+0` and `~-0` are bash's directory-stack ends: the top is the current
+/// directory, and the bottom is too while nothing was pushed (the stack is
+/// that one entry), so at the start both name the start dir. A `pushd` or
+/// `cd` in the same command moves them, as a `cd` moves `$PWD`.
+///
+/// Only these literal words are mapped. `$(pwd)`, backticks,
+/// `${PWD%...}`-style expansions and the other stack entries (`~+N`, `~-N`,
+/// `~N` for N > 0, which name directories only a `pushd` in the same
+/// command put there) also spell a directory the gate cannot know and are
+/// not: the same gap as any other `$VAR` the gate cannot evaluate, which the
+/// OS sandbox masking the home covers for a confined run.
+const START_DIR_WORDS: [&str; 8] =
+    ["$PWD", "${PWD}", "~+", "~-", "~+0", "~-0", "$OLDPWD", "${OLDPWD}"];
 
 /// Where a token's leading components put it, as far as
 /// [`start_dir_relative`] cares.
@@ -423,9 +464,14 @@ pub fn start_dir_relative(token: &str) -> Option<String> {
 /// dir and every `root` as the filesystem root, and what follows each is a
 /// candidate. Fails closed; a token with no such `..` (`/proc/cpuinfo`,
 /// `/proc/self/fd`, `/dev/null`) yields nothing, so ordinary reads are not
-/// touched. The candidates are not walked again: one per component keeps
-/// the count linear in the token.
-fn start_dir_past_links(token: &str) -> Vec<String> {
+/// touched. The candidates are not walked again.
+///
+/// One candidate per matching component, each the rest of the token, is
+/// quadratic in the token's length when many components match (every glob
+/// may be a `cwd`). So past [`MAX_LINKED`] candidates this gives up with
+/// `None`, which refuses the whole command (see [`hidden_tokens`]): what it
+/// would have to check cannot be checked in bounded time.
+fn start_dir_past_links(token: &str) -> Option<Vec<String>> {
     use std::path::Component;
     let parts: Vec<Component> = Path::new(token).components().collect();
     let name = |i: usize| match parts.get(i) {
@@ -434,10 +480,10 @@ fn start_dir_past_links(token: &str) -> Vec<String> {
     };
     let is = |i: usize, literal: &str| name(i).is_some_and(|n| may_be(&n, literal));
     let Some(linked) = (0..parts.len()).find(|&i| is(i, "proc") || is(i, "dev")) else {
-        return Vec::new();
+        return Some(Vec::new());
     };
     if !parts[linked..].contains(&Component::ParentDir) {
-        return Vec::new();
+        return Some(Vec::new());
     }
     let rest = |from: usize| {
         let rest: PathBuf = parts.iter().skip(from).collect();
@@ -456,8 +502,11 @@ fn start_dir_past_links(token: &str) -> Vec<String> {
         } else if is(i, "root") {
             out.push(format!("/{}", rest(i + 1)));
         }
+        if out.len() > MAX_LINKED {
+            return None;
+        }
     }
-    out
+    Some(out)
 }
 
 /// `word` with POSIX backslash escapes removed: each `\` keeps the character
@@ -1183,6 +1232,7 @@ mod tests {
 
     fn command_touches_hidden_root(project: &Path, hidden: &Path, cmd: &str) -> bool {
         hidden_tokens(hidden, cmd)
+            .unwrap()
             .iter()
             .any(|t| in_hidden_root(project, hidden, t))
     }
@@ -1257,7 +1307,7 @@ mod tests {
             "tar czf - -T - <<\"E\\\\x\"\nEx\n.jan\nE\\\\x",
             "<<E\nx\\\nE\n.jan\nE",
         ] {
-            let tokens = hidden_tokens(&jan, command);
+            let tokens = hidden_tokens(&jan, command).unwrap();
             assert!(
                 tokens.iter().any(|t| in_hidden_root_from(&project, &home, &jan, t)),
                 "{command:?}: {tokens:?}"
@@ -1269,20 +1319,41 @@ mod tests {
             ("Get-Content .jan\\config.toml", ".jan\\config.toml"),
             ("type C:\\Users\\me\\.jan\\config.toml", "C:\\Users\\me\\.jan\\config.toml"),
         ] {
-            let tokens = hidden_tokens(&jan, command);
+            let tokens = hidden_tokens(&jan, command).unwrap();
             assert!(tokens.iter().any(|t| t == token), "{command:?}: {tokens:?}");
         }
         #[cfg(windows)]
         assert!(hidden_tokens(&jan, "Get-Content .jan\\config.toml")
+            .unwrap()
             .iter()
             .any(|t| in_hidden_root_from(&project, &home, &jan, t)));
         // Command names are tokens too: from a cwd in the home they resolve
         // there, and only the gate's carve-out lets them through.
         assert_eq!(
-            hidden_tokens(Path::new("/h/.jan"), "cd /p && ls src | git diff; F=~/.jan/c cat"),
+            hidden_tokens(Path::new("/h/.jan"), "cd /p && ls src | git diff; F=~/.jan/c cat")
+                .unwrap(),
             ["cd", "/p", "ls", "src", "git", "diff", "F", "/h/.jan/c", "cat"]
         );
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A command whose tokens would take the gate too long to resolve is
+    /// reported as uncheckable (`None`), which the gate refuses; an ordinary
+    /// long command, and a `..` under `/proc` with a few globs, is scanned.
+    #[test]
+    fn hidden_tokens_give_up_on_a_command_too_complex_to_check() {
+        let jan = Path::new("/h/.jan");
+        let many = "a ".repeat(MAX_TOKENS + 1);
+        assert_eq!(hidden_tokens(jan, &many), None);
+        let long = format!("cat {}", "x".repeat(MAX_TOKEN_BYTES + 1));
+        assert_eq!(hidden_tokens(jan, &long), None);
+        let globs = |n: usize| format!("cat /proc/..{}", "/*".repeat(n));
+        assert_eq!(hidden_tokens(jan, &globs(MAX_LINKED + 1)), None);
+        // The two words, `start_dir_relative`'s one and a candidate per glob.
+        let tokens = hidden_tokens(jan, &globs(3)).unwrap();
+        assert_eq!(tokens.len(), 2 + 1 + 3, "{tokens:?}");
+        let script = "cat <<E > notes.md\nsome ordinary words\nE\n".repeat(2000);
+        assert!(hidden_tokens(jan, &script).is_some());
     }
 
     #[test]

@@ -247,11 +247,21 @@ pub fn resolve_decision_with_cwd(
                 .and_then(|v| v.as_str())
                 .is_some_and(hidden_hit)
         });
+        // A command too complex to scan in bounded time (`None`) is refused
+        // as if it named the home: it cannot be shown not to.
+        //
+        // Not covered: a link the model made earlier to `/proc/self/cwd`
+        // (`ln -s /proc/self/cwd l`, then an escalated `cat l/../../.jan/x`).
+        // Resolving the token follows `/proc/self` as Jan's own process, not
+        // the shell's, so the climb is checked from Jan's cwd and passes; the
+        // user still approves the escalation, and a confined run is masked.
         let hits_command = tool.capability == Capability::Exec
             && args
                 .get("command")
                 .and_then(|v| v.as_str())
-                .is_some_and(|c| hidden_tokens(hidden, c).iter().any(|t| hidden_hit(t)));
+                .is_some_and(|c| {
+                    hidden_tokens(hidden, c).map_or(true, |t| t.iter().any(|t| hidden_hit(t)))
+                });
         // An escalated command runs on the host from the held directory
         // whatever it names, so that directory is a token too: one in the
         // home (an attached worktree there, or a link swapped in for it)
@@ -1558,6 +1568,8 @@ mod tests {
             "/bin/cat ${PWD}/UP.jan/config.toml",
             "/bin/cat ~+/UP.jan/config.toml",
             "/bin/cat ~-/UP.jan/config.toml",
+            "/bin/cat ~+0/UP.jan/config.toml",
+            "/bin/cat ~-0/UP.jan/config.toml",
             "/bin/cat $OLDPWD/UP.jan/config.toml",
             "exec 3<.; /bin/cat /dev/fd/3/UP.jan/config.toml",
             "exec 3<.; /bin/cat /proc/self/fd/3/UP.jan/config.toml",
@@ -1636,6 +1648,45 @@ mod tests {
             assert_eq!(gate(command, true), Decision::Prompt(PromptKind::Escalate), "{command}");
             assert_eq!(gate(command, false), Decision::Prompt(PromptKind::Exec), "{command}");
         }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Every glob after a `..` under `/proc` may be a `cwd`, so a token of
+    /// repeated `/*` would make one start-dir candidate per component, each
+    /// as long as the rest of the token: quadratic in the command. Past a
+    /// small cap the command is refused unchecked rather than resolved, in
+    /// bounded time.
+    #[test]
+    fn a_token_with_too_many_start_dir_candidates_is_refused_quickly() {
+        let home = std::fs::canonicalize(unique_root()).unwrap();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |command: &str| {
+            let args = json!({"command": command, ESCALATE_ARG: true});
+            resolve_decision_with_cwd(shell, &args, &ctx, None, &perms, &grants)
+        };
+        let hidden = Decision::HardDeny(DenyReason::Hidden);
+        let started = std::time::Instant::now();
+        for n in [200, 8000] {
+            let command = format!("cat /proc/..{}", "/*".repeat(n));
+            assert_eq!(gate(&command), hidden, "{n} globs");
+        }
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "{:?}", started.elapsed());
+        // A few globs are still resolved one by one, and name nothing hidden.
+        let few = format!("cat /proc/..{}", "/*".repeat(4));
+        assert_eq!(gate(&few), Decision::Prompt(PromptKind::Escalate));
         let _ = std::fs::remove_dir_all(&home);
     }
 

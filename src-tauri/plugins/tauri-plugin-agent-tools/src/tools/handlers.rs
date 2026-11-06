@@ -1397,6 +1397,20 @@ const CWD_MARKER: &[u8] = b"\x1eJAN_CWD ";
 /// leaving a value for the trap to read: the command runs in the same shell
 /// and could set any variable the trap reads.
 ///
+/// The report is best-effort, not a boundary. The variable route is closed
+/// (the trap sets each variable it reads, and the refusal reads only one set
+/// before the command runs), but
+/// the command shares the shell, so it can still spoof the report by
+/// redefining `pwd`, `printf` or `[` as functions, replacing the trap, or
+/// printing a marker line itself; no wrapper in the same shell can guard
+/// against that. What a spoofed report can do stays bounded: the host
+/// refuses to hold a directory [`unholdable_shell_cwd`] names a reason for;
+/// the next call's `cd -P` plus `pwd -P` check refuses to run anywhere that
+/// is not its own physical path; and the gate hard-denies an escalated call
+/// from a held directory in the Jan home or above it
+/// (`DenyReason::HiddenShellCwd`). At worst the model picks where its own
+/// next call starts, which a `cd` already lets it do.
+///
 /// `OLDPWD` is set to the start directory on every run, held or not: the
 /// gate checks `~-` and `$OLDPWD` as the start dir (see
 /// `sandbox::start_dir_relative`), and after the `cd` the shell's own would
@@ -4555,7 +4569,8 @@ mod tests {
     /// `~-` and `$OLDPWD` name where the command starts, as the gate assumes:
     /// the held directory after the wrapper's `cd` (not the project root it
     /// was spawned in), and the project root without one, whatever OLDPWD the
-    /// shell inherited.
+    /// shell inherited. `~+0` and `~-0`, the ends of a stack nothing was
+    /// pushed on, name it as well.
     #[cfg(unix)]
     #[tokio::test]
     async fn oldpwd_is_the_start_dir() {
@@ -4567,12 +4582,12 @@ mod tests {
         let set = vec![("OLDPWD".to_string(), "/usr".to_string())];
         let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false).with_env_set(&set);
         let canon = std::fs::canonicalize(&root).unwrap();
-        let out = run_in(&ctx, "echo ~- $OLDPWD").await;
-        assert_eq!(out, format!("{0} {0}\n[exit 0]", canon.display()), "no held dir");
+        let out = run_in(&ctx, "echo ~- $OLDPWD ~+0 ~-0").await;
+        assert_eq!(out, format!("{0} {0} {0} {0}\n[exit 0]", canon.display()), "no held dir");
         run_in(&ctx, "cd sub").await;
         let sub = canon.join("sub");
-        let out = run_in(&ctx, "echo ~- $OLDPWD").await;
-        assert_eq!(out, format!("{0} {0}\n[exit 0]", sub.display()), "held dir");
+        let out = run_in(&ctx, "echo ~- $OLDPWD ~+0 ~-0").await;
+        assert_eq!(out, format!("{0} {0} {0} {0}\n[exit 0]", sub.display()), "held dir");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
     }
