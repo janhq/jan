@@ -355,15 +355,30 @@ pub fn sandbox_private(policy: &Policy, path: &Path) -> bool {
 /// order and a later one over a path hides every earlier one beneath it, so
 /// the last mount covering `path` decides: a tmpfs, `/proc` or `/dev` is the
 /// sandbox's own, a bind of a folder onto its own path is the host's.
+///
+/// A mount lands where its target resolves, and the shell reports where it
+/// stands with `pwd -P`, so a `$HOME` behind a symlink (`/home -> /var/home`)
+/// must be compared resolved or no mask over it would match and `--ro-bind /`
+/// would claim the path. Both spellings are tried on both sides, so a caller
+/// naming the literal path still matches, and a target that does not exist
+/// falls back to its literal.
 fn bwrap_private(policy: &Policy, path: &Path) -> bool {
+    use crate::tools::sandbox::{canonicalize_lenient, lexical_normalize};
     let cfg = ShellConfig {
         program: PathBuf::from("/bin/sh"),
         args: Vec::new(),
         kind: super::proc::ShellKind::Posix,
     };
     let args = bwrap_args(policy, &cfg);
-    let path = crate::tools::sandbox::lexical_normalize(path);
-    let covers = |dest: &str| path.starts_with(dest);
+    let spellings = |p: &Path| {
+        let literal = lexical_normalize(p);
+        let resolved = canonicalize_lenient(&literal).unwrap_or_else(|_| literal.clone());
+        [literal, resolved]
+    };
+    let paths = spellings(path);
+    let covers = |dest: &str| {
+        spellings(Path::new(dest)).iter().any(|d| paths.iter().any(|p| p.starts_with(d)))
+    };
     let mut private = false;
     let mut i = 0;
     while i < args.len() {
@@ -1215,6 +1230,45 @@ mod tests {
         let p = p.with_home_readonly(true);
         assert!(!bwrap_private(&p, &home.join("docs")));
         assert!(bwrap_private(&p, &home.join(".jan/x")), "still hidden");
+    }
+
+    /// The shell reports where it landed with `pwd -P`, the physical path,
+    /// while the mounts name a home behind a symlink (Fedora Atomic's
+    /// `/home -> /var/home`); the kernel puts each mount at the resolved
+    /// path, so that is the one the landed path must be compared with. The
+    /// home is passed as the data-folder mask here: `$HOME` itself is
+    /// process-wide and cannot be swapped under parallel tests. The real home
+    /// is mounted read-only (the host's own), and the fixture lives under the
+    /// crate's `target/`, not the private `/tmp`, so only the fake home's
+    /// mounts decide.
+    #[cfg(unix)]
+    #[test]
+    fn bwrap_private_sees_mounts_through_a_symlinked_home() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target/jail-tests")
+            .join(format!("symhome_{}_{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let real = base.join("var/home/u");
+        std::fs::create_dir_all(real.join(".jan/x")).unwrap();
+        std::fs::create_dir_all(real.join("proj/src")).unwrap();
+        std::fs::create_dir_all(real.join("docs")).unwrap();
+        std::fs::create_dir_all(base.join("r")).unwrap();
+        std::os::unix::fs::symlink(base.join("var/home"), base.join("home")).unwrap();
+        let home = base.join("home/u");
+        let p = Policy::new(&home.join("proj"), false)
+            .with_home_readonly(true)
+            .with_mask_root(&home)
+            .with_hide_root(&home.join(".jan"));
+        for private in [real.join("docs"), real.join(".jan/x"), home.join("docs")] {
+            assert!(bwrap_private(&p, &private), "{}", private.display());
+        }
+        for shared in [real.join("proj/src"), home.join("proj/src"), base.join("r")] {
+            assert!(!bwrap_private(&p, &shared), "{}", shared.display());
+        }
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[cfg(unix)]

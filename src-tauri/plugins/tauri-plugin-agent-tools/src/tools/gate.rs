@@ -1322,6 +1322,13 @@ mod tests {
         let escalated = json!({"command": "cat .jan/config.toml", ESCALATE_ARG: true});
         assert_eq!(gate(shell, &escalated, Some(&home)), Decision::HardDeny(DenyReason::Hidden));
         assert_eq!(gate(shell, &escalated, None), Decision::Prompt(PromptKind::Escalate));
+        // A substitution's closing `)` is no command boundary: the word after
+        // it is still an argument, and is checked.
+        let tar = json!({
+            "command": "tar czf backup-\"$(date +%F)\".tgz .jan",
+            ESCALATE_ARG: true,
+        });
+        assert_eq!(gate(shell, &tar, Some(&home)), Decision::HardDeny(DenyReason::Hidden));
         // Other tools resolve against the project root whatever the shell holds.
         let read = json!({"path": ".jan/config.toml"});
         assert_eq!(gate(lookup("read").unwrap(), &read, Some(&home)), Decision::Allow);

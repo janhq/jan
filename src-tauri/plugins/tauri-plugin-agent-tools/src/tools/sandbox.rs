@@ -265,83 +265,348 @@ pub fn in_hidden_root_from(project_root: &Path, base: &Path, hidden: &Path, raw:
 /// later command refused, `cd /proj` included. A slashed command word
 /// (`./run.sh`, `~/.jan/x`) is a path and stays.
 pub fn hidden_tokens(hidden: &Path, command: &str) -> Vec<String> {
-    let home = hidden.parent().map(|h| h.to_string_lossy().into_owned());
-    let expand = |t: &str| match &home {
-        Some(home) => expand_home(t, home),
-        None => t.to_string(),
+    let mut scan = Scan {
+        home: hidden.parent().map(|h| h.to_string_lossy().into_owned()),
+        at_command: true,
+        ..Scan::default()
     };
-    let mut tokens = Vec::new();
-    let mut word = String::new();
-    // At the start of a command: the next word is its name.
-    let mut at_command = true;
-    // After `<`/`>`: the next word is a file, wherever the redirect sits.
-    let mut redirect = false;
-    let mut prev = ' ';
-    for c in command.chars().chain(std::iter::once('\n')) {
-        let ends_word = c.is_whitespace() || ";|&><()\"'`".contains(c);
-        if !ends_word {
-            word.push(c);
-            prev = c;
-            continue;
-        }
-        if !word.is_empty() {
-            push_word(&mut tokens, &expand, &word, &mut at_command, redirect);
-            redirect = false;
-            word.clear();
-        }
-        match c {
-            '<' | '>' => redirect = true,
-            // `2>&1` and `<&0` duplicate a descriptor, not start a command.
-            '&' if prev == '>' || prev == '<' => {}
-            '\n' | ';' | '|' | '&' | '(' | ')' | '`' => at_command = true,
-            _ => {}
-        }
-        prev = c;
-    }
-    tokens
+    scan.run(&command.chars().collect::<Vec<_>>());
+    scan.tokens
 }
 
-/// Sort one word of a command into `tokens` for [`hidden_tokens`], moving
-/// `at_command` past the command's name.
-fn push_word(
-    tokens: &mut Vec<String>,
-    expand: &impl Fn(&str) -> String,
-    word: &str,
-    at_command: &mut bool,
+/// What a [`Scan`] is nested in, which decides what closes it and which
+/// characters still act inside it.
+#[derive(Clone, Copy, PartialEq)]
+enum Nest {
+    /// `(...)`, `$(...)` or `<(...)`: a command list, closed by `)`.
+    Paren,
+    /// A backtick substitution: a command list, closed by the next backtick.
+    Backtick,
+    /// `"..."`: one string, in which only `$(`, a backtick, `\` and `"` act.
+    Double,
+}
+
+/// The tokenizer behind [`hidden_tokens`]. A word is dropped only when it is
+/// certainly a plain, unquoted command name at a real command boundary: a
+/// separator that is quoted, escaped or part of a redirect starts no command,
+/// and a substitution's end leaves the command it sits in going. Getting
+/// that wrong drops an argument from the check, so whenever the shell's
+/// reading is in doubt the word is kept.
+#[derive(Default)]
+struct Scan {
+    home: Option<String>,
+    tokens: Vec<String>,
+    word: Word,
+    nests: Vec<Nest>,
+    // At the start of a command: the next word is its name.
+    at_command: bool,
+    // After `<`/`>`: the next word is a file, wherever the redirect sits.
     redirect: bool,
-) {
-    if redirect {
-        tokens.push(expand(word));
-        return;
+    // After `<<`: the next word is a heredoc's delimiter; true for `<<-`,
+    // which strips the body's leading tabs.
+    delimiter_next: Option<bool>,
+    // Heredocs whose bodies start on the next line: (delimiter, strip tabs).
+    heredocs: Vec<(String, bool)>,
+}
+
+impl Scan {
+    fn run(&mut self, chars: &[char]) {
+        let mut i = 0;
+        while let Some(&c) = chars.get(i) {
+            i += 1;
+            let next = chars.get(i).copied();
+            if self.nests.last() == Some(&Nest::Double) {
+                match c {
+                    '"' => {
+                        self.nests.pop();
+                        self.word.mark(c);
+                    }
+                    '\\' => i += self.escape(next),
+                    '`' => self.open(Nest::Backtick),
+                    '(' if unescaped_dollar(&chars[..i - 1]) => self.open(Nest::Paren),
+                    _ if breaks_token(c) => self.word.split(c),
+                    _ => self.word.push(c),
+                }
+                continue;
+            }
+            match c {
+                '\\' => i += self.escape(next),
+                '\'' => {
+                    self.word.mark(c);
+                    while let Some(&q) = chars.get(i) {
+                        i += 1;
+                        match q {
+                            '\'' => break,
+                            '\\' => self.word.drop_backslash(),
+                            _ if breaks_token(q) => self.word.split(q),
+                            _ => self.word.push(q),
+                        }
+                    }
+                    self.word.mark(c);
+                }
+                '"' => {
+                    self.nests.push(Nest::Double);
+                    self.word.mark(c);
+                }
+                '`' if self.nests.last() == Some(&Nest::Backtick) => self.close(Nest::Backtick),
+                '`' => self.open(Nest::Backtick),
+                '(' => self.open(Nest::Paren),
+                ')' => self.close(Nest::Paren),
+                '&' if next == Some('>') => {
+                    // `&>` and `&>>` redirect both streams; no command follows.
+                    self.finish_word();
+                    self.redirect = true;
+                    i += 1 + usize::from(chars.get(i + 1) == Some(&'>'));
+                }
+                // The second half of `||`, `&&` or `;;` lands here again,
+                // which changes nothing.
+                ';' | '|' | '&' | '\n' => {
+                    self.finish_word();
+                    self.at_command = true;
+                    if c == '\n' {
+                        i = self.heredoc_bodies(chars, i);
+                    }
+                }
+                '<' | '>' => {
+                    self.finish_word();
+                    self.redirect = true;
+                    match (c, next) {
+                        // `<<<` feeds the next word as a string.
+                        ('<', Some('<')) if chars.get(i + 1) == Some(&'<') => i += 2,
+                        ('<', Some('<')) => {
+                            let strip_tabs = chars.get(i + 1) == Some(&'-');
+                            i += 1 + usize::from(strip_tabs);
+                            self.delimiter_next = Some(strip_tabs);
+                        }
+                        // `>>`, `>|`, `>&`, `<&`, `<>`: one operator, so the
+                        // `|` or `&` in it is no command boundary.
+                        (_, Some('>' | '|' | '&')) => i += 1,
+                        _ => {}
+                    }
+                }
+                _ if c.is_whitespace() => self.finish_word(),
+                _ => self.word.push(c),
+            }
+        }
+        self.finish_word();
     }
-    if *at_command {
-        // `NAME=value` ahead of a command sets a variable: its value can name
-        // a path, and the command still follows.
-        if let Some((name, value)) = word.split_once('=') {
-            let is_name = name.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-            if is_name {
-                if !value.is_empty() {
-                    tokens.push(expand(value));
+
+    /// A backslash makes the next character literal, and joins the lines when
+    /// that is a newline. Inside `"..."` it stays before most characters, but
+    /// dropping it there too only checks the name a nested shell would see.
+    /// Returns how many characters it consumed after itself.
+    fn escape(&mut self, next: Option<char>) -> usize {
+        match next {
+            Some('\n') => 1,
+            Some(c) => {
+                self.word.literal(c);
+                1
+            }
+            None => 0,
+        }
+    }
+
+    fn open(&mut self, nest: Nest) {
+        // `a=(x y)` lists values, not commands.
+        let array = nest == Nest::Paren && self.word.raw.ends_with('=');
+        // A word a substitution cuts into has a computed value, never a
+        // plain command name.
+        self.word.quoted = true;
+        self.finish_word();
+        self.nests.push(nest);
+        self.at_command = !array;
+        self.redirect = false;
+    }
+
+    fn close(&mut self, nest: Nest) {
+        self.finish_word();
+        if self.nests.last() == Some(&nest) {
+            self.nests.pop();
+        }
+        // What follows a substitution or a subshell belongs to the command it
+        // sits in, so it is an argument, not a new command's name.
+        self.at_command = false;
+    }
+
+    /// Read the bodies of the heredocs opened on the line just ended, from
+    /// `i`, and return where the next command starts. A body is data (`tar
+    /// -T -` reads names from it), so all of its words are tokens.
+    fn heredoc_bodies(&mut self, chars: &[char], mut i: usize) -> usize {
+        for (delimiter, strip_tabs) in std::mem::take(&mut self.heredocs) {
+            while i < chars.len() {
+                let end = chars[i..]
+                    .iter()
+                    .position(|&c| c == '\n')
+                    .map_or(chars.len(), |n| i + n);
+                let line: String = chars[i..end].iter().collect();
+                i = (end + 1).min(chars.len());
+                let line = if strip_tabs { line.trim_start_matches('\t') } else { &line };
+                if line == delimiter {
+                    break;
+                }
+                let words: Vec<String> = line
+                    .split(|c| breaks_token(c) || c == '=')
+                    .filter(|t| !t.is_empty())
+                    .map(|t| self.expand(t))
+                    .collect();
+                self.tokens.extend(words);
+            }
+        }
+        i
+    }
+
+    /// Sort the word just read into `tokens`, moving `at_command` past the
+    /// command's name.
+    fn finish_word(&mut self) {
+        let mut word = std::mem::take(&mut self.word);
+        if word.raw.is_empty() {
+            return;
+        }
+        word.end_piece();
+        if let Some(strip_tabs) = self.delimiter_next.take() {
+            self.heredocs.push((word.text.clone(), strip_tabs));
+        }
+        if std::mem::take(&mut self.redirect) {
+            let paths: Vec<String> = word.pieces.iter().map(|p| self.expand(p)).collect();
+            self.tokens.extend(paths);
+            return;
+        }
+        if self.at_command {
+            // `NAME=value` ahead of a command sets a variable: its value,
+            // quoted or not, can name a path, and the command still follows.
+            if let Some((name, _)) = word.raw.split_once('=') {
+                let is_name = name
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                    && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+                if is_name {
+                    let prefix = format!("{name}=");
+                    if let Some(first) = word.pieces.first_mut() {
+                        if let Some(value) = first.strip_prefix(&prefix) {
+                            *first = value.to_string();
+                        }
+                    }
+                    let values: Vec<String> = word
+                        .pieces
+                        .iter()
+                        .filter(|p| !p.is_empty())
+                        .map(|p| self.expand(p))
+                        .collect();
+                    self.tokens.extend(values);
+                    return;
+                }
+            }
+            // Reserved words leave the next word in command position.
+            const KEYWORDS: &[&str] = &[
+                "if", "then", "else", "elif", "fi", "do", "done", "while", "until", "!", "{", "}",
+            ];
+            if !word.quoted && KEYWORDS.contains(&word.raw.as_str()) {
+                return;
+            }
+            self.at_command = false;
+            if !word.quoted {
+                let name = self.expand(&word.raw);
+                if name.contains('/') {
+                    self.tokens.push(name);
                 }
                 return;
             }
         }
-        // Reserved words leave the next word in command position.
-        const KEYWORDS: &[&str] =
-            &["if", "then", "else", "elif", "fi", "do", "done", "while", "until", "!", "{", "}"];
-        if KEYWORDS.contains(&word) {
-            return;
-        }
-        *at_command = false;
-        let name = expand(word);
-        if name.contains('/') {
-            tokens.push(name);
-        }
-        return;
+        // An argument, or a command name the shell computes: `--file=path`
+        // and `a=b` name paths on either side.
+        let args: Vec<String> = word
+            .pieces
+            .iter()
+            .flat_map(|p| p.split('='))
+            .filter(|t| !t.is_empty())
+            .map(|t| self.expand(t))
+            .collect();
+        self.tokens.extend(args);
     }
-    // An argument: `--file=path` and `a=b` name paths on either side.
-    tokens.extend(word.split('=').filter(|t| !t.is_empty()).map(expand));
+
+    fn expand(&self, token: &str) -> String {
+        match &self.home {
+            Some(home) => expand_home(token, home),
+            None => token.to_string(),
+        }
+    }
+}
+
+/// True iff `before` ends in a `$` that no backslash escapes, so a `(` after
+/// it opens a substitution even inside `"..."`.
+fn unescaped_dollar(before: &[char]) -> bool {
+    let Some((&'$', rest)) = before.split_last() else {
+        return false;
+    };
+    rest.iter().rev().take_while(|&&c| c == '\\').count() % 2 == 0
+}
+
+/// True iff `c` ends a token inside quotes or a heredoc body without ending
+/// the shell word: a quoted `'cat .jan/x'` is a script to `sh -c`, which
+/// splits it there, so its parts are checked as the paths they may be.
+fn breaks_token(c: char) -> bool {
+    c.is_whitespace() || ";|&<>()\"'`".contains(c)
+}
+
+/// One shell word as [`Scan`] reads it, split into pieces where a nested
+/// shell could split it.
+#[derive(Default)]
+struct Word {
+    /// As written, quotes and backslashes included.
+    raw: String,
+    /// Quotes and backslashes removed: what a heredoc delimiter compares as.
+    text: String,
+    pieces: Vec<String>,
+    piece: String,
+    /// Quoted, escaped, expanded or cut by a substitution anywhere: not
+    /// certainly a plain name.
+    quoted: bool,
+}
+
+impl Word {
+    fn push(&mut self, c: char) {
+        self.quoted |= c == '$';
+        self.raw.push(c);
+        self.text.push(c);
+        self.piece.push(c);
+    }
+
+    /// An escaped character: part of the word whatever it is.
+    fn literal(&mut self, c: char) {
+        self.quoted = true;
+        self.raw.push('\\');
+        self.raw.push(c);
+        self.text.push(c);
+        self.piece.push(c);
+    }
+
+    /// A backslash inside single quotes: literal to this shell, but a nested
+    /// `sh -c '...'` drops it, and the name without it is the one to check.
+    fn drop_backslash(&mut self) {
+        self.raw.push('\\');
+        self.text.push('\\');
+    }
+
+    /// A quote mark: ends the piece, as splitting on quotes always has.
+    fn mark(&mut self, c: char) {
+        self.quoted = true;
+        self.raw.push(c);
+        self.end_piece();
+    }
+
+    /// A quoted separator: ends the piece but not the word.
+    fn split(&mut self, c: char) {
+        self.raw.push(c);
+        self.text.push(c);
+        self.end_piece();
+    }
+
+    fn end_piece(&mut self) {
+        if !self.piece.is_empty() {
+            self.pieces.push(std::mem::take(&mut self.piece));
+        }
+    }
 }
 
 /// True iff `raw` resolves inside one of `roots` (canonicalized attached
@@ -511,7 +776,7 @@ pub fn landing(
 /// project. A link's target is spliced in place of its name instead, relative
 /// targets against the link's own directory, as the kernel does. Too many hops
 /// (a cycle) is an error, so callers fail closed.
-fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
+pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
     use std::path::Component;
     // Linux's MAXSYMLINKS: the most hops `open` itself would follow.
     const MAX_HOPS: usize = 40;
@@ -1094,6 +1359,58 @@ mod tests {
         assert_eq!(hidden_tokens(jan, "if true; then ls; fi"), Vec::<String>::new());
         // A name before `=` with a slash in it is a path, not a variable.
         assert_eq!(hidden_tokens(jan, "cat ~/.jan/a=b"), ["/h/.jan/a", "b"]);
+        // Leaving the home names no stray path.
+        for command in ["ls", "cd", "cd /abs", "git diff", "if true; then ls; fi"] {
+            let tokens = hidden_tokens(jan, command);
+            assert!(tokens.iter().all(|t| t == "/abs" || t == "diff"), "{command}: {tokens:?}");
+        }
+    }
+
+    /// A separator that is quoted, escaped, or part of a redirect, and the end
+    /// of a substitution, do not start a command: the word after them is an
+    /// argument and still names a path. So do a quoted assignment's value and
+    /// a heredoc's body.
+    #[test]
+    fn hidden_tokens_keep_words_after_quoted_or_closing_separators() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        for command in [
+            "grep -E \"a|b\" .jan",
+            "cat 'x;' .jan",
+            "tar czf /tmp/k.tgz \"$(true)\" .jan",
+            "cd \"$(true)\".jan && cat config.toml",
+            "GIT_DIR=\".jan\" git log",
+            "ls &>/dev/null .jan",
+            "echo \\; .jan",
+            "tar czf - -T - <<E\n.jan\nE",
+            "tar czf - -T - <<-'E'\n\t.jan\n\tE\nls",
+            "tar czf backup-\"$(date +%F)\".tgz .jan",
+            "cat `true` .jan",
+            "ls >|/dev/null .jan",
+            "ls 2>&1 .jan",
+            "echo \"`true`\" .jan",
+            "x`true` .jan",
+            "cat \\.jan",
+            "cat \"$HOME/.jan\"",
+            "'.jan'",
+            "x=(.jan)",
+            "cat <<<.jan",
+            "echo \"\\\\$(true)\" .jan",
+            "true || cat .jan",
+            "sh -c 'cat .jan/config.toml'",
+        ] {
+            let tokens = hidden_tokens(&jan, command);
+            assert!(
+                tokens.iter().any(|t| in_hidden_root_from(&project, &home, &jan, t)),
+                "{command:?}: {tokens:?}"
+            );
+        }
+        // After the heredoc's end the next line is a command again.
+        assert_eq!(hidden_tokens(&jan, "cat <<E\nx y\nE\nls"), ["E", "x", "y"]);
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
