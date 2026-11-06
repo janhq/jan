@@ -1338,6 +1338,10 @@ struct PendingChild {
     inbox: Arc<ChildInbox>,
     /// Set by `stop_subagent`: the plan driver skips it, so it never starts.
     stopped: bool,
+    /// The registry generation its plan was dispatched under, so a teardown
+    /// forgets only the plans it ended: a session-owned registry may already
+    /// be taking the next run's plan while that teardown is still draining.
+    generation: u64,
     /// Where its waiting panel was announced, to close it if it is stopped.
     events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
 }
@@ -1446,15 +1450,22 @@ impl BackgroundSubagents {
         }
     }
 
-    /// Record a plan's later phases as pending children, reporting into
-    /// `events`. A teardown forgets them (see [`Self::abort_all`]): no driver
-    /// is left to start them.
+    /// Record the later phases of a plan dispatched under `generation` as
+    /// pending children, reporting into `events`. A teardown of that
+    /// generation forgets them (see [`Self::abort_all`]): no driver is left
+    /// to start them.
     fn add_pending(
         &self,
         phases: &[Phase],
+        generation: u64,
         events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
     ) {
         let mut pending = self.pending.lock().unwrap();
+        // Read under the lock `abort_all` sweeps with, after its bump: a plan
+        // already torn down records nothing that no sweep would ever forget.
+        if self.generation() != generation {
+            return;
+        }
         for phase in phases {
             for req in &phase.subagents {
                 pending.insert(
@@ -1463,11 +1474,24 @@ impl BackgroundSubagents {
                         phase: phase.number,
                         inbox: Arc::default(),
                         stopped: false,
+                        generation,
                         events: self.child_events(events),
                     },
                 );
             }
         }
+    }
+
+    /// Forget the pending children of every plan dispatched under generation
+    /// `ended` or before: those plans were torn down, so no driver will start
+    /// them. Only those: a new run's plan on a session-owned registry may
+    /// register its own between the teardown's bump and this sweep, under the
+    /// new generation, and they are that live plan's to start.
+    fn forget_pending_through(&self, ended: u64) {
+        self.pending
+            .lock()
+            .unwrap()
+            .retain(|_, child| child.generation > ended);
     }
 
     /// Forget the pending children `names`: their plan skipped them or could
@@ -1800,8 +1824,12 @@ impl BackgroundSubagents {
         // so it is published first: a dispatch registering under the lock below
         // reads the new value and refuses, and one that read the old value has
         // already inserted and is found by the drain beneath it.
-        self.generation
+        let ended = self
+            .generation
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // Before `inner` is locked, never nested inside it: `start_dispatch`
+        // locks pending first.
+        self.forget_pending_through(ended);
         let mut guard = self.inner.lock().unwrap();
         for (_, entry) in guard.drain() {
             entry.abort.abort();
@@ -1828,8 +1856,6 @@ impl BackgroundSubagents {
             });
         }
         drop(guard);
-        // No driver will start them now: the plan they belong to just ended.
-        self.pending.lock().unwrap().clear();
         self.notices.lock().unwrap().clear();
         // Everything a parked waiter re-reads just changed, and `notify_waiters`
         // only reaches waiters already registered: without this a driver whose
@@ -3325,7 +3351,7 @@ pub(crate) async fn spawn_dispatch_plan(
             .collect();
         let _ = events.send(crate::core::agent::events::StreamEvent::SubagentPlan { pending });
         // Addressable by name from now on, though none has started.
-        bg.add_pending(&plan.phases[1..], events);
+        bg.add_pending(&plan.phases[1..], generation, events);
         // Hold the park open for the whole plan before the first child can finish.
         bg.begin_plan();
     }
@@ -4161,11 +4187,13 @@ pub fn parse_dispatch_plan(
 /// The parent cannot know a sibling's name before dispatching -- names are
 /// numbered per session, so its `general` may become `general-5` -- and the
 /// session's own `general` is then an older, finished worker whose worktree
-/// it silently got. So the plan's own items are consulted first: an agent
-/// type used by exactly one earlier-phase item binds to that item, an exact
-/// name the plan assigned binds to it, and a reference matching no item is
-/// left to name an earlier worker of the session. An agent type several
-/// earlier-phase items use is refused, since which one is meant cannot be
+/// it silently got. So the plan's own items are consulted first: an exact
+/// name the plan assigned binds to that item, else an agent type used by
+/// exactly one earlier-phase item binds to it, and a reference matching no
+/// item is left to name an earlier worker of the session. The exact name
+/// wins because it names one worker outright, where the agent type is only
+/// a guess at one. An agent type several earlier-phase items use, none of
+/// them named exactly that, is refused, since which one is meant cannot be
 /// told.
 fn bind_sibling_workspaces(phases: &mut [Phase]) -> Result<(), SubagentError> {
     use crate::core::agent::child_workspace::WorkspaceRequest;
@@ -4177,6 +4205,10 @@ fn bind_sibling_workspaces(phases: &mut [Phase]) -> Result<(), SubagentError> {
             let Some(WorkspaceRequest::Reuse(target)) = &mut req.workspace else {
                 continue;
             };
+            // Already the exact name of a sibling: bound as it stands.
+            if earlier.iter().any(|s| s.name == *target) {
+                continue;
+            }
             let by_agent: Vec<&str> = earlier
                 .iter()
                 .filter(|s| s.agent == *target)
@@ -4184,10 +4216,7 @@ fn bind_sibling_workspaces(phases: &mut [Phase]) -> Result<(), SubagentError> {
                 .collect();
             let bound = match by_agent.as_slice() {
                 [one] => Some(one.to_string()),
-                [] => earlier
-                    .iter()
-                    .find(|s| s.name == *target)
-                    .map(|s| s.name.clone()),
+                [] => None,
                 several => {
                     return Err(SubagentError::Upstream(format!(
                         "subagent '{}': workspace '{target}' is ambiguous: several earlier-phase \
@@ -4350,6 +4379,31 @@ pub(crate) mod tests {
         ));
         std::fs::create_dir_all(&root).expect("create test root");
         root
+    }
+
+    /// Run git in `root` with a throwaway identity; whether it succeeded.
+    #[cfg(feature = "cli")]
+    fn git_in(root: &Path, args: &[&str]) -> bool {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .is_ok_and(|o| o.status.success())
+    }
+
+    /// Make `root` a git repository with one commit, so a writer child can be
+    /// given a worktree. `false` where git is unavailable: the caller skips.
+    #[cfg(feature = "cli")]
+    fn committed_repo(root: &Path) -> bool {
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        git_in(root, &["init", "-q"])
+            && git_in(root, &["add", "a.txt"])
+            && git_in(root, &["commit", "-q", "--no-gpg-sign", "-m", "a"])
     }
 
     fn write_def(dir: &Path, name: &str, extra: &str) {
@@ -5960,23 +6014,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn a_dispatch_after_teardown_leaves_no_worktree_behind() {
         let root = unique_root("stale-wt");
-        let git = |args: &[&str]| {
-            std::process::Command::new("git")
-                .arg("-C")
-                .arg(&root)
-                .args(args)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t")
-                .output()
-                .is_ok_and(|o| o.status.success())
-        };
-        std::fs::write(root.join("a.txt"), "a\n").unwrap();
-        if !(git(&["init", "-q"])
-            && git(&["add", "a.txt"])
-            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
-        {
+        if !committed_repo(&root) {
             return;
         }
         write_def(&project_subagents_dir(&root), "writer", "");
@@ -6016,22 +6054,8 @@ pub(crate) mod tests {
     async fn a_dispatch_waiting_on_git_does_not_stall_the_runtime() {
         use crate::core::agent::child_workspace::WorkspaceRequest;
         let root = unique_root("no-stall");
-        let git = |args: &[&str]| {
-            std::process::Command::new("git")
-                .arg("-C")
-                .arg(&root)
-                .args(args)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t")
-                .output()
-                .is_ok_and(|o| o.status.success())
-        };
-        std::fs::write(root.join("a.txt"), "a\n").unwrap();
-        if !(git(&["init", "-q"])
-            && git(&["add", "a.txt"])
-            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"])
+        let git = |args: &[&str]| git_in(&root, args);
+        if !(committed_repo(&root)
             && git(&["config", "protocol.ext.allow", "always"])
             && git(&["remote", "add", "origin", "ext::sh -c sleep% 1"]))
         {
@@ -6080,23 +6104,7 @@ pub(crate) mod tests {
     async fn a_stale_dispatch_takes_back_only_its_own_worktree() {
         use crate::core::agent::child_workspace::WorkspaceRequest;
         let root = unique_root("stale-own");
-        let git = |args: &[&str]| {
-            std::process::Command::new("git")
-                .arg("-C")
-                .arg(&root)
-                .args(args)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t")
-                .output()
-                .is_ok_and(|o| o.status.success())
-        };
-        std::fs::write(root.join("a.txt"), "a\n").unwrap();
-        if !(git(&["init", "-q"])
-            && git(&["add", "a.txt"])
-            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
-        {
+        if !committed_repo(&root) {
             return;
         }
         write_def(&project_subagents_dir(&root), "writer", "");
@@ -6170,23 +6178,7 @@ pub(crate) mod tests {
     async fn a_stopped_writer_releases_its_worktree_before_the_stop_returns() {
         use crate::core::agent::child_workspace::WorkspaceRequest;
         let root = unique_root("lease-stop");
-        let git = |args: &[&str]| {
-            std::process::Command::new("git")
-                .arg("-C")
-                .arg(&root)
-                .args(args)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t")
-                .output()
-                .is_ok_and(|o| o.status.success())
-        };
-        std::fs::write(root.join("a.txt"), "a\n").unwrap();
-        if !(git(&["init", "-q"])
-            && git(&["add", "a.txt"])
-            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
-        {
+        if !committed_repo(&root) {
             return;
         }
         write_def(&project_subagents_dir(&root), "writer", "");
@@ -7064,9 +7056,6 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// F3, end to end through the phase-0 loop: one child starts, the next
-    /// cannot, and the dispatch's `Err` leaves nothing behind -- the started
-    /// child aborted and bracketed, the counters and the plan hold released.
     /// A two-or-more-phase plan whose phase 0 is parked on the semaphore, so a
     /// test can address the later phases before any of them can start. Returns
     /// the permit holding phase 0 back; drop it to let the plan run.
@@ -7254,6 +7243,116 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A teardown forgets only the plans it ended. On a session-owned
+    /// registry the next run's plan can register its pending children (under
+    /// the new generation) while the teardown is still draining; those are
+    /// that live plan's, and addressing them must keep working.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_teardown_keeps_the_pending_children_of_a_newer_plan() {
+        let bg = BackgroundSubagents::new(1);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let phase = |name: &str| Phase {
+            number: 1,
+            subagents: vec![worker(name)],
+        };
+        let ended = bg.generation();
+        bg.add_pending(&[phase("old")], ended, &tx);
+        // `abort_all`'s steps with the next run's plan landing between its
+        // bump and its sweep.
+        bg.generation.fetch_add(1, Ordering::SeqCst);
+        bg.add_pending(&[phase("new")], ended + 1, &tx);
+        // A plan of the ended run registering only now records nothing.
+        bg.add_pending(&[phase("late")], ended, &tx);
+        bg.forget_pending_through(ended);
+        let pending = bg.pending.lock().unwrap();
+        assert!(!pending.contains_key("old"), "the ended plan is forgotten");
+        assert!(!pending.contains_key("late"), "a torn-down plan adds nothing");
+        assert!(pending.contains_key("new"), "the live plan keeps its children");
+    }
+
+    /// A pending child stopped while its workspace was being assigned (after
+    /// the driver's `pending_stopped` check, before it is registered) is
+    /// refused at registration: it never shows as started, its fresh worktree
+    /// and writer lease are given back, the stop's own `SubagentEnd` is its
+    /// only one, and a sibling of its phase still starts.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_child_stopped_during_workspace_assignment_never_starts() {
+        use crate::core::agent::events::StreamEvent;
+        let root = unique_root("stop-assign");
+        if !committed_repo(&root) {
+            return;
+        }
+        write_def(&project_subagents_dir(&root), "writer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        // Hold the only slot so the sibling stays queued, not running.
+        let _held = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let late = SubagentRequest {
+            agent: "writer".to_string(),
+            ..req("late", None)
+        };
+        let phase = Phase {
+            number: 1,
+            subagents: vec![late.clone(), worker("gamma")],
+        };
+        bg.add_pending(std::slice::from_ref(&phase), bg.generation(), &tx);
+        let scope = bg.scope();
+
+        // The driver's pre-check passed, then git assigned the worktree...
+        assert!(!bg.pending_stopped("late"));
+        let prepared = prepare_dispatch(&scope, &args, late, &parent_run()).await.unwrap();
+        let late_wt = prepared.workspace.worktree.clone().expect("a writer gets a worktree");
+        let lease = prepared.lease.clone();
+        assert!(lease.0.lock().unwrap().is_some(), "the writer holds its lease");
+        // ...and the stop lands before it is registered.
+        let reply = stop_subagent(&bg, "late").unwrap();
+        assert!(reply.contains("never start"), "{reply}");
+        let refused = start_dispatch(&scope, &args, prepared, &tx, None, false);
+        assert!(matches!(refused, Err(SubagentError::Stopped)));
+        assert!(lease.0.lock().unwrap().is_none(), "the lease is released");
+        // The undo runs on the blocking pool; give it a bounded moment.
+        for _ in 0..300 {
+            if !late_wt.path.exists() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert!(!late_wt.path.exists(), "the stopped child's worktree is removed");
+        assert!(bg.workspaces.live().is_empty(), "{:?}", bg.workspaces.live());
+
+        let sibling = spawn_subagent(&scope, &args, worker("gamma"), &parent_run(), &tx, None, false)
+            .await
+            .expect("the sibling still starts");
+        assert_eq!(bg.live_run_ids(), [sibling.run_id.clone()].into());
+        let events: Vec<StreamEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        let late_ends = events
+            .iter()
+            .filter(|ev| matches!(ev, StreamEvent::SubagentEnd { name, .. } if name == "late"))
+            .count();
+        assert_eq!(late_ends, 1, "exactly one end bracket: {events:?}");
+        assert!(
+            !events.iter().any(|ev| matches!(
+                ev,
+                StreamEvent::SubagentStart { name, .. } | StreamEvent::SubagentQueued { name, .. }
+                    if name == "late"
+            )),
+            "{events:?}"
+        );
+        assert!(
+            events.iter().any(|ev| matches!(
+                ev,
+                StreamEvent::SubagentQueued { name, .. } if name == "gamma"
+            )),
+            "{events:?}"
+        );
+        bg.abort_all();
+        let _ = bg.workspaces.finish_session();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The later phases' workspaces taken from the plan's own earlier phases,
     /// as `(worker, sibling)` pairs, in phase order.
     #[cfg(feature = "cli")]
@@ -7314,24 +7413,46 @@ pub(crate) mod tests {
         );
     }
 
-    /// Several earlier-phase items of the agent named: which one is meant
+    /// Several earlier-phase items of the agent named, none of them named
+    /// exactly that (an earlier dispatch holds `general`): which one is meant
     /// cannot be told, so the whole dispatch is refused before anything runs.
     #[cfg(feature = "cli")]
     #[test]
     fn an_ambiguous_later_phase_workspace_refuses_the_dispatch() {
-        let err = parse_dispatch_plan_fresh(&serde_json::json!({
+        let err = parse_dispatch_plan(
+            &serde_json::json!({
+                "subagents": [
+                    { "agent": "general", "task": "a" },
+                    { "agent": "general", "task": "b", "phase": 1 },
+                    { "agent": "review", "task": "c", "phase": 2, "workspace": "general" }
+                ]
+            }),
+            |name| name == "general",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("ambiguous") && err.contains("general-2") && err.contains("general-3"),
+            "{err}"
+        );
+    }
+
+    /// A target that is both an earlier sibling's exact worker name and an
+    /// agent type several earlier siblings use names that one worker: the
+    /// exact name is checked before the agent type, so it binds rather than
+    /// being refused as ambiguous.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn an_exact_sibling_name_binds_before_its_agent_type() {
+        let plan = parse_dispatch_plan_fresh(&serde_json::json!({
             "subagents": [
                 { "agent": "general", "task": "a" },
                 { "agent": "general", "task": "b", "phase": 1 },
                 { "agent": "review", "task": "c", "phase": 2, "workspace": "general" }
             ]
         }))
-        .unwrap_err()
-        .to_string();
-        assert!(
-            err.contains("ambiguous") && err.contains("general") && err.contains("general-2"),
-            "{err}"
-        );
+        .unwrap();
+        assert_eq!(later_reuses(&plan), [("review".to_string(), "general".to_string())]);
     }
 
     /// The schema is where the model learns that a later phase can name an
@@ -7391,6 +7512,9 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// F3, end to end through the phase-0 loop: one child starts, the next
+    /// cannot, and the dispatch's `Err` leaves nothing behind -- the started
+    /// child aborted and bracketed, the counters and the plan hold released.
     #[cfg(feature = "cli")]
     #[tokio::test]
     async fn a_first_phase_spawn_failure_leaves_no_child_or_plan_hold() {

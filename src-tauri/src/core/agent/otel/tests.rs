@@ -275,6 +275,13 @@ fn a_subagents_signals_carry_its_run_and_the_parent_session() {
         None,
         &[
             provenance(None, "sess-1"),
+            StreamEvent::SubagentStart {
+                run_id: "run-7".into(),
+                name: "scout".into(),
+                task: None,
+                workspace: None,
+                internal: false,
+            },
             wrapped(provenance(Some("run-7"), "sess-1")),
             wrapped(StreamEvent::Step { index: 1, max: 0 }),
             wrapped(usage(4, 2, 0, 0)),
@@ -291,6 +298,37 @@ fn a_subagents_signals_carry_its_run_and_the_parent_session() {
     assert_eq!(attr(request, "session.id"), Some(&AnyValue::Str("sess-1".into())));
     assert_eq!(point(&state, "jan_agent.turn.count", &[("agent", "subagent")]), Some(PointValue::Int(1)));
     assert!(state.logs.iter().any(|l| l.event_name == "jan_agent.subagent_result"));
+}
+
+/// A later-phase child stopped before it started is closed by a
+/// `SubagentEnd` carrying an error, under a run id nothing else ever used.
+/// That is not a failed subagent run, so it reports no result; a child that
+/// was queued and then ended still does.
+#[test]
+fn an_end_for_a_run_never_started_reports_no_result() {
+    let end = |run: &str, error: Option<&str>| StreamEvent::SubagentEnd {
+        run_id: run.into(),
+        name: run.into(),
+        error: error.map(str::to_string),
+    };
+    let state = fold(
+        cfg_with(false, false),
+        None,
+        &[
+            end("never", Some("stopped by the parent agent before it started")),
+            StreamEvent::SubagentQueued { run_id: "waited".into(), name: "waited".into(), task: None, waiting: 1 },
+            end("waited", Some("boom")),
+            // A second end for the same run is not a second result.
+            end("waited", Some("boom")),
+        ],
+    );
+    let results: Vec<_> = state
+        .logs
+        .iter()
+        .filter(|l| l.event_name == "jan_agent.subagent_result")
+        .map(|l| attr(l, "agent.run_id").cloned())
+        .collect();
+    assert_eq!(results, vec![Some(AnyValue::Str("waited".into()))]);
 }
 
 #[test]
