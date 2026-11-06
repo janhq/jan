@@ -6876,12 +6876,6 @@ impl App {
         self.monitors.clear();
     }
 
-    /// Abort every background child and undock its panel. Cancelling stops the
-    /// whole session's background work, not just the turn in flight: children
-    /// used to die with the run through `AbortOnDrop`, and a session-owned
-    /// registry must not quietly turn Esc into "keep working". Also called when
-    /// the conversation goes away (reset, thread switch), where a later
-    /// completion would have no turn to join.
     /// A pending child `name` was just promoted to `run_id`: a `/agents`
     /// detail or message dock opened on it while it waited holds its name, and
     /// now follows the run id instead (see `SubagentPanel::target`), so it
@@ -6895,6 +6889,12 @@ impl App {
         }
     }
 
+    /// Abort every background child and undock its panel. Cancelling stops the
+    /// whole session's background work, not just the turn in flight: children
+    /// used to die with the run through `AbortOnDrop`, and a session-owned
+    /// registry must not quietly turn Esc into "keep working". Also called when
+    /// the conversation goes away (reset, thread switch), where a later
+    /// completion would have no turn to join.
     fn stop_subagents(&mut self) {
         self.subagent_set.abort_all();
         for panel in std::mem::take(&mut self.subagents) {
