@@ -24,6 +24,9 @@ describe('getProviderLogo', () => {
     expect(getProviderLogo('openai')).toBe('/images/model-provider/openai.svg')
     expect(getProviderLogo('gemini')).toBe('/images/model-provider/gemini.svg')
     expect(getProviderLogo('nvidia')).toBe('/images/model-provider/nvidia.svg')
+    expect(getProviderLogo('runcrate')).toBe(
+      '/images/model-provider/runcrate.svg'
+    )
   })
 
   it('returns undefined for unknown providers', () => {

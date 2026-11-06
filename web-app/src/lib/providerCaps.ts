@@ -81,6 +81,11 @@ const NVIDIA: ProviderCaps = {
   maybe: new Set(['top_k']),
 }
 
+const RUNCRATE: ProviderCaps = {
+  supported: set('penalties', 'json_schema'),
+  maybe: new Set(['top_k', 'min_p', 'repetition']),
+}
+
 const AZURE: ProviderCaps = {
   supported: set('penalties', 'json_schema'),
   maybe: new Set(),
@@ -159,6 +164,7 @@ const BUILTIN_CAPS: Record<string, ProviderCaps> = {
   huggingface: HUGGINGFACE,
   nvidia: NVIDIA,
   minimax: MINIMAX,
+  runcrate: RUNCRATE,
   llamacpp: LLAMACPP,
   mlx: MLX,
 }
