@@ -142,6 +142,11 @@ pub enum DenyReason {
     /// because the command itself may name nothing hidden: the fix is to
     /// move the shell back, which a message has to say.
     HiddenShellCwd,
+    /// The command is too large or convoluted for the token scan to finish
+    /// within its bounds, so it cannot be shown to stay out of the Jan home.
+    /// Told apart from [`DenyReason::Hidden`] because the command may name
+    /// nothing hidden: the fix is to simplify it, not to avoid a path.
+    TooComplex,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -255,13 +260,14 @@ pub fn resolve_decision_with_cwd(
         // Resolving the token follows `/proc/self` as Jan's own process, not
         // the shell's, so the climb is checked from Jan's cwd and passes; the
         // user still approves the escalation, and a confined run is masked.
-        let hits_command = tool.capability == Capability::Exec
-            && args
-                .get("command")
-                .and_then(|v| v.as_str())
-                .is_some_and(|c| {
-                    hidden_tokens(hidden, c).map_or(true, |t| t.iter().any(|t| hidden_hit(t)))
-                });
+        let tokens = match args.get("command").and_then(|v| v.as_str()) {
+            Some(c) if tool.capability == Capability::Exec => match hidden_tokens(hidden, c) {
+                Some(tokens) => tokens,
+                None => return Decision::HardDeny(DenyReason::TooComplex),
+            },
+            _ => Vec::new(),
+        };
+        let hits_command = tokens.iter().any(|t| hidden_hit(t));
         // An escalated command runs on the host from the held directory
         // whatever it names, so that directory is a token too: one in the
         // home (an attached worktree there, or a link swapped in for it)
@@ -1677,11 +1683,11 @@ mod tests {
             let args = json!({"command": command, ESCALATE_ARG: true});
             resolve_decision_with_cwd(shell, &args, &ctx, None, &perms, &grants)
         };
-        let hidden = Decision::HardDeny(DenyReason::Hidden);
+        let refused = Decision::HardDeny(DenyReason::TooComplex);
         let started = std::time::Instant::now();
         for n in [200, 8000] {
             let command = format!("cat /proc/..{}", "/*".repeat(n));
-            assert_eq!(gate(&command), hidden, "{n} globs");
+            assert_eq!(gate(&command), refused, "{n} globs");
         }
         assert!(started.elapsed() < std::time::Duration::from_secs(2), "{:?}", started.elapsed());
         // A few globs are still resolved one by one, and name nothing hidden.

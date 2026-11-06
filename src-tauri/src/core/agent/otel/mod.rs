@@ -198,6 +198,7 @@ impl Refusal {
 pub fn refusal_of(content: &str) -> Option<Refusal> {
     use crate::core::agent::r#loop::{
         DENIED_BY_POLICY, DENIED_BY_USER, HIDDEN_PATH_REFUSED, HOOK_DENIED, PLAN_MODE_UNAVAILABLE,
+        TOO_COMPLEX_REFUSED,
     };
     if !content.starts_with("ERROR:") {
         return None;
@@ -208,6 +209,7 @@ pub fn refusal_of(content: &str) -> Option<Refusal> {
     } else if head.contains(DENIED_BY_POLICY)
         || head.contains(PLAN_MODE_UNAVAILABLE)
         || head.contains(HIDDEN_PATH_REFUSED)
+        || head.contains(TOO_COMPLEX_REFUSED)
     {
         Some(Refusal::Config)
     } else if head.starts_with("ERROR: tool '") && head.contains(&format!("' {HOOK_DENIED}")) {

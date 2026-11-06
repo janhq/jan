@@ -948,6 +948,12 @@ async fn execute_tool_inner(
         Decision::HardDeny(gate::DenyReason::Hidden | gate::DenyReason::HiddenShellCwd) => {
             return Err(format!("tool '{name}' is denied: the Jan home (~/.jan) is hidden").into());
         }
+        Decision::HardDeny(gate::DenyReason::TooComplex) => {
+            return Err(format!(
+                "tool '{name}' is denied: the command is too complex to check; simplify it"
+            )
+            .into());
+        }
         // An exec prompt asks the user to vouch for a command that could reach
         // anything. Under an enforcing sandbox it cannot: writes stay in the
         // thread workspace and $HOME is unreadable, so the containment the prompt

@@ -796,6 +796,7 @@ fn every_exported_metric_is_described() {
 fn refusals_classify_the_messages_the_loop_builds() {
     use crate::core::agent::r#loop::{
         DENIED_BY_POLICY, DENIED_BY_USER, HIDDEN_PATH_REFUSED, HOOK_DENIED, PLAN_MODE_UNAVAILABLE,
+        TOO_COMPLEX_REFUSED,
     };
     // Built the way loop.rs builds them, from the same constants.
     assert_eq!(refusal_of(&format!("ERROR: tool 'bash' {DENIED_BY_USER}")), Some(Refusal::User));
@@ -812,6 +813,10 @@ fn refusals_classify_the_messages_the_loop_builds() {
         Some(Refusal::Config)
     );
     assert_eq!(refusal_of(&format!("ERROR: tool 'x' {HOOK_DENIED}nope")), Some(Refusal::Hook));
+    assert_eq!(
+        refusal_of(&format!("ERROR: tool 'bash' was {TOO_COMPLEX_REFUSED} to check")),
+        Some(Refusal::Config)
+    );
 }
 
 #[test]
