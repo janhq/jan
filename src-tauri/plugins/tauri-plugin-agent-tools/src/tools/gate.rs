@@ -1368,11 +1368,12 @@ mod tests {
     }
 
     /// A parent held in a child's worktree (an attached read root under the
-    /// Jan home, which the sandbox mounts) can still run commands there and
-    /// leave it: every relative token resolves into the home from there, and
-    /// is carved out by the same root. Leaving with a bare `cd` or a `cd` to
-    /// an absolute path is never refused, escalated or not, while the rest of
-    /// the home stays refused.
+    /// Jan home, which the sandbox mounts) can still run confined commands
+    /// there and leave it: every word, the command name too, resolves into
+    /// the home from there, and is carved out by the same root. The rest of
+    /// the home stays refused. An escalated command gets no carve-out, so
+    /// from there even its command name hits the home: refused, which fails
+    /// closed, and a confined `cd` out is always open.
     #[test]
     fn a_held_shell_cwd_in_an_attached_root_under_the_home_is_not_denied() {
         let home = unique_root();
@@ -1398,11 +1399,10 @@ mod tests {
             resolve_decision_with_cwd(shell, &args, &ctx, Some(&child), &perms, &grants)
         };
         let leave = format!("cd '{}'", project.display());
-        for command in ["ls", "ls -la .", "git diff", "cd", leave.as_str()] {
+        let leave = leave.as_str();
+        for command in ["ls", "ls -la .", "git diff", "cat src/x", "cd", "cd /", leave] {
             assert_eq!(gate(command, false), Decision::Prompt(PromptKind::Exec), "{command}");
-        }
-        for command in ["cd", leave.as_str(), "cd /"] {
-            assert_eq!(gate(command, true), Decision::Prompt(PromptKind::Escalate), "{command}");
+            assert_eq!(gate(command, true), Decision::HardDeny(DenyReason::Hidden), "{command}");
         }
         // Out of the root it is the home again.
         let climb = "cat ../../../config.toml";

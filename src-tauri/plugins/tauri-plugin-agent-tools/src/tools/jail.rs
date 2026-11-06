@@ -359,9 +359,11 @@ pub fn sandbox_private(policy: &Policy, path: &Path) -> bool {
 /// A mount lands where its target resolves, and the shell reports where it
 /// stands with `pwd -P`, so a `$HOME` behind a symlink (`/home -> /var/home`)
 /// must be compared resolved or no mask over it would match and `--ro-bind /`
-/// would claim the path. Both spellings are tried on both sides, so a caller
-/// naming the literal path still matches, and a target that does not exist
-/// falls back to its literal.
+/// would claim the path. Each mount target is tried in both spellings, so a
+/// caller naming the literal path still matches, and a target that does not
+/// exist falls back to its literal. `path` itself is taken as written: it is
+/// physical inside the sandbox, and resolving it through the host's symlinks
+/// (a host `/tmp/x -> ~/proj/sub`) would name another directory.
 fn bwrap_private(policy: &Policy, path: &Path) -> bool {
     use crate::tools::sandbox::{canonicalize_lenient, lexical_normalize};
     let cfg = ShellConfig {
@@ -375,10 +377,8 @@ fn bwrap_private(policy: &Policy, path: &Path) -> bool {
         let resolved = canonicalize_lenient(&literal).unwrap_or_else(|_| literal.clone());
         [literal, resolved]
     };
-    let paths = spellings(path);
-    let covers = |dest: &str| {
-        spellings(Path::new(dest)).iter().any(|d| paths.iter().any(|p| p.starts_with(d)))
-    };
+    let path = lexical_normalize(path);
+    let covers = |dest: &str| spellings(Path::new(dest)).iter().any(|d| path.starts_with(d));
     let mut private = false;
     let mut i = 0;
     while i < args.len() {
@@ -1269,6 +1269,32 @@ mod tests {
             assert!(!bwrap_private(&p, &shared), "{}", shared.display());
         }
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The landed path is physical inside the sandbox already: a `/tmp/x`
+    /// the shell reports is on the private `/tmp`, even when the host's
+    /// `/tmp/x` is a symlink into the project. Resolving it on the host would
+    /// call it the project's folder and let an unconfined command land there.
+    #[cfg(unix)]
+    #[test]
+    fn bwrap_private_does_not_resolve_the_landed_path_on_the_host() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target/jail-tests")
+            .join(format!("tmplink_{}_{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let project = base.join("proj");
+        std::fs::create_dir_all(project.join("sub")).unwrap();
+        let link = PathBuf::from("/tmp").join(format!("jan_tmplink_{}_{n}", std::process::id()));
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(project.join("sub"), &link).unwrap();
+        let p = Policy::new(&project, false);
+        let private = bwrap_private(&p, &link);
+        let _ = std::fs::remove_file(&link);
+        let _ = std::fs::remove_dir_all(&base);
+        assert!(private, "{}", link.display());
     }
 
     #[cfg(unix)]
