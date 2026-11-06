@@ -47,18 +47,15 @@ import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
-import { ExtensionManager } from '@/lib/extension'
+import { getExtensionHost } from '@/lib/extensions/host'
+import { extensionAuthorMetadata } from '@/lib/extensions/authorship'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
   tokensForThinkingBudgetLevel,
   isThinkingBudgetLevelKey,
 } from '@/lib/thinkingBudget'
 import { buildReasoningProviderOptions } from '@/lib/reasoningProviderOptions'
-import {
-  ExtensionTypeEnum,
-  VectorDBExtension,
-  type MCPTool,
-} from '@janhq/core'
+import { ServiceKeys, type MCPTool } from '@janhq/core'
 import {
   trimMessages,
   compactMessages,
@@ -101,7 +98,13 @@ export type ModelSelection = {
   selectedModel: Model | null
 }
 /** Partial assistant output replayed as a prefill to resume a stopped turn. */
-export type ContinuationContent = { text?: string; reasoning?: string }
+export type ContinuationContent = {
+  text?: string
+  reasoning?: string
+  /** The extension that wrote the stopped reply, if one did: the continued
+   * reply replaces it and must keep its author (see extensions/authorship). */
+  extensionAuthor?: string
+}
 export type ServiceHub = {
   rag(): {
     getTools(): Promise<
@@ -544,15 +547,28 @@ export function stripUnsupportedImageParts(
       .map((part) => {
         // A tool image (see tool-image-sentinel.ts) would decode into an
         // image_url part on the tool message; a text-only model rejects that.
-        const output = (part as { output?: unknown }).output
-        if (typeof output !== 'string' || !hasToolImageSentinel(output)) {
-          return part
+        // An error reaches the model the same way a result does.
+        const next: Record<string, string> = {}
+        if (
+          'output' in part &&
+          typeof part.output === 'string' &&
+          hasToolImageSentinel(part.output)
+        ) {
+          next.output = stripToolImageSentinels(part.output, TOOL_IMAGE_OMITTED)
         }
+        if (
+          'errorText' in part &&
+          typeof part.errorText === 'string' &&
+          hasToolImageSentinel(part.errorText)
+        ) {
+          next.errorText = stripToolImageSentinels(
+            part.errorText,
+            TOOL_IMAGE_OMITTED
+          )
+        }
+        if (Object.keys(next).length === 0) return part
         touched = true
-        return {
-          ...part,
-          output: stripToolImageSentinels(output, TOOL_IMAGE_OMITTED),
-        } as typeof part
+        return { ...part, ...next } as typeof part
       })
     if (!touched) return message
     return { ...message, parts: nextParts } as UIMessage
@@ -1094,11 +1110,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const projectId = thread?.metadata?.project?.id
         if (projectId) {
           try {
-            const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
-              ExtensionTypeEnum.VectorDB
+            const vectorDB = getExtensionHost().services.get(
+              ServiceKeys.VectorDB
             )
-            if (ext?.listAttachmentsForProject) {
-              const projectFiles = await ext.listAttachmentsForProject(projectId)
+            if (vectorDB) {
+              const projectFiles =
+                await vectorDB.listAttachmentsForProject(projectId)
               hasDocuments = hasThreadDocuments || projectFiles.length > 0
             }
           } catch (error) {
@@ -1221,6 +1238,19 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         toolsRecord['web_fetch'] = {
           description: WEB_FETCH_DESCRIPTION,
           inputSchema: jsonSchema(WEB_FETCH_INPUT_SCHEMA as Record<string, unknown>),
+        } as Tool
+      }
+
+      // Tools contributed by extensions, under their prefixed wire names so
+      // they can never shadow an MCP or built-in tool. Toggled per
+      // extension like an MCP server.
+      for (const tool of useAppState.getState().extensionTools) {
+        if (isToolDisabled(tool.server, tool.wireName)) continue
+        toolsRecord[tool.wireName] = {
+          description: tool.description,
+          inputSchema: jsonSchema(
+            normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
+          ),
         } as Tool
       }
 
@@ -1681,7 +1711,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       },
     })
 
-    const stepMetadata = createStepMetadata()
+    // A reply from an extension's provider names its author from the first
+    // chunk, so it never renders a remote image (see extensions/authorship).
+    // So does one continuing such a reply, whatever model it runs on now.
+    const author =
+      continueContent?.extensionAuthor ?? provider.source?.extensionId
+    const stepMetadata = createStepMetadata(
+      author ? extensionAuthorMetadata(author) : undefined
+    )
 
     const uiStream = result.toUIMessageStream({
       // Usage and token speed, assembled by the one implementation every

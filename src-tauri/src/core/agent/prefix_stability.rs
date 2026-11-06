@@ -28,7 +28,12 @@
 //! Each test says what it protects, and names the epic item behind it where
 //! there is one.
 
+#[cfg(feature = "cli")]
 use super::compaction::compact_conversation;
+use super::compaction::{
+    cached_compaction_request, caps, continuation_state, Sizing, DEFAULT_COMPACTION_RATIO,
+};
+use super::continuation::{gather, HarnessContext, Role};
 use super::context::{compose_system_prompt, SessionStart};
 use super::events::StreamEvent;
 use super::prompt::{Composer, Placement, PromptPolicy};
@@ -58,8 +63,9 @@ use {
 /// that reads the clock would be testing the clock.
 const DAY: &str = "2026-09-16";
 
-/// How much of the conversation a compaction keeps.
-const KEEP_RECENT: usize = 4;
+/// Tokens of conversation a compaction keeps: about one short message.
+#[cfg(feature = "cli")]
+const KEEP_TOKENS: u64 = 20;
 
 // ---------------------------------------------------------------------------
 // Comparing request bytes
@@ -271,6 +277,7 @@ fn turn(project: &Path, history: &[Value], recall: &str, tools: &[Value]) -> Req
         false,
         &PromptPolicy::default(),
         Some(&start),
+        true,
     )
     .unwrap();
     let mut tail = composed.tail;
@@ -332,8 +339,10 @@ async fn advertise(project: &Path) -> Vec<Value> {
 /// A model that returns a fixed summary, so the compaction path can run
 /// without an upstream: the shape of the array it leaves behind is what the
 /// turn after it has to keep its prefix across.
+#[cfg(feature = "cli")]
 struct StubSummarizer;
 
+#[cfg(feature = "cli")]
 #[async_trait]
 impl ModelInvoker for StubSummarizer {
     async fn invoke(
@@ -341,15 +350,23 @@ impl ModelInvoker for StubSummarizer {
         _request: &Value,
         _events: &mpsc::UnboundedSender<StreamEvent>,
     ) -> Result<Value, String> {
-        Ok(json!({ "choices": [{ "message": { "content": "The story so far." } }] }))
+        Ok(json!({ "choices": [{ "message": { "content": "## Progress\nThe story so far." } }] }))
     }
 }
 
 /// One real compaction: the array `orchestrate_inner` would hand the next turn.
+#[cfg(feature = "cli")]
 async fn compacted(history: &[Value]) -> Vec<Value> {
-    compact_conversation(history, "test-model", &StubSummarizer, KEEP_RECENT)
-        .await
-        .expect("the stub summarizer always answers")
+    compact_conversation(
+        history,
+        "test-model",
+        &StubSummarizer,
+        KEEP_TOKENS,
+        &HarnessContext::default(),
+        Sizing::new(100_000, DEFAULT_COMPACTION_RATIO),
+    )
+    .await
+    .0
 }
 
 /// A user turn with a given text.
@@ -602,6 +619,7 @@ fn a_failed_listing_keeps_the_advertised_tools() {
 /// #8957, #8958: compaction rewrites the middle of the conversation, so exactly
 /// one turn cannot extend its predecessor - the one after the summary lands.
 /// Every other turn has to.
+#[cfg(feature = "cli")]
 #[tokio::test]
 async fn compaction_breaks_the_prefix_exactly_once() {
     let project = Project::new("compaction");
@@ -840,4 +858,118 @@ fn hide_secrets_keeps_the_filtered_prefix_stable_from_turn_to_turn() {
         "the system prompt is not part of the secret pass unless it holds one"
     );
     a.assert_extended_by("turn two after Hide Secrets", &b);
+}
+
+/// A model that records every request and answers with model sections.
+struct RecordingSummarizer(std::sync::Mutex<Vec<Value>>);
+
+#[async_trait]
+impl ModelInvoker for RecordingSummarizer {
+    async fn invoke(
+        &self,
+        request: &Value,
+        _events: &mpsc::UnboundedSender<StreamEvent>,
+    ) -> Result<Value, String> {
+        self.0.lock().unwrap().push(request.clone());
+        Ok(json!({ "choices": [{ "message": { "content": "## Progress\nThe story so far." } }] }))
+    }
+}
+
+/// (a) janhq/jan-internal#516: the compaction request is the request the run
+/// was about to send plus one instruction, so every byte of it -- tools,
+/// `tool_choice`, the volatile tail -- is a prefix the provider cached. The
+/// serialized side request starts with the serialized next request up to the
+/// end of its last message's text, to which the instruction is appended.
+#[tokio::test]
+async fn the_compaction_request_extends_the_request_it_replaces() {
+    let project = Project::new("cached-compaction");
+    let tools = advertised(&["read_file", "write"]);
+    let mut history = vec![user("first question")];
+    for index in 0..6 {
+        history.push(assistant(&format!("answer {index}")));
+        history.push(user(&format!("question {index}")));
+    }
+    let next = turn(project.root(), &history, "# Recalled memory\n- one", &tools);
+    let request: Value = serde_json::from_str(&next.body).unwrap();
+
+    let model = RecordingSummarizer(std::sync::Mutex::new(Vec::new()));
+    continuation_state(
+        &gather(&history),
+        &history,
+        Some(&request),
+        &HarnessContext::default(),
+        Sizing::new(1_000_000, DEFAULT_COMPACTION_RATIO),
+        caps(800_000),
+        "test-model",
+        &model,
+    )
+    .await;
+    let sent = model.0.lock().unwrap();
+    assert_eq!(sent.len(), 1, "the cached path answered, no fallback request");
+    let side = serde_json::to_string(&sent[0]).unwrap();
+    assert_eq!(sent[0], cached_compaction_request(&request, Role::Parent, 800_000));
+
+    // Everything up to the end of the last message's text: the instruction
+    // is appended to that text (the volatile tail), so roles keep
+    // alternating, and only the closing quote and brace after it move.
+    let shared_until = next.last_message_end() - "\"}".len();
+    assert_prefix_kept(
+        "the compaction request must extend the next request",
+        &next.body,
+        &side,
+        shared_until,
+    );
+    assert_eq!(sent[0]["tools"], request["tools"], "tools stay as they were");
+    assert_eq!(sent[0]["tool_choice"], request["tool_choice"]);
+}
+
+/// (b) The state a compaction leaves is a `user` message, so the system
+/// prompt and the tool array -- the head every provider caches first -- are
+/// byte-identical across the compaction. A `system` summary would have been
+/// merged into the provider's system field and moved the head.
+#[tokio::test]
+async fn the_request_after_compaction_keeps_the_system_prompt_and_tools() {
+    let project = Project::new("compaction-head");
+    let tools = advertised(&["read_file", "write"]);
+    let mut history = vec![user("the task")];
+    for index in 0..8 {
+        history.push(assistant(&format!("answer {index}")));
+        history.push(user(&format!("question {index}")));
+    }
+    let before = turn(project.root(), &history, "", &tools);
+
+    let model = RecordingSummarizer(std::sync::Mutex::new(Vec::new()));
+    let state = continuation_state(
+        &gather(&history[..12]),
+        &history[..12],
+        None,
+        &HarnessContext::default(),
+        Sizing::new(100_000, DEFAULT_COMPACTION_RATIO),
+        caps(80_000),
+        "test-model",
+        &model,
+    )
+    .await
+    .state;
+    assert_eq!(state["role"], "user", "the summary is a user message");
+    let mut compacted = vec![state];
+    compacted.extend_from_slice(&history[12..]);
+    let after = turn(project.root(), &compacted, "", &tools);
+
+    let system = |r: &Request| -> Vec<String> {
+        r.messages
+            .iter()
+            .filter(|m| m["role"] == "system")
+            .map(|m| serde_json::to_string(m).unwrap())
+            .collect()
+    };
+    assert_eq!(system(&before), system(&after), "the system nodes are unchanged");
+    let head = serde_json::to_string(&before.messages[0]).unwrap();
+    let head_end = before.body.find(&head).unwrap() + head.len();
+    assert_prefix_kept("the system prompt survives compaction", &before.body, &after.body, head_end);
+    let tools_of = |r: &Request| {
+        let body: Value = serde_json::from_str(&r.body).unwrap();
+        serde_json::to_string(&body["tools"]).unwrap()
+    };
+    assert_same_bytes("the tools survive compaction", &tools_of(&before), &tools_of(&after));
 }

@@ -82,6 +82,28 @@ describe('useMCPServers', () => {
     })
   })
 
+  // The settings page's whole-config JSON editor and a rename both reach the
+  // store without the dialog's name check.
+  describe('ext: server names', () => {
+    it('refuses to add a server named like an extension', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const { result } = renderHook(() => useMCPServers())
+      act(() => { result.current.addServer('ext:foo', makeConfig()) })
+      expect(result.current.mcpServers).toEqual({})
+      expect(warn).toHaveBeenCalled()
+      warn.mockRestore()
+    })
+
+    it('refuses to rename a server to an extension name', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const { result } = renderHook(() => useMCPServers())
+      act(() => { result.current.addServer('srv', makeConfig()) })
+      act(() => { result.current.renameServer('srv', 'ext:foo', makeConfig()) })
+      expect(Object.keys(result.current.mcpServers)).toEqual(['srv'])
+      warn.mockRestore()
+    })
+  })
+
   describe('editServer', () => {
     it('should edit existing server and preserve untouched properties', () => {
       const { result } = renderHook(() => useMCPServers())

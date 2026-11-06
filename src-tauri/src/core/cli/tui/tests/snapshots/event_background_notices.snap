@@ -1,0 +1,24 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: doc
+---
+-- expanded
+
+◔ Monitor mon-1: 'build' matched
+• subagent worktrees kept (they hold work)
+  └ /tmp/wt-a on jan/agent/a (1 commit(s), 0 uncommitted file(s))
+-- collapsed
+
+◔ Monitor mon-1: 'build' matched
+• subagent worktrees kept (they hold work)
+  └ /tmp/wt-a on jan/agent/a (1 commit(s), 0 uncommitted file(s))
+-- narrow (28)
+
+◔ Monitor mon-1: 'build'
+  matched
+• subagent worktrees kept
+  (they hold work)
+  └ /tmp/wt-a on
+    jan/agent/a (1
+    commit(s), 0
+    uncommitted file(s))

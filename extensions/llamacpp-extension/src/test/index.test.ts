@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
+import { hostServices, loopbackFetch, newExtension } from './host'
 import { fs, getJanDataFolderPath, joinPath } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
 import {
   readGgufMetadata,
   reloadEngineModels,
@@ -22,10 +22,6 @@ vi.mock('../backend-settings')
 // Mock fetch globally
 global.fetch = vi.fn()
 
-// The engine requests go through the Tauri HTTP plugin (reqwest), not the
-// webview's fetch.
-const httpFetch = vi.hoisted(() => vi.fn())
-vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
 
 // Mock tauri-plugin-llamacpp-api (partial mock)
 vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
@@ -92,7 +88,7 @@ describe('llamacpp_extension', () => {
       pid: 1234,
       models: [],
     })
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   afterEach(() => {
@@ -177,7 +173,6 @@ describe('llamacpp_extension', () => {
 
     it('should return model list when models exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { invoke } = await import('@tauri-apps/api/core')
 
       // Set up providerPath first
       extension['providerPath'] = '/path/to/jan/llamacpp'
@@ -202,7 +197,7 @@ describe('llamacpp_extension', () => {
       vi.mocked(fs.readdirSync).mockResolvedValue(['test-model'])
       vi.mocked(fs.fileStat).mockResolvedValue({ isDirectory: true, size: 1000 })
 
-      vi.mocked(invoke).mockResolvedValue({
+      vi.mocked(fs.readYaml).mockResolvedValue({
         model_path: 'test-model/model.gguf',
         name: 'Test Model',
         size_bytes: 1000000
@@ -248,7 +243,6 @@ describe('llamacpp_extension', () => {
 
     it('should import model from URL', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { invoke } = await import('@tauri-apps/api/core')
       const apiModule = await import('@janhq/tauri-plugin-llamacpp-api')
       vi.mocked(apiModule.readGgufMetadata).mockResolvedValue({
         version: 3,
@@ -260,22 +254,68 @@ describe('llamacpp_extension', () => {
         downloadFiles: vi.fn().mockResolvedValue(undefined)
       }
 
-      window.core.extensionManager.getByName = vi.fn().mockReturnValue(mockDownloadManager)
+      const { ServiceKeys } = await import('@janhq/core')
+      const getService = vi.fn().mockReturnValue(mockDownloadManager)
+      hostServices.get = getService
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
       vi.mocked(fs.existsSync).mockResolvedValue(false)
       vi.mocked(fs.fileStat).mockResolvedValue({ size: 1000000 })
       vi.mocked(fs.mkdir).mockResolvedValue(undefined)
-      vi.mocked(invoke).mockResolvedValue(undefined)
+      vi.mocked(fs.writeYaml).mockResolvedValue(undefined)
 
       await extension.import('test-model', {
         modelPath: 'https://example.com/model.gguf'
       })
 
+      expect(getService).toHaveBeenCalledWith(ServiceKeys.Downloads)
       expect(mockDownloadManager.downloadFiles).toHaveBeenCalled()
       expect(fs.mkdir).toHaveBeenCalled()
-      expect(invoke).toHaveBeenCalledWith('write_yaml', expect.any(Object))
+      expect(fs.writeYaml).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Object)
+      )
+    })
+  })
+
+  describe('pauseImport / abortImport', () => {
+    const downloads = () => ({
+      pauseDownload: vi.fn().mockResolvedValue(undefined),
+      cancelDownload: vi.fn().mockResolvedValue(undefined),
+    })
+
+    it('pauses the task through the host Downloads service', async () => {
+      const { ServiceKeys } = await import('@janhq/core')
+      const service = downloads()
+      const getService = vi.fn().mockReturnValue(service)
+      hostServices.get = getService
+
+      await extension.pauseImport('m1')
+
+      expect(getService).toHaveBeenCalledWith(ServiceKeys.Downloads)
+      expect(service.pauseDownload).toHaveBeenCalledWith('llamacpp/m1')
+    })
+
+    it('cancels the task through the host Downloads service', async () => {
+      const { fs, joinPath } = await import('@janhq/core')
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
+      vi.mocked(fs.existsSync).mockResolvedValue(false)
+      const service = downloads()
+      hostServices.get = vi.fn().mockReturnValue(service)
+
+      await extension.abortImport('m1')
+
+      expect(service.cancelDownload).toHaveBeenCalledWith('llamacpp/m1')
+    })
+
+    it('fails the import loudly when no Downloads service is provided', async () => {
+      hostServices.get = vi.fn().mockReturnValue(undefined)
+      await expect(extension.pauseImport('m1')).rejects.toThrow(
+        'Downloads service is not available'
+      )
     })
   })
 
@@ -459,7 +499,7 @@ describe('llamacpp_extension', () => {
         }]
       }
 
-      httpFetch.mockResolvedValue({
+      loopbackFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve(mockResponse)
       })
@@ -473,7 +513,7 @@ describe('llamacpp_extension', () => {
       const result = await extension.chat(request)
 
       expect(result).toEqual(mockResponse)
-      expect(httpFetch).toHaveBeenCalledWith(
+      expect(loopbackFetch).toHaveBeenCalledWith(
         'http://localhost:3000/v1/chat/completions',
         expect.objectContaining({
           method: 'POST',
@@ -511,64 +551,79 @@ describe('llamacpp_extension', () => {
     })
   })
 
-  describe('migrateFitOff', () => {
-    beforeEach(() => {
+  // Existing installs keep their stored fit value: the settings file has no
+  // record of who set it, so an untouched off and an explicit off look alike.
+  describe('fit migration', () => {
+    it('no longer forces fit off at load', () => {
+      expect((extension as any).migrateFitOff).toBeUndefined()
+    })
+  })
+
+  describe('migrateSeededCtxSize', () => {
+    const yamls: Record<string, Record<string, unknown>> = {}
+
+    beforeEach(async () => {
+      const { fs, joinPath, getJanDataFolderPath } = await import('@janhq/core')
       vi.mocked(getBackendSetting).mockResolvedValue(null)
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/jan')
+      vi.mocked(joinPath).mockImplementation((p) => Promise.resolve(p.join('/')))
+      // A Hub download is nested one level deeper, under its author.
+      yamls['/jan/llamacpp/models/seeded/model.yml'] = { name: 's', ctx_size: 8192 }
+      yamls['/jan/llamacpp/models/custom/model.yml'] = { name: 'c', ctx_size: 32768 }
+      yamls['/jan/llamacpp/models/author/hub/model.yml'] = { name: 'h', ctx_size: 8192 }
+      const tree: Record<string, string[]> = {
+        '/jan/llamacpp/models': [
+          '/jan/llamacpp/models/seeded',
+          '/jan/llamacpp/models/custom',
+          '/jan/llamacpp/models/author',
+        ],
+        '/jan/llamacpp/models/author': ['/jan/llamacpp/models/author/hub'],
+      }
+      vi.mocked(fs.existsSync).mockImplementation(
+        async (p: string) => p === '/jan/llamacpp/models' || p in yamls
+      )
+      vi.mocked(fs.readdirSync).mockImplementation(async (p: string) => tree[p] ?? [])
+      vi.mocked(fs.fileStat).mockResolvedValue({ isDirectory: true, size: 0 })
+      ;(fs as any).readYaml = vi.fn((path: string) =>
+        Promise.resolve(structuredClone(yamls[path]))
+      )
+      ;(fs as any).writeYaml = vi.fn((path: string, data: Record<string, unknown>) => {
+        yamls[path] = data
+        return Promise.resolve()
+      })
     })
 
-    it('should skip migration if already migrated', async () => {
+    it('drops the seeded 8192 so fit can size the context, and keeps a chosen one', async () => {
+      await (extension as any).migrateSeededCtxSize()
+
+      expect(yamls['/jan/llamacpp/models/seeded/model.yml']).toEqual({ name: 's' })
+      expect(yamls['/jan/llamacpp/models/author/hub/model.yml']).toEqual({ name: 'h' })
+      expect(yamls['/jan/llamacpp/models/custom/model.yml'].ctx_size).toBe(32768)
+      expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_seeded_ctx_cleared_v1', '1')
+    })
+
+    it('runs once', async () => {
       vi.mocked(getBackendSetting).mockResolvedValue('1')
-      extension['config'] = { fit: true } as any
-      extension['getSettings'] = vi.fn()
 
-      await extension['migrateFitOff']()
+      await (extension as any).migrateSeededCtxSize()
 
-      expect(extension['getSettings']).not.toHaveBeenCalled()
+      expect(yamls['/jan/llamacpp/models/seeded/model.yml'].ctx_size).toBe(8192)
     })
 
-    it('should set migration key without calling updateSettings when fit is already false', async () => {
-      extension['config'] = { fit: false } as any
-      extension['getSettings'] = vi.fn()
-      extension['updateSettings'] = vi.fn()
+    // Installs that already ran the settings backfill still need the nested
+    // folders swept, so the ngl sweep has its own key.
+    it('sweeps the legacy n_gpu_layers stamp under its own key', async () => {
+      yamls['/jan/llamacpp/models/author/hub/model.yml'] = { name: 'h', n_gpu_layers: 100 }
+      yamls['/jan/llamacpp/models/custom/model.yml'] = { name: 'c', n_gpu_layers: 20 }
+      vi.mocked(getBackendSetting).mockImplementation(async (key: string) =>
+        key === 'llamacpp_model_yaml_backfill_v2' ? '1' : null
+      )
 
-      await extension['migrateFitOff']()
+      await (extension as any).migrateLegacyNgl()
 
-      expect(extension['getSettings']).not.toHaveBeenCalled()
-      expect(extension['updateSettings']).not.toHaveBeenCalled()
-      expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
-    })
-
-    it('should disable fit when it is true', async () => {
-      extension['config'] = { fit: true } as any
-      extension['getSettings'] = vi.fn().mockResolvedValue([
-        { key: 'fit', controllerProps: { value: true } },
-        { key: 'ctx_size', controllerProps: { value: 2048 } },
-      ])
-      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-      await extension['migrateFitOff']()
-
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
-      expect(updatedSettings.find((s: any) => s.key === 'fit').controllerProps.value).toBe(false)
-      expect(updatedSettings.find((s: any) => s.key === 'ctx_size').controllerProps.value).toBe(2048)
-      expect(extension['config'].fit).toBe(false)
-      expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
-    })
-
-    it('should not modify other settings during fit migration', async () => {
-      extension['config'] = { fit: true } as any
-      extension['getSettings'] = vi.fn().mockResolvedValue([
-        { key: 'fit', controllerProps: { value: true } },
-        { key: 'fit_target', controllerProps: { value: '1024' } },
-        { key: 'fit_ctx', controllerProps: { value: '' } },
-      ])
-      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-      await extension['migrateFitOff']()
-
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
-      expect(updatedSettings.find((s: any) => s.key === 'fit_target').controllerProps.value).toBe('1024')
-      expect(updatedSettings.find((s: any) => s.key === 'fit_ctx').controllerProps.value).toBe('')
+      expect(yamls['/jan/llamacpp/models/author/hub/model.yml']).toEqual({ name: 'h' })
+      expect(yamls['/jan/llamacpp/models/custom/model.yml'].n_gpu_layers).toBe(20)
+      expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_legacy_ngl_swept_v1', '1')
     })
   })
 
@@ -656,7 +711,7 @@ describe('llamacpp_extension', () => {
   it('reads the architecture-specific context limit without inventing an unknown limit', async () => {
     vi.mocked(getJanDataFolderPath).mockResolvedValue('/jan')
     vi.mocked(joinPath).mockImplementation(async (parts) => parts.join('/'))
-    vi.mocked(invoke).mockResolvedValue({ model_path: 'model.gguf' })
+    vi.mocked(fs.readYaml).mockResolvedValue({ model_path: 'model.gguf' })
     vi.mocked(readGgufMetadata).mockResolvedValueOnce({
       version: 3, tensor_count: 1,
       metadata: { 'general.architecture': 'qwen3', 'qwen3.context_length': '65536' },
@@ -749,11 +804,11 @@ describe('llamacpp_extension', () => {
     it('rejects a failed context application and restores model.yml', async () => {
       let savedModel: Record<string, unknown> = { ctx_size: 4096 }
       vi.mocked(fs.existsSync).mockResolvedValue(true)
-      vi.mocked(invoke).mockImplementation(async (command, args) => {
-        if (command === 'read_yaml') return structuredClone(savedModel)
-        if (command === 'write_yaml' && args && 'data' in args) {
-          savedModel = structuredClone(args.data as Record<string, unknown>)
-        }
+      vi.mocked(fs.readYaml).mockImplementation(async () =>
+        structuredClone(savedModel)
+      )
+      vi.mocked(fs.writeYaml).mockImplementation(async (_path, data) => {
+        savedModel = structuredClone(data as Record<string, unknown>)
       })
       vi.mocked(reloadEngineModels).mockRejectedValueOnce(new Error('reload failed'))
       vi.mocked(startEngine).mockRejectedValueOnce(new Error('engine unavailable'))
@@ -774,7 +829,7 @@ describe('a dead worker is noticed rather than cached', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   it('re-asks the command even after a successful answer', async () => {
@@ -825,7 +880,7 @@ describe('refreshEnginePreset embedding slot reservation', () => {
     userModelsMax: number
     embeddingCount: number
   }) => {
-    extension = new llamacpp_extension()
+    extension = newExtension()
     extension['config'] = { models_max: opts.userModelsMax } as never
     return (async () => {
       // A running worker is what get_engine_info reports, not what the
@@ -927,7 +982,7 @@ describe('bootstrapDefaultEmbedder', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   it('imports the fallback embedder when none is installed, then marks the bootstrap done', async () => {
@@ -1001,7 +1056,7 @@ describe('verifyEmbeddingModel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
     // The probe is gated on a configured backend, since the router it needs
     // cannot exist before one is selected.
     extension.config = {
@@ -1097,7 +1152,7 @@ describe('verifyGpuOffload', () => {
   let extension: llamacpp_extension
 
   const arm = async (devices: unknown[], gpus: unknown[] | undefined) => {
-    extension = new llamacpp_extension()
+    extension = newExtension()
     extension['config'] = {} as never
     vi.spyOn(extension, 'getDevices').mockResolvedValue(devices as never)
     const { getSystemInfo } = await import('@janhq/tauri-plugin-hardware-api')
@@ -1137,6 +1192,30 @@ describe('verifyGpuOffload', () => {
     expect(result.reason).toBeUndefined()
   })
 
+  // A host device is not where layers run: an engine that lists only BLAS next
+  // to a present GPU has not loaded the GPU, so the offload check must warn
+  // instead of counting BLAS as a device.
+  it('warns when the engine lists only a host device next to a GPU', async () => {
+    await arm([{ id: 'BLAS', name: 'Accelerate', mem: 0, free: 0 }], [{}])
+    const result = await extension.verifyGpuOffload()
+    expect(result.status).toBe('warning')
+    expect(result.reason).toBe('runtimeUnreachable')
+    expect(result.engineDeviceCount).toBe(0)
+  })
+
+  it('counts only the accelerators when host devices are listed too', async () => {
+    await arm(
+      [
+        { id: 'BLAS', name: 'Accelerate', mem: 0, free: 0 },
+        { id: 'MTL0', name: 'M3 Pro', mem: 1, free: 1 },
+      ],
+      [{}]
+    )
+    const result = await extension.verifyGpuOffload()
+    expect(result.status).toBe('ok')
+    expect(result.engineDeviceCount).toBe(1)
+  })
+
   // The one actionable failure: the GPU is there but the engine cannot see it.
   it('warns when a present GPU is invisible to the engine', async () => {
     await arm([], [{}])
@@ -1155,7 +1234,7 @@ describe('verifyGpuOffload', () => {
   // Without a device list there is no basis for a reason code, so the raw cause
   // is reported rather than a guess between "no GPU" and "unreachable GPU".
   it('reports the raw error when the device probe throws', async () => {
-    extension = new llamacpp_extension()
+    extension = newExtension()
     extension['config'] = {} as never
     vi.spyOn(extension, 'getDevices').mockRejectedValue(new Error('no worker'))
     const result = await extension.verifyGpuOffload()
@@ -1170,7 +1249,7 @@ describe('bootstrapDefaultEmbedder failure reporting', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   it('records why the bootstrap failed instead of only logging it', async () => {
@@ -1233,7 +1312,7 @@ describe('reportMissingLibrariesFromError', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
     extension['config'] = {
       version_backend: 'b9145/linux-cuda-12-common_cpus-x64',
     } as never
@@ -1320,7 +1399,7 @@ describe('createDownloadTaskId', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   const taskId = (modelId: string) =>
@@ -1360,7 +1439,7 @@ describe('import deduplication', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   // Two callers racing on one model both passed the model.yml guard and then
@@ -1431,7 +1510,7 @@ describe('embedding readiness during the first-run fetch', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
     extension['config'] = {} as never
   })
 
@@ -1474,7 +1553,7 @@ describe('forgetThreadCache', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension('http://localhost', 'llamacpp')
+    extension = newExtension()
   })
 
   afterEach(() => {
@@ -1531,7 +1610,7 @@ describe('reconcileEngineDevices', () => {
     vi.mocked(api.beginEngineRestart).mockResolvedValue(true)
     vi.mocked(api.endEngineRestart).mockResolvedValue(undefined)
     vi.mocked(api.stopEngine).mockResolvedValue(undefined)
-    extension = new llamacpp_extension()
+    extension = newExtension()
     // Standing in for the real spawn, which the plugin does.
     return vi
       .spyOn(extension as never, 'runStartEngine' as never)
@@ -1777,15 +1856,15 @@ describe('reconcileEngineDevices', () => {
     }
 
     // Chat and embeddings go out through the no-proxy client, not global fetch.
-    beforeEach(() => httpFetch.mockReset())
+    beforeEach(() => loopbackFetch.mockReset())
 
     it('are not cut off by a restart while one is in flight, even if the worker looks idle', async () => {
       const { spawn } = await armChat()
       const reply = Promise.withResolvers<Response>()
-      httpFetch.mockReturnValue(reply.promise)
+      loopbackFetch.mockReturnValue(reply.promise)
 
       const chat = extension.chat(request)
-      await vi.waitFor(() => expect(httpFetch).toHaveBeenCalled())
+      await vi.waitFor(() => expect(loopbackFetch).toHaveBeenCalled())
 
       expect(await extension.reconcileEngineDevices()).toBe('busy')
       expect(api.stopEngine).not.toHaveBeenCalled()
@@ -1799,7 +1878,7 @@ describe('reconcileEngineDevices', () => {
 
     it('wait for a restart under way and then use the new engine', async () => {
       const { spawn, ensureSession } = await armChat()
-      httpFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
+      loopbackFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
       const stopped = Promise.withResolvers<void>()
       vi.mocked(api.stopEngine).mockReturnValue(stopped.promise)
 
@@ -1896,7 +1975,7 @@ describe('reconcileEngineDevices', () => {
     // way out while the first is still deciding.
     it('are not admitted while an earlier restart is still deciding, however many ask', async () => {
       const { spawn, ensureSession } = await armChat()
-      httpFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
+      loopbackFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
       const idle = Promise.withResolvers<boolean>()
       vi.mocked(api.beginEngineRestart)
         .mockReturnValueOnce(idle.promise)
@@ -1930,10 +2009,10 @@ describe('reconcileEngineDevices', () => {
         512 as never
       )
       const reply = Promise.withResolvers<Response>()
-      httpFetch.mockReturnValue(reply.promise)
+      loopbackFetch.mockReturnValue(reply.promise)
 
       const embedding = extension.embed(['a'])
-      await vi.waitFor(() => expect(httpFetch).toHaveBeenCalled())
+      await vi.waitFor(() => expect(loopbackFetch).toHaveBeenCalled())
 
       expect(await extension.reconcileEngineDevices()).toBe('busy')
 
@@ -1963,22 +2042,23 @@ describe('engine requests bypass a configured proxy', () => {
 
   const okJson = (body: unknown) => ({ ok: true, json: async () => body })
 
+  // The host's loopback fetch is what bypasses the proxy (tested in the web
+  // app); here it is enough that the request went through it.
   const expectDirect = (urlPart: string) => {
-    const call = httpFetch.mock.calls.find(([url]) =>
+    const call = loopbackFetch.mock.calls.find(([url]) =>
       String(url).includes(urlPart)
     )
-    expect(call, `no plugin-http request to ${urlPart}`).toBeDefined()
-    const noProxy = (call![1] as { proxy?: { all?: { noProxy?: string } } })
-      .proxy?.all?.noProxy
-    expect(noProxy?.split(',')).toEqual(
-      expect.arrayContaining(['localhost', '127.0.0.1', '::1'])
+    expect(call, `no loopback request to ${urlPart}`).toBeDefined()
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining(urlPart),
+      expect.anything()
     )
   }
 
   beforeEach(() => {
     vi.clearAllMocks()
-    httpFetch.mockReset()
-    extension = new llamacpp_extension()
+    loopbackFetch.mockReset()
+    extension = newExtension()
   })
 
   it('sends the embeddings request direct', async () => {
@@ -1989,7 +2069,7 @@ describe('engine requests bypass a configured proxy', () => {
     vi.spyOn(extension as never, 'embedBatchBudget' as never).mockResolvedValue(
       512 as never
     )
-    httpFetch.mockResolvedValue(
+    loopbackFetch.mockResolvedValue(
       okJson({ data: [{ embedding: [0.1], index: 0 }], usage: {} })
     )
 
@@ -2003,7 +2083,7 @@ describe('engine requests bypass a configured proxy', () => {
       extension as never,
       'ensureEmbeddingModelLoaded' as never
     ).mockResolvedValue(session as never)
-    httpFetch.mockResolvedValue(okJson({ tokens: [1, 2, 3] }))
+    loopbackFetch.mockResolvedValue(okJson({ tokens: [1, 2, 3] }))
 
     await expect(extension.countEmbeddingTokens(['hello'])).resolves.toEqual([3])
 
@@ -2018,7 +2098,7 @@ describe('engine requests bypass a configured proxy', () => {
     vi.spyOn(extension as never, 'getLoadedModels' as never).mockResolvedValue([
       'test-model',
     ] as never)
-    httpFetch.mockResolvedValue(
+    loopbackFetch.mockResolvedValue(
       okJson({ default_generation_settings: { n_ctx: 4096 } })
     )
 
@@ -2034,7 +2114,7 @@ describe('engine requests bypass a configured proxy', () => {
       extension as never,
       'ensureHealthySession' as never
     ).mockResolvedValue(session as never)
-    httpFetch.mockResolvedValue({ ok: false, status: 500, json: async () => null })
+    loopbackFetch.mockResolvedValue({ ok: false, status: 500, json: async () => null })
 
     const request = {
       model: 'test-model',
@@ -2043,7 +2123,7 @@ describe('engine requests bypass a configured proxy', () => {
     await extension.chat({ ...request, stream: false }).catch(() => { })
     expectDirect('/v1/chat/completions')
 
-    httpFetch.mockClear()
+    loopbackFetch.mockClear()
     const stream = (await extension.chat({
       ...request,
       stream: true,

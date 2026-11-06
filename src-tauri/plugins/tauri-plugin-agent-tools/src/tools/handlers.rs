@@ -15,8 +15,8 @@ use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::nofollow;
 use crate::tools::sandbox::{
-    escapes_write_roots, hidden_under, in_scratch, landing, lexical_normalize,
-    refuse_windows_name, resolve_path, scratch_display_path, symlink_escapes_any_root, Landing,
+    escapes_write_roots, hidden_under, in_read_only_root, in_scratch, landing, lexical_normalize,
+    refuse_windows_name, resolve_path, symlink_escapes_any_root, Landing,
 };
 use crate::screenshot_pages::PageScope;
 use crate::tools::{BuiltinTool, ImageContentPart, ScreenshotBackend, ToolContext};
@@ -73,10 +73,10 @@ fn rel_to(base: &Path, path: &Path) -> String {
 /// How a mutated path is named back to the model: relative inside the project,
 /// absolute once it escapes. Normalizes first, since `root/../x` strips to a
 /// misleading `../x` against an un-normalized root. A target inside the session
-/// scratch is named by whichever spelling the shell can also use there.
+/// scratch is named by its full real path, which the shell can use too.
 fn display_path(root: &Path, scratch: Option<&Path>, target: &Path) -> String {
     if in_scratch(scratch, target) {
-        return scratch_display_path(scratch, target);
+        return lexical_normalize(target).to_string_lossy().into_owned();
     }
     rel_to(&lexical_normalize(root), &lexical_normalize(target))
 }
@@ -220,6 +220,11 @@ async fn execute_text(
         // readable and unwritable.
         "read" => read(args, project_root, scratch, ctx.read_roots).await.0,
         "ls" => ls(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
+        "write" if ctx.workspace_readonly
+            && in_read_only_root(project_root, scratch, arg_str(args, "path").unwrap_or("")) =>
+        {
+            read_only_refusal(args, scratch)
+        }
         "write" => {
             write(
                 args,
@@ -229,6 +234,11 @@ async fn execute_text(
                 ctx.write_roots,
             )
             .await
+        }
+        "edit" if ctx.workspace_readonly
+            && in_read_only_root(project_root, scratch, arg_str(args, "path").unwrap_or("")) =>
+        {
+            read_only_refusal(args, scratch)
         }
         "edit" => {
             edit(
@@ -245,9 +255,9 @@ async fn execute_text(
         "grep" => grep(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
         // Memory and skills live in the store root, not the sandbox: they must
         // outlive the conversation the filesystem tools are scoped to.
-        "memory_list" => memory_list(ctx.memory_scopes()).await,
-        "memory_read" => memory_read(args, ctx.memory_scopes()).await,
-        "memory_write" => memory_write(args, ctx.memory_scopes()).await,
+        crate::tools::MEMORY_TOOL => {
+            memory_tool(args, ctx.memory_scopes(), ctx.memory_change_budget, ctx.plan_mode).await
+        }
         // Skills go through the skills module so the tool honors the folder form
         // (`<name>/SKILL.md`) and frontmatter, matching what the UI writes.
         "skill_list" => skill_list(ctx),
@@ -272,7 +282,6 @@ pub async fn preview_diff(
     ctx: &ToolContext<'_>,
 ) -> Option<String> {
     let project_root = ctx.project_root;
-    let scratch = ctx.scratch_root;
     match tool.name {
         "edit" => {
             let edits = args.get("edits").and_then(|v| v.as_array())?;
@@ -280,7 +289,7 @@ pub async fn preview_diff(
                 return None;
             }
             let prior = match arg_str(args, "path") {
-                Some(p) => tokio::fs::read_to_string(resolve_path(project_root, scratch, p))
+                Some(p) => tokio::fs::read_to_string(resolve_path(project_root, p))
                     .await
                     .unwrap_or_default(),
                 None => String::new(),
@@ -290,7 +299,7 @@ pub async fn preview_diff(
         }
         "write" => {
             let prior = match arg_str(args, "path") {
-                Some(p) => tokio::fs::read_to_string(resolve_path(project_root, scratch, p))
+                Some(p) => tokio::fs::read_to_string(resolve_path(project_root, p))
                     .await
                     .ok(),
                 None => None,
@@ -448,6 +457,9 @@ fn skill_list(ctx: &ToolContext<'_>) -> String {
             .map(|m| (m.name, m.description))
             .collect(),
     };
+    if entries.is_empty() {
+        return "No skills.".to_string();
+    }
     entries
         .into_iter()
         .map(|(name, description)| {
@@ -517,32 +529,144 @@ fn skill_write(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     }
 }
 
-/// The memory tools delegate to `crate::memory` so the built-ins and the
-/// management commands share one implementation.
-async fn memory_list(scopes: memory::Scopes<'_>) -> String {
-    scopes.list().await.join("\n")
-}
-
-async fn memory_read(args: &serde_json::Value, scopes: memory::Scopes<'_>) -> String {
-    let Some(name) = arg_str(args, "name") else {
-        return "ERROR: missing required argument 'name'".to_string();
+/// The `memory` tool delegates every op to `crate::memory`, so the built-in
+/// and the management commands share one implementation. A `budget` (Jan's
+/// tidy subagent) caps the mutations: each write, edit, delete and move takes
+/// one change before it runs and gives it back if it changed nothing. In
+/// `plan_mode` only `view` and `search` run: plan mode is read-only, and the
+/// tool is classed `Read` (so the loop's capability check lets it through),
+/// which makes this the one place that knows which ops change the store.
+/// For the same reason every change holds the store's change lock from the
+/// freshness check to its own bookkeeping, so changes batched in parallel, or
+/// made by a tidy beside the main agent, apply one after another.
+async fn memory_tool(
+    args: &serde_json::Value,
+    scopes: memory::Scopes<'_>,
+    budget: Option<&memory::ChangeBudget>,
+    plan_mode: bool,
+) -> String {
+    let need = |key: &str| {
+        arg_str(args, key).ok_or_else(|| format!("ERROR: op needs the '{key}' argument"))
     };
-    match scopes.read(name).await {
-        Ok(content) => content,
-        Err(e) => e,
+    let op = arg_str(args, "op");
+    let mutates = matches!(op, Some("write" | "edit" | "delete" | "move"));
+    if mutates && plan_mode {
+        // Worded like the loop's plan-mode refusal, which telemetry reads as
+        // a config refusal.
+        return format!(
+            "ERROR: tool 'memory' op '{}' unavailable in plan_mode_read_only (plan mode is read-only). \
+             Only `view` and `search` work in plan mode; stage the memory change in the plan.",
+            op.unwrap_or_default()
+        );
     }
+    let _change_lock = match (mutates, arg_str(args, "name")) {
+        (true, Some(name)) => scopes.lock_changes(name).await,
+        _ => None,
+    };
+    // A tidy runs beside the main agent: its whole-file changes must be based
+    // on the note as it is now (see `ChangeBudget::check_fresh`). `edit` needs
+    // no check, being an exact match against the current text.
+    // Only a complete call is checked, so a missing argument is reported as
+    // such rather than as a stale note.
+    let complete = match op {
+        Some("write") => arg_str(args, "content").is_some(),
+        Some("move") => arg_str(args, "to").is_some(),
+        Some("delete") => true,
+        _ => false,
+    };
+    if let (Some(budget), Some(name), true) = (budget, arg_str(args, "name"), complete) {
+        if let Some(Err(e)) = scopes.note_file(name).map(|path| budget.check_fresh(&path, name)) {
+            return e;
+        }
+    }
+    // An `edit` is safe from a stale copy, but its result is only the run's
+    // view when the run was up to date before it: otherwise the note also
+    // holds text the run never saw, and recording it would let a later
+    // whole-file change drop that text unseen.
+    let edit_was_fresh = match (budget, op, arg_str(args, "name")) {
+        (Some(budget), Some("edit"), Some(name)) => scopes
+            .note_file(name)
+            .is_some_and(|path| budget.check_fresh(&path, name).is_ok()),
+        _ => false,
+    };
+    if mutates {
+        if let Some(Err(e)) = budget.map(memory::ChangeBudget::take) {
+            return e;
+        }
+    }
+    let result = match op {
+        Some("view") => scopes.view(arg_str(args, "name")).await,
+        Some("search") => match need("query") {
+            Ok(query) => scopes.search(query),
+            Err(e) => Err(e),
+        },
+        Some("write") => match (need("name"), need("content")) {
+            (Ok(name), Ok(content)) => scopes.write(name, arg_str(args, "title"), content).await,
+            (Err(e), _) | (_, Err(e)) => Err(e),
+        },
+        Some("edit") => match (need("name"), need("old"), need("new")) {
+            (Ok(name), Ok(old), Ok(new)) => scopes.edit(name, old, new).await,
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => Err(e),
+        },
+        Some("delete") => match need("name") {
+            Ok(name) => scopes.delete(name).await,
+            Err(e) => Err(e),
+        },
+        Some("move") => match (need("name"), need("to")) {
+            (Ok(name), Ok(to)) => scopes.rename(name, to).await,
+            (Err(e), _) | (_, Err(e)) => Err(e),
+        },
+        Some(other) => Err(format!(
+            "ERROR: unknown memory op '{other}' (expected view, search, write, edit, delete or move)"
+        )),
+        None => Err("ERROR: missing required argument 'op'".to_string()),
+    };
+    // A refused or no-op change (a missing note to delete) spends nothing.
+    let changed = matches!(&result, Ok(text) if !text.starts_with("No note"));
+    if !changed && mutates {
+        if let Some(budget) = budget {
+            budget.refund();
+        }
+    }
+    if let (Some(budget), Ok(text)) = (budget, &result) {
+        remember_notes(budget, scopes, op, args, text, edit_was_fresh);
+    }
+    result.unwrap_or_else(|e| e)
 }
 
-async fn memory_write(args: &serde_json::Value, scopes: memory::Scopes<'_>) -> String {
-    let Some(name) = arg_str(args, "name") else {
-        return "ERROR: missing required argument 'name'".to_string();
+/// Keep a budgeted run's view of the notes current after a successful op: a
+/// viewed note as returned, a changed one as now on disk (its own change must
+/// not read as someone else's), a moved or deleted one forgotten. An edit of
+/// a note the run was not up to date with (`edit_was_fresh` false) leaves the
+/// stale view in place, so the run must view it again before a whole-file
+/// change.
+fn remember_notes(
+    budget: &memory::ChangeBudget,
+    scopes: memory::Scopes<'_>,
+    op: Option<&str>,
+    args: &serde_json::Value,
+    text: &str,
+    edit_was_fresh: bool,
+) {
+    let file = |key: &str| arg_str(args, key).and_then(|name| scopes.note_file(name));
+    let record = |path: &Path| match std::fs::read_to_string(path) {
+        Ok(content) => budget.saw(path, &content),
+        Err(_) => budget.forget(path),
     };
-    let Some(content) = arg_str(args, "content") else {
-        return "ERROR: missing required argument 'content'".to_string();
-    };
-    match scopes.write(name, content).await {
-        Ok(file) => format!("Wrote {} bytes to memory/{file}", content.len()),
-        Err(e) => e,
+    match op {
+        Some("view") => {
+            if let Some(path) = file("name").filter(|p| p.is_file()) {
+                budget.saw(&path, text);
+            }
+        }
+        Some("write") => file("name").iter().for_each(|p| record(p)),
+        Some("edit") if edit_was_fresh => file("name").iter().for_each(|p| record(p)),
+        Some("move") => {
+            file("name").iter().for_each(|p| budget.forget(p));
+            file("to").iter().for_each(|p| record(p));
+        }
+        Some("delete") => file("name").iter().for_each(|p| budget.forget(p)),
+        _ => {}
     }
 }
 
@@ -557,7 +681,7 @@ async fn read(
     };
     let offset = arg_u64(args, "offset").map(|v| v as usize);
     let limit = arg_u64(args, "limit").map(|v| v as usize);
-    let target = resolve_path(root, scratch, path);
+    let target = resolve_path(root, path);
     // Fail closed: a component swapped to a symlink after the gate validated
     // the path must not redirect the open out of the workspace.
     if symlink_escapes_any_root(root, scratch, read_roots, &target) {
@@ -569,7 +693,7 @@ async fn read(
 
     let bytes = match tokio::fs::read(&target).await {
         Ok(b) => b,
-        Err(e) => return (format!("ERROR: {e}"), None),
+        Err(e) => return (format!("ERROR: cannot read {path}: {e}"), None),
     };
 
     // An image file is returned as an OpenAI `image_url` content part rather
@@ -577,7 +701,7 @@ async fn read(
     // plain read (no offset/limit) does this, since slicing an image makes no
     // sense and offset/limit still refers to text lines.
     if offset.is_none() && limit.is_none() && bytes.len() <= MAX_IMAGE_BYTES {
-        if let Some(mime) = crate::tools::image::detect(&target) {
+        if let Some(mime) = crate::tools::image::mime_from_signature(&bytes) {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
             let name = target
@@ -596,12 +720,18 @@ async fn read(
 
     let content = match String::from_utf8(bytes) {
         Ok(c) => c,
-        Err(_) => return ("ERROR: not a UTF-8 text file".to_string(), None),
+        Err(_) => return (format!("ERROR: {path} is not a UTF-8 text file"), None),
     };
 
+    let mut first_line = 1;
     let selected = if offset.is_some() || limit.is_some() {
-        let lines: Vec<&str> = content.split('\n').collect();
+        let mut lines: Vec<&str> = content.split('\n').collect();
+        // A trailing newline ends the last line; it does not start another.
+        if lines.len() > 1 && lines.last() == Some(&"") {
+            lines.pop();
+        }
         let start = offset.map(|o| o.saturating_sub(1)).unwrap_or(0);
+        first_line = start + 1;
         if start >= lines.len() {
             return (
                 format!(
@@ -621,15 +751,45 @@ async fn read(
         content
     };
 
-    (
-        cap_output(
-            &selected,
-            MAX_LINES,
-            MAX_BYTES,
-            "\n[truncated: use offset/limit to read more]",
-        ),
-        None,
-    )
+    (cap_read(&selected, first_line, MAX_LINES, MAX_BYTES), None)
+}
+
+/// [`cap_output`] for `read`, whose note names the `offset` to continue from.
+/// `first_line` is the file's line number of the first line of `s`. A single
+/// line over `max_bytes` (a minified file) is cut at a char boundary rather
+/// than dropped whole, since `offset`/`limit` cannot reach inside a line.
+fn cap_read(s: &str, first_line: usize, max_lines: usize, max_bytes: usize) -> String {
+    let mut out = String::new();
+    for (i, line) in s.split_inclusive('\n').enumerate() {
+        let number = first_line + i;
+        if i >= max_lines || (i > 0 && out.len() + line.len() > max_bytes) {
+            out.push_str(&format!("\n[truncated: use offset={number} to read more]"));
+            return out;
+        }
+        // The newline is not part of what a cut would keep, so a line whose
+        // text is exactly the cap fits.
+        let body = line.strip_suffix('\n').unwrap_or(line);
+        if body.len() > max_bytes {
+            let mut cut = max_bytes;
+            while !body.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            out.push_str(&body[..cut]);
+            let next = if s.len() > line.len() {
+                format!("; use offset={} to read the lines after it", number + 1)
+            } else {
+                String::new()
+            };
+            out.push_str(&format!(
+                "\n[truncated: line {number} cut at {cut} of {} bytes, the rest of that line \
+                 cannot be read with offset/limit{next}]",
+                body.len(),
+            ));
+            return out;
+        }
+        out.push_str(line);
+    }
+    out
 }
 
 async fn ls(
@@ -643,7 +803,7 @@ async fn ls(
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(LS_DEFAULT_LIMIT);
-    let target = resolve_path(root, scratch, path);
+    let target = resolve_path(root, path);
     // Names are content too: a symlinked directory would list a host directory.
     if symlink_escapes_any_root(root, scratch, read_roots, &target) {
         return format!("ERROR: refused to list through a symlink out of the workspace: {path}");
@@ -702,7 +862,7 @@ async fn write(
     // canonical root (not the raw argument) so `..` and absolute paths are
     // caught even if the gate's decision was made against a stale view.
     // `write_roots` widen the confinement exactly as they widened the gate.
-    let target = resolve_path(root, scratch, path);
+    let target = resolve_path(root, path);
     if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to write outside the agent workspace: {path}");
     }
@@ -834,7 +994,7 @@ async fn edit(
     if let Some((name, why)) = refuse_windows_name(path) {
         return format!("ERROR: refused to edit '{name}' in {path}: the name {why}");
     }
-    let target = resolve_path(root, scratch, path);
+    let target = resolve_path(root, path);
     if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
@@ -874,9 +1034,25 @@ async fn edit(
     }
 }
 
+/// The refusal a `write`/`edit` gets for a path in a read-only root. Refused
+/// here rather than left to the prompt, which auto-approval would answer.
+/// Names the scratch only where there is one.
+fn read_only_refusal(args: &serde_json::Value, scratch: Option<&Path>) -> String {
+    let path = arg_str(args, "path").unwrap_or_default();
+    let head = format!("ERROR: {path} is in a read-only checkout; this run cannot change it.");
+    match scratch {
+        Some(s) => format!(
+            "{head} Write temporary files under {} instead.",
+            s.display()
+        ),
+        None => head,
+    }
+}
+
 /// The shell a confined command launches with: the (possibly jail-wrapped)
-/// shell config, the path the sandbox exposes as its temp dir, and the policy
-/// itself (which `denial_hint` reads even when the shell runs unconfined).
+/// shell config, the env that names the scratch and package cache at their
+/// real paths (`None` unconfined), and the policy itself (which `denial_hint`
+/// reads even when the shell runs unconfined).
 ///
 /// With the sandbox off the shell is spawned bare, the way the user's own
 /// terminal would run it: no wrapper, no policy mounts, the real `$HOME` and
@@ -887,7 +1063,7 @@ async fn edit(
 /// call would.
 pub(crate) fn confined_shell(
     ctx: &ToolContext<'_>,
-) -> Result<(proc::ShellConfig, Option<PathBuf>, jail::Policy), String> {
+) -> Result<(proc::ShellConfig, Option<proc::SandboxEnv>, jail::Policy), String> {
     let root = ctx.project_root;
     let mut policy =
         jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
@@ -900,13 +1076,20 @@ pub(crate) fn confined_shell(
     if let Some(scratch) = ctx.scratch_root {
         policy = policy.with_scratch_root(scratch);
     }
+    if let Some(pkg) = ctx.pkg_cache {
+        policy = policy.with_pkg_cache(pkg);
+    }
     if !ctx.read_roots.is_empty() {
         policy = policy.with_read_roots(ctx.read_roots.to_vec());
     }
     if !ctx.write_roots.is_empty() {
         policy = policy.with_write_roots(ctx.write_roots.to_vec());
     }
-    let shell = if ctx.sandbox {
+    policy = policy.with_workspace_readonly(ctx.workspace_readonly);
+    // A read-only root is only read-only inside the sandbox, so it is never
+    // run without one, whatever the surface chose.
+    let confined = ctx.shell_confined();
+    let shell = if confined {
         // No confinement available means no shell: running unsandboxed would give
         // the command the whole machine, which is never what the caller asked for.
         let Some(wrapped) = jail::wrap(proc::shell(), &policy) else {
@@ -920,12 +1103,16 @@ pub(crate) fn confined_shell(
     } else {
         proc::shell().clone()
     };
-    let sandbox_tmp = if ctx.sandbox {
-        jail::scratch_env_path(jail::backend(), &policy)
-    } else {
-        None
-    };
-    Ok((shell, sandbox_tmp, policy))
+    // Every backend exposes the scratch and the package cache at their real
+    // paths, so those are what the shell's env names. Unconfined, there is no
+    // sandbox env at all: the host's own values stand.
+    let sandbox_env = confined.then(|| {
+        proc::SandboxEnv::new(
+            policy.scratch_root.as_deref(),
+            policy.pkg_cache.as_ref().map(|p| p.root.as_path()),
+        )
+    });
+    Ok((shell, sandbox_env, policy))
 }
 
 async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
@@ -943,7 +1130,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         );
     }
 
-    let (shell, sandbox_tmp, policy) = match confined_shell(ctx) {
+    let (shell, sandbox_env, policy) = match confined_shell(ctx) {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -951,7 +1138,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         &shell,
         command,
         root,
-        sandbox_tmp.as_deref(),
+        sandbox_env.as_ref(),
         ctx.shell_env(),
         ctx.thread_id,
     )
@@ -978,7 +1165,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // Cloned into the detached task, which is what keeps a backgrounded command
     // collecting output after this call has already returned.
     let sink = ctx.on_output.clone();
-    let sandboxed = ctx.sandbox;
+    // A read-only root is confined even in an unsandboxed session, so its
+    // denials get the note too.
+    let sandboxed = ctx.shell_confined();
     let escalation = ctx.escalation;
     // Fed from the first byte, so a command the user opens in `/shells` after it
     // backgrounded still shows what it printed before the timeout.
@@ -987,7 +1176,8 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         let mut out = collect_and_format(child, spill_scratch, sink, tail).await;
         // Appended inside the task so a backgrounded job carries the hint too.
         if sandboxed {
-            out.push_str(&sandbox_denial_note(&out, &policy, escalation));
+            let note = sandbox_denial_note(&out, &policy, escalation);
+            insert_before_exit_marker(&mut out, &note);
         }
         if let Some(pid) = pid {
             proc::unregister(thread_owned.as_deref(), pid);
@@ -1024,9 +1214,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
             let command_owned = command.to_string();
             let id = next_background_id();
             let temp = new_temp_path(ctx.scratch_root);
-            let display = temp
-                .as_ref()
-                .map(|p| crate::tools::sandbox::scratch_display_path(ctx.scratch_root, p));
+            let display = temp.as_ref().map(|p| p.to_string_lossy().into_owned());
             // Raised before this call returns, so the caller is already owed a
             // result by the time the turn that made the call can end.
             if let Some(sink) = &done_sink {
@@ -1253,15 +1441,13 @@ impl BashCapture {
         // yet), so dumping it captures the full prefix before we start
         // dropping from the front.
         if self.spill.is_none() && self.tail.len() + chunk.len() > BASH_MAX_BYTES {
-            if let Some(path) = new_temp_path(self.scratch.as_deref()) {
-                if let Ok(file) = open_spill_file(&path) {
-                    let mut w = std::io::BufWriter::new(file);
-                    let (a, b) = self.tail.as_slices();
-                    let _ = w.write_all(a);
-                    let _ = w.write_all(b);
-                    self.spill = Some(w);
-                    self.spill_path = Some(path);
-                }
+            if let Some((path, file)) = create_spill_file(self.scratch.as_deref()) {
+                let mut w = std::io::BufWriter::new(file);
+                let (a, b) = self.tail.as_slices();
+                let _ = w.write_all(a);
+                let _ = w.write_all(b);
+                self.spill = Some(w);
+                self.spill_path = Some(path);
             }
         }
         if let Some(w) = self.spill.as_mut() {
@@ -1280,54 +1466,63 @@ impl BashCapture {
         if let Some(w) = self.spill.as_mut() {
             let _ = w.flush();
         }
-        let retained = String::from_utf8_lossy(self.tail.make_contiguous()).into_owned();
+        let raw = self.tail.make_contiguous();
+        // Bytes dropped from the front cut into the first retained line. That
+        // loses visible text unless the line is a CR redraw whose last frame
+        // starts inside the retained part (only that frame is ever shown).
+        let front_cut = self.total_bytes > raw.len() && {
+            let first = raw.split(|&b| b == b'\n').next().unwrap_or_default();
+            let first = first.strip_suffix(b"\r").unwrap_or(first);
+            !first.contains(&b'\r')
+        };
+        let retained = String::from_utf8_lossy(raw).into_owned();
         let collapsed = sanitize_output(&retained);
         let capped = tail_cap(&collapsed, BASH_MAX_LINES, BASH_MAX_BYTES);
         let shown_lines = capped.matches('\n').count();
-        // Truncated when the model-facing output lost real lines (front dropped)
+        // Truncated when the model-facing output lost real lines (front dropped),
+        // raw bytes (front dropped from a line with no newline in the lost part)
         // or bytes (tail cap). CR-only progress redraws collapse to a single
         // line, so they read as complete rather than truncated.
-        let truncated = self.total_newlines > shown_lines || capped.len() < collapsed.len();
+        let truncated = self.total_newlines > shown_lines
+            || front_cut
+            || capped.len() < collapsed.len();
 
-        // Always emit an explicit exit marker on its own line. A bare exit code
-        // (including 0) is the only reliable success signal: commands like
-        // `git push` write their normal status to stderr on success, so stderr
-        // text must not be read as failure.
         let mut body = capped;
         if !body.is_empty() && !body.ends_with('\n') {
             body.push('\n');
         }
+        if truncated {
+            let shown = body.len();
+            let path = match self.spill_path.take() {
+                Some(p) => Some(p),
+                None => write_temp_output(&collapsed, self.scratch.as_deref()),
+            }
+            .map(|p| p.to_string_lossy().into_owned());
+            match path {
+                Some(p) => body.push_str(&format!(
+                    "[output truncated at {shown} of {} bytes; full output written \
+                     to {p}. Use the read tool (with offset/limit) on that path to see \
+                     the rest]\n",
+                    self.total_bytes,
+                )),
+                None => body.push_str(&format!(
+                    "[output truncated at {shown} of {} bytes]\n",
+                    self.total_bytes,
+                )),
+            }
+        } else if let Some(p) = self.spill_path.take() {
+            remove_spill_file(&p);
+        }
+
+        // Always end with an explicit exit marker on its own, final line. A bare
+        // exit code (including 0) is the only reliable success signal: commands
+        // like `git push` write their normal status to stderr on success, so
+        // stderr text must not be read as failure.
         match code {
             Some(code) => body.push_str(&format!("[exit {code}]")),
             None => body.push_str("[terminated by signal]"),
         }
-
-        if !truncated {
-            if let Some(p) = self.spill_path.take() {
-                remove_spill_file(&p);
-            }
-            return body;
-        }
-
-        let path = match self.spill_path.take() {
-            Some(p) => Some(p),
-            None => write_temp_output(&collapsed, self.scratch.as_deref()),
-        }
-        .map(|p| crate::tools::sandbox::scratch_display_path(self.scratch.as_deref(), &p));
-        match path {
-            Some(p) => format!(
-                "{body}\n[output truncated at {} of {} bytes; full output written \
-                 to {p}. Use the read tool (with offset/limit) on that path to see \
-                 the rest]",
-                body.len(),
-                self.total_bytes,
-            ),
-            None => format!(
-                "{body}\n[output truncated at {} of {} bytes]",
-                body.len(),
-                self.total_bytes,
-            ),
-        }
+        body
     }
 }
 
@@ -1352,10 +1547,25 @@ fn sandbox_denial_note(out: &str, policy: &jail::Policy, escalation: bool) -> St
         return String::new();
     }
     let mut note = jail::denial_hint(policy);
-    if escalation {
+    // Escalating drops the sandbox but not a read-only root, so offering it to
+    // a read-only run only buys a pointless prompt.
+    if escalation && !policy.workspace_readonly {
         note.push_str(ESCALATION_HINT);
     }
     note
+}
+
+/// Splice `note` (which starts with `\n`) in above a shell result's exit
+/// marker, so the marker stays the final line as the tool description
+/// promises. Output without a marker on its last line gets `note` appended.
+pub fn insert_before_exit_marker(out: &mut String, note: &str) {
+    let at = out.rfind('\n').map_or(0, |i| i + 1);
+    if note.is_empty() || exit_marker(&out[at..]).is_none() {
+        out.push_str(note);
+        return;
+    }
+    let line = note.strip_prefix('\n').unwrap_or(note);
+    out.insert_str(at, &format!("{line}\n"));
 }
 
 /// The escalation half of [`sandbox_denial_note`].
@@ -1363,8 +1573,9 @@ const ESCALATION_HINT: &str = "\n[If this command is needed for the task, rerun 
 
 /// True when a shell tool result reports failure via its exit marker: a
 /// non-zero `[exit N]` or a signal termination. The marker is emitted by
-/// [`BashCapture::finish`] on its own line and a truncation note may follow it,
-/// so scan every line rather than only the tail. Model-facing content is
+/// [`BashCapture::finish`] as the final line, but results saved before that
+/// order carry a truncation note after it, so scan every line rather than
+/// only the tail. Model-facing content is
 /// deliberately left unprefixed (a non-zero exit is not an "ERROR" string, since
 /// commands like `grep`/`diff`/`test` exit non-zero without failing); this feeds
 /// the display-only `is_error` flag so the TUI marks the call failed.
@@ -1469,7 +1680,7 @@ fn tail_cap(s: &str, max_lines: usize, max_bytes: usize) -> String {
 
 /// Directory holding bash-output spill files: inside the session scratch when
 /// there is one, so the file the truncation note points at is reachable by the
-/// same `/tmp/jan-bash/...` name from both the filesystem tools and the shell,
+/// same real path from both the filesystem tools and the shell,
 /// and is reclaimed when the session's scratch is removed.
 ///
 /// The directory is validated as a real, non-symlink directory before use: the
@@ -1488,9 +1699,21 @@ fn spill_dir(scratch: Option<&Path>) -> Option<PathBuf> {
     crate::tools::spill::validated_subdir(&base, "jan-bash")
 }
 
+/// A spill name no file holds yet. A pid is reused across runs, so an earlier
+/// process can have left its spills under the very names this one would
+/// count up to; a backgrounded command's file would then read as finished
+/// (stale) before the command ends. Creation still goes through
+/// [`open_spill_file`], which refuses a name taken in between.
 fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
-    let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-    Some(spill_dir(scratch)?.join(format!("jan-bash-{}-{}.txt", std::process::id(), n)))
+    let dir = spill_dir(scratch)?;
+    loop {
+        let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let path = dir.join(format!("jan-bash-{}-{}.txt", std::process::id(), n));
+        let taken = |p: &Path| std::fs::symlink_metadata(p).is_ok();
+        if !taken(&path) && !taken(&path.with_extension("part")) {
+            return Some(path);
+        }
+    }
 }
 
 /// Open a spill file atomically; see [`crate::tools::spill::open_excl`].
@@ -1500,12 +1723,26 @@ fn open_spill_file(path: &Path) -> std::io::Result<std::fs::File> {
     crate::tools::spill::open_excl(path)
 }
 
+/// Create a fresh spill file through [`open_spill_file`]. A name taken after
+/// [`new_temp_path`] checked it is skipped for the next one rather than
+/// losing the spill; any other error, or a run of taken names, gives up.
+fn create_spill_file(scratch: Option<&Path>) -> Option<(PathBuf, std::fs::File)> {
+    for _ in 0..64 {
+        let path = new_temp_path(scratch)?;
+        match open_spill_file(&path) {
+            Ok(file) => return Some((path, file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
 /// Write `content` to a uniquely named temp file, returning its path on
 /// success. Uses [`open_spill_file`] so the write never follows a symlink.
 fn write_temp_output(content: &str, scratch: Option<&Path>) -> Option<PathBuf> {
     use std::io::Write;
-    let path = new_temp_path(scratch)?;
-    let mut file = open_spill_file(&path).ok()?;
+    let (path, mut file) = create_spill_file(scratch)?;
     file.write_all(content.as_bytes()).ok()?;
     Some(path)
 }
@@ -1653,7 +1890,12 @@ pub async fn render_html_png(
         c.args(&chrome_args);
         c
     };
+    // Chrome gets no stdin and no controlling terminal: left alone it would sit
+    // in Jan's foreground process group holding the TUI's terminal.
+    #[cfg(unix)]
+    proc::detach_from_terminal(&mut launcher);
     let mut child = match launcher
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -1674,7 +1916,19 @@ pub async fn render_html_png(
         }
         String::from_utf8_lossy(&buf).into_owned()
     });
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(30), child.wait()).await;
+    let pid = child.id();
+    let waited = tokio::time::timeout(std::time::Duration::from_secs(30), child.wait()).await;
+    // Still running: Chrome leads its own process group, so take its helper
+    // processes down with it. Only while unreaped -- once `wait` returns, the
+    // pid (and so the group id) may be reused.
+    #[cfg(unix)]
+    if waited.is_err() {
+        if let Some(pid) = pid {
+            proc::kill_tree(pid);
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (waited, pid);
     let _ = child.kill().await;
     let stderr = drain.await.unwrap_or_default();
     let _ = tokio::fs::remove_dir_all(&profile).await;
@@ -1728,7 +1982,7 @@ async fn screenshot(
     };
     let width = arg_u64(args, "width").unwrap_or(1280).clamp(320, 4096);
     let height = arg_u64(args, "height").unwrap_or(960).clamp(240, 4096);
-    let target = resolve_path(root, scratch, path);
+    let target = resolve_path(root, path);
     // A page the user approved outside the trusted roots gets no neighbours:
     // its directory was never part of what they approved.
     let scope = match landing(root, scratch, read_roots, &target) {
@@ -1774,7 +2028,7 @@ async fn find(
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(FIND_DEFAULT_LIMIT);
-    let base = resolve_path(root, scratch, &path);
+    let base = resolve_path(root, &path);
     if symlink_escapes_any_root(root, scratch, read_roots, &base) {
         return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
     }
@@ -1794,6 +2048,9 @@ async fn find(
             require_literal_leading_dot: false,
         };
         let mut matches: Vec<String> = Vec::new();
+        // Set on the first match past the limit, so the notice only appears
+        // when something was actually left out.
+        let mut limited = false;
         for entry in WalkBuilder::new(&base)
             .hidden(false)
             .require_git(false)
@@ -1806,17 +2063,24 @@ async fn find(
             }
             let rel = rel_to(&base, entry.path());
             if pat.matches_with(&rel, opts) {
-                matches.push(rel);
                 if matches.len() >= limit {
+                    limited = true;
                     break;
                 }
+                matches.push(rel);
             }
         }
-        if matches.is_empty() {
-            "No matches.".to_string()
-        } else {
-            matches.join("\n")
+        if matches.is_empty() && !limited {
+            return "No matches.".to_string();
         }
+        let mut out = matches.join("\n");
+        if limited {
+            out.push_str(&format!(
+                "\n[truncated: {limit} path limit reached; raise limit or narrow the pattern]"
+            ));
+        }
+        // `limit: 0` leaves only the notice, which then has no line above it.
+        out.strip_prefix('\n').map(str::to_string).unwrap_or(out)
     })
     .await;
     res.unwrap_or_else(|e| format!("ERROR: {e}"))
@@ -1838,7 +2102,7 @@ async fn grep(
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(GREP_DEFAULT_LIMIT);
-    let base = resolve_path(root, scratch, &path);
+    let base = resolve_path(root, &path);
     if symlink_escapes_any_root(root, scratch, read_roots, &base) {
         return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
     }
@@ -1875,6 +2139,9 @@ async fn grep(
         let is_file = base.is_file();
         let mut matches: Vec<String> = Vec::new();
         let mut count = 0usize;
+        // Set on the first match past the limit, so the notice only appears
+        // when something was actually left out.
+        let mut limited = false;
 
         let mut search_file = |file: &Path, rel_base: &Path| -> bool {
             if let Some(gp) = &glob_pat {
@@ -1898,6 +2165,10 @@ async fn grep(
             let lines: Vec<&str> = content.lines().collect();
             for (i, line) in lines.iter().enumerate() {
                 if re.is_match(line) {
+                    if count >= limit {
+                        limited = true;
+                        return false;
+                    }
                     if context > 0 {
                         let start = i.saturating_sub(context);
                         let end = (i + context + 1).min(lines.len());
@@ -1913,9 +2184,6 @@ async fn grep(
                         matches.push(format!("{rel}:{}:{}", i + 1, truncate_line(line)));
                     }
                     count += 1;
-                    if count >= limit {
-                        return false;
-                    }
                 }
             }
             true
@@ -1958,16 +2226,22 @@ async fn grep(
             }
         }
 
-        if matches.is_empty() {
-            "No matches.".to_string()
-        } else {
-            cap_output(
-                &matches.join("\n"),
-                usize::MAX,
-                MAX_BYTES,
-                "\n[truncated: 64KB limit]",
-            )
+        if matches.is_empty() && !limited {
+            return "No matches.".to_string();
         }
+        let mut out = cap_output(
+            &matches.join("\n"),
+            usize::MAX,
+            MAX_BYTES,
+            "\n[truncated: 64KB limit]",
+        );
+        if limited {
+            out.push_str(&format!(
+                "\n[truncated: {limit} match limit reached; raise limit or narrow the search]"
+            ));
+        }
+        // `limit: 0` leaves only the notice, which then has no line above it.
+        out.strip_prefix('\n').map(str::to_string).unwrap_or(out)
     })
     .await;
     res.unwrap_or_else(|e| format!("ERROR: {e}"))
@@ -2031,7 +2305,60 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("jan_handlers_test_{}_{}", std::process::id(), n));
         std::fs::create_dir_all(&dir).expect("create test root");
+        // The root's store lives in the Jan home, outside the root a test
+        // removes, and a reused pid reuses the root: start it empty.
+        let _ = std::fs::remove_dir_all(crate::workspace::project_store(&dir));
         dir
+    }
+
+    /// `find` says when it stopped at its limit, and only then.
+    #[tokio::test]
+    async fn find_says_when_it_hits_its_limit() {
+        let root = unique_root();
+        for name in ["a.rs", "b.rs", "c.rs"] {
+            std::fs::write(root.join(name), b"x").unwrap();
+        }
+        let find = |limit: u64| {
+            let root = root.clone();
+            async move {
+                execute_builtin(
+                    lookup("find").unwrap(),
+                    &json!({"pattern": "*.rs", "limit": limit}),
+                    &root,
+                )
+                .await
+            }
+        };
+        let cut = find(2).await;
+        assert_eq!(cut.lines().count(), 3, "{cut}");
+        assert!(cut.ends_with("[truncated: 2 path limit reached; raise limit or narrow the pattern]"), "{cut}");
+        let exact = find(3).await;
+        assert!(!exact.contains("[truncated"), "{exact}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `grep` says when it stopped at its match limit, and only then.
+    #[tokio::test]
+    async fn grep_says_when_it_hits_its_limit() {
+        let root = unique_root();
+        std::fs::write(root.join("a.txt"), b"hit\nhit\nhit\n").unwrap();
+        let grep = |limit: u64| {
+            let root = root.clone();
+            async move {
+                execute_builtin(
+                    lookup("grep").unwrap(),
+                    &json!({"pattern": "hit", "limit": limit}),
+                    &root,
+                )
+                .await
+            }
+        };
+        let cut = grep(2).await;
+        assert_eq!(cut.matches("a.txt:").count(), 2, "{cut}");
+        assert!(cut.ends_with("[truncated: 2 match limit reached; raise limit or narrow the search]"), "{cut}");
+        let exact = grep(3).await;
+        assert!(!exact.contains("[truncated"), "{exact}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
@@ -2091,10 +2418,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_extension_fallback_catches_a_misnamed_image() {
+    async fn a_text_file_named_like_an_image_is_read_as_text() {
         let root = unique_root();
-        // No valid signature header, but the extension says PNG: the extension
-        // fallback still returns an image payload.
+        // No image signature: the extension alone must not turn it into a
+        // broken data URL.
         std::fs::write(root.join("scanned.png"), b"not a real png").unwrap();
         let (content, images) = super::execute_builtin(
             lookup("read").unwrap(),
@@ -2102,11 +2429,126 @@ mod tests {
             &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
         )
         .await;
-        assert!(!content.starts_with("ERROR"), "got: {content}");
-        assert!(
-            images.is_some(),
-            "extension-matching png must yield an image"
-        );
+        assert_eq!(content, "not a real png");
+        assert!(images.is_none(), "no signature, no image");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn a_corrupt_image_is_an_error_naming_the_path() {
+        let root = unique_root();
+        std::fs::write(root.join("broken.png"), [0xff, 0xfe, 0x00, 0x01]).unwrap();
+        let (content, images) = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "broken.png"}),
+            &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
+        )
+        .await;
+        assert!(images.is_none());
+        assert!(content.starts_with("ERROR"), "got: {content}");
+        assert!(content.contains("broken.png"), "got: {content}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_errors_name_the_path() {
+        let root = unique_root();
+        let out =
+            execute_builtin(lookup("read").unwrap(), &json!({"path": "missing.txt"}), &root).await;
+        assert!(out.starts_with("ERROR") && out.contains("missing.txt"), "got: {out}");
+        std::fs::write(root.join("bin"), [0xff, 0xfe, 0x00]).unwrap();
+        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "bin"}), &root).await;
+        assert!(out.starts_with("ERROR") && out.contains("bin"), "got: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The empty piece after a trailing newline is not a line.
+    #[tokio::test]
+    async fn read_line_count_ignores_a_trailing_newline() {
+        let root = unique_root();
+        std::fs::write(root.join("two.txt"), b"a\nb\n").unwrap();
+        let out = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "two.txt", "offset": 3}),
+            &root,
+        )
+        .await;
+        assert!(out.starts_with("ERROR"), "got: {out}");
+        assert!(out.contains("(2 lines total)"), "got: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A single line over the byte cap (a minified file) is cut at a char
+    /// boundary and the note says where, instead of returning only the note.
+    #[tokio::test]
+    async fn read_cuts_an_oversized_line_and_says_where() {
+        let root = unique_root();
+        // Two-byte chars, with an odd byte first, so the cap lands mid-char.
+        let long = format!("x{}", "\u{e9}".repeat(40_000));
+        std::fs::write(root.join("min.js"), format!("{long}\nnext\n")).unwrap();
+        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "min.js"}), &root).await;
+        let (body, note) = out.rsplit_once('\n').unwrap();
+        assert!(body.len() <= MAX_BYTES && body.len() > MAX_BYTES - 4, "len {}", body.len());
+        assert!(long.starts_with(body));
+        assert!(note.contains("line 1"), "{note}");
+        assert!(note.contains(&format!("{} of {} bytes", body.len(), long.len())), "{note}");
+        assert!(note.contains("offset=2"), "{note}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A line whose text is exactly the byte cap fits: it is returned whole
+    /// with no note that part of it cannot be read.
+    #[tokio::test]
+    async fn read_returns_a_line_of_exactly_the_cap_whole() {
+        let root = unique_root();
+        let line = "x".repeat(MAX_BYTES);
+        std::fs::write(root.join("at.js"), format!("{line}\n")).unwrap();
+        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "at.js"}), &root).await;
+        assert!(out.starts_with(&line), "len {}", out.len());
+        assert!(!out.contains("cut at"), "{}", &out[MAX_BYTES..]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_line_cap_boundary() {
+        let root = unique_root();
+        let lines = |n: usize| (1..=n).map(|i| format!("{i}\n")).collect::<String>();
+        std::fs::write(root.join("at.txt"), lines(MAX_LINES)).unwrap();
+        std::fs::write(root.join("over.txt"), lines(MAX_LINES + 1)).unwrap();
+        let at = execute_builtin(lookup("read").unwrap(), &json!({"path": "at.txt"}), &root).await;
+        assert!(!at.contains("[truncated"), "{}", &at[at.len() - 40..]);
+        let over =
+            execute_builtin(lookup("read").unwrap(), &json!({"path": "over.txt"}), &root).await;
+        assert!(!over.contains("\n2001\n"));
+        assert!(over.ends_with("use offset=2001 to read more]"), "{}", &over[over.len() - 80..]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_byte_cap_boundary() {
+        let root = unique_root();
+        // 64 lines of exactly 1KB each fill the cap to the byte.
+        let line = format!("{}\n", "a".repeat(1023));
+        let full = line.repeat(64);
+        assert_eq!(full.len(), MAX_BYTES);
+        std::fs::write(root.join("at.txt"), &full).unwrap();
+        std::fs::write(root.join("over.txt"), format!("{full}b")).unwrap();
+        let at = execute_builtin(lookup("read").unwrap(), &json!({"path": "at.txt"}), &root).await;
+        assert_eq!(at, full);
+        let over =
+            execute_builtin(lookup("read").unwrap(), &json!({"path": "over.txt"}), &root).await;
+        assert!(over.starts_with(&full));
+        assert!(over.ends_with("use offset=65 to read more]"), "{}", &over[over.len() - 80..]);
+        // The note's line number is relative to the file, not to the slice.
+        std::fs::write(root.join("later.txt"), format!("first\n{full}b")).unwrap();
+        let sliced = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "later.txt", "offset": 2}),
+            &root,
+        )
+        .await;
+        assert!(sliced.starts_with(&full));
+        assert!(sliced.ends_with("use offset=66 to read more]"), "{}", &sliced[sliced.len() - 80..]);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2148,6 +2590,57 @@ mod tests {
         );
         assert!(content.starts_with("ERROR"), "got: {content}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A read-only root: `write`/`edit` refuse anything under it outright,
+    /// while reads keep working and the scratch stays writable.
+    #[tokio::test]
+    async fn a_read_only_root_refuses_writes_and_edits_under_it() {
+        let root = unique_root();
+        std::fs::write(root.join("a.txt"), "one").unwrap();
+        let scratch = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[])
+            .with_scratch_root(&scratch)
+            .with_workspace_readonly(true);
+        for (tool, args) in [
+            ("write", json!({"path": "a.txt", "content": "two"})),
+            ("write", json!({"path": "new/b.txt", "content": "x"})),
+            ("write", json!({"path": ".git/HEAD", "content": "x"})),
+            ("edit", json!({"path": "a.txt", "edits": [{"old_string": "one", "new_string": "two"}]})),
+        ] {
+            let (out, _) = super::execute_builtin(lookup(tool).unwrap(), &args, &ctx).await;
+            assert!(out.starts_with("ERROR") && out.contains("read-only"), "{tool}: {out}");
+            // The host checkout path is not the model's business.
+            assert!(!out.contains(&*root.to_string_lossy()), "{tool}: {out}");
+            let shown = scratch.display();
+            assert!(out.ends_with(&format!("Write temporary files under {shown} instead.")), "{out}");
+        }
+        // No scratch, no pointer at one.
+        let bare = ToolContext::new(&root, &store, &[]).with_workspace_readonly(true);
+        let (out, _) = super::execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "a.txt", "content": "x"}),
+            &bare,
+        )
+        .await;
+        assert_eq!(out, "ERROR: a.txt is in a read-only checkout; this run cannot change it.");
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "one");
+        assert!(!root.join("new").exists());
+        let (read, _) =
+            super::execute_builtin(lookup("read").unwrap(), &json!({"path": "a.txt"}), &ctx).await;
+        assert_eq!(read, "one");
+        // The scratch is named by its real path on every platform.
+        let in_scratch = scratch.join("note.txt").to_string_lossy().into_owned();
+        let (out, _) = super::execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": in_scratch, "content": "ok"}),
+            &ctx,
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     #[tokio::test]
@@ -2842,8 +3335,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// `find` from a legitimate `/tmp` base must not walk *out* through a
-    /// symlinked directory inside the scratch. Pins `WalkBuilder`'s
+    /// `find` from the scratch as its base must not walk *out* through a
+    /// symlinked directory inside it. Pins `WalkBuilder`'s
     /// no-follow default, which is what the containment check cannot cover:
     /// the base path here is honest, only the recursion would escape.
     #[tokio::test]
@@ -2858,7 +3351,7 @@ mod tests {
         let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
         let out = super::execute_builtin(
             lookup("find").unwrap(),
-            &json!({"pattern": "*.txt", "path": "/tmp"}),
+            &json!({"pattern": "*.txt", "path": scratch.to_string_lossy()}),
             &ctx,
         )
         .await
@@ -2963,6 +3456,28 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
+    /// A stale spill from an earlier process with the same (reused) pid must
+    /// not cost this one its spill file: the next free name is taken instead.
+    #[test]
+    fn a_stale_spill_name_is_skipped_not_fatal() {
+        let scratch = unique_root();
+        let dir = spill_dir(Some(&scratch)).unwrap();
+        let next = TEMP_COUNTER.load(Ordering::SeqCst);
+        for n in next..next + 4 {
+            let stale = dir.join(format!("jan-bash-{}-{n}.txt", std::process::id()));
+            std::fs::write(stale, b"stale").unwrap();
+        }
+        let path = write_temp_output("fresh", Some(&scratch)).expect("a spill file");
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "fresh");
+        // A backgrounded command's file is named but not created up front: the
+        // name must be free too, or a stale file reads as its finished output.
+        let next = TEMP_COUNTER.load(Ordering::SeqCst);
+        let stale = dir.join(format!("jan-bash-{}-{next}.txt", std::process::id()));
+        std::fs::write(&stale, b"stale").unwrap();
+        assert_ne!(new_temp_path(Some(&scratch)), Some(stale));
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
     /// A spill *file* that is a planted symlink must never be opened (truncated
     /// and written through), so the host target it points at stays intact.
     #[cfg(unix)]
@@ -2986,12 +3501,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
-    /// The write escape the scratch clamp is there to stop, spelled with a
-    /// symlink instead of `..`: a confined `write` through `/tmp/esc` must be
-    /// refused and must leave nothing behind outside the scratch.
+    /// A confined `write` through a symlink the shell planted in the scratch
+    /// must be refused and must leave nothing behind outside the scratch.
     #[tokio::test]
-    #[cfg(target_os = "linux")]
-    async fn confined_write_refuses_a_tmp_symlink_escape() {
+    #[cfg(unix)]
+    async fn confined_write_refuses_a_scratch_symlink_escape() {
         let root = unique_root();
         let scratch = unique_root();
         let outside = unique_root();
@@ -3002,7 +3516,7 @@ mod tests {
             .with_confined_writes(true);
         let out = super::execute_builtin(
             lookup("write").unwrap(),
-            &json!({"path": "/tmp/esc/pwned.txt", "content": "x"}),
+            &json!({"path": scratch.join("esc/pwned.txt").to_string_lossy(), "content": "x"}),
             &ctx,
         )
         .await
@@ -3076,111 +3590,98 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
-    /// A `write` to `/tmp/x` lands in the session scratch, and a `read` of the
-    /// same path sees it: every fs tool shares the one `/tmp` the shell sees.
+    /// A `write` into the scratch by its real path lands there, a `read` of the
+    /// same path sees it, and the result names that same path.
     #[tokio::test]
-    #[cfg(target_os = "linux")]
-    async fn write_then_read_via_tmp_persists_in_scratch() {
+    async fn write_then_read_in_the_scratch_uses_its_real_path() {
         let root = unique_root();
         let scratch = unique_root();
+        let file = scratch.join("scratch.txt");
+        let shown = file.to_string_lossy().into_owned();
         let store = crate::workspace::project_store(&root);
         let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
         let out = super::execute_builtin(
             lookup("write").unwrap(),
-            &json!({"path": "/tmp/scratch.txt", "content": "persist"}),
+            &json!({"path": shown, "content": "persist"}),
             &ctx,
         )
         .await
         .0;
-        assert!(out.starts_with("Created /tmp/scratch.txt"), "got: {out}");
-        assert!(scratch.join("scratch.txt").exists(), "wrote into scratch");
+        assert!(out.starts_with(&format!("Created {shown}")), "got: {out}");
+        assert!(file.exists(), "wrote into scratch");
 
-        let out = super::execute_builtin(
-            lookup("read").unwrap(),
-            &json!({"path": "/tmp/scratch.txt"}),
-            &ctx,
-        )
-        .await
-        .0;
+        let out =
+            super::execute_builtin(lookup("read").unwrap(), &json!({"path": shown}), &ctx).await.0;
         assert_eq!(out, "persist");
-
-        // No stray file on the real host /tmp.
-        assert!(!Path::new("/tmp/scratch.txt").exists());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
-    /// The bare `/tmp` dir resolves to the scratch root; files written there by
-    /// the shell (or a sibling tool) are listable through the file tools.
-    #[test]
+    /// The point of the real path: a file sandboxed `bash` writes through
+    /// `$TMPDIR` is at that same absolute path on the host, so the filesystem
+    /// tools (and an escalated, unconfined command) find it by the name the
+    /// shell printed. Linux, where the scratch used to be mounted over `/tmp`.
+    #[tokio::test]
     #[cfg(target_os = "linux")]
-    fn resolve_path_maps_tmp_into_scratch() {
+    async fn a_file_bash_writes_to_the_scratch_is_at_the_same_path_on_the_host() {
+        if !crate::tools::jail::backend().enforces() {
+            eprintln!("skipping: no sandbox backend on this host");
+            return;
+        }
         let root = unique_root();
         let scratch = unique_root();
-        assert_eq!(
-            crate::tools::sandbox::resolve_path(&root, Some(&scratch), "/tmp/a/b.txt"),
-            scratch.join("a/b.txt")
-        );
-        assert_eq!(
-            crate::tools::sandbox::resolve_path(&root, Some(&scratch), "/tmp"),
-            scratch
-        );
-        // Without a scratch, /tmp stays the host path (i.e. never the project).
-        assert_eq!(
-            crate::tools::sandbox::resolve_path(&root, None, "/tmp/a.txt"),
-            Path::new("/tmp/a.txt")
-        );
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
+        let (out, _) = super::execute_builtin(
+            lookup("shell").unwrap(),
+            &json!({"command": "echo made-inside > \"$TMPDIR/out.txt\" && echo \"$TMPDIR/out.txt\""}),
+            &ctx,
+        )
+        .await;
+        let named = scratch.join("out.txt");
+        assert!(out.contains(&*named.to_string_lossy()), "TMPDIR is the real path: {out}");
+        let (read, _) = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": named.to_string_lossy()}),
+            &ctx,
+        )
+        .await;
+        assert_eq!(read.trim(), "made-inside");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
-    /// A `..` climb inside `/tmp` must NOT escape the session scratch: an
-    /// absolute path maps into the scratch, and a `..` is clamped back to the
-    /// scratch root (chroot semantics, matching the `/tmp` bind mount), so it
-    /// can never reach the host temp.
+    /// The gate treats a write into the scratch, by its real path, as an
+    /// in-project write rather than an escape, and the host `/tmp` as an
+    /// escape now that nothing maps it into the scratch.
     #[test]
-    #[cfg(target_os = "linux")]
-    fn tmp_path_cannot_climb_out_with_dotdot() {
+    #[cfg(unix)]
+    fn gate_allows_a_scratch_write_and_treats_tmp_as_an_escape() {
         let root = unique_root();
         let scratch = unique_root();
-        // `/tmp/../evil.txt` clamps inside the scratch, never the host parent.
-        let out = crate::tools::sandbox::resolve_path(&root, Some(&scratch), "/tmp/../evil.txt");
-        assert!(
-            out.starts_with(&scratch),
-            "must stay inside the scratch, got: {out:?}"
-        );
-        assert_eq!(out, scratch.join("evil.txt"));
-        // Even a deeper climb stays clamped at the scratch root.
-        let deep =
-            crate::tools::sandbox::resolve_path(&root, Some(&scratch), "/tmp/../../deep.txt");
-        assert_eq!(deep, scratch.join("deep.txt"));
-        let _ = std::fs::remove_dir_all(&root);
-        let _ = std::fs::remove_dir_all(&scratch);
-    }
-
-    /// The gate treats a scratch-backed `/tmp` write as inside, not an escape.
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn gate_allows_tmp_write_when_scratch_is_set() {
-        let root = unique_root();
-        let scratch = unique_root();
-        let d = crate::tools::gate::resolve_decision(
-            lookup("write").unwrap(),
-            &json!({"path": "/tmp/x.txt", "content": "y"}),
-            &crate::tools::gate::GateContext {
-                project_root: &root,
-                scratch: Some(&scratch),
-                read_roots: &[],
-                write_roots: &[],
-                hidden_root: None,
-            },
-            &crate::permissions::ToolPermissions::default(),
-            &crate::tools::gate::SessionGrants::default(),
-        );
+        let gate = |path: String| {
+            crate::tools::gate::resolve_decision(
+                lookup("write").unwrap(),
+                &json!({"path": path, "content": "y"}),
+                &crate::tools::gate::GateContext {
+                    project_root: &root,
+                    scratch: Some(&scratch),
+                    read_roots: &[],
+                    write_roots: &[],
+                    hidden_root: None,
+                },
+                &crate::permissions::ToolPermissions::default(),
+                &crate::tools::gate::SessionGrants::default(),
+            )
+        };
         assert_eq!(
-            d,
+            gate(scratch.join("x.txt").to_string_lossy().into_owned()),
             crate::tools::gate::Decision::Prompt(crate::tools::gate::PromptKind::Write),
             "in-scratch write is an in-project write, not an escape"
+        );
+        assert_eq!(
+            gate(format!("/tmp/jan-not-the-scratch-{}.txt", std::process::id())),
+            crate::tools::gate::Decision::Prompt(crate::tools::gate::PromptKind::WriteEscape)
         );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
@@ -3190,15 +3691,15 @@ mod tests {
     /// scratch is an escape, so it takes the escape prompt (refused outright on
     /// the desktop) rather than the ordinary in-project one.
     #[test]
-    #[cfg(target_os = "linux")]
-    fn gate_treats_a_tmp_symlink_escape_as_an_escape() {
+    #[cfg(unix)]
+    fn gate_treats_a_scratch_symlink_escape_as_an_escape() {
         let root = unique_root();
         let scratch = unique_root();
         let outside = unique_root();
         std::os::unix::fs::symlink(&outside, scratch.join("esc")).unwrap();
         let d = crate::tools::gate::resolve_decision(
             lookup("write").unwrap(),
-            &json!({"path": "/tmp/esc/x.txt", "content": "y"}),
+            &json!({"path": scratch.join("esc/x.txt").to_string_lossy(), "content": "y"}),
             &crate::tools::gate::GateContext {
                 project_root: &root,
                 scratch: Some(&scratch),
@@ -3698,6 +4199,24 @@ mod tests {
         assert!(sandbox_denial_note("Read-only file system\n[exit 0]", &policy, true).is_empty());
     }
 
+    /// A read-only workspace is named as read-only, never as where writes go,
+    /// and escalation is not offered: it would not lift the read-only root.
+    #[test]
+    fn a_read_only_workspace_denial_says_read_only_and_offers_no_escalation() {
+        let policy = jail::Policy::new(Path::new("/w"), true)
+            .with_scratch_root(Path::new("/var/scratch/jan-agent-s1"))
+            .with_workspace_readonly(true);
+        let denied = "touch: cannot touch '/w/x': Read-only file system\n[exit 1]";
+        let note = sandbox_denial_note(denied, &policy, true);
+        assert!(note.contains("the workspace (/w) is read-only"), "got: {note}");
+        assert!(note.contains("writes are limited to the scratch dir"), "got: {note}");
+        assert!(!note.contains("writes are limited to the workspace"), "got: {note}");
+        assert!(!note.contains("escalate"), "got: {note}");
+        let bare = jail::Policy::new(Path::new("/w"), true).with_workspace_readonly(true);
+        let note = sandbox_denial_note(denied, &bare, false);
+        assert!(note.contains("is read-only and nothing here is writable"), "got: {note}");
+    }
+
     #[test]
     fn bash_result_failed_detects_nonzero_and_signal_markers() {
         assert!(bash_result_failed("output\n[exit 1]"));
@@ -3848,6 +4367,64 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A first line longer than the window loses bytes from the front without
+    /// losing a newline, and that must still be reported as truncation.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn bash_long_first_line_without_newline_is_flagged_truncated() {
+        let root = unique_root();
+        let out = execute_builtin(
+            lookup("shell").unwrap(),
+            &json!({"command": "printf 'START%070000dEND\\nlast\\n' 0"}),
+            &root,
+        )
+        .await;
+        assert!(!out.contains("START"), "front was not dropped: {}", &out[..80]);
+        assert!(out.contains("output truncated at"), "silent truncation: end of {}", &out[out.len() - 200..]);
+        assert!(out.ends_with("[exit 0]"), "exit marker not last: {}", &out[out.len() - 300..]);
+        if let Some(spill) = out
+            .rsplit("full output written to ")
+            .next()
+            .and_then(|s| s.split(". Use the read tool").next())
+        {
+            let _ = std::fs::remove_file(spill);
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The tool description promises a final `[exit N]` line: the truncation
+    /// notice goes above it, never after it.
+    #[test]
+    fn bash_capture_puts_the_exit_marker_last_when_truncated() {
+        let scratch = unique_root();
+        let mut cap = BashCapture::new(Some(scratch.clone()));
+        for i in 0..5000 {
+            cap.push(format!("line {i:060}\n").as_bytes());
+        }
+        let out = cap.finish(Some(2));
+        let (head, last) = out.rsplit_once('\n').unwrap();
+        assert_eq!(last, "[exit 2]");
+        assert!(head.rsplit_once('\n').unwrap().1.starts_with("[output truncated at"), "{head}");
+        assert!(bash_result_failed(&out));
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The sandbox hint is spliced in above the exit marker, so the marker
+    /// stays the final line.
+    #[test]
+    fn notes_are_inserted_above_the_exit_marker() {
+        let mut out = "touch: x: Read-only file system\n[exit 1]".to_string();
+        insert_before_exit_marker(&mut out, "\n[sandbox: limits]");
+        assert_eq!(out, "touch: x: Read-only file system\n[sandbox: limits]\n[exit 1]");
+        let mut bare = "[terminated by signal]".to_string();
+        insert_before_exit_marker(&mut bare, "\n[sandbox: limits]");
+        assert_eq!(bare, "[sandbox: limits]\n[terminated by signal]");
+        let mut none = "no marker".to_string();
+        insert_before_exit_marker(&mut none, "\n[note]");
+        assert_eq!(none, "no marker\n[note]");
+    }
+
     // POSIX command text: Windows runs PowerShell.
     #[cfg(unix)]
     #[tokio::test]
@@ -3888,9 +4465,8 @@ mod tests {
     }
 
     /// The same overflow with a session scratch set: the spill must land in the
-    /// scratch and be advertised by the one name that works from both the fs
-    /// tools and the shell, so the `read` the note asks for actually finds it.
-    /// The no-scratch case above cannot catch this -- there `/tmp` is not remapped.
+    /// scratch and be advertised by its real path, which works from both the
+    /// fs tools and the shell, so the `read` the note asks for finds it.
     // POSIX command text: Windows runs PowerShell.
     #[cfg(unix)]
     #[tokio::test]
@@ -3911,12 +4487,10 @@ mod tests {
             .next()
             .and_then(|s| s.split(". Use the read tool").next())
             .unwrap_or("");
-        if cfg!(target_os = "linux") {
-            assert!(
-                path.starts_with("/tmp/"),
-                "must be advertised as the /tmp name the shell also sees: {out}"
-            );
-        }
+        assert!(
+            Path::new(path).starts_with(&scratch),
+            "must be advertised by its real path in the scratch: {out}"
+        );
         let full = super::execute_builtin(
             lookup("read").unwrap(),
             &json!({"path": path, "offset": 15999, "limit": 1}),
@@ -3960,8 +4534,8 @@ mod tests {
     }
 
     /// Dropping the sandbox drops the scratch with it, in either builder order.
-    /// A scratch that outlived the sandbox would leave the fs tools rewriting
-    /// `/tmp/...` into a directory the unconfined shell never looks at.
+    /// Unconfined, the shell writes wherever the user can with the host's
+    /// own `TMPDIR`, so a scratch would only widen what the fs tools reach.
     #[test]
     fn unsandboxed_context_has_no_scratch() {
         let root = unique_root();
@@ -3984,8 +4558,50 @@ mod tests {
                 .scratch_root,
             Some(scratch.as_path())
         );
+        // The package cache goes with it, in either order: an escalated
+        // command (the sandbox cleared for one call) keeps the host's caches.
+        let pkg = crate::workspace::PkgCache { root: scratch.join("pkg"), cargo_config: None };
+        assert!(ToolContext::new(&root, &store, &[])
+            .with_pkg_cache(Some(&pkg))
+            .with_sandbox(false)
+            .pkg_cache
+            .is_none());
+        assert!(ToolContext::new(&root, &store, &[])
+            .with_sandbox(false)
+            .with_pkg_cache(Some(&pkg))
+            .pkg_cache
+            .is_none());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A read-only root runs its shell confined even with the sandbox off (a
+    /// reader under the CLI default), so it keeps the package cache: its
+    /// `$HOME` is read-only in there and the host caches are unwritable.
+    /// Clearing the sandbox for one call does not unconfine it either, so it
+    /// keeps the cache then too; only clearing both drops it.
+    #[test]
+    fn a_read_only_root_keeps_its_pkg_cache_with_the_sandbox_off() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let pkg = crate::workspace::PkgCache { root: root.join("pkg"), cargo_config: None };
+        let reader = || {
+            ToolContext::new(&root, &store, &[])
+                .with_sandbox(false)
+                .with_workspace_readonly(true)
+                .with_pkg_cache(Some(&pkg))
+        };
+        assert_eq!(reader().pkg_cache, Some(&pkg));
+        assert_eq!(reader().with_sandbox(false).pkg_cache, Some(&pkg));
+        assert!(reader().with_workspace_readonly(false).pkg_cache.is_none());
+        // And the shell it builds names the cache.
+        let (_, env, _) = match confined_shell(&reader()) {
+            Ok(v) => v,
+            Err(_) => return, // no backend here: no shell at all
+        };
+        let env = env.expect("a read-only root is always confined");
+        assert!(env.vars().iter().any(|(k, v)| *k == "CARGO_HOME" && v.starts_with(&pkg.root)));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     // POSIX command text: Windows runs PowerShell.
@@ -4077,33 +4693,381 @@ mod tests {
         );
     }
 
+    /// #497 bug 3: the harness side of a conservative tidy, on a store modeled
+    /// on the smoke test (neutral notes plus explicitly finished ones). The
+    /// model's choices cannot be unit-tested; what is tested is what the
+    /// harness enforces whatever the model does: `move` keeps a note's front
+    /// matter and recency, an `index`/`MEMORY` note is refused, and a run with
+    /// a change budget stops mutating at the cap and says so.
     #[tokio::test]
-    async fn memory_write_read_list_roundtrip() {
+    async fn a_capped_tidy_moves_archives_and_stops_at_the_cap() {
         let root = unique_root();
-        let w = execute_builtin(
-            lookup("memory_write").unwrap(),
-            &json!({"name": "drift", "content": "553 behind"}),
-            &root,
-        )
-        .await;
+        let store = crate::workspace::project_store(&root);
+        let dir = store.join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        for i in 0..70 {
+            std::fs::write(
+                dir.join(format!("note-{i:03}.md")),
+                format!("Note {i:03} about area {i} with a fairly long descriptive title\n\nBody {i}.\n"),
+            )
+            .unwrap();
+        }
+        for i in 0..10 {
+            std::fs::write(
+                dir.join(format!("shipped-{i:02}.md")),
+                format!("PR {} merged and released, work finished\n\nNothing left.\n", 9100 + i),
+            )
+            .unwrap();
+        }
+        let budget = crate::memory::ChangeBudget::new(crate::memory::TIDY_MAX_CHANGES);
+        let memory = lookup("memory").unwrap();
+        let ctx = ToolContext::new(&root, &store, &[]).with_memory_change_budget(Some(&budget));
+        let run = |args: serde_json::Value| {
+            let ctx = ctx.clone();
+            async move { super::execute_builtin(memory, &args, &ctx).await.0 }
+        };
+
+        // A tidy views what it changes (the tool refuses a whole-file change
+        // to a note it has not seen; see the clobber test below).
+        for i in 0..70 {
+            run(json!({"op": "view", "name": format!("note-{i:03}")})).await;
+        }
+        // An archived note moved into a folder keeps its front matter. Viewed
+        // first: an edit alone does not count as a view (see the edit test).
+        run(json!({"op": "view", "name": "shipped-00"})).await;
+        let a = run(json!({"op": "edit", "name": "shipped-00", "old": "PR 9100", "new": "---\nstatus: done\n---\nPR 9100"})).await;
+        assert!(a.contains("archived"), "{a}");
+        let m = run(json!({"op": "move", "name": "shipped-00", "to": "shipped/9100"})).await;
+        assert_eq!(m, "Moved memory/shipped-00 to memory/shipped/9100", "{m}");
+        let moved = std::fs::read_to_string(dir.join("shipped/9100.md")).unwrap();
+        assert!(moved.starts_with("---\nstatus: done\n---\nPR 9100"), "{moved}");
+        assert!(!dir.join("shipped-00.md").exists());
+        let meta = std::fs::read_to_string(dir.join(".meta.json")).unwrap();
+        assert!(meta.contains("shipped/9100") && !meta.contains("\"shipped-00\""), "{meta}");
+        // A move onto an existing note, or of a missing one, changes nothing.
+        assert!(run(json!({"op": "move", "name": "note-001", "to": "note-002"})).await.starts_with("ERROR"));
+        assert!(run(json!({"op": "move", "name": "nope", "to": "x"})).await.starts_with("ERROR"));
+        assert!(run(json!({"op": "move", "name": "note-001"})).await.contains("'to'"));
+
+        // The harness builds the index; a note named like it is refused.
+        for bad in ["index", "subsystems/index", "MEMORY", "tui/Memory", "INDEX.md"] {
+            let w = run(json!({"op": "write", "name": bad, "content": "links"})).await;
+            assert!(w.starts_with("ERROR") && w.contains("index"), "{bad}: {w}");
+            let mv = run(json!({"op": "move", "name": "note-003", "to": bad})).await;
+            assert!(mv.starts_with("ERROR"), "{bad}: {mv}");
+        }
+
+        // 2 changes so far; 28 more fit, then every mutation is refused.
+        for i in 10..38 {
+            let r = run(json!({"op": "move", "name": format!("note-{i:03}"), "to": format!("area/{i:03}")})).await;
+            assert!(r.starts_with("Moved"), "{i}: {r}");
+        }
+        assert_eq!(budget.used(), 30);
+        for args in [
+            json!({"op": "edit", "name": "shipped-01", "old": "PR", "new": "---\nstatus: done\n---\nPR"}),
+            json!({"op": "write", "name": "x", "content": "y"}),
+            json!({"op": "delete", "name": "note-040"}),
+            json!({"op": "move", "name": "note-041", "to": "area/041"}),
+        ] {
+            let r = run(args).await;
+            assert!(r.starts_with("ERROR") && r.contains("30"), "{r}");
+        }
+        assert!(dir.join("note-040.md").exists() && dir.join("note-041.md").exists());
+        assert_eq!(budget.refused(), 4);
+        // Reads are never capped.
+        assert!(run(json!({"op": "view", "name": "shipped-01"})).await.starts_with("PR 9101"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A tidy (the run holding a change budget) runs beside the main agent on
+    /// the same store. A note the main agent changed after the tidy viewed it
+    /// is not overwritten, moved or deleted from the tidy's stale copy: the
+    /// tool refuses and asks for a fresh `view`. The tidy's own changes do not
+    /// trip it, and the main agent (no budget) is never checked.
+    #[tokio::test]
+    async fn a_tidy_never_clobbers_a_note_changed_since_it_viewed_it() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let dir = store.join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["a", "b", "c"] {
+            std::fs::write(dir.join(format!("{name}.md")), format!("Note {name}")).unwrap();
+        }
+        let budget = crate::memory::ChangeBudget::new(crate::memory::TIDY_MAX_CHANGES);
+        let tidy = ToolContext::new(&root, &store, &[]).with_memory_change_budget(Some(&budget));
+        let main = ToolContext::new(&root, &store, &[]);
+        async fn run(ctx: &ToolContext<'_>, args: serde_json::Value) -> String {
+            let memory = lookup("memory").unwrap();
+            super::execute_builtin(memory, &args, ctx).await.0
+        }
+        for name in ["a", "b", "c"] {
+            run(&tidy, json!({"op": "view", "name": name})).await;
+        }
+        // The main agent edits all three after the tidy read them.
+        for name in ["a", "b", "c"] {
+            let e = run(&main, json!({"op": "edit", "name": name, "old": "Note", "new": "Edited note"})).await;
+            assert!(e.starts_with("Edited"), "{e}");
+        }
+        for args in [
+            json!({"op": "write", "name": "a", "content": "Merged from a stale copy"}),
+            json!({"op": "move", "name": "b", "to": "grp/b"}),
+            json!({"op": "delete", "name": "c"}),
+        ] {
+            let r = run(&tidy, args.clone()).await;
+            assert!(r.starts_with("ERROR") && r.contains("changed") && r.contains("view"), "{args}: {r}");
+        }
+        for name in ["a", "b", "c"] {
+            let body = std::fs::read_to_string(dir.join(format!("{name}.md"))).unwrap();
+            assert_eq!(body, format!("Edited note {name}"), "the main agent's edit survived");
+        }
+        assert_eq!(budget.used(), 0, "a refused change spends nothing");
+        // A fresh view lets the tidy go ahead, and its own changes do not trip
+        // the guard on the next op.
+        run(&tidy, json!({"op": "view", "name": "a"})).await;
+        assert!(run(&tidy, json!({"op": "write", "name": "a", "content": "Merged"})).await.starts_with("Wrote"));
+        assert!(run(&tidy, json!({"op": "move", "name": "a", "to": "grp/a"})).await.starts_with("Moved"));
+        assert!(run(&tidy, json!({"op": "delete", "name": "grp/a"})).await.starts_with("Deleted"));
+        // The main agent is never checked.
+        assert!(run(&main, json!({"op": "write", "name": "b", "content": "Over"})).await.starts_with("Wrote"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Plan mode keeps memory readable and refuses every op that changes it,
+    /// whatever surface called the tool.
+    #[tokio::test]
+    async fn plan_mode_refuses_memory_changes_but_not_reads() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let dir = store.join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("fact.md"), "A fact").unwrap();
+        let hooks = crate::tools::hooks::HookSet::new();
+        let memory = lookup("memory").unwrap();
+        let ctx = ToolContext::new(&root, &store, &[]).with_hooks(&hooks, true, None);
+        for args in [
+            json!({"op": "write", "name": "new", "content": "x"}),
+            json!({"op": "edit", "name": "fact", "old": "A", "new": "B"}),
+            json!({"op": "delete", "name": "fact"}),
+            json!({"op": "move", "name": "fact", "to": "moved"}),
+        ] {
+            let out = super::execute_builtin(memory, &args, &ctx).await.0;
+            assert!(out.starts_with("ERROR:") && out.contains("plan mode is read-only"), "{out}");
+            assert!(out.contains("view") && out.contains("search"), "{out}");
+        }
+        assert_eq!(std::fs::read_to_string(dir.join("fact.md")).unwrap(), "A fact");
+        assert!(!dir.join("new.md").exists());
+        assert_eq!(super::execute_builtin(memory, &json!({"op": "view", "name": "fact"}), &ctx).await.0, "A fact");
+        let found = super::execute_builtin(memory, &json!({"op": "search", "query": "fact"}), &ctx).await.0;
+        assert!(found.contains("`fact`"), "{found}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `memory` is a read-capability tool, so the loop drives a batch of its
+    /// calls together (`FuturesUnordered` in one task, as `join!` does here).
+    /// Each edit is a read-modify-write of the note; without the store's
+    /// change lock every edit read the same text and the last write won, so
+    /// all but one edit were lost while every call reported success.
+    #[tokio::test]
+    async fn concurrent_memory_edits_on_one_note_all_apply() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let dir = store.join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("log.md"), "Log\n\nA0 B0 C0 D0\n").unwrap();
+        let ctx = ToolContext::new(&root, &store, &[]);
+        let memory = lookup("memory").unwrap();
+        let edit = |old: &str, new: &str| {
+            let args = json!({"op": "edit", "name": "log", "old": old, "new": new});
+            let ctx = ctx.clone();
+            async move { super::execute_builtin(memory, &args, &ctx).await.0 }
+        };
+        let (a, b, c, d) =
+            tokio::join!(edit("A0", "A1"), edit("B0", "B1"), edit("C0", "C1"), edit("D0", "D1"));
+        for r in [&a, &b, &c, &d] {
+            assert!(r.starts_with("Edited"), "{r}");
+        }
+        let body = std::fs::read_to_string(dir.join("log.md")).unwrap();
+        assert_eq!(body, "Log\n\nA1 B1 C1 D1\n", "no edit was lost");
+
+        // Two edits of the same text: one applies, the other finds its `old`
+        // gone and says so instead of overwriting the first.
+        let (x, y) = tokio::join!(edit("A1", "X"), edit("A1", "Y"));
+        let applied = [&x, &y].iter().filter(|r| r.starts_with("Edited")).count();
+        assert_eq!(applied, 1, "{x} / {y}");
+        let failed = if x.starts_with("Edited") { &y } else { &x };
+        assert!(failed.starts_with("ERROR") && failed.contains("not found"), "{failed}");
+        let body = std::fs::read_to_string(dir.join("log.md")).unwrap();
+        let winner = if x.starts_with("Edited") { "X" } else { "Y" };
+        assert_eq!(body, format!("Log\n\n{winner} B1 C1 D1\n"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Concurrent changes to different notes all land, and a write racing an
+    /// edit of the same note leaves one of the two whole, never a mix.
+    #[tokio::test]
+    async fn concurrent_memory_changes_to_different_notes_all_land() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]);
+        let memory = lookup("memory").unwrap();
+        let run = |args: serde_json::Value| {
+            let ctx = ctx.clone();
+            async move { super::execute_builtin(memory, &args, &ctx).await.0 }
+        };
+        let (a, b, c) = tokio::join!(
+            run(json!({"op": "write", "name": "a", "content": "Note a"})),
+            run(json!({"op": "write", "name": "b", "content": "Note b"})),
+            run(json!({"op": "write", "name": "grp/c", "content": "Note c"})),
+        );
+        for r in [&a, &b, &c] {
+            assert!(r.starts_with("Wrote"), "{r}");
+        }
+        let dir = store.join("memory");
+        assert_eq!(std::fs::read_to_string(dir.join("a.md")).unwrap(), "Note a");
+        assert_eq!(std::fs::read_to_string(dir.join("b.md")).unwrap(), "Note b");
+        assert_eq!(std::fs::read_to_string(dir.join("grp/c.md")).unwrap(), "Note c");
+        let index = std::fs::read_to_string(store.join(crate::memory::INDEX_FILE)).unwrap();
+        assert!(index.contains("`a`") && index.contains("`b`") && index.contains("`grp/`"), "{index}");
+
+        let (m, d) = tokio::join!(
+            run(json!({"op": "move", "name": "a", "to": "grp/a"})),
+            run(json!({"op": "delete", "name": "b"})),
+        );
+        assert!(m.starts_with("Moved") && d.starts_with("Deleted"), "{m} / {d}");
+        let (w, e) = tokio::join!(
+            run(json!({"op": "write", "name": "grp/c", "content": "Rewritten c"})),
+            run(json!({"op": "edit", "name": "grp/c", "old": "Note", "new": "Edited"})),
+        );
+        assert!(w.starts_with("Wrote"), "{w}");
+        // Either order ends with the write's text: an edit that ran first was
+        // replaced whole, one that ran second found `Note` gone.
+        assert!(e.starts_with("Edited") || e.contains("not found"), "{e}");
+        let body = std::fs::read_to_string(dir.join("grp/c.md")).unwrap();
+        assert_eq!(body, "Rewritten c");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A note may share its name with a folder (`tui.md` beside `tui/`, as a
+    /// tidy grouping notes under a topic leaves it). The tidy's freshness
+    /// guard still covers the note: `view` of `tui` opens the note (`tui/` is
+    /// the folder), and a whole-file change from a copy the main agent has
+    /// since edited is refused.
+    #[tokio::test]
+    async fn a_tidy_never_clobbers_a_note_that_shares_a_folders_name() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let dir = store.join("memory");
+        std::fs::create_dir_all(dir.join("tui")).unwrap();
+        std::fs::write(dir.join("tui.md"), "TUI overview").unwrap();
+        std::fs::write(dir.join("tui/scroll.md"), "Scroll fix").unwrap();
+        let budget = crate::memory::ChangeBudget::new(crate::memory::TIDY_MAX_CHANGES);
+        let tidy = ToolContext::new(&root, &store, &[]).with_memory_change_budget(Some(&budget));
+        let main = ToolContext::new(&root, &store, &[]);
+        async fn run(ctx: &ToolContext<'_>, args: serde_json::Value) -> String {
+            let memory = lookup("memory").unwrap();
+            super::execute_builtin(memory, &args, ctx).await.0
+        }
+        assert_eq!(run(&tidy, json!({"op": "view", "name": "tui"})).await, "TUI overview");
+        assert_eq!(run(&tidy, json!({"op": "view", "name": "tui/"})).await, "- `tui/scroll` - Scroll fix");
+        let e = run(&main, json!({"op": "edit", "name": "tui", "old": "overview", "new": "overview, edited"})).await;
+        assert!(e.starts_with("Edited"), "{e}");
+        for args in [
+            json!({"op": "write", "name": "tui", "content": "Stale merge"}),
+            json!({"op": "move", "name": "tui", "to": "tui-old"}),
+            json!({"op": "delete", "name": "tui"}),
+        ] {
+            let r = run(&tidy, args.clone()).await;
+            assert!(r.starts_with("ERROR") && r.contains("changed"), "{args}: {r}");
+        }
+        assert_eq!(std::fs::read_to_string(dir.join("tui.md")).unwrap(), "TUI overview, edited");
+        assert_eq!(budget.used(), 0);
+        // Viewed again, the tidy may change it.
+        run(&tidy, json!({"op": "view", "name": "tui"})).await;
+        assert!(run(&tidy, json!({"op": "delete", "name": "tui"})).await.starts_with("Deleted"));
+        assert!(dir.join("tui/scroll.md").exists(), "the folder is untouched");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An exact `edit` needs no fresh view, but it must not count as one: a
+    /// tidy that viewed `A`, then edited it after the main agent added `B`,
+    /// has still never seen `B`, so a whole-file change after that edit is
+    /// refused until it views the note again.
+    #[tokio::test]
+    async fn a_tidy_edit_never_marks_unseen_content_as_seen() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let dir = store.join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("log.md"), "Log\n\nA\n").unwrap();
+        let budget = crate::memory::ChangeBudget::new(crate::memory::TIDY_MAX_CHANGES);
+        let tidy = ToolContext::new(&root, &store, &[]).with_memory_change_budget(Some(&budget));
+        let main = ToolContext::new(&root, &store, &[]);
+        async fn run(ctx: &ToolContext<'_>, args: serde_json::Value) -> String {
+            let memory = lookup("memory").unwrap();
+            super::execute_builtin(memory, &args, ctx).await.0
+        }
+        run(&tidy, json!({"op": "view", "name": "log"})).await;
+        let e = run(&main, json!({"op": "edit", "name": "log", "old": "A\n", "new": "A\nB\n"})).await;
+        assert!(e.starts_with("Edited"), "{e}");
+        let e = run(&tidy, json!({"op": "edit", "name": "log", "old": "A\n", "new": "A2\n"})).await;
+        assert!(e.starts_with("Edited"), "{e}");
+        for args in [
+            json!({"op": "delete", "name": "log"}),
+            json!({"op": "write", "name": "log", "content": "Log\n\nA2\n"}),
+            json!({"op": "move", "name": "log", "to": "old-log"}),
+        ] {
+            let r = run(&tidy, args.clone()).await;
+            assert!(r.starts_with("ERROR") && r.contains("changed"), "{args}: {r}");
+        }
+        assert_eq!(std::fs::read_to_string(dir.join("log.md")).unwrap(), "Log\n\nA2\nB\n");
+        // A tidy that was up to date when it edited stays up to date.
+        run(&tidy, json!({"op": "view", "name": "log"})).await;
+        run(&tidy, json!({"op": "edit", "name": "log", "old": "A2", "new": "A3"})).await;
+        assert!(run(&tidy, json!({"op": "delete", "name": "log"})).await.starts_with("Deleted"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Without a budget (the main agent) nothing is capped, and `move` works.
+    #[tokio::test]
+    async fn the_main_agent_moves_notes_uncapped() {
+        let root = unique_root();
+        let memory = lookup("memory").unwrap();
+        for i in 0..40 {
+            let w = execute_builtin(memory, &json!({"op": "write", "name": format!("n{i}"), "content": "x"}), &root).await;
+            assert!(w.starts_with("Wrote"), "{w}");
+        }
+        let m = execute_builtin(memory, &json!({"op": "move", "name": "n1", "to": "grp/n1"}), &root).await;
+        assert!(m.starts_with("Moved"), "{m}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn the_memory_tool_runs_every_op() {
+        let root = unique_root();
+        let memory = lookup("memory").unwrap();
+        let run = |args: serde_json::Value| {
+            let root = root.clone();
+            async move { execute_builtin(memory, &args, &root).await }
+        };
+        let w = run(json!({"op": "write", "name": "drift", "title": "Drift", "content": "553 behind"})).await;
         assert!(w.starts_with("Wrote"), "unexpected: {w}");
-        // Landed at the canonical workspace path.
+        // Landed at the canonical workspace path, title first.
         assert_eq!(
             std::fs::read_to_string(crate::workspace::project_store(&root).join("memory/drift.md"))
                 .unwrap(),
-            "553 behind"
+            "Drift\n\n553 behind"
         );
-
-        let r = execute_builtin(
-            lookup("memory_read").unwrap(),
-            &json!({"name": "drift"}),
-            &root,
-        )
-        .await;
-        assert_eq!(r, "553 behind");
-
-        let l = execute_builtin(lookup("memory_list").unwrap(), &json!({}), &root).await;
-        assert_eq!(l, "drift");
+        assert_eq!(run(json!({"op": "view", "name": "drift"})).await, "Drift\n\n553 behind");
+        assert!(run(json!({"op": "view"})).await.contains("- `drift` - Drift"));
+        assert!(run(json!({"op": "search", "query": "553"})).await.contains("`drift`"));
+        assert!(run(json!({"op": "edit", "name": "drift", "old": "553", "new": "554"})).await.starts_with("Edited"));
+        assert!(run(json!({"op": "view", "name": "drift"})).await.ends_with("554 behind"));
+        assert!(run(json!({"op": "delete", "name": "drift"})).await.starts_with("Deleted"));
+        assert!(run(json!({"op": "view", "name": "drift"})).await.starts_with("ERROR"));
+        assert!(run(json!({"op": "write", "name": "x"})).await.contains("'content'"));
+        assert!(run(json!({"op": "rename"})).await.contains("unknown memory op"));
+        assert!(run(json!({"op": "rename"})).await.contains("move"));
+        assert!(run(json!({})).await.contains("'op'"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -4178,6 +5142,30 @@ mod tests {
         .await
         .0;
         assert!(out.starts_with("ERROR: scope 'user'"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An empty catalog says so, rather than returning an empty string the
+    /// model cannot tell from a failed call.
+    #[tokio::test]
+    async fn an_empty_skill_list_says_no_skills() {
+        struct Empty;
+        impl crate::tools::SkillProvider for Empty {
+            fn catalog(&self) -> Vec<(String, String)> {
+                Vec::new()
+            }
+            fn read(&self, name: &str) -> Result<String, String> {
+                Err(format!("ERROR: skill '{name}' not found"))
+            }
+        }
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx =
+            ToolContext::new(&root, &store, &[]).with_skill_source(std::sync::Arc::new(Empty));
+        let list = super::execute_builtin(lookup("skill_list").unwrap(), &json!({}), &ctx)
+            .await
+            .0;
+        assert_eq!(list, "No skills.");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -4351,10 +5339,10 @@ mod tests {
     #[tokio::test]
     async fn workspace_name_rejects_traversal() {
         let root = unique_root();
-        for bad in ["../escape", "sub/x", "..", ""] {
+        for bad in ["../escape", "a/b/c", "..", ""] {
             let out = execute_builtin(
-                lookup("memory_write").unwrap(),
-                &json!({"name": bad, "content": "x"}),
+                lookup("memory").unwrap(),
+                &json!({"op": "write", "name": bad, "content": "x"}),
                 &root,
             )
             .await;

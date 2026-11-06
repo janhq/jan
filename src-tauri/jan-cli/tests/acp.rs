@@ -255,13 +255,13 @@ impl Acp {
 }
 
 /// Every thread id saved anywhere under `dir`: a thread is a directory holding
-/// `messages.jsonl`, named by its id.
+/// `session.jsonl`, named by its id.
 fn thread_ids(dir: &std::path::Path) -> Vec<String> {
     let mut out = Vec::new();
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let path = entry.path();
         if path.is_dir() {
-            if path.join("messages.jsonl").is_file() {
+            if path.join("session.jsonl").is_file() {
                 out.push(entry.file_name().to_string_lossy().into_owned());
             }
             out.extend(thread_ids(&path));

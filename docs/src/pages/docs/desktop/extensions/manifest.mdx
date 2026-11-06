@@ -1,0 +1,245 @@
+---
+title: Extension Manifest
+description: Reference for the jan field of a Jan extension's package.json.
+keywords:
+  [
+    Jan,
+    extensions,
+    manifest,
+    package.json,
+    contributions,
+  ]
+---
+
+# Extension Manifest
+
+An extension declares itself in the `jan` field of its `package.json`. Jan
+validates the whole manifest at install time and again each time it loads the
+extension, and reports every problem at once with its path (for example
+`jan.contributes.commands[1].id`). Unknown fields are errors.
+
+You can run the same validator yourself with `validateManifest` from
+`@janhq/extension-api/manifest` (see [Build an Extension](/docs/desktop/extensions/develop#debugging)).
+
+## Minimal example
+
+```json
+{
+  "name": "@acme/hello",
+  "version": "0.1.0",
+  "engines": { "jan": ">=0.8.0" },
+  "jan": {
+    "id": "acme.hello",
+    "displayName": "Hello",
+    "description": "Says hello.",
+    "publisher": "Acme",
+    "apiVersion": "^1.0.0",
+    "main": "dist/index.js",
+    "permissions": ["ui:notify"],
+    "contributes": {
+      "commands": [{ "id": "hello.greet", "title": "Say hello" }],
+      "menus": { "commandPalette": [{ "command": "hello.greet" }] }
+    }
+  }
+}
+```
+
+## Package fields
+
+| Field | Type | Rules |
+|---|---|---|
+| `name` | string | Required, non-empty. |
+| `version` | string | Required, a semver version. Updates must be newer than the installed version. |
+| `engines.jan` | string | Optional. A semver range of Jan app versions, such as `>=0.8.0`. Prerelease builds are compared by their release number, so `>=0.9.0` accepts `0.9.0-nightly.3`. |
+
+## `jan` fields
+
+| Field | Type | Rules |
+|---|---|---|
+| `id` | string | Required. `<publisher>.<name>`: two parts of 2-39 lowercase letters, digits and dashes, each starting with a letter or digit, joined by one dot. Windows device names (`con`, `nul`, `com1`, ...) are not allowed as parts. Ids starting with `jan.` are reserved for built-in extensions. |
+| `displayName` | string | Required, non-empty. |
+| `description` | string | Optional, non-empty. |
+| `publisher` | string | Required, non-empty. |
+| `apiVersion` | string | Required. A caret range `^MAJOR.MINOR.PATCH` and nothing else, for example `^1.0.0`. See [API versioning](/docs/desktop/extensions/api#versioning). |
+| `main` | string | Required. Relative path to the bundle inside the package, ending in `.js`. No absolute paths, drive letters, backslashes, `.` or `..` segments. A leading `./` is allowed. |
+| `permissions` | string[] | Required (may be empty). Known [permissions](/docs/desktop/extensions/permissions), no duplicates. |
+| `proposals` | string[] | Optional. Proposed API groups; currently only `chat`. Only folders loaded unpacked may use them; an installed extension that lists any fails to start. |
+| `contributes` | object | Optional. See below. |
+| `l10n` | object | Optional. `locale -> key -> text`. See [Localization](#localization). |
+
+## Contributions
+
+All ids below (command, status item and provider ids, tool names) must be 1-64
+letters, digits, `.`, `_` or `-`, starting with a letter or digit, and unique
+within their list.
+
+### `contributes.settings`
+
+| Field | Type | Rules |
+|---|---|---|
+| `key` | string | Required, unique. |
+| `title` | string | Required. |
+| `description` | string | Optional. |
+| `secret` | boolean | Optional. Stored in the OS keyring. Only on `input` and `textarea` controls. |
+| `control` | object | Required, one of the controls below. |
+
+| `control.type` | Fields | `default` |
+|---|---|---|
+| `input` | `inputType?`: `text`, `url` or `number`; `placeholder?` | string |
+| `textarea` | `rows?` | string |
+| `checkbox` | | boolean |
+| `dropdown` | `options`: at least one `{ value, label }` | one of the option values |
+| `slider` | `min`, `max`, `step` (min &lt;= max, step &gt; 0) | number within min and max |
+
+Values the user sets are stored in Jan's settings; secret ones in the OS keyring.
+
+### `contributes.commands`
+
+| Field | Type | Rules |
+|---|---|---|
+| `id` | string | Required, contribution id. |
+| `title` | string | Required. |
+| `category` | string | Optional. Shown as `Category: Title`. |
+| `icon` | string | Optional. A [Tabler icon](https://tabler.io/icons) name in kebab case, such as `hand-stop`. |
+
+Bind a handler with `ctx.commands.registerCommand(id, handler)`.
+
+### `contributes.menus`
+
+An object keyed by location. Each value is a list of items.
+
+| Location | Where |
+|---|---|
+| `commandPalette` | The search / command palette dialog |
+| `thread/context` | A thread's menu in the thread list |
+| `message/actions` | The action bar under a message |
+| `chatInput/actions` | The chat input's actions |
+
+| Item field | Type | Rules |
+|---|---|---|
+| `command` | string | Required. A command declared in `contributes.commands`. |
+| `when` | string | Optional. `always`, `message.role == assistant`, `message.role == user` or `thread.hasMessages`. |
+| `group` | string | Optional. |
+| `order` | number | Optional. |
+
+### `contributes.statusItems`
+
+Shown in the left sidebar.
+
+| Field | Type | Rules |
+|---|---|---|
+| `id` | string | Required, contribution id. |
+| `text` | string | Required. |
+| `tooltip` | string | Optional. |
+| `command` | string | Optional. A declared command, run on click. |
+| `priority` | number | Optional. |
+
+Update text and tooltip at runtime with `ctx.ui.setStatusItem`.
+
+### `contributes.tools`
+
+Requires the `tools` permission.
+
+| Field | Type | Rules |
+|---|---|---|
+| `name` | string | Required, contribution id. |
+| `description` | string | Required. Shown to the model. |
+| `inputSchema` | object | Required. A JSON Schema with `"type": "object"`. |
+
+Tools are declared statically so the consent dialog can list them. Jan does not
+validate tool input against `inputSchema`; check it in your handler.
+
+### `contributes.providers`
+
+Requires the `providers` permission.
+
+| Field | Type | Rules |
+|---|---|---|
+| `id` | string | Required, contribution id. |
+| `displayName` | string | Required. |
+| `baseUrl` | string | Required. An OpenAI-compatible base URL. https, or http for `localhost` and `127.0.0.1`. Its host must be covered by a `network:` permission in the same manifest. |
+| `apiKeySetting` | string | Optional. The `key` of a **secret** setting in `contributes.settings` that holds the API key. |
+| `capabilities` | string[] | Optional, non-empty, no duplicates. What the provider's models can do: `completion`, `tools`, `vision`, `audio`, `video`, `embeddings`, `reasoning`. Any other value is an error. Defaults to `["completion"]`; declare `tools` for chat to offer tool calls. A `listModels` entry can override it per model. |
+
+## Localization
+
+`displayName`, `description`, setting titles, descriptions, input placeholders
+and dropdown option labels, command titles and categories, status item text and
+tooltips, and provider display names may be a literal or a `%key%` reference
+into `l10n`:
+
+```json
+{
+  "displayName": "%name%",
+  "l10n": {
+    "en": { "name": "Hello" },
+    "fr": { "name": "Bonjour" }
+  }
+}
+```
+
+Every `%key%` used must exist in `l10n.en`; the validator enforces this.
+
+Jan resolves a reference wherever it shows the string: the command palette and
+menus, the status bar, the settings form, Settings > Extensions, consent dialogs,
+notifications and the model picker. It looks the key up in the app language,
+then in its base language (`de` for `de-DE`), then in `en`; a key found nowhere
+is shown as written. Locale keys use Jan's language codes: `en`, `ca`, `cs`,
+`de-DE`, `es`, `fr`, `hi`, `id`, `it`, `ja`, `ko`, `pl`, `pt-BR`, `ru`, `vn`,
+`zh-CN`, `zh-TW`. Switching the language in Settings updates the text right
+away, and the tables go away with the extension when it stops or is unloaded.
+
+Only a value that is exactly `%key%` is a reference; `Hello %name%` is shown as
+written. Status item text and tooltips set at runtime with `setStatusItem` are
+resolved the same way, so they may also be a `%key%`.
+
+## Full example
+
+The [hello-provider sample](https://github.com/janhq/jan/blob/main/extensions-samples/hello-provider/package.json)
+uses every contribution point:
+
+```json
+"jan": {
+  "id": "jan-samples.hello-provider",
+  "displayName": "Hello Provider",
+  "publisher": "Jan",
+  "apiVersion": "^1.0.0",
+  "main": "dist/index.js",
+  "permissions": ["ui:notify", "tools", "providers", "network:127.0.0.1"],
+  "contributes": {
+    "settings": [
+      {
+        "key": "greeting",
+        "title": "Greeting",
+        "control": { "type": "input", "placeholder": "Hello", "default": "Hello" }
+      }
+    ],
+    "commands": [
+      { "id": "hello.greet", "title": "Say hello", "category": "Hello Provider" }
+    ],
+    "menus": { "commandPalette": [{ "command": "hello.greet" }] },
+    "statusItems": [
+      { "id": "hello.status", "text": "Hello (0)", "command": "hello.greet" }
+    ],
+    "tools": [
+      {
+        "name": "echo_upper",
+        "description": "Returns the given text in upper case.",
+        "inputSchema": {
+          "type": "object",
+          "properties": { "text": { "type": "string" } },
+          "required": ["text"]
+        }
+      }
+    ],
+    "providers": [
+      {
+        "id": "hello-local",
+        "displayName": "Hello Local",
+        "baseUrl": "http://127.0.0.1:11999/v1",
+        "capabilities": ["completion", "tools"]
+      }
+    ]
+  }
+}
+```

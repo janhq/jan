@@ -30,17 +30,36 @@ pub async fn get_lock_for_thread(thread_id: &str) -> Arc<Mutex<()>> {
     lock
 }
 
-/// Write messages to a thread's messages.jsonl file
+/// Replace `path` with `body` atomically: write a uniquely named sibling temp
+/// file, sync it, then rename it over the target. A crash mid-write leaves the
+/// previous file whole, and two writers never share a temp file.
+pub fn write_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
+    let name = path
+        .file_name()
+        .ok_or_else(|| format!("{} has no file name", path.display()))?
+        .to_string_lossy();
+    let tmp = path.with_file_name(format!(".{name}.{}.tmp", uuid::Uuid::new_v4()));
+    let written = File::create(&tmp)
+        .and_then(|mut file| file.write_all(body).and_then(|()| file.sync_all()))
+        .and_then(|()| fs::rename(&tmp, path));
+    if let Err(e) = written {
+        let _ = fs::remove_file(&tmp);
+        return Err(e.to_string());
+    }
+    Ok(())
+}
+
+/// Write messages to a thread's messages.jsonl file, atomically.
 pub fn write_messages_to_file(
     messages: &[serde_json::Value],
     path: &std::path::Path,
 ) -> Result<(), String> {
-    let mut file = File::create(path).map_err(|e| e.to_string())?;
+    let mut body = String::new();
     for msg in messages {
-        let data = serde_json::to_string(msg).map_err(|e| e.to_string())?;
-        writeln!(file, "{data}").map_err(|e| e.to_string())?;
+        body.push_str(&serde_json::to_string(msg).map_err(|e| e.to_string())?);
+        body.push('\n');
     }
-    Ok(())
+    write_atomic(path, body.as_bytes())
 }
 
 /// Read messages from a thread's messages.jsonl file
@@ -79,7 +98,7 @@ pub fn read_messages_from_file(
     Ok(messages)
 }
 
-/// Update thread metadata by writing to thread.json
+/// Update thread metadata by replacing thread.json atomically.
 pub fn update_thread_metadata(
     data_folder: &Path,
     thread_id: &str,
@@ -87,6 +106,33 @@ pub fn update_thread_metadata(
 ) -> Result<(), String> {
     let path = get_thread_metadata_path(data_folder, thread_id)?;
     let data = serde_json::to_string_pretty(thread).map_err(|e| e.to_string())?;
-    fs::write(path, data).map_err(|e| e.to_string())?;
-    Ok(())
+    write_atomic(&path, data.as_bytes())
+}
+
+#[cfg(test)]
+mod atomic_tests {
+    use super::*;
+
+    /// A replace leaves no temp file behind and never exposes a partial body.
+    #[test]
+    fn write_atomic_replaces_whole_and_cleans_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("thread.json");
+        write_atomic(&path, b"first").unwrap();
+        write_atomic(&path, b"second").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"second");
+        let names: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
+        assert_eq!(names.len(), 1, "temp files are renamed, not left behind");
+    }
+
+    /// A target that cannot be replaced fails without touching it.
+    #[test]
+    fn write_atomic_failure_leaves_no_temp_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("taken");
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("inside"), "x").unwrap();
+        assert!(write_atomic(&path, b"body").is_err());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
 }

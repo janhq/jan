@@ -88,6 +88,13 @@ impl BackgroundShells {
         self.wake.notify_waiters();
     }
 
+    /// Ids of the backgrounded commands still owed a result, for the harness
+    /// context a compaction writes: the call that backgrounded them is in the
+    /// span the compaction drops.
+    pub(crate) fn running_ids(&self) -> Vec<u64> {
+        self.state.lock().unwrap().pending.iter().map(|p| p.id).collect()
+    }
+
     /// Take every queued ping, oldest first.
     pub(crate) fn take_notices(&self) -> Vec<ShellNotice> {
         std::mem::take(&mut self.state.lock().unwrap().notices)

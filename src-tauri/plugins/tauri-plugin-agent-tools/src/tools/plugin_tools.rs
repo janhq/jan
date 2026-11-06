@@ -198,7 +198,7 @@ fn is_safe_name(name: &str) -> bool {
 /// is always text the model can read, never a transport failure.
 pub async fn execute(tool: &PluginTool, args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let body = serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string());
-    let (shell, sandbox_tmp, _policy) = match crate::tools::handlers::confined_shell(ctx) {
+    let (shell, sandbox_env, _policy) = match crate::tools::handlers::confined_shell(ctx) {
         Ok(parts) => parts,
         Err(e) => return e,
     };
@@ -206,7 +206,7 @@ pub async fn execute(tool: &PluginTool, args: &serde_json::Value, ctx: &ToolCont
         &shell,
         &tool.command,
         ctx.project_root,
-        sandbox_tmp.as_deref(),
+        sandbox_env.as_ref(),
         ctx.shell_env(),
         ctx.thread_id,
         Some(&body),

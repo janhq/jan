@@ -83,14 +83,6 @@ export enum DownloadEvent {
   onModelValidationFailed = 'onModelValidationFailed',
   onFileDownloadAndVerificationSuccess = 'onFileDownloadAndVerificationSuccess',
 }
-export enum ExtensionRoute {
-  baseExtensions = 'baseExtensions',
-  getActiveExtensions = 'getActiveExtensions',
-  installExtension = 'installExtension',
-  invokeExtensionFunc = 'invokeExtensionFunc',
-  updateExtension = 'updateExtension',
-  uninstallExtension = 'uninstallExtension',
-}
 export enum FileSystemRoute {
   appendFileSync = 'appendFileSync',
   unlinkSync = 'unlinkSync',
@@ -104,6 +96,11 @@ export enum FileSystemRoute {
   readYaml = 'readYaml',
   writeYaml = 'writeYaml',
   decompress = 'decompress',
+}
+export enum DownloadRoute {
+  downloadFiles = 'downloadFiles',
+  cancelDownloadTask = 'cancelDownloadTask',
+  pauseDownloadTask = 'pauseDownloadTask',
 }
 export enum FileManagerRoute {
   copyFile = 'copyFile',
@@ -133,12 +130,12 @@ export type DownloadEventFunctions = {
   [K in DownloadEvent]: ApiFunction
 }
 
-export type ExtensionRouteFunctions = {
-  [K in ExtensionRoute]: ApiFunction
-}
-
 export type FileSystemRouteFunctions = {
   [K in FileSystemRoute]: ApiFunction
+}
+
+export type DownloadRouteFunctions = {
+  [K in DownloadRoute]: ApiFunction
 }
 
 export type FileManagerRouteFunctions = {
@@ -149,15 +146,15 @@ export type APIFunctions = NativeRouteFunctions &
   AppRouteFunctions &
   AppEventFunctions &
   DownloadEventFunctions &
-  ExtensionRouteFunctions &
   FileSystemRouteFunctions &
+  DownloadRouteFunctions &
   FileManagerRoute
 
 export const CoreRoutes = [
   ...Object.values(AppRoute),
-  ...Object.values(ExtensionRoute),
   ...Object.values(FileSystemRoute),
   ...Object.values(FileManagerRoute),
+  ...Object.values(DownloadRoute),
   'launchClaudeCodeWithConfig',
   'writeEnvFileToConfig',
 ]

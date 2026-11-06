@@ -19,7 +19,4 @@ export default defineConfig({
     ENGINE: JSON.stringify(pkgJson.engine),
     IS_MAC: JSON.stringify(process.platform === 'darwin'),
   },
-  inject: process.env.IS_DEV ? {} : {
-      fetch: ['@tauri-apps/plugin-http', 'fetch'],
-  },
 })

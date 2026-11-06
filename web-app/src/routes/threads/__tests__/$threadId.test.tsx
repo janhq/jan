@@ -53,6 +53,12 @@ const h = vi.hoisted(() => {
     ragToolNames: new Set<string>(),
     mcpToolNames: new Set<string>(),
     tools: [] as Array<{ name: string; server?: string }>,
+    extensionTools: [] as Array<{
+      wireName: string
+      extensionId: string
+      name: string
+      server: string
+    }>,
     setOomError: vi.fn(),
     setBackendError: vi.fn(),
     busyThreads: {} as Record<string, boolean>,
@@ -316,16 +322,6 @@ vi.mock('@/lib/instructionTemplate', () => ({
   renderInstructions: (i: string) => `rendered:${i}`,
 }))
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      get: () => ({
-        listAttachmentsForProject: vi.fn().mockResolvedValue([]),
-      }),
-    }),
-  },
-}))
-
 vi.mock('@/lib/messages', () => ({
   convertThreadMessagesToUIMessages: (msgs: any[]) =>
     msgs.map((m) => ({
@@ -424,6 +420,15 @@ vi.mock('@/hooks/use-chat', () => ({
 vi.mock('@/hooks/useThreads', () => ({ useThreads: h.useThreadsMock }))
 vi.mock('@/hooks/useMessages', () => ({ useMessages: h.useMessagesMock }))
 vi.mock('@/hooks/useTools', () => ({ useTools: vi.fn() }))
+const extensionHost = vi.hoisted(() => ({
+  callTool: vi.fn(),
+  services: {
+    get: () => ({ listAttachmentsForProject: vi.fn().mockResolvedValue([]) }),
+  },
+}))
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => extensionHost,
+}))
 vi.mock('@/hooks/useAppState', () => ({ useAppState: h.useAppStateMock }))
 vi.mock('@/hooks/useModelProvider', () => ({ useModelProvider: h.useModelProviderMock }))
 vi.mock('@/stores/chat-session-store', () => ({ useChatSessions: h.useChatSessionsMock }))
@@ -466,8 +471,7 @@ vi.mock('@janhq/core', () => ({
   MessageStatus: { Ready: 'ready' },
   ChatCompletionRole: { Assistant: 'assistant', User: 'user' },
   ContentType: { Text: 'text' },
-  ExtensionTypeEnum: { VectorDB: 'vectorDB' },
-  VectorDBExtension: class {},
+  ServiceKeys: { VectorDB: { id: 'vector-db' } },
 }))
 
 vi.mock('@/constants/chat', () => ({
@@ -565,6 +569,7 @@ describe('ThreadDetail route', () => {
     h.appStateState.ragToolNames = new Set<string>()
     h.appStateState.mcpToolNames = new Set<string>()
     h.appStateState.tools = []
+    h.appStateState.extensionTools = []
     h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
     hub.mcp = realMcp
     useToolCallRuntime.getState().reset()
@@ -1664,6 +1669,31 @@ describe('ThreadDetail route', () => {
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
     })
 
+    // janhq/jan-internal#517: on an extension's provider the model is the
+    // extension's, so a free web_fetch would reach any host it has no grant for.
+    it('asks before serving the built-in on a turn an extension provider serves', async () => {
+      const byName = h.modelProviderState.getProviderByName
+      h.modelProviderState.getProviderByName = vi.fn((name: string) => ({
+        ...byName(name),
+        source: { extensionId: 'acme.provider', extensionName: 'Acme' },
+      }))
+      try {
+        await run(webCall('w4'))
+        // Strict: neither "allow all MCP" nor a grant from an ordinary turn
+        // may answer for the model an extension serves.
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+          'w4',
+          'web_search',
+          'thread-1',
+          undefined,
+          { strict: true, origin: 'mcp' }
+        )
+        expect(webTool.executeWebTool).toHaveBeenCalledTimes(1)
+      } finally {
+        h.modelProviderState.getProviderByName = byName
+      }
+    })
+
     it.each(['web_search', 'web_fetch'])(
       'serves an MCP tool named %s through MCP, with a prompt, while web search is off',
       async (name) => {
@@ -1725,7 +1755,8 @@ describe('ThreadDetail route', () => {
         'tc1',
         'fetch',
         'thread-1',
-        undefined
+        undefined,
+        { origin: 'mcp' }
       )
     })
 
@@ -1744,7 +1775,8 @@ describe('ThreadDetail route', () => {
         'tc-server',
         'fetch',
         'thread-1',
-        'fetch-server'
+        'fetch-server',
+        { origin: 'mcp' }
       )
     })
 
@@ -2786,6 +2818,201 @@ describe('ThreadDetail route', () => {
         expect(runtime.queue).toEqual([])
         expect(runtime.timings['tcA']?.startedAt).toBeUndefined()
         expect(runtime.timings['tcA']?.endedAt).toBeDefined()
+      })
+    })
+
+    describe('extension tools', () => {
+      const wireName = 'x_acme_one__echo'
+      const extToolCall = (id: string) => ({
+        toolCall: { toolCallId: id, toolName: wireName, input: { text: 'hi' } },
+      })
+      beforeEach(() => {
+        h.appStateState.extensionTools = [
+          {
+            wireName,
+            extensionId: 'acme.one',
+            name: 'echo',
+            server: 'ext:acme.one',
+          },
+        ]
+        extensionHost.callTool.mockReset()
+      })
+
+      it('asks for approval under the extension and runs the tool in its host', async () => {
+        extensionHost.callTool.mockResolvedValue({
+          content: [{ type: 'text', text: 'HI' }],
+        })
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(extToolCall('te1'))
+        })
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+          'te1',
+          wireName,
+          'thread-1',
+          'ext:acme.one',
+          { origin: 'extension' }
+        )
+        expect(extensionHost.callTool).toHaveBeenCalledWith(
+          'acme.one',
+          'echo',
+          { text: 'hi' },
+          expect.objectContaining({ signal: expect.any(AbortSignal) })
+        )
+        expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+          expect.objectContaining({
+            toolCallId: 'te1',
+            output: [{ type: 'text', text: 'HI' }],
+          })
+        )
+      })
+
+      // Approval must be asked of whatever actually runs, and execution
+      // prefers the contributed tool, so a name both claim is the extension's.
+      it('asks as the extension when an MCP tool has the same name, and runs it there', async () => {
+        h.appStateState.mcpToolNames = new Set([wireName])
+        h.appStateState.tools = [{ name: wireName, server: 'mcp-server' }]
+        const mcpCall = vi.fn().mockResolvedValue({ error: '', content: [] })
+        hub.mcp = () =>
+          ({ callToolWithCancellation: cancellable(mcpCall) }) as never
+        extensionHost.callTool.mockResolvedValue({
+          content: [{ type: 'text', text: 'HI' }],
+        })
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(extToolCall('te4'))
+        })
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+          'te4',
+          wireName,
+          'thread-1',
+          'ext:acme.one',
+          { origin: 'extension' }
+        )
+        expect(extensionHost.callTool).toHaveBeenCalledWith(
+          'acme.one',
+          'echo',
+          { text: 'hi' },
+          expect.objectContaining({ signal: expect.any(AbortSignal) })
+        )
+        expect(mcpCall).not.toHaveBeenCalled()
+      })
+
+      // The approval and the execution act on the origin the call arrived
+      // with: a grant for the MCP tool must not run a contributed tool that
+      // took the name while the prompt was open, and the reverse.
+      it('refuses an MCP-approved call whose name an extension took before it ran', async () => {
+        h.appStateState.extensionTools = []
+        h.appStateState.mcpToolNames = new Set([wireName])
+        h.appStateState.tools = [{ name: wireName, server: 'mcp-server' }]
+        const mcpCall = vi.fn().mockResolvedValue({ error: '', content: [] })
+        hub.mcp = () =>
+          ({ callToolWithCancellation: cancellable(mcpCall) }) as never
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(extToolCall('te5'))
+        })
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+          'te5',
+          wireName,
+          'thread-1',
+          'mcp-server',
+          { origin: 'mcp' }
+        )
+        h.appStateState.extensionTools = [
+          {
+            wireName,
+            extensionId: 'acme.one',
+            name: 'echo',
+            server: 'ext:acme.one',
+          },
+        ]
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(extensionHost.callTool).not.toHaveBeenCalled()
+        expect(mcpCall).not.toHaveBeenCalled()
+        expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+          expect.objectContaining({
+            state: 'output-error',
+            toolCallId: 'te5',
+            errorText:
+              'Tool call refused: the tool changed while it was waiting for approval.',
+          })
+        )
+      })
+
+      it('refuses an extension-approved call whose extension unloaded before it ran', async () => {
+        h.appStateState.mcpToolNames = new Set([wireName])
+        h.appStateState.tools = [{ name: wireName, server: 'mcp-server' }]
+        const mcpCall = vi.fn().mockResolvedValue({ error: '', content: [] })
+        hub.mcp = () =>
+          ({ callToolWithCancellation: cancellable(mcpCall) }) as never
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(extToolCall('te6'))
+        })
+        h.appStateState.extensionTools = []
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(extensionHost.callTool).not.toHaveBeenCalled()
+        expect(mcpCall).not.toHaveBeenCalled()
+        expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+          expect.objectContaining({
+            state: 'output-error',
+            toolCallId: 'te6',
+            errorText:
+              'Tool call refused: the tool changed while it was waiting for approval.',
+          })
+        )
+      })
+
+      it('does not run a denied extension tool', async () => {
+        h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(extToolCall('te2'))
+        })
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(extensionHost.callTool).not.toHaveBeenCalled()
+      })
+
+      it('Stop aborts the signal the extension call was given', async () => {
+        let signal: AbortSignal | undefined
+        extensionHost.callTool.mockImplementation(
+          (_e: string, _n: string, _i: unknown, opts: { signal: AbortSignal }) => {
+            signal = opts.signal
+            return new Promise(() => {})
+          }
+        )
+        h.mockAddToolOutput.mockClear()
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(extToolCall('te3'))
+        })
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(signal?.aborted).toBe(false)
+        await act(async () => {
+          screen.getByTestId('chat-stop').click()
+        })
+        expect(signal?.aborted).toBe(true)
+        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith(
+          'thread-1',
+          false
+        )
       })
     })
 

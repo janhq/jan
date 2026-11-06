@@ -8,6 +8,7 @@
 //! placement, so "who writes above the cache line" is answered by config and by
 //! one exhaustive match rather than by whoever edited the builder last.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
@@ -246,7 +247,24 @@ other agent fits. Dispatch independent subagents in parallel when \
 their work doesn't depend on each other; each returns in the background and a note carries its answer when \
 it finishes. Once you delegate a task it belongs to that subagent -- do not do the same work yourself; \
 spend the wait on other steps, and only `await_subagent` when nothing else is left to do. Do inline work \
-yourself for small, targeted tasks where delegating would cost more than it saves.";
+yourself for small, targeted tasks where delegating would cost more than it saves. Subagents have no \
+memory: no memory tool and no memory index. Put any fact from your memory that a subagent needs into its \
+task, and record anything worth keeping from its answer yourself.";
+
+/// Where a dispatched child works, appended to [`SUBAGENT_GUIDE`] only in the
+/// CLI build: the desktop makes no checkouts and keeps readers writable (see
+/// `child_workspace`), so there it would describe branches that never exist.
+/// A constant per build, so the prefix stays byte-stable.
+const SUBAGENT_WORKSPACE_GUIDE: &str = if cfg!(feature = "cli") {
+    "\n\nEach subagent's workspace is set when you dispatch it. One that can write or edit files works in its own \
+checkout (a clone) on its own branch, started from HEAD, so parallel writers never share a checkout and \
+your uncommitted changes are not in it; its branch is in your repository when it is done, to merge. \
+Any other subagent works in your checkout read-only. The dispatch result says where each one works. Override with `workspace`: \"new\", \
+\"shared\", the name of an earlier subagent to continue in its worktree, or `workspace: {\"ref\": \"<git \
+ref>\"}` to review or test a branch or pull request in a checkout of its own."
+} else {
+    ""
+};
 
 /// The `# Subagents` block: the guide, then the predefined agents the
 /// `dispatch_subagent` `agent` enum accepts, each with its model and purpose.
@@ -256,8 +274,10 @@ yourself for small, targeted tasks where delegating would cost more than it save
 fn subagent_guide(project_root: &Path) -> String {
     let registry = crate::core::agent::subagent::SubagentRegistry::load(project_root);
     match crate::core::agent::subagent::agent_catalog(&registry) {
-        Some(catalog) => format!("{SUBAGENT_GUIDE}\n\nPredefined agents (`agent` field):\n{catalog}"),
-        None => SUBAGENT_GUIDE.to_string(),
+        Some(catalog) => format!(
+            "{SUBAGENT_GUIDE}{SUBAGENT_WORKSPACE_GUIDE}\n\nPredefined agents (`agent` field):\n{catalog}"
+        ),
+        None => format!("{SUBAGENT_GUIDE}{SUBAGENT_WORKSPACE_GUIDE}"),
     }
 }
 
@@ -319,15 +339,14 @@ fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> Str
         .map(|note| format!("\n{note}"))
         .unwrap_or_default();
 
-    // Where to do temporary work. Named by the one spelling that resolves from
-    // both `bash` and the filesystem tools on this platform: `/tmp` where the
-    // sandbox binds the scratch over it, the real path where nothing is mounted
-    // there. Same directory either way, and the shell's `TMPDIR`/`TMP`/`TEMP`
-    // point at it too.
+    // Where to do temporary work, by its real path: every sandbox backend
+    // exposes it there, so the same name works from `bash`, the filesystem
+    // tools and an escalated command, and the shell's `TMPDIR`/`TMP`/`TEMP`
+    // name it too.
     let scratch_line = match scratch {
         Some(scratch) => format!(
             "\nScratch: `{}` is a writable scratch space for temporary work; it persists for this session.",
-            tauri_plugin_agent_tools::tools::sandbox::scratch_display_path(Some(scratch), scratch)
+            display_path(scratch)
         ),
         None => String::new(),
     };
@@ -341,7 +360,7 @@ Shell: `{shell}`{shell_note}{scratch_line}"
 }
 
 /// The memory index (names + one-line summaries), injected so the model can
-/// read a note on demand with `memory_read`: this project's notes, the user's
+/// view a note on demand with the `memory` tool: this project's notes, the user's
 /// `user:` notes, and pointers to other projects when cross-project memory is
 /// on. The same content as the generated `MEMORY.md` files, rendered from the
 /// notes. None when there is nothing to show. Progressive disclosure, not
@@ -356,6 +375,99 @@ pub(crate) fn load_memory_catalog(project_root: &Path) -> Option<String> {
     .prompt_block()
 }
 
+/// A content hash per writable note (this project's and the user's), read now.
+fn memory_fingerprint(project_root: &Path) -> BTreeMap<String, u64> {
+    let (store, home, cross_project) = crate::core::agent::project::memory_roots(project_root);
+    memory::Scopes {
+        store: &store,
+        home: home.as_deref(),
+        cross_project,
+    }
+    .fingerprint()
+}
+
+/// Most names the changes block spells out before it only counts the rest, so
+/// a tidy that touched hundreds of notes cannot flood the tail.
+const MAX_CHANGED_NAMES: usize = 20;
+
+/// The memory index as the session started with it, and a fingerprint of the
+/// notes it was rendered from.
+///
+/// The index sits above the cache line, so it is taken once per session rather
+/// than per run: a note written mid-session would otherwise change the system
+/// prompt, and a changed prompt is appended as a whole new system message
+/// (`upstream::set_system_prompt`), resending every byte of it. What changed
+/// since the snapshot is reported below the history instead (see
+/// [`MemorySnapshot::changes_block`]). Refreshed only where the conversation
+/// starts over anyway: `/new`, `/clear`, `/resume`, and after a compaction. A
+/// fork continues its source session and keeps the source's snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MemorySnapshot {
+    block: Option<String>,
+    fingerprint: BTreeMap<String, u64>,
+}
+
+impl MemorySnapshot {
+    /// Render the index and fingerprint the notes of `project_root` now.
+    ///
+    /// Session start is also where a store written by an older Jan is brought
+    /// to the titled format, once (a marker file makes later calls free), so
+    /// the first index a session shows is already archived and titled.
+    pub(crate) fn capture(project_root: &Path) -> Self {
+        let (store, home, _) = crate::core::agent::project::memory_roots(project_root);
+        memory::migrate(&store);
+        if let Some(home) = home.as_deref() {
+            memory::migrate(home);
+        }
+        Self {
+            block: load_memory_catalog(project_root),
+            fingerprint: memory_fingerprint(project_root),
+        }
+    }
+
+    /// The memory section as the session's system prompt carries it.
+    pub(crate) fn block(&self) -> Option<&str> {
+        self.block.as_deref()
+    }
+
+    /// The `# Memory Changes` tail block: every note added (`+`), changed
+    /// (`~`) or deleted (`-`) since the snapshot, by this run or any other
+    /// (the tidy subagent, another session). `None` when nothing changed.
+    pub(crate) fn changes_block(&self, project_root: &Path) -> Option<String> {
+        memory_changes(&self.fingerprint, &memory_fingerprint(project_root))
+    }
+}
+
+fn memory_changes(
+    before: &BTreeMap<String, u64>,
+    after: &BTreeMap<String, u64>,
+) -> Option<String> {
+    let mut changes: Vec<String> = Vec::new();
+    for (name, hash) in after {
+        match before.get(name) {
+            None => changes.push(format!("+ {name}")),
+            Some(old) if old != hash => changes.push(format!("~ {name}")),
+            Some(_) => {}
+        }
+    }
+    for name in before.keys().filter(|name| !after.contains_key(*name)) {
+        changes.push(format!("- {name}"));
+    }
+    if changes.is_empty() {
+        return None;
+    }
+    let total = changes.len();
+    changes.truncate(MAX_CHANGED_NAMES);
+    let more = match total - changes.len() {
+        0 => String::new(),
+        n => format!(", and {n} more"),
+    };
+    Some(format!(
+        "# Memory Changes\n\nMemory changes this session: {}{more}\nThe memory index in your system prompt is the session-start snapshot; read a changed note by name for its current content.",
+        changes.join(", ")
+    ))
+}
+
 /// Everything the prompt-block composers read.
 struct CompositionInputs<'a> {
     base: Option<&'a str>,
@@ -363,6 +475,31 @@ struct CompositionInputs<'a> {
     scratch: Option<&'a Path>,
     subagents_enabled: bool,
     session_start: Option<&'a SessionStart>,
+    memory: bool,
+}
+
+/// The skill/memory guide for a run that has memory, or only its skills half
+/// for one that does not (a subagent): no memory instructions for a tool the
+/// run was not given.
+fn skill_guide(memory: bool) -> String {
+    skill_guide_from(DEFAULT_SKILL_GUIDE, memory)
+}
+
+/// [`skill_guide`] over a given guide text. Line endings are normalized first:
+/// a Windows checkout with `core.autocrlf` hands `include_str!` CRLF, and the
+/// section split and heading swap below match on `\n`.
+fn skill_guide_from(raw: &str, memory: bool) -> String {
+    let normalized = raw.replace("\r\n", "\n");
+    let guide = normalized.trim();
+    if memory {
+        return guide.to_string();
+    }
+    let skills = guide.split("\n## Memory").next().unwrap_or(guide).trim_end();
+    skills.replacen(
+        "# Skills and Project Memory\n\nYou are running as a project agent. This project keeps two kinds of durable\nnotes that you maintain: skills (reusable procedures) and memory (durable\nfacts). Manage both with the dedicated tools below. Do NOT use `shell`, `cat`,\n`ls`, or raw file paths for skills or memory; the tools handle location and\nnaming for you.",
+        "# Skills\n\nYou are running as a project agent. Use the dedicated skill tools below; do NOT use\n`shell`, `cat`, `ls`, or raw file paths for skills. Memory belongs to the agent that\ndispatched you: anything you need from earlier sessions is in your task.",
+        1,
+    )
 }
 
 /// The date and git branch a session started with, taken once and then carried
@@ -377,14 +514,29 @@ struct CompositionInputs<'a> {
 pub(crate) struct SessionStart {
     date: String,
     branch: Option<String>,
+    /// The memory index the session started with. `None` with no project, and
+    /// in a fixed test snapshot, where the index is read live instead.
+    memory: Option<MemorySnapshot>,
 }
 
 impl SessionStart {
-    /// Read the clock and `project_root`'s checkout now.
+    /// Read the clock, `project_root`'s checkout and its memory now.
     pub(crate) fn capture(project_root: Option<&Path>) -> Self {
         Self {
             date: chrono::Local::now().format("%Y-%m-%d").to_string(),
             branch: project_root.and_then(crate::core::agent::git::current_branch),
+            memory: project_root.map(MemorySnapshot::capture),
+        }
+    }
+
+    /// Read the clock now, with a `branch` the caller already read. Takes no
+    /// memory snapshot: its caller places a worktree subagent, and subagents
+    /// have no memory.
+    pub(crate) fn with_branch(branch: Option<String>) -> Self {
+        Self {
+            date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+            branch,
+            memory: None,
         }
     }
 
@@ -393,6 +545,23 @@ impl SessionStart {
         Self {
             date: date.to_string(),
             branch: branch.map(str::to_string),
+            memory: None,
+        }
+    }
+
+    /// The session's memory snapshot, when it took one.
+    pub(crate) fn memory(&self) -> Option<&MemorySnapshot> {
+        self.memory.as_ref()
+    }
+
+    /// Re-take only the memory snapshot, keeping the date and branch: for a
+    /// compaction, which starts the history over but not the session. The
+    /// TUI is the only caller that compacts a session it keeps.
+    #[cfg(feature = "cli")]
+    pub(crate) fn with_fresh_memory(&self, project_root: &Path) -> Self {
+        Self {
+            memory: Some(MemorySnapshot::capture(project_root)),
+            ..self.clone()
         }
     }
 
@@ -453,15 +622,22 @@ fn render(composer: Composer, inputs: &CompositionInputs) -> Option<String> {
         }
         Composer::SessionStart => inputs.session_start.map(SessionStart::block),
         Composer::SubagentGuide => inputs.subagents_enabled.then(|| subagent_guide(inputs.project_root)),
-        Composer::SkillGuide => Some(DEFAULT_SKILL_GUIDE.trim().to_string()),
+        Composer::SkillGuide => Some(skill_guide(inputs.memory)),
         Composer::WebToolsGuide => Some(WEB_TOOLS_GUIDE.to_string()),
         Composer::ProjectContext => load_context_files(inputs.project_root),
         Composer::Skills => load_skills(inputs.project_root),
-        Composer::MemoryCatalog => load_memory_catalog(inputs.project_root),
+        // The session's snapshot when it has one, so a note written mid-session
+        // never rewrites the prompt; read live only for a run with no session.
+        Composer::MemoryCatalog if !inputs.memory => None,
+        Composer::MemoryCatalog => match inputs.session_start.and_then(SessionStart::memory) {
+            Some(snapshot) => snapshot.block().map(str::to_string),
+            None => load_memory_catalog(inputs.project_root),
+        },
         // Built where the request is assembled, because they need state the
         // composition has no access to: the tool array is a request field, and
-        // the last three read per-turn state (a query, the todo registry).
+        // the rest read per-turn state (a query, the notes, the todo registry).
         Composer::ToolSchemas
+        | Composer::MemoryChanges
         | Composer::MemoryRecall
         | Composer::PlanAddendum
         | Composer::TodoAddendum => None,
@@ -477,6 +653,10 @@ fn render(composer: Composer, inputs: &CompositionInputs) -> Option<String> {
 /// fails the run instead of quietly costing a cache miss per turn. Blocks the
 /// policy sends to the tail are returned rather than dropped: they reach the
 /// model, just below the conversation instead of in front of it.
+///
+/// `memory` is false for a run that has no memory (a subagent): its prompt then
+/// carries no memory index and no memory instructions.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn compose_system_prompt(
     base: Option<&str>,
     project_root: &Path,
@@ -484,6 +664,7 @@ pub(crate) fn compose_system_prompt(
     subagents_enabled: bool,
     policy: &PromptPolicy,
     session_start: Option<&SessionStart>,
+    memory: bool,
 ) -> Result<ComposedPrompt, String> {
     let inputs = CompositionInputs {
         base,
@@ -491,6 +672,7 @@ pub(crate) fn compose_system_prompt(
         scratch,
         subagents_enabled,
         session_start,
+        memory,
     };
     policy.validate()?;
     let mut prefix: Vec<String> = Vec::new();
@@ -533,6 +715,7 @@ mod tests {
             subagents_enabled,
             &PromptPolicy::default(),
             None,
+            true,
         )
         .ok()
         .map(|composed| composed.as_prompt())
@@ -616,10 +799,85 @@ mod tests {
         assert!(block.contains("- `decisions` - We use Yarn not npm."));
         assert!(block.contains("- `prefs` - Keep it minimal."));
         // Progressive disclosure: only the first line is advertised; the rest
-        // of the body stays out until memory_read.
+        // of the body stays out until it is viewed.
         assert!(!block.contains("SECRET_BODY_MARKER"));
-        assert!(block.contains("memory_read"));
+        assert!(block.contains("`memory` op `view`"));
         assert!(!block.contains("ignored.txt"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A CRLF checkout (Windows, `core.autocrlf`) strips the memory half of the
+    /// guide exactly like an LF one: the split and heading swap match on `\n`.
+    #[test]
+    fn the_memoryless_skill_guide_ignores_line_endings() {
+        // From an LF base: on a CRLF checkout the constant already has `\r\n`,
+        // and replacing `\n` again would produce `\r\r\n`.
+        let base = DEFAULT_SKILL_GUIDE.replace("\r\n", "\n");
+        let lf = skill_guide_from(&base, false);
+        let crlf = skill_guide_from(&base.replace('\n', "\r\n"), false);
+        assert_eq!(lf, crlf);
+        assert!(crlf.starts_with("# Skills\n"), "{crlf}");
+        assert!(!crlf.contains("## Memory"), "{crlf}");
+        assert!(!crlf.contains('\r'));
+    }
+
+    /// P0 of #497: a note written mid-session leaves the composed prompt
+    /// byte-identical; the change is reported by the tail block instead.
+    #[test]
+    fn a_memory_write_mid_session_does_not_change_the_prompt() {
+        let root = scratch_project("memsnapshot");
+        write_memory(&root, "keep.md", "Kept.");
+        write_memory(&root, "edit.md", "Before.");
+        write_memory(&root, "gone.md", "Deleted later.");
+        let start = SessionStart::capture(Some(&root));
+        let compose = || {
+            compose_system_prompt(None, &root, None, false, &PromptPolicy::default(), Some(&start), true)
+                .unwrap()
+                .prefix
+        };
+        let before = compose();
+        assert!(before.contains("`gone`"), "{before}");
+        let snapshot = start.memory().expect("a project session snapshots memory");
+        assert_eq!(snapshot.changes_block(&root), None, "nothing changed yet");
+
+        write_memory(&root, "new.md", "Added.");
+        write_memory(&root, "edit.md", "After.");
+        let dir = crate::core::agent::project::store_root(&root).join("memory");
+        std::fs::remove_file(dir.join("gone.md")).unwrap();
+
+        assert_eq!(compose(), before, "the prompt is the session-start snapshot");
+        let changes = snapshot.changes_block(&root).expect("changes are reported");
+        assert!(changes.starts_with("# Memory Changes"), "{changes}");
+        assert!(
+            changes.contains("Memory changes this session: ~ edit, + new, - gone"),
+            "{changes}"
+        );
+        assert!(!changes.contains("keep"), "{changes}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_memory_changes_block_caps_the_names_it_lists() {
+        let before = BTreeMap::new();
+        let after: BTreeMap<String, u64> =
+            (0..25).map(|i| (format!("n{i:02}"), 1)).collect();
+        let block = memory_changes(&before, &after).unwrap();
+        assert_eq!(block.matches("+ n").count(), MAX_CHANGED_NAMES);
+        assert!(block.contains(", and 5 more"), "{block}");
+    }
+
+    /// After a compaction the session keeps its date and branch but takes a
+    /// fresh memory index, so the tail stops repeating folded-in changes.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn a_fresh_memory_snapshot_keeps_the_date_and_branch() {
+        let root = scratch_project("memrefresh");
+        let start = SessionStart::capture(Some(&root));
+        write_memory(&root, "later.md", "Written after the start.");
+        let fresh = start.with_fresh_memory(&root);
+        assert_eq!((fresh.date.as_str(), &fresh.branch), (start.date.as_str(), &start.branch));
+        assert!(fresh.memory().unwrap().block().unwrap().contains("`later`"));
+        assert_eq!(fresh.memory().unwrap().changes_block(&root), None);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -693,7 +951,8 @@ mod tests {
         let out = default_prompt(None, &root, None, false).expect("guide always present");
         assert!(out.contains("Skills and Project Memory"));
         assert!(out.contains("skill_write"));
-        assert!(out.contains("memory_write"));
+        assert!(out.contains("`memory` tool"));
+        assert!(!out.contains("memory_write"), "the old tools are gone");
 
         // Base is preserved and precedes the guide.
         let with_base = default_prompt(Some("base"), &root, None, false).expect("prompt");
@@ -963,6 +1222,36 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // Where a child works is decided at dispatch, and the CLI guide says so,
+    // ahead of the agent catalog.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn the_cli_subagent_guide_explains_child_worktrees() {
+        let root = scratch_project("subagent-worktrees");
+        let with = default_prompt(None, &root, None, true).expect("prompt");
+        assert!(with.contains("own checkout"), "{with}");
+        assert!(with.contains("is in your repository"), "{with}");
+        assert!(with.contains("read-only"), "{with}");
+        assert!(with.contains("workspace: {\"ref\""), "{with}");
+        let guide = with.find("Each subagent's workspace").expect("workspace paragraph");
+        assert!(guide < with.find("Predefined agents").unwrap(), "{with}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // The desktop makes no worktrees and keeps readers writable, so its agent
+    // is told nothing about either.
+    #[cfg(not(feature = "cli"))]
+    #[test]
+    fn the_desktop_subagent_guide_says_nothing_of_worktrees() {
+        let root = scratch_project("subagent-desktop");
+        let with = default_prompt(None, &root, None, true).expect("prompt");
+        assert!(with.contains("belongs to that subagent"), "{with}");
+        assert!(!with.contains("own checkout"), "{with}");
+        assert!(!with.contains("is in your repository"), "{with}");
+        assert!(!with.contains("`workspace`"), "{with}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     // ── Runtime environment block ────────────────────────────────────────
 
     #[test]
@@ -1027,6 +1316,7 @@ mod tests {
             false,
             &PromptPolicy::default(),
             Some(&start),
+            true,
         )
         .expect("default policy");
         let block = "# Session Start\n\nSession start date: 2026-09-30\nStarting branch: `feat/x`";
@@ -1052,6 +1342,7 @@ mod tests {
             false,
             &PromptPolicy::default(),
             Some(&start),
+            true,
         )
         .unwrap()
         .prefix;
@@ -1087,6 +1378,7 @@ mod tests {
                 false,
                 &PromptPolicy::default(),
                 Some(&start),
+                true,
             )
             .unwrap()
             .prefix
@@ -1113,7 +1405,7 @@ mod tests {
                 "guidelines".to_string(),
             ]),
         );
-        let composed = compose_system_prompt(None, &root, None, false, &policy, None).expect("policy");
+        let composed = compose_system_prompt(None, &root, None, false, &policy, None, true).expect("policy");
 
         assert!(composed.prefix.contains("# Guidelines"));
         assert!(
@@ -1146,7 +1438,7 @@ mod tests {
         let root = scratch_project("varying");
         std::fs::create_dir_all(&root).unwrap();
         let policy = PromptPolicy::new(Placement::Tail, Some(vec!["memory_recall".to_string()]));
-        let error = compose_system_prompt(None, &root, None, false, &policy, None)
+        let error = compose_system_prompt(None, &root, None, false, &policy, None, true)
             .expect_err("a per-turn composer cannot be allowed into the prefix");
         assert!(error.contains("memory_recall"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
@@ -1159,7 +1451,7 @@ mod tests {
         let root = scratch_project("typo");
         std::fs::create_dir_all(&root).unwrap();
         let policy = PromptPolicy::new(Placement::Tail, Some(vec!["skils".to_string()]));
-        let error = compose_system_prompt(None, &root, None, false, &policy, None)
+        let error = compose_system_prompt(None, &root, None, false, &policy, None, true)
             .expect_err("an unknown id must not read as a policy");
         assert!(error.contains("skils"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
@@ -1173,7 +1465,7 @@ mod tests {
         let root = scratch_project("order");
         write_skill(&root, "s.md", "Do the thing.");
         std::fs::write(root.join("JAN.md"), "PROJECT_RULES").unwrap();
-        let composed = compose_system_prompt(None, &root, None, false, &PromptPolicy::default(), None)
+        let composed = compose_system_prompt(None, &root, None, false, &PromptPolicy::default(), None, true)
             .expect("default policy");
 
         // Every block the registry declares for the prefix is present, in the
@@ -1198,22 +1490,17 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// The scratch must be advertised under the name that resolves from both
-    /// `bash` and the filesystem tools: `/tmp` where the sandbox binds it there,
-    /// the real path where nothing is mounted over `/tmp`. Naming the host path
-    /// on Linux (or `/tmp` anywhere else) would send the model to a directory
-    /// one of the two surfaces cannot reach.
+    /// The scratch is advertised by its real path on every platform: the one
+    /// name that resolves from `bash`, the filesystem tools and an escalated
+    /// command alike. `/tmp` would name the host's temp dir to the latter.
     #[test]
     fn runtime_environment_block_advertises_the_scratch_the_tools_share() {
         let root = scratch_project("scratch");
         std::fs::create_dir_all(&root).unwrap();
         let scratch = root.join("agent-scratch");
         let block = runtime_environment_block(&root, Some(&scratch));
-        let expected = if cfg!(target_os = "linux") {
-            "/tmp".to_string()
-        } else {
-            scratch.to_string_lossy().into_owned()
-        };
+        let expected = display_path(&scratch);
+        assert!(!block.contains("Scratch: `/tmp`"), "{block}");
         assert!(
             block.contains(&format!("Scratch: `{expected}`")),
             "want {expected}: {block}"

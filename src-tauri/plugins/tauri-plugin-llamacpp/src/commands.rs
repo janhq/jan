@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::{Emitter, Manager, Runtime, State};
 
+use crate::engine::preset;
+use crate::engine::worker::FitMark;
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
 use crate::state::{EngineLease, LlamacppState, SessionInfo};
 
@@ -93,6 +95,79 @@ enum WorkerFate {
 /// proxy instead of being reported with its exit code and stderr.
 const EXIT_GRACE: Duration = Duration::from_millis(500);
 const EXIT_POLL: Duration = Duration::from_millis(50);
+
+/// How long a failed load waits for the worker's fit-failure line. fit prints
+/// it before the load starts, but stderr is drained on its own task, so it can
+/// still be in the pipe when the HTTP answer arrives.
+const FIT_NOTE_WAIT: Duration = Duration::from_millis(100);
+
+/// Where the worker on `port` is in its fit-failure lines, taken before a load
+/// so that only a line printed during it counts.
+async fn fit_mark(state: &LlamacppState, port: u16) -> Option<FitMark> {
+    let guard = state.engine.lock().await;
+    guard.as_ref().filter(|h| h.port == port).map(|h| h.fit_mark())
+}
+
+/// The fit-failure line the worker on `port` printed after `mark`, plus the
+/// preset it runs from.
+async fn fit_failure_since(
+    state: &LlamacppState,
+    port: u16,
+    mark: FitMark,
+) -> (Option<String>, Option<std::path::PathBuf>) {
+    let guard = state.engine.lock().await;
+    match guard.as_ref().filter(|h| h.port == port) {
+        Some(h) => (h.fit_failure_since(mark), Some(h.preset_path.clone())),
+        None => (None, None),
+    }
+}
+
+/// Rewords a failed load that auto-fit could not place. Without this the user
+/// sees an out-of-memory error whose advice is a smaller context, when fit has
+/// already shrunk the context as far as `fit-ctx` allows.
+///
+/// Two signals, because fit.cpp only gives up loudly without a GPU: there it
+/// prints a "unable to fit model into system memory" line. With a GPU it never
+/// fails; it shrinks the context, moves layers to the CPU and loads, so a model
+/// too big for the device fails as a plain out-of-memory load. That is read as
+/// not fitting only when fit owned the context for this model; a pinned
+/// `ctx-size` is left alone by fit, and lowering it is real advice.
+async fn explain_load_failure(
+    state: &LlamacppState,
+    port: u16,
+    model_id: &str,
+    mark: Option<FitMark>,
+    err: LlamacppError,
+) -> LlamacppError {
+    let Some(mark) = mark else { return err };
+    let (mut line, mut preset) = fit_failure_since(state, port, mark).await;
+    if line.is_none() {
+        tokio::time::sleep(FIT_NOTE_WAIT).await;
+        (line, preset) = fit_failure_since(state, port, mark).await;
+    }
+    let output = err.details.clone().unwrap_or_default();
+    if let Some(line) = line {
+        let details = if output.trim().is_empty() {
+            line
+        } else {
+            format!("{line}; {output}")
+        };
+        return LlamacppError::model_does_not_fit(details);
+    }
+    if !matches!(err.code, ErrorCode::OutOfMemory) {
+        return err;
+    }
+    let ini = match preset {
+        Some(path) => tokio::fs::read_to_string(&path).await.ok(),
+        None => None,
+    };
+    match ini {
+        Some(ini) if preset::fit_owns_context(&ini, model_id) => {
+            LlamacppError::model_does_not_fit(output)
+        }
+        _ => err,
+    }
+}
 
 /// Checks the process, which is the one thing that tells the two causes of an
 /// unreachable worker apart: a crash, or something between Jan and 127.0.0.1.
@@ -464,6 +539,7 @@ async fn post_load<R: Runtime>(
     }
 
     let state: State<Arc<LlamacppState>> = app_handle.state();
+    let mark = fit_mark(&state, port).await;
     let client = http_client().await;
     let url = format!("http://127.0.0.1:{}/models/load", port);
     let resp = client
@@ -491,10 +567,9 @@ async fn post_load<R: Runtime>(
         let body = resp.text().await.unwrap_or_default();
         if !body.to_lowercase().contains("already") {
             progress_task.abort();
-            return Err(ServerError::Llamacpp(load_rejection_error(
-                status.as_u16(),
-                &body,
-            )));
+            let err = load_rejection_error(status.as_u16(), &body);
+            let err = explain_load_failure(&state, port, model_id, mark, err).await;
+            return Err(ServerError::Llamacpp(err));
         }
     }
 
@@ -520,7 +595,12 @@ async fn post_load<R: Runtime>(
         ))),
     };
     progress_task.abort();
-    result
+    match result {
+        Err(ServerError::Llamacpp(err)) => Err(ServerError::Llamacpp(
+            explain_load_failure(&state, port, model_id, mark, err).await,
+        )),
+        other => other,
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -1173,6 +1253,137 @@ mod unreachable_worker_tests {
         let handle = state.engine.lock().await.take();
         assert!(handle.is_some(), "a live worker is left in place");
         handle.unwrap().kill().await;
+    }
+
+    /// The worker's answer to a load llama.cpp could not allocate, as
+    /// `http.rs` sends it: the shim's message plus the ERROR lines it caught.
+    const OOM_BODY: &str = r#"{"error":{"message":"failed to load model; ggml_backend_cuda_buffer_type_alloc_buffer: allocating 9000.00 MiB on device 0: cudaMalloc failed: out of memory","code":400}}"#;
+
+    const FIT_LINE: &str = "common_fit_params: failed to fit params to free device memory: was unable to fit model into system memory by reducing context, abort";
+
+    /// A live fake worker whose stderr runs `stderr` after the handshake,
+    /// installed as the engine and pointed at a preset holding `ini`.
+    #[cfg(unix)]
+    async fn fit_worker(dir: &Path, stderr: &str, ini: &str) -> (LlamacppState, u16) {
+        let port = closed_port();
+        let mut handle = spawn_fake(
+            dir,
+            &format!("echo '{{\"port\":{port},\"pid\":'$$'}}'\n{stderr}\nexec sleep 30"),
+        )
+        .await;
+        let preset = dir.join("router.preset.ini");
+        std::fs::write(&preset, ini).unwrap();
+        handle.preset_path = preset;
+        let state = LlamacppState::new();
+        *state.engine.lock().await = Some(handle);
+        (state, port)
+    }
+
+    /// Waits until the worker's stderr drain has seen a fit-failure line
+    /// printed after `mark`, so the assertion is not a race with the pipe.
+    #[cfg(unix)]
+    async fn wait_for_fit_line(state: &LlamacppState, port: u16, mark: FitMark) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while fit_failure_since(state, port, mark).await.0.is_none() {
+            assert!(std::time::Instant::now() < deadline, "fit line never arrived");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    #[cfg(unix)]
+    async fn stop(state: LlamacppState) {
+        state.engine.lock().await.take().unwrap().kill().await;
+    }
+
+    // No GPU: fit gives up out loud, and the load that follows fails with
+    // whatever llama.cpp hit next. The fit line is the cause.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_load_after_fit_gave_up_on_system_memory_does_not_fit() {
+        let dir = tempfile::tempdir().unwrap();
+        // Printed once the mark is taken, as during a real load.
+        let (state, port) = fit_worker(
+            dir.path(),
+            &format!("sleep 0.2; echo '{FIT_LINE}' >&2"),
+            "[*]\nfit = off\nctx-size = 8192\n[m]\n",
+        )
+        .await;
+        let mark = fit_mark(&state, port).await;
+        wait_for_fit_line(&state, port, mark.unwrap()).await;
+
+        let failed = LlamacppError::from_load_failure("failed to load model");
+        let err = explain_load_failure(&state, port, "m", mark, failed).await;
+        let v = json(&err);
+        assert_eq!(v["code"], "MODEL_DOES_NOT_FIT", "{v}");
+        let details = v["details"].as_str().unwrap();
+        assert!(details.starts_with(FIT_LINE), "{details}");
+        assert!(details.ends_with("failed to load model"), "{details}");
+        stop(state).await;
+    }
+
+    // With a GPU fit never fails: it shrinks the context and offloads, and a
+    // model still too big runs out of memory. With fit owning the context that
+    // is the model not fitting, not a context the user could lower.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_out_of_memory_load_with_fit_owning_the_context_does_not_fit() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, port) =
+            fit_worker(dir.path(), "", "[*]\nfit-ctx = 4096\n\n[m]\nmodel = /m.gguf\n").await;
+        let mark = fit_mark(&state, port).await;
+
+        let err = load_rejection_error(400, OOM_BODY);
+        assert_eq!(json(&err)["code"], "OUT_OF_MEMORY", "the plain classification");
+        let err = explain_load_failure(&state, port, "m", mark, err).await;
+        let v = json(&err);
+        assert_eq!(v["code"], "MODEL_DOES_NOT_FIT", "{v}");
+        assert!(
+            v["details"].as_str().unwrap().contains("cudaMalloc failed: out of memory"),
+            "{v}"
+        );
+        stop(state).await;
+    }
+
+    // Fit off, or a context the user pinned (fit leaves it alone): a smaller
+    // context is real advice, so the out-of-memory error stands.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_out_of_memory_load_fit_did_not_size_stays_out_of_memory() {
+        for ini in [
+            "[*]\nfit = off\nctx-size = 8192\n\n[m]\nmodel = /m.gguf\n",
+            "[*]\n\n[m]\nmodel = /m.gguf\nctx-size = 32768\n",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let (state, port) = fit_worker(dir.path(), "", ini).await;
+            let mark = fit_mark(&state, port).await;
+
+            let err = load_rejection_error(400, OOM_BODY);
+            let err = explain_load_failure(&state, port, "m", mark, err).await;
+            assert_eq!(json(&err)["code"], "OUT_OF_MEMORY", "{ini}");
+            stop(state).await;
+        }
+    }
+
+    // A fit line from an earlier load must not be blamed for this one, and a
+    // failure that is not about memory keeps its own code.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_earlier_loads_fit_line_does_not_explain_this_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, port) = fit_worker(
+            dir.path(),
+            &format!("echo '{FIT_LINE}' >&2"),
+            "[*]\n[m]\n",
+        )
+        .await;
+        let before = fit_mark(&state, port).await.unwrap();
+        wait_for_fit_line(&state, port, before).await;
+        let mark = fit_mark(&state, port).await;
+
+        let failed = LlamacppError::from_load_failure("error loading model architecture: unknown");
+        let err = explain_load_failure(&state, port, "m", mark, failed).await;
+        assert_eq!(json(&err)["code"], "MODEL_ARCH_NOT_SUPPORTED", "{err:?}");
+        stop(state).await;
     }
 }
 

@@ -2,7 +2,6 @@ export {}
 
 type AppCore = {
   api: APIs
-  extensionManager: ExtensionManager | undefined
 }
 
 declare global {

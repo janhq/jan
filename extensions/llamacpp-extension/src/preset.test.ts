@@ -39,12 +39,9 @@ vi.mock('@janhq/core', () => ({
       delete writtenFiles[from]
     }),
     rm: vi.fn(async () => undefined),
+    readYaml: vi.fn(async (p: string) => modelYamls[p]),
   },
   joinPath: vi.fn(async (parts: string[]) => parts.join('/')),
-}))
-
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(async (_cmd: string, args: { path: string }) => modelYamls[args.path]),
 }))
 
 import { generatePreset, threadCacheDir } from './preset'
@@ -717,6 +714,15 @@ describe('generatePreset upstream-default skipping', () => {
     setupModel('m', { ctx_size: 16384 })
     await generatePreset('/p', '/jan', { fit: true } as any)
     expect(modelSection('m')).toContain('ctx-size = 16384')
+  })
+
+  // No ctx_size in model.yml (the seeded 8192 is gone) means nothing pins n_ctx,
+  // so fit is free to shrink the context down to fit_ctx.
+  it('emits no ctx-size anywhere when fit is on and the model sets none', async () => {
+    setupModel('m', {})
+    await generatePreset('/p', '/jan', { fit: true } as any)
+    expect(modelSection('m')).not.toContain('ctx-size')
+    expect(globalSection()).not.toContain('ctx-size')
   })
 
   it('emits n-gpu-layers for auto (-1) and all (-2) but not below', async () => {

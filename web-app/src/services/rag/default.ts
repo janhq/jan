@@ -1,21 +1,15 @@
 import type { RAGService } from './types'
-import type { MCPTool, MCPToolCallResult, RAGExtension } from '@janhq/core'
-import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum } from '@janhq/core'
+import { ServiceKeys, type MCPTool, type MCPToolCallResult } from '@janhq/core'
+import { getExtensionHost } from '@/lib/extensions/host'
+
+// The rag built-in registers its tools on the host's internal tool registry
+// and publishes ingestion, parsing and embedding as ServiceKeys.RAG.
+const ragService = () => getExtensionHost().services.get(ServiceKeys.RAG)
+const internalTools = () => getExtensionHost().internalTools
 
 export class DefaultRAGService implements RAGService {
   async getTools(): Promise<MCPTool[]> {
-    const ext = ExtensionManager.getInstance().get<RAGExtension>(
-      ExtensionTypeEnum.RAG
-    )
-    if (ext?.getTools) {
-      try {
-        return await ext.getTools()
-      } catch (e) {
-        console.error('RAG extension getTools failed:', e)
-      }
-    }
-    return []
+    return internalTools().definitions()
   }
 
   async callTool(args: {
@@ -25,10 +19,8 @@ export class DefaultRAGService implements RAGService {
     projectId?: string
     scope: 'project' | 'thread'
   }): Promise<MCPToolCallResult> {
-    const ext = ExtensionManager.getInstance().get<RAGExtension>(
-      ExtensionTypeEnum.RAG
-    )
-    if (!ext?.callTool) {
+    const tools = internalTools()
+    if (!tools.has(args.toolName)) {
       return {
         error: 'RAG extension not available',
         content: [{ type: 'text', text: 'RAG extension not available' }],
@@ -50,7 +42,7 @@ export class DefaultRAGService implements RAGService {
         a.thread_id = args.projectId
       }
       a.scope = args.scope
-      return await ext.callTool(args.toolName, a)
+      return await tools.call(args.toolName, a)
     } catch (e) {
       const msg = e instanceof Error ? e.message : JSON.stringify(e)
       return {
@@ -61,26 +53,14 @@ export class DefaultRAGService implements RAGService {
   }
 
   async getToolNames(): Promise<string[]> {
-    try {
-      const ext = ExtensionManager.getInstance().get<RAGExtension>(
-        ExtensionTypeEnum.RAG
-      )
-      if (ext?.getToolNames) return await ext.getToolNames()
-      // No fallback to full tool list; return empty to save bandwidth
-      return []
-    } catch (e) {
-      console.error('Failed to fetch RAG tool names:', e)
-      return []
-    }
+    return internalTools().names()
   }
 
   async embed(texts: string[]): Promise<number[][]> {
     if (!texts || texts.length === 0) return []
     try {
-      const ext = ExtensionManager.getInstance().get<RAGExtension>(
-        ExtensionTypeEnum.RAG
-      )
-      if (ext?.embed) return await ext.embed(texts)
+      const rag = ragService()
+      if (rag) return await rag.embed(texts)
     } catch (e) {
       console.debug('RAG embed unavailable', e)
     }
@@ -89,10 +69,7 @@ export class DefaultRAGService implements RAGService {
 
   async parseDocument(path: string, type?: string): Promise<string> {
     try {
-      const ext = ExtensionManager.getInstance().get<RAGExtension>(
-        ExtensionTypeEnum.RAG
-      )
-      const parsed = await ext?.parseDocument?.(path, type)
+      const parsed = await ragService()?.parseDocument(path, type)
       return parsed ?? ''
     } catch (e) {
       console.debug('RAG parseDocument unavailable', e)

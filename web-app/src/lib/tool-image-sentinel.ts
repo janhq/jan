@@ -9,11 +9,38 @@
 import type { UIMessage } from '@ai-sdk/react'
 import type { ModelMessage } from 'ai'
 
-const PREFIX = ' __JAN_TOOL_IMAGE__'
+// What vision providers and llama.cpp's image loader accept. Anything else
+// (svg, bmp, tiff) is rejected upstream, and since the stored result is
+// re-sent on every turn it would break the thread for good.
+const SENDABLE_IMAGE_TYPES: Record<string, true> = {
+  'image/png': true,
+  'image/jpeg': true,
+  'image/gif': true,
+  'image/webp': true,
+}
+
+// A tool result is attacker-controlled text: a fetched page, a file, an MCP
+// server's reply or error. If the marker were a fixed string, any of them could
+// carry one and have it decoded into an `image_url` part, with an svg or
+// corrupt payload the upstream rejects. The result is stored and re-sent every
+// turn, so that one result would break the thread for good. So the marker
+// carries a per-process nonce that only this module knows: it never reaches a
+// model (a sentinel is decoded or stripped before the request leaves), so a
+// result cannot reproduce it. Sentinels are minted per request and never
+// persisted; one left over from an earlier run no longer decodes, which is the
+// same as any forged one: it stays plain text.
+const NONCE = Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (b) =>
+  b.toString(16).padStart(2, '0')
+).join('')
+const PREFIX = ` __JAN_TOOL_IMAGE__${NONCE}:`
 const SUFFIX = ' '
 
-const SENTINEL_REGEX =
-  / __JAN_TOOL_IMAGE__(data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+) /g
+const SENTINEL_REGEX = new RegExp(
+  `${PREFIX}(data:image/(?:${Object.keys(SENDABLE_IMAGE_TYPES)
+    .map((type) => type.slice('image/'.length))
+    .join('|')});base64,[A-Za-z0-9+/=]+)${SUFFIX}`,
+  'g'
+)
 
 const DATA_URL_REGEX = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/
 
@@ -96,28 +123,61 @@ function isMcpImage(
   return item?.type === 'image' && typeof item.data === 'string' && !!item.data
 }
 
-// What vision providers and llama.cpp's image loader accept. Anything else
-// (svg, bmp, tiff) is rejected upstream, and since the stored result is
-// re-sent on every turn it would break the thread for good.
-const SENDABLE_IMAGE_TYPES: Record<string, true> = {
-  'image/png': true,
-  'image/jpeg': true,
-  'image/gif': true,
-  'image/webp': true,
+// Largest decoded image sent to a model. Anthropic's 5 MB per-image limit is
+// the lowest of the providers; a larger one is rejected, and since the result
+// is re-sent every turn, so is every later request.
+const MAX_TOOL_IMAGE_BYTES = 5 * 1024 * 1024
+
+/** The media type the leading bytes declare, or null when they are no sendable image. */
+function sniffImageType(base64: string): string | null {
+  let head: string
+  try {
+    head = atob(base64.slice(0, 16))
+  } catch {
+    return null
+  }
+  if (head.startsWith('\x89PNG\r\n\x1a\n')) return 'image/png'
+  if (head.startsWith('\xff\xd8\xff')) return 'image/jpeg'
+  if (head.startsWith('GIF87a') || head.startsWith('GIF89a')) return 'image/gif'
+  if (head.startsWith('RIFF') && head.slice(8, 12) === 'WEBP') return 'image/webp'
+  return null
 }
 
-/** The image as a data URL, or null when its media type is not sendable. */
-function mcpImageDataUrl(item: McpContentItem & { data: string }): string | null {
+/**
+ * One MCP image item as a data URL, or the reason it is not sent. The server
+ * decides the bytes, so they are checked rather than trusted: a corrupt or
+ * mislabelled image fails the whole request upstream.
+ */
+function mcpImage(
+  item: McpContentItem & { data: string }
+): { url: string } | { omitted: string } {
   // The sentinel regex takes a lowercase media type and an unbroken base64
   // run, so normalise both: some servers wrap long base64 across lines.
-  const data = item.data.replace(/\s+/g, '')
-  const mime = data.startsWith('data:')
-    ? /^data:([^;,]*)/i.exec(data)?.[1]?.toLowerCase()
-    : item.mimeType?.toLowerCase().startsWith('image/')
-      ? item.mimeType.toLowerCase()
-      : 'image/png'
-  if (!mime || SENDABLE_IMAGE_TYPES[mime] !== true) return null
-  return data.startsWith('data:') ? data : `data:${mime};base64,${data}`
+  const raw = item.data.replace(/\s+/g, '')
+  const dataUrl = /^data:([^;,]*);base64,(.*)$/i.exec(raw)
+  const payload = dataUrl ? dataUrl[2] : raw
+  const declared = (
+    dataUrl
+      ? dataUrl[1]
+      : item.mimeType?.toLowerCase().startsWith('image/')
+        ? item.mimeType
+        : 'image/png'
+  ).toLowerCase()
+  if (SENDABLE_IMAGE_TYPES[declared] !== true) {
+    return { omitted: `${declared.slice(0, 64)} is not supported` }
+  }
+  const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0
+  if (Math.floor((payload.length * 3) / 4) - padding > MAX_TOOL_IMAGE_BYTES) {
+    return {
+      omitted: `larger than ${MAX_TOOL_IMAGE_BYTES / (1024 * 1024)} MB`,
+    }
+  }
+  const actual = /^[A-Za-z0-9+/]+={0,2}$/.test(payload)
+    ? sniffImageType(payload)
+    : null
+  if (!actual) return { omitted: 'not a valid PNG, JPEG, GIF or WebP image' }
+  // Label it with what the bytes are: a provider rejects a mismatched type.
+  return { url: `data:${actual};base64,${payload}` }
 }
 
 function mcpOutputWithSentinels(items: McpContentItem[]): string {
@@ -126,13 +186,12 @@ function mcpOutputWithSentinels(items: McpContentItem[]): string {
   let images = 0
   for (const item of items) {
     if (isMcpImage(item)) {
-      const url = mcpImageDataUrl(item)
-      if (url) {
+      const image = mcpImage(item)
+      if ('url' in image) {
         images++
-        pieces.push({ text: false, value: encodeToolImageSentinel(url) })
+        pieces.push({ text: false, value: encodeToolImageSentinel(image.url) })
       } else {
-        const mime = item.mimeType ?? 'unknown type'
-        pieces.push({ text: true, value: `(image omitted: ${mime} is not supported)` })
+        pieces.push({ text: true, value: `(image omitted: ${image.omitted})` })
       }
     } else if (item?.type === 'text' && typeof item.text === 'string') {
       pieces.push({ text: true, value: item.text })

@@ -9,7 +9,9 @@ import {
   formatDuration,
   getModelDisplayName,
   splitHtmlArtifacts,
+  isLocalProvider,
 } from '../utils'
+import { EngineManager, type AIEngine } from '@janhq/core'
 
 describe('getProviderLogo', () => {
   it('returns correct logo paths for known providers', () => {
@@ -47,6 +49,26 @@ describe('getProviderTitle', () => {
 
   it('handles empty strings', () => {
     expect(getProviderTitle('')).toBe('')
+  })
+
+  it('accepts a provider object and titles it by its name', () => {
+    expect(getProviderTitle({ provider: 'openai' })).toBe('OpenAI')
+    expect(getProviderTitle({ provider: 'mistral' })).toBe('Mistral')
+  })
+
+  it('prefers the display name a provider carries over its raw id', () => {
+    expect(
+      getProviderTitle({
+        provider: 'jan-samples.hello-provider/hello-local',
+        display_name: 'Hello Local',
+      })
+    ).toBe('Hello Local')
+  })
+
+  it('falls back to the id when the display name is empty', () => {
+    expect(getProviderTitle({ provider: 'openai', display_name: '' })).toBe(
+      'OpenAI'
+    )
   })
 })
 
@@ -432,5 +454,15 @@ describe('splitHtmlArtifacts', () => {
     const segs = splitHtmlArtifacts(content)
     expect(segs.map((s) => s.type)).toEqual(['markdown', 'svg'])
     expect(segs[1].content).toBe('<svg><circle/></svg>')
+  })
+})
+
+describe('isLocalProvider', () => {
+  it('is true only for a provider whose engine the engine manager holds', () => {
+    const manager = new EngineManager()
+    manager.register({ provider: 'llamacpp', load: vi.fn() } as unknown as AIEngine)
+    vi.spyOn(EngineManager, 'instance').mockReturnValue(manager)
+    expect(isLocalProvider('llamacpp')).toBe(true)
+    expect(isLocalProvider('openai')).toBe(false)
   })
 })

@@ -53,7 +53,12 @@ import {
   userTurn,
 } from '@/lib/coworkTurns'
 import { extractFilesFromPrompt } from '@/lib/fileMetadata'
-import { coworkLocalModel, coworkModelContext, recoverCoworkContext } from '@/lib/coworkModelControls'
+import {
+  coworkAllowsProvider,
+  coworkLocalModel,
+  coworkModelContext,
+  recoverCoworkContext,
+} from '@/lib/coworkModelControls'
 import { isContextOverflowMessage } from '@/utils/error'
 import { importAttachedFiles, withAttachedFiles } from '@/lib/coworkAttachments'
 import { useToolCallRuntime, withToolTiming } from '@/hooks/useToolCallRuntime'
@@ -102,12 +107,10 @@ import {
   getSandboxStatus,
   sandboxEnforces,
   writeBlackboard,
-  BLACKBOARD_DIR_DISPLAY,
   importAttachment,
   cancelAgentThreadBash,
   activeAgentMonitorIds,
 } from '@/lib/agentTools'
-import { isPlatformTauri } from '@/lib/platform'
 import { monitorLaneFor, type MonitorLane } from '@/lib/coworkMonitor'
 import { CoworkParkedNotice } from '@/containers/CoworkParkedNotice'
 import type { MonitorView } from '@/types/coworkSession'
@@ -463,13 +466,18 @@ function CoworkPage() {
           }
         : undefined)
     const selectedProvider = modelChoice?.provider ?? ''
-    const selectedModel = modelState.providers
-      .find(
-        (provider) => provider.provider === selectedProvider && provider.active
-      )
-      ?.models.find((model) => model.id === modelChoice?.id)
+    const runProvider = modelState.providers.find(
+      (provider) => provider.provider === selectedProvider && provider.active
+    )
+    const selectedModel = runProvider?.models.find(
+      (model) => model.id === modelChoice?.id
+    )
     if (!selectedModel?.id) {
       toast.error(t('common:selectModel'))
+      return
+    }
+    if (!coworkAllowsProvider(runProvider)) {
+      toast.error(t('common:coworkExtensionProvider'))
       return
     }
     // Without tool calling the transport drops the tool set silently, and the
@@ -819,16 +827,11 @@ function CoworkPage() {
                   }
 
                   const model = transport.model
-                  // `BLACKBOARD_DIR_DISPLAY` (/tmp/blackboard) is only where the
-                  // scratch surfaces on Linux, where the sandbox binds it over
-                  // /tmp (`scratch_display_path`). On macOS/Windows the scratch
-                  // is a real host path we don't know up front, so advertise no
-                  // dir there and let each completion notice carry the exact
-                  // path `writeBlackboard` returns.
-                  const blackboardDir =
-                    isPlatformTauri() && environment.os === 'linux'
-                      ? BLACKBOARD_DIR_DISPLAY
-                      : null
+                  // The scratch is a real host path (in the OS cache dir) on
+                  // every platform, which this side does not know up front, so
+                  // no dir is advertised: each completion notice carries the
+                  // exact path `writeBlackboard` returns.
+                  const blackboardDir = null
 
                   // The plan hold keeps the run alive across the whole plan,
                   // including the gap between one phase finishing and the next
@@ -1173,7 +1176,12 @@ function CoworkPage() {
   // (active providers, no embedding models, remote providers only with a key),
   // narrowed to tool-capable models since runRequest refuses the rest anyway.
   const allModels = useMemo(() => {
-    const items: { providerName: string; id: string; label: string }[] = []
+    const items: {
+      providerName: string
+      providerTitle: string
+      id: string
+      label: string
+    }[] = []
     providers.forEach((p) => {
       if (!p.active) return
       const isPredefined = predefinedProviders.some((e) =>
@@ -1189,6 +1197,7 @@ function CoworkPage() {
         if (!m.capabilities?.includes('tools')) return
         items.push({
           providerName: p.provider,
+          providerTitle: getProviderTitle(p),
           id: m.id,
           label: getModelDisplayName(m),
         })
@@ -1222,7 +1231,7 @@ function CoworkPage() {
         .map((m) => ({
           key: `${m.providerName}/${m.id}`,
           label: m.label,
-          description: getProviderTitle(m.providerName),
+          description: m.providerTitle,
           kind: 'model' as const,
           onSelect: () => switchModel(m.providerName, m.id),
         }))

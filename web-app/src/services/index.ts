@@ -31,6 +31,8 @@ import { DefaultRAGService } from './rag/default'
 import type { RAGService } from './rag/types'
 import { DefaultUploadsService } from './uploads/default'
 import type { UploadsService } from './uploads/types'
+import { DefaultExtensionsService } from './extensions/default'
+import type { ExtensionsService } from './extensions/types'
 
 // Import service types
 import type { ThemeService } from './theme/types'
@@ -76,6 +78,7 @@ export interface ServiceHub {
   projects(): ProjectsService
   rag(): RAGService
   uploads(): UploadsService
+  extensions(): ExtensionsService
 }
 
 class PlatformServiceHub implements ServiceHub {
@@ -100,6 +103,8 @@ class PlatformServiceHub implements ServiceHub {
   private projectsService: ProjectsService = new DefaultProjectsService()
   private ragService: RAGService = new DefaultRAGService()
   private uploadsService: UploadsService = new DefaultUploadsService()
+  // The install pipeline is desktop only (tauri-plugin-extensions).
+  private extensionsService: ExtensionsService = new DefaultExtensionsService()
   private initialized = false
 
   /**
@@ -132,6 +137,7 @@ class PlatformServiceHub implements ServiceHub {
           pathModule,
           coreModule,
           deepLinkModule,
+          extensionsModule,
         ] = await Promise.all([
           import('./theme/tauri'),
           import('./window/tauri'),
@@ -146,6 +152,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./path/tauri'),
           import('./core/tauri'),
           import('./deeplink/tauri'),
+          import('./extensions/tauri'),
         ])
 
         this.themeService = new themeModule.TauriThemeService()
@@ -161,6 +168,7 @@ class PlatformServiceHub implements ServiceHub {
         this.pathService = new pathModule.TauriPathService()
         this.coreService = new coreModule.TauriCoreService()
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
+        this.extensionsService = new extensionsModule.TauriExtensionsService()
       } else if (isPlatformIOS() || isPlatformAndroid()) {
         const [
           themeModule,
@@ -184,7 +192,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./dialog/tauri'),
           import('./opener/tauri'),
           import('./path/tauri'),
-          import('./core/mobile'), // Use mobile-specific core service
+          import('./core/tauri'),
           import('./deeplink/tauri'),
         ])
 
@@ -197,7 +205,7 @@ class PlatformServiceHub implements ServiceHub {
         this.dialogService = new dialogModule.TauriDialogService()
         this.openerService = new openerModule.TauriOpenerService()
         this.pathService = new pathModule.TauriPathService()
-        this.coreService = new coreModule.MobileCoreService() // Mobile service with pre-loaded extensions
+        this.coreService = new coreModule.TauriCoreService()
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
       }
 
@@ -322,6 +330,11 @@ class PlatformServiceHub implements ServiceHub {
   uploads(): UploadsService {
     this.ensureInitialized()
     return this.uploadsService
+  }
+
+  extensions(): ExtensionsService {
+    this.ensureInitialized()
+    return this.extensionsService
   }
 }
 

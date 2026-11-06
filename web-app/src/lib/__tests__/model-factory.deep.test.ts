@@ -78,6 +78,11 @@ vi.mock('@/lib/platform/utils', () => ({
   isPlatformTauri: vi.fn(() => false),
 }))
 
+const mlxMock = vi.hoisted(() => ({ findSession: vi.fn() }))
+vi.mock('@/lib/llamacppRouterProps', () => ({
+  getMlxExtension: () => mlxMock,
+}))
+
 vi.mock('@/lib/provider-api-keys', () => ({
   providerRemoteApiKeyChain: vi.fn((p: any) => {
     const primary = p.api_key?.trim()
@@ -88,7 +93,8 @@ vi.mock('@/lib/provider-api-keys', () => ({
   }),
 }))
 
-import { ModelFactory, LOOPBACK_DIRECT_PROXY } from '../model-factory'
+import { ModelFactory } from '../model-factory'
+import { LOOPBACK_DIRECT_PROXY } from '../loopback-fetch'
 import { invoke } from '@tauri-apps/api/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 
@@ -243,7 +249,7 @@ describe('model-factory deep coverage', () => {
         auto_compact: true,
       })
       const opts = getOpts()
-      await opts.fetch('http://x', { method: 'POST', body: JSON.stringify({ messages: [] }) })
+      await opts.fetch('http://localhost:8080/v1/chat/completions', { method: 'POST', body: JSON.stringify({ messages: [] }) })
       const body = JSON.parse(vi.mocked(httpFetch).mock.calls[0][1]!.body as string)
       expect(body.temperature).toBe(0.5)
       expect(body.max_tokens).toBe(1024)
@@ -300,23 +306,23 @@ describe('model-factory deep coverage', () => {
   /* mlx internals */
   describe('mlx internals', () => {
     it('url, headers, and param merge', async () => {
-      vi.mocked(invoke).mockResolvedValue({ port: 9090, api_key: 'mlx-key' })
+      mlxMock.findSession.mockResolvedValue({ port: 9090, api_key: 'mlx-key' })
       await ModelFactory.createModel('m', mkProvider('mlx'), { temperature: 0.3 })
       const opts = getOpts()
       expect(opts.url({ path: '/chat/completions' })).toBe('http://localhost:9090/v1/chat/completions')
       expect(opts.headers().Authorization).toBe('Bearer mlx-key')
 
-      await opts.fetch('http://x', { method: 'POST', body: JSON.stringify({ messages: [] }) })
+      await opts.fetch('http://localhost:9090/v1/chat/completions', { method: 'POST', body: JSON.stringify({ messages: [] }) })
       const body = JSON.parse(vi.mocked(httpFetch).mock.calls[0][1]!.body as string)
       expect(body.temperature).toBe(0.3)
     })
 
     it('sends cancel on abort', async () => {
-      vi.mocked(invoke).mockResolvedValue({ port: 9090, api_key: 'k' })
+      mlxMock.findSession.mockResolvedValue({ port: 9090, api_key: 'k' })
       await ModelFactory.createModel('m', mkProvider('mlx'), {})
       const opts = getOpts()
       const ctrl = new AbortController()
-      await opts.fetch('http://x', { method: 'POST', body: JSON.stringify({}), signal: ctrl.signal })
+      await opts.fetch('http://localhost:9090/v1/chat/completions', { method: 'POST', body: JSON.stringify({}), signal: ctrl.signal })
       ctrl.abort()
       await new Promise((r) => setTimeout(r, 20))
       expect(vi.mocked(httpFetch)).toHaveBeenCalledTimes(2)

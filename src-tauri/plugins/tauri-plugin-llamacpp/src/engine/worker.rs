@@ -174,6 +174,20 @@ fn is_backend_error_line(line_lower: &str) -> bool {
     .any(|m| line_lower.contains(m))
 }
 
+/// Whether a worker log line says auto-fit could not fit the model even into
+/// system memory. llama.cpp then loads with the unfitted parameters anyway, so
+/// the load that follows fails with an error that does not name the cause.
+///
+/// fit.cpp throws this only when there is no GPU at all (`nd == 0`); with a GPU
+/// it shrinks the context and offloads instead, and a model still too big shows
+/// up as an ordinary out-of-memory load failure (see `commands::explain_load_failure`).
+/// The other reasons fit gives (an explicit n_gpu_layers or tensor split, a
+/// split mode it does not handle) are fit declining to run, not a model that is
+/// too big. None of them is a runtime fault, so `classify_fault` ignores them.
+pub fn is_fit_failure_line(line_lower: &str) -> bool {
+    line_lower.contains("failed to fit params") && line_lower.contains("unable to fit model")
+}
+
 /// Turns worker stderr lines into faults, one call per line.
 ///
 /// Metal reports a failed command buffer as two lines: a status line that
@@ -251,6 +265,22 @@ const STDERR_DRAIN_WAIT: Duration = Duration::from_millis(300);
 
 /// The last few stderr lines, shared between the drain task and the handle.
 type StderrTail = Arc<Mutex<VecDeque<String>>>;
+
+/// Fit-failure lines the worker printed. Counted rather than taken, so a load
+/// can ask for the lines printed since it started without clearing a line that
+/// a concurrent load on the same worker is still waiting for.
+#[derive(Default)]
+struct FitNotes {
+    count: u64,
+    last: Option<String>,
+}
+
+type FitFailure = Arc<Mutex<FitNotes>>;
+
+/// How many fit-failure lines a worker had printed at some moment; see
+/// [`WorkerHandle::fit_failure_since`].
+#[derive(Debug, Clone, Copy)]
+pub struct FitMark(u64);
 
 /// Lines that are kept out of the tail, though still logged. ggml prints one
 /// `load_backend: loaded ... from <path>` per backend at start, which says
@@ -519,8 +549,12 @@ pub struct WorkerHandle {
     /// not in the webview, so it survives a page reload and always describes
     /// the worker that is actually running.
     pub devices: Option<Vec<DeviceIdentity>>,
+    /// The preset the worker was started from. Jan regenerates it in place and
+    /// the worker reloads the same path, so it also describes later loads.
+    pub preset_path: PathBuf,
     child: Child,
     stderr_tail: StderrTail,
+    fit_failure: FitFailure,
     /// The task filling `stderr_tail`; it ends when the worker's stderr closes.
     stderr_drain: Option<tokio::task::JoinHandle<()>>,
     /// Declared after `child` so it is dropped after it: the graceful stop must
@@ -595,6 +629,30 @@ impl WorkerHandle {
     /// None while still running, otherwise the exit status.
     pub fn exited(&mut self) -> Option<std::process::ExitStatus> {
         self.child.try_wait().ok().flatten()
+    }
+
+    /// Taken before a load, so only a fit failure printed during that load is
+    /// blamed for it: a stale one would pin the next, unrelated failure on fit.
+    pub fn fit_mark(&self) -> FitMark {
+        FitMark(self.fit_failure.lock().map(|f| f.count).unwrap_or(0))
+    }
+
+    /// The latest fit-failure line, if one was printed after `mark`.
+    ///
+    /// The line names no model: llama.cpp logs it from inside the load. The
+    /// worker loads one model at a time, but two loads sent at once can each
+    /// see a line printed after both marks, so a model that failed for another
+    /// reason can be reported as not fitting when the other one did not fit.
+    /// Tagging the line would take a marker that llama.cpp's own (asynchronous)
+    /// logger orders against, which it does not offer. Rare in practice: the
+    /// frontend loads one chat model at a time.
+    pub fn fit_failure_since(&self, mark: FitMark) -> Option<String> {
+        let notes = self.fit_failure.lock().ok()?;
+        if notes.count > mark.0 {
+            notes.last.clone()
+        } else {
+            None
+        }
     }
 
     /// None while still running, otherwise how it ended and what it last said.
@@ -689,9 +747,11 @@ pub async fn spawn(
     // Drained on its own task: a full stderr pipe would otherwise block the
     // worker mid-generation, which is a hang with no error message.
     let stderr_tail = StderrTail::default();
+    let fit_failure = FitFailure::default();
     let mut stderr_drain = None;
     if let Some(stderr) = child.stderr.take() {
         let tail = stderr_tail.clone();
+        let fit_note = fit_failure.clone();
         stderr_drain = Some(tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             let mut reader = FaultReader::default();
@@ -722,6 +782,12 @@ pub async fn spawn(
                 let Ok(Some(line)) = next else { break };
                 log::debug!("jan-llama-worker: {line}");
                 remember_stderr_line(&tail, &line);
+                if is_fit_failure_line(&line.to_lowercase()) {
+                    if let Ok(mut notes) = fit_note.lock() {
+                        notes.count += 1;
+                        notes.last = Some(line.trim().to_string());
+                    }
+                }
                 for (fault, text) in reader.feed(&line) {
                     report(fault, text);
                 }
@@ -788,8 +854,10 @@ pub async fn spawn(
         models: hs.models,
         cuda_toolkit: hs.cuda_toolkit,
         devices: hs.devices,
+        preset_path: preset_path.to_path_buf(),
         child,
         stderr_tail,
+        fit_failure,
         stderr_drain,
         #[cfg(windows)]
         _job: job,
@@ -891,6 +959,19 @@ pub(crate) mod tests {
             classify_fault("common_fit_params: failed to allocate a plan"),
             None
         );
+    }
+
+    // fit declining to run (the user pinned the layers) is not a model that is
+    // too big, and must not be reported as one.
+    #[test]
+    fn fit_declining_to_run_is_not_a_fit_failure() {
+        for line in [
+            "common_fit_params: failed to fit params to free device memory: n_gpu_layers already set by user to 99, abort",
+            "common_fit_params: successfully fit params to free device memory",
+            "alloc_tensor_range: failed to allocate cuda0 buffer of size 2491323904",
+        ] {
+            assert!(!is_fit_failure_line(&line.to_lowercase()), "{line:?}");
+        }
     }
 
     #[test]

@@ -12,6 +12,10 @@ pub enum ErrorCode {
 
     // --- Memory Errors ---
     OutOfMemory,
+    /// The load failed although auto-fit owned the layers and the context, so
+    /// no split fits this device's memory. Distinct from `OutOfMemory`:
+    /// lowering the context will not help, because fit already tried that.
+    ModelDoesNotFit,
 
     // --- Engine Process Errors ---
     /// The worker process exited on its own: a crash, or something killed it.
@@ -51,6 +55,17 @@ impl LlamacppError {
             details,
             missing_libraries: None,
         }
+    }
+
+    /// A load that failed with auto-fit already doing all it could: the model
+    /// does not fit this device at any context fit may choose. `details` keeps
+    /// what llama.cpp said, which is the evidence.
+    pub fn model_does_not_fit(details: String) -> Self {
+        Self::new(
+            ErrorCode::ModelDoesNotFit,
+            "The model does not fit on this device.".into(),
+            Some(details),
+        )
     }
 
     /// Classifies engine output from a failed model load. An unrecognized
@@ -273,6 +288,7 @@ mod tests {
             (ErrorCode::UnsupportedCpu, "UNSUPPORTED_CPU"),
             (ErrorCode::GpuDriverTooOld, "GPU_DRIVER_TOO_OLD"),
             (ErrorCode::OutOfMemory, "OUT_OF_MEMORY"),
+            (ErrorCode::ModelDoesNotFit, "MODEL_DOES_NOT_FIT"),
             (ErrorCode::EngineStopped, "ENGINE_STOPPED"),
             (ErrorCode::EngineUnreachable, "ENGINE_UNREACHABLE"),
             (ErrorCode::InvalidArgument, "INVALID_ARGUMENT"),

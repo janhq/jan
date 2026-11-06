@@ -15,7 +15,10 @@ import {
   IconGripVertical,
   IconCodeDots,
 } from '@tabler/icons-react'
-import { MCPServerConfig } from '@/hooks/useMCPServers'
+import {
+  MCPServerConfig,
+  isReservedServerName,
+} from '@/hooks/useMCPServers'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   DndContext,
@@ -298,6 +301,10 @@ export default function AddEditMCPServer({
             setError(t('mcp-servers:editJson.errorServerName'))
             return
           }
+          if (isReservedServerName(trimmedServerName)) {
+            setError(t('mcp-servers:editJson.errorReservedServerName'))
+            return
+          }
 
           // Validate the config object
           const serverConfig = config as MCPServerConfig
@@ -329,6 +336,10 @@ export default function AddEditMCPServer({
     }
 
     // Handle form mode
+    if (isReservedServerName(serverName)) {
+      setError(t('mcp-servers:editJson.errorReservedServerName'))
+      return
+    }
     // Convert env arrays to object
     const envObj: Record<string, string> = {}
     envKeys.forEach((key, index) => {
@@ -441,10 +452,14 @@ export default function AddEditMCPServer({
               </label>
               <Input
                 value={serverName}
-                onChange={(e) => setServerName(e.target.value)}
+                onChange={(e) => {
+                  setServerName(e.target.value)
+                  setError(null)
+                }}
                 placeholder={t('mcp-servers:enterServerName')}
                 autoFocus
               />
+              {error && <div className="text-destructive text-sm">{error}</div>}
             </div>
 
             <div className="space-y-2">

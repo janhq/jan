@@ -17,6 +17,11 @@ on:
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
         default: false
   pull_request:
+    # Desktop builds run on a pull request only while it carries the
+    # `ci:build` label (36-50 min across four platforms). `labeled` makes adding
+    # the label start a build; with the label on, every push rebuilds. Adding
+    # any other label builds nothing (the job conditions check which label).
+    types: [opened, synchronize, reopened, labeled]
     branches:
       - release/**
       - main
@@ -33,19 +38,21 @@ on:
       - 'web-app/**'
       - 'extensions/**'
       - 'scripts/**'
-      - 'pre-install/**'
       - 'Makefile'
       - 'package.json'
 
 
 concurrency:
-  group: nightly-${{ github.ref }}
+  # Adding some other label to a PR that carries `ci:build` fires `labeled`
+  # too. That run builds nothing, so it gets a group of its own rather than
+  # cancelling the build in progress.
+  group: nightly-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'ci:build' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
   set-public-provider:
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci:build') && (github.event.action != 'labeled' || github.event.label.name == 'ci:build'))
     outputs:
       public_provider: ${{ steps.set-public-provider.outputs.public_provider }}
       ref: ${{ steps.set-public-provider.outputs.ref }}
@@ -73,13 +80,13 @@ jobs:
           fi
   # Job create Update app version based on latest release tag with build number and save to output
   get-update-version:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci:build') && (github.event.action != 'labeled' || github.event.label.name == 'ci:build'))
     uses: ./.github/workflows/template-get-update-version.yml
 
   build-macos:
     uses: ./.github/workflows/template-tauri-build-macos.yml
     needs: [get-update-version, set-public-provider]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci:build') && (github.event.action != 'labeled' || github.event.label.name == 'ci:build'))
     secrets: inherit
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
@@ -94,7 +101,7 @@ jobs:
     uses: ./.github/workflows/template-tauri-build-windows-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci:build') && (github.event.action != 'labeled' || github.event.label.name == 'ci:build'))
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
@@ -106,7 +113,7 @@ jobs:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci:build') && (github.event.action != 'labeled' || github.event.label.name == 'ci:build'))
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
@@ -119,7 +126,7 @@ jobs:
     uses: ./.github/workflows/template-tauri-build-windows-arm64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci:build') && (github.event.action != 'labeled' || github.event.label.name == 'ci:build'))
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
@@ -154,7 +161,7 @@ jobs:
       && needs.build-windows-x64.result == 'success'
       && needs.build-linux-x64.result == 'success'
       && needs.build-macos.result == 'success'
-      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci:build') && (github.event.action != 'labeled' || github.event.label.name == 'ci:build')))
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

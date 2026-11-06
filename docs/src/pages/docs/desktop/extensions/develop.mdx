@@ -1,0 +1,235 @@
+---
+title: Build an Extension
+description: Write, bundle, debug and package a Jan Desktop extension, starting from the hello-provider sample.
+keywords:
+  [
+    Jan,
+    extensions,
+    extension development,
+    extension API,
+    TypeScript,
+    rolldown,
+  ]
+---
+import { Callout, Steps } from 'nextra/components'
+
+# Build an Extension
+
+A Jan extension is an npm-style package: a `package.json` with a
+[`jan` manifest](/docs/desktop/extensions/manifest) and one JavaScript bundle
+that exports `activate(ctx)`. Jan runs the bundle in a sandboxed Web Worker and
+hands it an [`ExtensionContext`](/docs/desktop/extensions/api).
+
+## Quick start from the sample
+
+The Jan repository contains a sample that uses every contribution point:
+[`extensions-samples/hello-provider`](https://github.com/janhq/jan/tree/main/extensions-samples/hello-provider).
+It contributes two commands, a setting, a status item, a tool (`echo_upper`) and
+an OpenAI-compatible provider at `http://127.0.0.1:11999/v1`.
+
+<Steps>
+### Build it
+From the repository root (Yarn 4, Node 20 or newer):
+
+```bash
+yarn install
+yarn build:extension-api && yarn build:extension-runtime
+yarn workspace @janhq/sample-hello-provider build   # type-check + dist/index.js
+yarn vitest run --project @janhq/sample-hello-provider
+```
+
+### Load it unpacked
+Start a development build of Jan with `yarn dev:tauri`, open
+**Settings > Extensions**, click **Load unpacked** and pick the folder that
+holds `package.json`.
+
+### Package and install it
+```bash
+yarn workspace @janhq/sample-hello-provider pack --out /tmp/%s-%v.tgz
+```
+Then use **Install from file...** in **Settings > Extensions** and pick the
+`.tgz`.
+</Steps>
+
+## The entry module
+
+Import **only types** from `@janhq/extension-api`. Everything the extension does
+goes through `ctx`, and every registration goes into `ctx.subscriptions`, which
+Jan disposes when the extension stops.
+
+```ts
+import type { ExtensionContext } from '@janhq/extension-api'
+
+export async function activate(ctx: ExtensionContext): Promise<void> {
+  const greeting = (await ctx.settings.get<string>('greeting')) ?? 'Hello'
+  ctx.subscriptions.add(
+    ctx.commands.registerCommand('hello.greet', () => {
+      ctx.ui.notify({ level: 'info', message: `${greeting}!` })
+    })
+  )
+}
+
+export function deactivate(): void {
+  // Everything lives in ctx.subscriptions, which the host disposes.
+}
+```
+
+`activate` must finish within 10 seconds, including the registrations it
+started; `deactivate` gets 5 seconds.
+
+## The bundle contract
+
+The bundle must be a single classic script that is **exactly one top-level
+statement**:
+
+```js
+var JanExtension = (function (exports) { /* ... */ return exports })({})
+```
+
+optionally preceded by a `'use strict'` directive, with comments anywhere.
+Jan parses the file before it starts a worker and refuses anything else with
+"is not a valid extension bundle". In practice:
+
+- Bundle to one file with `format: 'iife'` and `name: 'JanExtension'`
+  (rolldown or esbuild).
+- No runtime imports. Bundle your dependencies; import only types from
+  `@janhq/extension-api`.
+- No `banner`, `footer` or `intro` that adds top-level code, and no other
+  top-level `function`, `class`, `var`, `let` or `const`.
+- The entry file (`jan.main`) must be a `.js` file inside the package, at most
+  5 MiB.
+
+The sample's `rolldown.config.mjs`:
+
+```js
+import { defineConfig } from 'rolldown'
+
+export default defineConfig({
+  input: 'src/index.ts',
+  platform: 'browser',
+  output: {
+    format: 'iife',
+    name: 'JanExtension',
+    file: 'dist/index.js',
+  },
+})
+```
+
+### What the worker does not have
+
+Before your bundle runs, Jan removes these globals from the worker: `fetch`,
+`XMLHttpRequest`, `WebSocket`, `WebSocketStream`, `WebTransport`, `EventSource`,
+`importScripts`, `Worker`, `SharedWorker`, `BroadcastChannel`, `Notification`,
+`indexedDB`, `caches`, the Tauri globals, and `navigator.storage`, `navigator.locks` and
+`navigator.serviceWorker`. The worker also runs under its own Content Security
+Policy, `default-src 'none'`, so the engine refuses any direct network request
+(including `import()` and `FontFace`) and `eval`; WebAssembly still compiles.
+Use `ctx.http.fetch` for network access and
+`ctx.storage` for persistence. There is no DOM: extensions describe their UI in
+the manifest.
+
+### Frozen built-ins
+
+Your bundle runs after Jan has locked the worker down with
+[SES](https://github.com/endojs/endo/tree/master/packages/ses): every built-in
+(`Object.prototype`, `Array.prototype`, `Promise`, `JSON`, ...) is frozen,
+`eval` and `new Function` throw, and the `ctx` passed to `activate` is frozen.
+
+- A dependency that patches a built-in prototype when it loads (some
+  polyfills do) makes activation fail. Leave such polyfills out; the worker
+  runs a current JavaScript engine.
+- `error.stack` is empty in extension code. Log errors with `ctx.log.error`.
+- `harden(value)` is a global that deep-freezes your own objects.
+
+## Load unpacked (development builds)
+
+**Load unpacked** appears only in development builds (`yarn dev:tauri`); release
+builds never show it. Jan reads `package.json`, validates the manifest and the
+bundle shape, lists the permissions the extension requests, and starts it after
+you confirm. A folder loaded this way:
+
+- is labelled **Development** and is gone after Jan restarts (use **Unload** to
+  stop it, then load it again after a rebuild);
+- is granted every permission it requests;
+- may opt into [proposed APIs](/docs/desktop/extensions/api#stable-and-proposed-apis);
+- **has no network path**: `ctx.http.fetch` fails with `E_NOT_FOUND` and its
+  providers cannot be chatted with. Install the packed `.tgz` to test those.
+
+## Package it
+
+`yarn pack` (or `npm pack`) produces the `.tgz` Jan installs. Jan reads it
+without running anything; `scripts` are ignored. The archive rules:
+
+| Rule | Limit |
+|---|---|
+| Compressed size | 50 MiB |
+| Decompressed size | 50 MiB |
+| Entries (files and directories) | 2000 |
+| One file | 20 MiB |
+| Path depth below `package/` | 32 |
+| Path length below `package/` | 240 bytes |
+
+Every entry must sit under `package/`, and `package/package.json` must exist.
+Only regular files and directories are allowed (no links or devices), no path
+may contain `..` or be absolute, and no two paths may differ only in letter
+case. Execute bits are dropped.
+
+Jan also checks that `jan.apiVersion` accepts its extension API version and,
+when present, that `engines.jan` accepts the app version.
+
+## Debugging
+
+- `ctx.log.debug/info/warn/error` write to the app log
+  (`<Jan data folder>/logs/app.log`), tagged `[ext:<id>]`. In a development
+  build they also show in the webview devtools console.
+- The extension's card shows its state (**Starting**, **Active**, **Failed**,
+  **Crashed**) and the reason it failed or was stopped.
+- Errors from the host are `ExtensionError` instances with a
+  [`code`](/docs/desktop/extensions/api#errors), such as `E_PERMISSION` when a
+  grant is missing.
+- Validate a manifest the same way Jan does:
+
+```ts
+import { validateManifest } from '@janhq/extension-api/manifest'
+
+const result = validateManifest(JSON.parse(packageJsonText))
+if (!result.ok) console.error(result.errors) // [{ path, message }]
+```
+
+## Limits
+
+Third-party extensions run under these limits (built-in extensions are exempt):
+
+| What | Limit |
+|---|---|
+| Messages to the host | burst of 200, then 50 per second |
+| One message | 4 MiB (JSON size) |
+| Requests outstanding at once | 256 |
+| Refused calls (no grant, bad arguments, over a limit) | the worker is stopped after 16; one is forgiven every 10 s |
+| Host call timeout | 30 s (tool calls: 120 s) |
+| `activate` / `deactivate` | 10 s / 5 s |
+| Notifications | burst of 5, then one every 2 s; message up to 2000 characters |
+| Log lines | burst of 50, then 10 per second; 16 arguments and 4096 characters per line; 1 MiB per 10 minutes |
+| Listeners per event | 16 |
+| `ctx.storage` | 1 MiB per extension |
+| `ctx.http.fetch` concurrent requests | 8 |
+| `ctx.http.fetch` request body | 4 MiB |
+| `ctx.http.fetch` response body | 1 MiB |
+| `ctx.http.fetch` timeout | 30 s per request, at most 5 redirects |
+
+### Do not block the event loop
+
+Jan pings each worker every 5 seconds and stops it after 3 unanswered pings in a
+row. The worker answers from its event loop, so **no synchronous task may run
+for more than about 15 seconds**: a busy loop, a large synchronous parse or a
+long `Atomics.wait` gets the worker terminated after 15-20 seconds and marked
+**Crashed**. Split long work into chunks and `await` (or `setTimeout(next, 0)`)
+between them.
+
+A crashed extension is restarted. After 3 crashes in 10 minutes it stays off
+until Jan restarts.
+
+<Callout type="info">
+Tools receive a `CancellationToken`. When the user presses Stop, the token
+fires; return promptly. The sample's `echo_upper` shows the pattern.
+</Callout>

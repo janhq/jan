@@ -42,12 +42,6 @@ Object.defineProperty(globalThis, 'window', {
       api: {
         // getSystemInfo: vi.fn(),
       },
-      extensionManager: {
-        getByName: vi.fn().mockReturnValue({
-          downloadFiles: vi.fn().mockResolvedValue(undefined),
-          cancelDownload: vi.fn().mockResolvedValue(undefined),
-        }),
-      },
     },
   },
 })
@@ -61,21 +55,12 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }))
 
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn().mockResolvedValue(() => undefined),
-  emit: vi.fn(),
-}))
-
-// Mock Tauri path API
-vi.mock('@tauri-apps/api/path', () => ({
-  basename: vi.fn(),
-  dirname: vi.fn(),
-  join: vi.fn(),
-  resolve: vi.fn(),
-}))
-
 // Mock @janhq/core
 vi.mock('@janhq/core', () => ({
+  ServiceKeys: {
+    Downloads: { id: 'downloads' },
+    Llamacpp: { id: 'llamacpp' },
+  },
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -89,6 +74,8 @@ vi.mock('@janhq/core', () => ({
     fileStat: vi.fn(),
     mkdir: vi.fn(),
     rm: vi.fn(),
+    readYaml: vi.fn(),
+    writeYaml: vi.fn(),
   },
   joinPath: vi.fn(),
   modelInfo: {},
@@ -108,8 +95,7 @@ vi.mock('@janhq/core', () => ({
   DownloadEvent: {
     onFileDownloadUpdate: 'onFileDownloadUpdate',
     onFileDownloadStopped: 'onFileDownloadStopped',
-    onModelValidationStarted: 'onModelValidationStarted',
     onModelValidationFailed: 'onModelValidationFailed',
   },
-  AIEngine: vi.fn(),
+  AIEngine: class {},
 }))

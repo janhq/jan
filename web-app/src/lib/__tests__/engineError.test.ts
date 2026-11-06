@@ -125,6 +125,17 @@ describe('describeEngineError', () => {
     expect(text).toContain('cudaMalloc failed: out of memory')
   })
 
+  // jan-internal#487: fit finding no plan is its own advice, not the generic
+  // OOM one that suggests lowering a context fit already lowered.
+  it('describes a model fit could not place as not fitting this device', () => {
+    describeEngineError({
+      code: 'MODEL_DOES_NOT_FIT',
+      details: 'common_fit_params: failed to allocate a plan',
+    })
+
+    expect(mockT).toHaveBeenCalledWith('model-errors:engine.MODEL_DOES_NOT_FIT')
+  })
+
   it('collapses whitespace and clips a log-sized detail', () => {
     const text = describeEngineError({
       code: 'MODEL_LOAD_FAILED',

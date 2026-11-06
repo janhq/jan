@@ -142,15 +142,29 @@ lint: install-and-build
 # Both go through `test-rust`, which owns `stub-resources`: the app's build
 # script fails on any missing bundle.resources path, and neither entry point
 # builds the engine worker or the ggml backends.
-test-prepare: lint
-	yarn download:bin
+test-prepare: test-ts rust-test-assets
+
+# The two halves of test-ci. CI runs them as separate jobs so a pull request
+# runs only the half its files can break, and the TypeScript half on one OS.
+test-ts: lint
 	yarn test
+
+# The steps test-ci ran before test-rust, without the lint/vitest half. They
+# need node_modules (download:bin unpacks with it, build:icon is the Tauri CLI),
+# which lint's install-and-build used to provide.
+rust-test-assets:
+	yarn install
+	yarn download:bin
 	yarn copy:assets:tauri
 	yarn build:icon
+
+test-ci-rust: rust-test-assets
+	$(MAKE) test-rust
 
 test-rust: stub-resources
 	cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
+	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-extensions/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/utils/Cargo.toml
 	# No --locked: this crate gitignores its Cargo.lock, as rust-check.yml assumes.
@@ -197,6 +211,12 @@ stub-resources:
 
 test-ci: test-prepare
 	$(MAKE) test-rust
+
+# End-to-end smoke install of the sample extension: packs it, installs the
+# tarball with the extensions plugin (tests/smoke.rs, ignored by default) and
+# loads the result in the web-app's extension host (smoke.installed.test.ts).
+test-extensions-smoke:
+	node scripts/extensions-smoke.mjs
 
 # Compile and test guard for the CLI feature set. The `jan` CLI is no longer
 # bundled with the app; `make test` still builds the real binary via build-cli.
@@ -596,9 +616,7 @@ clean: clean-engine-source
 ifeq ($(DETECTED_OS),Windows)
 	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo, .yarn -Recurse -Directory | Remove-Item -Recurse -Force"
 	-powershell -Command "Get-ChildItem -Path . -Include package-lock.json, tsconfig.tsbuildinfo -Recurse -File | Remove-Item -Recurse -Force"
-	-powershell -Command "Remove-Item -Recurse -Force ./pre-install/*.tgz"
 	-powershell -Command "Remove-Item -Recurse -Force ./extensions/*/*.tgz"
-	-powershell -Command "Remove-Item -Recurse -Force ./electron/pre-install/*.tgz"
 	-powershell -Command "Remove-Item -Recurse -Force ./src-tauri/resources"
 	-powershell -Command "Remove-Item -Recurse -Force ./src-tauri/target"
 	-powershell -Command "if (Test-Path \"$($env:USERPROFILE)\jan\extensions\") { Remove-Item -Path \"$($env:USERPROFILE)\jan\extensions\" -Recurse -Force }"
@@ -612,9 +630,7 @@ else ifeq ($(DETECTED_OS),Linux)
 	find . -name ".yarn" -type d -exec rm -rf '{}' +
 	find . -name "packake-lock.json" -type f -exec rm -rf '{}' +
 	find . -name "package-lock.json" -type f -exec rm -rf '{}' +
-	rm -rf ./pre-install/*.tgz
 	rm -rf ./extensions/*/*.tgz
-	rm -rf ./electron/pre-install/*.tgz
 	rm -rf ./src-tauri/resources
 	rm -rf ./src-tauri/target
 	rm -rf "~/jan/extensions"
@@ -629,9 +645,7 @@ else
 	find . -name ".turbo" -type d -exec rm -rfv '{}' +
 	find . -name ".yarn" -type d -exec rm -rfv '{}' +
 	find . -name "package-lock.json" -type f -exec rm -rfv '{}' +
-	rm -rfv ./pre-install/*.tgz
 	rm -rfv ./extensions/*/*.tgz
-	rm -rfv ./electron/pre-install/*.tgz
 	rm -rfv ./src-tauri/resources
 	rm -rfv ./src-tauri/target
 	rm -rfv ~/jan/extensions

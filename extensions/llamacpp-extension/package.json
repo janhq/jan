@@ -4,19 +4,27 @@
   "version": "1.0.1",
   "description": "This extension enables llama.cpp chat completion API calls",
   "main": "dist/index.js",
-  "module": "dist/module.js",
+  "jan": {
+    "id": "jan.llamacpp",
+    "displayName": "llama.cpp Inference Engine",
+    "description": "This extension enables llama.cpp chat completion API calls",
+    "publisher": "Jan",
+    "apiVersion": "^1.0.0",
+    "main": "dist/index.js",
+    "permissions": []
+  },
   "engine": "llama.cpp",
   "author": "Jan <service@jan.ai>",
   "license": "Apache-2.0",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
+    "@tauri-apps/api": "2.8.0",
     "@vitest/ui": "3.2.7",
     "cpx": "1.5.0",
     "jsdom": "26.1.0",
@@ -29,9 +37,6 @@
     "@janhq/core": "workspace:*",
     "@janhq/tauri-plugin-hardware-api": "link:../../src-tauri/plugins/tauri-plugin-hardware",
     "@janhq/tauri-plugin-llamacpp-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp",
-    "@tauri-apps/api": "2.8.0",
-    "@tauri-apps/plugin-http": "2.5.9",
-    "fetch-retry": "^5.0.6",
     "ulidx": "2.4.1"
   },
   "engines": {
@@ -40,9 +45,6 @@
   "files": [
     "dist/*",
     "package.json"
-  ],
-  "bundleDependencies": [
-    "fetch-retry"
   ],
   "installConfig": {
     "hoistingLimits": "workspaces"

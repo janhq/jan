@@ -6,6 +6,14 @@ on:
       - main
     paths:
       - .github/workflows/jan-linter-and-test.yml
+      - '.github/actions/changed-areas/**'
+      - '.github/scripts/changed-areas*'
+      - 'vitest.config.ts'
+      - 'rust-toolchain.toml'
+      - 'scripts/stub-tauri-resources.mjs'
+      - 'scripts/rust-coverage.sh'
+      - 'scripts/download-bin.mjs'
+      - 'scripts/build-windows-icon.mjs'
       - 'package.json'
       - 'yarn.lock'
       - 'core/**'
@@ -13,20 +21,18 @@ on:
       - 'Makefile'
       - 'src-tauri/**'
       - 'web-app/**'
+      - 'packages/**'
+      - 'extensions-samples/**'
+      - 'scripts/extensions-smoke.mjs'
 
+  # No paths filter on pull requests: a workflow a filter skips never reports,
+  # so its required ci-ok check would sit pending and block the merge. The
+  # changes job does the filtering instead, and a PR that reaches no area runs
+  # only that job and ci-ok.
   pull_request:
     branches:
       - main
       - release/**
-    paths:
-      - .github/workflows/jan-linter-and-test.yml
-      - 'package.json'
-      - 'yarn.lock'
-      - 'Makefile'
-      - 'extensions/**'
-      - 'core/**'
-      - 'src-tauri/**'
-      - 'web-app/**'
 
 concurrency:
   group: linter-test-${{ github.ref }}
@@ -34,7 +40,10 @@ concurrency:
 
 jobs:
   base_branch_cov:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+      && (needs.changes.outputs.ts == 'true' || needs.changes.outputs.rust == 'true')
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -45,12 +54,6 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
-
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
 
       - name: Config Yarn
         run: |
@@ -74,7 +77,10 @@ jobs:
           path: coverage/lcov.info
 
   base_branch_rust_cov:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+      && needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -127,9 +133,27 @@ jobs:
           name: ref-rust-lcov.info
           path: rust-lcov.info
 
-  test-on-macos:
-    runs-on: 'macos-latest'
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+  # Classifies the PR's files (.github/scripts/changed-areas.sh); every job
+  # below runs only for the areas it tests. Pushes and dispatches run all.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ts: ${{ steps.areas.outputs.ts }}
+      mlx: ${{ steps.areas.outputs.mlx }}
+      rust: ${{ steps.areas.outputs.rust }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          sparse-checkout: .github
+      - id: areas
+        uses: ./.github/actions/changed-areas
+
+  # Lint and vitest are platform-independent, so they run once, on Linux. The
+  # one exception is the mlx-extension suite, which the next job covers.
+  test-ts:
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
+    runs-on: ubuntu-latest
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -139,11 +163,30 @@ jobs:
         with:
           node-version: 20
 
-      - name: 'Cleanup cache'
-        continue-on-error: true
+      - name: Config Yarn
         run: |
-          rm -rf ~/jan
-          make clean
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Linter and test
+        run: make test-ts
+
+  # vitest.config.ts includes extensions/mlx-extension only on macOS: its
+  # plugin API resolves nowhere else.
+  test-mlx-extension:
+    needs: changes
+    if: needs.changes.outputs.mlx == 'true'
+    runs-on: 'macos-latest'
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Installing node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
 
       - name: Config Yarn
         run: |
@@ -152,14 +195,153 @@ jobs:
           yarn --version
           yarn config set -H enableImmutableInstalls false
 
+      - name: Test the mlx extension
+        run: |
+          make install-and-build
+          yarn vitest run --project @janhq/mlx-extension
+
+  # The Rust suites do depend on the platform (the shell sandbox, paths, the
+  # Windows resource compiler), so they keep all three.
+  test-rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    env:
+      # No debuginfo in test builds: it is most of the target dir's size (and
+      # so of the cache), and a failing test still reports file and line, which
+      # come from the panic location rather than debuginfo.
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install make
+        if: runner.os == 'Windows'
+        run: choco install --yes --no-progress make
+
+      - name: Installing node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Install Tauri dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt update
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 webkit2gtk-driver
+
+      # The agent-tools unit tests run the shell tool inside its Linux sandbox,
+      # bubblewrap, which needs unprivileged user namespaces; Ubuntu 24.04's
+      # AppArmor default refuses those.
+      - name: Install the shell sandbox
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Set up Xcode version
+        if: runner.os == 'macOS'
         run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
 
-      - name: Linter and test
+      # Linux only, and saved only on main: the repo's 10GB cache cap already
+      # holds rust-check's caches, and a pull request's own cache is readable
+      # by nothing but that pull request, so saving per PR only evicts main's.
+      # macOS and Windows build cold; they run only when Rust changed.
+      # The workspaces are the five `make test-rust` builds, each its own
+      # target dir (the plugins and utils are standalone crates).
+      - uses: Swatinem/rust-cache@v2
+        if: runner.os == 'Linux'
+        with:
+          workspaces: |
+            src-tauri
+            src-tauri/plugins/tauri-plugin-hardware
+            src-tauri/plugins/tauri-plugin-llamacpp
+            src-tauri/plugins/tauri-plugin-agent-tools
+            src-tauri/utils
+          shared-key: test-rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Config Yarn
         run: |
-          make test-ci
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Rust tests
+        if: runner.os == 'Linux'
+        run: |
+          export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
+          make test-ci-rust
+
+      - name: Rust tests
+        if: runner.os == 'macOS'
+        run: make test-ci-rust
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Rust tests
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: make test-ci-rust
+
+  # End-to-end smoke install of the sample extension bundle: packs it, installs
+  # the tarball with the extensions plugin (tests/smoke.rs) and loads it in the
+  # web-app's extension host. It crosses both the TypeScript and Rust sides.
+  extensions-smoke:
+    needs: changes
+    if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Installing node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Install Tauri dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
+
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Extensions smoke install
+        run: |
+          make install-and-build
+          make test-extensions-smoke
+
+  # The one check to mark required, for the reason given on rust-check's ci-ok:
+  # the jobs above report "skipped" when a PR does not reach them.
+  ci-ok:
+    name: Linter & Test passed
+    if: always()
+    needs: [changes, test-ts, test-mlx-extension, test-rust, extensions-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail on a failed or cancelled job
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in
+              success | skipped) ;;
+              *) exit 1 ;;
+            esac
+          done
 
   test-on-windows:
     if: github.event_name == 'push'
@@ -202,97 +384,15 @@ jobs:
         run: |
           make test
 
-  test-on-windows-pr:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
-    runs-on: 'windows-latest'
-    steps:
-      - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: install dependencies
-        run: |
-          choco install --yes --no-progress make
-
-      - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 20
-
-      - name: 'Cleanup cache'
-        shell: powershell
-        continue-on-error: true
-        run: |
-          $path = "$Env:APPDATA\jan"
-          if (Test-Path $path) {
-              Remove-Item "\\?\$path" -Recurse -Force
-          } else {
-              Write-Output "Folder does not exist."
-          }
-          make clean
-
-      - name: Config Yarn
-        run: |
-          corepack enable
-          corepack prepare yarn@4.5.3 --activate
-          yarn --version
-          yarn config set -H enableImmutableInstalls false
-
-      - name: Linter and test
-        shell: powershell
-        run: |
-          make test-ci
-        env:
-          NODE_OPTIONS: '--max-old-space-size=2048'
-
-  test-on-ubuntu:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    steps:
-      - name: Getting the repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Installing node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 20
-
-      - name: Install Tauri dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 webkit2gtk-driver
-
-      # The agent-tools unit tests run the shell tool inside its Linux sandbox,
-      # bubblewrap, which needs unprivileged user namespaces; Ubuntu 24.04's
-      # AppArmor default refuses those.
-      - name: Install the shell sandbox
-        run: |
-          sudo apt install -y bubblewrap
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
-
-      - name: Config Yarn
-        run: |
-          corepack enable
-          corepack prepare yarn@4.5.3 --activate
-          yarn --version
-          yarn config set -H enableImmutableInstalls false
-
-      - name: Linter and test
-        run: |
-          export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
-          echo -e "Display ID: $DISPLAY"
-          make test-ci
-          make check-cli
-
+  # A PR that touches no Rust skips Rust coverage on both sides, so the
+  # comparison stays like for like (TS only); the merge step below already
+  # falls back to TS-only when the base Rust report is missing.
   coverage-check:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      !cancelled() && needs.base_branch_cov.result == 'success'
+      && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    needs: [base_branch_cov, base_branch_rust_cov]
+    needs: [changes, base_branch_cov, base_branch_rust_cov]
     continue-on-error: true
     steps:
       - name: Getting the repo
@@ -302,12 +402,6 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
-
       - name: Config Yarn
         run: |
           corepack enable
@@ -324,19 +418,26 @@ jobs:
           yarn test:coverage
 
       - name: Install Tauri dependencies
+        if: needs.changes.outputs.rust == 'true'
         run: |
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
 
       - name: Install cargo-llvm-cov
+        if: needs.changes.outputs.rust == 'true'
         uses: taiki-e/install-action@9e57365e36de1e26dea5145e57d471261468d9f7 # cargo-llvm-cov
 
       - name: Run Rust test coverage
+        if: needs.changes.outputs.rust == 'true'
         run: ./scripts/rust-coverage.sh
 
       - name: Merge coverage reports
         run: |
-          cat ./coverage/lcov.info rust-lcov.info > merged-lcov.info
+          if [ -f rust-lcov.info ]; then
+            cat ./coverage/lcov.info rust-lcov.info > merged-lcov.info
+          else
+            cp ./coverage/lcov.info merged-lcov.info
+          fi
 
       - name: Download code coverage report from base branch
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -345,6 +446,7 @@ jobs:
 
       - name: Download Rust code coverage report from base branch
         id: download-rust-cov
+        if: needs.changes.outputs.rust == 'true'
         continue-on-error: true
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:

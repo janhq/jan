@@ -84,7 +84,7 @@ describe('resolveToolOrigin', () => {
 
   it('recognises a built-in agent tool', () => {
     expect(
-      resolveToolOrigin('memory_read', { ...context, isAgentTool: true })
+      resolveToolOrigin('memory', { ...context, isAgentTool: true })
     ).toEqual({ kind: 'agent' })
   })
 

@@ -9,6 +9,9 @@ import { ChainOfThoughtGroup } from './message/ChainOfThoughtGroup'
 import { AskSummaryCard } from './message/AskSummaryCard'
 import { summarizeAsk } from '@/lib/coworkAsk'
 import { ASK_TOOL_NAME } from '@/lib/coworkTools'
+import { extensionAuthorOf } from '@/lib/extensions/authorship'
+import { withRemoteImages } from '@/lib/extensions/remoteImages'
+import { isExtensionToolName } from '@/lib/extensions/tools'
 import {
   CHAT_STATUS,
   CONTENT_TYPE,
@@ -47,6 +50,7 @@ import { useGroundingStore } from '@/stores/grounding-store'
 import { useWebCitationStore } from '@/stores/web-citation-store'
 import { WebSourcesRow } from '@/components/WebSourcesRow'
 import { injectCitationMarkers } from '@/lib/grounding'
+import { ContributedOverflowMenu } from '@/containers/extensions/ContributedMenuItems'
 
 export type MessageItemProps = {
   message: UIMessage
@@ -73,6 +77,8 @@ export type MessageItemProps = {
    * e.g. while a continue is pending and re-running would be ambiguous. */
   hideActions?: boolean
   highlightedPrefix?: string | null
+  /** The thread the message belongs to; extension message actions need it. */
+  threadId?: string
 }
 
 // Footer icon buttons: 28px boxes (a roomier hover highlight at the same pitch
@@ -104,6 +110,7 @@ export const MessageItem = memo(
     versionInfo,
     onSwitchVersion,
     highlightedPrefix,
+    threadId,
   }: MessageItemProps) => {
     const { t } = useTranslation()
     // Footer controls fade in on hover or keyboard focus. Keyboard only
@@ -122,6 +129,9 @@ export const MessageItem = memo(
     const selectedModel = useModelProvider((state) => state.selectedModel)
     const coloredUserBubble = useInterfaceSettings((s) => s.coloredUserBubble)
     const metadata = message.metadata as Record<string, unknown> | undefined
+    // Written by a third-party extension: nothing in it may load from the
+    // network (see lib/extensions/authorship).
+    const extensionAuthored = extensionAuthorOf(metadata) !== undefined
     const messageError = useMessageErrors((s) => s.errors[message.id])
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
     // Machine-readable stamp for <time>; toISOString throws on an invalid date,
@@ -231,6 +241,9 @@ export const MessageItem = memo(
           const part = parts[i]
           if (!part.type?.startsWith('tool-')) continue
           if (part.state !== 'output-available') continue
+          // A contributed tool's output is its extension's text: citations in
+          // it would put favicons from any host in the footer and the chips.
+          if (isExtensionToolName(part.type.slice('tool-'.length))) continue
           const parsed = parseCitationsFromToolOutput(part.output)
           if (parsed?.kind === 'rag') {
             offsets.set(i, out.length)
@@ -417,6 +430,7 @@ export const MessageItem = memo(
                 isStreaming={isStreaming && isLastPart}
                 messageId={message.id}
                 isAnimating={isAnimating}
+                noRemoteImages={extensionAuthored}
               />
             </>
           )}
@@ -429,6 +443,14 @@ export const MessageItem = memo(
       const isAudio =
         part.mediaType === 'audio/wav' || part.mediaType === 'audio/mpeg'
       const isVideo = part.mediaType?.startsWith('video/')
+      // Only inline media for extension-authored messages: a URL would be
+      // fetched from whatever host it names.
+      if (
+        extensionAuthored &&
+        part.url &&
+        !/^(data|blob):/i.test(part.url)
+      )
+        return null
 
       if (isAudio && part.url) {
         const justify =
@@ -574,6 +596,7 @@ export const MessageItem = memo(
       grounding,
       awaitingApproval,
       citationOffsets,
+      extensionAuthored,
     ])
 
     const versionNav =
@@ -624,7 +647,10 @@ export const MessageItem = memo(
       )
     }
 
-    return (
+    // Off for a message an extension authored: every widget below that would
+    // fetch an image by URL (citation favicons, the web tool bar) reads it.
+    return withRemoteImages(
+      !extensionAuthored,
       <div
         data-testid="message-item"
         data-message-role={message.role}
@@ -744,6 +770,18 @@ export const MessageItem = memo(
                   status !== CHAT_STATUS.SUBMITTED && (
                     <DeleteMessageDialog onDelete={handleDelete} />
                   )}
+
+                {threadId && (
+                  <ContributedOverflowMenu
+                    location="message/actions"
+                    context={{
+                      location: 'message/actions',
+                      threadId,
+                      messageId: message.id,
+                      role: 'user',
+                    }}
+                  />
+                )}
               </div>
               {/* Shown at rest when there are versions, beside copy. */}
               {versionNav}
@@ -821,6 +859,18 @@ export const MessageItem = memo(
                       <IconRefresh size={16} />
                     </Button>
                   )}
+
+                {threadId && (
+                  <ContributedOverflowMenu
+                    location="message/actions"
+                    context={{
+                      location: 'message/actions',
+                      threadId,
+                      messageId: message.id,
+                      role: 'assistant',
+                    }}
+                  />
+                )}
               </div>
             </div>
 
@@ -877,6 +927,7 @@ export const MessageItem = memo(
       prevProps.isLastMessage === nextProps.isLastMessage &&
       prevProps.status === nextProps.status &&
       prevProps.hideActions === nextProps.hideActions &&
+      prevProps.threadId === nextProps.threadId &&
       prevProps.versionInfo?.index === nextProps.versionInfo?.index &&
       prevProps.versionInfo?.count === nextProps.versionInfo?.count
     )

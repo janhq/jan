@@ -72,7 +72,7 @@ impl ServedTools {
         match tool.capability {
             Capability::Exec => self.allow_exec,
             // A `Write` tool with no path argument is a workspace tool
-            // (`memory_write`, `skill_write`): it writes into the agent's own
+            // (`skill_write`): it writes into the agent's own
             // store by sanitized name and can never reach a project file, so it
             // belongs to the memory/skill set rather than the mutating one.
             Capability::Write => self.allow_write || tool.path_args.is_empty(),
@@ -259,10 +259,15 @@ impl JanToolServer {
                 return (format!("ERROR: tool '{name}' is denied by policy"), Vec::new())
             }
             Decision::HardDeny(DenyReason::Hidden) => {
+                let offered: Vec<&str> = tauri_plugin_agent_tools::tools::JAN_HOME_TOOLS
+                    .into_iter()
+                    .filter(|t| self.opts.served.is_served(t))
+                    .collect();
                 return (
-                    format!(
-                        "ERROR: tool '{name}' was refused: the Jan home (~/.jan) is hidden. \
-                         Use the memory_* and skill_* tools instead."
+                    tauri_plugin_agent_tools::tools::hidden_home_refusal(
+                        name,
+                        "was refused: the Jan home",
+                        &offered,
                     ),
                     Vec::new(),
                 )

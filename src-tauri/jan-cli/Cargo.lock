@@ -16,11 +16,13 @@ dependencies = [
  "comfy-table",
  "console",
  "dirs",
+ "dunce",
  "ed25519-dalek",
  "env",
  "env_logger",
  "flate2",
  "form_urlencoded",
+ "fs4",
  "futures",
  "futures-util",
  "genai",
@@ -1849,6 +1851,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fs4"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e72ed92b67c146290f88e9c89d60ca163ea417a446f61ffd7b72df3e7f1dfd5"
+dependencies = [
+ "rustix",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5349,6 +5361,8 @@ name = "tauri-plugin-agent-tools"
 version = "0.8.3"
 dependencies = [
  "base64 0.22.1",
+ "dirs",
+ "fs4",
  "glob",
  "ignore",
  "nix 0.30.1",

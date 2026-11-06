@@ -6,6 +6,7 @@ import {
   useEnsureAttachmentNames,
 } from '@/hooks/useAttachmentNames'
 import { ExternalAnchor } from '@/components/ExternalAnchor'
+import { useRemoteImagesAllowed } from '@/lib/extensions/remoteImages'
 
 export type RagCitation = {
   id: string
@@ -96,6 +97,7 @@ RagCitationItem.displayName = 'RagCitationItem'
 
 const WebCitationItem = memo(({ c }: { c: WebCitation }) => {
   const [expanded, setExpanded] = useState(false)
+  const remoteImages = useRemoteImagesAllowed()
   let host = ''
   try {
     host = new URL(c.url).hostname.replace(/^www\./, '')
@@ -105,7 +107,7 @@ const WebCitationItem = memo(({ c }: { c: WebCitation }) => {
   return (
     <li className="rounded-md border bg-card/40 px-3 py-2 text-xs">
       <div className="flex items-center gap-2">
-        {c.favicon ? (
+        {c.favicon && remoteImages ? (
           <img
             src={c.favicon}
             alt=""

@@ -11,7 +11,6 @@ pub mod browser;
 mod contract_conformance;
 pub mod device_auth;
 pub mod housekeeping;
-pub mod journal;
 pub mod login;
 pub mod mcp;
 /// `jan mcp serve`: the other direction, Jan's toolset served over MCP.
@@ -43,14 +42,14 @@ pub mod worktree;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::core::agent::session_log::{
+    self, DisplayEntry, Loaded, SessionRecord, SessionWriter, SESSION_FILE,
+};
 use crate::core::app::commands::resolve_jan_data_folder;
 use crate::core::threads::{
     constants::THREADS_FILE,
-    helpers::{read_messages_from_file, update_thread_metadata, write_messages_to_file},
-    utils::{
-        ensure_data_dirs, get_data_dir, get_messages_path, get_thread_dir,
-        get_thread_metadata_path,
-    },
+    helpers::{read_messages_from_file, update_thread_metadata},
+    utils::{ensure_data_dirs, get_data_dir, get_thread_dir, get_thread_metadata_path},
 };
 
 // ── Thread operations ──────────────────────────────────────────────────────
@@ -223,47 +222,118 @@ pub fn resolve_resume(
     cli_get_thread_in(base, &id)
 }
 
-/// Read a thread's messages, tolerating a truncated or malformed line (a crash
-/// mid-append leaves one). Returns the parsed records and the skipped count, so
-/// a resume degrades to "lost the tail" instead of failing outright.
-pub fn cli_read_messages_lenient(
-    base: &std::path::Path,
-    thread_id: &str,
-) -> Result<(Vec<serde_json::Value>, usize), String> {
-    use std::io::BufRead;
+/// The session file of thread `thread_id` under `base`.
+pub fn session_path(base: &std::path::Path, thread_id: &str) -> Result<PathBuf, String> {
+    Ok(get_thread_dir(base, thread_id)?.join(SESSION_FILE))
+}
 
-    let path = get_messages_path(base, thread_id)?;
-    if !path.exists() {
-        return Ok((Vec::new(), 0));
-    }
-    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-    let mut messages = Vec::new();
+/// Files a thread kept before `session.jsonl`: the wire messages as
+/// `thread.message` records, the display journal, and a derived record. Read
+/// once to migrate a thread, and removed by the first save that replaces them.
+const LEGACY_MESSAGES_FILE: &str = "messages.jsonl";
+const LEGACY_DISPLAY_FILE: &str = "display.jsonl";
+const LEGACY_TRANSCRIPT_FILE: &str = "transcript.json";
+
+/// JSON lines of `path`, skipping (and counting) any line that does not parse:
+/// a crash mid-append, or a record written by a newer build.
+fn read_legacy_lines<T: serde::de::DeserializeOwned>(
+    path: &std::path::Path,
+) -> Result<(Vec<T>, usize), String> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((Vec::new(), 0)),
+        Err(e) => return Err(e.to_string()),
+    };
+    let mut out = Vec::new();
     let mut skipped = 0;
-    for line in std::io::BufReader::new(file).lines() {
-        let line = line.map_err(|e| e.to_string())?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        match serde_json::from_str(&line) {
-            Ok(v) => messages.push(v),
+    for line in text.lines().filter(|l| !l.trim().is_empty()) {
+        match serde_json::from_str(line) {
+            Ok(v) => out.push(v),
             Err(_) => skipped += 1,
         }
     }
-    Ok((messages, skipped))
+    Ok((out, skipped))
 }
 
-/// Read a thread's messages from `<base>/threads/<id>/messages.jsonl`.
-pub fn cli_list_messages_in(
-    base: &std::path::Path,
-    thread_id: &str,
-) -> Result<Vec<serde_json::Value>, String> {
-    read_messages_from_file(base, thread_id)
+/// A thread saved before `session.jsonl`, rebuilt in memory. Writes nothing.
+fn load_legacy_record(base: &std::path::Path, thread_id: &str) -> Result<Loaded, String> {
+    let dir = get_thread_dir(base, thread_id)?;
+    let (messages, skipped_m) = read_legacy_lines(&dir.join(LEGACY_MESSAGES_FILE))?;
+    let (display, skipped_d) = read_legacy_lines(&dir.join(LEGACY_DISPLAY_FILE))?;
+    Ok(Loaded {
+        record: SessionRecord {
+            messages: rebuild_wire_history(&messages),
+            display,
+            meta: None,
+        },
+        skipped: skipped_m + skipped_d,
+    })
+}
+
+/// Whether a thread has a session file with anything in it. An empty one (a
+/// writer that locked it and never synced) does not replace legacy files.
+fn has_session_file(path: &std::path::Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|m| m.len() > 0)
+}
+
+/// Read a saved thread's session record: the wire messages exactly as they
+/// were sent and received, and the transcript entries. Read-only, and takes no
+/// lock. A thread saved before `session.jsonl` existed is rebuilt from its
+/// legacy files; the first save then migrates it.
+pub fn load_thread_record(base: &std::path::Path, thread_id: &str) -> Result<Loaded, String> {
+    let path = session_path(base, thread_id)?;
+    if has_session_file(&path) {
+        return session_log::load(&path).map_err(|e| e.to_string());
+    }
+    load_legacy_record(base, thread_id)
 }
 
 /// List messages for a thread.
 pub fn cli_list_messages(thread_id: &str) -> Result<Vec<serde_json::Value>, String> {
-    let data_folder = resolve_jan_data_folder();
-    read_messages_from_file(&data_folder, thread_id)
+    cli_list_messages_in(&resolve_jan_data_folder(), thread_id)
+}
+
+/// [`cli_list_messages`] under `base`: a thread's wire messages as the
+/// `thread.message` records the command has always printed. A thread saved as
+/// a session file is rendered from it (its `messages.jsonl` is gone); one not
+/// yet migrated is read as it is.
+pub fn cli_list_messages_in(
+    base: &std::path::Path,
+    thread_id: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    if !has_session_file(&session_path(base, thread_id)?) {
+        return read_messages_from_file(base, thread_id);
+    }
+    let record = load_thread_record(base, thread_id)?.record;
+    Ok(record
+        .messages
+        .iter()
+        .enumerate()
+        .filter_map(|(i, m)| {
+            let role = m.get("role").and_then(|v| v.as_str())?;
+            // The old save minted a fresh id per message on every save; the
+            // position is at least stable across reads.
+            let mut out = serde_json::json!({
+                "id": format!("{thread_id}-{i}"),
+                "object": "thread.message",
+                "thread_id": thread_id,
+                "role": role,
+                "type": "text",
+                "status": "ready",
+                "content": [{
+                    "type": "text",
+                    "text": { "value": openai_content_text(m.get("content")), "annotations": [] },
+                }],
+            });
+            // The fields the text form cannot carry, as the old save kept them.
+            for key in ["tool_calls", "tool_call_id"] {
+                if let Some(v) = m.get(key) {
+                    out[key] = v.clone();
+                }
+            }
+            Some(out)
+        })
+        .collect())
 }
 
 /// Delete a thread directory.
@@ -297,11 +367,12 @@ pub fn cli_get_thread(thread_id: &str) -> Result<serde_json::Value, String> {
     cli_get_thread_in(&resolve_jan_data_folder(), thread_id)
 }
 
-/// Persist a TUI conversation as a desktop-compatible thread so it appears in
-/// `/resume` and the desktop app. `history` is OpenAI-shaped (`{role, content}`);
-/// it is written as `thread.message` records plus `thread.json` metadata. Pass
-/// an existing `thread_id` to update that thread, or `None` to create one
-/// (returns the id). Title/created are preserved when updating.
+/// Save a conversation as a thread so it appears in `/resume`: the session
+/// file plus `thread.json` metadata. `history` is the wire conversation and is
+/// stored exactly as given. Pass an existing `thread_id` to update that thread,
+/// or `None` to create one (returns the id). Title/created are preserved when
+/// updating. The thread's lock is held for the save only; a surface that keeps
+/// a session open uses [`save_session`] with a writer it holds.
 pub fn cli_save_thread(
     base: &std::path::Path,
     thread_id: Option<&str>,
@@ -309,6 +380,51 @@ pub fn cli_save_thread(
     history: &[serde_json::Value],
     metadata: Option<serde_json::Value>,
 ) -> Result<String, String> {
+    save_session(
+        base,
+        &mut None,
+        SessionSave {
+            thread_id,
+            model,
+            history,
+            display: None,
+            metadata,
+        },
+    )
+}
+
+/// One save of a session: what [`save_session`] writes.
+pub struct SessionSave<'a> {
+    /// The thread to update, or `None` for a new one.
+    pub thread_id: Option<&'a str>,
+    pub model: &'a str,
+    /// The wire conversation, stored byte for byte.
+    pub history: &'a [serde_json::Value],
+    /// The transcript entries, or `None` to keep the ones on disk (a surface
+    /// that renders no transcript of its own).
+    pub display: Option<&'a [DisplayEntry]>,
+    /// `thread.json` metadata, or `None` to keep the existing metadata.
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// Append what changed since the last save to the thread's session file, then
+/// update `thread.json`. `writer` is the caller's open writer, kept across
+/// saves so the thread stays locked for the whole session; it is opened here
+/// when empty or when it belongs to another thread. A thread still in the
+/// legacy layout is migrated by its first save, which writes the whole record
+/// and then removes the old files.
+pub fn save_session(
+    base: &std::path::Path,
+    writer: &mut Option<SessionWriter>,
+    save: SessionSave<'_>,
+) -> Result<String, String> {
+    let SessionSave {
+        thread_id,
+        model,
+        history,
+        display,
+        metadata,
+    } = save;
     if history.is_empty() {
         return Err("empty conversation".to_string());
     }
@@ -316,52 +432,37 @@ pub fn cli_save_thread(
     let id = thread_id
         .map(str::to_string)
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    std::fs::create_dir_all(get_thread_dir(base, &id)?).map_err(|e| e.to_string())?;
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let now_ms = now.as_millis() as i64;
-    let now_secs = now.as_secs_f64();
-
-    let messages: Vec<serde_json::Value> = history
-        .iter()
-        .filter_map(|m| {
-            let role = m.get("role").and_then(|v| v.as_str())?;
-            let content = openai_content_text(m.get("content"));
-            let mut record = serde_json::json!({
-                "id": uuid::Uuid::new_v4().to_string(),
-                "object": "thread.message",
-                "thread_id": id,
-                "role": role,
-                "type": "text",
-                "status": "ready",
-                "created_at": now_ms,
-                "completed_at": now_ms,
-                "content": [{ "type": "text", "text": { "value": content, "annotations": [] } }],
-            });
-            // Carry the wire fields the text form cannot express, so a resumed
-            // conversation still shows the model the tools it ran. Extra keys on
-            // a `thread.message`; the desktop reads `role` and `content`.
-            for key in ["tool_calls", "tool_call_id"] {
-                if let Some(v) = m.get(key) {
-                    record[key] = v.clone();
-                }
-            }
-            Some(record)
-        })
-        .collect();
-    write_messages_to_file(&messages, &get_messages_path(base, &id)?)?;
-    // Best effort, like the display journal: the record is a convenience for a
-    // reader, and failing to write it must not fail the save of the thread.
-    let record = crate::core::agent::run_record::Transcript::from_history(&id, history);
-    if let Err(e) = crate::core::agent::run_record::write_atomic(
-        &get_thread_dir(base, &id)?.join(THREAD_TRANSCRIPT_FILE),
-        &record,
-    ) {
-        log::warn!("thread {id}: could not write {THREAD_TRANSCRIPT_FILE}: {e}");
+    let dir = get_thread_dir(base, &id)?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = session_path(base, &id)?;
+    let open = match writer {
+        Some(open) if open.path() == path => open,
+        _ => {
+            // Release the previous thread's lock before taking this one.
+            *writer = None;
+            writer.insert(SessionWriter::open(&path)?)
+        }
+    };
+    let legacy = if open.record() == &SessionRecord::default() {
+        Some(load_legacy_record(base, &id)?.record)
+    } else {
+        None
+    };
+    let display = display.or(legacy.as_ref().map(|l| l.display.as_slice()));
+    open.sync(history, display).map_err(|e| e.to_string())?;
+    // The session file now holds everything the legacy files did.
+    for name in [LEGACY_MESSAGES_FILE, LEGACY_DISPLAY_FILE, LEGACY_TRANSCRIPT_FILE] {
+        match std::fs::remove_file(dir.join(name)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => log::warn!("thread {id}: could not remove legacy {name}: {e}"),
+        }
     }
 
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
     let existing: Option<serde_json::Value> =
         std::fs::read_to_string(get_thread_metadata_path(base, &id)?)
             .ok()
@@ -396,10 +497,6 @@ pub fn cli_save_thread(
     Ok(id)
 }
 
-/// A thread's record in the shared `prompt` / `transcript[]` / `output` shape,
-/// next to its `messages.jsonl`. See `agent::run_record`.
-pub const THREAD_TRANSCRIPT_FILE: &str = "transcript.json";
-
 /// Persist a TUI `/model` choice to the project's `agent.toml` `[agent].model`,
 /// so it is remembered on the next session (agent.toml wins over the desktop
 /// default in the model-resolution order). `agent_dir` is the project's store.
@@ -412,15 +509,19 @@ pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result
 pub(crate) const MISSING_TOOL_RESULT: &str =
     "(result not saved: the session ended before this call's output was recorded)";
 
-/// Rebuild the wire conversation from persisted `thread.message` records: the
+/// Rebuild the wire conversation from the `thread.message` records of a legacy
+/// `messages.jsonl`, which migrates into the session file on its next save: the
 /// user/assistant text plus the tool calls and results that text cannot express,
 /// so a resumed model sees the work it did instead of only its own answers.
 ///
 /// Tool pairing is enforced, because an OpenAI-compatible upstream rejects a
 /// conversation where it is broken: a result whose call is gone is dropped, and a
 /// call whose result is missing (a crash between the two) gets the placeholder
-/// above. Roles the agent owns (`system`) and messages carrying neither text nor
-/// calls are left out.
+/// above. A `system` prompt is the agent's and is left out, as are messages
+/// carrying neither text nor calls. A compaction summary is history rather
+/// than a prompt and is kept, placed first since it stands for everything
+/// before the rest: the `user`-role continuation state, or the `system` form
+/// older sessions saved. So is the cost ceiling note, in place.
 pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
     fn answer_open(out: &mut Vec<serde_json::Value>, open: &mut Vec<String>) {
         for id in open.drain(..) {
@@ -432,11 +533,22 @@ pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_
         }
     }
 
+    let mut summaries: Vec<serde_json::Value> = Vec::new();
     let mut out: Vec<serde_json::Value> = Vec::new();
     let mut open: Vec<String> = Vec::new();
     for m in messages {
         let role = m.get("role").and_then(|v| v.as_str()).unwrap_or_default();
         let text = thread_message_text(m);
+        if role == "system" {
+            let node = serde_json::json!({ "role": "system", "content": text });
+            if crate::core::agent::compaction::is_compaction_summary(&node) {
+                summaries.push(node);
+            } else if text.starts_with(crate::core::agent::r#loop::COST_CEILING_MARKER) {
+                answer_open(&mut out, &mut open);
+                out.push(node);
+            }
+            continue;
+        }
         if role == "tool" {
             let id = m
                 .get("tool_call_id")
@@ -465,6 +577,12 @@ pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_
             continue;
         }
         let mut msg = serde_json::json!({ "role": role, "content": text });
+        // A continuation state stands for everything before the rest, like
+        // the older `system` summary it replaced.
+        if crate::core::agent::continuation::is_state(&msg) {
+            summaries.push(msg);
+            continue;
+        }
         if let Some(calls) = calls {
             msg["tool_calls"] = calls.clone();
             open = calls
@@ -480,7 +598,8 @@ pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_
         out.push(msg);
     }
     answer_open(&mut out, &mut open);
-    out
+    summaries.append(&mut out);
+    summaries
 }
 
 // ── Thread forking ─────────────────────────────────────────────────────────
@@ -499,8 +618,8 @@ pub const SYSTEM_PROMPT_KEY: &str = "system_prompt";
 /// True for a `user` message the user actually authored. Hidden reminders ride
 /// in on the `user` role but are not turns: a rewind target, a fork point, a
 /// recall entry or a checkpoint key built from one would be a row the user never
-/// typed, and would shift every later index out of step with the display
-/// journal, which holds no reminder at all.
+/// typed, and would shift every later index out of step with the
+/// display list, which holds no reminder at all.
 pub(crate) fn is_user_turn(m: &serde_json::Value) -> bool {
     m.get("role").and_then(|v| v.as_str()) == Some("user")
         && !crate::core::agent::reminder::is_reminder_only(
@@ -565,7 +684,7 @@ fn fork_metadata(
 /// Branch a saved thread into a new one holding its prefix up to `at_user_turn`
 /// (that turn and everything after it are left behind, the same cut a rewind
 /// makes), or the whole conversation when `None`. Both the wire history and the
-/// display journal are carried, so the fork replays with its tool rows.
+/// display entries are carried, so the fork replays with its tool rows.
 ///
 /// The source is only read, never written: that is the whole point of a fork
 /// over a rewind.
@@ -581,20 +700,20 @@ pub fn fork_thread(
         .map_err(|e| format!("thread '{source_id}' not found: {e}"))?;
     let source: serde_json::Value = serde_json::from_str(&source).map_err(|e| e.to_string())?;
 
-    let (messages, _) = cli_read_messages_lenient(base, source_id)?;
-    // Cut the rebuilt conversation, not the raw records: `rebuild_wire_history`
-    // is what enforces tool_call/tool_result pairing, and cutting immediately
-    // before a user turn leaves that pairing intact because it closes every open
-    // call at each turn boundary.
-    let mut history = rebuild_wire_history(&messages);
-    let mut journal = journal::read_journal(&journal::journal_path(base, source_id)?);
+    let SessionRecord {
+        messages: mut history,
+        mut display,
+        meta: _,
+    } = load_thread_record(base, source_id)?.record;
     if let Some(turn) = at_user_turn {
+        // Cutting immediately before a user turn leaves tool pairing intact:
+        // every call ahead of it was answered (or folded) in its own turn.
         let cut = user_turn_index(&history, turn)
             .ok_or_else(|| format!("no message #{} to fork at", turn + 1))?;
         history.truncate(cut);
-        // The journal is keyed by its own user entries, not by history indices:
-        // it holds rows (tool calls, reasoning) history never had.
-        journal.truncate(journal::truncate_at_user(&journal, turn));
+        // The display list is keyed by its own user entries, not by history
+        // indices: it holds rows (tool calls, reasoning) history never had.
+        display.truncate(session_log::truncate_at_user(&display, turn));
     }
     if history.is_empty() {
         return Err("nothing before that message to fork".to_string());
@@ -608,9 +727,17 @@ pub fn fork_thread(
     // Cutting at user turn N keeps exactly N turns, so the recorded turn is the
     // same number whether the cut was asked for or the whole thread was taken.
     let metadata = fork_metadata(source.get("metadata"), source_id, user_turn_count(&history));
-    let id = cli_save_thread(base, None, model, &history, Some(metadata))?;
-    journal::write_journal(&journal::journal_path(base, &id)?, &journal)?;
-    Ok(id)
+    save_session(
+        base,
+        &mut None,
+        SessionSave {
+            thread_id: None,
+            model,
+            history: &history,
+            display: Some(&display),
+            metadata: Some(metadata),
+        },
+    )
 }
 
 /// One row of the fork forest: a thread plus how deep it sits under its root.
@@ -1445,7 +1572,7 @@ fn build_cli_orchestration_args(
         } else {
             crate::core::agent::plan::RunMode::Normal
         },
-        // Key the persistent bash `/tmp` scratch to this session. Generated per
+        // Key the persistent bash scratch to this session. Generated per
         // run/session: a one-shot CLI wipes it after its single run; the TUI
         // reuses `args` across turns and wipes it when the interactive session
         // ends.
@@ -1480,6 +1607,10 @@ fn build_cli_orchestration_args(
         session_start: Some(crate::core::agent::context::SessionStart::capture(Some(
             &project_root,
         ))),
+        // Only Jan's memory tidy subagent has one.
+        memory_change_budget: None,
+        // A top-level run works in its own checkout as given.
+        child_scope: None,
     }
 }
 
@@ -1584,7 +1715,7 @@ pub(crate) struct AgentSession {
     pub parse_think_tags: bool,
     /// Whether to resend a prior assistant turn's reasoning to the model
     /// (default true). False drops `reasoning_content` from outgoing assistant
-    /// messages; the display journal still keeps reasoning for a resume.
+    /// messages; the session record still keeps reasoning for a resume.
     pub send_reasoning: bool,
     /// Shared MCP connection map (same Arc held by `args`), so the TUI can
     /// connect/disconnect servers live via `/mcp` and later turns pick them up.
@@ -2083,8 +2214,8 @@ struct ResumedSession {
     history: Vec<serde_json::Value>,
 }
 
-/// Load a saved thread's conversation for continuation, tool calls and results
-/// included (see `rebuild_wire_history`), matching `/resume` in the TUI. Errors
+/// Load a saved thread's conversation for continuation, exactly as it was sent
+/// (see `load_thread_record`), matching `/resume` in the TUI. Errors
 /// describe why nothing could be resumed; the caller starts fresh.
 fn load_resume_history(
     agent_dir: &std::path::Path,
@@ -2096,12 +2227,14 @@ fn load_resume_history(
         .and_then(|v| v.as_str())
         .ok_or_else(|| "saved thread has no id".to_string())?
         .to_string();
-    let (messages, skipped) = cli_read_messages_lenient(agent_dir, &thread_id)?;
+    let Loaded { record, skipped } = load_thread_record(agent_dir, &thread_id)?;
     if skipped > 0 {
-        eprintln!("(skipped {skipped} unreadable message(s) in the resumed session)");
+        eprintln!("(skipped {skipped} unreadable line(s) in the resumed session)");
     }
-    let history = rebuild_wire_history(&messages);
-    Ok(ResumedSession { thread_id, history })
+    Ok(ResumedSession {
+        thread_id,
+        history: record.messages,
+    })
 }
 
 fn prepare_agent_run(
@@ -2425,6 +2558,24 @@ async fn run_agent_loop(
     // records before the final result, which it prints only once every sender
     // (the reader's included) has dropped.
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
+    // Weak, so a slow sweep (a kept worktree's fetch) never holds the printer
+    // open; it runs on a thread exit does not join, so what is left when the
+    // run ends is done at the next start. A notice counts as told only where
+    // the format shows one: under `json` it is sent but left for a later
+    // start to report.
+    if let Some(root) = args.project_root.clone() {
+        let sweep_tx = tx.downgrade();
+        crate::core::agent::child_workspace::spawn_startup_sweep(
+            root,
+            args.session_id.clone(),
+            move |text| {
+                sweep_tx
+                    .upgrade()
+                    .is_some_and(|tx| tx.send(StreamEvent::Notice { text }).is_ok())
+                    && format.shows_notices()
+            },
+        );
+    }
     let reader = input.as_ref().map(|input| {
         spawn_input_reader(
             Arc::clone(input),
@@ -2567,9 +2718,10 @@ async fn run_agent_loop(
         );
     }
     // The one-shot CLI runs exactly one turn, so its session ends here: wipe
-    // the persistent bash `/tmp` scratch this run used.
-    if let Some(session) = args.session_id.as_deref() {
-        let _ = workspace::remove_scratch_dir(session).await;
+    // the persistent bash scratch this run used, in its project's cache folder.
+    if let (Some(session), Some(root)) = (args.session_id.as_deref(), args.project_root.as_deref()) {
+        let cache = crate::core::agent::project::project_cache_dir(root);
+        let _ = workspace::trash_scratch_dir_in(&cache, session).await;
     }
     if aborted {
         return Ok(());
@@ -3324,9 +3476,12 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             };
             eprintln!("\x1b[2m[{tag}] {content}\x1b[0m");
         }
-        StreamEvent::SubagentStart { name, .. } => {
-            eprintln!("\x1b[2m[subagent:{name}] started (background)\x1b[0m")
-        }
+        StreamEvent::SubagentStart {
+            name, workspace, ..
+        } => match workspace {
+            Some(ws) => eprintln!("\x1b[2m[subagent:{name}] started (background) in {ws}\x1b[0m"),
+            None => eprintln!("\x1b[2m[subagent:{name}] started (background)\x1b[0m"),
+        },
         StreamEvent::SubagentQueued { name, waiting, .. } => {
             eprintln!("\x1b[2m[subagent:{name}] queued ({waiting} waiting)\x1b[0m")
         }
@@ -3345,10 +3500,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
         StreamEvent::Notice { text } => {
             eprintln!("\x1b[2m[notice] {text}\x1b[0m")
         }
+        StreamEvent::AgentMessage { from, to, text } => {
+            eprintln!("\x1b[2m[message {from} -> {to}] {text}\x1b[0m")
+        }
         StreamEvent::Compaction {
             phase,
             reason,
             messages,
+            ..
         } => eprintln!("\x1b[2m[compaction] {}\x1b[0m", describe_compaction(phase, reason, messages)),
         StreamEvent::Retry {
             attempt,
@@ -3372,10 +3531,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             StreamEvent::Notice { text } => {
                 eprintln!("\x1b[2m[subagent:{name}] [notice] {text}\x1b[0m")
             }
+            StreamEvent::AgentMessage { from, to, text } => {
+                eprintln!("\x1b[2m[message {from} -> {to}] {text}\x1b[0m")
+            }
             StreamEvent::Compaction {
                 phase,
                 reason,
                 messages,
+                ..
             } => eprintln!(
                 "\x1b[2m[subagent:{name}] [compaction] {}\x1b[0m",
                 describe_compaction(phase, reason, messages)
@@ -4109,111 +4272,207 @@ mod tests {
             serde_json::json!({ "id": id, "title": id, "updated": updated }).to_string(),
         )
         .unwrap();
-        std::fs::write(
-            get_messages_path(base, id).unwrap(),
-            serde_json::json!({
-                "role": "user",
-                "content": [{ "type": "text", "text": { "value": id, "annotations": [] } }],
-            })
-            .to_string()
-                + "\n",
-        )
-        .unwrap();
+        SessionWriter::open(&session_path(base, id).unwrap())
+            .unwrap()
+            .sync(&[serde_json::json!({ "role": "user", "content": id })], None)
+            .unwrap();
     }
 
-    /// Every save writes the thread's record beside its messages, in the shared
-    /// prompt/transcript/output shape.
+    /// `jan cli threads messages` reads a thread saved as a session file, in
+    /// the `thread.message` shape it always printed, tool fields included; a
+    /// thread still on `messages.jsonl` reads as before.
     #[test]
-    fn saving_a_thread_writes_its_transcript_json() {
-        let base = std::env::temp_dir().join(format!("jan-save-transcript-{}", std::process::id()));
+    fn listing_messages_reads_the_session_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let history = vec![
+            serde_json::json!({ "role": "user", "content": "fix the bug" }),
+            serde_json::json!({ "role": "assistant", "content": "", "tool_calls": [
+                { "id": "c1", "type": "function", "function": { "name": "read", "arguments": "{}" } }
+            ] }),
+            serde_json::json!({ "role": "tool", "tool_call_id": "c1", "content": "fn main() {}" }),
+            serde_json::json!({ "role": "assistant", "content": "fixed" }),
+        ];
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+        let listed = cli_list_messages_in(base, &id).unwrap();
+        assert_eq!(listed.len(), 4, "{listed:?}");
+        assert!(listed.iter().all(|m| m["object"] == "thread.message" && m["thread_id"] == id.as_str()));
+        let roles: Vec<&str> = listed.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, ["user", "assistant", "tool", "assistant"]);
+        assert_eq!(thread_message_text(&listed[0]), "fix the bug");
+        assert_eq!(listed[1]["tool_calls"], history[1]["tool_calls"]);
+        assert_eq!(listed[2]["tool_call_id"], "c1");
+
+        use crate::core::threads::{helpers::write_messages_to_file, utils::get_messages_path};
+        let legacy = "legacy-thread";
+        let record = serde_json::json!({ "id": "x", "object": "thread.message", "role": "user" });
+        std::fs::create_dir_all(get_thread_dir(base, legacy).unwrap()).unwrap();
+        write_messages_to_file(std::slice::from_ref(&record), &get_messages_path(base, legacy).unwrap())
+            .unwrap();
+        assert_eq!(cli_list_messages_in(base, legacy).unwrap(), vec![record]);
+    }
+
+    /// A save writes the session file and `thread.json`, and nothing else.
+    #[test]
+    fn a_save_writes_one_session_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
         let history = vec![
             serde_json::json!({ "role": "user", "content": "fix the bug" }),
             serde_json::json!({ "role": "assistant", "content": "fixed" }),
         ];
-        let id = cli_save_thread(&base, None, "m", &history, None).unwrap();
-        let path = get_thread_dir(&base, &id).unwrap().join(THREAD_TRANSCRIPT_FILE);
-        let doc: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).expect("transcript written")).unwrap();
-        assert_eq!(doc["prompt"], "fix the bug");
-        assert_eq!(doc["output"], "fixed");
-        assert_eq!(doc["run_id"], id.as_str());
-        let _ = std::fs::remove_dir_all(&base);
-    }
-
-    /// A resave replaces the record rather than appending to it: it always
-    /// mirrors the history as saved.
-    #[test]
-    fn resaving_a_thread_rewrites_its_transcript() {
-        let base = std::env::temp_dir().join(format!("jan-resave-transcript-{}", std::process::id()));
-        let mut history = vec![
-            serde_json::json!({ "role": "user", "content": "one" }),
-            serde_json::json!({ "role": "assistant", "content": "a" }),
-        ];
-        let id = cli_save_thread(&base, None, "m", &history, None).unwrap();
-        history.push(serde_json::json!({ "role": "user", "content": "two" }));
-        history.push(serde_json::json!({ "role": "assistant", "content": "b" }));
-        cli_save_thread(&base, Some(&id), "m", &history, None).unwrap();
-        let doc: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(get_thread_dir(&base, &id).unwrap().join(THREAD_TRANSCRIPT_FILE)).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(doc["output"], "b");
-        let kinds: Vec<&str> = doc["transcript"]
-            .as_array()
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+        let mut files: Vec<String> = std::fs::read_dir(get_thread_dir(base, &id).unwrap())
             .unwrap()
-            .iter()
-            .map(|e| e["kind"].as_str().unwrap())
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(kinds, ["prose", "user", "prose"]);
-        let _ = std::fs::remove_dir_all(&base);
+        files.sort();
+        assert_eq!(files, [SESSION_FILE, "session.jsonl.lock", THREADS_FILE]);
+        assert_eq!(load_thread_record(base, &id).unwrap().record.messages, history);
     }
 
-    /// The record is a convenience: if it cannot be written the thread still
-    /// saves. A directory squatting on the file name makes the write fail.
+    /// A thread another process holds open cannot be saved over: the second
+    /// writer would interleave its batches with the first.
     #[test]
-    fn a_transcript_write_failure_does_not_fail_the_save() {
-        let base = std::env::temp_dir().join(format!("jan-save-blocked-{}", std::process::id()));
+    fn a_save_is_refused_while_another_session_holds_the_thread() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
         let history = vec![serde_json::json!({ "role": "user", "content": "hi" })];
-        let id = cli_save_thread(&base, None, "m", &history, None).unwrap();
-        let blocked = get_thread_dir(&base, &id).unwrap().join(THREAD_TRANSCRIPT_FILE);
-        std::fs::remove_file(&blocked).unwrap();
-        std::fs::create_dir(&blocked).unwrap();
-        let again = cli_save_thread(&base, Some(&id), "m", &history, None);
-        assert_eq!(again.as_deref(), Ok(id.as_str()));
-        assert_eq!(list_threads_in(&base).unwrap().len(), 1);
-        let _ = std::fs::remove_dir_all(&base);
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+        let held = SessionWriter::open(&session_path(base, &id).unwrap()).unwrap();
+        let err = cli_save_thread(base, Some(&id), "m", &history, None).unwrap_err();
+        assert!(err.contains("another session"), "{err}");
+        drop(held);
+        assert!(cli_save_thread(base, Some(&id), "m", &history, None).is_ok());
     }
 
-    /// Forking copies messages by their own path, and the fork gets a record of
-    /// its own: it must describe the fork's history, not the source's.
+    /// A writer kept across saves holds the lock for the whole session and
+    /// appends only what each save adds.
     #[test]
-    fn a_thread_transcript_is_not_shared_between_threads() {
-        let base = std::env::temp_dir().join(format!("jan-two-transcripts-{}", std::process::id()));
-        let a = cli_save_thread(
-            &base,
-            None,
-            "m",
-            &[serde_json::json!({ "role": "user", "content": "alpha" })],
-            None,
-        )
-        .unwrap();
-        let b = cli_save_thread(
-            &base,
-            None,
-            "m",
-            &[serde_json::json!({ "role": "user", "content": "beta" })],
-            None,
-        )
-        .unwrap();
-        let prompt = |id: &str| -> String {
-            let doc: serde_json::Value = serde_json::from_slice(
-                &std::fs::read(get_thread_dir(&base, id).unwrap().join(THREAD_TRANSCRIPT_FILE)).unwrap(),
+    fn a_held_writer_appends_each_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let mut writer = None;
+        let mut history = vec![serde_json::json!({ "role": "user", "content": "one" })];
+        let display = vec![DisplayEntry::User {
+            text: "one".into(),
+            images: Vec::new(),
+        }];
+        let save = |writer: &mut Option<SessionWriter>, id: Option<&str>, h: &[serde_json::Value]| {
+            save_session(
+                base,
+                writer,
+                SessionSave {
+                    thread_id: id,
+                    model: "m",
+                    history: h,
+                    display: Some(&display),
+                    metadata: None,
+                },
             )
-            .unwrap();
-            doc["prompt"].as_str().unwrap().to_string()
+            .unwrap()
         };
-        assert_eq!((prompt(&a).as_str(), prompt(&b).as_str()), ("alpha", "beta"));
-        let _ = std::fs::remove_dir_all(&base);
+        let id = save(&mut writer, None, &history);
+        let path = session_path(base, &id).unwrap();
+        let first = std::fs::read(&path).unwrap();
+        assert!(SessionWriter::open(&path).is_err(), "held between saves");
+        history.push(serde_json::json!({ "role": "assistant", "content": "a" }));
+        save(&mut writer, Some(&id), &history);
+        let second = std::fs::read(&path).unwrap();
+        assert!(second.starts_with(&first), "appended, not rewritten");
+        let loaded = load_thread_record(base, &id).unwrap().record;
+        assert_eq!(loaded.messages, history);
+        assert_eq!(loaded.display, display);
+    }
+
+    /// Write a thread the way builds before `session.jsonl` did.
+    fn seed_legacy(base: &std::path::Path, id: &str) -> Vec<DisplayEntry> {
+        let dir = get_thread_dir(base, id).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            get_thread_metadata_path(base, id).unwrap(),
+            serde_json::json!({ "id": id, "title": "old", "updated": 1.0 }).to_string(),
+        )
+        .unwrap();
+        let record = |role: &str, text: &str, extra: serde_json::Value| {
+            let mut m = serde_json::json!({
+                "id": "x", "object": "thread.message", "thread_id": id, "role": role,
+                "content": [{ "type": "text", "text": { "value": text, "annotations": [] } }],
+            });
+            for (k, v) in extra.as_object().unwrap() {
+                m[k] = v.clone();
+            }
+            serde_json::to_string(&m).unwrap() + "\n"
+        };
+        let messages = record("user", "do it", serde_json::json!({}))
+            + &record("assistant", "", serde_json::json!({ "tool_calls": [call("c1", "write")] }))
+            + &record("tool", "wrote", serde_json::json!({ "tool_call_id": "c1" }))
+            + &record("assistant", "Done.", serde_json::json!({}));
+        std::fs::write(dir.join(LEGACY_MESSAGES_FILE), messages).unwrap();
+        let display = vec![
+            DisplayEntry::User {
+                text: "do it".into(),
+                images: Vec::new(),
+            },
+            DisplayEntry::ToolCall {
+                id: "c1".into(),
+                name: "write".into(),
+                args: serde_json::json!({ "path": "a.txt" }),
+            },
+            DisplayEntry::ToolResult {
+                id: "c1".into(),
+                content: "wrote".into(),
+                is_error: false,
+                diff: None,
+            },
+            DisplayEntry::Assistant {
+                text: "Done.".into(),
+                reasoning: Vec::new(),
+                reasoning_ms: None,
+            },
+        ];
+        let body: String = display
+            .iter()
+            .map(|e| serde_json::to_string(e).unwrap() + "\n")
+            .collect();
+        std::fs::write(dir.join(LEGACY_DISPLAY_FILE), body).unwrap();
+        std::fs::write(dir.join(LEGACY_TRANSCRIPT_FILE), "{}").unwrap();
+        display
+    }
+
+    /// An old thread resumes from its legacy files without a write, and its
+    /// first save moves both lists into the session file and removes them.
+    #[test]
+    fn a_legacy_thread_resumes_and_migrates_on_its_first_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let display = seed_legacy(base, "0ld7hread");
+        let thread_dir = get_thread_dir(base, "0ld7hread").unwrap();
+        let listing = || {
+            let mut names: Vec<String> = std::fs::read_dir(&thread_dir)
+                .unwrap()
+                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+            names.sort();
+            names
+        };
+        let before = listing();
+
+        let resumed = load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest))
+            .unwrap()
+            .history;
+        let loaded = load_thread_record(base, "0ld7hread").unwrap();
+        assert_eq!(listing(), before, "loading writes nothing");
+        assert_eq!(loaded.record.display, display);
+        assert_eq!(resumed.len(), 4);
+        assert_eq!(resumed[1]["tool_calls"][0]["id"], "c1");
+        assert_eq!(resumed[2]["content"], "wrote");
+
+        cli_save_thread(base, Some("0ld7hread"), "m", &resumed, None).unwrap();
+        assert_eq!(listing(), [SESSION_FILE, "session.jsonl.lock", THREADS_FILE]);
+        let migrated = load_thread_record(base, "0ld7hread").unwrap().record;
+        assert_eq!(migrated.messages, resumed);
+        assert_eq!(migrated.display, display, "the transcript came along");
     }
 
     /// The thread this session resumes is exempt from pruning however stale the
@@ -4361,27 +4620,26 @@ mod tests {
     }
 
     #[test]
-    fn read_messages_lenient_skips_truncated_tail() {
+    fn a_torn_session_tail_is_skipped_and_counted() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         seed_thread(base, "aaaa1111", 100.0);
-        let mut raw = std::fs::read_to_string(get_messages_path(base, "aaaa1111").unwrap()).unwrap();
-        raw.push_str("{\"role\":\"assist");
-        std::fs::write(get_messages_path(base, "aaaa1111").unwrap(), raw).unwrap();
+        let path = session_path(base, "aaaa1111").unwrap();
+        let mut raw = std::fs::read_to_string(&path).unwrap();
+        raw.push_str("{\"type\":\"message\",\"message\":{\"role\":\"assist");
+        std::fs::write(&path, raw).unwrap();
 
-        let (messages, skipped) = cli_read_messages_lenient(base, "aaaa1111").unwrap();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(skipped, 1);
-        // The strict reader used elsewhere still rejects the same file.
-        assert!(cli_list_messages_in(base, "aaaa1111").is_err());
+        let loaded = load_thread_record(base, "aaaa1111").unwrap();
+        assert_eq!(loaded.record.messages.len(), 1);
+        assert_eq!(loaded.skipped, 1);
     }
 
     #[test]
-    fn read_messages_lenient_on_missing_thread_is_empty() {
+    fn a_missing_thread_record_is_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let (messages, skipped) = cli_read_messages_lenient(dir.path(), "nope").unwrap();
-        assert!(messages.is_empty());
-        assert_eq!(skipped, 0);
+        let loaded = load_thread_record(dir.path(), "nope").unwrap();
+        assert_eq!(loaded.record, SessionRecord::default());
+        assert_eq!(loaded.skipped, 0);
     }
 
     #[test]
@@ -4416,6 +4674,99 @@ mod tests {
         );
     }
 
+    /// A history holding every shape a session can carry: a stable prompt, a
+    /// compaction summary, an image, reasoning, a tool call whose raw argument
+    /// bytes are unusual, a result over 64 KB, a cancelled turn's folded calls
+    /// and a trailing call that never got a result.
+    fn everything_history() -> Vec<serde_json::Value> {
+        let big = "0123456789abcdef\n".repeat(5 * 1024);
+        assert!(big.len() > 64 * 1024);
+        let mut history = vec![
+            serde_json::json!({ "role": "system", "content": "You are Jan." }),
+            crate::core::agent::compaction::summary_message("earlier: read a.txt"),
+            serde_json::json!({
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "what is in this picture?" },
+                    { "type": "image_url", "image_url": { "url": "data:image/png;base64,iVBORw0KGgo=" } }
+                ]
+            }),
+            serde_json::json!({
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": "The user wants the file. Read it first.",
+                "tool_calls": [{
+                    "id": "call_big",
+                    "type": "function",
+                    "function": { "name": "read", "arguments": "{ \"path\" :\"big.txt\"}" }
+                }]
+            }),
+            serde_json::json!({ "role": "tool", "tool_call_id": "call_big", "content": big }),
+            serde_json::json!({
+                "role": "assistant",
+                "content": "A cat. The file is long.",
+                "reasoning_content": "Answer briefly."
+            }),
+            serde_json::json!({ "role": "user", "content": "now edit it" }),
+        ];
+        // The cancelled turn, folded the way the TUI's Esc and ACP's cancel do.
+        fold_interrupted_tools(
+            &mut history,
+            &[
+                ("call_done".into(), "write".into(), serde_json::json!({ "path": "a" })),
+                ("call_live".into(), "bash".into(), serde_json::json!({ "command": "sleep 9" })),
+            ],
+            &[("call_done".into(), "wrote 1 line".into())],
+        );
+        history.push(serde_json::json!({ "role": "user", "content": "try again" }));
+        // An orphaned call: the process died before its result was recorded.
+        history.push(serde_json::json!({
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [call("call_orphan", "edit")]
+        }));
+        history
+    }
+
+    fn bytes(messages: &[serde_json::Value]) -> String {
+        serde_json::to_string(messages).unwrap()
+    }
+
+    /// The request a resumed session sends, as the loop builds it.
+    fn request_of(history: &[serde_json::Value]) -> String {
+        use crate::core::agent::transcript::{Projection, Transcript};
+        bytes(&Transcript::from_history(history.to_vec()).project(&Projection {
+            volatile_system: None,
+            send_reasoning: true,
+        }))
+    }
+
+    /// save -> resume -> save -> resume keeps every byte the model was sent, so
+    /// a resumed request shares the original's prefix and hits the prompt cache.
+    #[test]
+    fn a_save_resume_round_trip_is_byte_identical() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let history = everything_history();
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+
+        let first = load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest))
+            .unwrap()
+            .history;
+        assert_eq!(bytes(&first), bytes(&history), "first resume");
+        assert_eq!(request_of(&first), request_of(&history), "first request");
+
+        let mut extended = first;
+        extended.push(serde_json::json!({ "role": "user", "content": "and then?" }));
+        cli_save_thread(base, Some(&id), "m", &extended, None).unwrap();
+        let second = load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest))
+            .unwrap()
+            .history;
+        assert_eq!(bytes(&second), bytes(&extended), "second resume");
+        assert_eq!(request_of(&second), request_of(&extended), "second request");
+        assert_eq!(&second[..history.len()], history.as_slice());
+    }
+
     fn call(id: &str, name: &str) -> serde_json::Value {
         serde_json::json!({
             "id": id,
@@ -4442,6 +4793,99 @@ mod tests {
         assert_eq!(
             resumed.history, history,
             "the model must see the tools it ran, not just its own text"
+        );
+    }
+
+    /// A compaction summary is condensed history, not a prompt: it must survive
+    /// resume, and a second save and resume must not lose it either. The cost
+    /// ceiling note says why a run stopped and survives in place the same way.
+    #[test]
+    fn compaction_summary_survives_save_resume_save_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let summary = crate::core::agent::compaction::summary_message("we built a.txt");
+        let ceiling = serde_json::json!({
+            "role": "system",
+            "content": format!(
+                "{} This run stopped after spending about $1.0000.",
+                crate::core::agent::r#loop::COST_CEILING_MARKER
+            ),
+        });
+        let history = vec![
+            serde_json::json!({ "role": "system", "content": "You are Jan." }),
+            summary.clone(),
+            serde_json::json!({ "role": "user", "content": "do it" }),
+            serde_json::json!({ "role": "assistant", "content": "", "tool_calls": [call("c1", "write")] }),
+            serde_json::json!({ "role": "tool", "tool_call_id": "c1", "content": "wrote 1 line" }),
+            ceiling.clone(),
+            serde_json::json!({ "role": "assistant", "content": "Done." }),
+        ];
+        // Stored verbatim, system prompt included: the loop swaps in the live
+        // prompt itself, and a verbatim prefix is what keeps the prompt cache warm.
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+        let first =
+            load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest)).unwrap();
+        assert_eq!(first.history, history);
+        cli_save_thread(base, Some(&id), "m", &first.history, None).unwrap();
+        let second =
+            load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest)).unwrap();
+        assert_eq!(second.history, first.history);
+        assert!(crate::core::agent::compaction::is_compaction_summary(&second.history[1]));
+    }
+
+    /// (h) The continuation state -- a `user` message -- survives save and
+    /// resume twice, is still recognized as a summary, and is not counted as
+    /// a user turn. The older `system` form is covered by the test above.
+    #[test]
+    fn a_continuation_state_survives_save_resume_save_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let gathered = crate::core::agent::continuation::gather(&[
+            serde_json::json!({ "role": "user", "content": "build a.txt" }),
+        ]);
+        let state = crate::core::agent::continuation::build(
+            &gathered,
+            &crate::core::agent::continuation::HarnessContext::default(),
+            crate::core::agent::continuation::Caps::user_only(1_000),
+            Some("## Progress\nwrote a.txt"),
+        );
+        let history = vec![
+            serde_json::json!({ "role": "system", "content": "You are Jan." }),
+            state.clone(),
+            serde_json::json!({ "role": "assistant", "content": "", "tool_calls": [call("c1", "write")] }),
+            serde_json::json!({ "role": "tool", "tool_call_id": "c1", "content": "wrote 1 line" }),
+            serde_json::json!({ "role": "assistant", "content": "Done." }),
+        ];
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+        let first =
+            load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest)).unwrap();
+        assert_eq!(first.history, history);
+        cli_save_thread(base, Some(&id), "m", &first.history, None).unwrap();
+        let second =
+            load_resume_history(base, &ResumeRequest::resume(ResumeTarget::Latest)).unwrap();
+        assert_eq!(second.history, history);
+        assert!(crate::core::agent::compaction::is_compaction_summary(&second.history[1]));
+        assert!(!is_user_turn(&second.history[1]), "the state is not a user turn");
+        assert_eq!(user_turn_count(&second.history), 0);
+        let rebuilt = rebuild_wire_history(&[
+            serde_json::json!({ "role": "user", "content": "hi" }),
+            state.clone(),
+        ]);
+        assert_eq!(rebuilt[0], state, "a state is placed first on rebuild");
+    }
+
+    /// A summary is placed first, whatever order the saved records came in.
+    #[test]
+    fn rebuild_places_compaction_summaries_first() {
+        let summary = crate::core::agent::compaction::summary_message("earlier");
+        let messages = vec![
+            serde_json::json!({ "role": "user", "content": "hi" }),
+            summary.clone(),
+        ];
+        let out = rebuild_wire_history(&messages);
+        assert_eq!(
+            out,
+            vec![summary, serde_json::json!({ "role": "user", "content": "hi" })]
         );
     }
 
@@ -4754,9 +5198,8 @@ mod tests {
     }
 
     // ── fork ───────────────────────────────────────────────────────────────
-
-    /// Three user turns, each with a tool call and its result, plus the journal
-    /// the TUI would have written for them.
+    /// Three user turns, each with a tool call and its result, plus the display
+    /// entries the TUI would have written for them.
     fn seed_forkable(base: &std::path::Path) -> String {
         let mut history = Vec::new();
         for n in 0..3 {
@@ -4770,26 +5213,25 @@ mod tests {
             history
                 .push(serde_json::json!({ "role": "assistant", "content": format!("done {n}") }));
         }
-        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
-        let entries: Vec<journal::DisplayEntry> = (0..3)
+        let entries: Vec<DisplayEntry> = (0..3)
             .flat_map(|n| {
                 vec![
-                    journal::DisplayEntry::User {
+                    DisplayEntry::User {
                         text: format!("turn {n}"),
                         images: Vec::new(),
                     },
-                    journal::DisplayEntry::ToolCall {
+                    DisplayEntry::ToolCall {
                         id: format!("c{n}"),
                         name: "write".into(),
                         args: serde_json::json!({ "path": "a.txt" }),
                     },
-                    journal::DisplayEntry::ToolResult {
+                    DisplayEntry::ToolResult {
                         id: format!("c{n}"),
                         content: "ok".into(),
                         is_error: false,
                         diff: None,
                     },
-                    journal::DisplayEntry::Assistant {
+                    DisplayEntry::Assistant {
                         text: format!("done {n}"),
                         reasoning: Vec::new(),
                         reasoning_ms: None,
@@ -4797,8 +5239,18 @@ mod tests {
                 ]
             })
             .collect();
-        journal::write_journal(&journal::journal_path(base, &id).unwrap(), &entries).unwrap();
-        id
+        save_session(
+            base,
+            &mut None,
+            SessionSave {
+                thread_id: None,
+                model: "m",
+                history: &history,
+                display: Some(&entries),
+                metadata: None,
+            },
+        )
+        .unwrap()
     }
 
     #[test]
@@ -4806,8 +5258,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         let source = seed_forkable(base);
-        let before_messages = std::fs::read(get_messages_path(base, &source).unwrap()).unwrap();
-        let before_journal = std::fs::read(journal::journal_path(base, &source).unwrap()).unwrap();
+        let before = std::fs::read(session_path(base, &source).unwrap()).unwrap();
 
         let forked = fork_thread(base, &source, Some(2)).unwrap();
         assert_ne!(forked, source);
@@ -4833,24 +5284,20 @@ mod tests {
             "every carried call keeps its result"
         );
 
-        let journal = journal::read_journal(&journal::journal_path(base, &forked).unwrap());
+        let display = load_thread_record(base, &forked).unwrap().record.display;
         assert_eq!(
-            journal.len(),
+            display.len(),
             8,
             "tool rows were carried, not just the wire history"
         );
         assert!(
-            matches!(journal.last(), Some(journal::DisplayEntry::Assistant { text, .. }) if text == "done 1")
+            matches!(display.last(), Some(DisplayEntry::Assistant { text, .. }) if text == "done 1")
         );
 
         assert_eq!(
-            std::fs::read(get_messages_path(base, &source).unwrap()).unwrap(),
-            before_messages,
+            std::fs::read(session_path(base, &source).unwrap()).unwrap(),
+            before,
             "a fork must not touch the thread it came from"
-        );
-        assert_eq!(
-            std::fs::read(journal::journal_path(base, &source).unwrap()).unwrap(),
-            before_journal
         );
     }
 
@@ -4885,10 +5332,7 @@ mod tests {
         let forked = fork_thread(base, &source, None).unwrap();
         let thread = cli_get_thread_in(base, &forked).unwrap();
         assert_eq!(thread["metadata"][FORKED_FROM_KEY]["user_turn"], 3);
-        assert_eq!(
-            journal::read_journal(&journal::journal_path(base, &forked).unwrap()).len(),
-            12
-        );
+        assert_eq!(load_thread_record(base, &forked).unwrap().record.display.len(), 12);
     }
 
     #[test]
@@ -4913,12 +5357,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         let source = seed_forkable(base);
-        let history = cli_read_messages_lenient(base, &source).unwrap().0;
+        let history = load_thread_record(base, &source).unwrap().record.messages;
         cli_save_thread(
             base,
             Some(&source),
             "m",
-            &rebuild_wire_history(&history),
+            &history,
             Some(serde_json::json!({
                 "base_snapshot": "aaa",
                 "checkpoints": [
@@ -5048,12 +5492,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         let source = seed_forkable(base);
-        let history = cli_read_messages_lenient(base, &source).unwrap().0;
+        let history = load_thread_record(base, &source).unwrap().record.messages;
         cli_save_thread(
             base,
             Some(&source),
             "m",
-            &rebuild_wire_history(&history),
+            &history,
             Some(serde_json::json!({
                 "base_snapshot": "aaa",
                 worktree::WORKTREE_KEY: {

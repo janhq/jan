@@ -46,6 +46,10 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # question's recommended option (else its
 #                                     # first). 0 or unset waits forever, the
 #                                     # default
+# bell = "off"                       # TUI terminal bell: "attention" (the
+#                                     # default) rings when a permission prompt
+#                                     # or ask question needs you, "always"
+#                                     # also when a turn finishes, "off" never
 # terminal_hint = false               # stop the startup note that offers
 #                                     # /terminal-setup when this terminal is
 #                                     # dropping Shift+Enter or Option+Delete.
@@ -61,6 +65,10 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # memory_cross_project = false        # hide other projects' memory from the
 #                                     # agent (the root ~/.jan/MEMORY.md lists
 #                                     # them by default)
+# memory_auto_tidy = false            # stop the TUI tidying memory in the
+#                                     # background when its index outgrows the
+#                                     # prompt budget (on by default; /memory
+#                                     # tidy still runs it on demand)
 # prune_threads = true                # delete old saved threads at TUI start,
 #                                     # under each project's agent.toml
 #                                     # thread_retention_days / max_threads.
@@ -153,6 +161,11 @@ struct GlobalConfigToml {
     /// wait forever, blocking the run on the ask exactly as it does today.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ask_timeout_secs: Option<u64>,
+    /// TUI terminal bell: `"off"`, `"attention"` or `"always"`. `None` = the
+    /// default, attention. Any other string also reads as the default so a
+    /// typo never silences a prompt the user asked to hear.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bell: Option<String>,
     /// Offer `/terminal-setup` at startup when a config file proves this
     /// terminal is dropping a modified key. `None` = the default, on. For the
     /// user who has read the note and decided to keep `Option` composing
@@ -173,6 +186,10 @@ struct GlobalConfigToml {
     /// memory to itself (user-wide `user:` notes still apply everywhere).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     memory_cross_project: Option<bool>,
+    /// Tidy memory in the background once its index outgrows the prompt
+    /// budget. `None` = the default, on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    memory_auto_tidy: Option<bool>,
     /// Prune old saved threads at TUI start. `None` = the default, off: a
     /// deleted thread is not recoverable, so removing the user's history is
     /// something they turn on, not something they find out about.
@@ -718,6 +735,17 @@ pub(crate) fn memory_cross_project_enabled() -> bool {
         .unwrap_or(true)
 }
 
+/// Whether the TUI tidies memory on its own when the index outgrows its budget
+/// (`memory_auto_tidy` in `~/.jan/config.toml`), defaulting to on. Unreadable
+/// config yields the default, like the other preferences.
+#[cfg(feature = "cli")]
+pub(crate) fn memory_auto_tidy_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.memory_auto_tidy)
+        .unwrap_or(true)
+}
+
 /// Whether the TUI streams reasoning into its live tail while folding is on
 /// (`stream_reasoning` in `~/.jan/config.toml`), defaulting to on. `false` keeps
 /// a folded block off screen entirely, leaving the header badge to stand for it.
@@ -737,6 +765,13 @@ pub(crate) fn stream_reasoning_enabled() -> bool {
 /// so a display preference never blocks startup.
 pub(crate) fn theme_setting() -> Option<String> {
     load_raw().ok().and_then(|config| config.theme)
+}
+
+/// The TUI bell preference (`bell` in `~/.jan/config.toml`), `None` when unset.
+/// Read on every status transition so a `/settings` change applies at once; an
+/// unreadable config yields `None` (the default) rather than an error.
+pub(crate) fn bell_setting() -> Option<String> {
+    load_raw().ok().and_then(|config| config.bell)
 }
 
 /// How long an unanswered `ask` prompt waits before it auto-answers with each
@@ -768,7 +803,10 @@ const ROOT_KEYS: &[&str] = &[
     "stream_reasoning",
     "theme",
     "ask_timeout_secs",
+    "bell",
     "terminal_hint",
+    "memory_cross_project",
+    "memory_auto_tidy",
     "hooks",
 ];
 
@@ -1123,6 +1161,32 @@ mod tests {
         with_temp_home(|_| {
             let configs = load_global_config().expect("load");
             assert!(configs.is_empty());
+        });
+    }
+
+    #[test]
+    fn memory_auto_tidy_is_on_by_default_and_reads_its_key() {
+        with_temp_home(|home| {
+            assert!(memory_auto_tidy_enabled(), "missing file");
+            let path = home.join(".jan").join("config.toml");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "memory_auto_tidy = false\n").unwrap();
+            assert!(!memory_auto_tidy_enabled());
+            std::fs::write(&path, "memory_auto_tidy = [").unwrap();
+            assert!(memory_auto_tidy_enabled(), "fails open to the default");
+        });
+    }
+
+    #[test]
+    fn bell_is_unset_by_default_and_reads_its_key() {
+        with_temp_home(|home| {
+            assert_eq!(bell_setting(), None, "missing file");
+            let path = home.join(".jan").join("config.toml");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "bell = \"always\"\n").unwrap();
+            assert_eq!(bell_setting().as_deref(), Some("always"));
+            std::fs::write(&path, "bell = [").unwrap();
+            assert_eq!(bell_setting(), None, "fails open to the default");
         });
     }
 

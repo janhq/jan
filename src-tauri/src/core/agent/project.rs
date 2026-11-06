@@ -442,6 +442,42 @@ pub(crate) fn jan_home() -> Option<PathBuf> {
     }
 }
 
+/// The Jan cache root (`<OS cache dir>/jan`), where session scratch lives.
+/// Tests resolve a per-process temp directory instead, so no test writes into
+/// the developer's real cache.
+pub(crate) fn jan_cache_root() -> PathBuf {
+    #[cfg(test)]
+    {
+        std::env::temp_dir().join(format!("jan-app-test-cache-{}", std::process::id()))
+    }
+    #[cfg(not(test))]
+    {
+        tauri_plugin_agent_tools::workspace::jan_cache_root()
+    }
+}
+
+/// `project_root`'s folder under the Jan cache root, `<cache>/jan/<slug>`,
+/// with the same slug as its store under `~/.jan/projects/`.
+pub(crate) fn project_cache_dir(project_root: &Path) -> PathBuf {
+    tauri_plugin_agent_tools::workspace::project_cache_dir_in(&jan_cache_root(), Some(project_root))
+}
+
+/// A CLI/TUI session's scratch: `<cache>/jan/<slug>/scratch/<session>`. The
+/// one place the app derives it, so the prompt, the tools, the subagent
+/// replay and the exit trash all name the same directory.
+pub(crate) fn scratch_dir(project_root: &Path, session: &str) -> PathBuf {
+    tauri_plugin_agent_tools::workspace::scratch_dir_in(&project_cache_dir(project_root), session)
+}
+
+/// Prepare `project_root`'s package cache, `<cache>/jan/<slug>/pkg`, for a
+/// sandboxed run: shared by the project's sessions (subagent worktrees map to
+/// the same slug), never by another project's.
+pub(crate) async fn prepare_pkg_cache(
+    project_root: &Path,
+) -> Result<tauri_plugin_agent_tools::workspace::PkgCache, String> {
+    tauri_plugin_agent_tools::workspace::prepare_pkg_cache(&project_cache_dir(project_root)).await
+}
+
 /// The Jan home the general tools and the sandboxed shell may not reach while
 /// `sandbox` is on (see `workspace::hidden_root`). Resolved through [`jan_home`]
 /// so tests hide their temp home, not the developer's.
@@ -548,10 +584,11 @@ pub(crate) struct RunSettings {
     /// like the `[agent]` section it comes from.
     #[cfg(feature = "cli")]
     pub worktree: Option<bool>,
-    /// One line per `[tools]` `allow`/`deny`/`allow_write` entry that names the
-    /// shell tool's old name `bash`, which now matches nothing. Reported at run
-    /// start with the hook-load notices, so a deny rule that stopped applying
-    /// does not do so silently.
+    /// One line per `[tools]` `allow`/`deny`/`allow_write` entry that names a
+    /// tool by an old name: the shell's `bash`, which now matches nothing, or
+    /// an old memory tool, which now applies to all of `memory`. Reported at
+    /// run start with the hook-load notices, so a rule whose reach changed does
+    /// not do so silently.
     pub tool_notices: Vec<String>,
 }
 
@@ -587,7 +624,7 @@ fn renamed_tool_notices(tools: &ToolsSection) -> Vec<String> {
     .into_iter()
     .flat_map(|(where_, list)| {
         list.iter().filter_map(move |name| {
-            tauri_plugin_agent_tools::tools::renamed_shell_notice(name, where_)
+            tauri_plugin_agent_tools::tools::renamed_tool_notice(name, where_)
         })
     })
     .collect()
@@ -893,6 +930,20 @@ mod tests {
         let notices = run_settings(&root).tool_notices;
         assert_eq!(notices.len(), 1, "{notices:?}");
         assert!(notices[0].starts_with("[tools] deny names `bash`"), "{}", notices[0]);
+    }
+
+    /// A `[tools]` entry on an old memory tool name still applies, to the
+    /// whole `memory` tool, and is reported so the user renames it.
+    #[test]
+    fn a_tools_list_naming_an_old_memory_tool_still_applies_and_is_reported() {
+        let root = unique_root("renamed_memory");
+        write_agent_toml(&root, "[tools]\ndeny = [\"memory_write\"]\n");
+        let notices = run_settings(&root).tool_notices;
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert!(notices[0].starts_with("[tools] deny names `memory_write`"), "{}", notices[0]);
+        let cfg = load_agent_config(&root).unwrap();
+        assert!(permissions_from(&cfg).is_denied("memory"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

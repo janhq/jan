@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { backendStorage } from '@/lib/backendStorage'
+import { EXTENSION_SERVER_PREFIX } from '@/lib/extensions/tools'
 
 type ToolApprovalState = {
   /** threadId -> tool names trusted for that conversation only. */
@@ -66,7 +67,13 @@ export const useToolApproval = create<ToolApprovalState>()(
       ) => {
         const state = get()
         if (state.approvedToolsGlobal.includes(toolName)) return true
-        if (serverName && state.approvedServers.includes(serverName)) {
+        // Never for an ext: name, even one an older build saved: it would
+        // cover every tool that extension has or later adds.
+        if (
+          serverName &&
+          !serverName.startsWith(EXTENSION_SERVER_PREFIX) &&
+          state.approvedServers.includes(serverName)
+        ) {
           return true
         }
         return state.approvedTools[threadId]?.includes(toolName) || false

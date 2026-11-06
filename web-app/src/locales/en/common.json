@@ -248,7 +248,6 @@
   "loading": "Loading...",
   "settingUpJan": "Booting up Jan…",
   "registeringExtensions": "Registering extensions…",
-  "loadingExtensions": "Loading extensions… ({{done}}/{{total}})",
   "error": "Error",
   "success": "Success",
   "warning": "Warning",
@@ -781,6 +780,7 @@
     "tryAgain": "Try again"
   },
   "modelNoTools": "{{model}} can’t call tools, so it can’t act as an agent. Pick a tool-calling model.",
+  "coworkExtensionProvider": "Cowork cannot run on a provider added by an extension. Pick another model, or use it in a chat.",
   "askContinue": "Continue",
   "askNext": "Next question",
   "askPageOf": "{{current}} of {{total}}",

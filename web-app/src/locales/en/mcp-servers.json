@@ -38,6 +38,7 @@
     "errorPaste": "Invalid JSON format in pasted content",
     "errorFormat": "Invalid JSON format",
     "errorServerName": "Server name is required and cannot be empty",
+    "errorReservedServerName": "Server names starting with \"ext:\" are reserved for extensions.",
     "errorMissingServerNameKey": "JSON must be structured as {\"serverName\": {config}} - missing server name key",
     "errorInvalidType": "Invalid type '{{type}}' for server '{{serverName}}'. Type must be 'stdio', 'http', or 'sse'",
     "save": "Save"
