@@ -3,6 +3,7 @@
   "sortMostDownloaded": "Mais Baixados",
   "newChat": "Nova conversa",
   "download": "Baixar",
+  "downloadFailed": "Falha ao iniciar o download",
   "downloaded": "Baixado",
   "loadingModels": "Carregando modelos...",
   "noModels": "Nenhum modelo encontrado",
@@ -13,5 +14,6 @@
   "useModel": "Usar este modelo",
   "downloadModel": "Baixar modelo",
   "tools": "Ferramentas",
-  "searchPlaceholder": "Buscar modelos no Hugging Face..."
+  "searchPlaceholder": "Buscar modelos no Hugging Face...",
+  "resumeUnavailable": "Não é possível retomar este download. Inicie-o novamente."
 }
