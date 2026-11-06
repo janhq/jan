@@ -944,7 +944,8 @@ async fn execute_tool_inner(
         Decision::HardDeny(gate::DenyReason::Policy) => {
             return Err(format!("tool '{name}' is denied by policy").into());
         }
-        Decision::HardDeny(gate::DenyReason::Hidden) => {
+        // No held shell cwd here, so `HiddenShellCwd` never comes up.
+        Decision::HardDeny(gate::DenyReason::Hidden | gate::DenyReason::HiddenShellCwd) => {
             return Err(format!("tool '{name}' is denied: the Jan home (~/.jan) is hidden").into());
         }
         // An exec prompt asks the user to vouch for a command that could reach

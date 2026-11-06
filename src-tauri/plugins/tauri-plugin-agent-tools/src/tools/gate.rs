@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
-    escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root, in_hidden_root_from,
-    proc_cwd_relative, shell_reads_attached_from,
+    canonicalize_lenient, escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root,
+    in_hidden_root_from, shell_reads_attached_from,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -137,6 +137,11 @@ pub enum DenyReason {
     Policy,
     /// The call reaches the Jan home (`~/.jan`), hidden from every tool.
     Hidden,
+    /// An escalated shell call would start in the held shell cwd, which is in
+    /// the Jan home or above it. Told apart from [`DenyReason::Hidden`]
+    /// because the command itself may name nothing hidden: the fix is to
+    /// move the shell back, which a message has to say.
+    HiddenShellCwd,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -242,25 +247,33 @@ pub fn resolve_decision_with_cwd(
                 .and_then(|v| v.as_str())
                 .is_some_and(hidden_hit)
         });
-        // `/proc/self/cwd` is the shell's own start directory, which the host
-        // would read as Jan's: checked as the relative path it really is.
         let hits_command = tool.capability == Capability::Exec
-            && args.get("command").and_then(|v| v.as_str()).is_some_and(|c| {
-                hidden_tokens(hidden, c).into_iter().any(|t| {
-                    hidden_hit(&proc_cwd_relative(&t).unwrap_or(t))
-                })
-            });
+            && args
+                .get("command")
+                .and_then(|v| v.as_str())
+                .is_some_and(|c| hidden_tokens(hidden, c).iter().any(|t| hidden_hit(t)));
         // An escalated command runs on the host from the held directory
         // whatever it names, so that directory is a token too: one in the
         // home (an attached worktree there, or a link swapped in for it)
-        // would let `/proc/self/cwd/..` or a bare `cat config.toml` reach
-        // it. Without a held directory it starts in the project root, which
-        // the worktree exception keeps reachable, as before.
-        let starts_hidden = shell_cwd.is_some()
+        // would let a bare `cat config.toml` reach it. One above the home
+        // reaches it by a relative path no token scan catches in every
+        // spelling, and no escalated command needs to start there. Without
+        // a held directory it starts in the project root, which the
+        // worktree exception keeps reachable, as before.
+        let starts_hidden = |held: &Path| {
+            let above = canonicalize_lenient(hidden)
+                .ok()
+                .zip(canonicalize_lenient(held).ok())
+                .map_or(true, |(hidden, held)| hidden.starts_with(held));
+            above || hidden_hit(".")
+        };
+        if !shell_reads_only
             && tool.capability == Capability::Exec
-            && !shell_reads_only
-            && hidden_hit(".");
-        if hits_path || hits_command || starts_hidden {
+            && shell_cwd.is_some_and(starts_hidden)
+        {
+            return Decision::HardDeny(DenyReason::HiddenShellCwd);
+        }
+        if hits_path || hits_command {
             return Decision::HardDeny(DenyReason::Hidden);
         }
     }
@@ -1332,9 +1345,11 @@ mod tests {
         assert_eq!(gate(shell, &cat, None), Decision::Prompt(PromptKind::Exec), "no .jan here");
         assert_eq!(gate(shell, &cat, Some(&home)), Decision::HardDeny(DenyReason::Hidden));
         // An escalated command starts in the held dir too, and the hidden
-        // deny runs ahead of the escalate prompt.
+        // deny runs ahead of the escalate prompt. Held above the home, it is
+        // refused for where it starts, whatever it names.
+        let start = Decision::HardDeny(DenyReason::HiddenShellCwd);
         let escalated = json!({"command": "cat .jan/config.toml", ESCALATE_ARG: true});
-        assert_eq!(gate(shell, &escalated, Some(&home)), Decision::HardDeny(DenyReason::Hidden));
+        assert_eq!(gate(shell, &escalated, Some(&home)), start);
         assert_eq!(gate(shell, &escalated, None), Decision::Prompt(PromptKind::Escalate));
         // A substitution's closing `)` is no command boundary: the word after
         // it is still an argument, and is checked.
@@ -1342,7 +1357,12 @@ mod tests {
             "command": "tar czf backup-\"$(date +%F)\".tgz .jan",
             ESCALATE_ARG: true,
         });
-        assert_eq!(gate(shell, &tar, Some(&home)), Decision::HardDeny(DenyReason::Hidden));
+        assert_eq!(gate(shell, &tar, Some(&home)), start);
+        let plain = json!({"command": "/bin/true", ESCALATE_ARG: true});
+        assert_eq!(gate(shell, &plain, Some(&home)), start);
+        // Confined, the sandbox masks the home wherever the shell stands.
+        let plain = json!({"command": "/bin/true"});
+        assert_eq!(gate(shell, &plain, Some(&home)), Decision::Prompt(PromptKind::Exec));
         // Other tools resolve against the project root whatever the shell holds.
         let read = json!({"path": ".jan/config.toml"});
         assert_eq!(gate(lookup("read").unwrap(), &read, Some(&home)), Decision::Allow);
@@ -1412,27 +1432,28 @@ mod tests {
             let args = json!({"command": command, ESCALATE_ARG: escalate});
             resolve_decision_with_cwd(shell, &args, &ctx, Some(&child), &perms, &grants)
         };
+        let start = Decision::HardDeny(DenyReason::HiddenShellCwd);
         let leave = format!("cd '{}'", project.display());
         let leave = leave.as_str();
         for command in ["ls", "ls -la .", "git diff", "cat src/x", "cd", "cd /", leave] {
             assert_eq!(gate(command, false), Decision::Prompt(PromptKind::Exec), "{command}");
-            assert_eq!(gate(command, true), Decision::HardDeny(DenyReason::Hidden), "{command}");
+            assert_eq!(gate(command, true), start, "{command}");
         }
         // Out of the root it is the home again.
         let climb = "cat ../../../config.toml";
         assert_eq!(gate(climb, false), Decision::HardDeny(DenyReason::Hidden));
         // An escalated command may not name the child's tree: it leaves the
         // sandbox that mounts it read-only.
-        assert_eq!(gate("rm -rf src", true), Decision::HardDeny(DenyReason::Hidden));
+        assert_eq!(gate("rm -rf src", true), start);
         // Nor start there with only absolute words: its start dir is in the
         // home whatever it names.
-        assert_eq!(gate("/bin/true", true), Decision::HardDeny(DenyReason::Hidden));
+        assert_eq!(gate("/bin/true", true), start);
         // `/proc/self/cwd` is where the command starts, not Jan's own cwd.
         let leak = format!(
             "/usr/bin/cp /proc/self/cwd/../../../config.toml {}",
             project.join("leak").display()
         );
-        assert_eq!(gate(&leak, true), Decision::HardDeny(DenyReason::Hidden));
+        assert_eq!(gate(&leak, true), start);
         assert_eq!(gate(&leak, false), Decision::HardDeny(DenyReason::Hidden));
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -1469,11 +1490,12 @@ mod tests {
             "/bin/cat //proc/./self/cwd/.jan/config.toml",
             "/bin/tar cf /dev/null /proc/self/cwd/.jan",
         ];
+        let start = Decision::HardDeny(DenyReason::HiddenShellCwd);
         for command in spellings {
-            // Held in the home after a confined `cd ..`.
-            for escalate in [true, false] {
-                assert_eq!(gate(&project, command, escalate, Some(&home)), hidden, "{command}");
-            }
+            // Held in the home's parent after a confined `cd ..`; escalated,
+            // that start dir alone is refused.
+            assert_eq!(gate(&project, command, false, Some(&home)), hidden, "{command}");
+            assert_eq!(gate(&project, command, true, Some(&home)), start, "{command}");
             // No held directory: the shell starts in the project root, here
             // the home itself.
             assert_eq!(gate(&home, command, true, None), hidden, "{command}");
@@ -1485,6 +1507,76 @@ mod tests {
                 "{command}"
             );
         }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Every spelling of the shell's start directory is checked as that
+    /// directory: `$PWD` and `~+` (and `~-`, failing closed), any
+    /// `/proc/<pid>/cwd` however the pid and the path up to it are spelled,
+    /// `/proc/<pid>/root` re-entering `/proc`, and a directory fd opened on
+    /// it. From a held `proj/sub` each climbs into the home; with nothing
+    /// held the same spellings one level shorter do from the project root.
+    #[test]
+    fn every_spelling_of_the_start_dir_is_checked_as_it() {
+        let home = std::fs::canonicalize(unique_root()).unwrap();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        let sub = project.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |command: &str, escalate: bool, held: Option<&Path>| {
+            let args = json!({"command": command, ESCALATE_ARG: escalate});
+            resolve_decision_with_cwd(shell, &args, &ctx, held, &perms, &grants)
+        };
+        let hidden = Decision::HardDeny(DenyReason::Hidden);
+        let spellings = [
+            "/bin/cat /proc/$$/cwd/UP.jan/config.toml",
+            "/bin/cat /proc/$BASHPID/cwd/UP.jan/config.toml",
+            "/bin/cat /proc/1/cwd/UP.jan/config.toml",
+            "/bin/cat /proc/self/../self/cwd/UP.jan/config.toml",
+            "/bin/cat /proc/self/root/proc/self/cwd/UP.jan/config.toml",
+            "/bin/cat /proc/self/task/1/cwd/UP.jan/config.toml",
+            "/bin/cat /proc/self/task/1/root/proc/self/cwd/UP.jan/config.toml",
+            "/bin/cat $PWD/UP.jan/config.toml",
+            "/bin/cat ${PWD}/UP.jan/config.toml",
+            "/bin/cat ~+/UP.jan/config.toml",
+            "/bin/cat ~-/UP.jan/config.toml",
+            "/bin/cat $OLDPWD/UP.jan/config.toml",
+            "exec 3<.; /bin/cat /dev/fd/3/UP.jan/config.toml",
+            "exec 3<.; /bin/cat /proc/self/fd/3/UP.jan/config.toml",
+            "exec 0<.; /bin/cat /dev/stdin/UP.jan/config.toml",
+        ];
+        for spelling in spellings {
+            let from_sub = spelling.replace("UP", "../../");
+            for escalate in [true, false] {
+                assert_eq!(gate(&from_sub, escalate, Some(&sub)), hidden, "{from_sub}");
+            }
+            let from_root = spelling.replace("UP", "../");
+            for escalate in [true, false] {
+                assert_eq!(gate(&from_root, escalate, None), hidden, "{from_root}");
+            }
+            // From the held directory one level is not enough to leave the
+            // project, so nothing hidden is named.
+            assert_eq!(
+                gate(&from_root, true, Some(&sub)),
+                Decision::Prompt(PromptKind::Escalate),
+                "{from_root}"
+            );
+        }
+        // A relative path climbing into `/proc` is the same link.
+        let climb = format!("/bin/cat {}proc/self/cwd/../.jan/config.toml", "../".repeat(12));
+        assert_eq!(gate(&climb, true, None), hidden);
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -1518,7 +1610,7 @@ mod tests {
         std::fs::remove_dir(&sub).unwrap();
         // Relative to the link's own directory, so `proj/../.jan`.
         std::os::unix::fs::symlink("../.jan", &sub).unwrap();
-        assert_eq!(gate(true), Decision::HardDeny(DenyReason::Hidden));
+        assert_eq!(gate(true), Decision::HardDeny(DenyReason::HiddenShellCwd));
         // Confined, the sandbox masks the home wherever the shell stands.
         assert_eq!(gate(false), Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&home);

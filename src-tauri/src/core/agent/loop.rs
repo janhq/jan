@@ -1535,14 +1535,11 @@ impl CompositeToolInvoker {
         if !approved {
             return escalation_denied_msg(name);
         }
-        // Checked (again) once approved: the user may have taken minutes to
-        // answer, and a preapproved call was never prompted.
-        if let Some(refusal) = self.escalated_shell_cwd_refusal(name) {
-            return refusal;
-        }
         // The held directory comes along: the model was told every later call
-        // starts there, and the prompt named it. A gone one refuses the
-        // command rather than running it in the root. Where it lands is held
+        // starts there, and the prompt named it. No host re-check here after
+        // the prompt: the wrapper checks it after its own `cd`, the last
+        // moment a link can be swapped in, and refuses and resets as it does
+        // for a gone one (see `posix_cwd_script`). Where it lands is held
         // too, checked no differently from a confined call's: never on the
         // host, but by the next call entering it inside its own sandbox, or
         // refusing and resetting to the root.
@@ -2313,6 +2310,23 @@ impl CompositeToolInvoker {
                     name,
                     HIDDEN_PATH_REFUSED,
                     &offered,
+                )
+            }
+            // The command may name nothing hidden, so the generic refusal
+            // would leave the model retrying it from the same place. Reset
+            // as the other escalation refusals do (see
+            // `escalated_shell_cwd_refusal`): the project root is always a
+            // safe start, and the model is told to re-run from it.
+            DenyReason::HiddenShellCwd => {
+                let held = self.shell_cwd.as_ref().and_then(|cwd| cwd.lock().unwrap().take());
+                let held = held.map_or_else(|| "(unknown)".into(), |d| d.display().to_string());
+                format!(
+                    "ERROR: tool '{name}' escalation {HIDDEN_PATH_REFUSED} (~/.jan) is hidden, \
+                     and the shell cwd {held} is in it or above it, where an escalated command \
+                     would start outside the sandbox that masks it. The command was not run. The \
+                     shell is back in the project root {}: re-run it from there, or `cd` \
+                     somewhere outside the Jan home first",
+                    self.project_root.display()
                 )
             }
         }
@@ -12982,6 +12996,36 @@ mod tests {
         assert_eq!(*cwd.lock().unwrap(), None, "the shell is back in the root");
         responder.abort();
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An escalated call from a held directory above the Jan home is refused
+    /// for where it would start, though the command names nothing hidden.
+    /// The refusal names that directory and how to get out of it, and resets
+    /// the shell, rather than the generic hidden-home message that would
+    /// leave the model retrying from the same place. No prompt is sent.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", unix))]
+    async fn escalation_from_a_held_shell_cwd_above_the_home_names_it_and_resets() {
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
+            return;
+        }
+        let home = std::fs::canonicalize(unique_project_root()).unwrap();
+        let jan = home.join("jan-home");
+        let project = home.join("proj");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        let (mut invoker, cwd, responder) = held_cwd_escalation(&project, home.clone());
+        invoker.hidden_root = Some(jan);
+        let escalated = json!({ "command": "/bin/true", "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[shell_call("esc", escalated)]).await.unwrap();
+        let text = &out[0].content;
+        assert!(text.contains(HIDDEN_PATH_REFUSED), "{text}");
+        assert!(text.contains(&format!("shell cwd {} is in it", home.display())), "{text}");
+        assert!(text.contains("back in the project root"), "{text}");
+        assert_eq!(*cwd.lock().unwrap(), None, "the shell is back in the root");
+        assert!(!responder.is_finished(), "no prompt was sent");
+        responder.abort();
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// A gated confined exec names the held directory in its prompt, so the

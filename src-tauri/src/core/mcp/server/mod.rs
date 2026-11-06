@@ -258,7 +258,8 @@ impl JanToolServer {
             Decision::HardDeny(DenyReason::Policy) => {
                 return (format!("ERROR: tool '{name}' is denied by policy"), Vec::new())
             }
-            Decision::HardDeny(DenyReason::Hidden) => {
+            // No held shell cwd here, so `HiddenShellCwd` never comes up.
+            Decision::HardDeny(DenyReason::Hidden | DenyReason::HiddenShellCwd) => {
                 let offered: Vec<&str> = tauri_plugin_agent_tools::tools::JAN_HOME_TOOLS
                     .into_iter()
                     .filter(|t| self.opts.served.is_served(t))

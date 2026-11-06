@@ -266,53 +266,142 @@ pub fn in_hidden_root_from(project_root: &Path, base: &Path, hidden: &Path, raw:
 ///
 /// A backslash splits nothing, so a Windows path (`C:\Users\me\x`) stays one
 /// token; a word with one is also checked unescaped, the way a POSIX shell
-/// reads it (`\x` is `x`).
+/// reads it (`\x` is `x`). A word with quotes in it is also checked with them
+/// dropped, as the shell joins it: `"$PWD"/../x` is one path, not two.
+///
+/// A token spelling the shell's start directory some other way (see
+/// [`start_dir_relative`]) is followed by the path it names from there, which
+/// the caller resolves against the start dir like any relative token: read
+/// as written, the host would resolve it against Jan's own process. The word
+/// as written stays a token too: it may also be an ordinary relative path
+/// (a `proc/` directory in the project), and an extra token only adds a
+/// refusal.
 pub fn hidden_tokens(hidden: &Path, command: &str) -> Vec<String> {
     let home = hidden.parent().map(|h| h.to_string_lossy().into_owned());
-    command
-        .split(|c: char| c.is_whitespace() || ";|&><()\"'`=".contains(c))
+    let words = command.split(|c: char| c.is_whitespace() || ";|&><()\"'`=".contains(c));
+    let joined = command
+        .split(|c: char| c.is_whitespace() || ";|&><()`=".contains(c))
+        .filter(|w| w.contains(['"', '\'']))
+        .map(|w| w.replace(['"', '\''], ""));
+    words
+        .map(str::to_string)
+        .chain(joined)
         .filter(|t| !t.is_empty())
         .flat_map(|t| {
-            let unescaped = t.contains('\\').then(|| unescape(t));
-            std::iter::once(t.to_string()).chain(unescaped)
+            let unescaped = t.contains('\\').then(|| unescape(&t));
+            std::iter::once(t).chain(unescaped)
         })
         .map(|t| match &home {
             Some(home) => expand_home(&t, home),
             None => t,
         })
+        .flat_map(|t| {
+            let start = start_dir_relative(&t);
+            std::iter::once(t).chain(start)
+        })
         .collect()
 }
 
-/// A shell token spelling a path through `/proc/self/cwd` (or
-/// `/proc/thread-self/cwd`) as the same path relative to the shell's start
-/// directory, `None` for any other token. The host would resolve that magic
-/// link against Jan's own process cwd, not the directory the shell starts
-/// in, so `/proc/self/cwd/.jan/config.toml` from a shell held in the home
-/// would pass as a path under Jan's cwd. Rewritten by components so a `..`
-/// after the prefix still climbs from the start dir rather than out of
-/// `/proc`; `/proc/<pid>/cwd` names some other process and is not handled.
-pub fn proc_cwd_relative(token: &str) -> Option<String> {
+/// Words a POSIX shell expands to its current directory when it starts: the
+/// start dir. `~-` and `$OLDPWD` name the previous one, which the gate cannot
+/// know, so they are taken as the start dir too, which fails closed as far
+/// as the start dir reaches.
+const START_DIR_WORDS: [&str; 6] = ["$PWD", "${PWD}", "~+", "~-", "$OLDPWD", "${OLDPWD}"];
+
+/// Where a token's leading components put it, as far as
+/// [`start_dir_relative`] cares.
+enum Spot {
+    /// The shell's start directory (or, failing closed, maybe it).
+    Start,
+    /// The filesystem root again, through `/proc/<pid>/root`.
+    Root,
+    Elsewhere,
+}
+
+/// True iff the component `part` may be `literal` once the shell expands it:
+/// equal, or carrying a glob or an expansion that could turn into it
+/// (`/proc/s*/cwd`, `/proc/self/$d`). Fails closed for a word the gate
+/// cannot evaluate.
+fn may_be(part: &str, literal: &str) -> bool {
+    part == literal || part.contains(['*', '?', '[', '$', '{', '`'])
+}
+
+/// Where the components so far (`.`/`..` already applied) lead. Every
+/// process's `cwd` and `root`, and every fd, are matched whatever names the
+/// process (`self`, `$$`, a pid, `thread-self`, a task id): the gate cannot
+/// tell which process a pid is, and the shell's own is one of them.
+fn spot(parts: &[String]) -> Spot {
+    let is = |i: usize, literal: &str| parts.get(i).is_some_and(|p| may_be(p, literal));
+    let proc = is(0, "proc");
+    // `/proc/<pid>` or `/proc/<pid>/task/<tid>`: what follows is the same.
+    let base = if proc && parts.len() >= 5 && is(2, "task") { 4 } else { 2 };
+    match parts.len() {
+        2 if is(0, "dev") && ["stdin", "stdout", "stderr"].iter().any(|s| is(1, s)) => Spot::Start,
+        3 if is(0, "dev") && is(1, "fd") => Spot::Start,
+        n if proc && n == base + 1 && is(base, "cwd") => Spot::Start,
+        n if proc && n == base + 1 && is(base, "root") => Spot::Root,
+        n if proc && n == base + 2 && is(base, "fd") => Spot::Start,
+        _ => Spot::Elsewhere,
+    }
+}
+
+/// A shell token spelling a path through the shell's start directory, as the
+/// same path relative to that directory; `None` for any other token. The
+/// spellings: [`START_DIR_WORDS`] in front, `/proc/<pid>/cwd`, and a
+/// directory fd opened on it (`exec 3<.` then `/dev/fd/3`, `/proc/<pid>/fd/3`,
+/// `/dev/stdin`), the last two failing closed for an fd that names something
+/// else.
+///
+/// The host would resolve each against Jan's own process, not the shell, so
+/// `/proc/self/cwd/../.jan` from a shell held in `~/proj` would pass as a path
+/// under Jan's cwd. Leading components are normalized lexically first, so
+/// `/proc/self/../self/cwd` and `/proc/self/root/proc/self/cwd` (which
+/// re-enters `/proc` from the root) are caught too; what follows the match is
+/// kept as written, so a `..` there climbs from the start dir, as it does in
+/// the shell. A relative token is walked as if from the root, since it may
+/// climb there: at worst an ordinary `proc/x/cwd` directory is also checked
+/// as the start dir, which only adds a refusal.
+///
+/// A token through `/proc/<pid>/root` that never reaches the start dir is
+/// the absolute path it names under that root (`/proc/1/root/etc/x` is
+/// `/etc/x`), which the host may not be allowed to resolve as written.
+pub fn start_dir_relative(token: &str) -> Option<String> {
     use std::path::Component;
-    let mut parts = Path::new(token).components();
-    if parts.next() != Some(Component::RootDir)
-        || parts.next() != Some(Component::Normal("proc".as_ref()))
-    {
-        return None;
+    let rel = |rest: &Path| {
+        Some(match rest.as_os_str().is_empty() {
+            true => ".".to_string(),
+            false => rest.to_string_lossy().into_owned(),
+        })
+    };
+    let mut components = Path::new(token).components();
+    if let Some(Component::Normal(first)) = components.clone().next() {
+        if START_DIR_WORDS.iter().any(|w| first == *w) {
+            components.next();
+            return rel(components.as_path());
+        }
     }
-    let me = parts.next()?;
-    if me != Component::Normal("self".as_ref()) && me != Component::Normal("thread-self".as_ref())
-    {
-        return None;
+    let mut parts: Vec<String> = Vec::new();
+    let mut rerooted = false;
+    while let Some(c) = components.next() {
+        match c {
+            Component::ParentDir => {
+                parts.pop();
+            }
+            Component::Normal(name) => parts.push(name.to_string_lossy().into_owned()),
+            Component::CurDir => {}
+            // A root (or a Windows prefix) restarts the walk.
+            _ => parts.clear(),
+        }
+        match spot(&parts) {
+            Spot::Start => return rel(components.as_path()),
+            Spot::Root => {
+                parts.clear();
+                rerooted = true;
+            }
+            Spot::Elsewhere => {}
+        }
     }
-    if parts.next() != Some(Component::Normal("cwd".as_ref())) {
-        return None;
-    }
-    let rest = parts.as_path();
-    Some(if rest.as_os_str().is_empty() {
-        ".".to_string()
-    } else {
-        rest.to_string_lossy().into_owned()
-    })
+    rerooted.then(|| format!("/{}", parts.join("/")))
 }
 
 /// `word` with POSIX backslash escapes removed: each `\` keeps the character
