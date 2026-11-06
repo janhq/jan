@@ -1900,7 +1900,7 @@ impl CompositeToolInvoker {
                         Err(e) => return format!("ERROR: {e}"),
                     };
                 match crate::core::agent::subagent::message_subagent(&ctx.bg, &target, &message) {
-                    Ok(s) => s,
+                    Ok(s) => s.into_text(),
                     Err(e) => format!("ERROR: {e}"),
                 }
             }

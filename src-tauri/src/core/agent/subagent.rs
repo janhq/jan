@@ -1064,6 +1064,28 @@ fn resolve_target<'a>(
         })
 }
 
+/// What became of a [`message_subagent`] call that did not error. Both carry
+/// the reply the parent agent's tool returns verbatim; the variant is for a
+/// caller that shows the message as sent (the TUI's `/agents` detail), which
+/// must not do so for a message nobody will read.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum MessageReply {
+    /// On the child's inbox: it reads it at its next turn boundary.
+    Queued(String),
+    /// Not queued, and not an error to the model: the child already finished,
+    /// or was stopped before it started.
+    NotDelivered(String),
+}
+
+impl MessageReply {
+    /// The text the `message_subagent` tool replies with.
+    pub(crate) fn into_text(self) -> String {
+        match self {
+            MessageReply::Queued(s) | MessageReply::NotDelivered(s) => s,
+        }
+    }
+}
+
 /// Deliver one parent message to a live child, addressed by the name the
 /// dispatch gave it (see [`resolve_target`]) or its `run_id`.
 ///
@@ -1075,7 +1097,7 @@ pub(crate) fn message_subagent(
     bg: &Arc<BackgroundSubagents>,
     target: &str,
     message: &str,
-) -> Result<String, SubagentError> {
+) -> Result<MessageReply, SubagentError> {
     use std::sync::atomic::Ordering;
     // Pending first: a starting child leaves the pending table only once it
     // is in `inner`, so checked in this order it is always found.
@@ -1093,17 +1115,17 @@ pub(crate) fn message_subagent(
         )
     };
     if finished {
-        return Ok(format!(
+        return Ok(MessageReply::NotDelivered(format!(
             "Subagent '{name}' ({run_id}) has already finished, so there is nobody to read this. \
              Its answer is already yours; dispatch a follow-up subagent if more work is needed."
-        ));
+        )));
     }
     let depth = inbox.push(message.to_string())?;
-    Ok(format!(
+    Ok(MessageReply::Queued(format!(
         "Queued for subagent '{name}' ({run_id}); it reads this at its next turn boundary, after \
          any tool call already in flight. {depth} message(s) pending for it. Keep working -- \
          nothing waits on this."
-    ))
+    )))
 }
 
 /// Stop a live child by name (or `run_id`). Unlike [`BackgroundSubagents::abort_child`]
@@ -1518,22 +1540,26 @@ impl BackgroundSubagents {
     /// `message_subagent` on a child still pending in a live plan: queue it
     /// on the inbox the child starts with. `None` when no such child is
     /// pending, so the caller reports its own "no subagent" error.
-    fn message_pending(&self, name: &str, message: &str) -> Option<Result<String, SubagentError>> {
+    fn message_pending(
+        &self,
+        name: &str,
+        message: &str,
+    ) -> Option<Result<MessageReply, SubagentError>> {
         let pending = self.pending.lock().unwrap();
         let child = pending.get(name)?;
         if child.stopped {
-            return Some(Ok(format!(
+            return Some(Ok(MessageReply::NotDelivered(format!(
                 "Subagent '{name}' was stopped before it started, so nobody will read this. \
                  Dispatch a new subagent if the work is still needed."
-            )));
+            ))));
         }
         Some(child.inbox.push(message.to_string()).map(|depth| {
-            format!(
+            MessageReply::Queued(format!(
                 "Queued for subagent '{name}', which is pending on phase {}: it starts once the \
                  phases before it finish and reads this right after its task, before its first \
                  turn. {depth} message(s) pending for it. Keep working -- nothing waits on this.",
                 child.phase
-            )
+            ))
         }))
     }
 
@@ -5985,7 +6011,7 @@ pub(crate) mod tests {
         let queued_id = dispatch_reviewer(&bg, &args, &events_tx).await;
 
         let reply = message_subagent(&bg, &queued_id, "narrow it to the parser").unwrap();
-        assert!(reply.contains("Queued for subagent"), "{reply}");
+        assert!(reply.clone().into_text().contains("Queued for subagent"), "{reply:?}");
 
         let inbox = bg
             .inner
@@ -7118,6 +7144,8 @@ pub(crate) mod tests {
         let held = parked_plan(&bg, &root, later, &tx).await;
 
         let reply = message_subagent(&bg, "review", "check the parser too").unwrap();
+        assert!(matches!(reply, MessageReply::Queued(_)), "{reply:?}");
+        let reply = reply.into_text();
         assert!(
             reply.contains("review") && reply.contains("pending") && reply.contains("phase 1"),
             "{reply}"
@@ -7163,7 +7191,8 @@ pub(crate) mod tests {
         let again = stop_subagent(&bg, "review").unwrap();
         assert!(again.contains("already"), "{again}");
         let late = message_subagent(&bg, "review", "hello").unwrap();
-        assert!(late.contains("stopped"), "{late}");
+        assert!(matches!(late, MessageReply::NotDelivered(_)), "{late:?}");
+        assert!(late.clone().into_text().contains("stopped"), "{late:?}");
 
         drop(held);
         let pings = drain_plan(&bg).await;
@@ -8342,6 +8371,8 @@ pub(crate) mod tests {
         bg.inner.lock().unwrap().insert("sub-a-1".to_string(), entry);
 
         let reply = message_subagent(&bg, "sub-a-1", "look at loop.rs instead").unwrap();
+        assert!(matches!(reply, MessageReply::Queued(_)), "{reply:?}");
+        let reply = reply.into_text();
         assert!(reply.contains("sub-a-1"), "the reply names the child: {reply}");
 
         let drained = inbox.drain().0;
@@ -8351,6 +8382,7 @@ pub(crate) mod tests {
         assert_eq!(drained[0]["role"], "user");
         assert!(inbox.drain().0.is_empty(), "a drain empties the inbox");
     }
+
 
     /// To the child, the agent that dispatched it is its user: a message steers
     /// it exactly as typed input steers the main agent, as a plain user turn
@@ -8474,6 +8506,8 @@ pub(crate) mod tests {
             g.insert("sub-w-2".into(), b);
         }
         let reply = message_subagent(&bg, "w", "late").unwrap();
+        assert!(matches!(reply, MessageReply::NotDelivered(_)), "{reply:?}");
+        let reply = reply.into_text();
         assert!(reply.contains("already finished") && reply.contains("sub-w-2"), "{reply}");
         assert_eq!(ia.drain().0.len() + ib.drain().0.len(), 0);
     }
@@ -8678,7 +8712,8 @@ pub(crate) mod tests {
 
     /// A finished child is a different situation from a bad id: the parent's
     /// next move is a follow-up dispatch, so it gets a plain result saying so
-    /// rather than an error it might retry.
+    /// rather than an error it might retry. The result still says it was not
+    /// delivered, so a caller that shows a message as sent can tell.
     #[tokio::test]
     async fn a_message_to_a_finished_child_reports_rather_than_errors() {
         let bg = Arc::new(BackgroundSubagents::default());
@@ -8689,6 +8724,8 @@ pub(crate) mod tests {
         bg.inner.lock().unwrap().insert("sub-a-1".to_string(), entry);
 
         let reply = message_subagent(&bg, "sub-a-1", "too late").unwrap();
+        assert!(matches!(reply, MessageReply::NotDelivered(_)), "{reply:?}");
+        let reply = reply.into_text();
         assert!(reply.contains("already finished"), "{reply}");
         assert!(inbox.drain().0.is_empty(), "nothing is queued for a dead child");
     }
