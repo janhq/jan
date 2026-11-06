@@ -14,6 +14,7 @@ use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::nofollow;
+use crate::tools::sandbox;
 use crate::tools::sandbox::{
     escapes_write_roots, hidden_under, in_read_only_root, in_scratch, landing, lexical_normalize,
     refuse_windows_name, resolve_path, symlink_escapes_any_root, Landing,
@@ -1135,9 +1136,10 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         Err(e) => return e,
     };
     // Start where the last call's `cd` left the shell (see `posix_cwd_script`).
-    // The held path is never checked or read on the host: whether it can be
-    // entered is decided inside the sandbox, so holding a path discloses
-    // nothing the sandbox would not.
+    // The held path is never read on the host: whether it can be entered is
+    // decided inside the sandbox, so holding a path discloses nothing the
+    // sandbox would not. The host only asks, before holding it, whether it is
+    // a place the shell may stand (see `unholdable_shell_cwd`).
     let persist = ctx.shell_cwd.as_ref().filter(|_| proc::shell_cwd_supported());
     let start = persist.and_then(|cwd| cwd.lock().unwrap().clone());
     let script = match persist {
@@ -1184,6 +1186,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // denials get the note too.
     let sandboxed = ctx.shell_confined();
     let escalation = ctx.escalation;
+    // The task takes `policy` for its denial note; settling the cwd below
+    // asks it which paths only the sandbox has.
+    let confined_by = sandboxed.then(|| policy.clone());
     // Fed from the first byte, so a command the user opens in `/shells` after it
     // backgrounded still shows what it printed before the timeout.
     let tail = pid.and_then(proc::output_handle);
@@ -1206,7 +1211,12 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
             let (mut out, landed) = res.unwrap_or_else(|_| {
                 ("ERROR: background command ended without producing output".to_string(), None)
             });
-            if let Some(note) = persist.and_then(|cwd| settle_shell_cwd(cwd, root, landed)) {
+            let refused = landed
+                .as_deref()
+                .and_then(|dir| unholdable_shell_cwd(ctx, confined_by.as_ref(), dir));
+            if let Some(note) =
+                persist.and_then(|cwd| settle_shell_cwd(cwd, root, landed, refused))
+            {
                 insert_before_exit_marker(&mut out, &note);
             }
             out
@@ -1470,16 +1480,57 @@ fn unsafe_in_a_note(c: char) -> bool {
             | '\u{2060}'..='\u{2069}' | '\u{FEFF}')
 }
 
+/// Why the shell may not stand in `dir` for later calls, or `None` when it
+/// may. Checked where it landed, before it is held:
+///
+/// - A directory only the sandbox has (`confined_by` is the policy the call
+///   ran under): an escalated call starting there would enter the host's
+///   same-named directory, a different one, and a confined call needs no help
+///   to make a fresh one. See [`jail::sandbox_private`].
+/// - The Jan home outside the project and the attached read roots the confined
+///   shell may name: the gate would refuse every later command naming a path
+///   relative to it, and the sandbox masks it anyway.
+fn unholdable_shell_cwd(
+    ctx: &ToolContext<'_>,
+    confined_by: Option<&jail::Policy>,
+    dir: &Path,
+) -> Option<&'static str> {
+    if confined_by.is_some_and(|policy| jail::sandbox_private(policy, dir)) {
+        return Some(
+            "exists only inside the sandbox (its private /tmp or a masked folder), so a later \
+             command run outside it would land in a different directory",
+        );
+    }
+    let hidden = ctx.hidden_root?;
+    let raw = dir.to_string_lossy();
+    let root = ctx.project_root;
+    (sandbox::in_hidden_root_from(root, root, hidden, &raw)
+        && !sandbox::shell_reads_attached_from(root, root, ctx.read_roots, ctx.write_roots, &raw))
+    .then_some("is in the Jan home, which the shell may not work in")
+}
+
 /// Hold the directory a command ended in for the next call, and say so when it
 /// moved: the model cannot otherwise tell that a later relative command runs
 /// somewhere else. Silent when nothing changed, so a plain command carries no
-/// note. The project root is held as `None`.
+/// note. The project root is held as `None`. A directory `refused` names a
+/// reason for (see [`unholdable_shell_cwd`]) is not held: the shell goes back
+/// to the root, and the note says why, since it did not stay where the
+/// command left it.
 fn settle_shell_cwd(
     cwd: &crate::tools::ShellCwd,
     root: &Path,
     landed: Option<PathBuf>,
+    refused: Option<&str>,
 ) -> Option<String> {
     let landed = landed?;
+    if let Some(why) = refused {
+        *cwd.lock().unwrap() = None;
+        return Some(format!(
+            "\n{SHELL_CWD_TAG} {} {why}; the shell is back in the project root {}]",
+            landed.display(),
+            root.display()
+        ));
+    }
     let canonical_root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let next = (landed != canonical_root).then_some(landed);
     let mut held = cwd.lock().unwrap();
@@ -4424,12 +4475,12 @@ mod tests {
         dir
     }
 
-    /// Inside bubblewrap `/tmp` is a private tmpfs, so a directory there that
-    /// also exists on the host is still one the next call cannot enter: it is
-    /// refused there, not run in the root.
+    /// Inside bubblewrap `/tmp` is a private tmpfs, so a directory made there
+    /// is not the host's same-named one, which an escalated run would enter.
+    /// It is never held: the shell is back in the root at once, and says so.
     #[cfg(target_os = "linux")]
     #[tokio::test]
-    async fn a_sandboxed_cd_into_private_tmp_is_refused_on_the_next_call() {
+    async fn a_sandboxed_cd_into_private_tmp_is_not_held() {
         if !jail::backend().enforces() {
             eprintln!("skipping: no sandbox backend on this host");
             return;
@@ -4443,13 +4494,62 @@ mod tests {
         let ctx = cwd_ctx(&root, &store, &scratch, &cwd, true);
         let make = format!("mkdir -p {0} && cd {0}", shell_quote(&host_twin.to_string_lossy()));
         let out = run_in(&ctx, &make).await;
-        assert!(out.contains("shell cwd is now"), "{out}");
-        let out = run_in(&ctx, "touch ran-here").await;
-        assert!(out.contains("NOT run"), "{out}");
-        assert!(!root.join("ran-here").exists());
+        assert!(out.contains("exists only inside the sandbox"), "{out}");
+        assert!(out.contains("back in the project root"), "{out}");
         assert_eq!(*cwd.lock().unwrap(), None);
+        // The scratch is bound at its real path, so it is held.
+        let out = run_in(&ctx, &format!("cd {}", shell_quote(&scratch.to_string_lossy()))).await;
+        assert!(out.contains("shell cwd is now"), "{out}");
         let _ = std::fs::remove_dir_all(&host_twin);
         let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A directory in the Jan home is not held unless an attached read root
+    /// covers it (a parent viewing a child's worktree) or it is the project
+    /// itself (a worktree under the home): the gate would refuse every command
+    /// that names a relative path from there.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_cd_into_the_jan_home_is_not_held() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        let other = jan.join("worktrees/proj/general-1");
+        let child = jan.join("worktrees/proj/general-2");
+        let project = home.join("proj");
+        for d in [&other, &child, &project] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let store = crate::workspace::project_store(&project);
+        let scratch = unique_root();
+        let roots = vec![std::fs::canonicalize(&child).unwrap()];
+        let cwd = crate::tools::ShellCwd::default();
+        let ctx = cwd_ctx(&project, &store, &scratch, &cwd, false)
+            .with_hidden_root(Some(&jan))
+            .with_read_roots(&roots);
+        let cd = |dir: &Path| format!("cd {}", shell_quote(&dir.to_string_lossy()));
+        for dir in [&other, &jan, &jan.join("worktrees/proj")] {
+            let out = run_in(&ctx, &cd(dir)).await;
+            assert!(out.contains("Jan home"), "{out}");
+            assert!(out.contains("back in the project root"), "{out}");
+            assert_eq!(*cwd.lock().unwrap(), None, "{}", dir.display());
+        }
+        let out = run_in(&ctx, &cd(&child)).await;
+        assert!(out.contains("shell cwd is now"), "{out}");
+        assert_eq!(*cwd.lock().unwrap(), Some(roots[0].clone()));
+        // From the child's worktree, `dirname "$PWD"` lands in the home.
+        let out = run_in(&ctx, "cd \"$(dirname \"$PWD\")\"").await;
+        assert!(out.contains("Jan home"), "{out}");
+        assert_eq!(*cwd.lock().unwrap(), None);
+        // A worktree under the home as the project keeps its own tree.
+        let wt = std::fs::canonicalize(&other).unwrap();
+        std::fs::create_dir_all(wt.join("src")).unwrap();
+        let wt_store = crate::workspace::project_store(&wt);
+        let ctx = cwd_ctx(&wt, &wt_store, &scratch, &cwd, false).with_hidden_root(Some(&jan));
+        let out = run_in(&ctx, "cd src").await;
+        assert!(out.contains("shell cwd is now"), "{out}");
+        assert_eq!(*cwd.lock().unwrap(), Some(wt.join("src")));
+        let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
@@ -5012,8 +5112,20 @@ mod tests {
         let written = [
             jail::denial_hint(&policy),
             ESCALATION_HINT.to_string(),
-            settle_shell_cwd(&std::sync::Arc::default(), Path::new("/w"), Some(PathBuf::from("/x")))
-                .unwrap(),
+            settle_shell_cwd(
+                &std::sync::Arc::default(),
+                Path::new("/w"),
+                Some(PathBuf::from("/x")),
+                None,
+            )
+            .unwrap(),
+            settle_shell_cwd(
+                &std::sync::Arc::default(),
+                Path::new("/w"),
+                Some(PathBuf::from("/x")),
+                Some("is elsewhere"),
+            )
+            .unwrap(),
             format!("\n{} renamed", crate::tools::hooks::NOTICE_TAG),
         ];
         for note in written {

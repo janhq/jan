@@ -257,31 +257,137 @@ pub fn in_hidden_root_from(project_root: &Path, base: &Path, hidden: &Path, raw:
 /// to spell a path under it. The gate refuses a command when one of them is
 /// in the hidden root; best-effort is enough only because the OS sandbox
 /// masks the directory too (see [`super::jail::Policy::hide_root`]).
+///
+/// A word in command position without a `/` (`ls`, `git`, `cd`) is left out:
+/// the shell looks it up on `PATH`, never in the working directory, so it
+/// names no path there. Read as one, it resolves under wherever a `cd` left
+/// the shell, and a shell held in a folder under the home would have every
+/// later command refused, `cd /proj` included. A slashed command word
+/// (`./run.sh`, `~/.jan/x`) is a path and stays.
 pub fn hidden_tokens(hidden: &Path, command: &str) -> Vec<String> {
     let home = hidden.parent().map(|h| h.to_string_lossy().into_owned());
-    command
-        .split(|c: char| c.is_whitespace() || ";|&><()\"'`=".contains(c))
-        .filter(|t| !t.is_empty())
-        .map(|t| match &home {
-            Some(home) => expand_home(t, home),
-            None => t.to_string(),
-        })
-        .collect()
+    let expand = |t: &str| match &home {
+        Some(home) => expand_home(t, home),
+        None => t.to_string(),
+    };
+    let mut tokens = Vec::new();
+    let mut word = String::new();
+    // At the start of a command: the next word is its name.
+    let mut at_command = true;
+    // After `<`/`>`: the next word is a file, wherever the redirect sits.
+    let mut redirect = false;
+    let mut prev = ' ';
+    for c in command.chars().chain(std::iter::once('\n')) {
+        let ends_word = c.is_whitespace() || ";|&><()\"'`".contains(c);
+        if !ends_word {
+            word.push(c);
+            prev = c;
+            continue;
+        }
+        if !word.is_empty() {
+            push_word(&mut tokens, &expand, &word, &mut at_command, redirect);
+            redirect = false;
+            word.clear();
+        }
+        match c {
+            '<' | '>' => redirect = true,
+            // `2>&1` and `<&0` duplicate a descriptor, not start a command.
+            '&' if prev == '>' || prev == '<' => {}
+            '\n' | ';' | '|' | '&' | '(' | ')' | '`' => at_command = true,
+            _ => {}
+        }
+        prev = c;
+    }
+    tokens
+}
+
+/// Sort one word of a command into `tokens` for [`hidden_tokens`], moving
+/// `at_command` past the command's name.
+fn push_word(
+    tokens: &mut Vec<String>,
+    expand: &impl Fn(&str) -> String,
+    word: &str,
+    at_command: &mut bool,
+    redirect: bool,
+) {
+    if redirect {
+        tokens.push(expand(word));
+        return;
+    }
+    if *at_command {
+        // `NAME=value` ahead of a command sets a variable: its value can name
+        // a path, and the command still follows.
+        if let Some((name, value)) = word.split_once('=') {
+            let is_name = name.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+            if is_name {
+                if !value.is_empty() {
+                    tokens.push(expand(value));
+                }
+                return;
+            }
+        }
+        // Reserved words leave the next word in command position.
+        const KEYWORDS: &[&str] =
+            &["if", "then", "else", "elif", "fi", "do", "done", "while", "until", "!", "{", "}"];
+        if KEYWORDS.contains(&word) {
+            return;
+        }
+        *at_command = false;
+        let name = expand(word);
+        if name.contains('/') {
+            tokens.push(name);
+        }
+        return;
+    }
+    // An argument: `--file=path` and `a=b` name paths on either side.
+    tokens.extend(word.split('=').filter(|t| !t.is_empty()).map(expand));
 }
 
 /// True iff `raw` resolves inside one of `roots` (canonicalized attached
 /// folders). Relative paths belong to the project, never to a root.
 pub fn in_attached_root(project_root: &Path, roots: &[PathBuf], raw: &str) -> bool {
-    if roots.is_empty() || !Path::new(raw).is_absolute() {
+    in_attached_root_from(project_root, project_root, roots, raw)
+}
+
+/// [`in_attached_root`] with a relative `raw` resolved against `base`, where
+/// a `cd` left the shell: the same base [`in_hidden_root_from`] resolves it
+/// against, so a shell standing in an attached root under the Jan home is
+/// carved out by the same token that would hit the home. From the project
+/// root itself a relative path still belongs to the project, never a root.
+pub fn in_attached_root_from(
+    project_root: &Path,
+    base: &Path,
+    roots: &[PathBuf],
+    raw: &str,
+) -> bool {
+    if roots.is_empty() || (!Path::new(raw).is_absolute() && base == project_root) {
         return false;
     }
-    let Ok(resolved) = canonicalize_lenient(&resolve_path(project_root, raw)) else {
+    let Ok(resolved) = canonicalize_lenient(&resolve_path(base, raw)) else {
         return false;
     };
     roots
         .iter()
         .filter_map(|r| r.canonicalize().ok())
         .any(|r| resolved.starts_with(r))
+}
+
+/// True iff the confined shell may name `raw` (relative to `base`) even
+/// though it is in the Jan home: it sits in an attached read root the sandbox
+/// mounts read-only, which a root also marked writable is not. The gate's
+/// carve-out and the shell's choice of where it may stand both ask this, so
+/// the shell never holds a directory the gate would then refuse every
+/// command in.
+pub fn shell_reads_attached_from(
+    project_root: &Path,
+    base: &Path,
+    read_roots: &[PathBuf],
+    write_roots: &[PathBuf],
+    raw: &str,
+) -> bool {
+    in_attached_root_from(project_root, base, read_roots, raw)
+        && !in_attached_root_from(project_root, base, write_roots, raw)
 }
 
 fn expand_home(token: &str, home: &str) -> String {
@@ -968,6 +1074,26 @@ mod tests {
         assert!(!command_touches_hidden_root(&project, &jan, "cat ~/.bashrc"));
         assert!(!command_touches_hidden_root(&project, &jan, "ls -la src"));
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A command name without a slash is looked up on `PATH`, never in the
+    /// working directory, so it is not a path token; an argument, a path-like
+    /// command name, and an assignment's value are.
+    #[test]
+    fn hidden_tokens_skip_command_names() {
+        let jan = Path::new("/h/.jan");
+        let tokens = hidden_tokens(
+            jan,
+            "cd /p && ls -la src | grep x; F=~/.jan/c cat y\n./run.sh z $(dirname \"$PWD\")",
+        );
+        assert_eq!(
+            tokens,
+            ["/p", "-la", "src", "x", "/h/.jan/c", "y", "./run.sh", "z", "$", "$PWD"]
+        );
+        // A shell keyword keeps the next word in command position.
+        assert_eq!(hidden_tokens(jan, "if true; then ls; fi"), Vec::<String>::new());
+        // A name before `=` with a slash in it is a path, not a variable.
+        assert_eq!(hidden_tokens(jan, "cat ~/.jan/a=b"), ["/h/.jan/a", "b"]);
     }
 
     #[test]

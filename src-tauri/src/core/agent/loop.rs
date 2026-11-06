@@ -12877,6 +12877,46 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// An escalated `cd` into a host directory the sandbox cannot see (the
+    /// host's `/tmp`, under bubblewrap's private tmpfs) is held, since it runs
+    /// on the host and is not checked there, and the next confined call
+    /// refuses to run anywhere else and resets the shell to the root.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", target_os = "linux"))]
+    async fn an_escalated_cd_the_sandbox_cannot_see_is_refused_by_the_next_call() {
+        use tauri_plugin_agent_tools::tools::jail;
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported()
+            || jail::backend() != jail::Backend::Bubblewrap
+        {
+            return;
+        }
+        let root = unique_project_root();
+        let host = std::path::PathBuf::from(format!("/tmp/jan_loop_host_{}", std::process::id()));
+        std::fs::create_dir_all(&host).unwrap();
+        let host = std::fs::canonicalize(&host).unwrap();
+        let canonical_root = std::fs::canonicalize(&root).unwrap();
+        let (mut invoker, cwd, responder) = held_cwd_escalation(&root, canonical_root);
+        // bubblewrap binds the scratch, so it must exist for the confined call.
+        std::fs::create_dir_all(&invoker.scratch_root).unwrap();
+        // The confined call below runs without a prompt; the escalation
+        // still asks, which the responder answers.
+        invoker.auto_approve = true;
+        let command = format!("cd '{}'", host.display());
+        let escalated = json!({ "command": command, "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[shell_call("esc", escalated)]).await.unwrap();
+        responder.await.unwrap();
+        assert!(out[0].content.contains("shell cwd is now"), "{}", out[0].content);
+        assert_eq!(*cwd.lock().unwrap(), Some(host.clone()));
+        let confined = json!({ "command": "touch marker" });
+        let out = invoker.invoke(&[shell_call("next", confined)]).await.unwrap();
+        assert!(out[0].content.contains("was NOT run"), "{}", out[0].content);
+        assert!(!root.join("marker").exists(), "fell back to the project root");
+        assert!(!host.join("marker").exists(), "ran on the host");
+        assert_eq!(*cwd.lock().unwrap(), None, "the shell is back in the root");
+        let _ = std::fs::remove_dir_all(&host);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A held directory that is gone refuses the escalated command rather than
     /// running it in the project root, and the shell is back in the root.
     #[tokio::test]

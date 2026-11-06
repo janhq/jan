@@ -6,6 +6,7 @@ use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
     escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root, in_hidden_root_from,
+    shell_reads_attached_from,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -211,21 +212,28 @@ pub fn resolve_decision_with_cwd(
         // otherwise `rm -rf` on a child's worktree would be one prompt away.
         let shell_reads_only = tool.capability == Capability::Exec
             && !requests_escalation(tool, args);
-        let carved = |p: &str| match tool.capability {
-            Capability::Read => {
-                in_attached_root(ctx.project_root, ctx.read_roots, p)
-            }
-            Capability::Exec if shell_reads_only => {
-                in_attached_root(ctx.project_root, ctx.read_roots, p)
-                    && !in_attached_root(ctx.project_root, ctx.write_roots, p)
-            }
-            _ => false,
-        };
         // An escalated command starts in the held directory too, so its
         // relative tokens resolve there as well.
         let base = shell_cwd
             .filter(|_| tool.capability == Capability::Exec)
             .unwrap_or(ctx.project_root);
+        // Resolved against the same base as the hidden check: a shell held
+        // in an attached root under the home splits every word of a command
+        // (`ls` too) into a token there, and each must be carved out by the
+        // root it lands in, or nothing could run until the shell left.
+        let carved = |p: &str| match tool.capability {
+            Capability::Read => {
+                in_attached_root(ctx.project_root, ctx.read_roots, p)
+            }
+            Capability::Exec if shell_reads_only => shell_reads_attached_from(
+                ctx.project_root,
+                base,
+                ctx.read_roots,
+                ctx.write_roots,
+                p,
+            ),
+            _ => false,
+        };
         let hidden_hit = |p: &str| {
             in_hidden_root_from(ctx.project_root, base, hidden, p) && !carved(p)
         };
@@ -1349,6 +1357,52 @@ mod tests {
         };
         assert_eq!(gate(None), Decision::Prompt(PromptKind::Exec));
         assert_eq!(gate(Some(&held)), Decision::HardDeny(DenyReason::Hidden));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A parent held in a child's worktree (an attached read root under the
+    /// Jan home, which the sandbox mounts) can still run commands there and
+    /// leave it: every relative token resolves into the home from there, and
+    /// is carved out by the same root. Leaving with a bare `cd` or a `cd` to
+    /// an absolute path is never refused, escalated or not, while the rest of
+    /// the home stays refused.
+    #[test]
+    fn a_held_shell_cwd_in_an_attached_root_under_the_home_is_not_denied() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        let child = jan.join("worktrees/proj/general-2");
+        std::fs::create_dir_all(&child).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let roots = vec![child.clone()];
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &roots,
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |command: &str, escalate: bool| {
+            let args = json!({"command": command, ESCALATE_ARG: escalate});
+            resolve_decision_with_cwd(shell, &args, &ctx, Some(&child), &perms, &grants)
+        };
+        let leave = format!("cd '{}'", project.display());
+        for command in ["ls", "ls -la .", "git diff", "cd", leave.as_str()] {
+            assert_eq!(gate(command, false), Decision::Prompt(PromptKind::Exec), "{command}");
+        }
+        for command in ["cd", leave.as_str(), "cd /"] {
+            assert_eq!(gate(command, true), Decision::Prompt(PromptKind::Escalate), "{command}");
+        }
+        // Out of the root it is the home again.
+        let climb = "cat ../../../config.toml";
+        assert_eq!(gate(climb, false), Decision::HardDeny(DenyReason::Hidden));
+        // An escalated command may not name the child's tree: it leaves the
+        // sandbox that mounts it read-only.
+        assert_eq!(gate("rm -rf src", true), Decision::HardDeny(DenyReason::Hidden));
         let _ = std::fs::remove_dir_all(&home);
     }
 }

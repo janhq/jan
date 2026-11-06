@@ -338,6 +338,56 @@ pub fn wrap(cfg: &ShellConfig, policy: &Policy) -> Option<ShellConfig> {
     }
 }
 
+/// True when `path`, as a shell confined by `policy` names it, is not the
+/// host's directory of that name: it sits on a mount only the sandbox has
+/// (bubblewrap's private `/tmp`, the tmpfs masks over `$HOME` and the Jan
+/// home, its own `/proc` and `/dev`). An unconfined command naming the same
+/// path would reach another directory, or none.
+///
+/// Seatbelt and AppContainer only filter access to the host's filesystem and
+/// remap nothing, so there every path is the host's.
+pub fn sandbox_private(policy: &Policy, path: &Path) -> bool {
+    backend() == Backend::Bubblewrap && bwrap_private(policy, path)
+}
+
+/// [`sandbox_private`] for bubblewrap, read off the argv [`bwrap_args`]
+/// builds so the mount table is described in one place. Mounts apply in
+/// order and a later one over a path hides every earlier one beneath it, so
+/// the last mount covering `path` decides: a tmpfs, `/proc` or `/dev` is the
+/// sandbox's own, a bind of a folder onto its own path is the host's.
+fn bwrap_private(policy: &Policy, path: &Path) -> bool {
+    let cfg = ShellConfig {
+        program: PathBuf::from("/bin/sh"),
+        args: Vec::new(),
+        kind: super::proc::ShellKind::Posix,
+    };
+    let args = bwrap_args(policy, &cfg);
+    let path = crate::tools::sandbox::lexical_normalize(path);
+    let covers = |dest: &str| path.starts_with(dest);
+    let mut private = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--tmpfs" | "--proc" | "--dev" if i + 1 < args.len() => {
+                private |= covers(&args[i + 1]);
+                i += 2;
+            }
+            "--bind" | "--ro-bind" if i + 2 < args.len() => {
+                if covers(&args[i + 2]) {
+                    // A file bound onto another name (the cargo config) is
+                    // not the host's file of that name.
+                    private = args[i + 1] != args[i + 2];
+                }
+                i += 3;
+            }
+            // The shell's own argv follows; nothing after it is a mount.
+            "--" => break,
+            _ => i += 1,
+        }
+    }
+    private
+}
+
 // ---------------------------------------------------------------------------
 // bubblewrap (Linux)
 // ---------------------------------------------------------------------------
@@ -1134,6 +1184,37 @@ mod tests {
 
     fn policy() -> Policy {
         Policy::new(Path::new("/data/agent-workspace/threads/t1"), false)
+    }
+
+    /// A directory on a tmpfs the sandbox mounts is not the host's, unless a
+    /// later bind puts a host folder back at that path.
+    #[test]
+    fn bwrap_private_follows_the_mount_order() {
+        let home = home_dir().expect("a home");
+        let scratch = PathBuf::from("/tmp/jan-scratch");
+        let p = Policy::new(&home.join("proj"), false)
+            .with_scratch_root(&scratch)
+            .with_hide_root(&home.join(".jan"))
+            .with_read_roots(vec![home.join(".jan/worktrees/p/child")]);
+        for private in ["/tmp/x", "/tmp", "/proc/1", "/dev/shm"] {
+            assert!(bwrap_private(&p, Path::new(private)), "{private}");
+        }
+        for private in [home.join("docs"), home.join(".jan/worktrees/p")] {
+            assert!(bwrap_private(&p, &private), "{}", private.display());
+        }
+        for shared in [
+            PathBuf::from("/usr/lib"),
+            PathBuf::from("/"),
+            scratch.join("sub"),
+            home.join("proj/src"),
+            home.join(".jan/worktrees/p/child/src"),
+        ] {
+            assert!(!bwrap_private(&p, &shared), "{}", shared.display());
+        }
+        // A readable home is the host's own.
+        let p = p.with_home_readonly(true);
+        assert!(!bwrap_private(&p, &home.join("docs")));
+        assert!(bwrap_private(&p, &home.join(".jan/x")), "still hidden");
     }
 
     #[cfg(unix)]
