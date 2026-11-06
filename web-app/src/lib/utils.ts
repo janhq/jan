@@ -195,6 +195,8 @@ export const getProviderTitle = (
       return 'MiniMax'
     case 'nvidia':
       return 'NVIDIA NIM'
+    case 'edenai':
+      return 'Eden AI'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }
