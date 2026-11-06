@@ -17,7 +17,7 @@ expression: render_snapshot(buf)
 |────────────────────────────────────────────────────────────────────────────────|
 |› check the lock order too                                                      |
 |                                                                                |
-|📂 /snapshot/repo         PgUp/PgDn scroll   Enter send   Ctrl-X stop   Esc back|
+| PgUp/PgDn scroll   Enter send   Ctrl-X stop   Esc back   Ctrl-C close          |
 
  0 0..2 fg=Yellow
  0 3..14 mod=BOLD
@@ -50,6 +50,4 @@ expression: render_snapshot(buf)
 10 0..80 fg=#56B6C2
 13 0..2 fg=#56B6C2 mod=BOLD
 13 26..27 mod=REVERSED
-15 0..1 fg=#808080
-15 2..17 fg=#808080
-15 25..80 mod=DIM
+15 0..70 mod=DIM

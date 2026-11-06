@@ -923,6 +923,10 @@ struct Pending {
     justification: Option<String>,
     /// Highlighted option in the docked prompt (index into `options()`).
     selected: usize,
+    /// Whether the user moved the highlight with the arrows. Over a subagent's
+    /// `/agents` detail the prompt can land mid-sentence, so there Enter only
+    /// confirms an option the user picked (see `handle_key_input`).
+    picked: bool,
     /// Name of the subagent that requested this, when the call originated inside
     /// a nested subagent run; `None` for the parent agent's own calls.
     subagent: Option<String>,
@@ -1204,7 +1208,9 @@ impl Picker {
             PickerKind::Agents => " \u{2191}/\u{2193} select   Enter view   x stop   Esc close",
             // The input is live here, so the stop is a chord a typed letter
             // cannot hit.
-            PickerKind::AgentDetail => " PgUp/PgDn scroll   Enter send   Ctrl-X stop   Esc back",
+            PickerKind::AgentDetail => {
+                " PgUp/PgDn scroll   Enter send   Ctrl-X stop   Esc back   Ctrl-C close"
+            }
             PickerKind::BackgroundShells => {
                 " \u{2191}/\u{2193} select   Enter view   x stop   Esc close"
             }
@@ -4671,6 +4677,9 @@ struct PendingAsk {
     custom_input: String,
     rect: Rect,
     row_hitboxes: Vec<(u16, usize)>,
+    /// Whether the user moved through the options with the arrows; see
+    /// `Pending::picked`, which this mirrors for a question.
+    picked: bool,
     /// When the `ask` loop auto-selects the recommended option if unanswered.
     /// `Some` only when a timeout was configured; drives the live countdown in
     /// the prompt title. Anchored here at event receipt, a hair before the
@@ -4705,6 +4714,7 @@ impl PendingAsk {
             custom_input: String::new(),
             rect: Rect::default(),
             row_hitboxes: Vec::new(),
+            picked: false,
             deadline: timeout.map(|d| std::time::Instant::now() + d),
         }
     }
@@ -4892,6 +4902,15 @@ impl PendingAsk {
             false
         }
     }
+}
+
+/// A composer's field and its recall, set aside while another owns the input
+/// row (`App::parked_composer`).
+struct Composer {
+    input: String,
+    cursor: usize,
+    history: Vec<String>,
+    recall_pos: Option<usize>,
 }
 
 struct App {
@@ -5131,6 +5150,19 @@ struct App {
     /// Lines the `/agents` detail is scrolled up from its bottom; 0 follows
     /// the child as it works. Clamped to the content on every draw.
     agent_detail_scroll: u16,
+    /// The main composer, parked while a subagent's `/agents` detail has the
+    /// field: the detail's draft is a message to a child, and must never be
+    /// what the next Enter in the main view sends to the main agent. `Some`
+    /// exactly while the swap is in effect (see `settle_agent_detail`).
+    parked_composer: Option<Composer>,
+    /// What was sent to subagents from their detail, for that field's Up/Down
+    /// recall. Kept apart from `input_history` so a steer recalled in the main
+    /// view cannot go to the main agent.
+    steer_history: Vec<String>,
+    /// Why the detail's last send went nowhere (a full inbox, a child that
+    /// already finished), shown over the draft it kept until the next key.
+    /// On the input row rather than in the child's rows, which are its run.
+    steer_refusal: Option<String>,
     /// The background shell the `/shells` inspector is drilled into, or `None`
     /// at the list. Refreshed off the render path (`refresh_shell_tail`).
     shell_detail: Option<ShellDetail>,
@@ -6186,6 +6218,9 @@ impl App {
             mcp_detail: None,
             agent_detail: None,
             agent_detail_scroll: 0,
+            parked_composer: None,
+            steer_history: Vec::new(),
+            steer_refusal: None,
             shell_detail: None,
             mcp_job_request: None,
             mcp_auth: None,
@@ -6904,6 +6939,69 @@ impl App {
     /// The `/agents` detail is open: the composer is aimed at that child.
     fn agent_detail_open(&self) -> bool {
         self.picker.as_ref().is_some_and(|p| p.kind == PickerKind::AgentDetail)
+    }
+
+    /// Drill the open `/agents` list into `target`'s detail, handing the field
+    /// to it: the main composer is parked and the detail's own, empty, takes
+    /// its place, with the steer recall.
+    fn enter_agent_detail(&mut self, target: String) {
+        let Some(picker) = self.picker.as_mut() else {
+            return;
+        };
+        picker.kind = PickerKind::AgentDetail;
+        if self.parked_composer.is_none() {
+            let history = std::mem::take(&mut self.steer_history);
+            self.parked_composer = Some(Composer {
+                input: std::mem::take(&mut self.input),
+                cursor: self.cursor,
+                history: std::mem::replace(&mut self.input_history, history),
+                recall_pos: self.recall_pos,
+            });
+            self.input_clear();
+        }
+        self.agent_detail = Some(target);
+        self.agent_detail_scroll = 0;
+        self.steer_refusal = None;
+    }
+
+    /// Give the field back to the main composer once the detail is no longer
+    /// on screen, however it went: Esc, Ctrl-C, or another screen replacing
+    /// it (a plugin listing that lands meanwhile). Run ahead of every key,
+    /// paste and frame, so no path can leave a child's draft where the main
+    /// agent's next message goes. A draft left in the detail is kept in the
+    /// steer recall.
+    fn settle_agent_detail(&mut self) {
+        if self.agent_detail_open() {
+            return;
+        }
+        self.agent_detail = None;
+        self.agent_detail_scroll = 0;
+        self.steer_refusal = None;
+        let Some(main) = self.parked_composer.take() else {
+            return;
+        };
+        self.record_draft();
+        self.steer_history = std::mem::replace(&mut self.input_history, main.history);
+        self.set_input(main.input);
+        self.cursor = main.cursor.min(self.input.len());
+        self.recall_pos = main.recall_pos;
+    }
+
+    /// Leave the open detail, for the `/agents` list (`to_list`) or the main
+    /// view, handing the field back to the main composer.
+    fn leave_agent_detail(&mut self, to_list: bool) {
+        match self.picker.as_mut() {
+            Some(picker) if to_list => picker.kind = PickerKind::Agents,
+            _ => self.picker = None,
+        }
+        self.settle_agent_detail();
+    }
+
+    /// A permission request or an `ask` waits over the open detail. It owns
+    /// the keyboard there, but the user was typing a message when it landed,
+    /// so only an option picked with the arrows answers it.
+    fn prompt_over_detail(&self) -> bool {
+        self.agent_detail_open() && (!self.pending_queue.is_empty() || !self.ask_queue.is_empty())
     }
 
     /// Lines the view on screen is scrolled up from its bottom: the open
@@ -9082,6 +9180,7 @@ impl App {
                     offers_always,
                     justification,
                     selected: 0,
+                    picked: false,
                     subagent: None,
                 });
                 self.publish_agent_status();
@@ -9493,6 +9592,7 @@ impl App {
                     offers_always,
                     justification,
                     selected: 0,
+                    picked: false,
                     subagent: Some(name.to_string()),
                 });
                 self.publish_agent_status();
@@ -15643,6 +15743,10 @@ async fn handle_ask_key(
         app.request_repaint();
         return true;
     }
+    let over_detail = app.agent_detail_open();
+    if over_detail && detail_leave_key(&key) {
+        return false;
+    }
     if ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')) {
         crate::core::agent::interaction::cancel_all(registry).await;
         app.ask_queue.clear();
@@ -15666,15 +15770,21 @@ async fn handle_ask_key(
                 _ => {}
             }
         } else {
+            if matches!(key.code, KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right) {
+                ask.picked = true;
+            }
+            // Over the detail the user may be mid-message: a space or Enter
+            // typed for it must not choose an option they never picked.
+            let armed = !over_detail || ask.picked;
             match key.code {
                 KeyCode::Up => ask.move_selection(-1),
                 KeyCode::Down => ask.move_selection(1),
                 KeyCode::Left => ask.move_question(-1),
                 KeyCode::Right => ask.move_question(1),
-                KeyCode::Char(' ') if ask.question().multi => {
+                KeyCode::Char(' ') if ask.question().multi && armed => {
                     submit = ask.choose();
                 }
-                KeyCode::Enter => submit = ask.choose(),
+                KeyCode::Enter if armed => submit = ask.choose(),
                 _ => {}
             }
         }
@@ -15693,6 +15803,7 @@ fn route_paste_event(app: &mut App, event: Event) {
     let Event::Paste(text) = event else {
         return;
     };
+    app.settle_agent_detail();
     if let Some(prompt) = app.account_login.as_mut() {
         // A pasted redirect/code belongs to the OAuth prompt, not chat.
         prompt.paste(&text);
@@ -15720,6 +15831,12 @@ fn route_paste_event(app: &mut App, event: Event) {
         prompt.paste(&text);
     } else if !app.ask_queue.is_empty() {
         handle_ask_paste(app, &text);
+    } else if app.picker.is_some()
+        && (app.steerable_detail_child().is_none() || app.prompt_over_detail())
+    {
+        // Under a picker the field reads "selecting...", and a detail that
+        // cannot send (or waits on a prompt) takes no typing: a paste there
+        // would sit unseen in the composer and later go out as a message.
     } else {
         app.input_insert_str(&text);
     }
@@ -16393,6 +16510,9 @@ async fn handle_key_input(
     if key.kind != KeyEventKind::Press {
         return;
     }
+    // Whatever replaced the detail since the last key, the main composer is
+    // what this key edits.
+    app.settle_agent_detail();
 
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
 
@@ -16515,7 +16635,16 @@ async fn handle_key_input(
     // (see `pending_queue`), so cancelling denies all of them, not just the
     // one on screen. Quitting itself stays with the two-press exit below.
     if !app.pending_queue.is_empty() {
-        if ctrl_c || ctrl_d {
+        // Over a subagent's detail the user may be mid-message when the
+        // prompt lands, so the letter keys and an Enter the user never aimed
+        // at it must not answer it, and Esc/Ctrl-C keep their detail meaning
+        // (`detail_leave_key`) rather than denying and cancelling the main run.
+        let over_detail = app.agent_detail_open();
+        if over_detail && detail_leave_key(&key) {
+            handle_agent_detail_key(app, key, ctrl, newline);
+            return;
+        }
+        if !over_detail && (ctrl_c || ctrl_d) {
             for pending in app.pending_queue.drain(..) {
                 deny(registry, &pending.request_id).await;
             }
@@ -16527,6 +16656,9 @@ async fn handle_key_input(
             .pending_queue
             .front_mut()
             .expect("checked non-empty above");
+        if matches!(key.code, KeyCode::Up | KeyCode::Down) {
+            pending.picked = true;
+        }
         let decision = match key.code {
             KeyCode::Up => {
                 pending.move_selection(-1);
@@ -16536,7 +16668,10 @@ async fn handle_key_input(
                 pending.move_selection(1);
                 None
             }
-            KeyCode::Enter => Some(pending.options()[pending.selected].0),
+            KeyCode::Enter if !over_detail || pending.picked => {
+                Some(pending.options()[pending.selected].0)
+            }
+            _ if over_detail => None,
             KeyCode::Char('y') | KeyCode::Char('Y') => Some(PermissionDecision::AllowOnce),
             KeyCode::Char('a') | KeyCode::Char('A') if pending.offers_always => {
                 Some(PermissionDecision::AllowAlways)
@@ -16654,10 +16789,8 @@ async fn handle_key_input(
                 if target.is_empty() {
                     return;
                 }
-                picker.kind = PickerKind::AgentDetail;
                 replay_finished_agent(app, &target);
-                app.agent_detail = Some(target);
-                app.agent_detail_scroll = 0;
+                app.enter_agent_detail(target);
             }
             // `/agents`: `x` stops the selected child through the registry
             // call the parent agent's `stop_subagent` tool makes. Its detail
@@ -19104,26 +19237,16 @@ fn stop_agent(app: &mut App, target: &str) {
 /// A child that can no longer be steered takes no text: only the scroll keys
 /// fall through, so nothing typed piles up in a field that cannot send.
 fn handle_agent_detail_key(app: &mut App, key: KeyEvent, ctrl: bool, newline: bool) -> bool {
-    let back = |app: &mut App, close: bool| {
-        // A draft for this child means nothing to the main agent: kept in
-        // recall, out of the main composer.
-        app.record_draft();
-        app.input_clear();
-        app.agent_detail = None;
-        app.agent_detail_scroll = 0;
-        match app.picker.as_mut() {
-            Some(picker) if !close => picker.kind = PickerKind::Agents,
-            _ => app.picker = None,
-        }
-    };
+    // A refused send is reported until the user acts on it.
+    app.steer_refusal = None;
     match key.code {
         // One level up, to the `/agents` list, as before.
-        KeyCode::Esc => back(app, false),
+        KeyCode::Esc => app.leave_agent_detail(true),
         // Ctrl-C clears a draft first, the way the main composer does; on an
         // empty field it closes the inspector, and never cancels the main run.
         KeyCode::Char('c') | KeyCode::Char('d') if ctrl => {
             if app.input.trim().is_empty() {
-                back(app, true);
+                app.leave_agent_detail(false);
             } else {
                 app.record_draft();
                 app.input_clear();
@@ -19141,6 +19264,9 @@ fn handle_agent_detail_key(app: &mut App, key: KeyEvent, ctrl: bool, newline: bo
             }
         }
         KeyCode::Enter if !newline => send_to_detail_child(app),
+        // A newline opening an empty field is nothing to send; and falling
+        // through, it would step a `/find` on the main transcript behind.
+        KeyCode::Enter if app.input.is_empty() => {}
         // The main session's own keys mean nothing aimed at a child: Ctrl-F
         // would fill the field with a `/find` to send it, Ctrl-V would stage an
         // image the message does not carry, and the effort keys retune the
@@ -19155,7 +19281,7 @@ fn handle_agent_detail_key(app: &mut App, key: KeyEvent, ctrl: bool, newline: bo
         KeyCode::Home | KeyCode::End if app.input.is_empty() => {
             app.agent_detail_scroll = if key.code == KeyCode::Home { u16::MAX } else { 0 };
         }
-        // Up/Down recall like the main composer's (sent steers included)
+        // Up/Down recall what was sent to children (`App::steer_history`)
         // while there is a field to recall into; otherwise they scroll.
         KeyCode::Up | KeyCode::Down if app.steerable_detail_child().is_none() => {
             let scroll = app.view_scroll();
@@ -19174,8 +19300,9 @@ fn handle_agent_detail_key(app: &mut App, key: KeyEvent, ctrl: bool, newline: bo
 /// `message_subagent` tool makes, so the child cannot tell (and need not care)
 /// which of the two steered it. Addressed by `SubagentPanel::target`: the
 /// user picked this exact child, so its run id, or its reserved name while it
-/// is pending (queued for when it starts). A refusal keeps the draft and is
-/// noted in the child's own transcript, the one the user is looking at.
+/// is pending (queued for when it starts). A message that was not queued (a
+/// full inbox, a child that already finished) keeps the draft and says why on
+/// the input row (`App::steer_refusal`), leaving the child's run untouched.
 fn send_to_detail_child(app: &mut App) {
     let text = app.input.trim().to_string();
     if text.is_empty() {
@@ -19187,13 +19314,12 @@ fn send_to_detail_child(app: &mut App) {
     else {
         return;
     };
-    let result = crate::core::agent::subagent::message_subagent(&app.subagent_set, &target, &text);
-    let Some(panel) = app.subagents.iter_mut().find(|p| p.target() == target) else {
-        return;
-    };
-    match result {
-        Ok(_) => {
-            panel.steers_pending += 1;
+    use crate::core::agent::subagent::{message_subagent, MessageReply};
+    match message_subagent(&app.subagent_set, &target, &text) {
+        Ok(MessageReply::Queued(_)) => {
+            if let Some(panel) = app.subagents.iter_mut().find(|p| p.target() == target) {
+                panel.steers_pending += 1;
+            }
             app.record_submitted(&text);
             app.input_clear();
             // One entry, when the user sends it: the child taking it later
@@ -19202,11 +19328,18 @@ fn send_to_detail_child(app: &mut App) {
             // Sending is a request to see the answer: follow the tail again.
             app.agent_detail_scroll = 0;
         }
-        Err(e) => {
-            panel.transcript.finalize_tool_group();
-            panel.transcript.push_note(Level::Error.glyph(), Level::Error, &e.to_string());
-        }
+        Ok(MessageReply::NotDelivered(reply)) => app.steer_refusal = Some(reply),
+        Err(e) => app.steer_refusal = Some(e.to_string()),
     }
+}
+
+/// The keys that leave (or clear) a subagent's detail: Esc and Ctrl-C/Ctrl-D.
+/// A prompt waiting over the detail lets them through to the detail, so they
+/// never deny it or cancel the main run from a screen about a child; the
+/// prompt stays queued and is drawn, with its own keys, where the user lands.
+fn detail_leave_key(key: &KeyEvent) -> bool {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    key.code == KeyCode::Esc || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')))
 }
 
 /// Docked edit prompt for one `/settings` row: value field, inline validation
@@ -24511,7 +24644,7 @@ fn input_scroll(app: &App, area: Rect) -> u16 {
         return 0;
     }
     let visible = area.height.saturating_sub(1);
-    let total = Paragraph::new(input_content_lines(&app.input, app.cursor))
+    let total = Paragraph::new(composer_lines(app))
         .wrap(Wrap { trim: false })
         .line_count(area.width.saturating_sub(2).max(1))
         .min(u16::MAX as usize) as u16;
@@ -24519,6 +24652,9 @@ fn input_scroll(app: &App, area: Rect) -> u16 {
 }
 
 fn draw(f: &mut Frame, app: &mut App) {
+    // A screen that replaced the detail since the last key gets the main
+    // composer back before it is drawn.
+    app.settle_agent_detail();
     // Cached before anything reads it: the plan dock sizes the layout, so a
     // stale width would mis-size the frame a resize lands on. The body spans
     // the full frame width (its border is top-only).
@@ -24657,9 +24793,12 @@ fn draw(f: &mut Frame, app: &mut App) {
         f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
         // The `/mcp` sign-in confirm lives here too: the picker path returns
         // before the overlay chain below, so without this the "open a browser?"
-        // prompt never shows on the one screen that raises it.
+        // prompt never shows on the one screen that raises it. Likewise a
+        // queued permission request or `ask`, whose keys work under a picker.
         if let Some(confirm) = &app.browser_confirm {
             draw_browser_confirm_overlay(f, confirm, chunks[2], chunks[1]);
+        } else {
+            draw_queued_prompt(f, app, chunks[2], chunks[1]);
         }
         return;
     }
@@ -24911,33 +25050,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         draw_provider_prompt(f, rect, prompt);
     } else if let Some(prompt) = &app.web_search_prompt {
         draw_web_search_prompt(f, web_search_prompt_rect(prompt, chunks[1], chunks[2]), prompt);
-    } else if !app.ask_queue.is_empty() {
-        let queue_len = app.ask_queue.len();
-        let ask = app.ask_queue.front_mut().expect("checked non-empty above");
-        let height = ask.box_height(chunks[2].width).min(chunks[1].height);
-        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
-        let rect = ratatui::layout::Rect {
-            x: chunks[2].x,
-            y,
-            width: chunks[2].width,
-            height,
-        };
-        draw_ask(f, rect, ask, queue_len);
-    } else if let Some(pending) = app.pending() {
-        let inner_w = panel_inner_width(chunks[2].width);
-        let detail_rows = pending.detail_lines(inner_w).len() as u16;
-        let diff_rows = pending.diff_preview(inner_w).len() as u16;
-        let height =
-            (pending.options().len() as u16 + detail_rows + diff_rows + 2).min(chunks[1].height);
-        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
-        let rect = ratatui::layout::Rect {
-            x: chunks[2].x,
-            y,
-            width: chunks[2].width,
-            height,
-        };
-        draw_permission(f, rect, pending, app.pending_queue.len());
-    } else {
+    } else if !draw_queued_prompt(f, app, chunks[2], chunks[1]) {
         // Dock the slash-command hints above the input box, growing upward
         // and clamped to the body so they never overrun the transcript.
         let matches = app.slash_matches();
@@ -24987,7 +25100,36 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
 }
 
-fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
+/// Dock the front queued `ask`, else the front permission request, above
+/// `input`, clamped to `body`; false when neither waits. Shared by the main
+/// view and the picker path: the prompt's keys work under a picker too, so it
+/// has to be seen there, above all over a subagent's detail, where the user
+/// may be typing when it lands.
+fn draw_queued_prompt(f: &mut Frame, app: &mut App, input: Rect, body: Rect) -> bool {
+    let over_detail = app.agent_detail_open();
+    if !app.ask_queue.is_empty() {
+        let queue_len = app.ask_queue.len();
+        let ask = app.ask_queue.front_mut().expect("checked non-empty above");
+        let height = ask.box_height(input.width).min(body.height);
+        let y = input.y.saturating_sub(height).max(body.y);
+        let rect = Rect { x: input.x, y, width: input.width, height };
+        draw_ask(f, rect, ask, queue_len, over_detail);
+        return true;
+    }
+    let Some(pending) = app.pending() else {
+        return false;
+    };
+    let inner_w = panel_inner_width(input.width);
+    let detail_rows = pending.detail_lines(inner_w).len() as u16;
+    let diff_rows = pending.diff_preview(inner_w).len() as u16;
+    let height = (pending.options().len() as u16 + detail_rows + diff_rows + 2).min(body.height);
+    let y = input.y.saturating_sub(height).max(body.y);
+    let rect = Rect { x: input.x, y, width: input.width, height };
+    draw_permission(f, rect, pending, app.pending_queue.len());
+    true
+}
+
+fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize, over_detail: bool) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
     let dim = Style::new().fg(theme::muted());
@@ -25056,12 +25198,18 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
             Span::styled("\u{2588}", Style::new().fg(theme::accent())),
         ])
     } else {
+        let toggle = if ask.question().multi { " \u{b7} Space toggle" } else { "" };
+        // Over a subagent's detail Esc goes back and leaves the question
+        // waiting, and Enter needs an option picked first (`handle_ask_key`).
+        let (choose, esc) = match (over_detail, ask.picked) {
+            (false, _) => ("Enter choose", "Esc cancel"),
+            (true, false) => ("pick, then Enter", "Esc back"),
+            (true, true) => ("Enter choose", "Esc back"),
+        };
         Line::styled(
-            if ask.question().multi {
-                "\u{2191}\u{2193} move \u{b7} Space toggle \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
-            } else {
-                "\u{2191}\u{2193} move \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
-            },
+            format!(
+                "\u{2191}\u{2193} move{toggle} \u{b7} {choose} \u{b7} \u{2190}\u{2192} question \u{b7} {esc}"
+            ),
             dim,
         )
     };
@@ -26598,7 +26746,7 @@ fn input_box_height(app: &App, width: u16) -> u16 {
         && !(app.status == Status::Running && app.input.is_empty())
     {
         let inner = width.saturating_sub(2).max(1);
-        let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
+        let rows = Paragraph::new(composer_lines(app))
             .wrap(Wrap { trim: false })
             .line_count(inner)
             .max(1) as u16;
@@ -26607,6 +26755,21 @@ fn input_box_height(app: &App, width: u16) -> u16 {
         1
     };
     content + 1
+}
+
+/// The draft as the input row shows it: `input_content_lines`, then, in a
+/// subagent's detail, why its last send went nowhere (`App::steer_refusal`),
+/// under the draft it kept. One source for the row and the rows it is sized to.
+fn composer_lines(app: &App) -> Vec<Line<'static>> {
+    let mut lines = input_content_lines(&app.input, app.cursor);
+    if let Some(why) = app.steer_refusal.as_ref().filter(|_| app.agent_detail_open()) {
+        let (gutter, body) = Level::Error.styles();
+        lines.push(Line::from(vec![
+            Span::styled(format!("{} ", Level::Error.glyph()), gutter),
+            Span::styled(why.clone(), body),
+        ]));
+    }
+    lines
 }
 
 /// Visible input as styled lines: `USER_GLYPH` on the first line, 2-space hang on
@@ -26780,7 +26943,12 @@ fn detail_input_line(app: &App, width: u16) -> Vec<Line<'static>> {
         return note(format!("{name} is Jan's own agent and takes no messages"));
     }
     if !app.input.is_empty() {
-        return input_content_lines(&app.input, app.cursor);
+        return composer_lines(app);
+    }
+    // The prompt owns the keys until it is answered or left: the field does
+    // not invite typing that would go nowhere.
+    if app.prompt_over_detail() {
+        return note("answer the prompt above, or Esc to go back".to_string());
     }
     if panel.steers_pending > 0 {
         // The main composer's queue cue, for this child's inbox.
@@ -27254,6 +27422,14 @@ fn dock_line(app: &App, width: u16) -> Paragraph<'static> {
 }
 
 fn footer_spans(app: &App) -> Vec<Span<'static>> {
+    // Over a subagent's detail the letters and a stray Enter answer nothing,
+    // and Esc/Ctrl-C step out of the detail (`handle_key_input`).
+    if app.prompt_over_detail() {
+        return hint_spans(
+            Style::new().fg(theme::warning()).bold(),
+            &[("\u{2191}/\u{2193}", "pick"), ("Enter", "confirm the pick"), ("Esc", "back")],
+        );
+    }
     if !app.pending_queue.is_empty() {
         return hint_spans(
             Style::new().fg(theme::warning()).bold(),
@@ -27267,7 +27443,10 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
     }
     // A child that takes no messages has nothing to send or stop.
     if app.agent_detail_open() && app.steerable_detail_child().is_none() {
-        return vec![Span::styled(" PgUp/PgDn scroll   Esc back", Style::new().dim())];
+        return vec![Span::styled(
+            " PgUp/PgDn scroll   Esc back   Ctrl-C close",
+            Style::new().dim(),
+        )];
     }
     if let Some(picker) = &app.picker {
         return vec![Span::styled(picker.action_hint(), Style::new().dim())];
@@ -28598,8 +28777,383 @@ mod tests {
         assert!(text.contains("counter has finished"), "{text}");
         type_key_chars(&mut app, "hello").await;
         assert!(app.input.is_empty(), "{:?}", app.input);
+        // Nor does a paste: the field cannot send it.
+        route_paste_event(&mut app, Event::Paste("pasted".into()));
+        assert!(app.input.is_empty(), "{:?}", app.input);
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
         assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Agents));
+    }
+
+    /// `counter`, live in the registry and on screen, with `/agents` open on
+    /// its detail, as the user reaches it; and the inbox it reads.
+    async fn counter_detail(
+        app: &mut App,
+    ) -> std::sync::Arc<crate::core::agent::subagent::ChildInbox> {
+        let inbox = crate::core::agent::subagent::tests::register_live_child(
+            &app.subagent_set,
+            "sub-counter-1",
+            "counter",
+        );
+        start_subagent(app, "sub-counter-1", "counter");
+        open_agents_picker(app);
+        press(app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+        inbox
+    }
+
+    /// Deliver a key the way the event loop does: a queued `ask` sees it
+    /// first, and only what it declines reaches `handle_key`.
+    async fn press_routed(
+        app: &mut App,
+        asks: &crate::core::agent::interaction::AskRegistry,
+        perms: &PermissionRegistry,
+        code: KeyCode,
+        mods: KeyModifiers,
+    ) {
+        let key = KeyEvent::new(code, mods);
+        if !handle_ask_key(app, key, asks).await {
+            handle_key(app, key, perms, &mut None, &no_mcp()).await;
+        }
+    }
+
+    fn child_permission(app: &mut App, request_id: &str, command: &str) {
+        subagent_event(
+            app,
+            "sub-counter-1",
+            "counter",
+            StreamEvent::PermissionRequest {
+                request_id: request_id.into(),
+                tool_name: "bash".into(),
+                capability: "execute".into(),
+                path: None,
+                command: Some(command.into()),
+                diff: None,
+                prompt_kind: "exec".into(),
+                offers_always: true,
+                justification: None,
+            },
+        );
+    }
+
+    /// A child's permission request that lands while its detail is open is
+    /// drawn over the detail, and what the user was typing answers nothing:
+    /// `a` is not "allow always" and the Enter that would have sent the
+    /// message does not confirm the highlighted option. Only an option picked
+    /// with the arrows and confirmed with Enter answers it.
+    #[tokio::test]
+    async fn a_prompt_over_the_detail_is_drawn_and_typing_does_not_answer_it() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        app.status = Status::Running;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (tx, mut decision) = tokio::sync::oneshot::channel();
+        perms.lock().await.insert("p1".to_string(), tx);
+        child_permission(&mut app, "p1", "rm -rf build");
+
+        for ch in "also".chars() {
+            press_routed(&mut app, &asks, &perms, KeyCode::Char(ch), KeyModifiers::NONE).await;
+        }
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.pending_queue.len(), 1, "nothing answered the prompt");
+        assert!(decision.try_recv().is_err(), "no decision was sent");
+        assert!(app.input.is_empty(), "nor did the letters type: {:?}", app.input);
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("permission required"), "{screen}");
+        assert!(screen.contains("rm -rf build"), "{screen}");
+        assert!(footer_text(&app).contains("pick"), "{}", footer_text(&app));
+
+        press_routed(&mut app, &asks, &perms, KeyCode::Down, KeyModifiers::NONE).await;
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(app.pending_queue.is_empty());
+        assert_eq!(decision.try_recv().unwrap(), PermissionDecision::AllowAlways);
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+    }
+
+    /// The same for an `ask`: drawn over the detail, deaf to typing, and
+    /// answered only by an arrow-picked Enter.
+    #[tokio::test]
+    async fn an_ask_over_the_detail_is_drawn_and_typing_does_not_answer_it() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (request_id, answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+
+        for ch in "also".chars() {
+            press_routed(&mut app, &asks, &perms, KeyCode::Char(ch), KeyModifiers::NONE).await;
+        }
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        route_paste_event(&mut app, Event::Paste("pasted".into()));
+        assert_eq!(app.ask_queue.len(), 1, "nothing answered the ask");
+        assert!(app.ask_queue[0].answers[0].selected.is_empty());
+        assert!(app.input.is_empty(), "{:?}", app.input);
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("Which scope?"), "{screen}");
+
+        press_routed(&mut app, &asks, &perms, KeyCode::Down, KeyModifiers::NONE).await;
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(app.ask_queue.is_empty());
+        assert_eq!(answer.await.unwrap().unwrap()[0].selected, vec!["Large"]);
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+    }
+
+    /// Ctrl-C in the detail clears the draft, then closes the inspector. It
+    /// never cancels the main run or arms the exit, and with a prompt up it
+    /// neither denies it nor cancels anything: the prompt waits in the main
+    /// view.
+    #[tokio::test]
+    async fn ctrl_c_in_the_detail_never_cancels_the_main_run() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        app.status = Status::Running;
+        assert!(footer_text(&app).contains("Ctrl-C close"), "{}", footer_text(&app));
+        type_key_chars(&mut app, "draft").await;
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.input.is_empty());
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.picker.is_none(), "the empty field closes the inspector");
+        assert_eq!(app.status, Status::Running, "the main run goes on");
+        assert!(!app.should_quit && !app.exit_armed);
+
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (tx, mut decision) = tokio::sync::oneshot::channel();
+        perms.lock().await.insert("p1".to_string(), tx);
+        child_permission(&mut app, "p1", "ls");
+        let ctrl_c = (KeyCode::Char('c'), KeyModifiers::CONTROL);
+        press_routed(&mut app, &asks, &perms, ctrl_c.0, ctrl_c.1).await;
+        assert!(app.picker.is_none());
+        assert_eq!(app.pending_queue.len(), 1, "the prompt still waits");
+        assert!(decision.try_recv().is_err(), "nothing was denied");
+        assert_eq!(app.status, Status::Running);
+        assert!(!app.should_quit && !app.exit_armed);
+    }
+
+    /// The `Pending (n)` cue counts what was sent and not yet taken: it rises
+    /// with each send and falls as the child takes each message.
+    #[tokio::test]
+    async fn the_detail_pending_cue_rises_on_send_and_falls_on_delivery() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let screen = |app: &mut App| render_rows(app, 100, 30).join("\n");
+        for text in ["one", "two"] {
+            type_key_chars(&mut app, text).await;
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        }
+        assert!(screen(&mut app).contains("Pending (2)"), "{}", screen(&mut app));
+        for text in ["one", "two"] {
+            subagent_event(
+                &mut app,
+                "sub-counter-1",
+                "counter",
+                StreamEvent::AgentMessage {
+                    from: super::MAIN_AGENT.into(),
+                    to: "counter".into(),
+                    text: text.into(),
+                },
+            );
+            if text == "one" {
+                assert!(screen(&mut app).contains("Pending (1)"), "{}", screen(&mut app));
+            }
+        }
+        assert!(!screen(&mut app).contains("Pending ("), "{}", screen(&mut app));
+    }
+
+    /// A live child's field takes a paste like the main composer does.
+    #[tokio::test]
+    async fn a_paste_lands_in_a_live_childs_field() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        route_paste_event(&mut app, Event::Paste("look at a.rs".into()));
+        assert_eq!(app.input, "look at a.rs");
+    }
+
+    /// The `/agents` list has no field: a paste there is dropped, not hidden in
+    /// the composer to turn up later as a message to a child.
+    #[tokio::test]
+    async fn a_paste_on_the_agents_list_goes_nowhere() {
+        let mut app = test_app();
+        crate::core::agent::subagent::tests::register_live_child(
+            &app.subagent_set,
+            "sub-counter-1",
+            "counter",
+        );
+        start_subagent(&mut app, "sub-counter-1", "counter");
+        open_agents_picker(&mut app);
+        route_paste_event(&mut app, Event::Paste("stray".into()));
+        assert!(app.input.is_empty(), "{:?}", app.input);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(app.input.is_empty(), "{:?}", app.input);
+    }
+
+    /// Up/Down in the detail recall what was sent to children, on an empty
+    /// field, and otherwise scroll the child's run. The main composer's recall
+    /// is its own: a steer never comes back there to go to the main agent.
+    #[tokio::test]
+    async fn detail_recall_is_the_detail_own_and_scrolls_otherwise() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.agent_detail_scroll, 1, "nothing to recall: Up scrolls");
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        assert_eq!(app.agent_detail_scroll, 0);
+
+        type_key_chars(&mut app, "first").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "first", "Up recalls the sent message");
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        assert!(app.input.is_empty());
+        type_key_chars(&mut app, "x").await;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "x", "with a draft, Up scrolls");
+        assert_eq!(app.agent_detail_scroll, 1);
+
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.picker.is_none());
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert!(app.input.is_empty(), "a steer is not main recall: {:?}", app.input);
+        assert_eq!(app.scrollback, 1, "with nothing to recall, Up scrolls");
+    }
+
+    /// The main composer's draft and scroll position are where they were
+    /// after a visit to a child's detail, whatever was typed or scrolled there.
+    #[tokio::test]
+    async fn the_main_draft_and_scrollback_survive_the_detail() {
+        let mut app = test_app();
+        app.scrollback = 4;
+        app.set_input("main draft".to_string());
+        counter_detail(&mut app).await;
+        assert!(app.input.is_empty(), "the detail's field is its own");
+        press(&mut app, KeyCode::PageUp, KeyModifiers::NONE).await;
+        type_key_chars(&mut app, "for the child").await;
+        assert_eq!(app.scrollback, 4);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.picker.is_none());
+        assert_eq!(app.input, "main draft");
+        assert_eq!(app.scrollback, 4);
+    }
+
+    /// Another screen replacing the detail (a plugin collection listing
+    /// arriving) leaves no child draft in the main composer, where the next
+    /// Enter would send it to the main agent.
+    #[tokio::test]
+    async fn a_picker_replacing_the_detail_restores_the_main_composer() {
+        let mut app = test_app();
+        app.set_input("main draft".to_string());
+        counter_detail(&mut app).await;
+        type_key_chars(&mut app, "for the child").await;
+        finish_plugin_install(
+            &mut app,
+            Some("file:///tmp/collection".to_string()),
+            Ok(crate::core::agent::plugins::GitInstall::Collection(vec![
+                crate::core::agent::plugins::CollectionPlugin {
+                    path: "alpha".to_string(),
+                    installed: false,
+                },
+            ])),
+        );
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::PluginSelect));
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.picker.is_none());
+        assert_eq!(app.input, "main draft");
+        assert!(app.agent_detail.is_none());
+    }
+
+    /// The field is a message to the child, which runs no commands: a
+    /// `/word` typed there is sent as written.
+    #[tokio::test]
+    async fn a_typed_command_in_the_detail_is_sent_verbatim() {
+        let mut app = test_app();
+        let inbox = counter_detail(&mut app).await;
+        app.submit_user("keep me".to_string());
+        type_key_chars(&mut app, "/clear").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(inbox.drain().1, vec!["/clear".to_string()]);
+        assert!(transcript_text(&app).contains("keep me"), "nothing was cleared");
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+    }
+
+    /// The registry marks the child finished before its end reaches the
+    /// screen: the core takes the message without queueing it, so it is not
+    /// shown as sent. The draft stays and the reason shows on the input row.
+    #[tokio::test]
+    async fn a_message_to_a_child_that_just_finished_is_not_shown_as_sent() {
+        let mut app = test_app();
+        let inbox = counter_detail(&mut app).await;
+        crate::core::agent::subagent::stop_subagent(&app.subagent_set, "sub-counter-1").unwrap();
+        type_key_chars(&mut app, "late").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "late", "the draft is kept");
+        assert_eq!(app.subagents[0].steers_pending, 0);
+        assert!(!transcript_text(&app).contains("Message to counter"), "{}", transcript_text(&app));
+        assert!(inbox.drain().0.is_empty());
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("already finished"), "{screen}");
+        assert!(!screen.contains("Pending ("), "{screen}");
+    }
+
+    /// A refused send (a full inbox) leaves the child's run as it was: its
+    /// running tool group is not closed, nothing is added to its rows, and
+    /// the view is not moved. The error shows on the input row, over the
+    /// draft it kept.
+    #[tokio::test]
+    async fn a_refused_send_leaves_the_childs_run_alone() {
+        let mut app = test_app();
+        let inbox = counter_detail(&mut app).await;
+        subagent_event(
+            &mut app,
+            "sub-counter-1",
+            "counter",
+            StreamEvent::ToolCall {
+                id: "c1".into(),
+                name: "bash".into(),
+                args: json!({ "command": "sleep 20" }),
+            },
+        );
+        for i in 0..crate::core::agent::subagent::MAX_CHILD_INBOX {
+            inbox.push(format!("m{i}")).unwrap();
+        }
+        let rows = app.subagents[0].transcript.rows.len();
+        app.agent_detail_scroll = 2;
+        type_key_chars(&mut app, "more").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "more");
+        let child = &app.subagents[0].transcript;
+        assert!(child.tool_group.is_some(), "the running group is still open");
+        assert_eq!(child.rows.len(), rows, "nothing added to the child's run");
+        assert_eq!(app.agent_detail_scroll, 2, "the view did not move");
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("inbox is full"), "{screen}");
+        assert!(screen.contains("more"), "{screen}");
+    }
+
+    /// A modified Enter on an empty detail field is the detail's: it does not
+    /// step a `/find` running on the main transcript behind it.
+    #[tokio::test]
+    async fn shift_enter_in_the_detail_does_not_step_a_main_find() {
+        let mut app = long_answer_app();
+        run_command(&mut app, "find answer line", &no_mcp()).await;
+        let at = app.find.as_ref().and_then(|f| f.current);
+        assert!(at.is_some());
+        counter_detail(&mut app).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::SHIFT).await;
+        assert_eq!(app.find.as_ref().and_then(|f| f.current), at);
+        press(&mut app, KeyCode::Enter, KeyModifiers::ALT).await;
+        assert_eq!(app.find.as_ref().and_then(|f| f.current), at);
+        assert!(app.input.is_empty(), "{:?}", app.input);
     }
 
     /// A message is one entry: the main agent's `message_subagent` call reads
@@ -28852,7 +29406,8 @@ fn a() {}
     }
 
     /// Esc abandons a draft without sending it, back on the `/agents` list,
-    /// and keeps it in recall rather than leaving it in the main composer.
+    /// and keeps it in the steer recall rather than leaving it in the main
+    /// composer, or in the main recall where Up would send it to main.
     #[tokio::test]
     async fn agents_detail_esc_sends_nothing() {
         let mut app = test_app();
@@ -28869,7 +29424,8 @@ fn a() {}
         assert!(app.input.is_empty());
         assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Agents));
         assert!(inbox.drain().0.is_empty());
-        assert_eq!(app.input_history.last().map(String::as_str), Some("never mind"));
+        assert!(app.input_history.is_empty(), "{:?}", app.input_history);
+        assert_eq!(app.steer_history.last().map(String::as_str), Some("never mind"));
     }
 
     /// `x` on the list stops the selected child through `stop_subagent`.
@@ -29680,6 +30236,7 @@ fn a() {}
             offers_always,
             justification: None,
             selected: 0,
+            picked: false,
             subagent: None,
         }
     }

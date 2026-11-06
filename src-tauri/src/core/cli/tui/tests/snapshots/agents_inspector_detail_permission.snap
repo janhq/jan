@@ -1,0 +1,84 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+| 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ◉ [working]              |
+|╭ subagent ────────────────────────────────────────────────────────────────────╮|
+|│ kv-review  (sub-kv-review-1)                                                 │|
+|│ 0 tools · 1 req · 75% cache hit  Running                                     │|
+|│                                                                              │|
+|│ Review the key-value store for races.                                        │|
+|│                                                                              │|
+|│                                                                              │|
+|│                                                                              │|
+|╭ permission required ─────────────────────────────────────────────────────────╮|
+|│ subagent kv-review is asking:                                                │|
+|│ bash wants execute                                                           │|
+|│ $ cargo test --lib                                                           │|
+|│ ▶ Allow once                                                                 │|
+|│   Allow all 'cargo' commands (this thread)                                   │|
+|│   Deny                                                                       │|
+|╰──────────────────────────────────────────────────────────────────────────────╯|
+|› also                                                                          |
+|                                                                                |
+|📂 /snapshot/repo                   ↑/↓ pick   Enter confirm the pick   Esc back|
+
+ 0 0..2 fg=Yellow
+ 0 3..14 mod=BOLD
+ 0 14..29 fg=#E5C07B
+ 0 55..57 fg=#56B6C2
+ 0 57..66 fg=#56B6C2 mod=BOLD
+ 1 0..80 fg=#56B6C2
+ 2 0..1 fg=#56B6C2
+ 2 2..11 fg=#56B6C2 mod=BOLD
+ 2 11..30 fg=#808080
+ 2 79..80 fg=#56B6C2
+ 3 0..1 fg=#56B6C2
+ 3 2..33 fg=#808080
+ 3 35..42 fg=#56B6C2 mod=BOLD
+ 3 79..80 fg=#56B6C2
+ 4 0..1 fg=#56B6C2
+ 4 79..80 fg=#56B6C2
+ 5 0..1 fg=#56B6C2
+ 5 2..39 mod=DIM | ITALIC
+ 5 79..80 fg=#56B6C2
+ 6 0..1 fg=#56B6C2
+ 6 79..80 fg=#56B6C2
+ 7 0..1 fg=#56B6C2
+ 7 79..80 fg=#56B6C2
+ 8 0..1 fg=#56B6C2
+ 8 79..80 fg=#56B6C2
+ 9 0..1 fg=#E5C07B
+ 9 1..22 fg=Black bg=#E5C07B mod=BOLD
+ 9 22..80 fg=#E5C07B
+10 0..1 fg=#E5C07B
+10 2..11 fg=DarkGray
+10 11..20 fg=#56B6C2 mod=BOLD
+10 20..31 fg=DarkGray
+10 79..80 fg=#E5C07B
+11 0..1 fg=#E5C07B
+11 2..6 fg=Cyan mod=BOLD
+11 6..13 fg=DarkGray
+11 13..20 fg=Yellow mod=BOLD
+11 79..80 fg=#E5C07B
+12 0..1 fg=#E5C07B
+12 2..4 fg=DarkGray
+12 79..80 fg=#E5C07B
+13 0..1 fg=#E5C07B
+13 2..78 fg=Cyan mod=BOLD
+13 79..80 fg=#E5C07B
+14 0..1 fg=#E5C07B
+14 79..80 fg=#E5C07B
+15 0..1 fg=#E5C07B
+15 79..80 fg=#E5C07B
+16 0..80 fg=#E5C07B
+17 0..2 fg=#56B6C2 mod=BOLD
+17 6..7 mod=REVERSED
+19 0..1 fg=#808080
+19 2..17 fg=#808080
+19 36..39 fg=#E5C07B mod=BOLD
+19 39..44 mod=DIM
+19 47..52 fg=#E5C07B mod=BOLD
+19 52..69 mod=DIM
+19 72..75 fg=#E5C07B mod=BOLD
+19 75..80 mod=DIM

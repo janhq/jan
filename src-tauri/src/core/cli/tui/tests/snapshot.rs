@@ -954,6 +954,67 @@ fn agents_inspector_detail_takes_a_message() {
     assert_buffer("agents_inspector_detail_draft", &frame(&mut app, DARK, 80, 16));
 }
 
+/// A permission request from the child lands while its detail is open: it is
+/// drawn over the detail, and the footer says only a picked option answers.
+#[test]
+fn agents_inspector_detail_under_a_permission_prompt() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    child(&mut app, StreamEvent::Step { index: 1, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Token {
+            text: "Running the tests.".into(),
+        },
+    );
+    open_kv_review_detail(&mut app);
+    app.input = "also".into();
+    app.cursor = app.input.len();
+    child(
+        &mut app,
+        StreamEvent::PermissionRequest {
+            request_id: "p1".into(),
+            tool_name: "bash".into(),
+            capability: "execute".into(),
+            path: None,
+            command: Some("cargo test --lib".into()),
+            diff: None,
+            prompt_kind: "exec".into(),
+            offers_always: true,
+            justification: None,
+        },
+    );
+    assert_buffer(
+        "agents_inspector_detail_permission",
+        &frame(&mut app, DARK, 80, 20),
+    );
+}
+
+/// The same for an `ask`: drawn over the detail, its help line naming the
+/// detail's keys.
+#[test]
+fn agents_inspector_detail_under_an_ask() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    open_kv_review_detail(&mut app);
+    let request = crate::core::agent::interaction::AskRequest::parse(&json!({
+        "questions": [{
+            "id": "scope",
+            "question": "Which scope?",
+            "options": [{"label": "Small"}, {"label": "Large"}]
+        }]
+    }))
+    .unwrap();
+    app.apply(StreamEvent::AskRequest {
+        request_id: "a1".into(),
+        request,
+        timeout_secs: None,
+    });
+    assert_buffer("agents_inspector_detail_ask", &frame(&mut app, DARK, 80, 20));
+}
+
 // ---- Model picker -----------------------------------------------------------
 
 fn picker_app() -> TestApp {

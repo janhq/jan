@@ -31,7 +31,7 @@ expression: render_snapshot(buf)
 |────────────────────────────────────────────────────────────────────────────────|
 |›   working…       (type to message kv-review, Ctrl-X to stop)                  |
 |                                                                                |
-|📂 /snapshot/repo         PgUp/PgDn scroll   Enter send   Ctrl-X stop   Esc back|
+| PgUp/PgDn scroll   Enter send   Ctrl-X stop   Esc back   Ctrl-C close          |
 
  0 0..2 fg=Yellow
  0 3..14 mod=BOLD
@@ -130,6 +130,4 @@ expression: render_snapshot(buf)
 27 2..3 mod=REVERSED
 27 4..12 mod=DIM | ITALIC
 27 18..62 mod=DIM | ITALIC
-29 0..1 fg=#808080
-29 2..17 fg=#808080
-29 25..80 mod=DIM
+29 0..70 mod=DIM
