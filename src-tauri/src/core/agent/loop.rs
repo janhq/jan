@@ -1441,6 +1441,16 @@ impl CompositeToolInvoker {
         Some(held.display().to_string())
     }
 
+    /// The refusal for an escalated `name` call whose held shell directory is
+    /// no longer one it may start in; see
+    /// [`tauri_plugin_agent_tools::tools::handlers::escalated_shell_cwd_refusal`].
+    fn escalated_shell_cwd_refusal(&self, name: &str) -> Option<String> {
+        let why = tauri_plugin_agent_tools::tools::handlers::escalated_shell_cwd_refusal(
+            &self.tool_context(),
+        )?;
+        Some(format!("ERROR: tool '{name}' escalation refused: {why}."))
+    }
+
     /// A tool context whose output streams to the run's event channel as
     /// [`StreamEvent::ToolOutputDelta`], tagged with the call's `id`.
     ///
@@ -1483,6 +1493,11 @@ impl CompositeToolInvoker {
             // under it: under `--safe` the command would have been asked about
             // anyway, so one prompt covers both.
             Escalation::Allow | Escalation::Prompt => {
+                // Before the prompt, so the directory it names is the one the
+                // command would really start in, not a link swapped in for it.
+                if let Some(refusal) = self.escalated_shell_cwd_refusal(name) {
+                    return refusal;
+                }
                 let request_id = next_permission_id();
                 let (tx, rx) = tokio::sync::oneshot::channel();
                 self.permission_requests
@@ -1519,6 +1534,11 @@ impl CompositeToolInvoker {
         };
         if !approved {
             return escalation_denied_msg(name);
+        }
+        // Checked (again) once approved: the user may have taken minutes to
+        // answer, and a preapproved call was never prompted.
+        if let Some(refusal) = self.escalated_shell_cwd_refusal(name) {
+            return refusal;
         }
         // The held directory comes along: the model was told every later call
         // starts there, and the prompt named it. A gone one refuses the
@@ -12934,6 +12954,33 @@ mod tests {
         assert!(out[0].content.contains("was NOT run"), "{}", out[0].content);
         assert!(!root.join("marker").exists(), "fell back to the project root");
         assert_eq!(*cwd.lock().unwrap(), None, "the shell is back in the root");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A held directory swapped for a link refuses the escalation before the
+    /// user is asked: the prompt would name the held path while the command
+    /// followed the link somewhere else. The shell is back in the root.
+    #[tokio::test]
+    #[cfg(all(feature = "cli", unix))]
+    async fn escalation_refuses_a_held_shell_cwd_swapped_for_a_link() {
+        if !tauri_plugin_agent_tools::tools::proc::shell_cwd_supported() {
+            return;
+        }
+        let root = unique_project_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::create_dir_all(root.join("elsewhere")).unwrap();
+        let sub = std::fs::canonicalize(root.join("sub")).unwrap();
+        std::fs::remove_dir(&sub).unwrap();
+        std::os::unix::fs::symlink("elsewhere", &sub).unwrap();
+        let (invoker, cwd, responder) = held_cwd_escalation(&root, sub);
+        let escalated = json!({ "command": "touch marker", "escalate": true, "justification": "x" });
+        let out = invoker.invoke(&[shell_call("esc", escalated)]).await.unwrap();
+        assert!(out[0].content.contains("was not run"), "{}", out[0].content);
+        assert!(out[0].content.contains("back in the project root"), "{}", out[0].content);
+        assert!(!root.join("elsewhere/marker").exists(), "followed the link");
+        assert!(!root.join("marker").exists(), "fell back to the project root");
+        assert_eq!(*cwd.lock().unwrap(), None, "the shell is back in the root");
+        responder.abort();
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -1212,7 +1212,8 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                 ("ERROR: background command ended without producing output".to_string(), None)
             });
             let refused = landed
-                .as_deref()
+                .as_ref()
+                .and_then(Option::as_deref)
                 .and_then(|dir| unholdable_shell_cwd(ctx, confined_by.as_ref(), dir));
             if let Some(note) =
                 persist.and_then(|cwd| settle_shell_cwd(cwd, root, landed, refused))
@@ -1458,14 +1459,18 @@ impl CwdReport {
     }
 
     /// What is still held once the stream ends, and the directory last
-    /// reported, if it reads as one: an absolute, single-line path.
-    fn finish(mut self) -> (Vec<u8>, Option<PathBuf>) {
+    /// reported: `None` when nothing was (a signal killed the shell),
+    /// `Some(None)` when the report does not read as a directory (an
+    /// absolute, single-line path), as when the command removed the one it
+    /// stood in and `pwd -P` failed.
+    fn finish(mut self) -> (Vec<u8>, Option<Option<PathBuf>>) {
         let rest = std::mem::take(&mut self.held);
-        let landed = self
-            .landed
-            .and_then(|raw| String::from_utf8(raw).ok())
-            .filter(|path| path.starts_with('/') && !path.chars().any(unsafe_in_a_note))
-            .map(PathBuf::from);
+        let landed = self.landed.map(|raw| {
+            String::from_utf8(raw)
+                .ok()
+                .filter(|path| path.starts_with('/') && !path.chars().any(unsafe_in_a_note))
+                .map(PathBuf::from)
+        });
         (rest, landed)
     }
 }
@@ -1509,6 +1514,33 @@ fn unholdable_shell_cwd(
     .then_some("is in the Jan home, which the shell may not work in")
 }
 
+/// Why an escalated command may not start in the held shell directory, with
+/// the held directory reset to the project root, or `None` when it may (or
+/// none is held). The held path was checked where the shell landed, but a
+/// component of it can since have been swapped for a link (`rmdir sub && ln
+/// -s ../.jan sub` from beside it): the unconfined `cd` would follow it, into
+/// the Jan home or anywhere else, while the approval prompt names the held
+/// path. So it must still be its own physical path and still a place the
+/// shell may stand. A held directory that is gone is left to the wrapper,
+/// which refuses the command and resets (see [`posix_cwd_script`]).
+pub fn escalated_shell_cwd_refusal(ctx: &ToolContext<'_>) -> Option<String> {
+    let cwd = ctx.shell_cwd.as_ref().filter(|_| proc::shell_cwd_supported())?;
+    let held = cwd.lock().unwrap().clone()?;
+    let real = std::fs::canonicalize(&held).ok()?;
+    let why = if real != held {
+        Some("no longer resolves to itself (a link stands in its path)")
+    } else {
+        unholdable_shell_cwd(ctx, None, &held)
+    }?;
+    *cwd.lock().unwrap() = None;
+    Some(format!(
+        "the shell cwd {} {why}, so the command was not run. The shell is back in the project \
+         root {}: re-run it from there",
+        held.display(),
+        ctx.project_root.display()
+    ))
+}
+
 /// Hold the directory a command ended in for the next call, and say so when it
 /// moved: the model cannot otherwise tell that a later relative command runs
 /// somewhere else. Silent when nothing changed, so a plain command carries no
@@ -1516,13 +1548,25 @@ fn unholdable_shell_cwd(
 /// reason for (see [`unholdable_shell_cwd`]) is not held: the shell goes back
 /// to the root, and the note says why, since it did not stay where the
 /// command left it.
+///
+/// A report naming no directory (`Some(None)`, see [`CwdReport::finish`])
+/// resets too: the held path may since name something else, a link put in
+/// place of the removed directory, which nothing would check before an
+/// escalated command entered it.
 fn settle_shell_cwd(
     cwd: &crate::tools::ShellCwd,
     root: &Path,
-    landed: Option<PathBuf>,
+    landed: Option<Option<PathBuf>>,
     refused: Option<&str>,
 ) -> Option<String> {
-    let landed = landed?;
+    let Some(landed) = landed? else {
+        let gone = cwd.lock().unwrap().take()?;
+        return Some(format!(
+            "\n{SHELL_CWD_TAG} {} is gone or was replaced; the shell is back in the project root {}]",
+            gone.display(),
+            root.display()
+        ));
+    };
     if let Some(why) = refused {
         *cwd.lock().unwrap() = None;
         return Some(format!(
@@ -1595,7 +1639,7 @@ async fn collect_and_format(
     sink: Option<crate::tools::OutputSink>,
     tail: Option<proc::OutputTail>,
     reports_cwd: bool,
-) -> (String, Option<PathBuf>) {
+) -> (String, Option<Option<PathBuf>>) {
     use tokio::io::AsyncReadExt;
     let mut report = reports_cwd.then(CwdReport::default);
     let mut stdout = child.stdout.take();
@@ -4399,11 +4443,11 @@ mod tests {
         for path in ["/a\u{202E}b", "/a\u{2066}b", "/a\u{200B}b", "/a\tb"] {
             let mut report = CwdReport::default();
             report.feed(format!("\x1eJAN_CWD {path}\n").as_bytes());
-            assert_eq!(report.finish().1, None, "{path:?}");
+            assert_eq!(report.finish().1, Some(None), "{path:?}");
         }
         let mut report = CwdReport::default();
         report.feed("\x1eJAN_CWD /caf\u{e9}\n".as_bytes());
-        assert_eq!(report.finish().1, Some(PathBuf::from("/caf\u{e9}")), "plain non-ASCII is fine");
+        assert_eq!(report.finish().1, Some(Some(PathBuf::from("/caf\u{e9}"))), "plain non-ASCII is fine");
     }
 
     /// A held directory the shell can no longer enter refuses the command
@@ -4427,6 +4471,31 @@ mod tests {
         assert_eq!(*cwd.lock().unwrap(), None);
         assert!(run_in(&ctx, "touch ran-here").await.ends_with("[exit 0]"));
         assert!(root.join("ran-here").exists());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A command that removes the directory it stands in reports no directory
+    /// (`pwd -P` fails), so the held path is not kept: a link put in its place
+    /// later would otherwise be entered unchecked. The shell is back in the
+    /// root. (With a link already in place, bash's `pwd -P` reports the
+    /// link's target, which is checked like any other landing.)
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_held_shell_cwd_removed_under_the_shell_is_reset() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let scratch = unique_root();
+        let cwd = crate::tools::ShellCwd::default();
+        let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false);
+        run_in(&ctx, "cd sub").await;
+        assert!(cwd.lock().unwrap().is_some());
+        let out = run_in(&ctx, "rmdir ../sub").await;
+        assert!(out.contains("is gone or was replaced"), "{out}");
+        assert!(out.contains("back in the project root"), "{out}");
+        assert_eq!(*cwd.lock().unwrap(), None);
+        assert!(run_in(&ctx, "true").await.ends_with("[exit 0]"), "runs from the root");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
     }
@@ -4565,7 +4634,7 @@ mod tests {
             let (rest, landed) = report.finish();
             shown.extend(rest);
             assert_eq!(shown, b"one\ntwo\x1e\n", "cut at {cut}");
-            assert_eq!(landed, Some(PathBuf::from("/tmp/x")), "cut at {cut}");
+            assert_eq!(landed, Some(Some(PathBuf::from("/tmp/x"))), "cut at {cut}");
         }
     }
 
@@ -5115,15 +5184,22 @@ mod tests {
             settle_shell_cwd(
                 &std::sync::Arc::default(),
                 Path::new("/w"),
-                Some(PathBuf::from("/x")),
+                Some(Some(PathBuf::from("/x"))),
                 None,
             )
             .unwrap(),
             settle_shell_cwd(
                 &std::sync::Arc::default(),
                 Path::new("/w"),
-                Some(PathBuf::from("/x")),
+                Some(Some(PathBuf::from("/x"))),
                 Some("is elsewhere"),
+            )
+            .unwrap(),
+            settle_shell_cwd(
+                &std::sync::Arc::new(std::sync::Mutex::new(Some(PathBuf::from("/x")))),
+                Path::new("/w"),
+                Some(None),
+                None,
             )
             .unwrap(),
             format!("\n{} renamed", crate::tools::hooks::NOTICE_TAG),

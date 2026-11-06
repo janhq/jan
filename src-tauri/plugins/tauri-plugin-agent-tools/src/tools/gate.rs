@@ -6,7 +6,7 @@ use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
     escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root, in_hidden_root_from,
-    shell_reads_attached_from,
+    proc_cwd_relative, shell_reads_attached_from,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -242,11 +242,25 @@ pub fn resolve_decision_with_cwd(
                 .and_then(|v| v.as_str())
                 .is_some_and(hidden_hit)
         });
+        // `/proc/self/cwd` is the shell's own start directory, which the host
+        // would read as Jan's: checked as the relative path it really is.
         let hits_command = tool.capability == Capability::Exec
             && args.get("command").and_then(|v| v.as_str()).is_some_and(|c| {
-                hidden_tokens(hidden, c).into_iter().any(|t| hidden_hit(&t))
+                hidden_tokens(hidden, c).into_iter().any(|t| {
+                    hidden_hit(&proc_cwd_relative(&t).unwrap_or(t))
+                })
             });
-        if hits_path || hits_command {
+        // An escalated command runs on the host from the held directory
+        // whatever it names, so that directory is a token too: one in the
+        // home (an attached worktree there, or a link swapped in for it)
+        // would let `/proc/self/cwd/..` or a bare `cat config.toml` reach
+        // it. Without a held directory it starts in the project root, which
+        // the worktree exception keeps reachable, as before.
+        let starts_hidden = shell_cwd.is_some()
+            && tool.capability == Capability::Exec
+            && !shell_reads_only
+            && hidden_hit(".");
+        if hits_path || hits_command || starts_hidden {
             return Decision::HardDeny(DenyReason::Hidden);
         }
     }
@@ -1410,6 +1424,103 @@ mod tests {
         // An escalated command may not name the child's tree: it leaves the
         // sandbox that mounts it read-only.
         assert_eq!(gate("rm -rf src", true), Decision::HardDeny(DenyReason::Hidden));
+        // Nor start there with only absolute words: its start dir is in the
+        // home whatever it names.
+        assert_eq!(gate("/bin/true", true), Decision::HardDeny(DenyReason::Hidden));
+        // `/proc/self/cwd` is where the command starts, not Jan's own cwd.
+        let leak = format!(
+            "/usr/bin/cp /proc/self/cwd/../../../config.toml {}",
+            project.join("leak").display()
+        );
+        assert_eq!(gate(&leak, true), Decision::HardDeny(DenyReason::Hidden));
+        assert_eq!(gate(&leak, false), Decision::HardDeny(DenyReason::Hidden));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// `/proc/self/cwd` names the shell's own start directory, not Jan's: a
+    /// command spelling a path through it is checked as if it were relative,
+    /// with or without a held directory.
+    #[test]
+    fn proc_self_cwd_resolves_against_where_the_shell_starts() {
+        let home = std::fs::canonicalize(unique_root()).unwrap();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |root: &Path, command: &str, escalate: bool, held: Option<&Path>| {
+            let ctx = GateContext {
+                project_root: root,
+                scratch: None,
+                read_roots: &[],
+                write_roots: &[],
+                hidden_root: Some(&jan),
+            };
+            let args = json!({"command": command, ESCALATE_ARG: escalate});
+            resolve_decision_with_cwd(shell, &args, &ctx, held, &perms, &grants)
+        };
+        let hidden = Decision::HardDeny(DenyReason::Hidden);
+        let spellings = [
+            "/bin/cat /proc/self/cwd/.jan/config.toml",
+            "/bin/cat /proc/thread-self/cwd/.jan/config.toml",
+            "/bin/cat //proc/./self/cwd/.jan/config.toml",
+            "/bin/tar cf /dev/null /proc/self/cwd/.jan",
+        ];
+        for command in spellings {
+            // Held in the home after a confined `cd ..`.
+            for escalate in [true, false] {
+                assert_eq!(gate(&project, command, escalate, Some(&home)), hidden, "{command}");
+            }
+            // No held directory: the shell starts in the project root, here
+            // the home itself.
+            assert_eq!(gate(&home, command, true, None), hidden, "{command}");
+            assert_eq!(gate(&home, command, false, None), hidden, "{command}");
+            // From a project with no `.jan` of its own it names nothing hidden.
+            assert_eq!(
+                gate(&project, command, true, None),
+                Decision::Prompt(PromptKind::Escalate),
+                "{command}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A held directory swapped for a symlink into the Jan home is where an
+    /// escalated command would really start, so it is refused even when the
+    /// command names nothing under it.
+    #[cfg(unix)]
+    #[test]
+    fn an_escalation_from_a_held_cwd_swapped_for_a_link_into_the_home_is_denied() {
+        let home = std::fs::canonicalize(unique_root()).unwrap();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        let project = home.join("proj");
+        let sub = project.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |escalate: bool| {
+            let args = json!({"command": "/bin/true", ESCALATE_ARG: escalate});
+            resolve_decision_with_cwd(shell, &args, &ctx, Some(&sub), &perms, &grants)
+        };
+        assert_eq!(gate(true), Decision::Prompt(PromptKind::Escalate));
+        std::fs::remove_dir(&sub).unwrap();
+        // Relative to the link's own directory, so `proj/../.jan`.
+        std::os::unix::fs::symlink("../.jan", &sub).unwrap();
+        assert_eq!(gate(true), Decision::HardDeny(DenyReason::Hidden));
+        // Confined, the sandbox masks the home wherever the shell stands.
+        assert_eq!(gate(false), Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&home);
     }
 }

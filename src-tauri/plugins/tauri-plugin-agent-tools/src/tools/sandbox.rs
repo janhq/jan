@@ -283,6 +283,38 @@ pub fn hidden_tokens(hidden: &Path, command: &str) -> Vec<String> {
         .collect()
 }
 
+/// A shell token spelling a path through `/proc/self/cwd` (or
+/// `/proc/thread-self/cwd`) as the same path relative to the shell's start
+/// directory, `None` for any other token. The host would resolve that magic
+/// link against Jan's own process cwd, not the directory the shell starts
+/// in, so `/proc/self/cwd/.jan/config.toml` from a shell held in the home
+/// would pass as a path under Jan's cwd. Rewritten by components so a `..`
+/// after the prefix still climbs from the start dir rather than out of
+/// `/proc`; `/proc/<pid>/cwd` names some other process and is not handled.
+pub fn proc_cwd_relative(token: &str) -> Option<String> {
+    use std::path::Component;
+    let mut parts = Path::new(token).components();
+    if parts.next() != Some(Component::RootDir)
+        || parts.next() != Some(Component::Normal("proc".as_ref()))
+    {
+        return None;
+    }
+    let me = parts.next()?;
+    if me != Component::Normal("self".as_ref()) && me != Component::Normal("thread-self".as_ref())
+    {
+        return None;
+    }
+    if parts.next() != Some(Component::Normal("cwd".as_ref())) {
+        return None;
+    }
+    let rest = parts.as_path();
+    Some(if rest.as_os_str().is_empty() {
+        ".".to_string()
+    } else {
+        rest.to_string_lossy().into_owned()
+    })
+}
+
 /// `word` with POSIX backslash escapes removed: each `\` keeps the character
 /// after it and drops itself.
 fn unescape(word: &str) -> String {
@@ -314,6 +346,11 @@ pub fn in_attached_root_from(
     roots: &[PathBuf],
     raw: &str,
 ) -> bool {
+    // A literal comparison on purpose: the held cwd is always a physical path
+    // (`pwd -P`) and is cleared once it equals the canonical root, so a
+    // caller passes either the root itself or something else. A caller that
+    // spells the root differently (non-canonical) gets no carve-out for
+    // relative paths from it, which fails closed: keep passing the same path.
     if roots.is_empty() || (!Path::new(raw).is_absolute() && base == project_root) {
         return false;
     }
