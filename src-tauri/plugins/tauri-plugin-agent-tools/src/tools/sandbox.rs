@@ -297,15 +297,22 @@ pub fn hidden_tokens(hidden: &Path, command: &str) -> Vec<String> {
         })
         .flat_map(|t| {
             let start = start_dir_relative(&t);
-            std::iter::once(t).chain(start)
+            let linked = start_dir_past_links(&t);
+            std::iter::once(t).chain(start).chain(linked)
         })
         .collect()
 }
 
 /// Words a POSIX shell expands to its current directory when it starts: the
-/// start dir. `~-` and `$OLDPWD` name the previous one, which the gate cannot
-/// know, so they are taken as the start dir too, which fails closed as far
-/// as the start dir reaches.
+/// start dir. `~-` and `$OLDPWD` name the previous one, which the cwd
+/// wrapper sets to the start dir on every run (see
+/// `handlers::posix_cwd_script`): after its `cd` the shell's own would name
+/// the project root it was spawned in.
+///
+/// Only these literal words are mapped. `$(pwd)`, backticks and
+/// `${PWD%...}`-style expansions also spell the start dir and are not: the
+/// same gap as any other `$VAR` the gate cannot evaluate, which the OS
+/// sandbox masking the home covers for a confined run.
 const START_DIR_WORDS: [&str; 6] = ["$PWD", "${PWD}", "~+", "~-", "$OLDPWD", "${OLDPWD}"];
 
 /// Where a token's leading components put it, as far as
@@ -402,6 +409,55 @@ pub fn start_dir_relative(token: &str) -> Option<String> {
         }
     }
     rerooted.then(|| format!("/{}", parts.join("/")))
+}
+
+/// The paths a token under `/proc` or `/dev` may name through the shell's
+/// start dir once the kernel follows the links in it, which
+/// [`start_dir_relative`] does not see: a `..` after a link (`/proc/net`,
+/// `/proc/self`, `/proc/thread-self`, `/proc/mounts`, `/dev/fd`) climbs from
+/// the link's target, not from where the token spells it, so
+/// `/proc/net/../cwd` is `/proc/self/cwd` while it normalizes lexically to
+/// `/proc/cwd`. Which components are links the gate cannot know without the
+/// shell's `/proc`, so once a `..` follows a `proc` or `dev` component,
+/// every later `cwd`, `fd/<n>` and `std*` component is taken as the start
+/// dir and every `root` as the filesystem root, and what follows each is a
+/// candidate. Fails closed; a token with no such `..` (`/proc/cpuinfo`,
+/// `/proc/self/fd`, `/dev/null`) yields nothing, so ordinary reads are not
+/// touched. The candidates are not walked again: one per component keeps
+/// the count linear in the token.
+fn start_dir_past_links(token: &str) -> Vec<String> {
+    use std::path::Component;
+    let parts: Vec<Component> = Path::new(token).components().collect();
+    let name = |i: usize| match parts.get(i) {
+        Some(Component::Normal(n)) => Some(n.to_string_lossy()),
+        _ => None,
+    };
+    let is = |i: usize, literal: &str| name(i).is_some_and(|n| may_be(&n, literal));
+    let Some(linked) = (0..parts.len()).find(|&i| is(i, "proc") || is(i, "dev")) else {
+        return Vec::new();
+    };
+    if !parts[linked..].contains(&Component::ParentDir) {
+        return Vec::new();
+    }
+    let rest = |from: usize| {
+        let rest: PathBuf = parts.iter().skip(from).collect();
+        match rest.as_os_str().is_empty() {
+            true => ".".to_string(),
+            false => rest.to_string_lossy().into_owned(),
+        }
+    };
+    let std_stream = |i: usize| ["stdin", "stdout", "stderr"].iter().any(|s| is(i, s));
+    let mut out = Vec::new();
+    for i in linked + 1..parts.len() {
+        if is(i, "cwd") || std_stream(i) {
+            out.push(rest(i + 1));
+        } else if is(i, "fd") && name(i + 1).is_some() {
+            out.push(rest(i + 2));
+        } else if is(i, "root") {
+            out.push(format!("/{}", rest(i + 1)));
+        }
+    }
+    out
 }
 
 /// `word` with POSIX backslash escapes removed: each `\` keeps the character

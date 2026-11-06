@@ -1393,6 +1393,14 @@ const CWD_MARKER: &[u8] = b"\x1eJAN_CWD ";
 /// refusal reports the directory the wrapper started in (the project root),
 /// not the link's target it now stands in, so that target is never held; if
 /// the start could not be read, the report is not a path, which resets too.
+/// The refusal prints that report itself and drops the trap, rather than
+/// leaving a value for the trap to read: the command runs in the same shell
+/// and could set any variable the trap reads.
+///
+/// `OLDPWD` is set to the start directory on every run, held or not: the
+/// gate checks `~-` and `$OLDPWD` as the start dir (see
+/// `sandbox::start_dir_relative`), and after the `cd` the shell's own would
+/// name the project root, or without one whatever the shell inherited.
 ///
 /// The command runs through `eval` on one single-quoted word, so the shell
 /// parses it a command at a time as it would unwrapped: a `shopt -s extglob`
@@ -1406,11 +1414,12 @@ const CWD_MARKER: &[u8] = b"\x1eJAN_CWD ";
 fn posix_cwd_script(command: &str, start: Option<&Path>) -> String {
     // printf's own octal escape spells the separator, so the script stays ASCII.
     let marker = String::from_utf8_lossy(&CWD_MARKER[1..]);
+    let report = format!("printf \"\\036{marker}%s\\n\"");
     let mut script = format!(
-        "exec 9>&1; __jan_cwd_at=; trap '{{ __jan_rc=$?; set +x; }} 2>/dev/null; \
-         __jan_cwd=${{__jan_cwd_at:-$(pwd -P)}}; {{ if [ -p /dev/fd/9 ]; then \
-         printf \"\\036{marker}%s\\n\" \"$__jan_cwd\" >&9; elif [ -p /dev/fd/1 ]; then \
-         printf \"\\036{marker}%s\\n\" \"$__jan_cwd\"; fi; }} 2>/dev/null; exit $__jan_rc' EXIT; "
+        "exec 9>&1; trap '{{ __jan_rc=$?; set +x; }} 2>/dev/null; \
+         __jan_cwd=$(pwd -P); {{ if [ -p /dev/fd/9 ]; then \
+         {report} \"$__jan_cwd\" >&9; elif [ -p /dev/fd/1 ]; then \
+         {report} \"$__jan_cwd\"; fi; }} 2>/dev/null; exit $__jan_rc' EXIT; "
     );
     if let Some(dir) = start {
         let notice = format!(
@@ -1421,10 +1430,12 @@ fn posix_cwd_script(command: &str, start: Option<&Path>) -> String {
         let dir = shell_quote(&dir.to_string_lossy());
         script.push_str(&format!(
             "__jan_root=$(pwd -P); cd -P -- {dir} 2>/dev/null && [ \"$(pwd -P)\" = {dir} ] || \
-             {{ __jan_cwd_at=${{__jan_root:-unreadable}}; printf '%s\\n' {} >&2; exit 1; }}; ",
+             {{ printf '%s\\n' {} >&2; {report} \"${{__jan_root:-unreadable}}\" >&9; \
+             trap - EXIT; exit 1; }}; ",
             shell_quote(&notice)
         ));
     }
+    script.push_str("OLDPWD=$PWD; ");
     script.push_str(&format!("{{ eval {}\n}} 9>&-\n", shell_quote(command)));
     script
 }
@@ -1545,18 +1556,22 @@ fn unholdable_shell_cwd(
 /// held path can have been swapped for a link since the shell landed there
 /// (`rmdir sub && ln -s ../.jan sub` from beside it).
 ///
-/// Only that: the gate has just refused a held directory in the Jan home or
-/// above it (`DenyReason::HiddenShellCwd`), and a swap after this check, the
-/// prompt included, is refused by the wrapper once it has moved (see
-/// [`posix_cwd_script`]), which is the one check no later swap can slip past.
-/// A held directory that is gone is left to the wrapper too.
+/// This check covers the swap alone. A held directory in the Jan home or
+/// above it was already refused by the gate (`DenyReason::HiddenShellCwd`);
+/// a swap made after this check, while the prompt is up for one, is refused
+/// by the wrapper once it has moved (see [`posix_cwd_script`]), the one check
+/// no later swap can slip past; and a held directory that is gone is left to
+/// the wrapper too.
+///
+/// The held path is compared lexically normalized, since it is a `pwd -P`
+/// report and bash keeps a leading `//` there (`cd //tmp`), which is no link.
 pub fn escalated_shell_cwd_refusal(ctx: &ToolContext<'_>) -> Option<String> {
     let cwd = ctx.shell_cwd.as_ref().filter(|_| proc::shell_cwd_supported())?;
     // One lock for the read and the reset, so a held directory set in between
     // is never dropped unchecked.
     let mut held = cwd.lock().unwrap();
     let dir = held.as_ref()?;
-    if std::fs::canonicalize(dir).ok()? == *dir {
+    if std::fs::canonicalize(dir).ok()? == lexical_normalize(dir) {
         return None;
     }
     let dir = held.take()?;
@@ -4533,6 +4548,79 @@ mod tests {
         assert!(!root.join("elsewhere/marker").exists(), "followed the link");
         assert!(!root.join("marker").exists(), "ran in the project root");
         assert_eq!(*cwd.lock().unwrap(), None);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// `~-` and `$OLDPWD` name where the command starts, as the gate assumes:
+    /// the held directory after the wrapper's `cd` (not the project root it
+    /// was spawned in), and the project root without one, whatever OLDPWD the
+    /// shell inherited.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn oldpwd_is_the_start_dir() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let scratch = unique_root();
+        let cwd = crate::tools::ShellCwd::default();
+        let set = vec![("OLDPWD".to_string(), "/usr".to_string())];
+        let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false).with_env_set(&set);
+        let canon = std::fs::canonicalize(&root).unwrap();
+        let out = run_in(&ctx, "echo ~- $OLDPWD").await;
+        assert_eq!(out, format!("{0} {0}\n[exit 0]", canon.display()), "no held dir");
+        run_in(&ctx, "cd sub").await;
+        let sub = canon.join("sub");
+        let out = run_in(&ctx, "echo ~- $OLDPWD").await;
+        assert_eq!(out, format!("{0} {0}\n[exit 0]", sub.display()), "held dir");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The cwd report is the wrapper's, not the command's: a variable the
+    /// command can set (it runs in the same shell) never picks the directory
+    /// held next, on a normal run or a refused one.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_command_cannot_set_the_reported_cwd_through_a_variable() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let scratch = unique_root();
+        let cwd = crate::tools::ShellCwd::default();
+        let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false);
+        let out = run_in(&ctx, "__jan_cwd_at=/tmp").await;
+        assert!(!out.contains("shell cwd"), "{out}");
+        assert_eq!(*cwd.lock().unwrap(), None);
+        run_in(&ctx, "cd sub").await;
+        let sub = std::fs::canonicalize(root.join("sub")).unwrap();
+        run_in(&ctx, "__jan_cwd_at=/tmp; true").await;
+        assert_eq!(*cwd.lock().unwrap(), Some(sub));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A held path is compared to where it resolves lexically normalized, not
+    /// as spelled: bash's `pwd -P` after `cd //tmp` keeps the double slash,
+    /// and a `..` over a plain directory is no link either.
+    #[cfg(unix)]
+    #[test]
+    fn a_held_cwd_spelled_with_extra_slashes_is_no_swap() {
+        let root = std::fs::canonicalize(unique_root()).unwrap();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let scratch = unique_root();
+        let cwd = crate::tools::ShellCwd::default();
+        let ctx = cwd_ctx(&root, &store, &scratch, &cwd, false);
+        let spellings = [
+            format!("/{}", root.display()),
+            format!("{}/.", root.display()),
+            format!("{}/sub/..", root.display()),
+        ];
+        for held in spellings {
+            *cwd.lock().unwrap() = Some(PathBuf::from(&held));
+            assert_eq!(escalated_shell_cwd_refusal(&ctx), None, "{held}");
+        }
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
     }

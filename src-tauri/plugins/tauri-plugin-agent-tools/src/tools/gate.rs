@@ -260,6 +260,12 @@ pub fn resolve_decision_with_cwd(
         // spelling, and no escalated command needs to start there. Without
         // a held directory it starts in the project root, which the
         // worktree exception keeps reachable, as before.
+        //
+        // Not covered: a project root that is itself above the home (the
+        // home's parent opened as a project) with no held directory is not
+        // denied for where it starts, so relative spellings no token scan
+        // catches reach the home from there. Pre-existing and the same as
+        // before held directories existed; only a held one is refused here.
         let starts_hidden = |held: &Path| {
             let above = canonicalize_lenient(hidden)
                 .ok()
@@ -1578,6 +1584,100 @@ mod tests {
         let climb = format!("/bin/cat {}proc/self/cwd/../.jan/config.toml", "../".repeat(12));
         assert_eq!(gate(&climb, true, None), hidden);
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The kernel follows a link under `/proc` or `/dev` (`/proc/net`,
+    /// `/proc/thread-self`, `/dev/fd`) before it applies a `..` after it, so
+    /// lexical normalization lands somewhere else than the shell does: any
+    /// `cwd` or `fd/<n>` after such a `..` is checked as the start dir. A
+    /// plain read under `/proc` or `/dev` is not touched.
+    #[test]
+    fn a_dotdot_after_a_proc_or_dev_link_is_checked_as_the_start_dir() {
+        let home = std::fs::canonicalize(unique_root()).unwrap();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        let sub = project.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |command: &str, escalate: bool| {
+            let args = json!({"command": command, ESCALATE_ARG: escalate});
+            resolve_decision_with_cwd(shell, &args, &ctx, Some(&sub), &perms, &grants)
+        };
+        let hidden = Decision::HardDeny(DenyReason::Hidden);
+        for command in [
+            "/bin/cat /proc/net/../cwd/../../.jan/config.toml",
+            "/bin/cat /dev/fd/../cwd/../../.jan/config.toml",
+            "/bin/cat /proc/thread-self/../../cwd/../../.jan/config.toml",
+            "/bin/cat /proc/self/net/../fd/3/../../.jan/config.toml",
+            "/bin/cat /proc/mounts/../cwd/../../.jan/config.toml",
+        ] {
+            for escalate in [true, false] {
+                assert_eq!(gate(command, escalate), hidden, "{command}");
+            }
+        }
+        for command in [
+            "cat /proc/cpuinfo",
+            "ls /proc/self/fd",
+            "cat /proc/*/status",
+            "ls /dev/null",
+            "cat /proc/self/cwd/README.md",
+        ] {
+            assert_eq!(gate(command, true), Decision::Prompt(PromptKind::Escalate), "{command}");
+            assert_eq!(gate(command, false), Decision::Prompt(PromptKind::Exec), "{command}");
+        }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// `~-` and `$OLDPWD` are checked as the start dir because the wrapper
+    /// makes them that (see `posix_cwd_script`), not the project root the
+    /// shell was spawned in: from a held directory outside the home's
+    /// subtree, climbing one level from it names nothing hidden, and climbing
+    /// from the held dir in the home's subtree does.
+    #[test]
+    fn oldpwd_is_checked_as_the_held_dir() {
+        let home = std::fs::canonicalize(unique_root()).unwrap();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        let sub = project.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let outside = std::fs::canonicalize(unique_root()).unwrap();
+        let held = outside.join("held");
+        std::fs::create_dir_all(&held).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let shell = lookup(crate::tools::SHELL_TOOL).unwrap();
+        let gate = |command: &str, held: &Path| {
+            let args = json!({"command": command, ESCALATE_ARG: true});
+            resolve_decision_with_cwd(shell, &args, &ctx, Some(held), &perms, &grants)
+        };
+        for word in ["~-", "$OLDPWD", "${OLDPWD}"] {
+            let one_up = format!("/bin/cat {word}/../.jan/config.toml");
+            assert_eq!(gate(&one_up, &held), Decision::Prompt(PromptKind::Escalate), "{one_up}");
+            let two_up = format!("/bin/cat {word}/../../.jan/config.toml");
+            assert_eq!(gate(&two_up, &sub), Decision::HardDeny(DenyReason::Hidden), "{two_up}");
+        }
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 
     /// A held directory swapped for a symlink into the Jan home is where an
