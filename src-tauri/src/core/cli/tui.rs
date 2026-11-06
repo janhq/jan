@@ -5656,6 +5656,22 @@ impl SubagentPanel {
         }
     }
 
+    /// The handle `/agents` addresses this child by, for its rows, its detail
+    /// and the core's `stop_subagent` / `message_subagent`. A started or
+    /// queued child is its `run_id`, so a re-dispatched name can never
+    /// redirect a stop or a message to a newer run. A pending later-phase
+    /// child has no run id yet, only its worker name -- which the core checks
+    /// against the plan's pending table before any running child, and which
+    /// `plan_dispatch` reserves for the whole session, so it names this child
+    /// and no other. Promotion swaps the handle back (`readdress_pending`).
+    fn target(&self) -> &str {
+        if self.pending {
+            &self.name
+        } else {
+            &self.run_id
+        }
+    }
+
     /// Replace this child's rows with its run as its session file records it
     /// (see `subagent_session`): the whole run, where the live rows were
     /// capped. The task is the detail header's, so the prompt is not repeated.
@@ -6866,6 +6882,19 @@ impl App {
     /// registry must not quietly turn Esc into "keep working". Also called when
     /// the conversation goes away (reset, thread switch), where a later
     /// completion would have no turn to join.
+    /// A pending child `name` was just promoted to `run_id`: a `/agents`
+    /// detail or message dock opened on it while it waited holds its name, and
+    /// now follows the run id instead (see `SubagentPanel::target`), so it
+    /// keeps pointing at this exact run.
+    fn readdress_pending(&mut self, name: &str, run_id: &str) {
+        if self.agent_detail.as_deref() == Some(name) {
+            self.agent_detail = Some(run_id.to_string());
+        }
+        if let Some(prompt) = self.agent_message.as_mut().filter(|p| p.target == name) {
+            prompt.target = run_id.to_string();
+        }
+    }
+
     fn stop_subagents(&mut self) {
         self.subagent_set.abort_all();
         for panel in std::mem::take(&mut self.subagents) {
@@ -9046,6 +9075,8 @@ impl App {
                     if let Some(t) = task {
                         panel.task = t;
                     }
+                    let run_id = panel.run_id.clone();
+                    self.readdress_pending(&name, &run_id);
                 } else {
                     // Jan's own agent never touches the conversation, so the
                     // prose it starts beside is not committed early for it.
@@ -9085,6 +9116,8 @@ impl App {
                     if let Some(t) = task {
                         panel.task = t;
                     }
+                    let run_id = panel.run_id.clone();
+                    self.readdress_pending(&name, &run_id);
                 } else {
                     self.subagents.push(SubagentPanel {
                         queued: true,
@@ -16514,19 +16547,21 @@ async fn handle_key_input(
                 run_mcp_action(app, &action, mcp_servers).await;
             }
             // `/agents`: Enter drills into the selected subagent's detail.
+            // A pending child opens too: its header says which phase it waits
+            // on, and the detail follows it once it starts.
             KeyCode::Enter if picker.kind == PickerKind::Agents => {
-                let run_id = picker
+                let target = picker
                     .items
                     .get(picker.selected)
                     .map(|i| i.value.clone())
                     .unwrap_or_default();
                 // The watermark row (no subagents running) has no id to open.
-                if run_id.is_empty() {
+                if target.is_empty() {
                     return;
                 }
                 picker.kind = PickerKind::AgentDetail;
-                replay_finished_agent(app, &run_id);
-                app.agent_detail = Some(run_id);
+                replay_finished_agent(app, &target);
+                app.agent_detail = Some(target);
                 app.agent_detail_scroll = 0;
             }
             // The detail scrolls like the main body: PgUp/PgDn by a page's
@@ -16544,12 +16579,14 @@ async fn handle_key_input(
             }
             // `/agents`: `m` writes to the selected child (or the one drilled
             // into), `x` stops it. Both reach the same registry calls the parent
-            // agent's `message_subagent` / `stop_subagent` tools make.
+            // agent's `message_subagent` / `stop_subagent` tools make, with the
+            // panel's `target`: a pending child is stopped or messaged by name
+            // before it starts.
             KeyCode::Char('m') | KeyCode::Char('x')
                 if !ctrl
                     && matches!(picker.kind, PickerKind::Agents | PickerKind::AgentDetail) =>
             {
-                let run_id = if picker.kind == PickerKind::AgentDetail {
+                let target = if picker.kind == PickerKind::AgentDetail {
                     app.agent_detail.clone().unwrap_or_default()
                 } else {
                     picker
@@ -16561,15 +16598,15 @@ async fn handle_key_input(
                 let Some(name) = app
                     .subagents
                     .iter()
-                    .find(|p| p.run_id == run_id && !run_id.is_empty())
+                    .find(|p| p.target() == target && !target.is_empty())
                     .map(|p| p.name.clone())
                 else {
                     return;
                 };
                 if key.code == KeyCode::Char('m') {
-                    app.agent_message = Some(AgentMessagePrompt::new(&run_id, &name));
+                    app.agent_message = Some(AgentMessagePrompt::new(&target, &name));
                 } else {
-                    match crate::core::agent::subagent::stop_subagent(&app.subagent_set, &run_id) {
+                    match crate::core::agent::subagent::stop_subagent(&app.subagent_set, &target) {
                         Ok(_) => app.note(&format!("stopped subagent {name}")),
                         Err(e) => app.note(&format!("could not stop subagent {name}\n{e}")),
                     }
@@ -18993,16 +19030,18 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
 /// agent's own `message_subagent` tool makes, so the child cannot tell (and
 /// need not care) which of the two steered it.
 struct AgentMessagePrompt {
-    run_id: String,
+    /// The child's `SubagentPanel::target`: its run id, or its name while it
+    /// is pending (re-pointed at the run id when it starts).
+    target: String,
     name: String,
     input: String,
     error: Option<String>,
 }
 
 impl AgentMessagePrompt {
-    fn new(run_id: &str, name: &str) -> Self {
+    fn new(target: &str, name: &str) -> Self {
         Self {
-            run_id: run_id.to_string(),
+            target: target.to_string(),
             name: name.to_string(),
             input: String::new(),
             error: None,
@@ -19028,11 +19067,11 @@ fn handle_agent_message_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                 prompt.error = Some("type a message first (Esc to cancel)".to_string());
                 return;
             }
-            // By run id: the user picked this exact child, and a re-dispatched
-            // name must not redirect the message to a newer one.
+            // By `SubagentPanel::target`: the user picked this exact child, so
+            // its run id, or its reserved name while it is still pending.
             match crate::core::agent::subagent::message_subagent(
                 &app.subagent_set,
-                &prompt.run_id,
+                &prompt.target,
                 &text,
             ) {
                 Ok(_) => {
@@ -21783,8 +21822,9 @@ fn monitor_picker_items(monitors: &[MonitorSnapshot]) -> Vec<PickerItem> {
 /// (green while it runs, dim while it waits and once it has finished), its name, its dim stats and
 /// its status -- for a running child, what it is doing now. Jan's own agents
 /// (`internal`) follow, marked as internal. A single watermark row stands in
-/// when there are none. The row `value` is the child's `run_id`, which Enter
-/// drills into.
+/// when there are none. The row `value` is the child's `SubagentPanel::target`
+/// (its `run_id`, or its name while pending), which Enter drills into and
+/// `m` / `x` address.
 fn agent_picker_items(
     subagents: &mut [SubagentPanel],
     finished: &[SubagentBlock],
@@ -21820,7 +21860,7 @@ fn agent_picker_items(
             spans.push(Span::raw("  "));
         }
         spans.extend(tail);
-        styled_item(p.run_id.clone(), spans)
+        styled_item(p.target().to_string(), spans)
     };
     let mut items = Vec::new();
     for p in subagents.iter_mut() {
@@ -21943,8 +21983,10 @@ fn draw_agent_detail(f: &mut Frame, area: Rect, app: &mut App) {
     let run_id = app.agent_detail.clone().unwrap_or_default();
     let spinner_frame = app.spinner_frame;
     let context_window = app.context_window;
-    // A finished child is read from its summary row's block, which keeps it.
-    let found = match app.subagents.iter_mut().find(|p| p.run_id == run_id) {
+    // A live child is found by its `target` (a pending one has only its
+    // name); a finished child is read from its summary row's block, which
+    // keeps it.
+    let found = match app.subagents.iter_mut().find(|p| p.target() == run_id) {
         Some(panel) => Some((panel, None)),
         None => app
             .transcript
@@ -28674,6 +28716,118 @@ fn a() {}
             &app.subagent_set,
             "sub-waster-1"
         ));
+    }
+
+    /// A pending later-phase child (named by `SubagentPlan`, not started) has
+    /// no run id yet, so `/agents` addresses it by its worker name: the core
+    /// checks the plan's pending table under that name first. With no plan
+    /// behind this test the core answers "no subagent named 'collector'",
+    /// which is the proof the name -- not an empty id -- was what got sent.
+    #[tokio::test]
+    async fn agents_stop_and_message_a_pending_child_by_name() {
+        use crate::core::agent::events::PendingSubagent;
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentPlan {
+            pending: vec![PendingSubagent {
+                name: "collector".to_string(),
+                phase: 2,
+            }],
+        });
+        open_agents_picker(&mut app);
+        assert_eq!(app.picker.as_ref().unwrap().items[0].value, "collector");
+
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+        let text = transcript_text(&app);
+        assert!(text.contains("no subagent named 'collector'"), "{text}");
+
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        let prompt = app.agent_message.as_ref().expect("m opens the dock");
+        assert_eq!(prompt.target, "collector");
+        type_key_chars(&mut app, "hi").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        let error = app.agent_message.as_ref().and_then(|p| p.error.clone());
+        assert!(
+            error.as_deref().is_some_and(|e| e.contains("no subagent named 'collector'")),
+            "{error:?}"
+        );
+    }
+
+    /// Enter drills into a pending child too (its header says what it waits
+    /// on), and the open detail follows the child once it starts.
+    #[tokio::test]
+    async fn agents_detail_of_a_pending_child_follows_its_promotion() {
+        use crate::core::agent::events::PendingSubagent;
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentPlan {
+            pending: vec![PendingSubagent {
+                name: "collector".to_string(),
+                phase: 2,
+            }],
+        });
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::AgentDetail);
+        assert_eq!(app.agent_detail.as_deref(), Some("collector"));
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(!screen.contains("no longer available"), "{screen}");
+        assert!(screen.contains("collector"), "{screen}");
+
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-collector-1".to_string(),
+            name: "collector".to_string(),
+            task: None,
+            workspace: None,
+            internal: false,
+        });
+        assert_eq!(app.agent_detail.as_deref(), Some("sub-collector-1"));
+    }
+
+    /// Once promoted, the panel is addressed by its run id again: another live
+    /// child answering to the same name (which name resolution would prefer,
+    /// being newer) is left alone by both `x` and `m`.
+    #[tokio::test]
+    async fn agents_a_promoted_pending_child_is_addressed_by_run_id() {
+        use crate::core::agent::events::PendingSubagent;
+        use crate::core::agent::subagent::tests::{child_is_finished, register_live_child};
+        let mut app = test_app();
+        let mine = register_live_child(&app.subagent_set, "sub-collector-1", "collector");
+        let other = register_live_child(&app.subagent_set, "sub-collector-9", "collector");
+        app.apply(StreamEvent::SubagentPlan {
+            pending: vec![PendingSubagent {
+                name: "collector".to_string(),
+                phase: 2,
+            }],
+        });
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        app.apply(StreamEvent::SubagentQueued {
+            run_id: "sub-collector-1".to_string(),
+            name: "collector".to_string(),
+            task: None,
+            waiting: 1,
+        });
+        assert_eq!(
+            app.agent_message.as_ref().map(|p| p.target.as_str()),
+            Some("sub-collector-1"),
+            "a dock opened while pending follows the promotion"
+        );
+        type_key_chars(&mut app, "hello").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(mine.drain().1, vec!["hello".to_string()]);
+        assert!(other.drain().1.is_empty());
+
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-collector-1".to_string(),
+            name: "collector".to_string(),
+            task: None,
+            workspace: None,
+            internal: false,
+        });
+        render_rows(&mut app, 100, 30);
+        assert_eq!(app.picker.as_ref().unwrap().items[0].value, "sub-collector-1");
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+        assert!(child_is_finished(&app.subagent_set, "sub-collector-1"));
+        assert!(!child_is_finished(&app.subagent_set, "sub-collector-9"));
     }
 
     #[test]
