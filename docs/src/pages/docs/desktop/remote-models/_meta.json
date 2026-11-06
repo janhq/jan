@@ -20,6 +20,9 @@
   "openrouter": {
     "title": "OpenRouter"
   },
+  "litellm": {
+    "title": "LiteLLM"
+  },
   "huggingface": {
     "title": "Hugging Face"
   },
