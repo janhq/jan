@@ -700,6 +700,8 @@ pub(crate) enum CheckoutState {
     /// not carry. `build_output` names the ignored build output a forced
     /// removal deletes with it, relative to the checkout; it is measured
     /// only where a number is shown (see [`sizes`]), not by every classify.
+    /// In `jan cli worktrees list --json` it is therefore an array of those
+    /// paths (it used to be a byte count); the bytes are `build_output_bytes`.
     ///
     /// [`Checkout::uncommitted`]: crate::core::agent::git::Checkout::uncommitted
     Uncommitted { files: Vec<String>, commits: u64, off_branch: u64, build_output: Vec<String> },
