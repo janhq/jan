@@ -160,7 +160,7 @@ make dev JAN_ENGINE_VARIANT=cuda13
 - **Windows**: 10+ with GPU support for NVIDIA/AMD/Intel Arc
 - **Linux**: Most distributions work, GPU acceleration available
 
-For detailed compatibility, check our [installation guides](https://jan.ai/docs/desktop/mac).
+For detailed compatibility, check our [installation guides](https://jan.ai/docs/desktop/install/mac).
 
 ## Troubleshooting
 
