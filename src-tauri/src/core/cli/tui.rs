@@ -928,8 +928,8 @@ struct Pending {
     /// confirms an option the user picked (see `handle_key_input`).
     picked: bool,
     /// Over a subagent's detail, when the prompt next takes a key; see
-    /// `prompt_key_lands`.
-    quiet_until: Option<Instant>,
+    /// `PromptPause::key_lands`.
+    pause: PromptPause,
     /// Name of the subagent that requested this, when the call originated inside
     /// a nested subagent run; `None` for the parent agent's own calls.
     subagent: Option<String>,
@@ -1077,24 +1077,58 @@ impl Pending {
 /// How long a prompt over a subagent's detail stays deaf after it appears and
 /// after each key it takes. The user was typing for the child when it landed:
 /// a recall (Up/Down) and a send (Enter) already on their way must not arm,
-/// move and confirm it. 400 ms is longer than the gap between reflex presses
-/// and short enough that a user who stopped to read never notices it.
-const PROMPT_PAUSE: Duration = Duration::from_millis(400);
+/// move and confirm it. The TUI does not ask for the keyboard enhancement
+/// that reports repeats as such, so a held key's repeats arrive as ordinary
+/// presses, the first after the OS repeat delay (500 ms on GNOME and Windows,
+/// 600 ms on KDE, 660 ms for X11's `xset` default). 750 ms outlasts all of
+/// those, so holding a key cannot land its first repeat as a second press,
+/// and is still short enough that a user who stopped to read barely notices.
+const PROMPT_PAUSE: Duration = Duration::from_millis(750);
 
-/// Whether a key reaches a prompt over the detail now, at `now`: only once
-/// the pause has run out since it appeared (`None`: not drawn yet, so it has
-/// not appeared) or took its last key. Every key restarts the pause, landed
-/// or not, so a burst of presses keeps it deaf until the user stops.
-fn prompt_key_lands(quiet_until: &mut Option<Instant>, now: Instant) -> bool {
-    let lands = quiet_until.is_some_and(|until| now >= until);
-    *quiet_until = Some(now + PROMPT_PAUSE);
-    lands
+/// How soon after a press of the same key another counts as its repeat, on a
+/// prompt over the detail (`PromptPause::key_lands`). Longer than
+/// `PROMPT_PAUSE`, which already covers the defaults, to reach the slower
+/// repeat delays users pick (Windows' longest is about 1 s): there a held Up
+/// would otherwise arm on Deny and its first repeat move to a grant. Only the
+/// first repeat needs it; later ones come every few tens of ms. The cost is
+/// that a deliberate second press of the same arrow waits a little longer.
+const HELD_KEY_WINDOW: Duration = Duration::from_millis(1200);
+
+/// Over a subagent's detail, when a prompt next takes a key and which key it
+/// took last. Both are reset to the default whenever the prompt (re)appears
+/// there, so it is deaf until drawn and lands as new.
+#[derive(Clone, Copy, Debug, Default)]
+struct PromptPause {
+    /// When the prompt next takes a key; `None`: not drawn over the detail
+    /// yet, so it has not appeared and takes none.
+    until: Option<Instant>,
+    /// The last key pressed on the prompt and when, to tell a held key's
+    /// repeats from a fresh press.
+    last_key: Option<(KeyCode, Instant)>,
 }
 
-/// Whether Enter on a prompt over the detail would confirm its highlight at
-/// `now`: it was armed with an arrow and has been left alone for the pause.
-fn prompt_live(picked: bool, quiet_until: Option<Instant>, now: Instant) -> bool {
-    picked && quiet_until.is_some_and(|until| now >= until)
+impl PromptPause {
+    /// Whether `code`, pressed at `now`, reaches the prompt: only once the
+    /// pause has run out since it appeared or took its last key, and only if
+    /// it is not the repeat of a held key (the same key again within
+    /// `HELD_KEY_WINDOW` of its last press), so holding an arrow only ever
+    /// arms. Every key restarts both, landed or not, so a burst of presses or
+    /// a run of repeats keeps the prompt deaf until the user lets go.
+    fn key_lands(&mut self, code: KeyCode, now: Instant) -> bool {
+        let repeat = self
+            .last_key
+            .is_some_and(|(last, at)| last == code && now < at + HELD_KEY_WINDOW);
+        let lands = !repeat && self.until.is_some_and(|until| now >= until);
+        self.until = Some(now + PROMPT_PAUSE);
+        self.last_key = Some((code, now));
+        lands
+    }
+
+    /// Whether Enter would confirm the highlight at `now` of a prompt armed
+    /// with an arrow (`picked`): it has been left alone for the pause.
+    fn live(&self, picked: bool, now: Instant) -> bool {
+        picked && self.until.is_some_and(|until| now >= until)
+    }
 }
 
 /// Where Up/Down takes the highlight of a prompt over a subagent's detail,
@@ -4731,8 +4765,8 @@ struct PendingAsk {
     /// Whether the user moved through the options with the arrows; see
     /// `Pending::picked`, which this mirrors for a question.
     picked: bool,
-    /// `Pending::quiet_until`, for the question on screen.
-    quiet_until: Option<Instant>,
+    /// `Pending::pause`, for the question on screen.
+    pause: PromptPause,
     /// When the `ask` loop auto-selects the recommended option if unanswered.
     /// `Some` only when a timeout was configured; drives the live countdown in
     /// the prompt title. Anchored here at event receipt, a hair before the
@@ -4768,7 +4802,7 @@ impl PendingAsk {
             rect: Rect::default(),
             row_hitboxes: Vec::new(),
             picked: false,
-            quiet_until: None,
+            pause: PromptPause::default(),
             deadline: timeout.map(|d| std::time::Instant::now() + d),
         }
     }
@@ -4905,7 +4939,7 @@ impl PendingAsk {
         self.question_index = index;
         self.selected = 0;
         self.picked = false;
-        self.quiet_until = None;
+        self.pause = PromptPause::default();
     }
 
     fn all_answered(&self) -> bool {
@@ -7085,17 +7119,18 @@ impl App {
     /// The prompt on screen (the front ask, else the front permission request,
     /// as `draw_queued_prompt` picks): when it next takes a key over the
     /// detail, and whether it was armed with an arrow.
-    fn front_prompt_state(&self) -> Option<(Option<Instant>, bool)> {
+    fn front_prompt_state(&self) -> Option<(PromptPause, bool)> {
         match self.ask_queue.front() {
-            Some(ask) => Some((ask.quiet_until, ask.picked)),
-            None => self.pending_queue.front().map(|p| (p.quiet_until, p.picked)),
+            Some(ask) => Some((ask.pause, ask.picked)),
+            None => self.pending_queue.front().map(|p| (p.pause, p.picked)),
         }
     }
 
-    /// Whether Enter would confirm the prompt on screen now (`prompt_live`).
+    /// Whether Enter would confirm the prompt on screen now
+    /// (`PromptPause::live`).
     fn front_prompt_live(&self) -> bool {
         self.front_prompt_state()
-            .is_some_and(|(until, picked)| prompt_live(picked, until, Instant::now()))
+            .is_some_and(|(pause, picked)| pause.live(picked, Instant::now()))
     }
 
     /// A prompt over the detail is still in its pause. The footer names Enter
@@ -7104,7 +7139,7 @@ impl App {
         self.prompt_over_detail()
             && self
                 .front_prompt_state()
-                .and_then(|(until, _)| until)
+                .and_then(|(pause, _)| pause.until)
                 .is_some_and(|until| Instant::now() < until)
     }
 
@@ -9285,7 +9320,7 @@ impl App {
                     justification,
                     selected: 0,
                     picked: false,
-                    quiet_until: None,
+                    pause: PromptPause::default(),
                     subagent: None,
                 });
                 self.publish_agent_status();
@@ -9698,7 +9733,7 @@ impl App {
                     justification,
                     selected: 0,
                     picked: false,
-                    quiet_until: None,
+                    pause: PromptPause::default(),
                     subagent: Some(name.to_string()),
                 });
                 self.publish_agent_status();
@@ -15887,7 +15922,7 @@ async fn handle_ask_key(
                 KeyCode::Char(ch) if !ctrl => ask.custom_input.push(ch),
                 _ => {}
             }
-        } else if !over_detail || prompt_key_lands(&mut ask.quiet_until, Instant::now()) {
+        } else if !over_detail || ask.pause.key_lands(key.code, Instant::now()) {
             // Over the detail the user may be mid-message: a space or Enter
             // typed for it must not choose an option they never picked, nor
             // open the free-text field that the next message would fill.
@@ -16038,6 +16073,9 @@ async fn handle_ask_mouse(
     else {
         return true;
     };
+    // A click answers at once, even over the detail where keys wait out a
+    // pause and need an arrow first (`PromptPause`): those guard against keys
+    // already on their way for the draft, and a click on a row is aimed.
     ask.selected = selected;
     let submit = ask.choose();
     if submit {
@@ -16779,7 +16817,7 @@ async fn handle_key_input(
             .expect("checked non-empty above");
         // Keys already on their way when the prompt landed over the detail,
         // or pressed in a burst, fall on it without effect.
-        if over_detail && !prompt_key_lands(&mut pending.quiet_until, Instant::now()) {
+        if over_detail && !pending.pause.key_lands(key.code, Instant::now()) {
             return;
         }
         let decision = match key.code {
@@ -25244,21 +25282,39 @@ fn draw(f: &mut Frame, app: &mut App) {
 fn draw_queued_prompt(f: &mut Frame, app: &mut App, input: Rect, body: Rect) -> bool {
     let over_detail = app.agent_detail_open();
     // A prompt's pause over the detail starts when the user can see it there
-    // (`prompt_key_lands`), not when it was queued: one queued behind another,
-    // or seen in the main view before the detail opened, lands as new when it
-    // shows over the detail. The main view does not read the pause.
+    // (`PromptPause::key_lands`), not when it was queued: one queued behind
+    // another, or seen in the main view before the detail opened, lands as new
+    // when it shows over the detail. The main view does not read the pause.
     let now = Instant::now();
-    let stamp = |quiet_until: &mut Option<Instant>| {
+    let stamp = |pause: &mut PromptPause| {
         if !over_detail {
-            *quiet_until = None;
-        } else if quiet_until.is_none() {
-            *quiet_until = Some(now + PROMPT_PAUSE);
+            *pause = PromptPause::default();
+        } else if pause.until.is_none() {
+            pause.until = Some(now + PROMPT_PAUSE);
         }
     };
+    // Every prompt but the one in front is hidden, so it forgets its pause and
+    // its arming: a permission request covered by a newer ask, then uncovered
+    // when the ask is answered, comes back with a fresh pause and unarmed.
+    // Otherwise its old, long-past deadline would let a reflex second Enter,
+    // meant for the ask, confirm whatever the user had armed on it before.
+    // It has to be armed again, on the safe row, like any prompt that lands
+    // over the detail. The main view reads neither (`prompt_highlight`, and
+    // its Enter ignores `picked`), so it is unchanged.
+    let shown_requests = usize::from(app.ask_queue.is_empty());
+    let hidden_asks = app.ask_queue.iter_mut().skip(1);
+    let hidden_requests = app.pending_queue.iter_mut().skip(shown_requests);
+    let hidden = hidden_asks
+        .map(|ask| (&mut ask.pause, &mut ask.picked))
+        .chain(hidden_requests.map(|p| (&mut p.pause, &mut p.picked)));
+    for (pause, picked) in hidden {
+        *pause = PromptPause::default();
+        *picked = false;
+    }
     if !app.ask_queue.is_empty() {
         let queue_len = app.ask_queue.len();
         let ask = app.ask_queue.front_mut().expect("checked non-empty above");
-        stamp(&mut ask.quiet_until);
+        stamp(&mut ask.pause);
         let height = ask.box_height(input.width).min(body.height);
         let y = input.y.saturating_sub(height).max(body.y);
         let rect = Rect { x: input.x, y, width: input.width, height };
@@ -25266,7 +25322,7 @@ fn draw_queued_prompt(f: &mut Frame, app: &mut App, input: Rect, body: Rect) -> 
         return true;
     }
     if let Some(pending) = app.pending_queue.front_mut() {
-        stamp(&mut pending.quiet_until);
+        stamp(&mut pending.pause);
     }
     let Some(pending) = app.pending() else {
         return false;
@@ -25363,7 +25419,7 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize, o
         // waiting, Left/Right edit the draft rather than switch questions, and
         // Enter and Space do nothing until an arrow arms it and its pause runs
         // out (`handle_ask_key`).
-        let live = prompt_live(ask.picked, ask.quiet_until, std::time::Instant::now());
+        let live = ask.pause.live(ask.picked, std::time::Instant::now());
         let help = match (over_detail, live) {
             (false, _) => format!(
                 "\u{2191}\u{2193} move{toggle} \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
@@ -27613,7 +27669,7 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
             return hint_spans(style, &[("Enter", "answer"), ("Esc", "options")]);
         }
         // Enter is named only once it would confirm something: armed with an
-        // arrow (`Pending::arrow`) and past its pause (`prompt_key_lands`).
+        // arrow (`Pending::arrow`) and past its pause (`PromptPause::key_lands`).
         return if app.front_prompt_live() {
             hint_spans(
                 style,
@@ -27731,6 +27787,7 @@ mod tests {
         cancel_command, next_event, RunEvent, SessionLimits, SteeringRequest, SubagentOutcome,
     };
     use tokio::sync::mpsc;
+    use super::{PromptPause, HELD_KEY_WINDOW, PROMPT_PAUSE};
     use super::{
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_repaint, apply_resume, apply_stream_event, assistant_is_awaiting_user_answer,
@@ -29180,12 +29237,14 @@ mod tests {
 
     /// Lets the pause run out on the prompt on screen, as if the user had
     /// stopped to read it (`PROMPT_PAUSE`), without sleeping.
+    /// The last key is forgotten too, so the next press is a fresh one rather
+    /// than a held key's repeat (`HELD_KEY_WINDOW`).
     fn settle_prompt(app: &mut App) {
-        let now = Some(Instant::now());
+        let settled = PromptPause { until: Some(Instant::now()), last_key: None };
         if let Some(ask) = app.ask_queue.front_mut() {
-            ask.quiet_until = now;
+            ask.pause = settled;
         } else if let Some(pending) = app.pending_queue.front_mut() {
-            pending.quiet_until = now;
+            pending.pause = settled;
         }
     }
 
@@ -29368,6 +29427,152 @@ mod tests {
         assert_eq!(app.ask_queue.len(), 1, "question 2 was answered unarmed");
         assert!(app.ask_queue[0].answers[1].selected.is_empty());
         assert!(!footer_text(&app).contains("Enter"), "{}", footer_text(&app));
+    }
+
+    /// `by` passes for the prompt on screen, without sleeping: its pause and
+    /// its last key's press move that far into the past.
+    fn elapse(app: &mut App, by: Duration) {
+        let back = |at: Instant| at.checked_sub(by).expect("monotonic clock this far back");
+        let pause = match app.ask_queue.front_mut() {
+            Some(ask) => &mut ask.pause,
+            None => &mut app.pending_queue.front_mut().expect("a prompt on screen").pause,
+        };
+        pause.until = pause.until.map(back);
+        pause.last_key = pause.last_key.map(|(code, at)| (code, back(at)));
+    }
+
+    /// A held key, as the TUI gets it without keyboard enhancement: a press,
+    /// its first repeat after the OS repeat delay `delay`, then repeats every
+    /// 33 ms, then the release and a pause.
+    async fn hold_key(
+        app: &mut App,
+        asks: &crate::core::agent::interaction::AskRegistry,
+        perms: &PermissionRegistry,
+        code: KeyCode,
+        delay: Duration,
+    ) {
+        press_routed(app, asks, perms, code, KeyModifiers::NONE).await;
+        elapse(app, delay);
+        for _ in 0..10 {
+            press_routed(app, asks, perms, code, KeyModifiers::NONE).await;
+            elapse(app, Duration::from_millis(33));
+        }
+        elapse(app, PROMPT_PAUSE);
+    }
+
+    /// The OS repeat delays a held key is checked against: GNOME and Windows'
+    /// default, X11's `xset` default, a slow one a user might pick, and none
+    /// (the repeats start at once).
+    const REPEAT_DELAYS: [u64; 4] = [500, 660, 1000, 33];
+
+    /// Holding an arrow over the detail counts as one press: it arms the
+    /// prompt on its safe row and its repeats never move it, so after the
+    /// release and a pause Enter denies (or, on an ask, opens "Other") rather
+    /// than granting the row a repeat would have reached.
+    #[tokio::test]
+    async fn a_held_arrow_over_the_detail_only_arms() {
+        for arrow in [KeyCode::Up, KeyCode::Down] {
+            for delay in REPEAT_DELAYS.map(Duration::from_millis) {
+                let mut app = test_app();
+                counter_detail(&mut app).await;
+                let asks = crate::core::agent::interaction::new_registry();
+                let perms = PermissionRegistry::default();
+                let (tx, mut decision) = tokio::sync::oneshot::channel();
+                perms.lock().await.insert("p1".to_string(), tx);
+                child_permission(&mut app, "p1", "rm -rf build");
+                settle_prompt(&mut app);
+                hold_key(&mut app, &asks, &perms, arrow, delay).await;
+                let pending = &app.pending_queue[0];
+                assert!(pending.picked, "{arrow:?} held {delay:?} did not arm");
+                assert_eq!(pending.selected, 2, "{arrow:?} held {delay:?} moved off Deny");
+                press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+                let got = decision.try_recv().ok();
+                assert_eq!(got, Some(PermissionDecision::Deny), "{arrow:?} held {delay:?}");
+
+                let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+                app.apply(StreamEvent::AskRequest {
+                    request_id,
+                    request: ask_request(false, false),
+                    timeout_secs: None,
+                });
+                settle_prompt(&mut app);
+                hold_key(&mut app, &asks, &perms, arrow, delay).await;
+                assert_eq!(app.ask_queue[0].selected, 2, "{arrow:?} held {delay:?} left Other");
+                press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+                assert_eq!(app.ask_queue.len(), 1, "{arrow:?} held {delay:?} answered the ask");
+                assert!(app.ask_queue[0].answers[0].selected.is_empty());
+                assert!(app.ask_queue[0].editing_custom, "Enter on Other opens the field");
+            }
+        }
+    }
+
+    /// Deliberate presses still move: the same arrow again once a held key's
+    /// repeat would have come, or a different key a pause after the last.
+    #[tokio::test]
+    async fn distinct_presses_a_pause_apart_over_the_detail_still_move() {
+        let cases = [
+            ([KeyCode::Up, KeyCode::Up], HELD_KEY_WINDOW, PermissionDecision::AllowAlways),
+            ([KeyCode::Down, KeyCode::Up], PROMPT_PAUSE, PermissionDecision::AllowAlways),
+            ([KeyCode::Up, KeyCode::Up], PROMPT_PAUSE, PermissionDecision::Deny),
+        ];
+        for (keys, gap, expected) in cases {
+            let mut app = test_app();
+            counter_detail(&mut app).await;
+            let asks = crate::core::agent::interaction::new_registry();
+            let perms = PermissionRegistry::default();
+            let (tx, mut decision) = tokio::sync::oneshot::channel();
+            perms.lock().await.insert("p1".to_string(), tx);
+            child_permission(&mut app, "p1", "rm -rf build");
+            settle_prompt(&mut app);
+            for code in keys {
+                press_routed(&mut app, &asks, &perms, code, KeyModifiers::NONE).await;
+                elapse(&mut app, gap);
+            }
+            press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+            assert_eq!(decision.try_recv().ok(), Some(expected), "{keys:?} {gap:?} apart");
+        }
+    }
+
+    /// A permission request covered by a newer ask comes back from behind it
+    /// unarmed and with a fresh pause: the reflex second Enter of the one that
+    /// answered the ask does not confirm what the user had armed on it before.
+    #[tokio::test]
+    async fn a_request_uncovered_by_an_answered_ask_returns_unarmed() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (tx, mut decision) = tokio::sync::oneshot::channel();
+        perms.lock().await.insert("p1".to_string(), tx);
+        child_permission(&mut app, "p1", "rm -rf build");
+        render_rows(&mut app, 100, 30);
+        settle_prompt(&mut app);
+        press_detail(&mut app, &asks, &perms, &[KeyCode::Down, KeyCode::Up], true).await;
+        assert_eq!(app.pending_queue[0].selected, 1, "armed on Allow always");
+
+        let (request_id, answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+        render_rows(&mut app, 100, 30);
+        settle_prompt(&mut app);
+        let keys = [KeyCode::Down, KeyCode::Up, KeyCode::Enter];
+        press_detail(&mut app, &asks, &perms, &keys, true).await;
+        assert_eq!(answer.await.unwrap().unwrap()[0].selected, vec!["Large"]);
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(decision.try_recv().is_err(), "the reflex Enter confirmed the request");
+
+        // Drawn again, it still has to be armed after its pause, on Deny.
+        render_rows(&mut app, 100, 30);
+        let pending = &app.pending_queue[0];
+        assert!(!pending.picked, "the uncovered request is still armed");
+        assert!(pending.pause.until.is_some_and(|until| until > Instant::now()));
+        settle_prompt(&mut app);
+        assert!(!footer_text(&app).contains("Enter"), "{}", footer_text(&app));
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(decision.try_recv().is_err(), "an unarmed Enter decided");
     }
 
     /// With a prompt over the detail the child's run still scrolls: PgUp/PgDn,
@@ -30757,7 +30962,7 @@ fn a() {}
             justification: None,
             selected: 0,
             picked: false,
-            quiet_until: None,
+            pause: PromptPause::default(),
             subagent: None,
         }
     }
