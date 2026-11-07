@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
-    canonicalize_metered, escapes_read_roots, escapes_write_roots, hidden_tokens, resolve_cost,
-    HiddenRoot, Meter, MAX_RESOLVE_COST,
+    canonicalize_metered, escapes_roots_metered, hidden_tokens, resolve_cost, HiddenRoot, Meter,
+    MAX_RESOLVE_COST,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -212,18 +212,23 @@ pub fn resolve_decision_with_cwd(
     if perms.is_denied(tool.name) {
         return Decision::HardDeny(DenyReason::Policy);
     }
-    // One budget for every path this decision resolves. Every branch below
-    // resolves the path arguments against the project root, some of it in
-    // escape checks that are not metered, so their estimated cost is
-    // charged up front whatever else applies.
+    // One budget for every path this decision resolves, with or without a
+    // hidden root: the escape checks below walk the path arguments too, and
+    // with the sandbox off they are the only walk. Each walk charges the
+    // meter what it really does.
     let meter = Meter::new(MAX_RESOLVE_COST);
+    // Estimated from the text first, so a path argument too deep on its
+    // face (whose missing tail a walk would append for free) is refused
+    // without a syscall. A cap, not a charge: charging it as well made each
+    // path argument pay twice, so the deepest one that fit was ~1650
+    // components rather than the 2048 the budget is sized for.
     let root_depth = ctx.project_root.components().count();
     let path_cost = tool
         .path_args
         .iter()
         .filter_map(|key| args.get(key).and_then(|v| v.as_str()))
         .fold(0usize, |sum, p| sum.saturating_add(resolve_cost(root_depth, p)));
-    if meter.charge(path_cost).is_err() {
+    if path_cost > MAX_RESOLVE_COST {
         return Decision::HardDeny(DenyReason::TooComplex);
     }
     // Ahead of allow rules and session grants, so neither an allowed tool name
@@ -354,15 +359,9 @@ pub fn resolve_decision_with_cwd(
             // Read roots widen only this branch; the Write branch below widens
             // only by `write_roots`, so an attached folder is writable exactly
             // when the caller marked it so.
-            let escapes = tool.path_args.iter().any(|key| {
-                args.get(key)
-                    .and_then(|v| v.as_str())
-                    .map(|p| {
-                        escapes_read_roots(ctx.project_root, ctx.scratch, ctx.read_roots, p)
-                            .unwrap_or(true)
-                    })
-                    .unwrap_or(false)
-            });
+            let Some(escapes) = escapes_any(tool, args, ctx, ctx.read_roots, &meter) else {
+                return Decision::HardDeny(DenyReason::TooComplex);
+            };
             if !escapes || grants.covers(PromptKind::ReadEscape) {
                 Decision::Allow
             } else {
@@ -382,15 +381,9 @@ pub fn resolve_decision_with_cwd(
         // this branch exactly the way read roots widen the Read branch; a
         // caller that passes none keeps the unchanged `escapes_project`.
         Capability::Write => {
-            let escapes = tool.path_args.iter().any(|key| {
-                args.get(key)
-                    .and_then(|v| v.as_str())
-                    .map(|p| {
-                        escapes_write_roots(ctx.project_root, ctx.scratch, ctx.write_roots, p)
-                            .unwrap_or(true)
-                    })
-                    .unwrap_or(false)
-            });
+            let Some(escapes) = escapes_any(tool, args, ctx, ctx.write_roots, &meter) else {
+                return Decision::HardDeny(DenyReason::TooComplex);
+            };
             if escapes {
                 if grants.covers(PromptKind::WriteEscape) {
                     Decision::Allow
@@ -410,6 +403,26 @@ pub fn resolve_decision_with_cwd(
             }
         }
     }
+}
+
+/// True iff a path argument of the call escapes the project, the scratch
+/// and `roots` (one that fails to resolve counts as escaping). `None` when
+/// `meter` ran out on the way: the answer is unknown, and the caller refuses
+/// the call as too complex rather than let a cut-short check read as an
+/// escape it could grant or as inside the project.
+fn escapes_any(
+    tool: &BuiltinTool,
+    args: &serde_json::Value,
+    ctx: &GateContext,
+    roots: &[PathBuf],
+    meter: &Meter,
+) -> Option<bool> {
+    let escapes = tool.path_args.iter().any(|key| {
+        args.get(key).and_then(|v| v.as_str()).is_some_and(|p| {
+            escapes_roots_metered(ctx.project_root, ctx.scratch, roots, p, meter).unwrap_or(true)
+        })
+    });
+    (!meter.spent()).then_some(escapes)
 }
 
 fn gated(kind: PromptKind, grants: &SessionGrants) -> Decision {
@@ -1395,6 +1408,48 @@ mod tests {
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// With no hidden root (the sandbox off) the escape checks are the only
+    /// walk of a path argument, and are metered too: a read or write path
+    /// through a chain of links, each leading back into a deep directory,
+    /// took the gate 20 s. It is refused as too complex instead, never let
+    /// through on a check cut short; a shallow path is decided as before.
+    #[cfg(unix)]
+    #[test]
+    fn a_path_through_links_into_a_deep_directory_is_decided_quickly_unsandboxed() {
+        let project = std::fs::canonicalize(unique_root()).unwrap();
+        let deep = project.join("a/".repeat(1900));
+        std::fs::create_dir_all(&deep).unwrap();
+        std::os::unix::fs::symlink(&deep, deep.join("l0")).unwrap();
+        for n in 1..30 {
+            let prev = deep.join(format!("l{}", n - 1));
+            std::os::unix::fs::symlink(prev, deep.join(format!("l{n}"))).unwrap();
+        }
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: None,
+        };
+        let perms = ToolPermissions::default();
+        let grants = SessionGrants::default();
+        let chained = deep.join("l29/x").to_string_lossy().into_owned();
+        for (tool, args) in [
+            ("read", json!({"path": chained})),
+            ("write", json!({"path": chained, "content": ""})),
+        ] {
+            let start = std::time::Instant::now();
+            let d = resolve_decision(lookup(tool).unwrap(), &args, &ctx, &perms, &grants);
+            let took = start.elapsed();
+            assert_eq!(d, Decision::HardDeny(DenyReason::TooComplex), "{tool}");
+            assert!(took < std::time::Duration::from_secs(5), "{tool}: {took:?}");
+        }
+        let shallow = json!({"path": "a/a/x"});
+        let d = resolve_decision(lookup("read").unwrap(), &shallow, &ctx, &perms, &grants);
+        assert_eq!(d, Decision::Allow);
+        let _ = std::fs::remove_dir_all(&project);
     }
 
     /// Realistic large calls stay well inside the budget: a long prose or

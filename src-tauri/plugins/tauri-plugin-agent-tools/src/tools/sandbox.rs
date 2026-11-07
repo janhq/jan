@@ -10,30 +10,7 @@ pub fn escapes_project(
     scratch: Option<&Path>,
     raw: &str,
 ) -> Result<bool, String> {
-    let root = project_root
-        .canonicalize()
-        .map_err(|e| format!("project root {:?}: {e}", project_root))?;
-    let abs = if Path::new(raw).is_absolute() {
-        PathBuf::from(raw)
-    } else {
-        root.join(raw)
-    };
-    let resolved = canonicalize_lenient(&abs)?;
-    if resolved.starts_with(&root) {
-        return Ok(false);
-    }
-    // The scratch is the agent's own per-session area and is writable under
-    // every backend at this same real path, so a path landing in it is not a
-    // host escape even though it sits outside the project. Canonicalized, so
-    // a symlink the shell planted in the scratch cannot lead back out. A
-    // scratch that cannot be canonicalized grants nothing: the path stays an
-    // escape.
-    if let Some(scratch) = scratch {
-        if let Ok(scratch) = scratch.canonicalize() {
-            return Ok(!resolved.starts_with(&scratch));
-        }
-    }
-    Ok(true)
+    escapes_roots_metered(project_root, scratch, &[], raw, &Meter::unlimited())
 }
 
 /// True iff `raw` escapes every root a *read* may legitimately reach: the
@@ -43,7 +20,7 @@ pub fn escapes_project(
 /// keeps the exact check it has today and a read root can only ever widen what
 /// reads reach, never what writes do.
 ///
-/// A read root that cannot be canonicalized grants nothing — same rule as the
+/// A read root that cannot be canonicalized grants nothing -- same rule as the
 /// scratch above. A vanished root must not silently open a path up.
 pub fn escapes_read_roots(
     project_root: &Path,
@@ -51,29 +28,7 @@ pub fn escapes_read_roots(
     read_roots: &[PathBuf],
     raw: &str,
 ) -> Result<bool, String> {
-    if !escapes_project(project_root, scratch, raw)? {
-        return Ok(false);
-    }
-    if read_roots.is_empty() {
-        return Ok(true);
-    }
-    let abs = if Path::new(raw).is_absolute() {
-        PathBuf::from(raw)
-    } else {
-        // Relative paths belong to the workspace, never to an attached folder:
-        // resolving them against a read root would make `write` and `read`
-        // disagree about what one path means.
-        project_root.join(raw)
-    };
-    let resolved = canonicalize_lenient(&abs)?;
-    for root in read_roots {
-        if let Ok(root) = root.canonicalize() {
-            if resolved.starts_with(&root) {
-                return Ok(false);
-            }
-        }
-    }
-    Ok(true)
+    escapes_roots_metered(project_root, scratch, read_roots, raw, &Meter::unlimited())
 }
 
 /// True iff `raw` escapes every root a *write* may legitimately reach: the
@@ -89,28 +44,44 @@ pub fn escapes_write_roots(
     write_roots: &[PathBuf],
     raw: &str,
 ) -> Result<bool, String> {
-    if !escapes_project(project_root, scratch, raw)? {
-        return Ok(false);
-    }
-    if write_roots.is_empty() {
-        return Ok(true);
-    }
+    escapes_roots_metered(project_root, scratch, write_roots, raw, &Meter::unlimited())
+}
+
+/// [`escapes_project`] widened by `roots` (the read or the write roots),
+/// charging `meter` for resolving `raw`; an error once it runs out, which
+/// the gate must tell from an escape with [`Meter::spent`]. Only `raw` is
+/// metered: it is what the model sends, while the roots are the user's and
+/// cost one `canonicalize` each.
+///
+/// `raw` is resolved once, relative paths against the project root: they
+/// belong to the workspace, never to an attached folder, or `write` and
+/// `read` would disagree about what one path means.
+pub fn escapes_roots_metered(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    roots: &[PathBuf],
+    raw: &str,
+    meter: &Meter,
+) -> Result<bool, String> {
+    let root = project_root
+        .canonicalize()
+        .map_err(|e| format!("project root {:?}: {e}", project_root))?;
     let abs = if Path::new(raw).is_absolute() {
         PathBuf::from(raw)
     } else {
-        // Relative paths belong to the workspace, never to an attached folder
-        // -- the same rule reads follow, so one path means one place to both.
-        project_root.join(raw)
+        root.join(raw)
     };
-    let resolved = canonicalize_lenient(&abs)?;
-    for root in write_roots {
-        if let Ok(root) = root.canonicalize() {
-            if resolved.starts_with(&root) {
-                return Ok(false);
-            }
-        }
-    }
-    Ok(true)
+    let resolved = canonicalize_metered(&abs, meter)?;
+    // The scratch is the agent's own per-session area and is writable under
+    // every backend at this same real path, so a path landing in it is not a
+    // host escape even though it sits outside the project. Canonicalized, so
+    // a symlink the shell planted in the scratch (or a root) cannot lead back
+    // out. A scratch or root that cannot be canonicalized grants nothing: the
+    // path stays an escape.
+    let within = |dir: &Path| dir.canonicalize().is_ok_and(|dir| resolved.starts_with(dir));
+    Ok(!resolved.starts_with(&root)
+        && !scratch.is_some_and(within)
+        && !roots.iter().any(|r| within(r)))
 }
 
 /// Resolve a tool-supplied path to its on-disk location: absolute paths as
@@ -335,6 +306,8 @@ struct Carve {
 
 impl Carve {
     fn new(read_roots: &[PathBuf], write_roots: &[PathBuf], meter: &Meter) -> Self {
+        // Charged on every decision that carves: two attached roots ~1900
+        // deep would spend the budget alone, accepted as the user attaches them.
         let real = |roots: &[PathBuf]| -> Vec<PathBuf> {
             roots.iter().filter_map(|r| meter.canonicalize(r).ok().flatten()).collect()
         };
@@ -448,9 +421,9 @@ pub const MAX_RESOLVE_COST: usize = 2048 * 2048;
 /// far. A bare word thus costs the depth of its directory; an absolute path
 /// ignores the base.
 ///
-/// Blind to links, so it only pre-charges a [`Meter`] for checks that run
-/// unmetered (the gate's escape checks of a path argument); a walk charges
-/// what it really does.
+/// Blind to links, so the gate uses it only as a cap, to refuse what is too
+/// deep on its face before any syscall; the [`Meter`] is charged by the
+/// walks, with what they really do.
 pub fn resolve_cost(base_depth: usize, raw: &str) -> usize {
     let own = raw.bytes().filter(|b| *b == b'/' || *b == b'\\').count() + 1;
     let depth = if Path::new(raw).is_absolute() { own } else { own + base_depth };
@@ -815,7 +788,7 @@ pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
 /// there can cost more than it is charged.
 pub(crate) fn canonicalize_metered(path: &Path, meter: &Meter) -> Result<PathBuf, String> {
     use std::path::Component;
-    let walk_all = meter.is_limited() && cfg!(any(target_os = "linux", target_os = "android"));
+    let walk_all = meter.walks_all();
     if !walk_all {
         if let Some(p) = meter.canonicalize(path)? {
             return Ok(p);
@@ -872,8 +845,10 @@ impl Meter {
         Self { used: std::cell::Cell::new(0), budget: None }
     }
 
-    fn is_limited(&self) -> bool {
-        self.budget.is_some()
+    /// True when walks charged to this meter make every lookup themselves
+    /// rather than ask `realpath` (see [`canonicalize_metered`]).
+    fn walks_all(&self) -> bool {
+        self.budget.is_some() && cfg!(any(target_os = "linux", target_os = "android"))
     }
 
     /// True once a charge went past the budget.
@@ -980,10 +955,16 @@ fn walk(
                 }
                 // Through a link the lookup walks wherever it leads, which
                 // may be far deeper than the text: charged by the result.
-                if let Some(real) = meter.canonicalize(&resolved)? {
-                    depth = real.components().count();
-                    resolved = real;
-                    continue;
+                // Where the meter walks all, the target is spliced in and
+                // walked instead: one `realpath` through a chain of links
+                // into a deep directory took seconds before it could be
+                // charged.
+                if !meter.walks_all() {
+                    if let Some(real) = meter.canonicalize(&resolved)? {
+                        depth = real.components().count();
+                        resolved = real;
+                        continue;
+                    }
                 }
                 hops += 1;
                 if hops > MAX_HOPS {
