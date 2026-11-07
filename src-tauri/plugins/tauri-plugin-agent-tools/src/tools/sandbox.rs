@@ -237,33 +237,42 @@ pub fn in_hidden_root(project_root: &Path, hidden: &Path, raw: &str) -> bool {
 /// from there. The worktree exception stays keyed on `project_root`, since
 /// that, not where the shell stands, is the agent's working tree.
 pub fn in_hidden_root_from(project_root: &Path, base: &Path, hidden: &Path, raw: &str) -> bool {
-    HiddenRoot::new(project_root, base, hidden).is_some_and(|h| h.holds(raw))
+    let meter = Meter::unlimited();
+    HiddenRoot::new(project_root, base, hidden, &meter).is_some_and(|h| h.holds(raw, &meter))
 }
 
-/// The hidden root, its worktree exception (see [`in_hidden_root`]) and the
-/// base relative paths resolve against, resolved once: a caller checking
-/// many paths (every token of a command) would otherwise re-resolve all
-/// three for each, which from a deep base cost every token a syscall per
-/// component of it.
+/// The hidden root, its worktree exception (see [`in_hidden_root`]), the
+/// base relative paths resolve against and the attached roots carved out of
+/// it, resolved once: a caller checking many paths (every token of a
+/// command) would otherwise re-resolve all of them for each, which from a
+/// deep base cost every token a syscall per component of it.
 pub struct HiddenRoot {
     hidden: PathBuf,
     /// The project root when it is a worktree inside `hidden`.
     worktree: Option<PathBuf>,
-    /// `base`, canonical when it resolves; else as given, and each path is
-    /// resolved from scratch.
-    base: Result<PathBuf, PathBuf>,
+    base: Base,
+    carve: Carve,
 }
 
 impl HiddenRoot {
-    /// `None` when `hidden` cannot be resolved: then nothing is in it.
-    pub fn new(project_root: &Path, base: &Path, hidden: &Path) -> Option<Self> {
-        let hidden = canonicalize_lenient(hidden).ok()?;
-        let worktree = project_root
-            .canonicalize()
+    /// `None` when `hidden` cannot be resolved: then nothing is in it. No
+    /// attached root is carved out until [`HiddenRoot::carving`] says so.
+    pub fn new(project_root: &Path, base: &Path, hidden: &Path, meter: &Meter) -> Option<Self> {
+        let hidden = canonicalize_metered(hidden, meter).ok()?;
+        let worktree = meter
+            .canonicalize(project_root)
             .ok()
+            .flatten()
             .filter(|root| *root != hidden && root.starts_with(&hidden));
-        let base = base.canonicalize().map_err(|_| base.to_path_buf());
-        Some(Self { hidden, worktree, base })
+        let base = Base::new(project_root, base, meter);
+        Some(Self { hidden, worktree, base, carve: Carve::default() })
+    }
+
+    /// This root with what [`shell_reads_attached_from`] lets through carved
+    /// out of it: paths in `read_roots` and in none of `write_roots`. A tool
+    /// that only reads passes no write roots.
+    pub fn carving(self, read_roots: &[PathBuf], write_roots: &[PathBuf], meter: &Meter) -> Self {
+        Self { carve: Carve::new(read_roots, write_roots, meter), ..self }
     }
 
     /// The resolved hidden root.
@@ -271,17 +280,75 @@ impl HiddenRoot {
         &self.hidden
     }
 
-    /// [`in_hidden_root_from`] against this root and base.
-    pub fn holds(&self, raw: &str) -> bool {
-        let resolved = match &self.base {
-            Ok(dir) if !Path::new(raw).is_absolute() => resolve_from(dir, raw),
-            Ok(dir) | Err(dir) => canonicalize_lenient(&resolve_path(dir, raw)),
-        };
-        let Ok(resolved) = resolved else {
+    /// [`in_hidden_root_from`] against this root and base, less the carve-out.
+    /// False when `meter` runs out, which the caller must check.
+    pub fn holds(&self, raw: &str, meter: &Meter) -> bool {
+        let Ok(resolved) = self.base.resolve(raw, meter) else {
             return false;
         };
         resolved.starts_with(&self.hidden)
             && !self.worktree.as_ref().is_some_and(|w| resolved.starts_with(w))
+            && !self.carve.covers(&self.base, raw, &resolved)
+    }
+}
+
+/// The directory relative paths resolve against, resolved once.
+struct Base {
+    /// Canonical when it resolves; else as given, and each path is resolved
+    /// from scratch.
+    dir: Result<PathBuf, PathBuf>,
+    /// The base is the project root: its relative paths belong to the
+    /// project, never to an attached root. A literal comparison on purpose:
+    /// the held cwd is always a physical path (`pwd -P`) and is cleared once
+    /// it equals the canonical root, so a caller passes either the root
+    /// itself or something else. A caller that spells the root differently
+    /// gets no carve-out for relative paths from it, which fails closed.
+    is_project: bool,
+}
+
+impl Base {
+    fn new(project_root: &Path, base: &Path, meter: &Meter) -> Self {
+        let dir = match meter.canonicalize(base) {
+            Ok(Some(dir)) => Ok(dir),
+            _ => Err(base.to_path_buf()),
+        };
+        Self { dir, is_project: base == project_root }
+    }
+
+    /// `raw` resolved against this base, every link followed.
+    fn resolve(&self, raw: &str, meter: &Meter) -> Result<PathBuf, String> {
+        match &self.dir {
+            Ok(dir) if !Path::new(raw).is_absolute() => resolve_from(dir, raw, meter),
+            Ok(dir) | Err(dir) => canonicalize_metered(&resolve_path(dir, raw), meter),
+        }
+    }
+}
+
+/// Attached roots a path in the Jan home may still be named in (see
+/// [`shell_reads_attached_from`]), canonicalized once. A root that cannot
+/// be canonicalized grants nothing.
+#[derive(Default)]
+struct Carve {
+    read: Vec<PathBuf>,
+    write: Vec<PathBuf>,
+}
+
+impl Carve {
+    fn new(read_roots: &[PathBuf], write_roots: &[PathBuf], meter: &Meter) -> Self {
+        let real = |roots: &[PathBuf]| -> Vec<PathBuf> {
+            roots.iter().filter_map(|r| meter.canonicalize(r).ok().flatten()).collect()
+        };
+        Self { read: real(read_roots), write: real(write_roots) }
+    }
+
+    /// True iff `raw`, which resolved to `resolved` from `base`, is in a read
+    /// root and in no write root.
+    fn covers(&self, base: &Base, raw: &str, resolved: &Path) -> bool {
+        if self.read.is_empty() || (!Path::new(raw).is_absolute() && base.is_project) {
+            return false;
+        }
+        let within = |roots: &[PathBuf]| roots.iter().any(|r| resolved.starts_with(r));
+        within(&self.read) && !within(&self.write)
     }
 }
 
@@ -316,7 +383,7 @@ impl HiddenRoot {
 /// caller resolves every token, so a scan without a bound would stall the
 /// agent in the gate; it refuses the command instead, failing closed, and
 /// the model can split or simplify it. What resolving the tokens costs is
-/// bounded by the caller, with [`resolve_cost`].
+/// bounded by the caller, with a [`Meter`].
 pub fn hidden_tokens(hidden: &Path, command: &str) -> Option<Vec<String>> {
     let home = hidden.parent().map(|h| h.to_string_lossy().into_owned());
     let words = command.split(|c: char| c.is_whitespace() || ";|&><()\"'`=".contains(c));
@@ -364,23 +431,26 @@ const MAX_TOKENS: usize = 150_000;
 /// memory and time, not the resolving that follows.
 const MAX_TOKEN_BYTES: usize = 4 << 20;
 
-/// The most [`resolve_cost`] one gate decision may spend on all the paths it
-/// resolves (command tokens and path arguments together): a path 2048
-/// components deep, or a 150k-word command run from a directory 25 levels
-/// deep. A path syscall walks the path from the root, so the work is
-/// quadratic in a path's depth whichever way it is resolved: one path a
-/// model can send, made of real directories and `..`, took minutes. Up to
-/// this budget it takes about a second in a release build.
+/// The most one gate decision may spend on all the paths it resolves
+/// (command tokens and path arguments together), in path components the OS
+/// walks, charged to one [`Meter`]: a path 2048 components deep, or a
+/// 150k-word command run from a directory 25 levels deep. A path syscall
+/// walks the path from the root, so the work is quadratic in a path's depth
+/// whichever way it is resolved: one path a model can send, made of real
+/// directories and `..`, took minutes, and so did many short tokens through
+/// a link into a deep directory. Up to this budget it takes well under a
+/// second in a release build.
 pub const MAX_RESOLVE_COST: usize = 2048 * 2048;
 
-/// What the gate pays to resolve `raw` against a directory `base_depth`
-/// components deep, in path components walked: each component of the full
-/// path is a step, and each step walks the path so far. A bare word thus
-/// costs the depth of its directory; an absolute path ignores the base.
+/// What resolving `raw` against a directory `base_depth` components deep
+/// costs, estimated from the text in the units of [`MAX_RESOLVE_COST`]: each
+/// component of the full path is a step, and each step walks the path so
+/// far. A bare word thus costs the depth of its directory; an absolute path
+/// ignores the base.
 ///
-/// Counted from the text, so a symlink into a deep directory costs more than
-/// it is charged; the OS sandbox masking the home covers a confined run if
-/// that stalls the gate.
+/// Blind to links, so it only pre-charges a [`Meter`] for checks that run
+/// unmetered (the gate's escape checks of a path argument); a walk charges
+/// what it really does.
 pub fn resolve_cost(base_depth: usize, raw: &str) -> usize {
     let own = raw.bytes().filter(|b| *b == b'/' || *b == b'\\').count() + 1;
     let depth = if Path::new(raw).is_absolute() { own } else { own + base_depth };
@@ -581,46 +651,13 @@ fn unescape(word: &str) -> String {
     out
 }
 
-/// True iff `raw` resolves inside one of `roots` (canonicalized attached
-/// folders). Relative paths belong to the project, never to a root.
-pub fn in_attached_root(project_root: &Path, roots: &[PathBuf], raw: &str) -> bool {
-    in_attached_root_from(project_root, project_root, roots, raw)
-}
-
-/// [`in_attached_root`] with a relative `raw` resolved against `base`, where
-/// a `cd` left the shell: the same base [`in_hidden_root_from`] resolves it
-/// against, so a shell standing in an attached root under the Jan home is
-/// carved out by the same token that would hit the home. From the project
-/// root itself a relative path still belongs to the project, never a root.
-pub fn in_attached_root_from(
-    project_root: &Path,
-    base: &Path,
-    roots: &[PathBuf],
-    raw: &str,
-) -> bool {
-    // A literal comparison on purpose: the held cwd is always a physical path
-    // (`pwd -P`) and is cleared once it equals the canonical root, so a
-    // caller passes either the root itself or something else. A caller that
-    // spells the root differently (non-canonical) gets no carve-out for
-    // relative paths from it, which fails closed: keep passing the same path.
-    if roots.is_empty() || (!Path::new(raw).is_absolute() && base == project_root) {
-        return false;
-    }
-    let Ok(resolved) = canonicalize_lenient(&resolve_path(base, raw)) else {
-        return false;
-    };
-    roots
-        .iter()
-        .filter_map(|r| r.canonicalize().ok())
-        .any(|r| resolved.starts_with(r))
-}
-
-/// True iff the confined shell may name `raw` (relative to `base`) even
-/// though it is in the Jan home: it sits in an attached read root the sandbox
-/// mounts read-only, which a root also marked writable is not. The gate's
-/// carve-out and the shell's choice of where it may stand both ask this, so
-/// the shell never holds a directory the gate would then refuse every
-/// command in.
+/// True iff the confined shell may name `raw` (relative to `base`, where a
+/// `cd` left it) even though it is in the Jan home: it sits in an attached
+/// read root the sandbox mounts read-only, which a root also marked writable
+/// is not. From the project root itself a relative path belongs to the
+/// project, never a root. The gate's carve-out ([`HiddenRoot::carving`]) and
+/// the shell's choice of where it may stand both ask this, so the shell
+/// never holds a directory the gate would then refuse every command in.
 pub fn shell_reads_attached_from(
     project_root: &Path,
     base: &Path,
@@ -628,8 +665,10 @@ pub fn shell_reads_attached_from(
     write_roots: &[PathBuf],
     raw: &str,
 ) -> bool {
-    in_attached_root_from(project_root, base, read_roots, raw)
-        && !in_attached_root_from(project_root, base, write_roots, raw)
+    let meter = Meter::unlimited();
+    let carve = Carve::new(read_roots, write_roots, &meter);
+    let base = Base::new(project_root, base, &meter);
+    base.resolve(raw, &meter).is_ok_and(|resolved| carve.covers(&base, raw, &resolved))
 }
 
 fn expand_home(token: &str, home: &str) -> String {
@@ -759,9 +798,28 @@ pub fn landing(
 /// syscall until a `..` climbs back out. A syscall per component on the whole
 /// prefix made one deep missing path a model sent cost the gate minutes.
 pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
+    canonicalize_metered(path, &Meter::unlimited())
+}
+
+/// [`canonicalize_lenient`] charging `meter` for the work it does; an error
+/// once the meter runs out.
+///
+/// On Linux a limited meter skips the whole-path `canonicalize` and the
+/// probes for the existing prefix, and walks from the root: `realpath` there
+/// is glibc making the walk's own lookups, a component at a time, so the
+/// result is the same, but a failing call tells nothing of what it spent (a
+/// link into a deep directory walks all of it before a missing leaf fails),
+/// so it could not be charged. Elsewhere the calls are kept, since they also
+/// spell the path as the roots are spelled (case; Windows applies `..`
+/// lexically), and a failing one is charged by the input's depth: a link
+/// there can cost more than it is charged.
+pub(crate) fn canonicalize_metered(path: &Path, meter: &Meter) -> Result<PathBuf, String> {
     use std::path::Component;
-    if let Ok(p) = path.canonicalize() {
-        return Ok(p);
+    let walk_all = meter.is_limited() && cfg!(any(target_os = "linux", target_os = "android"));
+    if !walk_all {
+        if let Some(p) = meter.canonicalize(path)? {
+            return Ok(p);
+        }
     }
     let abs = if path.is_absolute() {
         path.to_path_buf()
@@ -771,16 +829,89 @@ pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
             .join(path)
     };
     let parts: Vec<Component> = abs.components().collect();
-    let (seeded, resolved) = existing_prefix(&parts);
-    walk(path, resolved, &parts[seeded..])
+    let (seeded, resolved) = match walk_all {
+        true => (0, PathBuf::new()),
+        false => existing_prefix(&parts, meter)?,
+    };
+    walk(path, resolved, &parts[seeded..], meter)
 }
 
 /// [`canonicalize_lenient`] of a relative `raw` under `dir`, a canonical
 /// directory: walked from `dir` without resolving it again, so many paths
 /// under one deep directory do not each pay for its depth.
-fn resolve_from(dir: &Path, raw: &str) -> Result<PathBuf, String> {
+fn resolve_from(dir: &Path, raw: &str, meter: &Meter) -> Result<PathBuf, String> {
     let parts: Vec<std::path::Component> = Path::new(raw).components().collect();
-    walk(Path::new(raw), dir.to_path_buf(), &parts)
+    walk(Path::new(raw), dir.to_path_buf(), &parts, meter)
+}
+
+/// A budget for the path lookups one gate decision makes, shared by every
+/// path it resolves, in components the OS walks: a lookup of a path `k`
+/// components deep walks `k`. Charged with what the walk really does, the
+/// components of a link's target and the depth it lands at included, not
+/// estimated from the text: a short token through a link into a deep
+/// directory costs as much as that directory is deep, and thousands of
+/// them took the gate minutes.
+///
+/// Shared through `&self` (a `Cell`), as the gate's checks are closures
+/// over one meter. Once a charge fails the meter stays spent, so a caller
+/// that saw a path fail to resolve can tell running out from a path that
+/// does not resolve, with [`Meter::spent`].
+pub struct Meter {
+    used: std::cell::Cell<usize>,
+    /// `None` for callers outside the gate, which are not metered.
+    budget: Option<usize>,
+}
+
+impl Meter {
+    /// A meter that refuses past `budget` components walked.
+    pub fn new(budget: usize) -> Self {
+        Self { used: std::cell::Cell::new(0), budget: Some(budget) }
+    }
+
+    fn unlimited() -> Self {
+        Self { used: std::cell::Cell::new(0), budget: None }
+    }
+
+    fn is_limited(&self) -> bool {
+        self.budget.is_some()
+    }
+
+    /// True once a charge went past the budget.
+    pub fn spent(&self) -> bool {
+        self.budget.is_some_and(|b| self.used.get() > b)
+    }
+
+    /// Add `cost`; an error once the budget is exceeded.
+    pub fn charge(&self, cost: usize) -> Result<(), String> {
+        self.used.set(self.used.get().saturating_add(cost));
+        match self.spent() {
+            true => Err("too complex to resolve within the gate's budget".to_string()),
+            false => Ok(()),
+        }
+    }
+
+    /// `path.canonicalize()` charged: `Ok(None)` when it fails, an error
+    /// when the meter runs out (and then no call is made). `realpath` looks
+    /// up every prefix of the path, and after an absolute link every prefix
+    /// of where it leads, so a result `d` deep from an input `n` deep costs
+    /// about `1 + .. + n` plus `1 + .. + d`. A failed call is charged as if
+    /// it reached the input's depth; one that failed deep inside a dangling
+    /// link's target is paid for again by the walk that follows, which
+    /// splices that target in and charges each of its components.
+    fn canonicalize(&self, path: &Path) -> Result<Option<PathBuf>, String> {
+        // Refused before the call: a spent meter must stop the work, not
+        // just report it afterwards.
+        self.charge(0)?;
+        let prefixes = |k: usize| k.saturating_mul(k + 1) / 2;
+        let n = prefixes(path.components().count());
+        match path.canonicalize() {
+            Ok(real) => {
+                self.charge(n.saturating_add(prefixes(real.components().count())))?;
+                Ok(Some(real))
+            }
+            Err(_) => self.charge(n).map(|()| None),
+        }
+    }
 }
 
 /// The walk of [`canonicalize_lenient`]: `parts` resolved one at a time onto
@@ -790,6 +921,7 @@ fn walk(
     path: &Path,
     mut resolved: PathBuf,
     parts: &[std::path::Component],
+    meter: &Meter,
 ) -> Result<PathBuf, String> {
     use std::path::Component;
     // Linux's MAXSYMLINKS: the most hops `open` itself would follow.
@@ -801,17 +933,22 @@ fn walk(
     // How many trailing components of `resolved` are not on disk; 0 while
     // all of it exists (and is canonical).
     let mut missing = 0usize;
+    // Components in `resolved`: what a lookup of it walks, and is charged.
+    let mut depth = resolved.components().count();
     while let Some(raw) = pending.pop() {
         match Path::new(&raw).components().next() {
             Some(Component::Prefix(_) | Component::RootDir) => {
                 resolved.push(&raw);
                 missing = 0;
-                if let Ok(root) = resolved.canonicalize() {
+                if let Some(root) = meter.canonicalize(&resolved)? {
                     resolved = root;
                 }
+                depth = resolved.components().count();
             }
             Some(Component::ParentDir) => {
-                resolved.pop();
+                if resolved.pop() {
+                    depth = depth.saturating_sub(1);
+                }
                 missing = missing.saturating_sub(1);
             }
             Some(Component::Normal(name)) if missing > 0 => {
@@ -823,9 +960,12 @@ fn walk(
                 s.push(std::path::MAIN_SEPARATOR_STR);
                 s.push(name);
                 missing += 1;
+                depth += 1;
             }
             Some(Component::Normal(name)) => {
                 resolved.push(name);
+                depth += 1;
+                meter.charge(depth)?;
                 // `lstat` first: a name that is not there costs one syscall,
                 // where `canonicalize` would read every ancestor again first.
                 let Ok(meta) = std::fs::symlink_metadata(&resolved) else {
@@ -833,12 +973,15 @@ fn walk(
                     continue;
                 };
                 if !meta.file_type().is_symlink() {
-                    if !spell_as_on_disk(&mut resolved) {
+                    if !spell_as_on_disk(&mut resolved, meter)? {
                         missing = 1;
                     }
                     continue;
                 }
-                if let Ok(real) = resolved.canonicalize() {
+                // Through a link the lookup walks wherever it leads, which
+                // may be far deeper than the text: charged by the result.
+                if let Some(real) = meter.canonicalize(&resolved)? {
+                    depth = real.components().count();
                     resolved = real;
                     continue;
                 }
@@ -846,10 +989,13 @@ fn walk(
                 if hops > MAX_HOPS {
                     return Err(format!("too many levels of symbolic links in {:?}", path));
                 }
+                meter.charge(depth)?;
                 let target = std::fs::read_link(&resolved)
                     .map_err(|e| format!("read link {:?}: {e}", resolved))?;
-                // The link's name gives way to its target.
+                // The link's name gives way to its target, whose components
+                // are charged as they are walked.
                 resolved.pop();
+                depth = depth.saturating_sub(1);
                 // An absolute target restarts from its own root when its
                 // RootDir component is popped; a relative one stays here.
                 pending.extend(target.components().rev().map(|c| c.as_os_str().to_owned()));
@@ -866,23 +1012,23 @@ fn walk(
 /// saves a syscall per component of the whole prefix: a command of many
 /// `dir/..` steps paid seconds for it.
 #[cfg(any(target_os = "linux", target_os = "android"))]
-fn spell_as_on_disk(path: &mut PathBuf) -> bool {
-    let _ = path;
-    true
+fn spell_as_on_disk(path: &mut PathBuf, meter: &Meter) -> Result<bool, String> {
+    let _ = (path, meter);
+    Ok(true)
 }
 
 /// [`spell_as_on_disk`] where the disk may be case-insensitive (macOS,
 /// Windows): `canonicalize` spells the name as stored, which is how the
 /// roots it is compared with are spelled.
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
-fn spell_as_on_disk(path: &mut PathBuf) -> bool {
-    match path.canonicalize() {
-        Ok(real) => {
+fn spell_as_on_disk(path: &mut PathBuf, meter: &Meter) -> Result<bool, String> {
+    Ok(match meter.canonicalize(path)? {
+        Some(real) => {
             *path = real;
             true
         }
-        Err(_) => false,
-    }
+        None => false,
+    })
 }
 
 /// How many of `parts` (an absolute path's components) the OS resolves, up
@@ -899,7 +1045,10 @@ fn spell_as_on_disk(path: &mut PathBuf) -> bool {
 /// than the existing part however long the path is. The deepest candidate
 /// is probed first: for a new leaf, the usual miss, that is its directory,
 /// found in one probe.
-fn existing_prefix(parts: &[std::path::Component]) -> (usize, PathBuf) {
+fn existing_prefix(
+    parts: &[std::path::Component],
+    meter: &Meter,
+) -> Result<(usize, PathBuf), String> {
     use std::path::Component;
     let mut lead = parts.iter().take_while(|c| **c != Component::ParentDir).count();
     // The caller already tried the whole path.
@@ -912,17 +1061,17 @@ fn existing_prefix(parts: &[std::path::Component]) -> (usize, PathBuf) {
         .take_while(|c| matches!(c, Component::Prefix(_) | Component::RootDir))
         .count()
         .max(1);
-    let real = |n: usize| parts[..n].iter().collect::<PathBuf>().canonicalize().ok();
+    let real = |n: usize| meter.canonicalize(&parts[..n].iter().collect::<PathBuf>());
     if lead < root {
-        return (0, PathBuf::new());
+        return Ok((0, PathBuf::new()));
     }
-    if let Some(path) = real(lead) {
-        return (lead, path);
+    if let Some(path) = real(lead)? {
+        return Ok((lead, path));
     }
     let (mut found, mut lo, mut hi) = ((0, PathBuf::new()), root, lead - 1);
     while lo <= hi {
         let mid = lo + (hi - lo) / 2;
-        match real(mid) {
+        match real(mid)? {
             Some(path) => {
                 found = (mid, path);
                 lo = mid + 1;
@@ -930,7 +1079,7 @@ fn existing_prefix(parts: &[std::path::Component]) -> (usize, PathBuf) {
             None => hi = mid - 1,
         }
     }
-    found
+    Ok(found)
 }
 
 #[cfg(test)]
@@ -1578,6 +1727,41 @@ mod tests {
             canonicalize_lenient(&root.join(&short)).unwrap(),
             root.canonicalize().unwrap().join("missing/link/x")
         );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// The gate's metered walk skips the whole-path `canonicalize` and the
+    /// prefix probes, but must land where the unmetered one does: through
+    /// links absolute, relative and dangling, a regular file mid-path, `..`
+    /// after a link and a missing tail.
+    #[cfg(unix)]
+    #[test]
+    fn the_metered_walk_resolves_as_the_unmetered_one() {
+        use std::os::unix::fs::symlink;
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::create_dir_all(root.join("a/b")).unwrap();
+        std::fs::write(root.join("a/f"), b"x").unwrap();
+        symlink(&outside, root.join("abs")).unwrap();
+        symlink("a/b", root.join("rel")).unwrap();
+        symlink("../nowhere/x", root.join("a/dangling")).unwrap();
+        symlink("loop", root.join("loop")).unwrap();
+        let raws = [
+            "", "a", "a/b", "a/f", "a/f/x", "a/f/../b", "abs", "abs/new", "abs/..",
+            "rel/../f", "rel/../../a", "a/dangling", "a/dangling/y", "loop", "missing/x/..",
+            "missing/../rel/z", "./a//b/./", "../",
+        ];
+        for raw in raws {
+            let path = root.join(raw);
+            let meter = Meter::new(MAX_RESOLVE_COST);
+            assert_eq!(canonicalize_metered(&path, &meter), canonicalize_lenient(&path), "{raw}");
+            assert!(!meter.spent(), "{raw}");
+        }
+        // A spent meter refuses rather than answering.
+        let meter = Meter::new(1);
+        assert!(canonicalize_metered(&root.join("a/b"), &meter).is_err());
+        assert!(meter.spent());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
     }

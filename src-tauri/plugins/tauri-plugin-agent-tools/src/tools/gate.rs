@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
-    canonicalize_lenient, escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root,
-    resolve_cost, shell_reads_attached_from, HiddenRoot, MAX_RESOLVE_COST,
+    canonicalize_metered, escapes_read_roots, escapes_write_roots, hidden_tokens, resolve_cost,
+    HiddenRoot, Meter, MAX_RESOLVE_COST,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -212,15 +212,18 @@ pub fn resolve_decision_with_cwd(
     if perms.is_denied(tool.name) {
         return Decision::HardDeny(DenyReason::Policy);
     }
-    // Every branch below resolves the path arguments, against the project
-    // root, so their cost is charged up front whatever else applies.
+    // One budget for every path this decision resolves. Every branch below
+    // resolves the path arguments against the project root, some of it in
+    // escape checks that are not metered, so their estimated cost is
+    // charged up front whatever else applies.
+    let meter = Meter::new(MAX_RESOLVE_COST);
     let root_depth = ctx.project_root.components().count();
     let path_cost = tool
         .path_args
         .iter()
         .filter_map(|key| args.get(key).and_then(|v| v.as_str()))
         .fold(0usize, |sum, p| sum.saturating_add(resolve_cost(root_depth, p)));
-    if path_cost > MAX_RESOLVE_COST {
+    if meter.charge(path_cost).is_err() {
         return Decision::HardDeny(DenyReason::TooComplex);
     }
     // Ahead of allow rules and session grants, so neither an allowed tool name
@@ -240,26 +243,23 @@ pub fn resolve_decision_with_cwd(
         let base = shell_cwd
             .filter(|_| tool.capability == Capability::Exec)
             .unwrap_or(ctx.project_root);
-        // Resolved against the same base as the hidden check: a shell held
+        // Carved out against the same base as the hidden check: a shell held
         // in an attached root under the home splits every word of a command
         // (`ls` too) into a token there, and each must be carved out by the
         // root it lands in, or nothing could run until the shell left.
-        let carved = |p: &str| match tool.capability {
-            Capability::Read => {
-                in_attached_root(ctx.project_root, ctx.read_roots, p)
-            }
-            Capability::Exec if shell_reads_only => shell_reads_attached_from(
-                ctx.project_root,
-                base,
-                ctx.read_roots,
-                ctx.write_roots,
-                p,
-            ),
-            _ => false,
-        };
         // Resolved once for the decision, not once per token.
-        let hidden_root = HiddenRoot::new(ctx.project_root, base, hidden);
-        let hidden_hit = |p: &str| hidden_root.as_ref().is_some_and(|h| h.holds(p)) && !carved(p);
+        let hidden_root = HiddenRoot::new(ctx.project_root, base, hidden, &meter).map(|h| {
+            match tool.capability {
+                Capability::Read => h.carving(ctx.read_roots, &[], &meter),
+                Capability::Exec if shell_reads_only => {
+                    h.carving(ctx.read_roots, ctx.write_roots, &meter)
+                }
+                _ => h,
+            }
+        });
+        // A path the meter ran out on reads as not hidden here; the decision
+        // checks `meter.spent()` before it trusts any of these answers.
+        let hidden_hit = |p: &str| hidden_root.as_ref().is_some_and(|h| h.holds(p, &meter));
         let hits_path = tool.path_args.iter().any(|key| {
             args.get(key)
                 .and_then(|v| v.as_str())
@@ -286,8 +286,12 @@ pub fn resolve_decision_with_cwd(
         // Each distinct token once: the words of a long heredoc mostly
         // repeat, and the answer for a word does not change within the call.
         let tokens: std::collections::HashSet<&str> = tokens.iter().map(String::as_str).collect();
-        // Charged against what is left of the budget: each token is
-        // resolved against `base`, the held cwd for a shell.
+        // Estimated from the text before any is resolved, so a command too
+        // large on its face (one deep path whose missing tail the walk
+        // would append for free) is refused without a syscall. Not charged:
+        // the walks charge the meter what they really do, a link into a
+        // deep directory included. Each token is resolved against `base`,
+        // the held cwd for a shell.
         let base_depth = base.components().count();
         let token_cost = tokens
             .iter()
@@ -313,14 +317,19 @@ pub fn resolve_decision_with_cwd(
         let starts_hidden = |held: &Path| {
             let above = hidden_root
                 .as_ref()
-                .zip(canonicalize_lenient(held).ok())
+                .zip(canonicalize_metered(held, &meter).ok())
                 .map_or(true, |(hidden, held)| hidden.path().starts_with(held));
             above || hidden_hit(".")
         };
-        if !shell_reads_only
+        let held_hidden = !shell_reads_only
             && tool.capability == Capability::Exec
-            && shell_cwd.is_some_and(starts_hidden)
-        {
+            && shell_cwd.is_some_and(starts_hidden);
+        // Ahead of `HiddenShellCwd`, so that refusal does not reset the held
+        // cwd when the answers it rests on were cut short.
+        if meter.spent() {
+            return Decision::HardDeny(DenyReason::TooComplex);
+        }
+        if held_hidden {
             return Decision::HardDeny(DenyReason::HiddenShellCwd);
         }
         if hits_path || hits_command {
@@ -1338,6 +1347,53 @@ mod tests {
         let args = json!({"path": path(60_000)});
         let d = resolve_decision(lookup("read").unwrap(), &args, &open, &perms, &grants);
         assert_eq!(d, refused());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A short token through a link into a deep directory is cheap as text
+    /// but walks the whole target, so the budget meters the real walk: many
+    /// distinct such tokens (which ordinary approved commands can set up)
+    /// stalled the gate for minutes before ending in an exec prompt.
+    #[cfg(unix)]
+    #[test]
+    fn tokens_through_a_link_into_a_deep_directory_are_decided_quickly() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        let project = home.join("proj");
+        let deep = project.join("d").join("a/".repeat(1500));
+        std::fs::create_dir_all(&deep).unwrap();
+        std::os::unix::fs::symlink(&deep, project.join("l")).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let words: Vec<String> = (0..500).map(|n| format!("l/w{n}")).collect();
+        let args = json!({"command": format!("cat {}", words.join(" "))});
+        let start = std::time::Instant::now();
+        let d = resolve_decision(
+            lookup("shell").unwrap(),
+            &args,
+            &ctx,
+            &ToolPermissions::default(),
+            &SessionGrants::default(),
+        );
+        let took = start.elapsed();
+        assert_eq!(d, Decision::HardDeny(DenyReason::TooComplex));
+        assert!(took < std::time::Duration::from_secs(5), "{took:?}");
+        // A few such tokens are ordinary work and still decided as before.
+        let few = json!({"command": "cat l/x l/y"});
+        let d = resolve_decision(
+            lookup("shell").unwrap(),
+            &few,
+            &ctx,
+            &ToolPermissions::default(),
+            &SessionGrants::default(),
+        );
+        assert_eq!(d, Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&home);
     }
 
