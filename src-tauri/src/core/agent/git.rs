@@ -1256,31 +1256,83 @@ pub(crate) fn try_changed_paths(worktree: &Path) -> Result<Vec<String>, String> 
     changed_paths_with(|args| run(worktree, None, args))
 }
 
-/// Directories whose ignored contents are build output, which a checkout may
-/// be removed with: rebuilt by the next build, and never what a person wrote.
-/// Kept short on purpose: an ignored file anywhere else (a `.env`, local
-/// config, notes) is the child's work, since removal would delete it.
+/// What an ignored build directory holds, which decides what inside it is
+/// work. Either may go with its checkout: rebuilt or reinstalled by the next
+/// build, and never what a person wrote. Kept short on purpose: an ignored
+/// file anywhere else (a `.env`, local config, notes) is the child's work,
+/// since removal would delete it.
 #[cfg(feature = "cli")]
-const BUILD_OUTPUT_DIRS: [&str; 8] =
-    ["target", "node_modules", "dist", "build", ".next", "__pycache__", ".venv", ".gradle"];
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuildKind {
+    /// Dependencies or a tool's cache ([`DEPENDENCY_DIRS`]). Packages ship
+    /// certificates (pip's vendored `cacert.pem`), key fixtures and
+    /// `.env.example` files, so a secret-like name there means nothing; only
+    /// a nested repository is work, as a clone a person made in it.
+    Dependency,
+    /// What a build writes for the project ([`OUTPUT_DIRS`]), where a person
+    /// may also have dropped a `.env` or a key: those are work too.
+    Output,
+}
+
+#[cfg(feature = "cli")]
+const DEPENDENCY_DIRS: [&str; 5] = ["node_modules", ".venv", "target", "__pycache__", ".gradle"];
+
+#[cfg(feature = "cli")]
+const OUTPUT_DIRS: [&str; 3] = ["build", "dist", ".next"];
 
 /// Extensions of ignored files that are build output wherever they are.
 #[cfg(feature = "cli")]
 const BUILD_OUTPUT_EXTS: [&str; 3] = ["o", "pyc", "class"];
 
-/// Whether the ignored `path` (as status names it, `/`-separated, a
-/// directory with a trailing `/`) is build output: a directory named one of
-/// [`BUILD_OUTPUT_DIRS`] itself, or a file with one of [`BUILD_OUTPUT_EXTS`].
-/// Only the entry's own name counts: status lists a wholly ignored directory
-/// as one line, so an entry below a `dist/` was listed apart from it (a
-/// `dist/*` rule) and is whatever it is, not build output by its parent.
 #[cfg(feature = "cli")]
-fn is_build_output(path: &str) -> bool {
-    let last = path.trim_end_matches('/').rsplit('/').next().unwrap_or_default();
-    match path.ends_with('/') {
-        true => BUILD_OUTPUT_DIRS.contains(&last),
-        false => last.rsplit_once('.').is_some_and(|(_, ext)| BUILD_OUTPUT_EXTS.contains(&ext)),
+impl BuildKind {
+    /// The kind of a directory named `name`, if it is a build directory.
+    fn of(name: &str) -> Option<Self> {
+        match name {
+            n if DEPENDENCY_DIRS.contains(&n) => Some(Self::Dependency),
+            n if OUTPUT_DIRS.contains(&n) => Some(Self::Output),
+            _ => None,
+        }
     }
+
+    /// Whether a file named `name` somewhere inside such a directory is work.
+    fn holds_work(self, name: &str) -> bool {
+        name == ".git" || (self == Self::Output && looks_like_secret(name))
+    }
+}
+
+/// How [`work_with`] treats an ignored path that is build output.
+#[cfg(feature = "cli")]
+#[derive(Debug, PartialEq, Eq)]
+enum BuildOutput {
+    /// A build directory, looked inside (see [`work_inside`]).
+    Dir(BuildKind),
+    /// A file that is build output as it is.
+    File,
+}
+
+/// Whether the ignored `path` (as status names it, `/`-separated, a
+/// directory with a trailing `/`) is build output. A directory is so only by
+/// its own name: status lists a wholly ignored directory as one line, so a
+/// directory below a `dist/` was listed apart from it (a `dist/*` rule) and
+/// may be anything a person made there. A file is so by one of
+/// [`BUILD_OUTPUT_EXTS`], or by a build directory among its ancestors (that
+/// same rule lists each built file) unless it is what an output folder holds
+/// as work, so `dist/.env` still is. Listed one by one, even a dependency
+/// tree's files are held to that: a rule naming them apart is the user's,
+/// and the stricter reading keeps rather than deletes.
+#[cfg(feature = "cli")]
+fn build_output(path: &str) -> Option<BuildOutput> {
+    let mut parts = path.trim_end_matches('/').rsplit('/');
+    let last = parts.next().unwrap_or_default();
+    if path.ends_with('/') {
+        return BuildKind::of(last).map(BuildOutput::Dir);
+    }
+    if last.rsplit_once('.').is_some_and(|(_, ext)| BUILD_OUTPUT_EXTS.contains(&ext)) {
+        return Some(BuildOutput::File);
+    }
+    parts.find_map(BuildKind::of)?;
+    (!BuildKind::Output.holds_work(last)).then_some(BuildOutput::File)
 }
 
 /// Whether a file named `name`, found inside ignored build output, looks
@@ -1288,54 +1340,71 @@ fn is_build_output(path: &str) -> bool {
 /// wrote: `.env` and its variants (`.env.local`), a key or certificate
 /// (`*.pem`, `*.key`), a package registry token file (`.npmrc`, `.pypirc`),
 /// or a credentials file (`credentials`, `credentials.json`). Kept small on
-/// purpose: every match keeps a checkout, and a dependency tree is large.
-/// `credentials.*` is not matched whole, since SDKs ship `credentials.js`.
+/// purpose: every match keeps a checkout. `credentials.*` is not matched
+/// whole, since SDKs ship `credentials.js`. A name with an example part
+/// (`.env.example`, `.env.sample`, `key.pem.template`) is a
+/// placeholder shipped to be copied, not a secret.
 #[cfg(feature = "cli")]
 fn looks_like_secret(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
-    name.starts_with(".env")
-        || name.ends_with(".pem")
-        || name.ends_with(".key")
-        || [".npmrc", ".pypirc", "credentials", "credentials.json"].contains(&name.as_str())
+    let example = name.split('.').any(|part| ["example", "sample", "template"].contains(&part));
+    !example
+        && (name.starts_with(".env")
+            || name.ends_with(".pem")
+            || name.ends_with(".key")
+            || [".npmrc", ".pypirc", "credentials", "credentials.json"].contains(&name.as_str()))
 }
 
 /// How many entries [`work_inside`] reads before it gives up. A dependency
-/// tree or a build directory can hold hundreds of thousands; one larger than
-/// this counts as work, which keeps the checkout rather than guess.
+/// tree or a build directory can hold hundreds of thousands.
 #[cfg(feature = "cli")]
 const INSIDE_LIMIT: usize = 200_000;
 
-/// The first work inside the ignored build-output directory `dir` (relative
-/// to `root`, with its trailing `/`), as a path for the user: a nested
-/// repository (any `.git`, named by the directory holding it) or a file
-/// [`looks_like_secret`]. Status never looks inside an ignored directory, so
-/// this is the only place either is seen. Never follows a link. `dir` itself
-/// when the walk passes [`INSIDE_LIMIT`] or cannot read a directory: what it
-/// did not see is not known to be build output. A directory gone meanwhile
-/// holds nothing.
+/// The first work inside the ignored build directory `dir` of `kind`
+/// (relative to `root`, with its trailing `/`), as a path for the user: a
+/// nested repository (any `.git`, named by the directory holding it) or a
+/// file [`BuildKind::holds_work`] says is work. Status never looks inside an
+/// ignored directory, so this is the only place either is seen. Walks the
+/// names as the filesystem gives them, never a lossy spelling that would
+/// name a directory that does not exist. Never follows a link.
+///
+/// Past `limit` entries an output folder is `dir` itself: what the walk did
+/// not see is not known to be build output. A dependency tree is let go
+/// instead: it is regenerable, and a monorepo's often passes the limit, so
+/// keeping it would keep every such checkout forever; a nested repository
+/// seen before the limit still keeps it. A directory that cannot be read is
+/// `dir` for either kind, since that is not a matter of size. A directory
+/// gone meanwhile holds nothing.
 #[cfg(feature = "cli")]
-fn work_inside(root: &Path, dir: &str) -> Option<String> {
-    let mut pending = vec![dir.to_string()];
+fn work_inside(root: &Path, dir: &str, kind: BuildKind, limit: usize) -> Option<String> {
+    let shown = |path: &Path| {
+        let rel = path.strip_prefix(root).unwrap_or(path).to_string_lossy();
+        rel.replace(std::path::MAIN_SEPARATOR, "/")
+    };
+    let mut pending = vec![root.join(dir.trim_end_matches('/'))];
     let mut seen = 0;
     while let Some(next) = pending.pop() {
-        let entries = match std::fs::read_dir(root.join(&next)) {
+        let entries = match std::fs::read_dir(&next) {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(_) => return Some(dir.to_string()),
         };
         for entry in entries {
             seen += 1;
-            let Some(entry) = entry.ok().filter(|_| seen <= INSIDE_LIMIT) else {
-                return Some(dir.to_string());
-            };
-            let name = entry.file_name().to_string_lossy().into_owned();
+            if seen > limit {
+                return (kind == BuildKind::Output).then(|| dir.to_string());
+            }
+            let Ok(entry) = entry else { return Some(dir.to_string()) };
+            let name = entry.file_name();
             if name == ".git" {
-                return Some(next);
+                return Some(format!("{}/", shown(&next)));
             }
             // The entry's own type, not its target's: a link is not walked.
             match entry.file_type() {
-                Ok(kind) if kind.is_dir() => pending.push(format!("{next}{name}/")),
-                Ok(_) if looks_like_secret(&name) => return Some(format!("{next}{name}")),
+                Ok(file) if file.is_dir() => pending.push(entry.path()),
+                Ok(_) if kind.holds_work(&name.to_string_lossy()) => {
+                    return Some(shown(&entry.path()));
+                }
                 Ok(_) => {}
                 Err(_) => return Some(dir.to_string()),
             }
@@ -1398,10 +1467,17 @@ fn work_with(root: &Path, git: impl Fn(&[&str]) -> Result<String, String>) -> Re
         if code.contains(['R', 'C']) {
             fields.next();
         }
-        if code == "!!" && is_build_output(path) {
+        // Status gives raw bytes and the caller reads them lossily: a name
+        // that was not UTF-8 cannot be judged by its spelling or found on
+        // disk by it, so it is work rather than a guess.
+        let built = match code == "!!" && !path.contains('\u{FFFD}') {
+            true => build_output(path),
+            false => None,
+        };
+        if let Some(built) = built {
             work.build_output.push(path.to_string());
-            if path.ends_with('/') {
-                work.paths.extend(work_inside(root, path));
+            if let BuildOutput::Dir(kind) = built {
+                work.paths.extend(work_inside(root, path, kind, INSIDE_LIMIT));
             }
             continue;
         }
@@ -2100,10 +2176,16 @@ mod tests {
         // Ignored build output is not work; any other ignored file is.
         let ignored = "!! target/\0!! web/node_modules/\0!! src/x.o\0!! .env\0!! conf/\0";
         assert_eq!(answer(Ok(ignored)), Ok(vec![".env".to_string(), "conf/".to_string()]));
-        // Only an entry's own name makes it build output.
-        let below = "!! target/notes/\0!! dist/a.txt\0";
-        let listed = vec!["target/notes/".to_string(), "dist/a.txt".to_string()];
+        // Only a directory's own name makes it build output; a file below
+        // one is build output by its ancestor unless it looks like a secret.
+        let below = "!! target/notes/\0!! dist/a.txt\0!! web/dist/js/b.js\0!! dist/.env\0";
+        let listed = vec!["target/notes/".to_string(), "dist/.env".to_string()];
         assert_eq!(answer(Ok(below)), Ok(listed));
+        // A name git gave as bytes that are not UTF-8 is not judged by its
+        // lossy spelling: it is work.
+        let lossy = "!! dist/a\u{FFFD}.js\0!! x\u{FFFD}.o\0";
+        let listed = vec!["dist/a\u{FFFD}.js".to_string(), "x\u{FFFD}.o".to_string()];
+        assert_eq!(answer(Ok(lossy)), Ok(listed));
         assert!(answer(Err("broken")).is_err());
     }
 
@@ -2174,6 +2256,121 @@ mod tests {
         std::fs::create_dir_all(wt.join("dist/notes")).unwrap();
         std::fs::write(wt.join("dist/notes/todo.md"), "mine\n").unwrap();
         assert_eq!(child.uncommitted(), Ok(vec!["dist/notes/".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A dependency tree is regenerable and ships certificates, key fixtures
+    /// and example env files: only a nested repository in one is work. An
+    /// output folder is still searched for secrets, but an example file is
+    /// not one.
+    #[test]
+    fn dependency_trees_hold_only_nested_repositories_as_work() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("deps");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/deps-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".gitignore"), ".venv/\nnode_modules/\nbuild/\n").unwrap();
+        run(&wt, None, &["commit", "-qam", "ignore", "--no-gpg-sign"]).unwrap();
+        let certifi = wt.join(".venv/lib/python3.12/site-packages/pip/_vendor/certifi");
+        std::fs::create_dir_all(&certifi).unwrap();
+        std::fs::write(certifi.join("cacert.pem"), "x").unwrap();
+        std::fs::create_dir_all(wt.join("node_modules/x/test")).unwrap();
+        std::fs::write(wt.join("node_modules/x/test/fixture.key"), "x").unwrap();
+        std::fs::write(wt.join("node_modules/x/.env"), "x").unwrap();
+        std::fs::create_dir_all(wt.join("build")).unwrap();
+        std::fs::write(wt.join("build/.env.example"), "KEY=\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec![]), "none of these is work");
+
+        std::fs::write(wt.join("build/.env"), "KEY=1\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["build/.env".to_string()]));
+        std::fs::remove_file(wt.join("build/.env")).unwrap();
+
+        std::fs::create_dir_all(wt.join("node_modules/x/.git")).unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["node_modules/x/".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Over the walk's limit a dependency tree is let go, since it is
+    /// regenerable, unless a nested repository was already seen; an output
+    /// folder over it is kept, since what was not seen may be a secret.
+    #[test]
+    fn the_walk_limit_lets_a_dependency_tree_go_but_not_an_output_folder() {
+        let root = tempfile::tempdir().unwrap();
+        for i in 0..5 {
+            std::fs::create_dir_all(root.path().join(format!("node_modules/p{i}"))).unwrap();
+            std::fs::create_dir_all(root.path().join(format!("dist/p{i}"))).unwrap();
+        }
+        let deps = BuildKind::Dependency;
+        assert_eq!(work_inside(root.path(), "node_modules/", deps, 3), None);
+        assert_eq!(
+            work_inside(root.path(), "dist/", BuildKind::Output, 3),
+            Some("dist/".to_string())
+        );
+        assert_eq!(work_inside(root.path(), "dist/", BuildKind::Output, 100), None);
+        std::fs::create_dir_all(root.path().join("node_modules/.git")).unwrap();
+        let found = work_inside(root.path(), "node_modules/", deps, 100);
+        assert_eq!(found, Some("node_modules/".to_string()));
+    }
+
+    #[test]
+    fn example_files_do_not_look_like_secrets() {
+        for name in [".env", ".env.local", "server.pem", "id.key", ".npmrc"] {
+            assert!(looks_like_secret(name), "{name}");
+        }
+        for name in [".env.example", ".env.sample", ".env.template", "key.pem.example"] {
+            assert!(!looks_like_secret(name), "{name}");
+        }
+    }
+
+    /// With `dist/*` and a kept `.gitkeep`, git lists each built file on its
+    /// own: one is build output by its `dist/` ancestor, but a secret there
+    /// is still work.
+    #[test]
+    fn files_listed_below_an_output_folder_are_build_output_unless_secret() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("listed");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/listed-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".gitignore"), "dist/*\n!dist/.gitkeep\n").unwrap();
+        std::fs::create_dir_all(wt.join("dist")).unwrap();
+        std::fs::write(wt.join("dist/.gitkeep"), "").unwrap();
+        run(&wt, None, &["add", "-A"]).unwrap();
+        run(&wt, None, &["commit", "-qm", "ignore", "--no-gpg-sign"]).unwrap();
+        std::fs::write(wt.join("dist/app.js"), "x").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec![]), "a built file is not work");
+        std::fs::write(wt.join("dist/.env"), "KEY=1\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["dist/.env".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A directory whose name is not UTF-8 is walked by its real name, so a
+    /// secret inside it is still seen.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_named_in_raw_bytes_is_walked() {
+        use std::os::unix::ffi::OsStrExt;
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("raw");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/raw-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".gitignore"), "build/\n").unwrap();
+        run(&wt, None, &["commit", "-qam", "ignore", "--no-gpg-sign"]).unwrap();
+        let raw = wt.join("build").join(std::ffi::OsStr::from_bytes(b"bad\xff"));
+        std::fs::create_dir_all(&raw).unwrap();
+        std::fs::write(raw.join(".env"), "KEY=1\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["build/bad\u{FFFD}/.env".to_string()]));
         let _ = std::fs::remove_dir_all(&wt);
         let _ = std::fs::remove_dir_all(&root);
     }

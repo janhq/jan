@@ -24067,7 +24067,7 @@ fn worktrees_action(app: &mut App, value: &str) {
             else {
                 return;
             };
-            if let Some(loses) = found.state.loses() {
+            if let Some(loses) = found.loses() {
                 return open_worktree_confirm(app, &found, &loses);
             }
             if !matches!(found.state, CheckoutState::Removable { .. }) {
@@ -43997,6 +43997,7 @@ fn a() {}
             path: std::path::PathBuf::from(format!("/w/{id}")),
             branch: format!("jan/agent/{id}"),
             bytes: 2048,
+            build_output_bytes: 0,
             state,
         };
         WorktreesReport {
@@ -44010,7 +44011,7 @@ fn a() {}
                         files: vec!["a.txt".into(), ".env".into()],
                         commits: 1,
                         off_branch: 0,
-                        build_output: 0,
+                        build_output: vec![],
                     },
                 ),
                 checkout("ahead-0004", CheckoutState::Unbrought { commits: 3 }),

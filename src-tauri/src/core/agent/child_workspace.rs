@@ -697,11 +697,12 @@ pub(crate) enum CheckoutState {
     /// files that are not build output (see [`Checkout::uncommitted`]).
     /// `commits` past its base, of which `off_branch` are on no branch (a
     /// stash, a tag, a detached `HEAD`), which bringing its branch back does
-    /// not carry. `build_output` is the bytes of ignored build output a
-    /// forced removal deletes with it, for the confirm.
+    /// not carry. `build_output` names the ignored build output a forced
+    /// removal deletes with it, relative to the checkout; it is measured
+    /// only where a number is shown (see [`sizes`]), not by every classify.
     ///
     /// [`Checkout::uncommitted`]: crate::core::agent::git::Checkout::uncommitted
-    Uncommitted { files: Vec<String>, commits: u64, off_branch: u64, build_output: u64 },
+    Uncommitted { files: Vec<String>, commits: u64, off_branch: u64, build_output: Vec<String> },
     /// Clean, with commits its branch in the user's repository lacks.
     Unbrought { commits: u64 },
     /// Clean, and everything it committed (if anything) is in the user's
@@ -765,18 +766,16 @@ impl CheckoutState {
     /// A removal brings its branch back first (see [`Self::brings_back`]),
     /// so the commits on it are not lost; an `Unbrought` one's are, since
     /// its branch could not be brought back.
+    /// The build output it deletes as well is not named here: see
+    /// [`CheckoutInfo::loses`], which has it measured.
     pub(crate) fn loses(&self) -> Option<String> {
         match self {
-            Self::Uncommitted { files, off_branch, build_output, .. } => {
+            Self::Uncommitted { files, off_branch, .. } => {
                 let stashed = match off_branch {
                     0 => String::new(),
                     n => format!(" and {n} commit(s) on no branch"),
                 };
-                Some(format!(
-                    "{} uncommitted file(s){stashed}{}",
-                    files.len(),
-                    plus_build_output(*build_output)
-                ))
+                Some(format!("{} uncommitted file(s){stashed}", files.len()))
             }
             Self::Unbrought { commits } => {
                 Some(format!("{commits} commit(s) not in your repository"))
@@ -830,15 +829,7 @@ fn classify(wt: &ChildWorktree) -> CheckoutState {
                 files if !files.is_empty() => files,
                 _ => vec!["a submodule".to_string()],
             };
-            let build_output = work
-                .build_output
-                .iter()
-                .map(|path| match std::fs::symlink_metadata(wt.path.join(path)) {
-                    Ok(m) if m.is_dir() => dir_size(&wt.path.join(path), u64::MAX),
-                    Ok(m) if m.is_file() => m.len(),
-                    _ => 0,
-                })
-                .sum();
+            let build_output = work.build_output;
             let on_branch = checkout.commits_on(&wt.base, &format!("refs/heads/{}", wt.branch));
             let (commits, off_branch) = match (commits, on_branch) {
                 // The branch is among the refs counted, so the rest are on
@@ -1807,23 +1798,41 @@ fn larger_than(dir: &Path, cap: u64) -> bool {
 /// only until they pass `stop_above` (the total so far is returned then).
 #[cfg(feature = "cli")]
 fn dir_size(dir: &Path, stop_above: u64) -> u64 {
-    let mut total: u64 = 0;
-    let mut pending = vec![dir.to_path_buf()];
-    while let Some(next) = pending.pop() {
+    sizes(dir, &[], stop_above).0
+}
+
+/// [`dir_size`], and of that the bytes under `within` (paths relative to
+/// `dir`, as [`CheckoutState::Uncommitted`] names build output), counted in
+/// the same walk: a checkout listed is walked for its size anyway, so its
+/// build output costs nothing more to measure.
+#[cfg(feature = "cli")]
+fn sizes(dir: &Path, within: &[String], stop_above: u64) -> (u64, u64) {
+    let marked: HashSet<PathBuf> =
+        within.iter().map(|p| dir.join(p.trim_end_matches('/'))).collect();
+    let (mut total, mut inside) = (0u64, 0u64);
+    let mut pending = vec![(dir.to_path_buf(), false)];
+    while let Some((next, in_marked)) = pending.pop() {
         let Ok(entries) = std::fs::read_dir(&next) else { continue };
         for entry in entries.filter_map(Result::ok) {
             let Ok(meta) = entry.metadata() else { continue };
+            let path = entry.path();
+            // Hashing every path of a large tree is skipped when nothing is
+            // marked, as for every plain size.
+            let in_marked = in_marked || (!marked.is_empty() && marked.contains(&path));
             if meta.is_dir() {
-                pending.push(entry.path());
+                pending.push((path, in_marked));
             } else if meta.is_file() {
                 total = total.saturating_add(meta.len());
+                if in_marked {
+                    inside = inside.saturating_add(meta.len());
+                }
                 if total > stop_above {
-                    return total;
+                    return (total, inside);
                 }
             }
         }
     }
-    total
+    (total, inside)
 }
 
 /// `bytes` for a person: whole bytes, else one decimal of the largest unit.
@@ -1895,12 +1904,21 @@ pub(crate) struct CheckoutInfo {
     pub(crate) path: PathBuf,
     pub(crate) branch: String,
     pub(crate) bytes: u64,
+    /// Of `bytes`, those of the ignored build output its state names.
+    pub(crate) build_output_bytes: u64,
     #[serde(flatten)]
     pub(crate) state: CheckoutState,
 }
 
 #[cfg(feature = "cli")]
 impl CheckoutInfo {
+    /// [`CheckoutState::loses`], with the build output a forced removal
+    /// deletes as well, for the confirm.
+    pub(crate) fn loses(&self) -> Option<String> {
+        let loses = self.state.loses()?;
+        Some(format!("{loses}{}", plus_build_output(self.build_output_bytes)))
+    }
+
     /// The row `jan cli worktrees list` prints.
     pub(crate) fn line(&self) -> String {
         format!("{}  {}  {}", self.branch, human_bytes(self.bytes), self.state.describe())
@@ -2041,12 +2059,23 @@ pub(crate) fn list_worktrees(root: &Path, session: Option<&Session>) -> Worktree
     };
     let checkouts = found_checkouts(&dir, session)
         .iter()
-        .map(|found| CheckoutInfo {
-            id: found.id.clone(),
-            path: found.wt.path.clone(),
-            branch: found.wt.branch.clone(),
-            bytes: dir_size(&found.wt.path, u64::MAX),
-            state: found.state(session),
+        .map(|found| {
+            let state = found.state(session);
+            let built = match &state {
+                CheckoutState::Uncommitted { build_output, .. } => build_output.as_slice(),
+                _ => &[],
+            };
+            // One walk for the size shown and the build output the confirm
+            // names: no file is read twice.
+            let (bytes, build_output_bytes) = sizes(&found.wt.path, built, u64::MAX);
+            CheckoutInfo {
+                id: found.id.clone(),
+                path: found.wt.path.clone(),
+                branch: found.wt.branch.clone(),
+                bytes,
+                build_output_bytes,
+                state,
+            }
         })
         .collect();
     let target = dir.join(CARGO_TARGET);
@@ -2171,10 +2200,17 @@ fn prune_one(found: Found, session: Option<&Session>, force: bool, pruned: &mut 
         }
         _ => None,
     };
-    let bytes = dir_size(&wt.path, u64::MAX);
-    let mut build_output = 0;
+    // Sized only once it is known to go, and in the walk that also finds
+    // its build output: a kept checkout is not walked at all.
+    let (mut bytes, mut build_output) = (0, 0);
     let (gone, brought) = match dispose(&wt, true) {
-        Disposition::Removed { gone, brought } => (Some(gone), brought),
+        Disposition::Removed { gone, brought } => {
+            // Moved, not deleted: what is in the trash is what went.
+            if let Gone::Trashed(to) = &gone {
+                bytes = dir_size(to, u64::MAX);
+            }
+            (Some(gone), brought)
+        }
         Disposition::Kept { not_brought } => match classify(&wt) {
             // The confirm promised an uncommitted checkout's branch is
             // brought back first: when it could not be, its commits would be
@@ -2183,10 +2219,11 @@ fn prune_one(found: Found, session: Option<&Session>, force: bool, pruned: &mut 
             CheckoutState::Uncommitted { commits, off_branch, build_output: built, .. }
                 if force && not_brought.is_none() =>
             {
-                build_output = built;
+                (bytes, build_output) = sizes(&wt.path, &built, u64::MAX);
                 (trash(&wt.path), (commits > off_branch).then(|| wt.branch.clone()))
             }
             CheckoutState::Unbrought { .. } | CheckoutState::Removable { .. } if force => {
+                bytes = dir_size(&wt.path, u64::MAX);
                 (trash(&wt.path), None)
             }
             // Everything in it is in the user's repository, so only the move
@@ -3451,7 +3488,7 @@ mod git_tests {
                 files: vec![".env".to_string()],
                 commits: 1,
                 off_branch: 0,
-                build_output: 0
+                build_output: vec![]
             }
         );
         assert_eq!(state_of(&listed, &built), &CheckoutState::Removable { commits: 1 });
@@ -3497,11 +3534,12 @@ mod git_tests {
                 files: vec!["build/out/.env".to_string()],
                 commits: 1,
                 off_branch: 0,
-                build_output: 106
+                build_output: vec!["build/".to_string()]
             }
         );
+        let env_info = listed.checkouts.iter().find(|c| &c.state == env_state).unwrap();
         assert_eq!(
-            env_state.loses().as_deref(),
+            env_info.loses().as_deref(),
             Some("1 uncommitted file(s) plus ignored build output (106 B)")
         );
         let nested_state = state_of(&listed, &nested);
@@ -3868,7 +3906,7 @@ mod git_tests {
                 files: vec!["a.txt".to_string()],
                 commits: 0,
                 off_branch: 0,
-                build_output: 0
+                build_output: vec![]
             }
         );
         assert_eq!(state_of(&report, &ws[3]), &CheckoutState::Unbrought { commits: 1 });
@@ -4077,7 +4115,7 @@ mod git_tests {
             files: files.clone(),
             commits: 3,
             off_branch: 0,
-            build_output: 0,
+            build_output: vec![],
         };
         assert_eq!(dirty.loses().as_deref(), Some("2 uncommitted file(s)"));
         assert_eq!(
@@ -4088,18 +4126,33 @@ mod git_tests {
             files: files.clone(),
             commits: 3,
             off_branch: 1,
-            build_output: 0,
+            build_output: vec![],
         };
         assert_eq!(
             stashed.loses().as_deref(),
             Some("2 uncommitted file(s) and 1 commit(s) on no branch")
         );
         let only_files =
-            CheckoutState::Uncommitted { files, commits: 0, off_branch: 0, build_output: 0 };
+            CheckoutState::Uncommitted { files, commits: 0, off_branch: 0, build_output: vec![] };
         assert_eq!(only_files.brings_back(), None);
         let ahead = CheckoutState::Unbrought { commits: 2 };
         assert_eq!(ahead.loses().as_deref(), Some("2 commit(s) not in your repository"));
         assert_eq!(ahead.brings_back(), None);
+    }
+
+    /// A checkout's size and its build output's are counted in one walk,
+    /// a named file as well as a named directory.
+    #[test]
+    fn build_output_is_measured_in_the_walk_that_sizes_the_checkout() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("build/out")).unwrap();
+        std::fs::write(dir.path().join("build/out/app.js"), "x".repeat(100)).unwrap();
+        std::fs::write(dir.path().join("x.o"), "x".repeat(10)).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "x").unwrap();
+        let built = vec!["build/".to_string(), "x.o".to_string()];
+        assert_eq!(sizes(dir.path(), &built, u64::MAX), (111, 110));
+        assert_eq!(sizes(dir.path(), &[], u64::MAX), (111, 0));
+        assert_eq!(dir_size(dir.path(), u64::MAX), 111);
     }
 
     #[test]
