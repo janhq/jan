@@ -1068,7 +1068,7 @@ fn resolve_target<'a>(
 /// the reply the parent agent's tool returns verbatim; the variant is for a
 /// caller that shows the message as sent (the TUI's `/agents` detail), which
 /// must not do so for a message nobody will read.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub(crate) enum MessageReply {
     /// On the child's inbox: it reads it at its next turn boundary.
     Queued(String),
@@ -8382,7 +8382,6 @@ pub(crate) mod tests {
         assert_eq!(drained[0]["role"], "user");
         assert!(inbox.drain().0.is_empty(), "a drain empties the inbox");
     }
-
 
     /// To the child, the agent that dispatched it is its user: a message steers
     /// it exactly as typed input steers the main agent, as a plain user turn
