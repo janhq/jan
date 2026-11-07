@@ -607,6 +607,24 @@ jan cli threads messages <THREAD_ID>
 jan cli threads delete <ID>
 ```
 
+## `jan cli worktrees`
+
+See and prune the checkouts subagents left under `~/.jan/worktrees/<project>/` and their shared
+build cache. The agent cannot clean these itself: its sandbox mounts `~/.jan` read-only.
+
+```bash
+jan cli worktrees list [--project <DIR>] [--json]
+jan cli worktrees prune [--project <DIR>] [--build-cache] [--all --yes]
+```
+
+`list` prints each checkout's branch, size and state (in use by a live session, holds uncommitted
+work, holds commits not in your repository, or removable), then the build cache and trash sizes.
+`prune` removes only what is safe to remove, the same rule a session end uses: a clean checkout
+whose commits are all in your repository (its branch is brought back first). `--build-cache` also
+clears the build cache, refused while a live session holds a checkout of the project.
+`--all --yes` removes every checkout no live session holds, deleting uncommitted work and commits
+not in your repository. A checkout a live session holds is never removed.
+
 ## `jan cli models`
 
 Print every configured provider's models as JSON, keys redacted.

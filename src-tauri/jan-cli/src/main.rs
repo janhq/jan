@@ -19,7 +19,7 @@ use app_lib::core::cli::{
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
     cli_get_thread, cli_list_messages, cli_list_threads, cli_plugin_install, cli_plugin_list,
     cli_plugin_remove, cli_plugin_search, cli_web_search_reset, cli_web_search_set,
-    cli_web_search_status, ResumeRequest, SessionFlags,
+    cli_web_search_status, cli_worktrees_list, cli_worktrees_prune, ResumeRequest, SessionFlags,
 };
 use std::fmt::Write as _;
 
@@ -428,6 +428,47 @@ enum CliCommands {
     Mcp {
         #[command(subcommand)]
         cmd: McpCommands,
+    },
+    /// See and prune the project's subagent worktrees and their build cache
+    #[command(display_order = 14)]
+    Worktrees {
+        #[command(subcommand)]
+        cmd: WorktreesCommands,
+    },
+}
+
+// -- Worktrees subcommands ---------------------------------------------------
+
+/// The checkouts subagents left under ~/.jan/worktrees/<project>, which the
+/// agent itself cannot reach (its sandbox mounts ~/.jan read-only).
+#[derive(Subcommand)]
+enum WorktreesCommands {
+    /// List each checkout's branch, size and state, then the build cache
+    List {
+        /// Project root whose subagent worktrees to list
+        #[arg(long, default_value = ".")]
+        project: String,
+        /// Print JSON instead of text
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove the checkouts that are safe to remove: clean, with every commit
+    /// in your repository (committed branches are brought back first)
+    Prune {
+        /// Project root whose subagent worktrees to prune
+        #[arg(long, default_value = ".")]
+        project: String,
+        /// Also clear the shared build cache (refused while a live session
+        /// holds a checkout of the project, as it may be building there)
+        #[arg(long)]
+        build_cache: bool,
+        /// Remove every checkout no live session holds, deleting uncommitted
+        /// work and commits not in your repository; needs --yes
+        #[arg(long, requires = "yes")]
+        all: bool,
+        /// Confirm --all
+        #[arg(long, requires = "all")]
+        yes: bool,
     },
 }
 
@@ -1083,6 +1124,28 @@ async fn handle_cli(cmd: CliCommands) {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }
+        }
+        CliCommands::Worktrees { cmd } => handle_worktrees(cmd).await,
+    }
+}
+
+// -- Worktrees handlers ------------------------------------------------------
+
+async fn handle_worktrees(cmd: WorktreesCommands) {
+    // Git per checkout and a walk of every file: off the async runtime.
+    let result = tokio::task::spawn_blocking(move || match cmd {
+        WorktreesCommands::List { project, json } => Ok(cli_worktrees_list(&project, json)),
+        WorktreesCommands::Prune { project, build_cache, all, yes } => {
+            cli_worktrees_prune(&project, build_cache, all && yes)
+        }
+    })
+    .await
+    .unwrap_or_else(|e| Err(e.to_string()));
+    match result {
+        Ok(text) => println!("{text}"),
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
         }
     }
 }
@@ -1976,6 +2039,48 @@ mod tests {
                 }
             })
         ));
+    }
+
+    #[test]
+    fn worktrees_list_parses_with_its_defaults() {
+        let cli = Cli::parse_from(["jan", "cli", "worktrees", "list"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cli {
+                cmd: CliCommands::Worktrees {
+                    cmd: WorktreesCommands::List { ref project, json: false }
+                }
+            }) if project == "."
+        ));
+        let cli = Cli::parse_from(["jan", "cli", "worktrees", "list", "--json"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cli {
+                cmd: CliCommands::Worktrees { cmd: WorktreesCommands::List { json: true, .. } }
+            })
+        ));
+    }
+
+    /// `prune` is safe by default; removing work takes `--all --yes`, both.
+    #[test]
+    fn worktrees_prune_needs_all_and_yes_together_to_remove_work() {
+        let prune = |extra: &[&str]| {
+            let mut argv = vec!["jan", "cli", "worktrees", "prune"];
+            argv.extend_from_slice(extra);
+            Cli::try_parse_from(argv).map(|cli| match cli.command {
+                Some(Commands::Cli {
+                    cmd: CliCommands::Worktrees {
+                        cmd: WorktreesCommands::Prune { build_cache, all, yes, .. },
+                    },
+                }) => (build_cache, all, yes),
+                _ => panic!("not worktrees prune"),
+            })
+        };
+        assert_eq!(prune(&[]).ok(), Some((false, false, false)));
+        assert_eq!(prune(&["--build-cache"]).ok(), Some((true, false, false)));
+        assert_eq!(prune(&["--all", "--yes"]).ok(), Some((false, true, true)));
+        assert!(prune(&["--all"]).is_err(), "--all alone is refused");
+        assert!(prune(&["--yes"]).is_err(), "--yes alone is refused");
     }
 
     #[test]

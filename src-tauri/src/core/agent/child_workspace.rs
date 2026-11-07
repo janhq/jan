@@ -535,16 +535,22 @@ impl Ledger {
         if gone {
             forget_meta(wt);
         }
+        self.release(&wt.path, gone);
+        gone
+    }
+
+    /// End a [`Self::claim`] of `path`; when it is `gone`, forget it and
+    /// every name that pointed at it, dropping its lock.
+    fn release(&self, path: &Path, gone: bool) {
         let mut state = self.state.lock().unwrap();
-        state.removing.remove(&wt.path);
+        state.removing.remove(path);
         if gone {
-            state.holds.remove(&wt.path);
-            state.created.retain(|c| c.path != wt.path);
+            state.holds.remove(path);
+            state.created.retain(|c| c.path != path);
             state
                 .by_name
-                .retain(|_, ws| ws.worktree.as_ref().is_none_or(|w| w.path != wt.path));
+                .retain(|_, ws| ws.worktree.as_ref().is_none_or(|w| w.path != path));
         }
-        gone
     }
 }
 
@@ -559,10 +565,9 @@ fn remove_if_empty(wt: &ChildWorktree) -> bool {
 /// What [`dispose`] did with a checkout.
 #[cfg(feature = "cli")]
 enum Disposition {
-    /// It went: into the trash (`trashed`) or deleted in place. `brought`
-    /// names its branch when it held commits, which are now only in the
-    /// user's repository.
-    Removed { trashed: bool, brought: Option<String> },
+    /// It went (see [`Gone`]). `brought` names its branch when it held
+    /// commits, which are now only in the user's repository.
+    Removed { gone: Gone, brought: Option<String> },
     /// It stays. `not_brought` says why its branch is not in the user's
     /// repository, when bringing it back failed.
     Kept { not_brought: Option<String> },
@@ -578,32 +583,125 @@ enum Disposition {
 #[cfg(feature = "cli")]
 fn dispose(wt: &ChildWorktree, bring: bool) -> Disposition {
     let keep = Disposition::Kept { not_brought: None };
-    // A checkout that is no longer what Jan made is never removed: what it
-    // holds cannot be read without trusting it.
-    let Ok(checkout) = checkout(wt) else { return keep };
-    let clean = checkout.is_clean() == Ok(true);
-    if clean && checkout.commits_anywhere(&wt.base) == Some(0) {
+    let first = classify(wt);
+    if first == (CheckoutState::Removable { commits: 0 }) {
         return removed(wt, None);
     }
     if !bring {
         return keep;
     }
     // Whatever the child committed, kept or not, so the user has the branch
-    // to merge.
+    // to merge. One git cannot read fails here, and is kept.
     if let Err(why) = bring_back(wt) {
         return Disposition::Kept { not_brought: Some(why) };
     }
-    if clean && in_users_branch(wt, &checkout) {
-        return removed(wt, Some(wt.branch.clone()));
+    // Only bringing the branch back can change where it stands.
+    let now = match first {
+        CheckoutState::Unbrought { .. } => classify(wt),
+        other => other,
+    };
+    match now {
+        CheckoutState::Removable { .. } => removed(wt, Some(wt.branch.clone())),
+        _ => keep,
     }
-    keep
+}
+
+/// Where a subagent checkout stands, for the user deciding what to prune.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub(crate) enum CheckoutState {
+    /// A running subagent of this session works in it, or another live jan
+    /// session owns it: never removed from here.
+    InUse { by: InUseBy },
+    /// Uncommitted changes (and maybe commits) that are only in it.
+    Uncommitted { files: usize, commits: u64 },
+    /// Clean, with commits its branch in the user's repository lacks.
+    Unbrought { commits: u64 },
+    /// Clean, and everything it committed (if anything) is in the user's
+    /// repository: removing it loses nothing.
+    Removable { commits: u64 },
+    /// No longer what Jan made, or git cannot read it: never removed.
+    Unreadable { why: String },
+}
+
+/// Who holds a checkout that is [`CheckoutState::InUse`].
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum InUseBy {
+    Child,
+    Session,
+}
+
+#[cfg(feature = "cli")]
+impl CheckoutState {
+    /// The state in words, for a list row.
+    pub(crate) fn describe(&self) -> String {
+        match self {
+            Self::InUse { by: InUseBy::Child } => "in use by a running subagent".to_string(),
+            Self::InUse { by: InUseBy::Session } => {
+                "in use by another live jan session".to_string()
+            }
+            Self::Uncommitted { .. } | Self::Unbrought { .. } => {
+                format!("holds {}", self.loses().unwrap_or_default())
+            }
+            Self::Removable { commits: 0 } => "removable (no work in it)".to_string(),
+            Self::Removable { commits } => {
+                format!("removable ({commits} commit(s), all in your repository)")
+            }
+            Self::Unreadable { why } => format!("kept, git cannot read it: {why}"),
+        }
+    }
+
+    /// What removing it would lose, when the user may still remove it after
+    /// confirming; `None` when it loses nothing or may not be removed here.
+    pub(crate) fn loses(&self) -> Option<String> {
+        match self {
+            Self::Uncommitted { files, commits: 0 } => Some(format!("{files} uncommitted file(s)")),
+            Self::Uncommitted { files, commits } => {
+                Some(format!("{files} uncommitted file(s) and {commits} commit(s)"))
+            }
+            Self::Unbrought { commits } => {
+                Some(format!("{commits} commit(s) not in your repository"))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Where a checkout stands under [`dispose`]'s rule, read without changing
+/// anything: what `/worktrees` shows, and what every removal decides by.
+#[cfg(feature = "cli")]
+fn classify(wt: &ChildWorktree) -> CheckoutState {
+    // A checkout that is no longer what Jan made is never removed: what it
+    // holds cannot be read without trusting it.
+    let checkout = match checkout(wt) {
+        Ok(checkout) => checkout,
+        Err(why) => return CheckoutState::Unreadable { why },
+    };
+    let commits = checkout.commits_anywhere(&wt.base);
+    match checkout.is_clean() {
+        Ok(true) => {}
+        Ok(false) => {
+            let files = checkout.try_changed_paths().map_or(0, |paths| paths.len());
+            return CheckoutState::Uncommitted { files, commits: commits.unwrap_or(0) };
+        }
+        Err(why) => return CheckoutState::Unreadable { why },
+    }
+    match commits {
+        Some(0) => CheckoutState::Removable { commits: 0 },
+        Some(n) if in_users_branch(wt, &checkout) => CheckoutState::Removable { commits: n },
+        Some(n) => CheckoutState::Unbrought { commits: n },
+        None => CheckoutState::Unreadable { why: "git could not count its commits".to_string() },
+    }
 }
 
 /// Move `wt` out of the way for [`dispose`]; kept when it cannot be.
 #[cfg(feature = "cli")]
 fn removed(wt: &ChildWorktree, brought: Option<String>) -> Disposition {
     match trash(&wt.path) {
-        Some(trashed) => Disposition::Removed { trashed, brought },
+        Some(gone) => Disposition::Removed { gone, brought },
         None => Disposition::Kept { not_brought: None },
     }
 }
@@ -643,10 +741,14 @@ const UNLOCKED_EXT: &str = "unlocked";
 /// reopens an existing lock file, see [`reserve`]).
 fn forget_meta(wt: &ChildWorktree) {
     let (Some(dir), Some(id)) = (wt.path.parent(), wt.path.file_name()) else { return };
-    let id = id.to_string_lossy();
-    let _ = std::fs::remove_file(meta_file(dir, &id, "json"));
-    let _ = std::fs::remove_file(meta_file(dir, &id, UNLOCKED_EXT));
-    let _ = std::fs::remove_file(meta_file(dir, &id, "lock"));
+    forget_meta_at(dir, &id.to_string_lossy());
+}
+
+/// [`forget_meta`] by checkout id, for a checkout with no usable record.
+fn forget_meta_at(dir: &Path, id: &str) {
+    let _ = std::fs::remove_file(meta_file(dir, id, "json"));
+    let _ = std::fs::remove_file(meta_file(dir, id, UNLOCKED_EXT));
+    let _ = std::fs::remove_file(meta_file(dir, id, "lock"));
 }
 
 /// What Jan recorded about a subagent checkout when it made it, so a later
@@ -743,24 +845,33 @@ fn reserve_with(
 /// (`node_modules`, build output) while the user waits, and the trash keeps
 /// it a while in case the emptiness check missed work. Deletes in place when
 /// the rename fails (something mounted there, a handle still open on
-/// Windows). `Some(true)` when trashed, `Some(false)` when deleted, `None`
-/// when it is still there.
+/// Windows). `None` when it is still there.
 #[cfg(feature = "cli")]
-fn trash(path: &Path) -> Option<bool> {
-    if move_to_trash(path) {
-        return Some(true);
+fn trash(path: &Path) -> Option<Gone> {
+    if let Some(to) = move_to_trash(path) {
+        return Some(Gone::Trashed(to));
     }
-    std::fs::remove_dir_all(path).is_ok().then_some(false)
+    std::fs::remove_dir_all(path).is_ok().then_some(Gone::Deleted)
 }
 
-/// Rename `path` into the trash beside it, never deleting anything. Whether
-/// it moved.
+/// How [`trash`] got a directory out of the way.
 #[cfg(feature = "cli")]
-fn move_to_trash(path: &Path) -> bool {
-    let (Some(dir), Some(id)) = (path.parent(), path.file_name()) else { return false };
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Gone {
+    /// Renamed to this path in the trash.
+    Trashed(PathBuf),
+    /// Deleted in place.
+    Deleted,
+}
+
+/// Rename `path` into the trash beside it, never deleting anything. Where
+/// it went, when it moved.
+#[cfg(feature = "cli")]
+fn move_to_trash(path: &Path) -> Option<PathBuf> {
+    let (dir, id) = (path.parent()?, path.file_name()?);
     let bin = dir.join(TRASH_DIR);
     let to = bin.join(tauri_plugin_agent_tools::workspace::trash_name(&id.to_string_lossy()));
-    std::fs::create_dir_all(&bin).is_ok() && std::fs::rename(path, to).is_ok()
+    (std::fs::create_dir_all(&bin).is_ok() && std::fs::rename(path, &to).is_ok()).then_some(to)
 }
 
 /// Delete what has been in the trash of `root`'s project for
@@ -1169,7 +1280,7 @@ fn settle_one(
     }
     let disposed = match wt.path.is_dir() {
         true => dispose(&wt, true),
-        false => Disposition::Removed { trashed: false, brought: None },
+        false => Disposition::Removed { gone: Gone::Deleted, brought: None },
     };
     let outcome = if let Disposition::Kept { not_brought } = disposed {
         let line = kept_line(&wt, not_brought.as_deref());
@@ -1187,7 +1298,7 @@ fn settle_one(
         forget_meta(&wt);
         match (disposed, wt.path.parent()) {
             (Disposition::Removed { brought: Some(branch), .. }, _) => Outcome::Brought(branch),
-            (Disposition::Removed { trashed: true, .. }, Some(dir)) => {
+            (Disposition::Removed { gone: Gone::Trashed(_), .. }, Some(dir)) => {
                 Outcome::Trashed(dir.join(TRASH_DIR))
             }
             _ => Outcome::Gone,
@@ -1394,7 +1505,10 @@ pub(crate) fn trim_build_cache(root: &Path, cap: u64) -> Option<String> {
     if !std::fs::symlink_metadata(&target).is_ok_and(|m| m.is_dir()) {
         return None;
     }
-    if checkouts_in_use(&dir) || !larger_than(&target, cap) || !move_to_trash(&target) {
+    if checkouts_in_use(&dir, &HashSet::new())
+        || !larger_than(&target, cap)
+        || move_to_trash(&target).is_none()
+    {
         return None;
     }
     Some(format!("subagent build cache over {}, cleared (next build starts cold)", size(cap)))
@@ -1409,18 +1523,22 @@ fn size(cap: u64) -> String {
     }
 }
 
-/// Whether any checkout among `dir`'s is owned by a live session: its lock
+/// Whether any checkout among `dir`'s, but those named in `ours` (the
+/// caller's own, whose locks it holds), is owned by a live session: its lock
 /// is held, or it was reserved without one (nothing can show its owner has
 /// gone). Taking a free lock here only to test it is harmless: a sweep that
 /// meets it meanwhile skips that checkout until the next start.
 #[cfg(feature = "cli")]
-fn checkouts_in_use(dir: &Path) -> bool {
+fn checkouts_in_use(dir: &Path, ours: &HashSet<String>) -> bool {
     let Ok(entries) = std::fs::read_dir(dir.join(META_DIR)) else { return false };
     entries.filter_map(Result::ok).any(|entry| {
         let name = entry.file_name();
         let Some(id) = name.to_str().and_then(|n| n.strip_suffix(".lock")) else {
             return false;
         };
+        if ours.contains(id) {
+            return false;
+        }
         if meta_file(dir, id, UNLOCKED_EXT).exists() {
             return true;
         }
@@ -1443,6 +1561,13 @@ fn checkouts_in_use(dir: &Path) -> bool {
 /// entries count as empty: the cost is a trim that waits for the next end.
 #[cfg(feature = "cli")]
 fn larger_than(dir: &Path, cap: u64) -> bool {
+    dir_size(dir, cap) > cap
+}
+
+/// The bytes of the files under `dir`, walked without following a link, and
+/// only until they pass `stop_above` (the total so far is returned then).
+#[cfg(feature = "cli")]
+fn dir_size(dir: &Path, stop_above: u64) -> u64 {
     let mut total: u64 = 0;
     let mut pending = vec![dir.to_path_buf()];
     while let Some(next) = pending.pop() {
@@ -1453,13 +1578,400 @@ fn larger_than(dir: &Path, cap: u64) -> bool {
                 pending.push(entry.path());
             } else if meta.is_file() {
                 total = total.saturating_add(meta.len());
-                if total > cap {
-                    return true;
+                if total > stop_above {
+                    return total;
                 }
             }
         }
     }
-    false
+    total
+}
+
+/// `bytes` for a person: whole bytes, else one decimal of the largest unit.
+#[cfg(feature = "cli")]
+pub(crate) fn human_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64 / 1024.0;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    format!("{value:.1} {}", UNITS[unit])
+}
+
+/// The live session asking `/worktrees` what it may prune, so its own
+/// checkouts do not read as another session's and its running subagents
+/// keep their checkouts and the build cache. `None` for `jan cli worktrees`,
+/// which owns nothing.
+#[cfg(feature = "cli")]
+pub(crate) struct Session<'a> {
+    pub(crate) ledger: &'a Ledger,
+    /// Whether any subagent of the session is running: a reader builds in
+    /// the shared build cache too, without a checkout of its own.
+    pub(crate) children_running: bool,
+}
+
+#[cfg(feature = "cli")]
+impl Session<'_> {
+    /// The ids of the checkouts this session made, whose locks it holds.
+    fn own_ids(&self) -> HashSet<String> {
+        let state = self.ledger.state.lock().unwrap();
+        state.created.iter().filter_map(|wt| id_of_path(&wt.path)).collect()
+    }
+
+    /// Whether a subagent of the session may be in `path`: a writer holds
+    /// it, or any subagent runs (a reader reusing a checkout holds no lease,
+    /// so a running one may be reading any of the session's).
+    fn in_use(&self, path: &Path) -> bool {
+        self.children_running || self.ledger.state.lock().unwrap().busy.contains(path)
+    }
+}
+
+#[cfg(feature = "cli")]
+fn id_of_path(path: &Path) -> Option<String> {
+    path.file_name().map(|id| id.to_string_lossy().into_owned())
+}
+
+/// One subagent checkout of the project, as `/worktrees` lists it.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct CheckoutInfo {
+    pub(crate) id: String,
+    pub(crate) path: PathBuf,
+    pub(crate) branch: String,
+    pub(crate) bytes: u64,
+    #[serde(flatten)]
+    pub(crate) state: CheckoutState,
+}
+
+#[cfg(feature = "cli")]
+impl CheckoutInfo {
+    /// The row `jan cli worktrees list` prints.
+    pub(crate) fn line(&self) -> String {
+        format!("{}  {}  {}", self.branch, human_bytes(self.bytes), self.state.describe())
+    }
+}
+
+/// What the project's subagents left on disk under its worktrees directory.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct WorktreesReport {
+    /// `~/.jan/worktrees/<slug>`, `None` without a Jan home.
+    pub(crate) dir: Option<PathBuf>,
+    pub(crate) checkouts: Vec<CheckoutInfo>,
+    /// The shared build cache's size, `None` when there is none.
+    pub(crate) build_cache_bytes: Option<u64>,
+    /// What already-removed checkouts and caches hold until the trash is
+    /// emptied at a later start.
+    pub(crate) trash_bytes: u64,
+}
+
+#[cfg(feature = "cli")]
+impl WorktreesReport {
+    /// The checkouts a safe prune would remove now, and their total size.
+    pub(crate) fn removable(&self) -> (usize, u64) {
+        let ones = self.checkouts.iter().filter(|c| matches!(c.state, CheckoutState::Removable { .. }));
+        ones.fold((0, 0), |(n, bytes), c| (n + 1, bytes + c.bytes))
+    }
+
+    /// The report as `jan cli worktrees list` prints it.
+    pub(crate) fn lines(&self) -> Vec<String> {
+        let mut lines: Vec<String> = match &self.dir {
+            Some(dir) => vec![format!("subagent worktrees in {}", display(dir))],
+            None => return vec!["no Jan home: there are no subagent worktrees".to_string()],
+        };
+        if self.checkouts.is_empty() {
+            lines.push("  no subagent checkouts".to_string());
+        }
+        lines.extend(self.checkouts.iter().map(|c| format!("  {}", c.line())));
+        lines.push(match self.build_cache_bytes {
+            Some(bytes) => format!("build cache  {}", human_bytes(bytes)),
+            None => "build cache  none".to_string(),
+        });
+        if self.trash_bytes > 0 {
+            let days = tauri_plugin_agent_tools::workspace::TRASH_KEPT_FOR.as_secs() / 86_400;
+            lines.push(format!(
+                "trash        {} (deleted after {days} days)",
+                human_bytes(self.trash_bytes)
+            ));
+        }
+        lines
+    }
+}
+
+/// How a found checkout is held while it is looked at or pruned.
+#[cfg(feature = "cli")]
+enum Hold {
+    /// The asking session made it and holds its lock.
+    Ours,
+    /// No live session owns it: this lock keeps every sweep off it meanwhile.
+    Locked(std::fs::File),
+    /// Another live session owns it.
+    Theirs,
+}
+
+#[cfg(feature = "cli")]
+struct Found {
+    id: String,
+    wt: ChildWorktree,
+    hold: Hold,
+}
+
+#[cfg(feature = "cli")]
+impl Found {
+    /// Where it stands, without changing anything.
+    fn state(&self, session: Option<&Session>) -> CheckoutState {
+        match self.hold {
+            Hold::Theirs => CheckoutState::InUse { by: InUseBy::Session },
+            Hold::Ours if session.is_some_and(|s| s.in_use(&self.wt.path)) => {
+                CheckoutState::InUse { by: InUseBy::Child }
+            }
+            _ => classify(&self.wt),
+        }
+    }
+}
+
+/// The project's canonical worktrees directory, as records name it.
+#[cfg(feature = "cli")]
+fn worktrees_dir(root: &Path) -> Option<PathBuf> {
+    project_worktrees_dir(root).and_then(|d| dunce::canonicalize(d).ok())
+}
+
+/// Every recorded checkout in `dir`, in id order, each held as [`Hold`]
+/// says. One without a record that describes it is not Jan's to judge, so is
+/// left out, as the startup sweep leaves it.
+#[cfg(feature = "cli")]
+fn found_checkouts(dir: &Path, session: Option<&Session>) -> Vec<Found> {
+    let ours = session.map(Session::own_ids).unwrap_or_default();
+    let Ok(entries) = std::fs::read_dir(dir.join(META_DIR)) else { return Vec::new() };
+    let mut found = Vec::new();
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name();
+        let Some(id) = name.to_str().and_then(|n| n.strip_suffix(".lock")) else { continue };
+        if !is_checkout_id(id) || !std::fs::symlink_metadata(dir.join(id)).is_ok_and(|m| m.is_dir())
+        {
+            continue;
+        }
+        let Some(wt) = std::fs::read(meta_file(dir, id, "json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<WorktreeMeta>(&bytes).ok())
+            .and_then(|meta| recorded_worktree(dir, id, meta))
+        else {
+            continue;
+        };
+        let hold = if ours.contains(id) {
+            Hold::Ours
+        } else if meta_file(dir, id, UNLOCKED_EXT).exists() {
+            Hold::Theirs
+        } else {
+            match crate::core::agent::session_log::open_no_follow(
+                std::fs::OpenOptions::new().write(true),
+                &entry.path(),
+            ) {
+                // Settled by its owner meanwhile.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(_) => Hold::Theirs,
+                Ok(file) => match lock(file) {
+                    Ok(hold) if still_at(&hold, &entry.path()) => Hold::Locked(hold),
+                    // Replaced since it was opened: a new owner has it.
+                    Ok(_) => Hold::Theirs,
+                    Err(_) => Hold::Theirs,
+                },
+            }
+        };
+        found.push(Found { id: id.to_string(), wt, hold });
+    }
+    found.sort_by(|a, b| a.id.cmp(&b.id));
+    found
+}
+
+/// List `root`'s project's subagent checkouts, its shared build cache and
+/// its trash, with their sizes and where each checkout stands. Runs git and
+/// walks every checkout: call it off the render loop.
+#[cfg(feature = "cli")]
+pub(crate) fn list_worktrees(root: &Path, session: Option<&Session>) -> WorktreesReport {
+    let Some(dir) = worktrees_dir(root) else {
+        return WorktreesReport { dir: project_worktrees_dir(root), ..WorktreesReport::default() };
+    };
+    let checkouts = found_checkouts(&dir, session)
+        .iter()
+        .map(|found| CheckoutInfo {
+            id: found.id.clone(),
+            path: found.wt.path.clone(),
+            branch: found.wt.branch.clone(),
+            bytes: dir_size(&found.wt.path, u64::MAX),
+            state: found.state(session),
+        })
+        .collect();
+    let target = dir.join(CARGO_TARGET);
+    let build_cache_bytes = std::fs::symlink_metadata(&target)
+        .is_ok_and(|m| m.is_dir())
+        .then(|| dir_size(&target, u64::MAX));
+    WorktreesReport {
+        trash_bytes: dir_size(&dir.join(TRASH_DIR), u64::MAX),
+        dir: Some(dir),
+        checkouts,
+        build_cache_bytes,
+    }
+}
+
+/// Which checkouts a prune removes.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Prune {
+    /// Every checkout session end would remove (see [`dispose`]).
+    Safe,
+    /// Every checkout that is not in use, its uncommitted work and unbrought
+    /// commits included: the user confirmed the loss.
+    All,
+    /// The checkout with this id, by the safe rule, or (`force`) whatever it
+    /// holds once the user confirmed the loss.
+    One { id: String, force: bool },
+}
+
+/// What a prune did, for the notice that tells the user.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Pruned {
+    /// The branches of the checkouts removed.
+    pub(crate) removed: Vec<String>,
+    /// Of those, the branches whose commits were brought into the user's
+    /// repository first: where that work is now.
+    pub(crate) brought: Vec<String>,
+    /// A line per checkout kept, saying why.
+    pub(crate) kept: Vec<String>,
+    pub(crate) freed: u64,
+}
+
+#[cfg(feature = "cli")]
+impl Pruned {
+    /// The notice for the user: what went, the space it freed, what stayed.
+    pub(crate) fn notice(&self) -> String {
+        let mut text = match self.removed.len() {
+            0 => "no subagent worktree removed".to_string(),
+            n => format!("removed {n} subagent worktree(s), freed {}", human_bytes(self.freed)),
+        };
+        if !self.brought.is_empty() {
+            text.push_str(&format!("\nbrought back first: {}", self.brought.join(", ")));
+        }
+        for line in &self.kept {
+            text.push_str(&format!("\nkept {line}"));
+        }
+        text
+    }
+}
+
+/// Remove `root`'s project's subagent checkouts that `which` names, never
+/// one a running subagent of `session` or another live session holds, nor
+/// one git cannot read. A removed checkout is deleted, not left in the
+/// trash: the user asked for the space. Runs git and deletes: call it off
+/// the render loop.
+#[cfg(feature = "cli")]
+pub(crate) fn prune_worktrees(root: &Path, session: Option<&Session>, which: &Prune) -> Pruned {
+    let mut pruned = Pruned::default();
+    let Some(dir) = worktrees_dir(root) else { return pruned };
+    for found in found_checkouts(&dir, session) {
+        let force = match which {
+            Prune::Safe => false,
+            Prune::All => true,
+            Prune::One { id, force } if *id == found.id => *force,
+            Prune::One { .. } => continue,
+        };
+        prune_one(found, session, force, &mut pruned);
+    }
+    pruned
+}
+
+/// [`prune_worktrees`] for one checkout.
+#[cfg(feature = "cli")]
+fn prune_one(found: Found, session: Option<&Session>, force: bool, pruned: &mut Pruned) {
+    let Found { wt, hold, .. } = found;
+    let kept = |state: CheckoutState| format!("{} ({})", wt.branch, state.describe());
+    let ledger = match (&hold, session) {
+        (Hold::Theirs, _) => {
+            return pruned.kept.push(kept(CheckoutState::InUse { by: InUseBy::Session }));
+        }
+        // Claimed, as a session end claims it, so no dispatch is handed it
+        // while it goes; a writer in it refuses the claim.
+        (Hold::Ours, Some(session))
+            if session.in_use(&wt.path) || !session.ledger.claim(&wt.path) =>
+        {
+            return pruned.kept.push(kept(CheckoutState::InUse { by: InUseBy::Child }));
+        }
+        (Hold::Ours, Some(session)) => Some(session.ledger),
+        _ => None,
+    };
+    let bytes = dir_size(&wt.path, u64::MAX);
+    let (gone, brought) = match dispose(&wt, true) {
+        Disposition::Removed { gone, brought } => (Some(gone), brought),
+        Disposition::Kept { .. } => match classify(&wt) {
+            CheckoutState::Uncommitted { .. } | CheckoutState::Unbrought { .. } if force => {
+                (trash(&wt.path), None)
+            }
+            state => {
+                pruned.kept.push(kept(state));
+                (None, None)
+            }
+        },
+    };
+    if gone.is_some() {
+        forget_meta(&wt);
+    }
+    if let Some(ledger) = ledger {
+        ledger.release(&wt.path, gone.is_some());
+    }
+    // Only now may a sweep take it: the decision and the removal are done.
+    if let Hold::Locked(lock) = hold {
+        drop(lock);
+    }
+    let Some(gone) = gone else { return };
+    // Once its record is gone the trash entry is nobody's: a failed delete
+    // is left for the startup sweep to empty.
+    if let Gone::Trashed(to) = gone {
+        let _ = std::fs::remove_dir_all(to);
+    }
+    pruned.freed += bytes;
+    pruned.removed.push(wt.branch.clone());
+    pruned.brought.extend(brought);
+}
+
+/// Delete `root`'s project's shared build cache now, returning the bytes
+/// freed. Refused while a build may be running in it: a running subagent of
+/// `session`, or any other live session that holds a checkout of the
+/// project (the same check as [`trim_build_cache`]). Call it off the render
+/// loop.
+#[cfg(feature = "cli")]
+pub(crate) fn clear_build_cache(root: &Path, session: Option<&Session>) -> Result<u64, String> {
+    let dir = worktrees_dir(root).ok_or("there is no subagent build cache")?;
+    let target = dir.join(CARGO_TARGET);
+    if !std::fs::symlink_metadata(&target).is_ok_and(|m| m.is_dir()) {
+        return Err("there is no subagent build cache".to_string());
+    }
+    let ours = match session {
+        // A reader builds there too, without a lease, so any running
+        // subagent counts.
+        Some(s) if s.children_running || !s.ledger.state.lock().unwrap().busy.is_empty() => {
+            return Err("a subagent is running and may be building there; try again once it \
+                        has finished"
+                .to_string());
+        }
+        Some(s) => s.own_ids(),
+        None => HashSet::new(),
+    };
+    if checkouts_in_use(&dir, &ours) {
+        return Err("another live jan session has a subagent checkout of this project and \
+                    may be building there"
+            .to_string());
+    }
+    let bytes = dir_size(&target, u64::MAX);
+    let to = move_to_trash(&target).ok_or("could not move the build cache out of the way")?;
+    // Deleted now, not after the trash's week: the user asked for the space.
+    let _ = std::fs::remove_dir_all(to);
+    Ok(bytes)
 }
 
 /// Settle `root`'s orphaned worktrees and report them (see
@@ -2795,6 +3307,189 @@ mod git_tests {
         let _ = std::fs::remove_dir_all(&root);
         assert!(small, "100 bytes is over a 99-byte cap");
         assert!(!big, "and not over 100, the linked repository not counted");
+    }
+
+    /// A project with a checkout in each state `/worktrees` shows: in use by
+    /// a writer of `ledger`, by another live session (`other`), with
+    /// uncommitted work, with commits not in the user's repository, and
+    /// removable. Returns the workspaces in that order and the writer's lease.
+    fn every_state(
+        root: &Path,
+        ledger: &Arc<Ledger>,
+        other: &Arc<Ledger>,
+    ) -> ([ChildWorkspace; 5], Option<WriterLease>) {
+        let (busy, lease) = ledger.assign(root, "busy", true, None).unwrap();
+        let (theirs, l1) = other.assign(root, "theirs", true, None).unwrap();
+        let (dirty, l2) = ledger.assign(root, "dirty", true, None).unwrap();
+        let (committed, l3) = ledger.assign(root, "committed", true, None).unwrap();
+        let (idle, l4) = ledger.assign(root, "idle", true, None).unwrap();
+        drop((l1, l2, l3, l4));
+        std::fs::write(dirty.root.join("a.txt"), "edited\n").unwrap();
+        commit(&committed.root, "b.txt");
+        ([busy, theirs, dirty, committed, idle], lease)
+    }
+
+    fn state_of<'a>(report: &'a WorktreesReport, ws: &ChildWorkspace) -> &'a CheckoutState {
+        let branch = &ws.worktree.as_ref().unwrap().branch;
+        &report.checkouts.iter().find(|c| &c.branch == branch).expect("listed").state
+    }
+
+    /// Each checkout is listed under the state that decides what may be done
+    /// with it, with its size; the build cache with its own.
+    #[test]
+    fn the_list_names_each_checkouts_state_and_size() {
+        let Some(root) = repo("list") else { return };
+        let (ledger, other) = (Arc::new(Ledger::default()), Arc::new(Ledger::default()));
+        let (ws, lease) = every_state(&root, &ledger, &other);
+        fill_build_cache(&root, 4096);
+        let session = Session { ledger: &ledger, children_running: false };
+        let report = list_worktrees(&root, Some(&session));
+        let headless = list_worktrees(&root, None);
+        drop(lease);
+        let _ = ledger.finish_with(|_| 0);
+        let _ = other.finish_with(|_| 0);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(report.checkouts.len(), 5, "{report:?}");
+        assert_eq!(state_of(&report, &ws[0]), &CheckoutState::InUse { by: InUseBy::Child });
+        assert_eq!(state_of(&report, &ws[1]), &CheckoutState::InUse { by: InUseBy::Session });
+        assert_eq!(state_of(&report, &ws[2]), &CheckoutState::Uncommitted { files: 1, commits: 0 });
+        assert_eq!(state_of(&report, &ws[3]), &CheckoutState::Unbrought { commits: 1 });
+        assert_eq!(state_of(&report, &ws[4]), &CheckoutState::Removable { commits: 0 });
+        assert!(report.checkouts.iter().all(|c| c.bytes > 0), "{report:?}");
+        assert_eq!(report.build_cache_bytes, Some(4096));
+        assert_eq!(report.removable().0, 1);
+        // Headless owns nothing: this session's checkouts are another's.
+        for one in &ws {
+            assert_eq!(state_of(&headless, one), &CheckoutState::InUse { by: InUseBy::Session });
+        }
+        let lines = report.lines().join("\n");
+        assert!(lines.contains("build cache  4.0 KB"), "{lines}");
+        assert!(lines.contains("holds 1 uncommitted file(s)"), "{lines}");
+    }
+
+    /// The safe prune removes what session end would (bringing a committed
+    /// branch back first), and never a checkout a running subagent or
+    /// another live session holds, nor one with uncommitted work.
+    #[test]
+    fn a_safe_prune_removes_only_what_session_end_would() {
+        let Some(root) = repo("prune-safe") else { return };
+        let (ledger, other) = (Arc::new(Ledger::default()), Arc::new(Ledger::default()));
+        let (ws, lease) = every_state(&root, &ledger, &other);
+        let session = Session { ledger: &ledger, children_running: false };
+        let pruned = prune_worktrees(&root, Some(&session), &Prune::Safe);
+        let there = ws.each_ref().map(|w| w.root.is_dir());
+        let branch = |w: &ChildWorkspace| w.worktree.as_ref().unwrap().branch.clone();
+        let brought = crate::core::agent::git::resolve_commit(&root, &branch(&ws[3]));
+        let live = ledger.live().len();
+        drop(lease);
+        let _ = ledger.finish_with(|_| 0);
+        let _ = other.finish_with(|_| 0);
+        let _ = std::fs::remove_dir_all(&ws[2].root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(there, [true, true, true, false, false], "{pruned:?}");
+        assert!(brought.is_some(), "its commits were brought back before it went");
+        assert_eq!(pruned.removed.len(), 2, "{pruned:?}");
+        assert_eq!(pruned.brought, [branch(&ws[3])]);
+        assert_eq!(pruned.kept.len(), 3, "{pruned:?}");
+        assert!(pruned.freed > 0);
+        assert_eq!(live, 2, "the ledger forgets what went (theirs is another's)");
+        assert!(pruned.notice().starts_with("removed 2 subagent worktree(s), freed "));
+    }
+
+    /// A checkout a running subagent works in is never removed, whatever is
+    /// asked: not by the safe prune, not by a forced one, not by name.
+    #[test]
+    fn a_checkout_in_use_by_a_live_child_is_never_removed() {
+        let Some(root) = repo("prune-busy") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (busy, lease) = ledger.assign(&root, "busy", true, None).unwrap();
+        let (reused, l2) = ledger.assign(&root, "reused", true, None).unwrap();
+        drop(l2);
+        let id = id_of(&busy);
+        // A reader holds no lease: while any subagent runs, none of the
+        // session's checkouts goes.
+        let running = Session { ledger: &ledger, children_running: true };
+        let pruned = prune_worktrees(&root, Some(&running), &Prune::All);
+        assert!(reused.root.is_dir() && pruned.removed.is_empty(), "{pruned:?}");
+        let session = Session { ledger: &ledger, children_running: false };
+        for which in [Prune::Safe, Prune::All, Prune::One { id: id.clone(), force: true }] {
+            let pruned = prune_worktrees(&root, Some(&session), &which);
+            assert!(busy.root.is_dir(), "{which:?}");
+            assert!(!pruned.removed.contains(&busy.worktree.as_ref().unwrap().branch));
+        }
+        assert!(!reused.root.exists(), "the idle one went once nothing ran");
+        drop(lease);
+        let _ = ledger.finish_with(|_| 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// After the user confirms the loss, one checkout with uncommitted work
+    /// goes by name (its committed branch still brought back first), and
+    /// `All` takes every one not in use.
+    #[test]
+    fn a_confirmed_prune_removes_work_but_never_another_sessions_checkout() {
+        let Some(root) = repo("prune-force") else { return };
+        let (ledger, other) = (Arc::new(Ledger::default()), Arc::new(Ledger::default()));
+        let (ws, lease) = every_state(&root, &ledger, &other);
+        let session = Session { ledger: &ledger, children_running: false };
+        let unforced = Prune::One { id: id_of(&ws[2]), force: false };
+        let kept = prune_worktrees(&root, Some(&session), &unforced);
+        let dirty_kept = ws[2].root.is_dir();
+        let forced = Prune::One { id: id_of(&ws[2]), force: true };
+        let one = prune_worktrees(&root, Some(&session), &forced);
+        let dirty_gone = !ws[2].root.exists();
+        let all = prune_worktrees(&root, Some(&session), &Prune::All);
+        let there = ws.each_ref().map(|w| w.root.is_dir());
+        drop(lease);
+        let _ = ledger.finish_with(|_| 0);
+        let _ = other.finish_with(|_| 0);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(dirty_kept && kept.removed.is_empty(), "{kept:?}");
+        assert!(dirty_gone && one.removed.len() == 1, "{one:?}");
+        assert_eq!(there, [true, true, false, false, false], "{all:?}");
+        assert_eq!(all.removed.len(), 2, "{all:?}");
+    }
+
+    /// Clearing the build cache deletes it and says how much it freed, but
+    /// not while a subagent of this session or another live session may be
+    /// building in it.
+    #[test]
+    fn the_build_cache_is_cleared_only_when_no_build_may_run() {
+        let Some(root) = repo("clear-cache") else { return };
+        let target = fill_build_cache(&root, 4096);
+        let (ledger, other) = (Arc::new(Ledger::default()), Arc::new(Ledger::default()));
+        let (_mine, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let session = Session { ledger: &ledger, children_running: false };
+        let busy = clear_build_cache(&root, Some(&session));
+        drop(lease);
+        let running = Session { ledger: &ledger, children_running: true };
+        let reading = clear_build_cache(&root, Some(&running));
+        let (_theirs, l2) = other.assign(&root, "general", true, None).unwrap();
+        drop(l2);
+        let elsewhere = clear_build_cache(&root, Some(&session));
+        let kept = target.join("debug/deps/lib.rlib").is_file();
+        let _ = other.finish_with(|_| 0);
+        // This session's own idle checkout does not hold the cache back.
+        let cleared = clear_build_cache(&root, Some(&session));
+        let gone = !target.exists();
+        let trashed = trashed_caches(&root);
+        let again = clear_build_cache(&root, None);
+        let _ = ledger.finish_with(|_| 0);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(busy.is_err() && reading.is_err(), "{busy:?} {reading:?}");
+        assert!(elsewhere.is_err_and(|e| e.contains("another live jan session")));
+        assert!(kept);
+        assert_eq!(cleared, Ok(4096));
+        assert!(gone && trashed == 0, "deleted, not left in the trash");
+        assert!(again.is_err_and(|e| e.contains("no subagent build cache")));
+    }
+
+    #[test]
+    fn sizes_read_as_a_person_would_say_them() {
+        assert_eq!(human_bytes(0), "0 B");
+        assert_eq!(human_bytes(1023), "1023 B");
+        assert_eq!(human_bytes(1536), "1.5 KB");
+        assert_eq!(human_bytes(20 << 30), "20.0 GB");
     }
 
     /// The `.meta` and `.trash` directories beside `root`'s checkouts.

@@ -509,6 +509,16 @@ fn monitors_inspector_empty() {
     assert_buffer("monitors_inspector_empty", &frame(&mut app, DARK, 60, 9));
 }
 
+/// `/worktrees`: the actions, then each checkout coloured by what may be
+/// done with it (removable green, holding work amber, in use dim).
+#[test]
+fn worktrees_inspector_lists_each_state() {
+    let mut app = snapshot_app();
+    app.worktrees = Some(worktrees_fixture());
+    open_worktrees_picker(&mut app);
+    assert_buffer("worktrees_inspector_list", &frame(&mut app, DARK, 100, 15));
+}
+
 #[test]
 fn monitor_group_overflow_counts_the_rest() {
     let mut app = snapshot_app();
