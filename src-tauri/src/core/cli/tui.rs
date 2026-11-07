@@ -44010,6 +44010,7 @@ fn a() {}
                         files: vec!["a.txt".into(), ".env".into()],
                         commits: 1,
                         off_branch: 0,
+                        build_output: 0,
                     },
                 ),
                 checkout("ahead-0004", CheckoutState::Unbrought { commits: 3 }),
