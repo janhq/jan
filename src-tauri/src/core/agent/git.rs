@@ -1334,10 +1334,21 @@ enum BuildOutput {
     File,
 }
 
+/// The ignore rule that matched a path, as `check-ignore -v` reports it.
+#[cfg(feature = "cli")]
+#[derive(Debug)]
+struct IgnoreRule {
+    /// The file the rule is in.
+    source: String,
+    pattern: String,
+    /// Whether `source` is a committed `.gitignore`, one the child did not
+    /// write unseen (see [`named_folder`]).
+    committed: bool,
+}
+
 /// Whether the ignored `path` (as status names it, `/`-separated, a
-/// directory with a trailing `/`) is build output, given `rule`, the
-/// `(source, pattern)` of the ignore rule that matched it (see
-/// [`named_folder`]), when known.
+/// directory with a trailing `/`) is build output, given the `rule` that
+/// matched it (see [`named_folder`]), when known.
 ///
 /// A directory is so by its own name, and a file by one of
 /// [`BUILD_OUTPUT_EXTS`], whatever the rule. Otherwise an ancestor named
@@ -1349,7 +1360,7 @@ enum BuildOutput {
 /// work. A file still is when [`BuildKind::holds_work`] says so, so
 /// `dist/.env` is work.
 #[cfg(feature = "cli")]
-fn build_output(path: &str, rule: Option<(&str, &str)>) -> Option<BuildOutput> {
+fn build_output(path: &str, rule: Option<&IgnoreRule>) -> Option<BuildOutput> {
     let trimmed = path.trim_end_matches('/');
     let (parent, last) = trimmed.rsplit_once('/').unwrap_or(("", trimmed));
     let dir = path.ends_with('/');
@@ -1359,10 +1370,12 @@ fn build_output(path: &str, rule: Option<(&str, &str)>) -> Option<BuildOutput> {
     if !dir && last.rsplit_once('.').is_some_and(|(_, ext)| BUILD_OUTPUT_EXTS.contains(&ext)) {
         return Some(BuildOutput::File);
     }
-    let (source, pattern) = rule?;
-    let name = named_folder(source, pattern)?;
+    let rule = rule?;
+    let name = named_folder(&rule.source, &rule.pattern, rule.committed)?;
     let kind = BuildKind::of(name)?;
     // How far up the folder the rule names is; 0 is the path's own parent.
+    // The nearest ancestor so named is taken: `build/` matches at any depth,
+    // and that is the folder it hid.
     let depth = parent.rsplit('/').position(|part| part == name)?;
     if dir {
         return Some(BuildOutput::Dir(kind));
@@ -1374,31 +1387,54 @@ fn build_output(path: &str, rule: Option<(&str, &str)>) -> Option<BuildOutput> {
 /// rule's `pattern` and the `source` file it is in. That is the last folder
 /// in the pattern's directory part that is not a bare `*` or `**` (`dist`
 /// for `dist/*`, `/dist/**`, `dist/`, `**/dist/*` and `dist/*/`); a
-/// pattern's last part is the entry itself unless it ends in `/`. A pattern
-/// with no directory part (`*.local`) names no folder, except one that
-/// matches everything (`*`) in a nested `.gitignore`, which names the folder
-/// that file sits in: `python -m venv` writes such a file into `.venv/`.
-/// `.git/info/exclude`, the one other source the clean check reads (git
-/// names it by its absolute path), sits in no folder of the checkout. A
-/// negated pattern never ignored anything.
+/// pattern's last part is the entry itself unless it ends in `/`. A rule
+/// with no leading or inner `/` matches at any depth, so `build/` names a
+/// tracked `tools/build/` too: its ignored files are build output then,
+/// though a secret there is still work. A pattern with no directory part
+/// (`*.local`) names no folder, except one that matches everything (`*`)
+/// in a nested `.gitignore`, which names the folder that file sits in:
+/// `python -m venv` writes such a file into `.venv/`. A negated pattern
+/// never ignored anything.
+///
+/// Only a rule someone could have reviewed names anything, since the child
+/// can write a rule to exempt its own files. So `.git/info/exclude`, the one
+/// source besides `.gitignore` files the clean check reads (see
+/// [`in_git_dir`]), names nothing, and a `.gitignore` that is not
+/// `committed` names only a venv's own: a `*` in a folder named like a
+/// dependency tree, which `python -m venv` writes there and no one commits.
 #[cfg(feature = "cli")]
-fn named_folder<'a>(source: &'a str, pattern: &'a str) -> Option<&'a str> {
+fn named_folder<'a>(source: &'a str, pattern: &'a str, committed: bool) -> Option<&'a str> {
     let wild = |part: &str| matches!(part, "*" | "**");
-    if pattern.starts_with('!') {
+    if pattern.starts_with('!') || in_git_dir(source) {
         return None;
     }
     let mut parts: Vec<&str> = pattern.trim_matches('/').split('/').collect();
-    if !pattern.ends_with('/') {
-        let last = parts.pop().unwrap_or_default();
-        if parts.iter().all(|part| part.is_empty()) {
-            let base = match source.rsplit_once('/') {
-                Some((base, ".gitignore")) if !Path::new(source).is_absolute() => base,
-                _ => return None,
-            };
-            return base.rsplit('/').next().filter(|_| wild(last));
-        }
+    let last = match pattern.ends_with('/') {
+        true => None,
+        false => parts.pop(),
+    };
+    let bare = parts.iter().all(|part| part.is_empty());
+    // A nested `.gitignore` of `*` names the folder it sits in.
+    let own = || match (last, source.rsplit_once('/')) {
+        (Some(last), Some((base, ".gitignore"))) if bare && wild(last) => base.rsplit('/').next(),
+        _ => None,
+    };
+    if !committed {
+        return own().filter(|name| BuildKind::of(name) == Some(BuildKind::Dependency));
+    }
+    if last.is_some() && bare {
+        return own();
     }
     parts.into_iter().rev().find(|part| !part.is_empty() && !wild(part))
+}
+
+/// Whether a rule's `source` is in the checkout's git dir rather than its
+/// work tree, as `.git/info/exclude` is: git names it by its absolute path
+/// (`GIT_DIR` is absolute), while a `.gitignore` is named relative to the
+/// top. A relative `.git/...` is caught too, should git ever name it so.
+#[cfg(feature = "cli")]
+fn in_git_dir(source: &str) -> bool {
+    Path::new(source).is_absolute() || source.split('/').next() == Some(".git")
 }
 
 /// Whether a file named `name`, found inside ignored build output, looks
@@ -1560,7 +1596,7 @@ fn work_with(
     let mut work = Work::default();
     for (field, code, path) in entries {
         let built = match judged(code, path) {
-            true => build_output(path, rules.get(path).map(|(s, p)| (s.as_str(), p.as_str()))),
+            true => build_output(path, rules.get(path)),
             false => None,
         };
         if let Some(built) = built {
@@ -1576,17 +1612,18 @@ fn work_with(
     Ok(work)
 }
 
-/// The `(source, pattern)` of the rule that ignores each of `paths`, by
-/// path, from one `check-ignore`. `--no-index`, since status lists a file
-/// that is tracked yet ignored only when it is not, and with the same
-/// excludes [`work_with`] reads (its own `.git/info/exclude`, never the
-/// user's global file). If git fails, nothing is known, so no ancestor
-/// exempts anything: the fallback keeps rather than deletes.
+/// The rule that ignores each of `paths`, by path, from one `check-ignore`.
+/// `--no-index`, since status lists a file that is tracked yet ignored only
+/// when it is not, and with the same excludes [`work_with`] reads (its own
+/// `.git/info/exclude`, never the user's global file). Which `.gitignore`
+/// sources are committed is asked of one `ls-files`. If git fails, nothing
+/// is known, so no ancestor exempts anything (and an unknown source counts
+/// as written by the child): the fallback keeps rather than deletes.
 #[cfg(feature = "cli")]
 fn ignore_rules(
     paths: &[&str],
     git: impl Fn(&[&str], &[u8]) -> Result<String, String>,
-) -> std::collections::HashMap<String, (String, String)> {
+) -> std::collections::HashMap<String, IgnoreRule> {
     if paths.is_empty() {
         return Default::default();
     }
@@ -1596,10 +1633,28 @@ fn ignore_rules(
     // Four fields a path: source, line number, pattern, path.
     let fields: Vec<&str> = out.split('\0').collect();
     let (rules, _) = fields.as_chunks::<4>();
+    let mut sources: Vec<&str> =
+        rules.iter().map(|[source, ..]| *source).filter(|s| !in_git_dir(s)).collect();
+    sources.sort_unstable();
+    sources.dedup();
+    // Literal, so a folder named with `*` or `[` matches only itself.
+    let mut args = vec!["--literal-pathspecs", "ls-files", "-z", "--"];
+    args.extend(&sources);
+    let listed = match sources.is_empty() {
+        true => String::new(),
+        false => git(&args, &[]).unwrap_or_default(),
+    };
+    let committed: std::collections::HashSet<&str> =
+        listed.split('\0').filter(|s| !s.is_empty()).collect();
     rules
         .iter()
         .map(|[source, _, pattern, path]| {
-            (path.to_string(), (source.to_string(), pattern.to_string()))
+            let rule = IgnoreRule {
+                source: source.to_string(),
+                pattern: pattern.to_string(),
+                committed: committed.contains(source),
+            };
+            (path.to_string(), rule)
         })
         .collect()
 }
@@ -2275,10 +2330,18 @@ mod tests {
         let seen = std::cell::RefCell::new(Vec::new());
         // No checkout on disk: an ignored directory there holds nothing.
         let root = std::env::temp_dir().join("jan_no_such_checkout");
-        // `rules` is what check-ignore answers, as `source\0line\0pattern\0path\0`.
+        // `rules` is what check-ignore answers, as `source\0line\0pattern\0path\0`;
+        // ls-files lists every source it is asked about as committed, unless
+        // `untracked`.
+        let untracked = std::cell::Cell::new(false);
         let ask = |out: Result<&str, &str>, rules: Result<&str, &str>| {
             work_with(&root, |args, input| {
                 seen.borrow_mut().extend(args.iter().map(|a| a.to_string()));
+                if args.contains(&"ls-files") {
+                    let asked = args.iter().skip_while(|a| **a != "--").skip(1);
+                    let listed = asked.map(|a| format!("{a}\0")).collect::<String>();
+                    return Ok(if untracked.get() { String::new() } else { listed });
+                }
                 let answer = match args.contains(&"check-ignore") {
                     true => {
                         assert!(input.ends_with(b"\0"), "{input:?}");
@@ -2320,6 +2383,13 @@ mod tests {
         ];
         assert_eq!(ask(Ok(below), Ok(rules)), Ok(listed));
         assert!(seen.borrow().iter().any(|a| a == "--no-index"), "{seen:?}");
+        assert!(seen.borrow().iter().any(|a| a == "--literal-pathspecs"), "{seen:?}");
+        // A `.gitignore` the child wrote and never committed names nothing.
+        untracked.set(true);
+        let listed = vec!["dist/a.txt".to_string()];
+        let rules = ".gitignore\x001\0dist/*\0dist/a.txt\0";
+        assert_eq!(ask(Ok("!! dist/a.txt\0"), Ok(rules)), Ok(listed));
+        untracked.set(false);
         // When git cannot say which rule it was, no ancestor exempts anything.
         let listed = vec!["dist/a.txt".to_string(), "dist/assets/".to_string()];
         assert_eq!(ask(Ok("!! dist/a.txt\0!! dist/assets/\0"), Err("broken")), Ok(listed));
@@ -2472,6 +2542,58 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The child writes `.git/info/exclude` and no one reviews it, so a rule
+    /// there exempts nothing, even one naming a build folder.
+    #[test]
+    fn a_rule_in_the_checkouts_own_exclude_file_exempts_nothing() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("exclude");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/exclude-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".git/info/exclude"), "sub/build/*\n").unwrap();
+        std::fs::create_dir_all(wt.join("sub/build")).unwrap();
+        std::fs::write(wt.join("sub/build/todo.md"), "mine\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["sub/build/todo.md".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A nested `.gitignore` the child wrote and never committed names no
+    /// folder, except the `*` one `python -m venv` writes into a folder named
+    /// like a dependency tree (see
+    /// [`a_venv_ignored_by_its_own_gitignore_is_a_dependency_tree`]). A
+    /// committed one still does.
+    #[test]
+    fn an_untracked_nested_gitignore_names_no_folder() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("nested");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/nested-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::create_dir_all(wt.join("web")).unwrap();
+        std::fs::write(wt.join("web/.gitignore"), "**/build/\ndist/*\n").unwrap();
+        run(&wt, None, &["add", "-A"]).unwrap();
+        run(&wt, None, &["commit", "-qm", "web", "--no-gpg-sign"]).unwrap();
+        std::fs::create_dir_all(wt.join("web/build/out")).unwrap();
+        std::fs::write(wt.join("web/build/out/app.js"), "x").unwrap();
+        std::fs::create_dir_all(wt.join("web/dist")).unwrap();
+        std::fs::write(wt.join("web/dist/app.js"), "x").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec![]), "a committed rule still exempts");
+
+        std::fs::create_dir_all(wt.join("src/build")).unwrap();
+        std::fs::write(wt.join("src/build/.gitignore"), "*\n").unwrap();
+        std::fs::write(wt.join("src/build/mine.md"), "mine\n").unwrap();
+        let both = vec!["src/build/.gitignore".to_string(), "src/build/mine.md".to_string()];
+        assert_eq!(child.uncommitted(), Ok(both));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A tracked source folder that happens to be named like a build folder
     /// exempts nothing: an ignored file in it is hand-written unless the rule
     /// that ignored it names that folder.
@@ -2522,16 +2644,22 @@ mod tests {
     #[test]
     fn the_folder_a_rule_names() {
         for pattern in ["dist/*", "/dist/**", "dist/", "**/dist/*", "dist/*/", "web/dist/**"] {
-            assert_eq!(named_folder(".gitignore", pattern), Some("dist"), "{pattern}");
+            assert_eq!(named_folder(".gitignore", pattern, true), Some("dist"), "{pattern}");
+            assert_eq!(named_folder(".gitignore", pattern, false), None, "{pattern}");
         }
         for pattern in ["*.local", "*", "!dist/*", "/notes.txt", "*/"] {
-            assert_eq!(named_folder(".gitignore", pattern), None, "{pattern}");
+            assert_eq!(named_folder(".gitignore", pattern, true), None, "{pattern}");
         }
-        assert_eq!(named_folder(".venv/.gitignore", "*"), Some(".venv"));
-        assert_eq!(named_folder("tools/build/.gitignore", "*.local"), None);
+        assert_eq!(named_folder(".venv/.gitignore", "*", true), Some(".venv"));
+        assert_eq!(named_folder(".venv/.gitignore", "*", false), Some(".venv"));
+        assert_eq!(named_folder("src/build/.gitignore", "*", true), Some("build"));
+        assert_eq!(named_folder("src/build/.gitignore", "*", false), None);
+        assert_eq!(named_folder("tools/build/.gitignore", "*.local", true), None);
         let exclude = std::env::temp_dir().join("x/.git/info/exclude");
-        assert_eq!(named_folder(&exclude.to_string_lossy(), "*"), None);
-        assert_eq!(named_folder(&exclude.to_string_lossy(), "build/"), Some("build"));
+        for pattern in ["*", "build/", "sub/build/*"] {
+            assert_eq!(named_folder(&exclude.to_string_lossy(), pattern, true), None);
+            assert_eq!(named_folder(".git/info/exclude", pattern, true), None);
+        }
     }
 
     #[test]
