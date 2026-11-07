@@ -625,9 +625,9 @@ changed, untracked or ignored file, except ignored build output (anything under 
 `node_modules/`, `dist/`, `build/`, `.next/`, `__pycache__/`, `.venv/` or `.gradle/` that the
 ignore rule naming that folder hides, and `*.o`, `*.pyc`, `*.class` files): an ignored `.env` or
 local config keeps the checkout, listed as holding uncommitted work with the files named. Only a
-rule in a committed `.gitignore` names a folder; one the subagent wrote (in a `.gitignore` it did
-not commit, or in the checkout's `.git/info/exclude`) exempts nothing, except the `*` that
-`python -m venv` writes into `.venv/`. A rule like `build/` matches at any depth, so ignored files
+rule in a `.gitignore` committed at the checkout's HEAD, unchanged since, names a folder; one the
+subagent wrote (in a `.gitignore` it did not commit or edited, or in the checkout's
+`.git/info/exclude`) exempts nothing, except the `*` that `python -m venv` writes into `.venv/`. A rule like `build/` matches at any depth, so ignored files
 in a tracked folder such as `tools/build/` are treated as build output too (a `.env` or key there
 still keeps the checkout). With
 `--json`, an uncommitted checkout's `build_output` is an array of those build output paths and
