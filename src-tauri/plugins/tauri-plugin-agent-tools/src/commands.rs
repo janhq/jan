@@ -950,7 +950,8 @@ async fn execute_tool_inner(
         }
         Decision::HardDeny(gate::DenyReason::TooComplex) => {
             return Err(format!(
-                "tool '{name}' is denied: the command is too complex to check; simplify it"
+                "tool '{name}' is denied: the command is too complex to check; split it, or \
+                 write a long script to a file and run that"
             )
             .into());
         }

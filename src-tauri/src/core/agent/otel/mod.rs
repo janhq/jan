@@ -175,7 +175,8 @@ impl From<&Usage> for Tokens {
 pub enum Refusal {
     /// The user answered a permission prompt with deny.
     User,
-    /// Project policy, plan mode or the hidden Jan home.
+    /// Project policy, plan mode, the hidden Jan home, or a command too
+    /// complex for the gate to check.
     Config,
     /// A `PreToolUse` hook said no.
     Hook,

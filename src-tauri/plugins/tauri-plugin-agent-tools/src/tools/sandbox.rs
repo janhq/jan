@@ -304,30 +304,48 @@ pub fn hidden_tokens(hidden: &Path, command: &str) -> Option<Vec<String>> {
         });
     let mut out = Vec::new();
     let mut bytes = 0;
+    let mut components = 0;
     for t in tokens {
         let start = start_dir_relative(&t);
         let linked = start_dir_past_links(&t)?;
         for t in std::iter::once(t).chain(start).chain(linked) {
             bytes += t.len();
+            components += path_components(&t);
             out.push(t);
         }
-        if out.len() > MAX_TOKENS || bytes > MAX_TOKEN_BYTES {
+        if out.len() > MAX_TOKENS || bytes > MAX_TOKEN_BYTES || components > MAX_COMPONENTS {
             return None;
         }
     }
     Some(out)
 }
 
+/// How many separators a token holds: the gate's cost to resolve it grows
+/// with the square of this (`canonicalize_lenient` re-resolves each prefix of
+/// a path that does not exist), so it is what [`MAX_COMPONENTS`] bounds.
+fn path_components(token: &str) -> usize {
+    token.bytes().filter(|b| *b == b'/' || *b == b'\\').count()
+}
+
 /// The most tokens [`hidden_tokens`] hands back for one command. Each costs
 /// the gate a few syscalls to resolve; this is far more words than a command
-/// a model writes by hand, a long heredoc included.
+/// a model writes by hand, a long heredoc included. Together with
+/// [`MAX_COMPONENTS`] it keeps the gate to a few seconds at worst.
 const MAX_TOKENS: usize = 100_000;
 
-/// The most bytes of tokens [`hidden_tokens`] hands back for one command:
-/// the gate resolves each component of each with a syscall. A few times the
-/// largest command a model plausibly writes, since quoted and escaped words
-/// are counted twice.
+/// The most bytes of tokens [`hidden_tokens`] hands back for one command. A
+/// few times the largest command a model plausibly writes, since quoted and
+/// escaped words are counted twice. Bytes alone do not bound the gate's time:
+/// one long token of many components costs far more than many short words.
 const MAX_TOKEN_BYTES: usize = 4 << 20;
+
+/// The most path separators across all tokens of one command. Resolving a
+/// token that does not exist re-resolves each of its prefixes, so its cost is
+/// quadratic in its components: one 400 KB path took the gate 20 s before
+/// this cap. Long tokens are capped rather than skipped, because brace
+/// expansion and other splitting the scan does not model can turn one long
+/// word into a short path.
+const MAX_COMPONENTS: usize = 64 * 1024;
 
 /// The most candidates [`start_dir_past_links`] makes from one token. Each
 /// is as long as the rest of the token, so without a cap a token of repeated
@@ -1347,6 +1365,13 @@ mod tests {
         assert_eq!(hidden_tokens(jan, &many), None);
         let long = format!("cat {}", "x".repeat(MAX_TOKEN_BYTES + 1));
         assert_eq!(hidden_tokens(jan, &long), None);
+        // One deep path well under the byte cap: its components bound the
+        // gate's time, not its bytes.
+        let deep = format!("cat {}", "a/".repeat(MAX_COMPONENTS + 1));
+        assert!(deep.len() < MAX_TOKEN_BYTES);
+        assert_eq!(hidden_tokens(jan, &deep), None);
+        let shallow = format!("cat {}", "a/".repeat(1000));
+        assert!(hidden_tokens(jan, &shallow).is_some());
         let globs = |n: usize| format!("cat /proc/..{}", "/*".repeat(n));
         assert_eq!(hidden_tokens(jan, &globs(MAX_LINKED + 1)), None);
         // The two words, `start_dir_relative`'s one and a candidate per glob.

@@ -13004,6 +13004,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A command the gate cannot scan within its bounds gets its own refusal,
+    /// telling the model to split it, not the hidden-home one that would send
+    /// it looking for a path it never named. Telemetry counts it as a config
+    /// refusal like the others.
+    #[tokio::test]
+    #[cfg(feature = "cli")]
+    async fn a_command_too_complex_to_check_is_refused_with_its_own_reason() {
+        let root = unique_project_root();
+        let jan = root.join("jan-home");
+        std::fs::create_dir_all(&jan).unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.hidden_root = Some(jan);
+        let deep = format!("cat {}", "a/".repeat(70_000));
+        let out = invoker.invoke(&[shell_call("c", json!({ "command": deep }))]).await.unwrap();
+        let text = &out[0].content;
+        assert!(text.contains(TOO_COMPLEX_REFUSED), "{}", &text[..text.len().min(300)]);
+        assert!(!text.contains(HIDDEN_PATH_REFUSED), "not refused as naming the home");
+        assert_eq!(
+            crate::core::agent::otel::refusal_of(text),
+            Some(crate::core::agent::otel::Refusal::Config)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// An escalated call from a held directory above the Jan home is refused
     /// for where it would start, though the command names nothing hidden.
     /// The refusal names that directory and how to get out of it, and resets

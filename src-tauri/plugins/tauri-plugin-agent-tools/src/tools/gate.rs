@@ -252,8 +252,11 @@ pub fn resolve_decision_with_cwd(
                 .and_then(|v| v.as_str())
                 .is_some_and(hidden_hit)
         });
-        // A command too complex to scan in bounded time (`None`) is refused
-        // as if it named the home: it cannot be shown not to.
+        // A command too complex to scan in bounded time (`None`) cannot be
+        // shown to stay out of the home, so it is refused with its own
+        // reason (`TooComplex`) telling the model to simplify it. Checked
+        // ahead of `HiddenShellCwd`, so that refusal does not reset the held
+        // cwd; the next, simpler command gets it.
         //
         // Not covered: a link the model made earlier to `/proc/self/cwd`
         // (`ln -s /proc/self/cwd l`, then an escalated `cat l/../../.jan/x`).

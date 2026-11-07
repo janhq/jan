@@ -262,7 +262,7 @@ impl JanToolServer {
                 return (
                     format!(
                         "ERROR: tool '{name}' was refused: the command is too complex to check; \
-                         simplify it"
+                         split it, or write a long script to a file and run that"
                     ),
                     Vec::new(),
                 )
