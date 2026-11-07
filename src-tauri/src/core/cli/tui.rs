@@ -927,6 +927,9 @@ struct Pending {
     /// `/agents` detail the prompt can land mid-sentence, so there Enter only
     /// confirms an option the user picked (see `handle_key_input`).
     picked: bool,
+    /// Over a subagent's detail, when the prompt next takes a key; see
+    /// `prompt_key_lands`.
+    quiet_until: Option<Instant>,
     /// Name of the subagent that requested this, when the call originated inside
     /// a nested subagent run; `None` for the parent agent's own calls.
     subagent: Option<String>,
@@ -1058,17 +1061,52 @@ impl Pending {
         self.selected = (self.selected as isize + delta).rem_euclid(len) as usize;
     }
 
-    /// Up/Down on the prompt. Over a subagent's detail Down is also the recall
-    /// key, so the first arrow only arms the prompt, on Deny: a reflex arrow
-    /// then Enter grants nothing. Elsewhere, and once armed, it moves.
+    /// Up/Down on the prompt: over a subagent's detail `detail_arrow`, armed
+    /// on Deny; elsewhere it moves and wraps.
     fn arrow(&mut self, delta: isize, over_detail: bool) {
-        if over_detail && !self.picked {
-            self.selected = self.options().len() - 1;
+        if over_detail {
+            let len = self.options().len();
+            self.selected = detail_arrow(self.selected, len, len - 1, delta, self.picked);
         } else {
             self.move_selection(delta);
         }
         self.picked = true;
     }
+}
+
+/// How long a prompt over a subagent's detail stays deaf after it appears and
+/// after each key it takes. The user was typing for the child when it landed:
+/// a recall (Up/Down) and a send (Enter) already on their way must not arm,
+/// move and confirm it. 400 ms is longer than the gap between reflex presses
+/// and short enough that a user who stopped to read never notices it.
+const PROMPT_PAUSE: Duration = Duration::from_millis(400);
+
+/// Whether a key reaches a prompt over the detail now, at `now`: only once
+/// the pause has run out since it appeared (`None`: not drawn yet, so it has
+/// not appeared) or took its last key. Every key restarts the pause, landed
+/// or not, so a burst of presses keeps it deaf until the user stops.
+fn prompt_key_lands(quiet_until: &mut Option<Instant>, now: Instant) -> bool {
+    let lands = quiet_until.is_some_and(|until| now >= until);
+    *quiet_until = Some(now + PROMPT_PAUSE);
+    lands
+}
+
+/// Whether Enter on a prompt over the detail would confirm its highlight at
+/// `now`: it was armed with an arrow and has been left alone for the pause.
+fn prompt_live(picked: bool, quiet_until: Option<Instant>, now: Instant) -> bool {
+    picked && quiet_until.is_some_and(|until| now >= until)
+}
+
+/// Where Up/Down takes the highlight of a prompt over a subagent's detail,
+/// among `len` rows. Up/Down is also the draft's recall key there, so the
+/// first arrow only arms the prompt, on `safe` (the row that grants nothing),
+/// and later ones stop at the ends rather than wrap: wrapping would carry a
+/// second reflex Down from Deny round to Allow once.
+fn detail_arrow(selected: usize, len: usize, safe: usize, delta: isize, picked: bool) -> usize {
+    if !picked {
+        return safe;
+    }
+    (selected as isize + delta).clamp(0, len as isize - 1) as usize
 }
 
 /// What a highlighted picker row does on Enter.
@@ -4693,6 +4731,8 @@ struct PendingAsk {
     /// Whether the user moved through the options with the arrows; see
     /// `Pending::picked`, which this mirrors for a question.
     picked: bool,
+    /// `Pending::quiet_until`, for the question on screen.
+    quiet_until: Option<Instant>,
     /// When the `ask` loop auto-selects the recommended option if unanswered.
     /// `Some` only when a timeout was configured; drives the live countdown in
     /// the prompt title. Anchored here at event receipt, a hair before the
@@ -4728,6 +4768,7 @@ impl PendingAsk {
             rect: Rect::default(),
             row_hitboxes: Vec::new(),
             picked: false,
+            quiet_until: None,
             deadline: timeout.map(|d| std::time::Instant::now() + d),
         }
     }
@@ -4841,8 +4882,9 @@ impl PendingAsk {
     /// Up/Down on the question; `Pending::arrow`'s rule, armed on "Other",
     /// which only opens the free-text field and so chooses nothing.
     fn arrow(&mut self, delta: isize, over_detail: bool) {
-        if over_detail && !self.picked {
-            self.selected = self.question().options.len();
+        if over_detail {
+            let other = self.question().options.len();
+            self.selected = detail_arrow(self.selected, self.row_count(), other, delta, self.picked);
         } else {
             self.move_selection(delta);
         }
@@ -4851,10 +4893,19 @@ impl PendingAsk {
 
     fn move_question(&mut self, delta: isize) {
         let last = self.request.questions.len().saturating_sub(1) as isize;
-        self.question_index = (self.question_index as isize + delta).clamp(0, last) as usize;
-        self.selected = 0;
+        self.show_question((self.question_index as isize + delta).clamp(0, last) as usize);
         self.editing_custom = false;
         self.custom_input.clear();
+    }
+
+    /// A new question is a new prompt: over the detail it opens unarmed and
+    /// with the pause restarted, or the second Enter of a double press would
+    /// answer it on whatever row it happened to land on.
+    fn show_question(&mut self, index: usize) {
+        self.question_index = index;
+        self.selected = 0;
+        self.picked = false;
+        self.quiet_until = None;
     }
 
     fn all_answered(&self) -> bool {
@@ -4917,12 +4968,12 @@ impl PendingAsk {
         if self.all_answered() {
             true
         } else {
-            self.question_index = self
+            let index = self
                 .answers
                 .iter()
                 .position(|answer| answer.selected.is_empty() && answer.custom_input.is_none())
                 .unwrap_or(self.question_index);
-            self.selected = 0;
+            self.show_question(index);
             false
         }
     }
@@ -6598,6 +6649,8 @@ impl App {
     ///   streaming tool-call throbbers, which all animate in the dock/tail;
     /// - an active `/goal`, whose header chip counts seconds;
     /// - an `ask` with a timeout, whose title counts down;
+    /// - a prompt over a subagent's detail in its pause, whose hints name
+    ///   Enter once it runs out;
     /// - the `copied N lines` notice until it expires;
     /// - a closed todo plan until it hides itself;
     /// - a drag-select, which auto-scrolls while held past an edge.
@@ -6623,6 +6676,7 @@ impl App {
                 .as_ref()
                 .is_some_and(|g| g.status == crate::core::agent::goal::GoalStatus::Active)
             || self.ask_queue.iter().any(|a| a.deadline.is_some())
+            || self.prompt_pausing()
             || self.copy_notice().is_some()
             || (self.todos_closed_at.is_some() && !self.todos_expired())
             || self.selection.as_ref().is_some_and(|s| s.dragging)
@@ -7028,13 +7082,30 @@ impl App {
         self.agent_detail_open() && (!self.pending_queue.is_empty() || !self.ask_queue.is_empty())
     }
 
-    /// Whether the prompt on screen (the front ask, else the front permission
-    /// request, as `draw_queued_prompt` picks) was armed with an arrow.
-    fn front_prompt_picked(&self) -> bool {
+    /// The prompt on screen (the front ask, else the front permission request,
+    /// as `draw_queued_prompt` picks): when it next takes a key over the
+    /// detail, and whether it was armed with an arrow.
+    fn front_prompt_state(&self) -> Option<(Option<Instant>, bool)> {
         match self.ask_queue.front() {
-            Some(ask) => ask.picked,
-            None => self.pending_queue.front().is_some_and(|p| p.picked),
+            Some(ask) => Some((ask.quiet_until, ask.picked)),
+            None => self.pending_queue.front().map(|p| (p.quiet_until, p.picked)),
         }
+    }
+
+    /// Whether Enter would confirm the prompt on screen now (`prompt_live`).
+    fn front_prompt_live(&self) -> bool {
+        self.front_prompt_state()
+            .is_some_and(|(until, picked)| prompt_live(picked, until, Instant::now()))
+    }
+
+    /// A prompt over the detail is still in its pause. The footer names Enter
+    /// only once it runs out, so frames keep coming until then (`animating`).
+    fn prompt_pausing(&self) -> bool {
+        self.prompt_over_detail()
+            && self
+                .front_prompt_state()
+                .and_then(|(until, _)| until)
+                .is_some_and(|until| Instant::now() < until)
     }
 
     /// Lines the view on screen is scrolled up from its bottom: the open
@@ -9214,6 +9285,7 @@ impl App {
                     justification,
                     selected: 0,
                     picked: false,
+                    quiet_until: None,
                     subagent: None,
                 });
                 self.publish_agent_status();
@@ -9626,6 +9698,7 @@ impl App {
                     justification,
                     selected: 0,
                     picked: false,
+                    quiet_until: None,
                     subagent: Some(name.to_string()),
                 });
                 self.publish_agent_status();
@@ -15780,6 +15853,15 @@ async fn handle_ask_key(
     // While the free-text answer is open the cursor keys are its own, so only
     // the scroll keys reach the draft behind it.
     let editing = app.ask_queue.front().is_some_and(|ask| ask.editing_custom);
+    // Over the detail Esc in the free-text field closes just the field, back
+    // to the options: leaving the detail would hide a question the user was
+    // halfway through answering.
+    if over_detail && editing && key.code == KeyCode::Esc {
+        let ask = app.ask_queue.front_mut().expect("checked non-empty above");
+        ask.editing_custom = false;
+        ask.custom_input.clear();
+        return true;
+    }
     if over_detail && detail_key_under_prompt(&key, !editing) {
         return false;
     }
@@ -15805,9 +15887,10 @@ async fn handle_ask_key(
                 KeyCode::Char(ch) if !ctrl => ask.custom_input.push(ch),
                 _ => {}
             }
-        } else {
+        } else if !over_detail || prompt_key_lands(&mut ask.quiet_until, Instant::now()) {
             // Over the detail the user may be mid-message: a space or Enter
-            // typed for it must not choose an option they never picked.
+            // typed for it must not choose an option they never picked, nor
+            // open the free-text field that the next message would fill.
             let armed = !over_detail || ask.picked;
             match key.code {
                 KeyCode::Up => ask.arrow(-1, over_detail),
@@ -16694,6 +16777,11 @@ async fn handle_key_input(
             .pending_queue
             .front_mut()
             .expect("checked non-empty above");
+        // Keys already on their way when the prompt landed over the detail,
+        // or pressed in a burst, fall on it without effect.
+        if over_detail && !prompt_key_lands(&mut pending.quiet_until, Instant::now()) {
+            return;
+        }
         let decision = match key.code {
             KeyCode::Up => {
                 pending.arrow(-1, over_detail);
@@ -25155,14 +25243,30 @@ fn draw(f: &mut Frame, app: &mut App) {
 /// may be typing when it lands.
 fn draw_queued_prompt(f: &mut Frame, app: &mut App, input: Rect, body: Rect) -> bool {
     let over_detail = app.agent_detail_open();
+    // A prompt's pause over the detail starts when the user can see it there
+    // (`prompt_key_lands`), not when it was queued: one queued behind another,
+    // or seen in the main view before the detail opened, lands as new when it
+    // shows over the detail. The main view does not read the pause.
+    let now = Instant::now();
+    let stamp = |quiet_until: &mut Option<Instant>| {
+        if !over_detail {
+            *quiet_until = None;
+        } else if quiet_until.is_none() {
+            *quiet_until = Some(now + PROMPT_PAUSE);
+        }
+    };
     if !app.ask_queue.is_empty() {
         let queue_len = app.ask_queue.len();
         let ask = app.ask_queue.front_mut().expect("checked non-empty above");
+        stamp(&mut ask.quiet_until);
         let height = ask.box_height(input.width).min(body.height);
         let y = input.y.saturating_sub(height).max(body.y);
         let rect = Rect { x: input.x, y, width: input.width, height };
         draw_ask(f, rect, ask, queue_len, over_detail);
         return true;
+    }
+    if let Some(pending) = app.pending_queue.front_mut() {
+        stamp(&mut pending.quiet_until);
     }
     let Some(pending) = app.pending() else {
         return false;
@@ -25241,8 +25345,15 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize, o
     }
 
     let help = if ask.editing_custom {
+        // Over the detail the draft row sits just below with its own cursor,
+        // so the field says plainly that what is typed here is the answer.
+        let label = if over_detail {
+            Span::styled("your answer: ", Style::new().fg(theme::accent()).bold())
+        } else {
+            Span::styled("Other: ", Style::new().fg(theme::accent()))
+        };
         Line::from(vec![
-            Span::styled("Other: ", Style::new().fg(theme::accent())),
+            label,
             Span::raw(ask.custom_input.clone()),
             Span::styled("\u{2588}", Style::new().fg(theme::accent())),
         ])
@@ -25250,8 +25361,10 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize, o
         let toggle = if ask.question().multi { " \u{b7} Space toggle" } else { "" };
         // Over a subagent's detail Esc goes back and leaves the question
         // waiting, Left/Right edit the draft rather than switch questions, and
-        // Enter and Space do nothing until an arrow arms it (`handle_ask_key`).
-        let help = match (over_detail, ask.picked) {
+        // Enter and Space do nothing until an arrow arms it and its pause runs
+        // out (`handle_ask_key`).
+        let live = prompt_live(ask.picked, ask.quiet_until, std::time::Instant::now());
+        let help = match (over_detail, live) {
             (false, _) => format!(
                 "\u{2191}\u{2193} move{toggle} \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
             ),
@@ -27495,8 +27608,13 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
     // and Esc/Ctrl-C step out of the detail (`handle_key_input`).
     if app.prompt_over_detail() {
         let style = Style::new().fg(theme::warning()).bold();
-        // Enter is named only once it would confirm something (`Pending::arrow`).
-        return if app.front_prompt_picked() {
+        // The free-text field takes the keys, and Esc closes only it.
+        if app.ask_queue.front().is_some_and(|ask| ask.editing_custom) {
+            return hint_spans(style, &[("Enter", "answer"), ("Esc", "options")]);
+        }
+        // Enter is named only once it would confirm something: armed with an
+        // arrow (`Pending::arrow`) and past its pause (`prompt_key_lands`).
+        return if app.front_prompt_live() {
             hint_spans(
                 style,
                 &[("\u{2191}/\u{2193}", "move"), ("Enter", "confirm"), ("Esc", "back")],
@@ -28939,10 +29057,11 @@ mod tests {
         assert!(screen.contains("rm -rf build"), "{screen}");
         assert!(footer_text(&app).contains("pick"), "{}", footer_text(&app));
 
-        // The first arrow arms on Deny, the next moves up to Allow always.
-        press_routed(&mut app, &asks, &perms, KeyCode::Down, KeyModifiers::NONE).await;
-        press_routed(&mut app, &asks, &perms, KeyCode::Up, KeyModifiers::NONE).await;
-        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        // The first arrow arms on Deny, the next moves up to Allow always,
+        // each a pause apart.
+        settle_prompt(&mut app);
+        let keys = [KeyCode::Down, KeyCode::Up, KeyCode::Enter];
+        press_detail(&mut app, &asks, &perms, &keys, true).await;
         assert!(app.pending_queue.is_empty());
         assert_eq!(decision.try_recv().unwrap(), PermissionDecision::AllowAlways);
         assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
@@ -28975,9 +29094,9 @@ mod tests {
         assert!(screen.contains("Which scope?"), "{screen}");
 
         // The first arrow arms on "Other", the next moves up to Large.
-        press_routed(&mut app, &asks, &perms, KeyCode::Down, KeyModifiers::NONE).await;
-        press_routed(&mut app, &asks, &perms, KeyCode::Up, KeyModifiers::NONE).await;
-        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        settle_prompt(&mut app);
+        let keys = [KeyCode::Down, KeyCode::Up, KeyCode::Enter];
+        press_detail(&mut app, &asks, &perms, &keys, true).await;
         assert!(app.ask_queue.is_empty());
         assert_eq!(answer.await.unwrap().unwrap()[0].selected, vec!["Large"]);
         assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
@@ -29036,7 +29155,8 @@ mod tests {
         assert!(!marked(&mut app, "Deny"), "an unarmed prompt marks nothing");
         assert!(!footer_text(&app).contains("Enter"), "{}", footer_text(&app));
 
-        press_routed(&mut app, &asks, &perms, KeyCode::Down, KeyModifiers::NONE).await;
+        settle_prompt(&mut app);
+        press_detail(&mut app, &asks, &perms, &[KeyCode::Down], true).await;
         assert!(marked(&mut app, "Deny"), "armed, on Deny");
         assert!(footer_text(&app).contains("Enter"), "{}", footer_text(&app));
         press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
@@ -29050,11 +29170,204 @@ mod tests {
             timeout_secs: None,
         });
         assert!(!marked(&mut app, "\u{25cb} Small"), "an unarmed ask marks nothing");
-        press_routed(&mut app, &asks, &perms, KeyCode::Down, KeyModifiers::NONE).await;
+        settle_prompt(&mut app);
+        press_detail(&mut app, &asks, &perms, &[KeyCode::Down], true).await;
         assert!(marked(&mut app, "\u{25cb} Other"), "armed, on Other");
         press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
         assert_eq!(app.ask_queue.len(), 1, "nothing was answered");
         assert!(app.ask_queue[0].answers[0].selected.is_empty());
+    }
+
+    /// Lets the pause run out on the prompt on screen, as if the user had
+    /// stopped to read it (`PROMPT_PAUSE`), without sleeping.
+    fn settle_prompt(app: &mut App) {
+        let now = Some(Instant::now());
+        if let Some(ask) = app.ask_queue.front_mut() {
+            ask.quiet_until = now;
+        } else if let Some(pending) = app.pending_queue.front_mut() {
+            pending.quiet_until = now;
+        }
+    }
+
+    /// A key over the detail, then the pause runs out when `settle` asks.
+    async fn press_detail(
+        app: &mut App,
+        asks: &crate::core::agent::interaction::AskRegistry,
+        perms: &PermissionRegistry,
+        keys: &[KeyCode],
+        settle: bool,
+    ) {
+        for &code in keys {
+            press_routed(app, asks, perms, code, KeyModifiers::NONE).await;
+            if settle {
+                settle_prompt(app);
+            }
+        }
+    }
+
+    /// Two reflex arrows then Enter, typed faster than the pause, grant nothing
+    /// over the detail: Down Down does not wrap from Deny to Allow once, and Up
+    /// Up Enter (recalling the message two back) does not allow always. The
+    /// prompt has been up a while first, so the arming arrow itself counts.
+    #[tokio::test]
+    async fn two_fast_arrows_then_enter_over_the_detail_grant_nothing() {
+        for arrow in [KeyCode::Down, KeyCode::Up] {
+            let mut app = test_app();
+            counter_detail(&mut app).await;
+            let asks = crate::core::agent::interaction::new_registry();
+            let perms = PermissionRegistry::default();
+            let (tx, mut decision) = tokio::sync::oneshot::channel();
+            perms.lock().await.insert("p1".to_string(), tx);
+            child_permission(&mut app, "p1", "rm -rf build");
+            settle_prompt(&mut app);
+            press_detail(&mut app, &asks, &perms, &[arrow, arrow, KeyCode::Enter], false).await;
+            assert_eq!(app.pending_queue.len(), 1, "{arrow:?} {arrow:?} Enter answered");
+            assert!(decision.try_recv().is_err(), "{arrow:?} {arrow:?} Enter decided");
+            assert!(!footer_text(&app).contains("Enter"), "{}", footer_text(&app));
+
+            // The same for an ask: neither option 0 nor the last is chosen.
+            app.pending_queue.clear();
+            let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+            app.apply(StreamEvent::AskRequest {
+                request_id,
+                request: ask_request(false, false),
+                timeout_secs: None,
+            });
+            settle_prompt(&mut app);
+            press_detail(&mut app, &asks, &perms, &[arrow, arrow, KeyCode::Enter], false).await;
+            assert_eq!(app.ask_queue.len(), 1, "{arrow:?} {arrow:?} Enter answered the ask");
+            let ask = &app.ask_queue[0];
+            assert!(ask.answers[0].selected.is_empty(), "{arrow:?}: {:?}", ask.answers);
+            assert!(!ask.editing_custom, "{arrow:?} {arrow:?} Enter opened Other");
+        }
+    }
+
+    /// With the pause run out before Enter, Enter confirms the highlighted
+    /// row. Fast arrows count only once (the second lands inside the pause the
+    /// first started), and arrows a pause apart move but clamp at the ends: Down
+    /// Down stays on Deny rather than wrapping to Allow once.
+    #[tokio::test]
+    async fn arrows_then_a_pause_then_enter_over_the_detail_pick_the_highlight() {
+        let cases = [
+            (KeyCode::Down, false, PermissionDecision::Deny),
+            (KeyCode::Up, false, PermissionDecision::Deny),
+            (KeyCode::Down, true, PermissionDecision::Deny),
+            (KeyCode::Up, true, PermissionDecision::AllowAlways),
+        ];
+        for (arrow, paused, expected) in cases {
+            let mut app = test_app();
+            counter_detail(&mut app).await;
+            let asks = crate::core::agent::interaction::new_registry();
+            let perms = PermissionRegistry::default();
+            let (tx, mut decision) = tokio::sync::oneshot::channel();
+            perms.lock().await.insert("p1".to_string(), tx);
+            child_permission(&mut app, "p1", "rm -rf build");
+            settle_prompt(&mut app);
+            press_detail(&mut app, &asks, &perms, &[arrow, arrow], paused).await;
+            settle_prompt(&mut app);
+            assert!(footer_text(&app).contains("Enter"), "{}", footer_text(&app));
+            press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+            let got = decision.try_recv();
+            assert_eq!(got.ok(), Some(expected), "{arrow:?} {arrow:?} paused={paused}");
+        }
+
+        // An ask has Small, Large, Other: Up Up a pause apart lands on Large;
+        // fast, or Down Down, it stays on Other, whose Enter opens the field.
+        for (arrow, paused, chosen) in [
+            (KeyCode::Up, true, Some("Large")),
+            (KeyCode::Up, false, None),
+            (KeyCode::Down, true, None),
+        ] {
+            let mut app = test_app();
+            counter_detail(&mut app).await;
+            let asks = crate::core::agent::interaction::new_registry();
+            let perms = PermissionRegistry::default();
+            let (request_id, answer) = crate::core::agent::interaction::register(&asks).await;
+            app.apply(StreamEvent::AskRequest {
+                request_id,
+                request: ask_request(false, false),
+                timeout_secs: None,
+            });
+            settle_prompt(&mut app);
+            press_detail(&mut app, &asks, &perms, &[arrow, arrow], paused).await;
+            settle_prompt(&mut app);
+            press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+            match chosen {
+                Some(label) => {
+                    assert!(app.ask_queue.is_empty(), "{arrow:?} paused={paused}");
+                    assert_eq!(answer.await.unwrap().unwrap()[0].selected, vec![label]);
+                }
+                None => {
+                    assert_eq!(app.ask_queue.len(), 1, "{arrow:?} paused={paused}");
+                    assert!(app.ask_queue[0].editing_custom, "{arrow:?} paused={paused}");
+                }
+            }
+        }
+    }
+
+    /// What the user types for the child never becomes the ask's answer: a
+    /// reflex Down (recall) and Enter (send) do not open the free-text field,
+    /// so the next message and its Enter answer nothing. Opened deliberately,
+    /// the field is labelled inside the box, and Esc closes it back to the
+    /// options rather than leaving the detail.
+    #[tokio::test]
+    async fn typing_for_the_child_never_answers_an_ask_over_the_detail() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+        settle_prompt(&mut app);
+        press_detail(&mut app, &asks, &perms, &[KeyCode::Down, KeyCode::Enter], false).await;
+        for ch in "next message".chars() {
+            press_routed(&mut app, &asks, &perms, KeyCode::Char(ch), KeyModifiers::NONE).await;
+        }
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.ask_queue.len(), 1, "the typed message answered the ask");
+        let ask = &app.ask_queue[0];
+        assert!(!ask.editing_custom, "the reflex Enter opened the field");
+        assert_eq!(ask.answers[0].custom_input, None);
+
+        settle_prompt(&mut app);
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(app.ask_queue[0].editing_custom, "a paused Enter on Other opens it");
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("your answer"), "{screen}");
+        assert!(footer_text(&app).contains("Esc options"), "{}", footer_text(&app));
+        press_routed(&mut app, &asks, &perms, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(!app.ask_queue[0].editing_custom, "Esc closes the field");
+        assert_eq!(app.ask_queue.len(), 1);
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::AgentDetail));
+    }
+
+    /// Answering question 1 over the detail does not leave question 2 armed:
+    /// it opens unarmed, like a fresh prompt, so Enter Enter answers nothing.
+    #[tokio::test]
+    async fn the_next_question_over_the_detail_opens_unarmed() {
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, true),
+            timeout_secs: None,
+        });
+        settle_prompt(&mut app);
+        let keys = [KeyCode::Down, KeyCode::Up, KeyCode::Enter];
+        press_detail(&mut app, &asks, &perms, &keys, true).await;
+        assert_eq!(app.ask_queue[0].answers[0].selected, vec!["Large"]);
+        assert_eq!(app.ask_queue[0].question_index, 1);
+        press_detail(&mut app, &asks, &perms, &[KeyCode::Enter, KeyCode::Enter], true).await;
+        assert_eq!(app.ask_queue.len(), 1, "question 2 was answered unarmed");
+        assert!(app.ask_queue[0].answers[1].selected.is_empty());
+        assert!(!footer_text(&app).contains("Enter"), "{}", footer_text(&app));
     }
 
     /// With a prompt over the detail the child's run still scrolls: PgUp/PgDn,
@@ -30444,6 +30757,7 @@ fn a() {}
             justification: None,
             selected: 0,
             picked: false,
+            quiet_until: None,
             subagent: None,
         }
     }
