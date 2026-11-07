@@ -1092,7 +1092,14 @@ const PROMPT_PAUSE: Duration = Duration::from_millis(750);
 /// would otherwise arm on Deny and its first repeat move to a grant. Only the
 /// first repeat needs it; later ones come every few tens of ms. The cost is
 /// that a deliberate second press of the same arrow waits a little longer.
+/// A repeat slower still lands each repeat as a fresh press, so the prompt
+/// also caps a run of one arrow at one step (`PromptPause::stepped`).
 const HELD_KEY_WINDOW: Duration = Duration::from_millis(1200);
+
+/// How long the arrow that last stepped an armed prompt over the detail must
+/// be left alone before it steps again (`PromptPause::stepped`). Twice the
+/// held-key window: a repeat that slow is past any setting a desktop offers.
+const STEP_AGAIN_WINDOW: Duration = HELD_KEY_WINDOW.saturating_mul(2);
 
 /// Over a subagent's detail, when a prompt next takes a key and which key it
 /// took last. Both are reset to the default whenever the prompt (re)appears
@@ -1105,6 +1112,13 @@ struct PromptPause {
     /// The last key pressed on the prompt and when, to tell a held key's
     /// repeats from a fresh press.
     last_key: Option<(KeyCode, Instant)>,
+    /// The arrow that last moved the highlight of the armed prompt, and when
+    /// it was last pressed. A key held with a repeat slower than
+    /// `HELD_KEY_WINDOW` lands every repeat as a fresh press and would walk
+    /// the highlight from the safe row to the widest grant, one step each;
+    /// with this, a run of one arrow arms and moves once, and moves again only
+    /// after another key or `STEP_AGAIN_WINDOW` without it.
+    stepped: Option<(KeyCode, Instant)>,
 }
 
 impl PromptPause {
@@ -1112,13 +1126,18 @@ impl PromptPause {
     /// pause has run out since it appeared or took its last key, and only if
     /// it is not the repeat of a held key (the same key again within
     /// `HELD_KEY_WINDOW` of its last press), so holding an arrow only ever
-    /// arms. Every key restarts both, landed or not, so a burst of presses or
-    /// a run of repeats keeps the prompt deaf until the user lets go.
-    fn key_lands(&mut self, code: KeyCode, now: Instant) -> bool {
+    /// arms, nor the arrow that just moved the armed (`picked`) prompt
+    /// (`stepped`). Every key restarts all three, landed or not, so a burst of
+    /// presses or a run of repeats keeps the prompt deaf until the user lets go.
+    fn key_lands(&mut self, code: KeyCode, now: Instant, picked: bool) -> bool {
         let repeat = self
             .last_key
             .is_some_and(|(last, at)| last == code && now < at + HELD_KEY_WINDOW);
-        let lands = !repeat && self.until.is_some_and(|until| now >= until);
+        let stepped = self.stepped.filter(|&(last, _)| last == code);
+        let steps_again = stepped.is_some_and(|(_, at)| now < at + STEP_AGAIN_WINDOW);
+        let lands = !repeat && !steps_again && self.until.is_some_and(|until| now >= until);
+        let arrow = matches!(code, KeyCode::Up | KeyCode::Down);
+        self.stepped = (stepped.is_some() || (lands && picked && arrow)).then_some((code, now));
         self.until = Some(now + PROMPT_PAUSE);
         self.last_key = Some((code, now));
         lands
@@ -15922,7 +15941,7 @@ async fn handle_ask_key(
                 KeyCode::Char(ch) if !ctrl => ask.custom_input.push(ch),
                 _ => {}
             }
-        } else if !over_detail || ask.pause.key_lands(key.code, Instant::now()) {
+        } else if !over_detail || ask.pause.key_lands(key.code, Instant::now(), ask.picked) {
             // Over the detail the user may be mid-message: a space or Enter
             // typed for it must not choose an option they never picked, nor
             // open the free-text field that the next message would fill.
@@ -16817,7 +16836,7 @@ async fn handle_key_input(
             .expect("checked non-empty above");
         // Keys already on their way when the prompt landed over the detail,
         // or pressed in a burst, fall on it without effect.
-        if over_detail && !pending.pause.key_lands(key.code, Instant::now()) {
+        if over_detail && !pending.pause.key_lands(key.code, Instant::now(), pending.picked) {
             return;
         }
         let decision = match key.code {
@@ -25284,13 +25303,19 @@ fn draw_queued_prompt(f: &mut Frame, app: &mut App, input: Rect, body: Rect) -> 
     // A prompt's pause over the detail starts when the user can see it there
     // (`PromptPause::key_lands`), not when it was queued: one queued behind
     // another, or seen in the main view before the detail opened, lands as new
-    // when it shows over the detail. The main view does not read the pause.
+    // when it shows over the detail. It lands unarmed too: an arrow the user
+    // pressed on it in the main view was not aimed at a prompt over the
+    // detail, so the Enter they then type for the child must not confirm it.
+    // Clearing `picked` also hides the highlight (`prompt_highlight`), and the
+    // next arrow re-arms on the safe row (`detail_arrow`). The main view reads
+    // neither the pause nor `picked`, so it is unchanged.
     let now = Instant::now();
-    let stamp = |pause: &mut PromptPause| {
+    let stamp = |pause: &mut PromptPause, picked: &mut bool| {
         if !over_detail {
             *pause = PromptPause::default();
         } else if pause.until.is_none() {
             pause.until = Some(now + PROMPT_PAUSE);
+            *picked = false;
         }
     };
     // Every prompt but the one in front is hidden, so it forgets its pause and
@@ -25314,7 +25339,7 @@ fn draw_queued_prompt(f: &mut Frame, app: &mut App, input: Rect, body: Rect) -> 
     if !app.ask_queue.is_empty() {
         let queue_len = app.ask_queue.len();
         let ask = app.ask_queue.front_mut().expect("checked non-empty above");
-        stamp(&mut ask.pause);
+        stamp(&mut ask.pause, &mut ask.picked);
         let height = ask.box_height(input.width).min(body.height);
         let y = input.y.saturating_sub(height).max(body.y);
         let rect = Rect { x: input.x, y, width: input.width, height };
@@ -25322,7 +25347,7 @@ fn draw_queued_prompt(f: &mut Frame, app: &mut App, input: Rect, body: Rect) -> 
         return true;
     }
     if let Some(pending) = app.pending_queue.front_mut() {
-        stamp(&mut pending.pause);
+        stamp(&mut pending.pause, &mut pending.picked);
     }
     let Some(pending) = app.pending() else {
         return false;
@@ -27787,7 +27812,7 @@ mod tests {
         cancel_command, next_event, RunEvent, SessionLimits, SteeringRequest, SubagentOutcome,
     };
     use tokio::sync::mpsc;
-    use super::{PromptPause, HELD_KEY_WINDOW, PROMPT_PAUSE};
+    use super::{PromptPause, HELD_KEY_WINDOW, PROMPT_PAUSE, STEP_AGAIN_WINDOW};
     use super::{
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_repaint, apply_resume, apply_stream_event, assistant_is_awaiting_user_answer,
@@ -29238,14 +29263,19 @@ mod tests {
     /// Lets the pause run out on the prompt on screen, as if the user had
     /// stopped to read it (`PROMPT_PAUSE`), without sleeping.
     /// The last key is forgotten too, so the next press is a fresh one rather
-    /// than a held key's repeat (`HELD_KEY_WINDOW`).
+    /// than a held key's repeat (`HELD_KEY_WINDOW`). The arrow that last
+    /// stepped the prompt is kept: a pause this short does not free it
+    /// (`STEP_AGAIN_WINDOW`).
     fn settle_prompt(app: &mut App) {
-        let settled = PromptPause { until: Some(Instant::now()), last_key: None };
-        if let Some(ask) = app.ask_queue.front_mut() {
-            ask.pause = settled;
-        } else if let Some(pending) = app.pending_queue.front_mut() {
-            pending.pause = settled;
-        }
+        let pause = match app.ask_queue.front_mut() {
+            Some(ask) => &mut ask.pause,
+            None => match app.pending_queue.front_mut() {
+                Some(pending) => &mut pending.pause,
+                None => return,
+            },
+        };
+        pause.until = Some(Instant::now());
+        pause.last_key = None;
     }
 
     /// A key over the detail, then the pause runs out when `settle` asks.
@@ -29439,6 +29469,7 @@ mod tests {
         };
         pause.until = pause.until.map(back);
         pause.last_key = pause.last_key.map(|(code, at)| (code, back(at)));
+        pause.stepped = pause.stepped.map(|(code, at)| (code, back(at)));
     }
 
     /// A held key, as the TUI gets it without keyboard enhancement: a press,
@@ -29533,6 +29564,64 @@ mod tests {
         }
     }
 
+    /// An arrow held with a repeat slower than `HELD_KEY_WINDOW` lands each
+    /// repeat as a fresh press. Over the detail it still takes one step past
+    /// the arming at most: once an armed arrow has moved, the same arrow moves
+    /// again only after a different key or `STEP_AGAIN_WINDOW` of quiet, so
+    /// the held Up stops on Allow always rather than walking on to Allow once.
+    #[tokio::test]
+    async fn a_slow_repeating_arrow_over_the_detail_moves_one_step_at_most() {
+        let slow = HELD_KEY_WINDOW + Duration::from_millis(100);
+        let quiet = STEP_AGAIN_WINDOW + Duration::from_millis(100);
+        // (keys, gap after each, decision): a slow held Up, then deliberate
+        // presses that still reach Allow once: after a long quiet, or with a
+        // different key between.
+        let cases = [
+            (vec![KeyCode::Up; 6], slow, PermissionDecision::AllowAlways),
+            (vec![KeyCode::Up; 3], quiet, PermissionDecision::AllowOnce),
+            (
+                vec![KeyCode::Up, KeyCode::Up, KeyCode::Char('x'), KeyCode::Up],
+                slow,
+                PermissionDecision::AllowOnce,
+            ),
+        ];
+        for (keys, gap, expected) in cases {
+            let mut app = test_app();
+            counter_detail(&mut app).await;
+            let asks = crate::core::agent::interaction::new_registry();
+            let perms = PermissionRegistry::default();
+            let (tx, mut decision) = tokio::sync::oneshot::channel();
+            perms.lock().await.insert("p1".to_string(), tx);
+            child_permission(&mut app, "p1", "rm -rf build");
+            settle_prompt(&mut app);
+            for &code in &keys {
+                press_routed(&mut app, &asks, &perms, code, KeyModifiers::NONE).await;
+                elapse(&mut app, gap);
+            }
+            press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+            assert_eq!(decision.try_recv().ok(), Some(expected), "{keys:?} {gap:?} apart");
+        }
+
+        // An ask (Small, Large, Other): the slow held Up stops on Large.
+        let mut app = test_app();
+        counter_detail(&mut app).await;
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (request_id, answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+        settle_prompt(&mut app);
+        for _ in 0..6 {
+            press_routed(&mut app, &asks, &perms, KeyCode::Up, KeyModifiers::NONE).await;
+            elapse(&mut app, slow);
+        }
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(answer.await.unwrap().unwrap()[0].selected, vec!["Large"]);
+    }
+
     /// A permission request covered by a newer ask comes back from behind it
     /// unarmed and with a fresh pause: the reflex second Enter of the one that
     /// answered the ask does not confirm what the user had armed on it before.
@@ -29573,6 +29662,64 @@ mod tests {
         assert!(!footer_text(&app).contains("Enter"), "{}", footer_text(&app));
         press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
         assert!(decision.try_recv().is_err(), "an unarmed Enter decided");
+    }
+
+    /// A prompt armed in the main view and then shown over the detail (the
+    /// detail opened, say with the mouse, while it waits) lands there unarmed:
+    /// the Enter the user then types for the child does not confirm the row
+    /// they had moved to before, and nothing is marked until an arrow arms it.
+    #[tokio::test]
+    async fn a_prompt_armed_in_the_main_view_lands_unarmed_over_the_detail() {
+        let open_detail = |app: &mut App| {
+            open_agents_picker(app);
+            app.enter_agent_detail("sub-counter-1".to_string());
+            assert!(app.agent_detail_open());
+        };
+        let marks_any = |app: &mut App| {
+            let mark = super::SELECT_MARK;
+            render_rows(app, 100, 30).iter().any(|row| row.contains(mark))
+        };
+        let mut app = test_app();
+        start_subagent(&mut app, "sub-counter-1", "counter");
+        let asks = crate::core::agent::interaction::new_registry();
+        let perms = PermissionRegistry::default();
+        let (tx, mut decision) = tokio::sync::oneshot::channel();
+        perms.lock().await.insert("p1".to_string(), tx);
+        child_permission(&mut app, "p1", "rm -rf build");
+        render_rows(&mut app, 100, 30);
+        press_routed(&mut app, &asks, &perms, KeyCode::Down, KeyModifiers::NONE).await;
+        assert!(app.pending_queue[0].picked, "Down arms it in the main view");
+        assert_eq!(app.pending_queue[0].selected, 1, "on Allow always");
+
+        open_detail(&mut app);
+        assert!(!marks_any(&mut app), "the moved prompt is still armed");
+        assert!(!app.pending_queue[0].picked, "the moved prompt is still armed");
+        settle_prompt(&mut app);
+        assert!(!footer_text(&app).contains("Enter"), "{}", footer_text(&app));
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(decision.try_recv().is_err(), "Enter confirmed the main view's arming");
+        assert_eq!(app.pending_queue.len(), 1);
+
+        // The same for an ask armed in the main view.
+        app.pending_queue.clear();
+        app.picker = None;
+        let (request_id, _answer) = crate::core::agent::interaction::register(&asks).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+        render_rows(&mut app, 100, 30);
+        press_routed(&mut app, &asks, &perms, KeyCode::Down, KeyModifiers::NONE).await;
+        assert!(app.ask_queue[0].picked, "Down arms the ask in the main view");
+        open_detail(&mut app);
+        assert!(!marks_any(&mut app), "the moved ask is still armed");
+        assert!(!app.ask_queue[0].picked, "the moved ask is still armed");
+        settle_prompt(&mut app);
+        press_routed(&mut app, &asks, &perms, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.ask_queue.len(), 1, "Enter answered the ask");
+        assert!(app.ask_queue[0].answers[0].selected.is_empty());
+        assert!(!app.ask_queue[0].editing_custom, "Enter opened Other");
     }
 
     /// With a prompt over the detail the child's run still scrolls: PgUp/PgDn,
