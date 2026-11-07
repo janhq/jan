@@ -40,7 +40,7 @@ Either form loads the skill's full instructions into the conversation (no separa
 | `/fork` | Branch this session at a past message into a new thread, keeping this one |
 | `/tree` | Saved threads as a fork tree. Enter resumes one |
 | `/worktree` | The dedicated checkout this session works in, what changed there, and its subagents' worktrees |
-| `/worktrees` | This project's subagent checkouts under `~/.jan/worktrees/` (branch, size, and whether each is in use, holds uncommitted work, holds commits not in your repository, or is removable) and the shared build cache's size. Enter on **Remove what is safe to remove** applies the session-end rule; **Clear build cache** deletes it unless a build may be running; Enter on a checkout removes it, asking first and naming what would be lost when it holds work. A checkout a running subagent or another live session holds is never removed |
+| `/worktrees` | This project's subagent checkouts under `~/.jan/worktrees/` (branch, size, and whether each is in use, holds uncommitted work, holds commits not in your repository, or is removable) and the shared build cache's size. Enter on **Remove what is safe to remove** applies the session-end rule and moves those checkouts to the trash (kept 7 days); **Clear build cache** deletes it unless a build may be running; Enter on a checkout removes it, asking first and naming what would be lost when it holds work (its uncommitted files, and its commits only when its branch cannot be brought back), then deleting it at once. An ignored file that is not build output, such as a `.env`, counts as uncommitted work. A checkout a running subagent, this session's settling, or another live session holds is never removed |
 | `/quit` | Exit |
 
 See [Sessions](/docs/agent/sessions).

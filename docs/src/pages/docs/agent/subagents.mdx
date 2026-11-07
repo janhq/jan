@@ -225,9 +225,20 @@ The main agent can read its subagents' checkouts with the file tools (`read`, `l
 `find`, `grep`), and from its shell only while that shell is sandboxed, where they are mounted
 read-only (`git -C <checkout> diff` works; an escalated command naming them is refused).
 
-When the session ends, checkouts with no commits beyond their base and no uncommitted changes are
-deleted. The rest are kept and named (their branches already fetched into your repository), and so
-is any checkout git cannot read; `/worktree` lists them while the session runs.
+When the session ends, a checkout with no uncommitted work whose commits (if any) are all on its
+branch in your repository is moved to the trash under `~/.jan/worktrees/<project>/.trash`, kept 7
+days and emptied at a later start. Uncommitted work includes untracked files and ignored files
+that are not build output (`target/`, `node_modules/`, `dist/`, `build/`, `.next/`,
+`__pycache__/`, `.venv/`, `.gradle/`, `*.o`, `*.pyc`, `*.class`), whatever ignore rule hides them,
+the checkout's own `.git/info/exclude` included: an ignored `.env` keeps its checkout. The rest are
+kept and named (their branches already fetched into your repository), and so is any checkout git
+cannot read; `/worktree` lists them while the session runs, and `/worktrees` lists every checkout
+of the project.
+
+A subagent given the shared build directory holds a shared lock on
+`~/.jan/worktrees/<project>/.meta/cargo-target.lock` while it runs, a reader in your own checkout
+included, so no session clears the directory under a running build: the size cap and **Clear
+build cache** both skip while any such lock is held.
 
 <Callout type="info">
 Because a subagent's context is separate, a long research task that would have crowded your session

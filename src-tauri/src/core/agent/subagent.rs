@@ -2433,10 +2433,13 @@ async fn run_subagent(
     let mut child_args = without_memory(parent_args, memory_access);
     // Where it works: its own worktree, or the parent's checkout read-only.
     // The git behind it was read at dispatch, on the blocking pool.
-    let workspace = placed.map(|(ws, placement)| {
-        crate::core::agent::child_workspace::apply(&mut child_args, &ws, placement);
-        ws
-    });
+    let (workspace, build_hold) = match placed {
+        Some((ws, placement)) => {
+            let hold = crate::core::agent::child_workspace::apply(&mut child_args, &ws, placement);
+            (Some(ws), hold)
+        }
+        None => (None, None),
+    };
     child_args.system_prompt_override = Some(resolved.definition.system_prompt.clone());
     // The host wrote its prompt for the conversation it drives, not for a
     // delegate with a task of its own; left in place it would also replace the
@@ -2572,6 +2575,9 @@ async fn run_subagent(
     });
 
     let result = run_orchestration_steered(&child_tx, &body, &child_args, Some(&steering_tx)).await;
+    // The child's build is over: the shared build directory may be trimmed
+    // once no other child holds it.
+    drop(build_hold);
     drop(child_tx);
     drop(steering_tx);
     let _ = forwarder.await;

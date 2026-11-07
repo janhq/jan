@@ -23925,14 +23925,16 @@ fn worktrees_command(app: &mut App) {
 }
 
 /// Run `job` on the blocking pool as this session, so its own checkouts and
-/// running subagents are told apart from another live session's.
+/// running subagents are told apart from another live session's. Whether a
+/// subagent runs is asked live, at each decision, not when the job was
+/// queued: one may start while git runs.
 fn spawn_worktrees_job(app: &App, job: WorktreesJob) -> tokio::task::JoinHandle<WorktreesDone> {
     use crate::core::agent::child_workspace as cw;
-    let ledger = app.subagent_set.workspaces.clone();
-    let children_running = !app.subagent_set.live_run_ids().is_empty();
+    let subagents = app.subagent_set.clone();
     let root = app.project_root.clone();
     tokio::task::spawn_blocking(move || {
-        let session = cw::Session { ledger: &ledger, children_running };
+        let running = || !subagents.live_run_ids().is_empty();
+        let session = cw::Session { ledger: &subagents.workspaces, children_running: &running };
         match job {
             WorktreesJob::List => WorktreesDone::Listed(cw::list_worktrees(&root, Some(&session))),
             WorktreesJob::Prune(which) => {
@@ -23952,18 +23954,30 @@ fn finish_worktrees_job(app: &mut App, done: WorktreesDone) {
             app.worktrees = Some(report);
             open_worktrees_picker(app);
         }
-        WorktreesDone::Pruned(pruned) => app.note(&pruned.notice()),
-        WorktreesDone::Cleared(Ok(bytes)) => app.note(&format!(
-            "cleared the subagent build cache, freed {} (next build starts cold)",
-            human_bytes(bytes)
-        )),
+        // The listing no longer says what is on disk: nothing may reopen it.
+        WorktreesDone::Pruned(pruned) => {
+            app.worktrees = None;
+            app.note(&pruned.notice());
+        }
+        WorktreesDone::Cleared(Ok(bytes)) => {
+            app.worktrees = None;
+            app.note(&format!(
+                "cleared the subagent build cache, freed {} (next build starts cold)",
+                human_bytes(bytes)
+            ));
+        }
         WorktreesDone::Cleared(Err(why)) => app.note(&format!("build cache not cleared: {why}")),
     }
 }
 
-/// Open (or return to) the `/worktrees` list from the last listing.
+/// Open (or return to) the `/worktrees` list from the last listing; with
+/// none (a prune since made it stale), list again rather than show nothing.
 fn open_worktrees_picker(app: &mut App) {
-    let items = app.worktrees.as_ref().map(worktrees_picker_items).unwrap_or_default();
+    let Some(report) = app.worktrees.as_ref() else {
+        app.picker = None;
+        return worktrees_command(app);
+    };
+    let items = worktrees_picker_items(report);
     app.picker = Some(Picker {
         kind: PickerKind::Worktrees,
         items,
@@ -24073,9 +24087,13 @@ fn open_worktree_confirm(
     found: &crate::core::agent::child_workspace::CheckoutInfo,
     loses: &str,
 ) {
-    let items = vec![
+    let mut items = vec![
         watermark_item(&format!("{} at {}", found.branch, tilde_path(&found.path))),
         watermark_item(&format!("removing it deletes {loses}, for good")),
+    ];
+    items.extend(found.state.brings_back().map(|kept| watermark_item(&kept)));
+    let keep = items.len();
+    items.extend([
         styled_item("keep".to_string(), vec![Span::raw("Keep it")]),
         styled_item(
             format!("{WORKTREE_FORCE_ROW}{}", found.id),
@@ -24084,11 +24102,11 @@ fn open_worktree_confirm(
                 Style::new().fg(theme::warning()),
             )],
         ),
-    ];
+    ]);
     app.picker = Some(Picker {
         kind: PickerKind::WorktreeConfirm,
         items,
-        selected: 2,
+        selected: keep,
         search: None,
         armed_delete: None,
     });
@@ -28101,7 +28119,7 @@ mod tests {
         transcript_top_padding, unescape_partial_json_string, user_content_parts,
         with_real_think_tag_gate, worktree_command, await_job, spawn_worktree_report,
         worktrees_command, spawn_worktrees_job, finish_worktrees_job, worktrees_picker_items,
-        open_worktrees_picker, worktrees_action, WorktreesJob,
+        open_worktrees_picker, worktrees_action, WorktreesDone, WorktreesJob,
         finish_worktree_report, AgentStatus, App, CompactKind, ContextReport,
         ContextSegment, CurrentRun, Readout, McpField, McpPrompt, MonitorSet, Pending,
         PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
@@ -43986,7 +44004,14 @@ fn a() {}
             checkouts: vec![
                 checkout("child-0001", CheckoutState::InUse { by: InUseBy::Child }),
                 checkout("other-0002", CheckoutState::InUse { by: InUseBy::Session }),
-                checkout("dirty-0003", CheckoutState::Uncommitted { files: 2, commits: 1 }),
+                checkout(
+                    "dirty-0003",
+                    CheckoutState::Uncommitted {
+                        files: vec!["a.txt".into(), ".env".into()],
+                        commits: 1,
+                        off_branch: 0,
+                    },
+                ),
                 checkout("ahead-0004", CheckoutState::Unbrought { commits: 3 }),
                 checkout("idle-0005", CheckoutState::Removable { commits: 0 }),
             ],
@@ -44016,7 +44041,7 @@ fn a() {}
                 ("wt:other-0002", "jan/agent/other-0002  2.0 KB  in use by another live jan session"),
                 (
                     "wt:dirty-0003",
-                    "jan/agent/dirty-0003  2.0 KB  holds 2 uncommitted file(s) and 1 commit(s)"
+                    "jan/agent/dirty-0003  2.0 KB  holds uncommitted work: a.txt, .env; 1 commit(s)"
                 ),
                 ("wt:ahead-0004", "jan/agent/ahead-0004  2.0 KB  holds 3 commit(s) not in your repository"),
                 ("wt:idle-0005", "jan/agent/idle-0005  2.0 KB  removable (no work in it)"),
@@ -44071,7 +44096,9 @@ fn a() {}
         let picker = app.picker.as_ref().unwrap();
         assert_eq!(picker.kind, PickerKind::WorktreeConfirm);
         let text: Vec<&str> = picker.items.iter().map(|i| i.label.as_str()).collect();
-        assert!(text[1].contains("deletes 2 uncommitted file(s) and 1 commit(s)"), "{text:?}");
+        // Its branch is brought back first: only the files are lost.
+        assert!(text[1].ends_with("deletes 2 uncommitted file(s), for good"), "{text:?}");
+        assert!(text[2].contains("its branch (1 commit(s)) is brought back"), "{text:?}");
         assert_eq!(picker.items[picker.selected].value, "keep");
         assert_eq!(app.worktrees_request, None);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
@@ -44079,6 +44106,9 @@ fn a() {}
         assert_eq!(app.worktrees_request, None, "keep removes nothing");
 
         enter_on_worktrees_row(&mut app, "wt:ahead-0004").await;
+        let text: Vec<String> =
+            app.picker.as_ref().unwrap().items.iter().map(|i| i.label.clone()).collect();
+        assert!(text[1].contains("deletes 3 commit(s) not in your repository"), "{text:?}");
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
         assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Worktrees));
 
@@ -44118,10 +44148,28 @@ fn a() {}
         let mut task = run(&mut app);
         finish_worktrees_job(&mut app, await_job(&mut task).await.unwrap());
         let notes: String = app.transcript.rows.iter().map(row_text).collect();
-        assert!(notes.contains("removed 1 subagent worktree(s), freed "), "{notes}");
+        assert!(notes.contains("removed 1 subagent worktree(s); moved "), "{notes}");
         assert!(busy.root.is_dir() && !idle.root.exists());
+        assert!(app.worktrees.is_none(), "the listing it acted on is dropped");
         drop(lease);
         let _ = tokio::task::spawn_blocking(move || ledger.finish_session()).await;
+    }
+
+    /// Once a prune or a clear lands, the listing it acted on is stale: it is
+    /// dropped, so stepping back to the list lists again rather than showing
+    /// checkouts that are gone.
+    #[tokio::test]
+    async fn a_finished_prune_drops_the_stale_listing() {
+        use crate::core::agent::child_workspace::Pruned;
+        for done in [WorktreesDone::Pruned(Pruned::default()), WorktreesDone::Cleared(Ok(1))] {
+            let mut app = test_app();
+            app.worktrees = Some(worktrees_fixture());
+            finish_worktrees_job(&mut app, done);
+            assert!(app.worktrees.is_none());
+            open_worktrees_picker(&mut app);
+            assert!(app.picker.is_none());
+            assert_eq!(app.worktrees_request, Some(WorktreesJob::List));
+        }
     }
 
     #[tokio::test]

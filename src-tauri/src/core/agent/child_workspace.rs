@@ -293,7 +293,7 @@ pub(crate) fn scope_for(ws: &ChildWorkspace, parent_root: &Path) -> ChildScope {
         read_only: ws.read_only,
         ..ChildScope::default()
     };
-    if ws.worktree.is_some() || ws.read_only {
+    if builds_in_cache(ws) {
         if let Some(target) = project_worktrees_dir(parent_root).map(|d| d.join(CARGO_TARGET)) {
             if std::fs::create_dir_all(&target).is_ok() {
                 scope.env_set.push((
@@ -310,40 +310,104 @@ pub(crate) fn scope_for(ws: &ChildWorkspace, parent_root: &Path) -> ChildScope {
     scope
 }
 
+/// Whether a child in `ws` is given the shared build directory: any child
+/// outside the plain writable checkout, readers in the parent's own checkout
+/// included.
+fn builds_in_cache(ws: &ChildWorkspace) -> bool {
+    ws.worktree.is_some() || ws.read_only
+}
+
 /// What a child's args take from its workspace beyond `project_root`, read
 /// from git by [`place`] when the child is dispatched.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct Placement {
     /// The child's own Session Start, when it is not in the parent's checkout.
     session_start: Option<crate::core::agent::context::SessionStart>,
     scope: ChildScope,
+    /// The child's shared lock on the build directory (see
+    /// [`hold_build_cache`]), which the child keeps until it is done.
+    build_hold: Option<std::fs::File>,
 }
 
 /// Resolve the [`Placement`] of a child in `ws`: its checkout's branch and the
 /// scope its tools enforce. Runs git, so the dispatch calls it on
-/// the blocking pool and [`apply`], on the async child task, runs none.
+/// the blocking pool and [`apply`], on the async child task, runs none. The
+/// build lock is taken before the scope creates the build directory, so a
+/// trim never moves it away between the two.
 pub(crate) fn place(ws: &ChildWorkspace, parent_root: &Path) -> Placement {
+    let build_hold = builds_in_cache(ws).then(|| hold_build_cache(parent_root)).flatten();
     Placement {
         session_start: ws.worktree.as_ref().map(|wt| {
             crate::core::agent::context::SessionStart::with_branch(worktree_branch(wt))
         }),
         scope: scope_for(ws, parent_root),
+        build_hold,
     }
 }
 
 /// Point a child's run at its workspace: `project_root` (and so its prompt's
 /// Working Directory and Runtime Environment blocks), its own Session Start
 /// when it is not in the parent's checkout, and the scope its tools enforce.
+/// Returns the child's build lock, which the caller holds until the child
+/// has finished: dropping it lets a trim move the build directory away.
 pub(crate) fn apply(
     args: &mut crate::core::agent::r#loop::OrchestrationArgs,
     ws: &ChildWorkspace,
     placement: Placement,
-) {
+) -> Option<std::fs::File> {
     if let Some(start) = placement.session_start {
         args.session_start = Some(start);
     }
     args.project_root = Some(ws.root.clone());
     args.child_scope = Some(placement.scope);
+    placement.build_hold
+}
+
+/// The lock file every build in the project's shared build directory holds
+/// shared, and a trim or clear exclusive. Under `.meta`, out of every
+/// child's write roots, so no child can replace it.
+#[cfg(feature = "cli")]
+const BUILD_LOCK: &str = "cargo-target.lock";
+
+/// Take a shared lock on `root`'s project's build lock, for a child that
+/// builds in the shared build directory: while any such lock is held, in
+/// this process or another, [`trim_build_cache`] and [`clear_build_cache`]
+/// leave the directory alone. Waits out a trim's brief exclusive hold (the
+/// dispatch runs on the blocking pool). `None` when it cannot be locked: the
+/// filesystem then cannot lock for a trim either, so none happens.
+#[cfg(feature = "cli")]
+fn hold_build_cache(root: &Path) -> Option<std::fs::File> {
+    let file = open_build_lock(&project_worktrees_dir(root)?)?;
+    fs4::FileExt::lock_shared(&file).ok()?;
+    Some(file)
+}
+
+/// The build lock of the worktrees in `dir`, created if need be; never a
+/// link, so nothing else is locked through it.
+#[cfg(feature = "cli")]
+fn open_build_lock(dir: &Path) -> Option<std::fs::File> {
+    let meta = dir.join(META_DIR);
+    std::fs::create_dir_all(&meta).ok()?;
+    crate::core::agent::session_log::open_no_follow(
+        std::fs::OpenOptions::new().write(true).create(true).truncate(false),
+        &meta.join(BUILD_LOCK),
+    )
+    .ok()
+}
+
+/// The desktop gives no child the shared build directory.
+#[cfg(not(feature = "cli"))]
+fn hold_build_cache(_root: &Path) -> Option<std::fs::File> {
+    None
+}
+
+/// The exclusive lock on the build lock of the worktrees in `dir`, taken
+/// without waiting: `None` while any child builds there (or the filesystem
+/// cannot lock, when no build can be shown to have stopped). Held across
+/// the move of the build directory only.
+#[cfg(feature = "cli")]
+fn lock_build_cache(dir: &Path) -> Option<std::fs::File> {
+    lock(open_build_lock(dir)?).ok()
 }
 
 /// The directory the parent's sandboxed tools may read its children's
@@ -377,6 +441,9 @@ struct LedgerState {
     /// The lock on each of `created`'s metadata, held so no other jan
     /// process's startup sweep takes a worktree this one still owns.
     holds: HashMap<PathBuf, std::fs::File>,
+    /// Worktrees a conversation end took and still holds (see [`Settling`]).
+    #[cfg(feature = "cli")]
+    settling: HashSet<PathBuf>,
     /// The parent's checkout of the last assignment: whose project's shared
     /// build directory the session end may trim. The desktop makes no
     /// checkouts, so has no build directory to trim.
@@ -584,8 +651,10 @@ enum Disposition {
 fn dispose(wt: &ChildWorktree, bring: bool) -> Disposition {
     let keep = Disposition::Kept { not_brought: None };
     let first = classify(wt);
-    if first == (CheckoutState::Removable { commits: 0 }) {
-        return removed(wt, None);
+    // Everything it holds is in the user's repository already: no fetch is
+    // needed, so none can fail and keep it.
+    if let CheckoutState::Removable { commits } = first {
+        return removed(wt, (commits > 0).then(|| wt.branch.clone()));
     }
     if !bring {
         return keep;
@@ -614,8 +683,14 @@ pub(crate) enum CheckoutState {
     /// A running subagent of this session works in it, or another live jan
     /// session owns it: never removed from here.
     InUse { by: InUseBy },
-    /// Uncommitted changes (and maybe commits) that are only in it.
-    Uncommitted { files: usize, commits: u64 },
+    /// Uncommitted work that is only in it: changed, untracked and ignored
+    /// files that are not build output (see [`Checkout::uncommitted`]).
+    /// `commits` past its base, of which `off_branch` are on no branch (a
+    /// stash, a tag, a detached `HEAD`), which bringing its branch back does
+    /// not carry.
+    ///
+    /// [`Checkout::uncommitted`]: crate::core::agent::git::Checkout::uncommitted
+    Uncommitted { files: Vec<String>, commits: u64, off_branch: u64 },
     /// Clean, with commits its branch in the user's repository lacks.
     Unbrought { commits: u64 },
     /// Clean, and everything it committed (if anything) is in the user's
@@ -632,7 +707,14 @@ pub(crate) enum CheckoutState {
 pub(crate) enum InUseBy {
     Child,
     Session,
+    /// This session's conversation end is settling it (bringing its branch
+    /// back), or holds it until the user is told it was kept.
+    Settling,
 }
+
+/// How many uncommitted paths a description names before eliding the rest.
+#[cfg(feature = "cli")]
+const NAMED_FILES: usize = 3;
 
 #[cfg(feature = "cli")]
 impl CheckoutState {
@@ -643,9 +725,22 @@ impl CheckoutState {
             Self::InUse { by: InUseBy::Session } => {
                 "in use by another live jan session".to_string()
             }
-            Self::Uncommitted { .. } | Self::Unbrought { .. } => {
-                format!("holds {}", self.loses().unwrap_or_default())
+            Self::InUse { by: InUseBy::Settling } => {
+                "in use by this session, which is settling it".to_string()
             }
+            Self::Uncommitted { files, commits, .. } => {
+                let more = match files.len().saturating_sub(NAMED_FILES) {
+                    0 => String::new(),
+                    n => format!(" and {n} more"),
+                };
+                let named = files.iter().take(NAMED_FILES).cloned().collect::<Vec<_>>();
+                let commits = match commits {
+                    0 => String::new(),
+                    n => format!("; {n} commit(s)"),
+                };
+                format!("holds uncommitted work: {}{more}{commits}", named.join(", "))
+            }
+            Self::Unbrought { .. } => format!("holds {}", self.loses().unwrap_or_default()),
             Self::Removable { commits: 0 } => "removable (no work in it)".to_string(),
             Self::Removable { commits } => {
                 format!("removable ({commits} commit(s), all in your repository)")
@@ -656,15 +751,34 @@ impl CheckoutState {
 
     /// What removing it would lose, when the user may still remove it after
     /// confirming; `None` when it loses nothing or may not be removed here.
+    /// A removal brings its branch back first (see [`Self::brings_back`]),
+    /// so the commits on it are not lost; an `Unbrought` one's are, since
+    /// its branch could not be brought back.
     pub(crate) fn loses(&self) -> Option<String> {
         match self {
-            Self::Uncommitted { files, commits: 0 } => Some(format!("{files} uncommitted file(s)")),
-            Self::Uncommitted { files, commits } => {
-                Some(format!("{files} uncommitted file(s) and {commits} commit(s)"))
+            Self::Uncommitted { files, off_branch: 0, .. } => {
+                Some(format!("{} uncommitted file(s)", files.len()))
             }
+            Self::Uncommitted { files, off_branch, .. } => Some(format!(
+                "{} uncommitted file(s) and {off_branch} commit(s) on no branch",
+                files.len()
+            )),
             Self::Unbrought { commits } => {
                 Some(format!("{commits} commit(s) not in your repository"))
             }
+            _ => None,
+        }
+    }
+
+    /// What a removal keeps by bringing the branch into the user's
+    /// repository first, for the confirm; `None` when there is nothing to
+    /// bring back.
+    pub(crate) fn brings_back(&self) -> Option<String> {
+        match self {
+            Self::Uncommitted { commits, off_branch, .. } if commits > off_branch => Some(format!(
+                "its branch ({} commit(s)) is brought back to your repository first",
+                commits - off_branch
+            )),
             _ => None,
         }
     }
@@ -684,8 +798,22 @@ fn classify(wt: &ChildWorktree) -> CheckoutState {
     match checkout.is_clean() {
         Ok(true) => {}
         Ok(false) => {
-            let files = checkout.try_changed_paths().map_or(0, |paths| paths.len());
-            return CheckoutState::Uncommitted { files, commits: commits.unwrap_or(0) };
+            // A submodule's work is not a path status lists: say so rather
+            // than show no file.
+            let files = match checkout.uncommitted() {
+                Ok(files) if !files.is_empty() => files,
+                _ => vec!["a submodule".to_string()],
+            };
+            let on_branch = checkout.commits_on(&wt.base, &format!("refs/heads/{}", wt.branch));
+            let (commits, off_branch) = match (commits, on_branch) {
+                // The branch is among the refs counted, so the rest are on
+                // no branch.
+                (Some(all), Some(on)) => (all, all.saturating_sub(on)),
+                // Unknown is all off the branch: the confirm must not
+                // promise to bring back what may not be there.
+                (all, _) => (all.unwrap_or(0), all.unwrap_or(0)),
+            };
+            return CheckoutState::Uncommitted { files, commits, off_branch };
         }
         Err(why) => return CheckoutState::Unreadable { why },
     }
@@ -697,11 +825,13 @@ fn classify(wt: &ChildWorktree) -> CheckoutState {
     }
 }
 
-/// Move `wt` out of the way for [`dispose`]; kept when it cannot be.
+/// Move `wt` into the trash for [`dispose`], never deleting it: the trash
+/// keeps it a week in case the check missed work. Kept when it cannot be
+/// moved, which leaks it but loses nothing.
 #[cfg(feature = "cli")]
 fn removed(wt: &ChildWorktree, brought: Option<String>) -> Disposition {
-    match trash(&wt.path) {
-        Some(gone) => Disposition::Removed { gone, brought },
+    match move_to_trash(&wt.path) {
+        Some(to) => Disposition::Removed { gone: Gone::Trashed(to), brought },
         None => Disposition::Kept { not_brought: None },
     }
 }
@@ -840,12 +970,10 @@ fn reserve_with(
     }
 }
 
-/// Move a checkout that holds nothing out of the way at once, into the
-/// project's trash: deleting in place walks every file a child left
-/// (`node_modules`, build output) while the user waits, and the trash keeps
-/// it a while in case the emptiness check missed work. Deletes in place when
-/// the rename fails (something mounted there, a handle still open on
-/// Windows). `None` when it is still there.
+/// Get a checkout the user confirmed losing out of the way: renamed into the
+/// project's trash first, so the caller can delete it there after dropping
+/// its record, else deleted in place (something mounted there, a handle
+/// still open on Windows). `None` when it is still there.
 #[cfg(feature = "cli")]
 fn trash(path: &Path) -> Option<Gone> {
     if let Some(to) = move_to_trash(path) {
@@ -1085,6 +1213,26 @@ fn create(
 struct Owned {
     wt: ChildWorktree,
     hold: Option<std::fs::File>,
+    /// Set while a ledger's conversation end owns it, so `/worktrees` names
+    /// it as this session's rather than another live one's.
+    mark: Option<Settling>,
+}
+
+/// A ledger's mark on a worktree its conversation end took: the session
+/// still holds it (settling it, or until the user is told it was kept)
+/// though it is no longer among the ledger's `created`. Unmarked on drop.
+#[cfg(feature = "cli")]
+#[derive(Debug)]
+struct Settling {
+    ledger: Arc<Ledger>,
+    path: PathBuf,
+}
+
+#[cfg(feature = "cli")]
+impl Drop for Settling {
+    fn drop(&mut self) {
+        self.ledger.state.lock().unwrap().settling.remove(&self.path);
+    }
 }
 
 /// Worktrees taken from a ledger (or found orphaned) to be settled, off the
@@ -1135,7 +1283,10 @@ impl Batch {
                     settled.trashed += 1;
                     settled.trash = Some(bin);
                 }
-                Outcome::Brought(branch) => settled.brought.push(branch),
+                Outcome::Brought(branch, bin) => {
+                    settled.brought.push(branch);
+                    settled.brought_to = Some(bin);
+                }
                 Outcome::Gone => {}
             }
         }
@@ -1154,8 +1305,10 @@ pub(crate) struct Settled {
     trashed: usize,
     trash: Option<PathBuf>,
     /// The branches whose checkouts went once their commits were brought
-    /// into the user's repository: where that work is now.
+    /// into the user's repository: where that work is now. Their checkouts
+    /// wait in the trash at `brought_to`.
     brought: Vec<String>,
+    brought_to: Option<PathBuf>,
     /// Set when the shared build directory was over its cap and cleared.
     cache_notice: Option<String>,
     /// Kept orphans not yet marked reported, each still locked: a sweep marks
@@ -1179,12 +1332,19 @@ impl Settled {
 
     /// The branches brought back whose checkouts went: the one place the
     /// user learns where that work is, so each is named once.
+    /// The checkouts wait in the trash, since one may hold what the check
+    /// missed, and the user must know where to look.
     fn brought_notice(&self) -> Option<String> {
+        let bin = self.brought_to.as_deref().map(display).unwrap_or_default();
+        let days = tauri_plugin_agent_tools::workspace::TRASH_KEPT_FOR.as_secs() / 86_400;
         match self.brought.as_slice() {
             [] => None,
-            [one] => Some(format!("brought back branch {one}, removed its worktree")),
+            [one] => Some(format!(
+                "brought back branch {one}, moved its worktree to {bin}; deleted after {days} days"
+            )),
             many => Some(format!(
-                "brought back {} branches, removed their worktrees\n{}",
+                "brought back {} branches, moved their worktrees to {bin}; deleted after {days} \
+                 days\n{}",
                 many.len(),
                 many.join("\n")
             )),
@@ -1225,9 +1385,9 @@ impl Settled {
     /// The user has been told about the kept worktrees: no later sweep
     /// repeats them. Their locks drop once each is marked.
     fn mark_reported(&mut self) {
-        for Owned { wt, hold } in self.unmarked.drain(..) {
+        for Owned { wt, hold, mark } in self.unmarked.drain(..) {
             let _ = write_meta(&wt, true);
-            drop(hold);
+            drop((hold, mark));
         }
     }
 }
@@ -1243,8 +1403,8 @@ enum Outcome {
     /// It held nothing and went into the trash at this path.
     Trashed(PathBuf),
     /// Its commits were brought back on this branch of the user's
-    /// repository, and the checkout went (into the trash or deleted).
-    Brought(String),
+    /// repository, and the checkout went into the trash at this path.
+    Brought(String, PathBuf),
     /// It held nothing and is gone, or it stays the ledger's unreported.
     Gone,
 }
@@ -1260,7 +1420,7 @@ fn settle_one(
     report_busy: bool,
     mark_when_told: bool,
 ) -> Outcome {
-    let Owned { wt, hold } = one;
+    let Owned { wt, hold, mark } = one;
     if let Some(ledger) = ledger {
         if !ledger.claim(&wt.path) {
             let mut state = ledger.state.lock().unwrap();
@@ -1288,7 +1448,7 @@ fn settle_one(
             if let Some(ledger) = ledger {
                 ledger.state.lock().unwrap().removing.remove(&wt.path);
             }
-            return Outcome::KeptUnmarked(line, Owned { wt, hold });
+            return Outcome::KeptUnmarked(line, Owned { wt, hold, mark });
         }
         // This process names it at its own end, so the user owns it now: no
         // later sweep reports it again.
@@ -1296,10 +1456,13 @@ fn settle_one(
         Outcome::Kept(line)
     } else {
         forget_meta(&wt);
-        match (disposed, wt.path.parent()) {
-            (Disposition::Removed { brought: Some(branch), .. }, _) => Outcome::Brought(branch),
-            (Disposition::Removed { gone: Gone::Trashed(_), .. }, Some(dir)) => {
-                Outcome::Trashed(dir.join(TRASH_DIR))
+        match disposed {
+            Disposition::Removed { gone: Gone::Trashed(to), brought } => {
+                let bin = to.parent().map(Path::to_path_buf).unwrap_or(to);
+                match brought {
+                    Some(branch) => Outcome::Brought(branch, bin),
+                    None => Outcome::Trashed(bin),
+                }
             }
             _ => Outcome::Gone,
         }
@@ -1307,7 +1470,7 @@ fn settle_one(
     if let Some(ledger) = ledger {
         ledger.state.lock().unwrap().removing.remove(&wt.path);
     }
-    drop(hold);
+    drop((hold, mark));
     outcome
 }
 
@@ -1366,7 +1529,9 @@ impl Ledger {
                 continue;
             }
             let hold = state.holds.remove(&wt.path);
-            owned.push(Owned { wt, hold });
+            state.settling.insert(wt.path.clone());
+            let mark = Some(Settling { ledger: self.clone(), path: wt.path.clone() });
+            owned.push(Owned { wt, hold, mark });
         }
         Batch { ledger: Some(self.clone()), owned, report_busy: busy_too, mark_when_told: false }
     }
@@ -1409,25 +1574,9 @@ pub(crate) fn sweep_orphans(root: &Path) -> Settled {
         if !is_checkout_id(id) {
             continue;
         }
-        // Reserved without a lock: nothing can show its owner is gone.
-        if meta_file(&dir, id, UNLOCKED_EXT).exists() {
-            continue;
-        }
         // Once: a lock that is not free right now has a live owner, and
         // skipping is always safe.
-        let Ok(hold) = crate::core::agent::session_log::open_no_follow(
-            std::fs::OpenOptions::new().write(true),
-            &entry.path(),
-        )
-        .and_then(lock) else {
-            continue;
-        };
-        // The owner may have unlinked this lock (it settled the worktree)
-        // between the open and the lock, and a new owner of a reused id made
-        // a fresh one: the lock taken is then on a file no one else sees.
-        if !still_at(&hold, &entry.path()) {
-            continue;
-        }
+        let Probe::Free(hold) = probe_lock(&dir, id) else { continue };
         let path = dir.join(id);
         let present = std::fs::symlink_metadata(&path);
         let meta = match std::fs::read(meta_file(&dir, id, "json")) {
@@ -1446,7 +1595,9 @@ pub(crate) fn sweep_orphans(root: &Path) -> Settled {
         let Some(wt) = recorded_worktree(&dir, id, meta.clone()) else { continue };
         match present {
             Err(_) => forget_meta(&wt),
-            Ok(m) if m.is_dir() && !meta.finished => owned.push(Owned { wt, hold: Some(hold) }),
+            Ok(m) if m.is_dir() && !meta.finished => {
+                owned.push(Owned { wt, hold: Some(hold), mark: None })
+            }
             Ok(_) => {}
         }
     }
@@ -1489,11 +1640,13 @@ pub(crate) fn spawn_startup_sweep(
 
 /// Move `root`'s project's shared build directory into the trash when it is
 /// larger than `cap` bytes (0 never), so it cannot grow without bound: the
-/// next build starts cold. Never while any live jan session (this one
-/// included) holds a checkout of the project, since its child may be
-/// building there. The notice for the user when it was cleared. Walks the
-/// directory only up to the cap, so a huge one costs little; a rename, so
-/// nobody waits on its deletion. Runs I/O: call it off the render loop.
+/// next build starts cold. Never while any child of any process holds the
+/// build lock (see [`hold_build_cache`]), readers without a checkout
+/// included, nor while any live jan session (this one included) holds a
+/// checkout of the project, since its next child may be building there.
+/// The notice for the user when it was cleared. Walks the directory only up
+/// to the cap, so a huge one costs little; a rename, so nobody waits on its
+/// deletion. Runs I/O: call it off the render loop.
 #[cfg(feature = "cli")]
 pub(crate) fn trim_build_cache(root: &Path, cap: u64) -> Option<String> {
     if cap == 0 {
@@ -1505,6 +1658,7 @@ pub(crate) fn trim_build_cache(root: &Path, cap: u64) -> Option<String> {
     if !std::fs::symlink_metadata(&target).is_ok_and(|m| m.is_dir()) {
         return None;
     }
+    let _building = lock_build_cache(&dir)?;
     if checkouts_in_use(&dir, &HashSet::new())
         || !larger_than(&target, cap)
         || move_to_trash(&target).is_none()
@@ -1536,23 +1690,44 @@ fn checkouts_in_use(dir: &Path, ours: &HashSet<String>) -> bool {
         let Some(id) = name.to_str().and_then(|n| n.strip_suffix(".lock")) else {
             return false;
         };
-        if ours.contains(id) {
-            return false;
-        }
-        if meta_file(dir, id, UNLOCKED_EXT).exists() {
-            return true;
-        }
-        match crate::core::agent::session_log::open_no_follow(
-            std::fs::OpenOptions::new().write(true),
-            &entry.path(),
-        ) {
-            Ok(file) => lock(file).is_err(),
-            // Its owner settled it and unlinked the lock meanwhile.
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-            // Unknown is in use: the cost of guessing wrong is a child's build.
-            Err(_) => true,
-        }
+        // Only checkout locks: the build lock sits beside them.
+        is_checkout_id(id) && !ours.contains(id) && matches!(probe_lock(dir, id), Probe::Held)
     })
+}
+
+/// Who owns a checkout's lock, as [`probe_lock`] found it.
+#[cfg(feature = "cli")]
+enum Probe {
+    /// No live owner: this lock, now taken, keeps every other sweep off it.
+    Free(std::fs::File),
+    /// A live owner holds it, it was reserved without a lock (nothing can
+    /// show its owner has gone), or it cannot be read: unknown is held.
+    Held,
+    /// Its owner settled it and unlinked the lock meanwhile.
+    Gone,
+}
+
+/// Try the lock of checkout `id` in `dir` once, without waiting. A lock
+/// taken on a file that is no longer the one at its path is held: its owner
+/// unlinked it (it settled the worktree) between the open and the lock, and
+/// a new owner of a reused id made a fresh one that no one else sees.
+#[cfg(feature = "cli")]
+fn probe_lock(dir: &Path, id: &str) -> Probe {
+    if meta_file(dir, id, UNLOCKED_EXT).exists() {
+        return Probe::Held;
+    }
+    let path = meta_file(dir, id, "lock");
+    match crate::core::agent::session_log::open_no_follow(
+        std::fs::OpenOptions::new().write(true),
+        &path,
+    ) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Probe::Gone,
+        Err(_) => Probe::Held,
+        Ok(file) => match lock(file) {
+            Ok(hold) if still_at(&hold, &path) => Probe::Free(hold),
+            _ => Probe::Held,
+        },
+    }
 }
 
 /// Whether the files under `dir` add up to more than `cap` bytes. Stops as
@@ -1610,24 +1785,36 @@ pub(crate) fn human_bytes(bytes: u64) -> String {
 #[cfg(feature = "cli")]
 pub(crate) struct Session<'a> {
     pub(crate) ledger: &'a Ledger,
-    /// Whether any subagent of the session is running: a reader builds in
-    /// the shared build cache too, without a checkout of its own.
-    pub(crate) children_running: bool,
+    /// Whether any subagent of the session is running right now: a reader
+    /// builds in the shared build cache too, without a checkout of its own.
+    /// Asked at each decision, not once when the job was queued, since a
+    /// subagent may have started meanwhile.
+    pub(crate) children_running: &'a dyn Fn() -> bool,
 }
 
 #[cfg(feature = "cli")]
 impl Session<'_> {
-    /// The ids of the checkouts this session made, whose locks it holds.
+    /// The ids of the checkouts this session made and still holds the locks
+    /// of, those its conversation end is settling included.
     fn own_ids(&self) -> HashSet<String> {
         let state = self.ledger.state.lock().unwrap();
-        state.created.iter().filter_map(|wt| id_of_path(&wt.path)).collect()
+        let created = state.created.iter().map(|wt| wt.path.as_path());
+        created.chain(state.settling.iter().map(PathBuf::as_path)).filter_map(id_of_path).collect()
     }
 
-    /// Whether a subagent of the session may be in `path`: a writer holds
-    /// it, or any subagent runs (a reader reusing a checkout holds no lease,
-    /// so a running one may be reading any of the session's).
-    fn in_use(&self, path: &Path) -> bool {
-        self.children_running || self.ledger.state.lock().unwrap().busy.contains(path)
+    /// Who of the session holds `path`, if anyone: a writer, any running
+    /// subagent (a reader reusing a checkout holds no lease, so a running
+    /// one may be reading any of the session's), or its conversation end.
+    fn in_use(&self, path: &Path) -> Option<InUseBy> {
+        let state = self.ledger.state.lock().unwrap();
+        if state.settling.contains(path) {
+            Some(InUseBy::Settling)
+        } else if state.busy.contains(path) {
+            Some(InUseBy::Child)
+        } else {
+            drop(state);
+            (self.children_running)().then_some(InUseBy::Child)
+        }
     }
 }
 
@@ -1725,11 +1912,13 @@ struct Found {
 impl Found {
     /// Where it stands, without changing anything.
     fn state(&self, session: Option<&Session>) -> CheckoutState {
-        match self.hold {
-            Hold::Theirs => CheckoutState::InUse { by: InUseBy::Session },
-            Hold::Ours if session.is_some_and(|s| s.in_use(&self.wt.path)) => {
-                CheckoutState::InUse { by: InUseBy::Child }
-            }
+        let ours = match (&self.hold, session) {
+            (Hold::Ours, Some(session)) => session.in_use(&self.wt.path),
+            _ => None,
+        };
+        match (&self.hold, ours) {
+            (Hold::Theirs, _) => CheckoutState::InUse { by: InUseBy::Session },
+            (_, Some(by)) => CheckoutState::InUse { by },
             _ => classify(&self.wt),
         }
     }
@@ -1765,22 +1954,11 @@ fn found_checkouts(dir: &Path, session: Option<&Session>) -> Vec<Found> {
         };
         let hold = if ours.contains(id) {
             Hold::Ours
-        } else if meta_file(dir, id, UNLOCKED_EXT).exists() {
-            Hold::Theirs
         } else {
-            match crate::core::agent::session_log::open_no_follow(
-                std::fs::OpenOptions::new().write(true),
-                &entry.path(),
-            ) {
-                // Settled by its owner meanwhile.
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(_) => Hold::Theirs,
-                Ok(file) => match lock(file) {
-                    Ok(hold) if still_at(&hold, &entry.path()) => Hold::Locked(hold),
-                    // Replaced since it was opened: a new owner has it.
-                    Ok(_) => Hold::Theirs,
-                    Err(_) => Hold::Theirs,
-                },
+            match probe_lock(dir, id) {
+                Probe::Free(hold) => Hold::Locked(hold),
+                Probe::Held => Hold::Theirs,
+                Probe::Gone => continue,
             }
         };
         found.push(Found { id: id.to_string(), wt, hold });
@@ -1844,17 +2022,34 @@ pub(crate) struct Pruned {
     pub(crate) brought: Vec<String>,
     /// A line per checkout kept, saying why.
     pub(crate) kept: Vec<String>,
+    /// The bytes deleted: a forced removal's, once its delete succeeded.
     pub(crate) freed: u64,
+    /// The bytes moved to the trash (a safe removal's, or a forced one whose
+    /// delete failed), which a later start empties, and where it is.
+    pub(crate) trashed: u64,
+    pub(crate) trash: Option<PathBuf>,
 }
 
 #[cfg(feature = "cli")]
 impl Pruned {
-    /// The notice for the user: what went, the space it freed, what stayed.
+    /// The notice for the user: what went, the space it freed or where it
+    /// waits, what stayed.
     pub(crate) fn notice(&self) -> String {
         let mut text = match self.removed.len() {
             0 => "no subagent worktree removed".to_string(),
-            n => format!("removed {n} subagent worktree(s), freed {}", human_bytes(self.freed)),
+            n => format!("removed {n} subagent worktree(s)"),
         };
+        if self.freed > 0 {
+            text.push_str(&format!(", freed {}", human_bytes(self.freed)));
+        }
+        if let Some(bin) = self.trash.as_ref().filter(|_| self.trashed > 0) {
+            let days = tauri_plugin_agent_tools::workspace::TRASH_KEPT_FOR.as_secs() / 86_400;
+            text.push_str(&format!(
+                "; moved {} to {}, deleted after {days} days",
+                human_bytes(self.trashed),
+                display(bin)
+            ));
+        }
         if !self.brought.is_empty() {
             text.push_str(&format!("\nbrought back first: {}", self.brought.join(", ")));
         }
@@ -1867,9 +2062,10 @@ impl Pruned {
 
 /// Remove `root`'s project's subagent checkouts that `which` names, never
 /// one a running subagent of `session` or another live session holds, nor
-/// one git cannot read. A removed checkout is deleted, not left in the
-/// trash: the user asked for the space. Runs git and deletes: call it off
-/// the render loop.
+/// one git cannot read. What the safe rule removes goes to the trash, as at
+/// session end: the check may miss work. What a forced prune removes is
+/// deleted at once: the user confirmed the loss and asked for the space.
+/// Runs git and deletes: call it off the render loop.
 #[cfg(feature = "cli")]
 pub(crate) fn prune_worktrees(root: &Path, session: Option<&Session>, which: &Prune) -> Pruned {
     let mut pruned = Pruned::default();
@@ -1897,23 +2093,40 @@ fn prune_one(found: Found, session: Option<&Session>, force: bool, pruned: &mut 
         }
         // Claimed, as a session end claims it, so no dispatch is handed it
         // while it goes; a writer in it refuses the claim.
-        (Hold::Ours, Some(session))
-            if session.in_use(&wt.path) || !session.ledger.claim(&wt.path) =>
-        {
-            return pruned.kept.push(kept(CheckoutState::InUse { by: InUseBy::Child }));
+        (Hold::Ours, Some(session)) => {
+            let by = session.in_use(&wt.path);
+            let claimed = || session.ledger.claim(&wt.path);
+            if let Some(by) = by.or_else(|| (!claimed()).then_some(InUseBy::Child)) {
+                return pruned.kept.push(kept(CheckoutState::InUse { by }));
+            }
+            Some(session.ledger)
         }
-        (Hold::Ours, Some(session)) => Some(session.ledger),
         _ => None,
     };
     let bytes = dir_size(&wt.path, u64::MAX);
     let (gone, brought) = match dispose(&wt, true) {
         Disposition::Removed { gone, brought } => (Some(gone), brought),
-        Disposition::Kept { .. } => match classify(&wt) {
-            CheckoutState::Uncommitted { .. } | CheckoutState::Unbrought { .. } if force => {
+        Disposition::Kept { not_brought } => match classify(&wt) {
+            // The confirm promised an uncommitted checkout's branch is
+            // brought back first: when it could not be, its commits would be
+            // lost too, which the user did not confirm.
+            CheckoutState::Uncommitted { .. } if force && not_brought.is_none() => {
                 (trash(&wt.path), None)
             }
+            CheckoutState::Unbrought { .. } | CheckoutState::Removable { .. } if force => {
+                (trash(&wt.path), None)
+            }
+            // Everything in it is in the user's repository, so only the move
+            // into the trash can have failed.
+            CheckoutState::Removable { .. } => {
+                pruned.kept.push(format!("{} (could not be moved to the trash)", wt.branch));
+                (None, None)
+            }
             state => {
-                pruned.kept.push(kept(state));
+                let why = not_brought
+                    .map(|why| format!("; its branch could not be brought back: {why}"))
+                    .unwrap_or_default();
+                pruned.kept.push(format!("{} ({}{why})", wt.branch, state.describe()));
                 (None, None)
             }
         },
@@ -1929,21 +2142,30 @@ fn prune_one(found: Found, session: Option<&Session>, force: bool, pruned: &mut 
         drop(lock);
     }
     let Some(gone) = gone else { return };
-    // Once its record is gone the trash entry is nobody's: a failed delete
-    // is left for the startup sweep to empty.
-    if let Gone::Trashed(to) = gone {
-        let _ = std::fs::remove_dir_all(to);
+    // The user confirmed the loss and asked for the space: delete it now.
+    // Once its record is gone the trash entry is nobody's, so a failed
+    // delete is left for the startup sweep to empty, and counted there.
+    let left = match gone {
+        Gone::Trashed(to) if force && std::fs::remove_dir_all(&to).is_err() => Some(to),
+        Gone::Trashed(to) if !force => Some(to),
+        _ => None,
+    };
+    match left.as_deref().and_then(Path::parent) {
+        Some(bin) => {
+            pruned.trashed += bytes;
+            pruned.trash = Some(bin.to_path_buf());
+        }
+        None => pruned.freed += bytes,
     }
-    pruned.freed += bytes;
     pruned.removed.push(wt.branch.clone());
     pruned.brought.extend(brought);
 }
 
 /// Delete `root`'s project's shared build cache now, returning the bytes
 /// freed. Refused while a build may be running in it: a running subagent of
-/// `session`, or any other live session that holds a checkout of the
-/// project (the same check as [`trim_build_cache`]). Call it off the render
-/// loop.
+/// `session`, any child of any process holding the build lock, or any other
+/// live session that holds a checkout of the project (the same checks as
+/// [`trim_build_cache`]). Call it off the render loop.
 #[cfg(feature = "cli")]
 pub(crate) fn clear_build_cache(root: &Path, session: Option<&Session>) -> Result<u64, String> {
     let dir = worktrees_dir(root).ok_or("there is no subagent build cache")?;
@@ -1954,13 +2176,14 @@ pub(crate) fn clear_build_cache(root: &Path, session: Option<&Session>) -> Resul
     let ours = match session {
         // A reader builds there too, without a lease, so any running
         // subagent counts.
-        Some(s) if s.children_running || !s.ledger.state.lock().unwrap().busy.is_empty() => {
-            return Err("a subagent is running and may be building there; try again once it \
-                        has finished"
-                .to_string());
+        Some(s) if (s.children_running)() || !s.ledger.state.lock().unwrap().busy.is_empty() => {
+            return Err(BUILDING.to_string());
         }
         Some(s) => s.own_ids(),
         None => HashSet::new(),
+    };
+    let Some(_building) = lock_build_cache(&dir) else {
+        return Err(BUILDING.to_string());
     };
     if checkouts_in_use(&dir, &ours) {
         return Err("another live jan session has a subagent checkout of this project and \
@@ -1973,6 +2196,11 @@ pub(crate) fn clear_build_cache(root: &Path, session: Option<&Session>) -> Resul
     let _ = std::fs::remove_dir_all(to);
     Ok(bytes)
 }
+
+/// Why the build cache was not cleared while a subagent may build in it.
+#[cfg(feature = "cli")]
+const BUILDING: &str =
+    "a subagent is running and may be building there; try again once it has finished";
 
 /// Settle `root`'s orphaned worktrees and report them (see
 /// [`Settled::report`]).
@@ -2036,8 +2264,7 @@ fn kept_line(wt: &ChildWorktree, not_brought: Option<&str>) -> String {
              delete the directory"
         ),
         Ok(checkout) => {
-            let mut held = match (checkout.commits_anywhere(&wt.base), checkout.try_changed_paths())
-            {
+            let mut held = match (checkout.commits_anywhere(&wt.base), checkout.uncommitted()) {
                 (Some(commits), Ok(changed)) => {
                     format!("{commits} commit(s), {} uncommitted file(s)", changed.len())
                 }
@@ -3097,10 +3324,107 @@ mod git_tests {
         assert!(settled.kept.is_empty(), "{:?}", settled.kept);
         assert!(gone, "its worktree goes");
         assert_eq!(in_repo.as_deref(), Some(tip.as_str()), "its work is on the branch");
+        let bin = display(&dunce::canonicalize(trash_of(&root)).unwrap());
         assert_eq!(
             settled.notices(),
-            [format!("brought back branch {branch}, removed its worktree")]
+            [format!(
+                "brought back branch {branch}, moved its worktree to {bin}; deleted after 7 days"
+            )]
         );
+    }
+
+    /// Commit `.gitignore` with `rules` in the checkout `ws`, as a child would.
+    fn commit_ignore(ws: &ChildWorkspace, rules: &str) {
+        std::fs::write(ws.root.join(".gitignore"), rules).unwrap();
+        assert!(git(&ws.root, &["add", ".gitignore"]));
+        assert!(git(&ws.root, &["commit", "-q", "--no-gpg-sign", "-m", "ignore"]));
+    }
+
+    /// An ignored file that is not build output (a `.env`, local config) is
+    /// only in the checkout: a brought-back checkout holding one is kept and
+    /// listed with the file named, while one holding only ignored build
+    /// output goes, into the trash rather than deleted.
+    #[test]
+    fn a_brought_back_checkout_keeps_ignored_files_but_not_build_output() {
+        let Some(root) = repo("ignored") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (env, l1) = ledger.assign(&root, "general", true, None).unwrap();
+        let (built, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
+        drop((l1, l2));
+        commit_ignore(&env, ".env\ntarget/\n");
+        std::fs::write(env.root.join(".env"), "KEY=1\n").unwrap();
+        commit_ignore(&built, "target/\n");
+        std::fs::create_dir_all(built.root.join("target/debug")).unwrap();
+        std::fs::write(built.root.join("target/debug/app"), "x").unwrap();
+        // As each writer's finish does.
+        assert_eq!((env.bring_back(), built.bring_back()), (None, None));
+
+        let session = Session { ledger: &ledger, children_running: &|| false };
+        let listed = list_worktrees(&root, Some(&session));
+        let settled = ledger.finish_with(|_| 0);
+        let env_kept = env.root.join(".env").is_file();
+        let built_gone = !built.root.exists();
+        let trashed = std::fs::read_dir(trash_of(&root)).map_or(0, |e| e.count());
+        let _ = std::fs::remove_dir_all(&env.root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(
+            state_of(&listed, &env),
+            &CheckoutState::Uncommitted {
+                files: vec![".env".to_string()],
+                commits: 1,
+                off_branch: 0
+            }
+        );
+        assert_eq!(state_of(&listed, &built), &CheckoutState::Removable { commits: 1 });
+        let shown = state_of(&listed, &env).describe();
+        assert!(shown.starts_with("holds uncommitted work") && shown.contains(".env"), "{shown}");
+        assert!(env_kept, "the .env is still there");
+        assert_eq!(settled.kept.len(), 1, "{:?}", settled.kept);
+        assert!(settled.kept[0].contains("1 uncommitted file(s)"), "{:?}", settled.kept);
+        assert!(built_gone && trashed == 1, "build output alone does not keep it");
+    }
+
+    /// A child can write its checkout's `.git/info/exclude`: what that hides
+    /// is still the child's, so the checkout does not read as clean.
+    #[test]
+    fn a_file_hidden_by_the_checkouts_own_exclude_keeps_it() {
+        let Some(root) = repo("info-exclude") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        commit(&ws.root, "b.txt");
+        std::fs::write(ws.root.join(".git/info/exclude"), "notes.md\n").unwrap();
+        std::fs::write(ws.root.join("notes.md"), "mine\n").unwrap();
+        let kept = ledger.finish_session().kept;
+        let there = ws.root.join("notes.md").is_file();
+        let _ = std::fs::remove_dir_all(&ws.root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(there);
+        assert_eq!(kept.len(), 1, "{kept:?}");
+    }
+
+    /// A branch already in the user's repository needs no bringing back, so a
+    /// failed bring-back never keeps a checkout that holds nothing else, nor
+    /// lists it as kept while calling it removable.
+    #[test]
+    fn a_checkout_whose_branch_is_already_in_the_repository_goes_without_a_fetch() {
+        let Some(root) = repo("already") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        commit(&ws.root, "b.txt");
+        assert_eq!(ws.bring_back(), None);
+        // Any fetch from the checkout into the user's repository now fails.
+        let from = ws.root.join(".git").to_string_lossy().into_owned();
+        let nowhere = format!("url.{}.insteadOf", root.join("nowhere").display());
+        assert!(git(&root, &["config", &nowhere, &from]));
+        let session = Session { ledger: &ledger, children_running: &|| false };
+        let pruned = prune_worktrees(&root, Some(&session), &Prune::Safe);
+        let gone = !ws.root.exists();
+        let _ = ledger.finish_with(|_| 0);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(gone && pruned.kept.is_empty(), "{pruned:?}");
+        assert_eq!(pruned.removed.len(), 1, "{pruned:?}");
     }
 
     /// The settle brings a committed branch back itself; with two, one
@@ -3124,7 +3448,8 @@ mod git_tests {
         assert!(fetched.iter().all(Option::is_some), "{fetched:?}");
         let notices = settled.notices();
         assert_eq!(notices.len(), 1, "{notices:?}");
-        assert!(notices[0].starts_with("brought back 2 branches, removed their worktrees\n"));
+        assert!(notices[0].starts_with("brought back 2 branches, moved their worktrees to "));
+        assert!(notices[0].contains("; deleted after 7 days\n"), "{notices:?}");
         assert!(notices[0].contains(&branch(&a)) && notices[0].contains(&branch(&b)));
     }
 
@@ -3191,10 +3516,16 @@ mod git_tests {
         let fetched = crate::core::agent::git::resolve_commit(&root, &branch);
         let gone = !ws.root.exists();
         let record = meta_of(&root).join(format!("{}.json", id_of(&ws))).exists();
+        let bin = display(&dunce::canonicalize(trash_of(&root)).unwrap());
         let _ = std::fs::remove_dir_all(&root);
         assert!(gone && !record);
         assert_eq!(fetched.as_deref(), Some(tip.as_str()));
-        assert_eq!(told, [format!("brought back branch {branch}, removed its worktree")]);
+        assert_eq!(
+            told,
+            [format!(
+                "brought back branch {branch}, moved its worktree to {bin}; deleted after 7 days"
+            )]
+        );
     }
 
     /// Fill `root`'s project's shared build directory with `bytes` of output.
@@ -3342,7 +3673,7 @@ mod git_tests {
         let (ledger, other) = (Arc::new(Ledger::default()), Arc::new(Ledger::default()));
         let (ws, lease) = every_state(&root, &ledger, &other);
         fill_build_cache(&root, 4096);
-        let session = Session { ledger: &ledger, children_running: false };
+        let session = Session { ledger: &ledger, children_running: &|| false };
         let report = list_worktrees(&root, Some(&session));
         let headless = list_worktrees(&root, None);
         drop(lease);
@@ -3352,7 +3683,14 @@ mod git_tests {
         assert_eq!(report.checkouts.len(), 5, "{report:?}");
         assert_eq!(state_of(&report, &ws[0]), &CheckoutState::InUse { by: InUseBy::Child });
         assert_eq!(state_of(&report, &ws[1]), &CheckoutState::InUse { by: InUseBy::Session });
-        assert_eq!(state_of(&report, &ws[2]), &CheckoutState::Uncommitted { files: 1, commits: 0 });
+        assert_eq!(
+            state_of(&report, &ws[2]),
+            &CheckoutState::Uncommitted {
+                files: vec!["a.txt".to_string()],
+                commits: 0,
+                off_branch: 0
+            }
+        );
         assert_eq!(state_of(&report, &ws[3]), &CheckoutState::Unbrought { commits: 1 });
         assert_eq!(state_of(&report, &ws[4]), &CheckoutState::Removable { commits: 0 });
         assert!(report.checkouts.iter().all(|c| c.bytes > 0), "{report:?}");
@@ -3364,7 +3702,7 @@ mod git_tests {
         }
         let lines = report.lines().join("\n");
         assert!(lines.contains("build cache  4.0 KB"), "{lines}");
-        assert!(lines.contains("holds 1 uncommitted file(s)"), "{lines}");
+        assert!(lines.contains("holds uncommitted work: a.txt"), "{lines}");
     }
 
     /// The safe prune removes what session end would (bringing a committed
@@ -3375,12 +3713,13 @@ mod git_tests {
         let Some(root) = repo("prune-safe") else { return };
         let (ledger, other) = (Arc::new(Ledger::default()), Arc::new(Ledger::default()));
         let (ws, lease) = every_state(&root, &ledger, &other);
-        let session = Session { ledger: &ledger, children_running: false };
+        let session = Session { ledger: &ledger, children_running: &|| false };
         let pruned = prune_worktrees(&root, Some(&session), &Prune::Safe);
         let there = ws.each_ref().map(|w| w.root.is_dir());
         let branch = |w: &ChildWorkspace| w.worktree.as_ref().unwrap().branch.clone();
         let brought = crate::core::agent::git::resolve_commit(&root, &branch(&ws[3]));
         let live = ledger.live().len();
+        let trashed = std::fs::read_dir(trash_of(&root)).map_or(0, |e| e.count());
         drop(lease);
         let _ = ledger.finish_with(|_| 0);
         let _ = other.finish_with(|_| 0);
@@ -3391,9 +3730,11 @@ mod git_tests {
         assert_eq!(pruned.removed.len(), 2, "{pruned:?}");
         assert_eq!(pruned.brought, [branch(&ws[3])]);
         assert_eq!(pruned.kept.len(), 3, "{pruned:?}");
-        assert!(pruned.freed > 0);
+        // Moved to the trash, as session end does, not deleted.
+        assert!(pruned.freed == 0 && pruned.trashed > 0, "{pruned:?}");
+        assert_eq!(trashed, 2);
         assert_eq!(live, 2, "the ledger forgets what went (theirs is another's)");
-        assert!(pruned.notice().starts_with("removed 2 subagent worktree(s), freed "));
+        assert!(pruned.notice().starts_with("removed 2 subagent worktree(s); moved "));
     }
 
     /// A checkout a running subagent works in is never removed, whatever is
@@ -3408,10 +3749,10 @@ mod git_tests {
         let id = id_of(&busy);
         // A reader holds no lease: while any subagent runs, none of the
         // session's checkouts goes.
-        let running = Session { ledger: &ledger, children_running: true };
+        let running = Session { ledger: &ledger, children_running: &|| true };
         let pruned = prune_worktrees(&root, Some(&running), &Prune::All);
         assert!(reused.root.is_dir() && pruned.removed.is_empty(), "{pruned:?}");
-        let session = Session { ledger: &ledger, children_running: false };
+        let session = Session { ledger: &ledger, children_running: &|| false };
         for which in [Prune::Safe, Prune::All, Prune::One { id: id.clone(), force: true }] {
             let pruned = prune_worktrees(&root, Some(&session), &which);
             assert!(busy.root.is_dir(), "{which:?}");
@@ -3431,7 +3772,7 @@ mod git_tests {
         let Some(root) = repo("prune-force") else { return };
         let (ledger, other) = (Arc::new(Ledger::default()), Arc::new(Ledger::default()));
         let (ws, lease) = every_state(&root, &ledger, &other);
-        let session = Session { ledger: &ledger, children_running: false };
+        let session = Session { ledger: &ledger, children_running: &|| false };
         let unforced = Prune::One { id: id_of(&ws[2]), force: false };
         let kept = prune_worktrees(&root, Some(&session), &unforced);
         let dirty_kept = ws[2].root.is_dir();
@@ -3446,6 +3787,7 @@ mod git_tests {
         let _ = std::fs::remove_dir_all(&root);
         assert!(dirty_kept && kept.removed.is_empty(), "{kept:?}");
         assert!(dirty_gone && one.removed.len() == 1, "{one:?}");
+        assert!(one.freed > 0 && one.trashed == 0, "deleted at once: {one:?}");
         assert_eq!(there, [true, true, false, false, false], "{all:?}");
         assert_eq!(all.removed.len(), 2, "{all:?}");
     }
@@ -3459,10 +3801,10 @@ mod git_tests {
         let target = fill_build_cache(&root, 4096);
         let (ledger, other) = (Arc::new(Ledger::default()), Arc::new(Ledger::default()));
         let (_mine, lease) = ledger.assign(&root, "general", true, None).unwrap();
-        let session = Session { ledger: &ledger, children_running: false };
+        let session = Session { ledger: &ledger, children_running: &|| false };
         let busy = clear_build_cache(&root, Some(&session));
         drop(lease);
-        let running = Session { ledger: &ledger, children_running: true };
+        let running = Session { ledger: &ledger, children_running: &|| true };
         let reading = clear_build_cache(&root, Some(&running));
         let (_theirs, l2) = other.assign(&root, "general", true, None).unwrap();
         drop(l2);
@@ -3482,6 +3824,92 @@ mod git_tests {
         assert_eq!(cleared, Ok(4096));
         assert!(gone && trashed == 0, "deleted, not left in the trash");
         assert!(again.is_err_and(|e| e.contains("no subagent build cache")));
+    }
+
+    /// Any child given the build directory (a reader in the parent's own
+    /// checkout too, which holds no checkout lock) holds the build lock
+    /// shared, from another process as from this one: while it does, neither
+    /// the trim nor the clear touches the directory; once it lets go, both may.
+    #[test]
+    fn the_build_cache_is_neither_trimmed_nor_cleared_while_a_child_holds_it() {
+        let Some(root) = repo("build-lock") else { return };
+        let target = fill_build_cache(&root, 4096);
+        let reader = ChildWorkspace::shared(&root, true);
+        let placement = place(&reader, &root);
+        let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
+        let hold = apply(&mut args, &reader, placement);
+        assert!(hold.is_some(), "a reader building in the cache holds its lock");
+        let trimmed = trim_build_cache(&root, 1024);
+        let cleared = clear_build_cache(&root, None);
+        let kept = target.join("debug/deps/lib.rlib").is_file();
+        drop(hold);
+        // Another process's child: its own open of the lock file, held shared.
+        let other = open_build_lock(&project_worktrees_dir(&root).unwrap()).unwrap();
+        fs4::FileExt::lock_shared(&other).unwrap();
+        let elsewhere = clear_build_cache(&root, None);
+        drop(other);
+        let free = trim_build_cache(&root, 1024);
+        let gone = !target.exists();
+        let refilled = fill_build_cache(&root, 4096);
+        let cleared_free = clear_build_cache(&root, None);
+        let gone_again = !refilled.exists();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(trimmed, None);
+        assert!(cleared.is_err() && elsewhere.is_err(), "{cleared:?} {elsewhere:?}");
+        assert!(kept);
+        assert!(free.is_some() && gone, "{free:?}");
+        assert_eq!(cleared_free, Ok(4096));
+        assert!(gone_again);
+    }
+
+    /// A checkout this session kept at a conversation end is still held by
+    /// it until the user is told: `/worktrees` says so, rather than calling
+    /// it another session's, and prunes it as nobody's once told.
+    #[test]
+    fn a_checkout_held_after_a_conversation_end_is_labelled_as_this_sessions() {
+        let Some(root) = repo("settling") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        std::fs::write(ws.root.join("a.txt"), "edited\n").unwrap();
+        let settled = ledger.end_conversation().settle();
+        let session = Session { ledger: &ledger, children_running: &|| false };
+        let held = list_worktrees(&root, Some(&session));
+        let pruned = prune_worktrees(&root, Some(&session), &Prune::All);
+        let there = ws.root.is_dir();
+        settled.report(&mut |_| true);
+        let told = list_worktrees(&root, Some(&session));
+        let _ = std::fs::remove_dir_all(&ws.root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(state_of(&held, &ws), &CheckoutState::InUse { by: InUseBy::Settling });
+        assert!(state_of(&held, &ws).describe().contains("this session"));
+        assert!(there && pruned.removed.is_empty(), "{pruned:?}");
+        assert!(matches!(state_of(&told, &ws), CheckoutState::Uncommitted { .. }), "{told:?}");
+    }
+
+    /// The confirm names only what is really lost: a removal brings an
+    /// uncommitted checkout's branch back first, so only its files (and any
+    /// commit on no branch) are lost; an unbrought one loses its commits.
+    #[test]
+    fn the_loss_named_counts_only_what_a_removal_cannot_bring_back() {
+        let files = vec!["a.txt".to_string(), ".env".to_string()];
+        let dirty = CheckoutState::Uncommitted { files: files.clone(), commits: 3, off_branch: 0 };
+        assert_eq!(dirty.loses().as_deref(), Some("2 uncommitted file(s)"));
+        assert_eq!(
+            dirty.brings_back().as_deref(),
+            Some("its branch (3 commit(s)) is brought back to your repository first")
+        );
+        let stashed =
+            CheckoutState::Uncommitted { files: files.clone(), commits: 3, off_branch: 1 };
+        assert_eq!(
+            stashed.loses().as_deref(),
+            Some("2 uncommitted file(s) and 1 commit(s) on no branch")
+        );
+        let only_files = CheckoutState::Uncommitted { files, commits: 0, off_branch: 0 };
+        assert_eq!(only_files.brings_back(), None);
+        let ahead = CheckoutState::Unbrought { commits: 2 };
+        assert_eq!(ahead.loses().as_deref(), Some("2 commit(s) not in your repository"));
+        assert_eq!(ahead.brings_back(), None);
     }
 
     #[test]

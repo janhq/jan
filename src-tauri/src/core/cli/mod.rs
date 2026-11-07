@@ -1440,7 +1440,6 @@ pub fn cli_web_search_status() -> serde_json::Value {
     })
 }
 
-/// List plugins installed for a project.
 /// `jan cli worktrees list`: `project`'s subagent checkouts, each with its
 /// branch, size and state, then the build cache and trash; JSON with `json`.
 /// This process owns no checkout, so one a live session holds reads as in use.
@@ -1453,10 +1452,10 @@ pub fn cli_worktrees_list(project: &str, json: bool) -> String {
     }
 }
 
-/// `jan cli worktrees prune`: remove `project`'s subagent checkouts that are
-/// safe to remove (the session-end rule), or with `all` every one no live
-/// session holds, work included; with `build_cache`, then clear the shared
-/// build cache. What happened, for the user; `Err` only when the cache was
+/// `jan cli worktrees prune`: move `project`'s subagent checkouts that are
+/// safe to remove (the session-end rule) to the trash, or with `all` delete
+/// every one no live session holds, work included; with `build_cache`, then
+/// clear the shared build cache. What happened, for the user; `Err` only when the cache was
 /// asked for and could not be cleared.
 pub fn cli_worktrees_prune(project: &str, build_cache: bool, all: bool) -> Result<String, String> {
     use crate::core::agent::child_workspace as cw;
@@ -1475,6 +1474,7 @@ pub fn cli_worktrees_prune(project: &str, build_cache: bool, all: bool) -> Resul
     }
 }
 
+/// List plugins installed for a project.
 pub fn cli_plugin_list(project: &str) -> Vec<crate::core::agent::plugins::InstalledPlugin> {
     crate::core::agent::plugins::installed(&resolve_project_root(project))
 }

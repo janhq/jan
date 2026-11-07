@@ -1124,21 +1124,19 @@ impl Checkout {
         self.run(&["rev-list", "--count", "--all", "--not", base, "--"]).ok()?.parse().ok()
     }
 
-    /// [`try_changed_paths`] for this checkout. A nested repository (or a
-    /// recorded submodule) is never opened: its own config can name a program
-    /// (`core.fsmonitor`) that its status would run.
-    pub(crate) fn try_changed_paths(&self) -> Result<Vec<String>, String> {
-        changed_paths_with(|args| {
-            let mut full = args.to_vec();
-            full.push("--ignore-submodules=all");
-            self.run(&full)
-        })
+    /// What removing the checkout would lose besides its commits: every path
+    /// [`work_with`] reports, as one list for both the clean check and the
+    /// count the user is shown, so the two never disagree. A nested
+    /// repository (or a recorded submodule) is never opened: its own config
+    /// can name a program (`core.fsmonitor`) that its status would run.
+    pub(crate) fn uncommitted(&self) -> Result<Vec<String>, String> {
+        work_with(|args| Ok(String::from_utf8_lossy(&self.run_raw(args)?).into_owned()))
     }
 
     /// Whether the checkout has no uncommitted change. `Err` when git cannot
     /// tell, which a caller deciding on removal must never read as clean.
     pub(crate) fn is_clean(&self) -> Result<bool, String> {
-        Ok(!self.holds_submodule_work()? && clean_with(|args| self.run(args))?)
+        Ok(!self.holds_submodule_work()? && self.uncommitted()?.is_empty())
     }
 
     /// Whether a submodule holds anything: status never looks inside one (see
@@ -1243,23 +1241,69 @@ pub(crate) fn try_changed_paths(worktree: &Path) -> Result<Vec<String>, String> 
     changed_paths_with(|args| run(worktree, None, args))
 }
 
-/// The status [`Checkout::is_clean`] runs, split out so its arguments are
-/// testable. `--untracked-files=normal` shows a new directory as one `?? dir/`
-/// line instead of walking every file a child left in it (`node_modules`,
-/// build output), and still overrides a user's `status.showUntrackedFiles=no`,
-/// under which new files would read as clean and be deleted. The user's
-/// global excludes file is emptied too: what it hides is still the child's.
+/// Directories whose ignored contents are build output, which a checkout may
+/// be removed with: rebuilt by the next build, and never what a person wrote.
+/// Kept short on purpose: an ignored file anywhere else (a `.env`, local
+/// config, notes) is the child's work, since removal would delete it.
 #[cfg(feature = "cli")]
-fn clean_with(git: impl Fn(&[&str]) -> Result<String, String>) -> Result<bool, String> {
+const BUILD_OUTPUT_DIRS: [&str; 8] =
+    ["target", "node_modules", "dist", "build", ".next", "__pycache__", ".venv", ".gradle"];
+
+/// Extensions of ignored files that are build output wherever they are.
+#[cfg(feature = "cli")]
+const BUILD_OUTPUT_EXTS: [&str; 3] = ["o", "pyc", "class"];
+
+/// Whether the ignored `path` (as status names it, `/`-separated, a
+/// directory with a trailing `/`) is build output: under one of
+/// [`BUILD_OUTPUT_DIRS`] or with one of [`BUILD_OUTPUT_EXTS`].
+#[cfg(feature = "cli")]
+fn is_build_output(path: &str) -> bool {
+    let mut parts = path.trim_end_matches('/').split('/');
+    let last = parts.next_back().unwrap_or_default();
+    parts.any(|dir| BUILD_OUTPUT_DIRS.contains(&dir))
+        || BUILD_OUTPUT_DIRS.contains(&last)
+        || (!path.ends_with('/')
+            && last.rsplit_once('.').is_some_and(|(_, ext)| BUILD_OUTPUT_EXTS.contains(&ext)))
+}
+
+/// The status [`Checkout::uncommitted`] runs and how it is read, split out so
+/// both are testable. `--untracked-files=normal` shows a new directory as one
+/// `?? dir/` line instead of walking every file a child left in it, and still
+/// overrides a user's `status.showUntrackedFiles=no`, under which new files
+/// would read as clean and be deleted. Ignored paths are listed too
+/// (`--ignored=matching`, a wholly ignored directory as one line), and any
+/// that is not build output counts: an ignore rule says what not to commit,
+/// not what may be deleted. That also covers whatever the user's global
+/// excludes file (emptied anyway) or the checkout's own `.git/info/exclude`,
+/// which the child can write, hides. `-z`, so a path is never quoted and a
+/// rename's old name is its own field.
+#[cfg(feature = "cli")]
+fn work_with(git: impl Fn(&[&str]) -> Result<String, String>) -> Result<Vec<String>, String> {
     let args = [
         "-c",
         "core.excludesFile=",
         "status",
         "--porcelain",
+        "-z",
         "--untracked-files=normal",
+        "--ignored=matching",
         "--ignore-submodules=all",
     ];
-    Ok(git(&args)?.trim().is_empty())
+    let out = git(&args)?;
+    let mut fields = out.split('\0').filter(|f| !f.is_empty());
+    let mut work = Vec::new();
+    while let Some(field) = fields.next() {
+        let (code, path) = (field.get(..2).unwrap_or(field), field.get(3..).unwrap_or_default());
+        if code.contains(['R', 'C']) {
+            fields.next();
+        }
+        if code == "!!" && is_build_output(path) {
+            continue;
+        }
+        // A line git wrote in a shape not read here is still a change.
+        work.push(if path.is_empty() { field.to_string() } else { path.to_string() });
+    }
+    Ok(work)
 }
 
 #[cfg(feature = "cli")]
@@ -1840,7 +1884,7 @@ mod tests {
         assert_eq!(child.commits_on(&head, "--all"), None, "never an option");
         assert_eq!(child.commits_anywhere(&head), Some(1));
         std::fs::write(wt.join("c.txt"), "c\n").unwrap();
-        assert_eq!(child.try_changed_paths(), Ok(vec!["c.txt".to_string()]));
+        assert_eq!(child.uncommitted(), Ok(vec!["c.txt".to_string()]));
 
         assert_eq!(resolve_commit(&root, "jan/agent/child-1"), None, "not there yet");
         child.fetch_branch(&root, "jan/agent/child-1", LIMIT).unwrap();
@@ -1932,17 +1976,56 @@ mod tests {
     fn the_emptiness_check_lists_untracked_files_normally() {
         let seen = std::cell::RefCell::new(Vec::new());
         let answer = |out: Result<&str, &str>| {
-            clean_with(|args| {
+            work_with(|args| {
                 seen.borrow_mut().extend(args.iter().map(|a| a.to_string()));
                 out.map(str::to_string).map_err(str::to_string)
             })
         };
-        assert_eq!(answer(Ok("")), Ok(true));
+        assert_eq!(answer(Ok("")), Ok(vec![]));
         assert!(seen.borrow().iter().any(|a| a == "--untracked-files=normal"), "{seen:?}");
         assert!(seen.borrow().iter().any(|a| a == "core.excludesFile="), "{seen:?}");
+        assert!(seen.borrow().iter().any(|a| a == "--ignored=matching"), "{seen:?}");
         assert!(!seen.borrow().iter().any(|a| a == "--untracked-files=all"), "{seen:?}");
-        assert_eq!(answer(Ok("?? node_modules/")), Ok(false));
+        assert_eq!(answer(Ok("?? node_modules/\0")), Ok(vec!["node_modules/".to_string()]));
+        // A rename's second field is its old name, never a path of its own.
+        assert_eq!(answer(Ok("R  b.txt\0a.txt\0")), Ok(vec!["b.txt".to_string()]));
+        // Ignored build output is not work; any other ignored file is.
+        let ignored = "!! target/\0!! web/node_modules/\0!! src/x.o\0!! .env\0!! conf/\0";
+        assert_eq!(answer(Ok(ignored)), Ok(vec![".env".to_string(), "conf/".to_string()]));
         assert!(answer(Err("broken")).is_err());
+    }
+
+    /// A file only an ignore rule hides (a `.env`, local config) is work, as
+    /// is one hidden by the checkout's own `.git/info/exclude`, which a child
+    /// can write; ignored build output is not, so it never keeps a checkout.
+    #[test]
+    fn the_clean_check_sees_ignored_files_that_are_not_build_output() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("ignored");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/ignored-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".gitignore"), "ignored/\ntarget/\n.env\n").unwrap();
+        run(&wt, None, &["commit", "-qam", "ignore", "--no-gpg-sign"]).unwrap();
+        assert_eq!(child.is_clean(), Ok(true));
+
+        std::fs::create_dir_all(wt.join("target/debug")).unwrap();
+        std::fs::write(wt.join("target/debug/app"), "x").unwrap();
+        assert_eq!(child.is_clean(), Ok(true), "build output is not work");
+
+        std::fs::write(wt.join(".env"), "KEY=1\n").unwrap();
+        assert_eq!(child.is_clean(), Ok(false), "an ignored .env is");
+        assert_eq!(child.uncommitted(), Ok(vec![".env".to_string()]));
+        std::fs::remove_file(wt.join(".env")).unwrap();
+
+        std::fs::write(wt.join(".git/info/exclude"), "secret.txt\n").unwrap();
+        std::fs::write(wt.join("secret.txt"), "s\n").unwrap();
+        assert_eq!(child.is_clean(), Ok(false), "the checkout's own excludes hide nothing");
+        assert_eq!(child.uncommitted(), Ok(vec!["secret.txt".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A new directory full of files is work, even for a user who hides
