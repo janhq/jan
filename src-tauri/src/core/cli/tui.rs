@@ -43580,6 +43580,9 @@ fn a() {}
             .status()
             .is_ok_and(|s| s.success());
         assert!(ok);
+        // Work only the checkout holds, so it is kept: a clean one whose
+        // branch is brought back goes.
+        std::fs::write(work.root.join("notes.md"), "draft\n").unwrap();
         let branch = work.worktree.as_ref().unwrap().branch.clone();
         (idle.root, work.root, branch)
     }

@@ -235,6 +235,12 @@ pub(crate) struct AgentSection {
     /// run only.
     #[serde(default)]
     pub max_parallel_subagents: Option<u32>,
+    /// Largest the build directory shared by this project's subagents
+    /// (`~/.jan/worktrees/<slug>/cargo-target`) may grow, in GB, before a
+    /// session end moves it to the trash so the next build starts cold.
+    /// `None` defers to `~/.jan/config.toml`, then 20; 0 never trims.
+    #[serde(default)]
+    pub subagent_build_cache_max_gb: Option<u64>,
     /// Saved threads untouched for this many days are pruned at session start
     /// (default 90; 0 disables), when `prune_threads = true` in
     /// `~/.jan/config.toml` turns pruning on. The newest few, the resumed thread, forks'
@@ -328,6 +334,8 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# subagent_build_cache_max_gb = 20  # clear the subagents' shared cargo-target at session end once
+#                                   # it is larger than this; 0 never clears it
 # thread_retention_days = 90  # prune saved threads older than this at startup; 0 disables
 # max_threads = 500  # keep at most this many saved threads; 0 disables
 #                    # (both apply only with prune_threads = true in ~/.jan/config.toml)
@@ -612,6 +620,24 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
         #[cfg(feature = "cli")]
         worktree: cfg.agent.worktree,
     }
+}
+
+/// The default cap, in GB, on a project's shared subagent build directory.
+#[cfg(feature = "cli")]
+pub(crate) const DEFAULT_SUBAGENT_BUILD_CACHE_MAX_GB: u64 = 20;
+
+/// The cap, in bytes, on `project_root`'s shared subagent build directory:
+/// `[agent].subagent_build_cache_max_gb` in its agent.toml, else the same key
+/// in `~/.jan/config.toml`, else [`DEFAULT_SUBAGENT_BUILD_CACHE_MAX_GB`].
+/// `0` never trims. An unreadable agent.toml falls through, like every knob.
+#[cfg(feature = "cli")]
+pub(crate) fn subagent_build_cache_cap(project_root: &Path) -> u64 {
+    let gb = load_agent_config(project_root)
+        .ok()
+        .and_then(|cfg| cfg.agent.subagent_build_cache_max_gb)
+        .or_else(crate::core::agent::global_config::subagent_build_cache_max_gb_setting)
+        .unwrap_or(DEFAULT_SUBAGENT_BUILD_CACHE_MAX_GB);
+    gb.saturating_mul(1 << 30)
 }
 
 /// See [`RunSettings::tool_notices`].
@@ -1205,6 +1231,23 @@ mod tests {
         set_subagent_model(&path, "explorer", Some("b")).expect("inline write");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.subagents["explorer"].model.as_deref(), Some("b"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The project's cap wins, 0 is kept as "never", and an unset key falls
+    /// back to 20 GB.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn subagent_build_cache_cap_reads_the_project_key_in_gb() {
+        let root = unique_root("build_cache_cap");
+        ensure_project(&root).expect("scaffold");
+        assert_eq!(subagent_build_cache_cap(&root), 20 << 30, "template leaves it unset");
+        let path = agent_toml_path(&root);
+        for (value, bytes) in [(3i64, 3u64 << 30), (0, 0)] {
+            set_agent_key(&path, "subagent_build_cache_max_gb", Some(toml_edit::value(value)))
+                .expect("set");
+            assert_eq!(subagent_build_cache_cap(&root), bytes, "{value}");
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 
