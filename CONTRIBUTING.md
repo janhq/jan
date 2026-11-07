@@ -121,7 +121,6 @@ jan/
 │   ├── download-extension/
 │   └── llamacpp-extension/
 ├── docs/                 # Documentation website
-├── website/              # Marketing website
 ├── autoqa/               # Automated testing
 ├── scripts/              # Build utilities
 │
