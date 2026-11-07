@@ -135,6 +135,16 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  cloudgpu: {
+    models: ['deepseek-v4-flash', 'kimi-k2.6', 'glm-5.3', 'qwen3-coder-480b'],
+    supportsCompletion: true,
+    // Streaming, JSON, tool calls, and n are not in the public catalog.
+    supportsStreaming: false,
+    supportsJSON: false,
+    supportsImages: false,
+    supportsToolCalls: false,
+    supportsN: false,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,
