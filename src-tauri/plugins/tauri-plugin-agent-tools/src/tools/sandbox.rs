@@ -782,7 +782,10 @@ pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
 /// is glibc making the walk's own lookups, a component at a time, so the
 /// result is the same, but a failing call tells nothing of what it spent (a
 /// link into a deep directory walks all of it before a missing leaf fails),
-/// so it could not be charged. Elsewhere the calls are kept, since they also
+/// so it could not be charged. One difference is deliberate: the walk stops
+/// at `MAX_HOPS` links, as the kernel's `open` does (ELOOP), where glibc's
+/// `realpath` follows more; do not raise it to match, since a path no syscall
+/// can open must not be judged by where it would have led. Elsewhere the calls are kept, since they also
 /// spell the path as the roots are spelled (case; Windows applies `..`
 /// lexically), and a failing one is charged by the input's depth: a link
 /// there can cost more than it is charged.
