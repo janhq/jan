@@ -2217,7 +2217,8 @@ impl CompositeToolInvoker {
 pub(crate) const DENIED_BY_USER: &str = "denied by user";
 pub(crate) const DENIED_BY_POLICY: &str = "denied by project policy";
 pub(crate) const HIDDEN_PATH_REFUSED: &str = "refused: the Jan home";
-pub(crate) const TOO_COMPLEX_REFUSED: &str = "refused: the command is too large or convoluted";
+pub(crate) const TOO_COMPLEX_REFUSED: &str =
+    "refused: the command or path is too large or deeply nested";
 pub(crate) const PLAN_MODE_UNAVAILABLE: &str = "unavailable in plan_mode_read_only";
 pub(crate) const HOOK_DENIED: &str = "denied: ";
 
@@ -2332,8 +2333,8 @@ impl CompositeToolInvoker {
             }
             DenyReason::TooComplex => format!(
                 "ERROR: tool '{name}' was {TOO_COMPLEX_REFUSED} to check that it stays out of \
-                 the Jan home (~/.jan). It was not run. Split it into smaller commands, or \
-                 write a long script to a file and run that"
+                 the Jan home (~/.jan). It was not run. Split it into smaller calls or \
+                 shorten the path, or write a long script to a file and run that"
             ),
         }
     }

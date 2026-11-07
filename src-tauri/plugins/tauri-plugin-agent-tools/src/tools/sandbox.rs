@@ -237,18 +237,51 @@ pub fn in_hidden_root(project_root: &Path, hidden: &Path, raw: &str) -> bool {
 /// from there. The worktree exception stays keyed on `project_root`, since
 /// that, not where the shell stands, is the agent's working tree.
 pub fn in_hidden_root_from(project_root: &Path, base: &Path, hidden: &Path, raw: &str) -> bool {
-    let Ok(hidden) = canonicalize_lenient(hidden) else {
-        return false;
-    };
-    let Ok(resolved) = canonicalize_lenient(&resolve_path(base, raw)) else {
-        return false;
-    };
-    if !resolved.starts_with(&hidden) {
-        return false;
+    HiddenRoot::new(project_root, base, hidden).is_some_and(|h| h.holds(raw))
+}
+
+/// The hidden root, its worktree exception (see [`in_hidden_root`]) and the
+/// base relative paths resolve against, resolved once: a caller checking
+/// many paths (every token of a command) would otherwise re-resolve all
+/// three for each, which from a deep base cost every token a syscall per
+/// component of it.
+pub struct HiddenRoot {
+    hidden: PathBuf,
+    /// The project root when it is a worktree inside `hidden`.
+    worktree: Option<PathBuf>,
+    /// `base`, canonical when it resolves; else as given, and each path is
+    /// resolved from scratch.
+    base: Result<PathBuf, PathBuf>,
+}
+
+impl HiddenRoot {
+    /// `None` when `hidden` cannot be resolved: then nothing is in it.
+    pub fn new(project_root: &Path, base: &Path, hidden: &Path) -> Option<Self> {
+        let hidden = canonicalize_lenient(hidden).ok()?;
+        let worktree = project_root
+            .canonicalize()
+            .ok()
+            .filter(|root| *root != hidden && root.starts_with(&hidden));
+        let base = base.canonicalize().map_err(|_| base.to_path_buf());
+        Some(Self { hidden, worktree, base })
     }
-    match project_root.canonicalize() {
-        Ok(root) if root != hidden && root.starts_with(&hidden) => !resolved.starts_with(&root),
-        _ => true,
+
+    /// The resolved hidden root.
+    pub fn path(&self) -> &Path {
+        &self.hidden
+    }
+
+    /// [`in_hidden_root_from`] against this root and base.
+    pub fn holds(&self, raw: &str) -> bool {
+        let resolved = match &self.base {
+            Ok(dir) if !Path::new(raw).is_absolute() => resolve_from(dir, raw),
+            Ok(dir) | Err(dir) => canonicalize_lenient(&resolve_path(dir, raw)),
+        };
+        let Ok(resolved) = resolved else {
+            return false;
+        };
+        resolved.starts_with(&self.hidden)
+            && !self.worktree.as_ref().is_some_and(|w| resolved.starts_with(w))
     }
 }
 
@@ -280,9 +313,10 @@ pub fn in_hidden_root_from(project_root: &Path, base: &Path, hidden: &Path, raw:
 /// `None` when the command is too complex to check in bounded time: more
 /// than [`MAX_TOKENS`] tokens or [`MAX_TOKEN_BYTES`] of them, or one token
 /// with more start-dir candidates than [`start_dir_past_links`] allows. The
-/// caller resolves every token (a syscall per component), so a scan without
-/// a bound would stall the agent in the gate; it refuses the command instead,
-/// failing closed, and the model can split or simplify it.
+/// caller resolves every token, so a scan without a bound would stall the
+/// agent in the gate; it refuses the command instead, failing closed, and
+/// the model can split or simplify it. What resolving the tokens costs is
+/// bounded by the caller, with [`resolve_cost`].
 pub fn hidden_tokens(hidden: &Path, command: &str) -> Option<Vec<String>> {
     let home = hidden.parent().map(|h| h.to_string_lossy().into_owned());
     let words = command.split(|c: char| c.is_whitespace() || ";|&><()\"'`=".contains(c));
@@ -304,48 +338,54 @@ pub fn hidden_tokens(hidden: &Path, command: &str) -> Option<Vec<String>> {
         });
     let mut out = Vec::new();
     let mut bytes = 0;
-    let mut components = 0;
     for t in tokens {
         let start = start_dir_relative(&t);
         let linked = start_dir_past_links(&t)?;
         for t in std::iter::once(t).chain(start).chain(linked) {
             bytes += t.len();
-            components += path_components(&t);
             out.push(t);
         }
-        if out.len() > MAX_TOKENS || bytes > MAX_TOKEN_BYTES || components > MAX_COMPONENTS {
+        if out.len() > MAX_TOKENS || bytes > MAX_TOKEN_BYTES {
             return None;
         }
     }
     Some(out)
 }
 
-/// How many separators a token holds: the gate's cost to resolve it grows
-/// with the square of this (`canonicalize_lenient` re-resolves each prefix of
-/// a path that does not exist), so it is what [`MAX_COMPONENTS`] bounds.
-fn path_components(token: &str) -> usize {
-    token.bytes().filter(|b| *b == b'/' || *b == b'\\').count()
-}
-
-/// The most tokens [`hidden_tokens`] hands back for one command. Each costs
-/// the gate a few syscalls to resolve; this is far more words than a command
-/// a model writes by hand, a long heredoc included. Together with
-/// [`MAX_COMPONENTS`] it keeps the gate to a few seconds at worst.
-const MAX_TOKENS: usize = 100_000;
+/// The most tokens [`hidden_tokens`] hands back for one command: half again
+/// a 100k-word heredoc, far more than a model writes by hand. It bounds the
+/// scan's memory; the gate's time to resolve them is bounded by
+/// [`MAX_RESOLVE_COST`].
+const MAX_TOKENS: usize = 150_000;
 
 /// The most bytes of tokens [`hidden_tokens`] hands back for one command. A
 /// few times the largest command a model plausibly writes, since quoted and
-/// escaped words are counted twice. Bytes alone do not bound the gate's time:
-/// one long token of many components costs far more than many short words.
+/// escaped words are counted twice. Like [`MAX_TOKENS`] it bounds the scan's
+/// memory and time, not the resolving that follows.
 const MAX_TOKEN_BYTES: usize = 4 << 20;
 
-/// The most path separators across all tokens of one command. Resolving a
-/// token that does not exist re-resolves each of its prefixes, so its cost is
-/// quadratic in its components: one 400 KB path took the gate 20 s before
-/// this cap. Long tokens are capped rather than skipped, because brace
-/// expansion and other splitting the scan does not model can turn one long
-/// word into a short path.
-const MAX_COMPONENTS: usize = 64 * 1024;
+/// The most [`resolve_cost`] one gate decision may spend on all the paths it
+/// resolves (command tokens and path arguments together): a path 2048
+/// components deep, or a 150k-word command run from a directory 25 levels
+/// deep. A path syscall walks the path from the root, so the work is
+/// quadratic in a path's depth whichever way it is resolved: one path a
+/// model can send, made of real directories and `..`, took minutes. Up to
+/// this budget it takes about a second in a release build.
+pub const MAX_RESOLVE_COST: usize = 2048 * 2048;
+
+/// What the gate pays to resolve `raw` against a directory `base_depth`
+/// components deep, in path components walked: each component of the full
+/// path is a step, and each step walks the path so far. A bare word thus
+/// costs the depth of its directory; an absolute path ignores the base.
+///
+/// Counted from the text, so a symlink into a deep directory costs more than
+/// it is charged; the OS sandbox masking the home covers a confined run if
+/// that stalls the gate.
+pub fn resolve_cost(base_depth: usize, raw: &str) -> usize {
+    let own = raw.bytes().filter(|b| *b == b'/' || *b == b'\\').count() + 1;
+    let depth = if Path::new(raw).is_absolute() { own } else { own + base_depth };
+    own.saturating_mul(depth)
+}
 
 /// The most candidates [`start_dir_past_links`] makes from one token. Each
 /// is as long as the rest of the token, so without a cap a token of repeated
@@ -713,10 +753,13 @@ pub fn landing(
 /// project. A link's target is spliced in place of its name instead, relative
 /// targets against the link's own directory, as the kernel does. Too many hops
 /// (a cycle) is an error, so callers fail closed.
+///
+/// Linear in the path's length: below a component that does not exist (and
+/// is no link) nothing exists either, so the rest is appended without a
+/// syscall until a `..` climbs back out. A syscall per component on the whole
+/// prefix made one deep missing path a model sent cost the gate minutes.
 pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
     use std::path::Component;
-    // Linux's MAXSYMLINKS: the most hops `open` itself would follow.
-    const MAX_HOPS: usize = 40;
     if let Ok(p) = path.canonicalize() {
         return Ok(p);
     }
@@ -727,41 +770,86 @@ pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
             .map_err(|e| format!("current dir: {e}"))?
             .join(path)
     };
+    let parts: Vec<Component> = abs.components().collect();
+    let (seeded, resolved) = existing_prefix(&parts);
+    walk(path, resolved, &parts[seeded..])
+}
+
+/// [`canonicalize_lenient`] of a relative `raw` under `dir`, a canonical
+/// directory: walked from `dir` without resolving it again, so many paths
+/// under one deep directory do not each pay for its depth.
+fn resolve_from(dir: &Path, raw: &str) -> Result<PathBuf, String> {
+    let parts: Vec<std::path::Component> = Path::new(raw).components().collect();
+    walk(Path::new(raw), dir.to_path_buf(), &parts)
+}
+
+/// The walk of [`canonicalize_lenient`]: `parts` resolved one at a time onto
+/// `resolved`, which exists and is canonical (or is empty, and `parts`
+/// starts at a root). `path` names the whole path in an error.
+fn walk(
+    path: &Path,
+    mut resolved: PathBuf,
+    parts: &[std::path::Component],
+) -> Result<PathBuf, String> {
+    use std::path::Component;
+    // Linux's MAXSYMLINKS: the most hops `open` itself would follow.
+    const MAX_HOPS: usize = 40;
     // Components still to resolve, next one last so a link splices onto the end.
     let mut pending: Vec<std::ffi::OsString> =
-        abs.components().rev().map(|c| c.as_os_str().to_owned()).collect();
-    let mut resolved = PathBuf::new();
+        parts.iter().rev().map(|c| c.as_os_str().to_owned()).collect();
     let mut hops = 0;
+    // How many trailing components of `resolved` are not on disk; 0 while
+    // all of it exists (and is canonical).
+    let mut missing = 0usize;
     while let Some(raw) = pending.pop() {
         match Path::new(&raw).components().next() {
             Some(Component::Prefix(_) | Component::RootDir) => {
                 resolved.push(&raw);
+                missing = 0;
                 if let Ok(root) = resolved.canonicalize() {
                     resolved = root;
                 }
             }
             Some(Component::ParentDir) => {
                 resolved.pop();
+                missing = missing.saturating_sub(1);
+            }
+            Some(Component::Normal(name)) if missing > 0 => {
+                // Appended by hand: `push` onto a verbatim Windows path (the
+                // project root is one) re-collects all of it, which would make
+                // the walk quadratic again. `resolved` ends in a name here, so
+                // it needs the separator.
+                let s = resolved.as_mut_os_string();
+                s.push(std::path::MAIN_SEPARATOR_STR);
+                s.push(name);
+                missing += 1;
             }
             Some(Component::Normal(name)) => {
-                let candidate = resolved.join(name);
-                if let Ok(real) = candidate.canonicalize() {
-                    resolved = real;
+                resolved.push(name);
+                // `lstat` first: a name that is not there costs one syscall,
+                // where `canonicalize` would read every ancestor again first.
+                let Ok(meta) = std::fs::symlink_metadata(&resolved) else {
+                    missing = 1;
+                    continue;
+                };
+                if !meta.file_type().is_symlink() {
+                    if !spell_as_on_disk(&mut resolved) {
+                        missing = 1;
+                    }
                     continue;
                 }
-                let is_link = std::fs::symlink_metadata(&candidate)
-                    .is_ok_and(|m| m.file_type().is_symlink());
-                if !is_link {
-                    // Does not exist: nothing below it can be a link either way.
-                    resolved = candidate;
+                if let Ok(real) = resolved.canonicalize() {
+                    resolved = real;
                     continue;
                 }
                 hops += 1;
                 if hops > MAX_HOPS {
                     return Err(format!("too many levels of symbolic links in {:?}", path));
                 }
-                let target = std::fs::read_link(&candidate)
-                    .map_err(|e| format!("read link {:?}: {e}", candidate))?;
+                let target = std::fs::read_link(&resolved)
+                    .map_err(|e| format!("read link {:?}: {e}", resolved))?;
+                // The link's name gives way to its target.
+                resolved.pop();
                 // An absolute target restarts from its own root when its
                 // RootDir component is popped; a relative one stays here.
                 pending.extend(target.components().rev().map(|c| c.as_os_str().to_owned()));
@@ -770,6 +858,79 @@ pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
         }
     }
     Ok(resolved)
+}
+
+/// Respell `path`, a canonical directory joined with a name on disk that is
+/// no link, the way `canonicalize` would; false if that fails. On Linux it is
+/// already spelled so (`realpath` only follows links), and skipping the call
+/// saves a syscall per component of the whole prefix: a command of many
+/// `dir/..` steps paid seconds for it.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn spell_as_on_disk(path: &mut PathBuf) -> bool {
+    let _ = path;
+    true
+}
+
+/// [`spell_as_on_disk`] where the disk may be case-insensitive (macOS,
+/// Windows): `canonicalize` spells the name as stored, which is how the
+/// roots it is compared with are spelled.
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn spell_as_on_disk(path: &mut PathBuf) -> bool {
+    match path.canonicalize() {
+        Ok(real) => {
+            *path = real;
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// How many of `parts` (an absolute path's components) the OS resolves, up
+/// to the first `..`, and their real path; `(0, empty)` when none does. The
+/// walk in [`canonicalize_lenient`] starts from there: walked from the root,
+/// each existing component costs a `canonicalize` of its whole prefix, so
+/// every word of a command (a new leaf, as most are) paid that once per
+/// ancestor of the project root.
+///
+/// A binary search, as the OS resolves a path one component at a time: once
+/// a prefix fails every longer one does. That holds only without a `..`,
+/// which Windows applies lexically before it opens anything, hence the cut.
+/// Each probe stops at the first missing component, so it costs no more
+/// than the existing part however long the path is. The deepest candidate
+/// is probed first: for a new leaf, the usual miss, that is its directory,
+/// found in one probe.
+fn existing_prefix(parts: &[std::path::Component]) -> (usize, PathBuf) {
+    use std::path::Component;
+    let mut lead = parts.iter().take_while(|c| **c != Component::ParentDir).count();
+    // The caller already tried the whole path.
+    if lead == parts.len() {
+        lead -= 1;
+    }
+    // Never a bare Windows prefix (`C:`): that names the drive's cwd.
+    let root = parts
+        .iter()
+        .take_while(|c| matches!(c, Component::Prefix(_) | Component::RootDir))
+        .count()
+        .max(1);
+    let real = |n: usize| parts[..n].iter().collect::<PathBuf>().canonicalize().ok();
+    if lead < root {
+        return (0, PathBuf::new());
+    }
+    if let Some(path) = real(lead) {
+        return (lead, path);
+    }
+    let (mut found, mut lo, mut hi) = ((0, PathBuf::new()), root, lead - 1);
+    while lo <= hi {
+        let mid = lo + (hi - lo) / 2;
+        match real(mid) {
+            Some(path) => {
+                found = (mid, path);
+                lo = mid + 1;
+            }
+            None => hi = mid - 1,
+        }
+    }
+    found
 }
 
 #[cfg(test)]
@@ -1365,11 +1526,10 @@ mod tests {
         assert_eq!(hidden_tokens(jan, &many), None);
         let long = format!("cat {}", "x".repeat(MAX_TOKEN_BYTES + 1));
         assert_eq!(hidden_tokens(jan, &long), None);
-        // One deep path well under the byte cap: its components bound the
-        // gate's time, not its bytes.
-        let deep = format!("cat {}", "a/".repeat(MAX_COMPONENTS + 1));
-        assert!(deep.len() < MAX_TOKEN_BYTES);
-        assert_eq!(hidden_tokens(jan, &deep), None);
+        // A deep path is the gate's budget to refuse (`resolve_cost`), not
+        // the scan's: the scan hands it back whole.
+        let deep = format!("cat {}", "a/".repeat(100_000));
+        assert_eq!(hidden_tokens(jan, &deep).map(|t| t.len()), Some(2));
         let shallow = format!("cat {}", "a/".repeat(1000));
         assert!(hidden_tokens(jan, &shallow).is_some());
         let globs = |n: usize| format!("cat /proc/..{}", "/*".repeat(n));
@@ -1379,6 +1539,62 @@ mod tests {
         assert_eq!(tokens.len(), 2 + 1 + 3, "{tokens:?}");
         let script = "cat <<E > notes.md\nsome ordinary words\nE\n".repeat(2000);
         assert!(hidden_tokens(jan, &script).is_some());
+    }
+
+    /// A path that stops existing early costs no syscall per missing
+    /// component, so its resolution is linear in its length: a quadratic walk
+    /// took minutes on a path of this shape, which a model can send as one
+    /// tool argument.
+    #[test]
+    fn a_deep_missing_path_resolves_in_linear_time() {
+        let root = unique_root();
+        let comp = format!("{}/", "a".repeat(63));
+        let deep = root.join("missing").join(comp.repeat(DEEP));
+        let start = std::time::Instant::now();
+        let resolved = canonicalize_lenient(&deep).unwrap();
+        let took = start.elapsed();
+        assert!(took < std::time::Duration::from_secs(5), "{took:?}");
+        assert_eq!(resolved, root.canonicalize().unwrap().join("missing").join(comp.repeat(DEEP)));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Components after a missing one that climb back out of it with `..`
+    /// reach the disk again, so a link there is still followed.
+    #[cfg(unix)]
+    #[test]
+    fn a_climb_out_of_a_missing_tail_follows_links_again() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+        let climb = format!("missing/{}{}link/x", "a/".repeat(1000), "../".repeat(1001));
+        assert_eq!(
+            canonicalize_lenient(&root.join(&climb)).unwrap(),
+            outside.canonicalize().unwrap().join("x")
+        );
+        assert_eq!(escapes_project(&root, None, &climb), Ok(true));
+        // One `..` short stays in the missing tail, where nothing is a link.
+        let short = format!("missing/{}{}link/x", "a/".repeat(1000), "../".repeat(1000));
+        assert_eq!(
+            canonicalize_lenient(&root.join(&short)).unwrap(),
+            root.canonicalize().unwrap().join("missing/link/x")
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// Components in the path of the timing test, 63 bytes each: a 4 MB path,
+    /// just under the scan's byte cap, which a quadratic walk took minutes on.
+    const DEEP: usize = 65_000;
+
+    /// The cost is quadratic in a path's own depth and charges a bare word
+    /// the depth of the directory it is resolved in.
+    #[test]
+    fn resolve_cost_grows_with_depth() {
+        assert_eq!(resolve_cost(10, "word"), 11);
+        assert_eq!(resolve_cost(10, "src/a/b/c.rs"), 4 * 14);
+        assert_eq!(resolve_cost(10, "/usr/lib/x.so"), 4 * 4);
+        assert!(resolve_cost(0, &"a/".repeat(2048)) > MAX_RESOLVE_COST);
+        assert!(resolve_cost(10, &"a/".repeat(2000)) <= MAX_RESOLVE_COST);
     }
 
     #[test]

@@ -261,8 +261,9 @@ impl JanToolServer {
             Decision::HardDeny(DenyReason::TooComplex) => {
                 return (
                     format!(
-                        "ERROR: tool '{name}' was refused: the command is too complex to check; \
-                         split it, or write a long script to a file and run that"
+                        "ERROR: tool '{name}' was refused: the command or path is too large or \
+                         deeply nested to check; split it or shorten the path, or write a \
+                         long script to a file and run that"
                     ),
                     Vec::new(),
                 )

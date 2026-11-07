@@ -950,7 +950,8 @@ async fn execute_tool_inner(
         }
         Decision::HardDeny(gate::DenyReason::TooComplex) => {
             return Err(format!(
-                "tool '{name}' is denied: the command is too complex to check; split it, or \
+                "tool '{name}' is denied: the command or path is too large or deeply nested to \
+                 check; split it or shorten the path, or \
                  write a long script to a file and run that"
             )
             .into());

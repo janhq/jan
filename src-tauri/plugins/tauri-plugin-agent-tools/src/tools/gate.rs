@@ -6,7 +6,7 @@ use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
     canonicalize_lenient, escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root,
-    in_hidden_root_from, shell_reads_attached_from,
+    resolve_cost, shell_reads_attached_from, HiddenRoot, MAX_RESOLVE_COST,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -142,10 +142,12 @@ pub enum DenyReason {
     /// because the command itself may name nothing hidden: the fix is to
     /// move the shell back, which a message has to say.
     HiddenShellCwd,
-    /// The command is too large or convoluted for the token scan to finish
-    /// within its bounds, so it cannot be shown to stay out of the Jan home.
-    /// Told apart from [`DenyReason::Hidden`] because the command may name
-    /// nothing hidden: the fix is to simplify it, not to avoid a path.
+    /// The command, or a path argument, is too large or deeply nested to
+    /// resolve within the gate's budget (see
+    /// [`crate::tools::sandbox::MAX_RESOLVE_COST`]), so it cannot be shown to
+    /// stay out of the Jan home. Told apart from [`DenyReason::Hidden`]
+    /// because the call may name nothing hidden: the fix is to simplify it,
+    /// not to avoid a path.
     TooComplex,
 }
 
@@ -210,6 +212,17 @@ pub fn resolve_decision_with_cwd(
     if perms.is_denied(tool.name) {
         return Decision::HardDeny(DenyReason::Policy);
     }
+    // Every branch below resolves the path arguments, against the project
+    // root, so their cost is charged up front whatever else applies.
+    let root_depth = ctx.project_root.components().count();
+    let path_cost = tool
+        .path_args
+        .iter()
+        .filter_map(|key| args.get(key).and_then(|v| v.as_str()))
+        .fold(0usize, |sum, p| sum.saturating_add(resolve_cost(root_depth, p)));
+    if path_cost > MAX_RESOLVE_COST {
+        return Decision::HardDeny(DenyReason::TooComplex);
+    }
     // Ahead of allow rules and session grants, so neither an allowed tool name
     // nor a routine "allow writes" approval reaches keys, hooks or the agent's
     // own permissions.
@@ -244,9 +257,9 @@ pub fn resolve_decision_with_cwd(
             ),
             _ => false,
         };
-        let hidden_hit = |p: &str| {
-            in_hidden_root_from(ctx.project_root, base, hidden, p) && !carved(p)
-        };
+        // Resolved once for the decision, not once per token.
+        let hidden_root = HiddenRoot::new(ctx.project_root, base, hidden);
+        let hidden_hit = |p: &str| hidden_root.as_ref().is_some_and(|h| h.holds(p)) && !carved(p);
         let hits_path = tool.path_args.iter().any(|key| {
             args.get(key)
                 .and_then(|v| v.as_str())
@@ -270,6 +283,18 @@ pub fn resolve_decision_with_cwd(
             },
             _ => Vec::new(),
         };
+        // Each distinct token once: the words of a long heredoc mostly
+        // repeat, and the answer for a word does not change within the call.
+        let tokens: std::collections::HashSet<&str> = tokens.iter().map(String::as_str).collect();
+        // Charged against what is left of the budget: each token is
+        // resolved against `base`, the held cwd for a shell.
+        let base_depth = base.components().count();
+        let token_cost = tokens
+            .iter()
+            .fold(path_cost, |sum, t| sum.saturating_add(resolve_cost(base_depth, t)));
+        if token_cost > MAX_RESOLVE_COST {
+            return Decision::HardDeny(DenyReason::TooComplex);
+        }
         let hits_command = tokens.iter().any(|t| hidden_hit(t));
         // An escalated command runs on the host from the held directory
         // whatever it names, so that directory is a token too: one in the
@@ -286,10 +311,10 @@ pub fn resolve_decision_with_cwd(
         // catches reach the home from there. Pre-existing and the same as
         // before held directories existed; only a held one is refused here.
         let starts_hidden = |held: &Path| {
-            let above = canonicalize_lenient(hidden)
-                .ok()
+            let above = hidden_root
+                .as_ref()
                 .zip(canonicalize_lenient(held).ok())
-                .map_or(true, |(hidden, held)| hidden.starts_with(held));
+                .map_or(true, |(hidden, held)| hidden.path().starts_with(held));
             above || hidden_hit(".")
         };
         if !shell_reads_only
@@ -1267,6 +1292,92 @@ mod tests {
             &grants,
         );
         assert_eq!(in_writable, Decision::HardDeny(DenyReason::Hidden));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The gate's time is bounded for any argument a model can send. A path
+    /// within the budget is decided as before; one past it (a path argument
+    /// had no cap at all, and a command just under the scan's caps can be one
+    /// deep path) is refused as too complex instead of taking minutes.
+    #[test]
+    fn a_deep_path_is_decided_quickly() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let path = |n: usize| format!("missing/{}", format!("{}/", "a".repeat(63)).repeat(n));
+        let (fits, deep) = (path(1500), path(60_000));
+        let cat = |p: &str| json!({"command": format!("cat {p}")});
+        let perms = ToolPermissions::default();
+        let grants = SessionGrants::default();
+        let refused = || Decision::HardDeny(DenyReason::TooComplex);
+        for (tool, args, want) in [
+            ("read", json!({"path": fits}), Decision::Allow),
+            ("shell", cat(&fits), Decision::Prompt(PromptKind::Exec)),
+            ("read", json!({"path": deep}), refused()),
+            ("write", json!({"path": deep, "content": ""}), refused()),
+            ("shell", cat(&deep), refused()),
+        ] {
+            let start = std::time::Instant::now();
+            let d = resolve_decision(lookup(tool).unwrap(), &args, &ctx, &perms, &grants);
+            let took = start.elapsed();
+            assert_eq!(d, want, "{tool}");
+            assert!(took < std::time::Duration::from_secs(5), "{tool}: {took:?}");
+        }
+        // Without a hidden root a path argument is still resolved, so the
+        // budget applies there too.
+        let open = GateContext { hidden_root: None, ..ctx };
+        let args = json!({"path": path(60_000)});
+        let d = resolve_decision(lookup("read").unwrap(), &args, &open, &perms, &grants);
+        assert_eq!(d, refused());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Realistic large calls stay well inside the budget: a long prose or
+    /// path-filled heredoc, a long `find`, and a deeply held shell cwd.
+    #[test]
+    fn realistic_large_commands_fit_the_budget() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        let project = home.join("proj");
+        let held = project.join("l/".repeat(15));
+        std::fs::create_dir_all(&held).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let words = "the quick brown fox jumps over the lazy dog and keeps going ";
+        let prose = format!("cat <<E > notes.md\n{}E\n", words.repeat(300_000 / words.len()));
+        let paths = format!("cat <<E > notes.md\n{}E\n", "see src/a/b/c.rs here\n".repeat(2000));
+        let find = format!("find .{}", " -path ./src/a/b/c.rs -o".repeat(2000));
+        let many = format!("cat <<E > notes.md\n{}E\n", "word ".repeat(100_000));
+        let shell = |c: &str, cwd: Option<&Path>| {
+            resolve_decision_with_cwd(
+                lookup("shell").unwrap(),
+                &json!({"command": c}),
+                &ctx,
+                cwd,
+                &ToolPermissions::default(),
+                &SessionGrants::default(),
+            )
+        };
+        for c in [&prose, &paths, &find, &many] {
+            for cwd in [None, Some(held.as_path())] {
+                assert_eq!(shell(c, cwd), Decision::Prompt(PromptKind::Exec), "{}", &c[..40]);
+            }
+        }
         let _ = std::fs::remove_dir_all(&home);
     }
 
