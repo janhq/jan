@@ -45,6 +45,8 @@ jan <COMMAND>
 | `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |
 | `--worktree` | Work in a dedicated git worktree instead of the project directory. Off by default |
 | `--no-worktree` | Work in the project directory, overriding a persistent `worktree` setting |
+| `--subagent-worktrees` | Give each subagent that can write its own git worktree unless it asks for another `workspace`. Off by default: it edits your checkout. See [Where a subagent works](/docs/agent/subagents#where-a-subagent-works) |
+| `--no-subagent-worktrees` | Subagents edit your checkout, overriding `[agent].subagent_worktrees` |
 | `--provider <ID>` | Target a specific provider for this run |
 | `--api-key <KEY>` | API key for that provider |
 | `--base-url <URL>` | Base URL for the `--provider` named, e.g. a gateway. Requires `--provider`. See [Using a gateway](/docs/agent/providers#using-a-gateway) |
@@ -108,6 +110,8 @@ jan cli agent run --max-turns 5 --max-session-tokens 20000 "triage the build fai
 | `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |
 | `--worktree` | Work in a dedicated git worktree instead of the project directory. Off by default |
 | `--no-worktree` | Work in the project directory, overriding a persistent `worktree` setting |
+| `--subagent-worktrees` | Give each subagent that can write its own git worktree unless it asks for another `workspace`. Off by default: it edits your checkout |
+| `--no-subagent-worktrees` | Subagents edit your checkout, overriding `[agent].subagent_worktrees` |
 | `--max-turns <N>` | Hard cap on agentic turns. If the model is still calling tools at N the run fails with `reached the N-turn limit...` and exits `53`; with `--output-format json` the partial answer is still in `result`. Bounds the parent run only - subagent turns are not counted. `0` means unbounded, which is the default |
 | `--max-session-tokens <N>` | Advisory token ceiling for this run, overriding `[budget].max_tokens`. Records a note when passed (it does not compact); it does not terminate the run. `0` means no ceiling |
 | `--max-budget-usd <USD>` | Stop the run once it has spent this much, overriding `[budget].max_usd`. Priced from the provider's published rates, so a model with no published price is **refused** rather than run uncapped - including a subagent whose definition names its own model. Subagents inherit the ceiling. Compaction is billed against it like any other request. Stopping this way exits `0` with `stop_reason: budget_exceeded`; `0` as a limit stops at the first billed request |
