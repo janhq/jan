@@ -43,6 +43,13 @@ export const WEB_SEARCH_PROVIDERS: WebSearchProviderMeta[] = [
     secretKey: 'you-api-key',
     homepage: 'you.com',
   },
+  {
+    id: 'specstream',
+    label: 'SpecStream',
+    keyless: false,
+    secretKey: 'specstream-api-key',
+    homepage: 'specstream.ai',
+  },
 ]
 
 export const DEFAULT_SEARCH_PROVIDER = 'exa'

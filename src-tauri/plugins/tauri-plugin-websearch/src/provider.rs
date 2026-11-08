@@ -33,6 +33,9 @@ const EXA_REST_CONTENTS_URL: &str = "https://api.exa.ai/contents";
 const TAVILY_SEARCH_URL: &str = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL: &str = "https://api.tavily.com/extract";
 
+const SPECSTREAM_SEARCH_URL: &str = "https://api.specstream.ai/v1/web-search";
+const SPECSTREAM_EXTRACT_URL: &str = "https://api.specstream.ai/v1/extract";
+
 const YOU_COM_HOSTED_URL: &str = "https://api.you.com/mcp?profile=free";
 // Identifies the calling application to You.com, per the convention its other
 // integrations follow. Carries no user or query data beyond the request itself,
@@ -122,6 +125,13 @@ pub const PROVIDERS: &[ProviderMeta] = &[
         secret_key: Some("you-api-key"),
         requires_endpoint: false,
     },
+    ProviderMeta {
+        id: "specstream",
+        label: "SpecStream",
+        keyless: false,
+        secret_key: Some("specstream-api-key"),
+        requires_endpoint: false,
+    },
 ];
 
 /// Look up a backend by id (case-insensitive; empty/absent is the default).
@@ -177,6 +187,7 @@ pub fn create_provider(
         Some("tavily") => Ok(Box::new(TavilyProvider::new(api_key)?)),
         Some("searxng") => Ok(Box::new(SearxngProvider::new(endpoint)?)),
         Some("you") => Ok(Box::new(YouComProvider::new(api_key)?)),
+        Some("specstream") => Ok(Box::new(SpecStreamProvider::new(api_key)?)),
         Some(other) => Err(format!("Unknown web search provider '{other}'")),
     }
 }
@@ -675,6 +686,135 @@ fn normalize_tavily_extract(body: &Value, requested_url: &str) -> Result<Fetched
     Ok(FetchedPage {
         url,
         title: String::new(),
+        content,
+        truncated,
+    })
+}
+
+/// SpecStream backend (key-only). `/v1/web-search` answers a question from the
+/// live web and `/v1/extract` reads a page as Markdown; both reply with the
+/// payload wrapped in a `data` object and take a bearer token.
+pub struct SpecStreamProvider {
+    api_key: String,
+    client: reqwest::Client,
+}
+
+impl SpecStreamProvider {
+    pub fn new(api_key: Option<String>) -> Result<Self, String> {
+        Ok(Self {
+            api_key: require_key("SpecStream", api_key)?,
+            client: build_http_client("SpecStream")?,
+        })
+    }
+
+    async fn send(&self, request: reqwest::RequestBuilder) -> Result<Value, String> {
+        let resp = request
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(|e| format!("SpecStream request failed: {e}"))?;
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("SpecStream: failed to read response body: {e}"))?;
+        if !status.is_success() {
+            return Err(format!(
+                "SpecStream failed with HTTP {}: {}",
+                status.as_u16(),
+                text.chars().take(400).collect::<String>()
+            ));
+        }
+        serde_json::from_str(&text).map_err(|e| format!("SpecStream: invalid JSON response: {e}"))
+    }
+}
+
+#[async_trait]
+impl SearchProvider for SpecStreamProvider {
+    async fn search(&self, query: &str, count: u32) -> Result<Vec<SearchResult>, String> {
+        let parsed = self
+            .send(self.client.get(SPECSTREAM_SEARCH_URL).query(&[("q", query)]))
+            .await?;
+        Ok(normalize_specstream_search(&parsed, count))
+    }
+
+    async fn fetch(&self, url: &str) -> Result<FetchedPage, String> {
+        let parsed = self
+            .send(
+                self.client
+                    .post(SPECSTREAM_EXTRACT_URL)
+                    .json(&json!({ "urls": [url], "format": "markdown" })),
+            )
+            .await?;
+        normalize_specstream_extract(&parsed, url)
+    }
+}
+
+/// The search API has no result count parameter, so `count` trims the ranked
+/// `sources` here.
+fn normalize_specstream_search(body: &Value, count: u32) -> Vec<SearchResult> {
+    let Some(sources) = body
+        .get("data")
+        .and_then(|d| d.get("sources"))
+        .and_then(|v| v.as_array())
+    else {
+        return Vec::new();
+    };
+    sources
+        .iter()
+        .take(count as usize)
+        .map(|r| {
+            let title = r.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            let url = r.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            let snippet = r
+                .get("snippet")
+                .and_then(|v| v.as_str())
+                .map(|t| clip_chars(t, 500))
+                .unwrap_or_default();
+            let published_at = r
+                .get("published")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            SearchResult {
+                title: title.to_string(),
+                url: url.to_string(),
+                snippet,
+                published_at,
+            }
+        })
+        .collect()
+}
+
+fn normalize_specstream_extract(body: &Value, requested_url: &str) -> Result<FetchedPage, String> {
+    let first = body
+        .get("data")
+        .and_then(|d| d.get("results"))
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .ok_or_else(|| format!("SpecStream returned no content for {requested_url}"))?;
+    let status = first.get("status").and_then(|v| v.as_str()).unwrap_or("");
+    if status != "ok" {
+        return Err(format!(
+            "SpecStream could not read {requested_url} (status: {})",
+            if status.is_empty() { "unknown" } else { status }
+        ));
+    }
+    let url = first
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or(requested_url)
+        .to_string();
+    let title = first
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let text = first.get("text").and_then(|v| v.as_str()).unwrap_or("");
+    let (content, truncated) = bound_text(text);
+    Ok(FetchedPage {
+        url,
+        title,
         content,
         truncated,
     })
@@ -1378,6 +1518,84 @@ mod tests {
     #[test]
     fn normalize_tavily_extract_no_results_errors() {
         assert!(normalize_tavily_extract(&json!({"results": []}), "u").is_err());
+    }
+
+    #[test]
+    fn normalize_specstream_search_maps_contract() {
+        let body = json!({
+            "data": {
+                "answer": null,
+                "sources": [
+                    {
+                        "url": "https://example.com",
+                        "title": "Example",
+                        "site": "example.com",
+                        "snippet": "A short excerpt.",
+                        "cited": true,
+                        "published": "2026-05-01"
+                    },
+                    { "url": "https://example.org", "title": "No date", "site": "example.org", "snippet": "Body.", "cited": false, "published": null }
+                ]
+            }
+        });
+        let results = normalize_specstream_search(&body, 5);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].url, "https://example.com");
+        assert_eq!(results[0].snippet, "A short excerpt.");
+        assert_eq!(results[0].published_at.as_deref(), Some("2026-05-01"));
+        assert!(results[1].published_at.is_none());
+    }
+
+    #[test]
+    fn normalize_specstream_search_trims_to_count() {
+        let sources: Vec<Value> = (0..8)
+            .map(|i| json!({ "url": format!("https://example.com/{i}"), "title": "t", "snippet": "s" }))
+            .collect();
+        let body = json!({ "data": { "sources": sources } });
+        assert_eq!(normalize_specstream_search(&body, 3).len(), 3);
+    }
+
+    #[test]
+    fn normalize_specstream_search_empty_is_empty() {
+        assert!(normalize_specstream_search(&json!({}), 5).is_empty());
+        assert!(normalize_specstream_search(&json!({"data": {"sources": []}}), 5).is_empty());
+    }
+
+    #[test]
+    fn normalize_specstream_extract_reads_text() {
+        let body = json!({
+            "data": { "results": [
+                { "url": "https://example.com", "status": "ok", "title": "Example", "text": "hello world" }
+            ] }
+        });
+        let page = normalize_specstream_extract(&body, "https://example.com").unwrap();
+        assert_eq!(page.title, "Example");
+        assert_eq!(page.content, "hello world");
+        assert!(!page.truncated);
+    }
+
+    #[test]
+    fn normalize_specstream_extract_unread_page_errors() {
+        for status in ["blocked", "not_found", "empty", "unsupported", "invalid_url", "failed"] {
+            let body = json!({ "data": { "results": [ { "url": "u", "status": status, "text": "" } ] } });
+            let err = normalize_specstream_extract(&body, "u").unwrap_err();
+            assert!(err.contains(status), "{err}");
+        }
+    }
+
+    #[test]
+    fn normalize_specstream_extract_no_results_errors() {
+        assert!(normalize_specstream_extract(&json!({"data": {"results": []}}), "u").is_err());
+        assert!(normalize_specstream_extract(&json!({}), "u").is_err());
+    }
+
+    #[test]
+    fn create_provider_specstream_requires_key() {
+        match create_provider(Some("specstream"), None, None) {
+            Ok(_) => panic!("expected SpecStream to require a key"),
+            Err(e) => assert!(e.contains("SpecStream")),
+        }
+        assert!(create_provider(Some("specstream"), Some("sk-abc".into()), None).is_ok());
     }
 
     #[test]
