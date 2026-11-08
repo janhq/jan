@@ -235,6 +235,12 @@ pub(crate) struct AgentSection {
     /// run only.
     #[serde(default)]
     pub max_parallel_subagents: Option<u32>,
+    /// Give a subagent that can write or edit, and asked for no `workspace`, a
+    /// git worktree of its own. `None` and `false`: it works in the parent's
+    /// checkout, so concurrent writers edit the same files. Overridden by
+    /// `--subagent-worktrees`.
+    #[serde(default)]
+    pub subagent_worktrees: Option<bool>,
     /// Largest the build directory shared by this project's subagents
     /// (`~/.jan/worktrees/<slug>/cargo-target`) may grow, in GB, before a
     /// session end moves it to the trash so the next build starts cold.
@@ -334,6 +340,8 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# subagent_worktrees = false  # true: a subagent that can write gets its own git worktree; false
+#                             # (default): it edits your checkout, shared with its siblings
 # subagent_build_cache_max_gb = 20  # clear the subagents' shared cargo-target at session end once
 #                                   # it is larger than this; 0 never clears it
 # thread_retention_days = 90  # prune saved threads older than this at startup; 0 disables
@@ -1276,6 +1284,19 @@ mod tests {
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.max_parallel_subagents, None);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Off unless asked for: the scaffold leaves the key unset, and an explicit
+    /// value reads back both ways.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn subagent_worktrees_parses_and_defaults_to_none() {
+        let cfg: AgentToml = toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
+        assert_eq!(cfg.agent.subagent_worktrees, None, "template leaves it unset");
+        let on: AgentToml = toml::from_str("[agent]\nsubagent_worktrees = true\n").expect("parses");
+        assert_eq!(on.agent.subagent_worktrees, Some(true));
+        let off: AgentToml = toml::from_str("[agent]\nsubagent_worktrees = false\n").expect("parses");
+        assert_eq!(off.agent.subagent_worktrees, Some(false));
     }
 
     #[cfg(feature = "cli")]

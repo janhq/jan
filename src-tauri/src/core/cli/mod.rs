@@ -1600,6 +1600,8 @@ fn build_cli_orchestration_args(
         project_memory: true,
         subagents_enabled: true,
         max_parallel_subagents,
+        // Filled in by `prepare_agent_session`, which reads the flag and agent.toml.
+        subagent_worktrees: false,
         auto_approve,
         run_mode: if plan {
             crate::core::agent::plan::RunMode::Plan
@@ -1852,6 +1854,11 @@ pub struct SessionFlags {
     /// defers to `[agent].worktree`, then the global `worktree`, then the CLI
     /// default of off.
     pub worktree: Option<bool>,
+    /// `--subagent-worktrees`: a subagent that can write gets its own worktree
+    /// unless it asks for another workspace. `None` (not passed) defers to
+    /// `[agent].subagent_worktrees`, then the default of off: it shares the
+    /// session's checkout.
+    pub subagent_worktrees: Option<bool>,
     /// `--max-turns`: hard cap on agentic turns, and the only setting that
     /// ends a run. `None` (not passed) leaves the run unbounded by turns; `0`
     /// is unbounded as well.
@@ -2196,6 +2203,9 @@ fn prepare_agent_session(
         reserve_tokens: cfg.agent.compaction_reserve_tokens,
         window_pinned: cfg.agent.context_window.is_some(),
     });
+
+    args.subagent_worktrees =
+        worktree::resolve_subagent_worktrees(flags.subagent_worktrees, cfg.agent.subagent_worktrees);
 
     let session_budget = resolve_session_budget(
         flags.max_session_tokens,
@@ -5632,8 +5642,8 @@ mod tests {
         let root = dunce::canonicalize(dir.path()).unwrap();
         let project = root.to_string_lossy().into_owned();
         let (live, crashed) = (Arc::new(Ledger::default()), Arc::new(Ledger::default()));
-        let (held, _) = live.assign(&root, "held", true, None).unwrap();
-        let (left, _) = crashed.assign(&root, "left", true, None).unwrap();
+        let (held, _) = live.assign(&root, "held", true, None, true).unwrap();
+        let (left, _) = crashed.assign(&root, "left", true, None, true).unwrap();
         // Its process died: the lock drops, the checkout stays.
         drop(crashed);
         let target = crate::core::agent::child_workspace::project_worktrees_dir(&root)

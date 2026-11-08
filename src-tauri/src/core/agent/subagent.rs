@@ -2746,11 +2746,12 @@ async fn assign_dispatch(
         let root = project_root.clone();
         let name = name.clone();
         let request = req.workspace.clone();
+        let worktrees = parent_args.subagent_worktrees;
         tokio::task::spawn_blocking(move || {
             let (ws, lease) = scope
                 .bg
                 .workspaces
-                .assign(&root, &name, writer, request.as_ref())
+                .assign(&root, &name, writer, request.as_ref(), worktrees)
                 .map_err(SubagentError::Upstream)?;
             // Checked here too, not only under the registry lock: a run
             // cancelled while git worked drops this dispatch's future, and
@@ -4091,7 +4092,7 @@ pub fn subagent_tool_schemas(
     if cfg!(feature = "cli") {
         tools[0]["function"]["parameters"]["properties"]["subagents"]["items"]["properties"]
             ["workspace"] = json!({
-            "description": "Optional; where the subagent works. OMIT for the default: one that can write or edit gets a fresh worktree (a clone of its own) on its own branch, any other works read-only in your checkout. \"new\": a fresh worktree. \"shared\": your checkout. The name of an earlier subagent: that subagent's workspace (one writer at a time). In a later phase, an agent (e.g. \"general\") or worker name of an item in an earlier phase of this same call means that item's workspace, whatever it ends up named; if several earlier-phase items use that agent the reference is ambiguous and the dispatch is refused with their worker names, so name one of those instead. {\"ref\": \"<git ref>\"}: a fresh worktree at that ref, fetched if needed (e.g. pull/123/head).",
+            "description": "Optional; where the subagent works. OMIT for the default: one that can write or edit works in your checkout, shared with you and with any sibling writer (concurrent writers can overwrite each other, so give parallel writers disjoint files or \"new\"); only when the user turned on subagent worktrees (--subagent-worktrees, or subagent_worktrees under [agent] in agent.toml) does it get a fresh worktree (a clone of its own) on its own branch. Any other subagent works read-only in your checkout. The dispatch result says where it works. \"new\": a fresh worktree, whatever that setting. \"shared\": your checkout. The name of an earlier subagent: that subagent's workspace (one writer at a time). In a later phase, an agent (e.g. \"general\") or worker name of an item in an earlier phase of this same call means that item's workspace, whatever it ends up named; if several earlier-phase items use that agent the reference is ambiguous and the dispatch is refused with their worker names, so name one of those instead. {\"ref\": \"<git ref>\"}: a fresh worktree at that ref, fetched if needed (e.g. pull/123/head).",
             "anyOf": [
                 { "type": "string" },
                 {
@@ -5783,6 +5784,7 @@ pub(crate) mod tests {
             project_memory: true,
             subagents_enabled: true,
             max_parallel_subagents: 1,
+            subagent_worktrees: false,
             auto_approve: false,
             monitors: None,
             bg_shells: None,
@@ -6141,7 +6143,8 @@ pub(crate) mod tests {
         }
         write_def(&project_subagents_dir(&root), "writer", "");
         write_def(&project_subagents_dir(&root), "reader", "allowed_tools = [\"read\"]\n");
-        let args = max_par_args(&root);
+        let mut args = max_par_args(&root);
+        args.subagent_worktrees = true;
         let bg = Arc::new(BackgroundSubagents::new(2));
         let (events_tx, _events_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.install_session_events(events_tx.clone());
@@ -6193,7 +6196,7 @@ pub(crate) mod tests {
         assert_eq!(bg.workspaces.live(), before, "the earlier worktrees stay");
         for name in ["reader", "writer"] {
             let reuse = WorkspaceRequest::Reuse(name.to_string());
-            let again = bg.workspaces.assign(&root, "next", false, Some(&reuse));
+            let again = bg.workspaces.assign(&root, "next", false, Some(&reuse), true);
             assert!(again.is_ok(), "{name}: {:?}", again.err());
         }
         let _ = bg.workspaces.finish_session();
@@ -6214,7 +6217,8 @@ pub(crate) mod tests {
             return;
         }
         write_def(&project_subagents_dir(&root), "writer", "");
-        let args = max_par_args(&root);
+        let mut args = max_par_args(&root);
+        args.subagent_worktrees = true;
         let bg = Arc::new(BackgroundSubagents::new(1));
         let (events_tx, _events_rx) = tokio::sync::mpsc::unbounded_channel();
         // Queued behind the only permit, so it is still holding its lease.
@@ -6232,11 +6236,11 @@ pub(crate) mod tests {
         .unwrap();
         assert!(d.workspace.contains("worktree"), "{}", d.workspace);
         let reuse = WorkspaceRequest::Reuse("writer".to_string());
-        let busy = bg.workspaces.assign(&root, "next", true, Some(&reuse)).unwrap_err();
+        let busy = bg.workspaces.assign(&root, "next", true, Some(&reuse), true).unwrap_err();
         assert!(busy.contains("still writing"), "{busy}");
 
         stop_subagent(&bg, "writer").unwrap();
-        let next = bg.workspaces.assign(&root, "next", true, Some(&reuse));
+        let next = bg.workspaces.assign(&root, "next", true, Some(&reuse), true);
         assert!(next.is_ok(), "{:?}", next.err());
         drop(next);
         drop(held);
@@ -7320,7 +7324,8 @@ pub(crate) mod tests {
             return;
         }
         write_def(&project_subagents_dir(&root), "writer", "");
-        let args = max_par_args(&root);
+        let mut args = max_par_args(&root);
+        args.subagent_worktrees = true;
         let bg = Arc::new(BackgroundSubagents::new(1));
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         // Hold the only slot so the sibling stays queued, not running.
@@ -7845,7 +7850,13 @@ pub(crate) mod tests {
         assert_eq!(shapes[0]["type"], "string");
         assert_eq!(shapes[1]["type"], "object");
         assert_eq!(shapes[1]["required"], serde_json::json!(["ref"]));
-        assert!(ws["description"].as_str().unwrap().contains("\"shared\""));
+        let desc = ws["description"].as_str().unwrap();
+        assert!(desc.contains("\"shared\""));
+        // Worktrees are opt-in, so the default is the shared checkout, and the
+        // model is told that writers there can collide.
+        assert!(desc.contains("OMIT for the default: one that can write or edit works in your checkout"), "{desc}");
+        assert!(desc.contains("--subagent-worktrees") && desc.contains("subagent_worktrees"), "{desc}");
+        assert!(desc.contains("overwrite each other"), "{desc}");
         assert_eq!(item["required"], serde_json::json!(["agent", "task"]));
         assert_eq!(
             schemas,

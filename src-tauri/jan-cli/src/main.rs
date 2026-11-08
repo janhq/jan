@@ -121,12 +121,29 @@ struct WorktreeArgs {
     /// Work in the project directory, overriding a persistent worktree setting
     #[arg(long, conflicts_with = "worktree")]
     no_worktree: bool,
+    /// Give each subagent that can write its own git worktree, unless it asks
+    /// for another workspace (default: it edits the session's checkout)
+    #[arg(long)]
+    subagent_worktrees: bool,
+    /// Subagents edit the session's checkout, overriding a persistent
+    /// [agent].subagent_worktrees setting
+    #[arg(long, conflicts_with = "subagent_worktrees")]
+    no_subagent_worktrees: bool,
 }
 
 impl WorktreeArgs {
     /// `None` when neither flag was passed, so the config files decide.
     fn into_flag(self) -> Option<bool> {
         match (self.worktree, self.no_worktree) {
+            (true, _) => Some(true),
+            (_, true) => Some(false),
+            _ => None,
+        }
+    }
+
+    /// `None` when neither subagent flag was passed, so agent.toml decides.
+    fn into_subagent_flag(self) -> Option<bool> {
+        match (self.subagent_worktrees, self.no_subagent_worktrees) {
             (true, _) => Some(true),
             (_, true) => Some(false),
             _ => None,
@@ -851,6 +868,7 @@ async fn main() {
                 sandbox: cli.sandbox.into_flag(),
                 allow_escalation: cli.sandbox.escalation_flag(),
                 worktree: cli.worktree.into_flag(),
+                subagent_worktrees: cli.worktree.into_subagent_flag(),
                 ..Default::default()
             },
             cli.resume.into_request(),
@@ -1192,6 +1210,7 @@ async fn run_agent(cmd: AgentCommands) -> Result<(), String> {
                     sandbox: sandbox.into_flag(),
                     allow_escalation: sandbox.escalation_flag(),
                     worktree: worktree.into_flag(),
+                    subagent_worktrees: worktree.into_subagent_flag(),
                     max_turns: budget.max_turns,
                     max_session_tokens: budget.max_session_tokens,
                     max_budget_usd: budget.max_budget_usd,
@@ -1737,6 +1756,37 @@ mod tests {
             parsed_budget(&["--max-budget-usd", "0"]).max_budget_usd,
             Some(0.0)
         );
+    }
+
+    /// `--subagent-worktrees` and its opposite parse on the bare TUI and on
+    /// `agent run`; neither leaves agent.toml in charge, and they exclude each other.
+    #[test]
+    fn subagent_worktree_flags_parse_on_both_surfaces() {
+        let bare = |extra: &[&str]| {
+            let mut argv = vec!["jan"];
+            argv.extend_from_slice(extra);
+            Cli::parse_from(argv).worktree.into_subagent_flag()
+        };
+        assert_eq!(bare(&[]), None);
+        assert_eq!(bare(&["--subagent-worktrees"]), Some(true));
+        assert_eq!(bare(&["--no-subagent-worktrees"]), Some(false));
+        let run = |extra: &[&str]| {
+            let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+            argv.extend_from_slice(extra);
+            match Cli::parse_from(argv).command {
+                Some(Commands::Cli {
+                    cmd:
+                        CliCommands::Agent {
+                            cmd: AgentCommands::Run { worktree, .. },
+                        },
+                }) => worktree.into_subagent_flag(),
+                _ => panic!("expected `cli agent run`"),
+            }
+        };
+        assert_eq!(run(&[]), None);
+        assert_eq!(run(&["--subagent-worktrees"]), Some(true));
+        assert_eq!(run(&["--no-subagent-worktrees"]), Some(false));
+        assert!(Cli::try_parse_from(["jan", "--subagent-worktrees", "--no-subagent-worktrees"]).is_err());
     }
 
     /// Parse `jan cli agent run <task> <extra...>` and pull out its input format.

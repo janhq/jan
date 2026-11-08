@@ -136,6 +136,11 @@ pub(crate) struct OrchestrationArgs {
     /// (`[agent].max_parallel_subagents` in agent.toml, default 10). Snapshot
     /// taken at run start: a mid-run config edit affects the *next* run only.
     pub max_parallel_subagents: u32,
+    /// Whether a subagent that can write and asked for no `workspace` gets a
+    /// worktree of its own (`--subagent-worktrees`, `[agent].subagent_worktrees`).
+    /// Off: it works in the parent's checkout. CLI-only in effect, like the
+    /// worktrees themselves.
+    pub subagent_worktrees: bool,
     /// Auto-allow every tool call that would otherwise prompt (built-in
     /// reads/writes/exec and MCP). The CLI default, since the OS jail in the
     /// tools plugin confines exec regardless; `--safe` turns it off. Desktop
@@ -3202,6 +3207,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         project_memory: true,
         subagents_enabled: false,
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
+        subagent_worktrees: false,
         auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
         session_id: None,
@@ -3929,6 +3935,8 @@ async fn orchestrate_inner(
         project_memory,
         subagents_enabled,
         max_parallel_subagents,
+        // Read through `args` by the subagent dispatch, which clones them.
+        subagent_worktrees: _,
         auto_approve,
         run_mode,
         session_id,
@@ -14977,6 +14985,7 @@ mod tests {
         });
 
         let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
+        args.subagent_worktrees = true;
         args.sandbox = Some(false);
         args.project_memory = false;
         args.provider_configs = Arc::new(Mutex::new(HashMap::from([(

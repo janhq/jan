@@ -3,9 +3,12 @@
 //!
 //! Decided by the harness when the child is dispatched, never by a tool the
 //! model calls. A child whose tool set can change files (`write`/`edit`) is a
-//! *writer* and gets a fresh checkout on `jan/agent/<name>-<id>`, so parallel
-//! writers never edit one checkout and none of them mixes its edits with the
-//! user's uncommitted work. Every other child is a *reader*: it runs in the
+//! *writer*. With subagent worktrees on (`--subagent-worktrees`,
+//! `[agent].subagent_worktrees`; off by default) it gets a fresh checkout on
+//! `jan/agent/<name>-<id>`, so parallel writers never edit one checkout and
+//! none of them mixes its edits with the user's uncommitted work; off, it
+//! shares the parent's checkout and concurrent writers are not serialized.
+//! Every other child is a *reader*: it runs in the
 //! checkout it was given with that checkout read-only, enforced by the file
 //! tools and by a sandbox that is always on for it.
 //!
@@ -485,13 +488,16 @@ impl Drop for WriterLease {
 impl Ledger {
     /// Assign `name` its workspace and record it. A writer in a worktree gets
     /// the lease that keeps a second writer out until it is done: a second
-    /// writer naming a busy worktree is refused, not queued.
+    /// writer naming a busy worktree is refused, not queued. `worktrees` is
+    /// whether a writer with no `request` gets a worktree of its own; without
+    /// it, it shares the parent's checkout. A request is honored either way.
     pub(crate) fn assign(
         self: &Arc<Self>,
         parent_root: &Path,
         name: &str,
         writer: bool,
         request: Option<&WorkspaceRequest>,
+        worktrees: bool,
     ) -> Result<(ChildWorkspace, Option<WriterLease>), String> {
         let read_only = !writer && READ_ONLY_READERS;
         let (ws, hold) = match request {
@@ -514,7 +520,7 @@ impl Ledger {
             }
             Some(WorkspaceRequest::New) => create(parent_root, name, None, read_only)?,
             Some(WorkspaceRequest::Ref(r)) => create(parent_root, name, Some(r), read_only)?,
-            None if writer => create(parent_root, name, None, read_only)?,
+            None if writer && worktrees => create(parent_root, name, None, read_only)?,
             None => (ChildWorkspace::shared(parent_root, read_only), None),
         };
         let mut state = self.state.lock().unwrap();
@@ -2442,7 +2448,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("jan_child_ws_desk_{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "explore", false, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "explore", false, None, true).unwrap();
         assert!(lease.is_none());
         assert!(!ws.read_only, "{ws:?}");
         assert_eq!(scope_for(&ws, &root), ChildScope::default());
@@ -2519,7 +2525,7 @@ mod git_tests {
     fn a_writer_gets_its_own_worktree_and_a_reader_the_checkout_read_only() {
         let Some(root) = repo("default") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (writer, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (writer, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         let wt = writer.worktree.clone().expect("a writer gets a worktree");
         assert!(lease.is_some());
         assert!(!writer.read_only);
@@ -2534,10 +2540,44 @@ mod git_tests {
         assert!(note.contains(&wt.branch) && note.contains("worktree"), "{note}");
         assert_eq!(writer.answer_footer(None).map(|f| f.contains(&wt.branch)), Some(true));
 
-        let (reader, lease) = ledger.assign(&root, "explore", false, None).unwrap();
+        let (reader, lease) = ledger.assign(&root, "explore", false, None, true).unwrap();
         assert!(lease.is_none());
         assert_eq!(reader, ChildWorkspace::shared(&root, true));
         assert!(reader.note().starts_with("working read-only in "), "{}", reader.note());
+        let _ = ledger.finish_session();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// With worktrees off, a writer that asks for nothing works in the
+    /// parent's checkout: no clone, no lease, no branch.
+    #[test]
+    fn a_writer_with_no_request_shares_the_checkout_when_worktrees_are_off() {
+        let Some(root) = repo("shared_default") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (w, lease) = ledger.assign(&root, "general", true, None, false).unwrap();
+        assert_eq!(w, ChildWorkspace::shared(&root, false));
+        assert!(lease.is_none());
+        assert!(ledger.live().is_empty(), "{:?}", ledger.live());
+        assert!(w.note().starts_with("working in your checkout"), "{}", w.note());
+        let _ = ledger.finish_session();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Asking for a worktree is honored with the setting off: only the default
+    /// changes, so `"new"` and a ref still get one and the writer is leased.
+    #[test]
+    fn an_explicit_new_or_ref_still_gets_a_worktree_when_worktrees_are_off() {
+        let Some(root) = repo("explicit_off") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let new = WorkspaceRequest::New;
+        let (w, lease) = ledger.assign(&root, "general", true, Some(&new), false).unwrap();
+        assert!(w.worktree.is_some() && lease.is_some(), "{w:?}");
+        let at = WorkspaceRequest::Ref("HEAD".to_string());
+        let (r, _) = ledger.assign(&root, "review", false, Some(&at), false).unwrap();
+        assert!(r.worktree.is_some() && r.read_only, "{r:?}");
+        let shared = WorkspaceRequest::Shared;
+        let (s, _) = ledger.assign(&root, "general-2", true, Some(&shared), false).unwrap();
+        assert_eq!(s, ChildWorkspace::shared(&root, false));
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -2546,25 +2586,25 @@ mod git_tests {
     fn two_concurrent_writers_never_share_and_reuse_of_a_busy_worktree_is_refused() {
         let Some(root) = repo("lease") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (a, lease_a) = ledger.assign(&root, "general", true, None).unwrap();
-        let (b, _lease_b) = ledger.assign(&root, "general-2", true, None).unwrap();
+        let (a, lease_a) = ledger.assign(&root, "general", true, None, true).unwrap();
+        let (b, _lease_b) = ledger.assign(&root, "general-2", true, None, true).unwrap();
         assert_ne!(a.root, b.root, "two writers, two checkouts");
 
         let reuse = WorkspaceRequest::Reuse("general".to_string());
-        let err = ledger.assign(&root, "general-3", true, Some(&reuse)).unwrap_err();
+        let err = ledger.assign(&root, "general-3", true, Some(&reuse), true).unwrap_err();
         assert!(err.contains("still writing") && err.contains("not started"), "{err}");
         // A reader may look at it meanwhile, read-only.
-        let (look, _) = ledger.assign(&root, "review", false, Some(&reuse)).unwrap();
+        let (look, _) = ledger.assign(&root, "review", false, Some(&reuse), true).unwrap();
         assert_eq!(look.root, a.root);
         assert!(look.read_only);
 
         drop(lease_a);
-        let (again, lease) = ledger.assign(&root, "general-3", true, Some(&reuse)).unwrap();
+        let (again, lease) = ledger.assign(&root, "general-3", true, Some(&reuse), true).unwrap();
         assert_eq!(again.root, a.root, "sequential reuse gets the same checkout");
         assert!(!again.read_only && lease.is_some());
         drop(lease);
         assert!(ledger
-            .assign(&root, "x", true, Some(&WorkspaceRequest::Reuse("nobody".into())))
+            .assign(&root, "x", true, Some(&WorkspaceRequest::Reuse("nobody".into())), true)
             .unwrap_err()
             .contains("no earlier subagent"));
         let _ = ledger.finish_session();
@@ -2590,7 +2630,7 @@ mod git_tests {
 
         let ledger = Arc::new(Ledger::default());
         let req = WorkspaceRequest::Ref("feature".to_string());
-        let (ws, lease) = ledger.assign(&clone, "review", false, Some(&req)).unwrap();
+        let (ws, lease) = ledger.assign(&clone, "review", false, Some(&req), true).unwrap();
         let wt = ws.worktree.clone().expect("a ref gets a worktree");
         assert!(ws.read_only && lease.is_none(), "a reader there is still read-only");
         assert_eq!(wt.base, feature);
@@ -2612,9 +2652,9 @@ mod git_tests {
         assert!(git(&root, &["branch", "feature"]));
         let ledger = Arc::new(Ledger::default());
         let req = WorkspaceRequest::Ref("feature".to_string());
-        let (committed, l1) = ledger.assign(&root, "general", true, Some(&req)).unwrap();
-        let (dirty, l2) = ledger.assign(&root, "general-2", true, Some(&req)).unwrap();
-        let (idle, l3) = ledger.assign(&root, "general-3", true, Some(&req)).unwrap();
+        let (committed, l1) = ledger.assign(&root, "general", true, Some(&req), true).unwrap();
+        let (dirty, l2) = ledger.assign(&root, "general-2", true, Some(&req), true).unwrap();
+        let (idle, l3) = ledger.assign(&root, "general-3", true, Some(&req), true).unwrap();
         drop((l1, l2, l3));
         commit(&committed.root, "b.txt");
         let tip = crate::core::agent::git::head_sha(&committed.root).unwrap();
@@ -2642,7 +2682,7 @@ mod git_tests {
     fn a_worktree_whose_status_cannot_be_read_is_kept() {
         let Some(root) = repo("badstatus") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         std::fs::write(ws.root.join("a.txt"), "edited\n").unwrap();
         let out = Command::new("git")
@@ -2669,9 +2709,9 @@ mod git_tests {
     fn session_end_removes_only_clean_worktrees_whose_work_is_in_the_repo() {
         let Some(root) = repo("cleanup") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (idle, l1) = ledger.assign(&root, "general", true, None).unwrap();
-        let (committed, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
-        let (dirty, l3) = ledger.assign(&root, "general-3", true, None).unwrap();
+        let (idle, l1) = ledger.assign(&root, "general", true, None, true).unwrap();
+        let (committed, l2) = ledger.assign(&root, "general-2", true, None, true).unwrap();
+        let (dirty, l3) = ledger.assign(&root, "general-3", true, None, true).unwrap();
         drop((l1, l2, l3));
         commit(&committed.root, "b.txt");
         std::fs::write(dirty.root.join("a.txt"), "edited\n").unwrap();
@@ -2700,7 +2740,7 @@ mod git_tests {
     fn an_untracked_only_worktree_is_kept_when_status_hides_untracked_files() {
         let Some(root) = repo("untracked") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         std::fs::create_dir_all(ws.root.join("out")).unwrap();
         std::fs::write(ws.root.join("out/report.md"), "deliverable\n").unwrap();
@@ -2721,7 +2761,7 @@ mod git_tests {
     fn a_branch_holding_commits_is_brought_back_even_when_head_moved_away() {
         let Some(root) = repo("head-moved") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         let wt = ws.worktree.as_ref().unwrap();
         commit(&ws.root, "b.txt");
@@ -2744,11 +2784,11 @@ mod git_tests {
         let Some(root) = repo("undo") else { return };
         let ledger = Arc::new(Ledger::default());
         let new = WorkspaceRequest::New;
-        let (reader, _) = ledger.assign(&root, "explore", false, Some(&new)).unwrap();
-        let (writer, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (reader, _) = ledger.assign(&root, "explore", false, Some(&new), true).unwrap();
+        let (writer, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
 
-        let (late, lease) = ledger.assign(&root, "late", true, None).unwrap();
+        let (late, lease) = ledger.assign(&root, "late", true, None, true).unwrap();
         drop(lease);
         ledger.undo("late", &late);
         let late_wt = late.worktree.as_ref().unwrap();
@@ -2759,18 +2799,18 @@ mod git_tests {
 
         // An undone reuse hands nothing back: the worktree was not its own.
         let reuse = WorkspaceRequest::Reuse("general".to_string());
-        let (borrowed, lease) = ledger.assign(&root, "late-2", true, Some(&reuse)).unwrap();
+        let (borrowed, lease) = ledger.assign(&root, "late-2", true, Some(&reuse), true).unwrap();
         drop(lease);
         ledger.undo("late-2", &borrowed);
         assert!(writer.root.is_dir(), "an earlier child's worktree survives");
 
         for earlier in ["explore", "general"] {
             let reuse = WorkspaceRequest::Reuse(earlier.to_string());
-            assert!(ledger.assign(&root, "next", false, Some(&reuse)).is_ok(), "{earlier}");
+            assert!(ledger.assign(&root, "next", false, Some(&reuse), true).is_ok(), "{earlier}");
         }
         for gone in ["late", "late-2"] {
             let reuse = WorkspaceRequest::Reuse(gone.to_string());
-            assert!(ledger.assign(&root, "next", false, Some(&reuse)).is_err(), "{gone}");
+            assert!(ledger.assign(&root, "next", false, Some(&reuse), true).is_err(), "{gone}");
         }
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
@@ -2814,8 +2854,8 @@ mod git_tests {
         use std::time::{Duration, Instant};
         let Some(root) = repo("slow") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (idle, l1) = ledger.assign(&root, "general", true, None).unwrap();
-        let (busy, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
+        let (idle, l1) = ledger.assign(&root, "general", true, None, true).unwrap();
+        let (busy, l2) = ledger.assign(&root, "general-2", true, None, true).unwrap();
         drop(l1);
         commit(&busy.root, "b.txt");
         if !slow_status(&idle.root) {
@@ -2843,18 +2883,18 @@ mod git_tests {
     fn a_worktree_being_removed_is_not_reused() {
         let Some(root) = repo("removing") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         let path = ws.worktree.as_ref().unwrap().path.clone();
         assert!(ledger.claim(&path));
         assert!(!ledger.claim(&path), "one removal at a time");
         let reuse = WorkspaceRequest::Reuse("general".to_string());
         for writer in [true, false] {
-            let err = ledger.assign(&root, "next", writer, Some(&reuse)).unwrap_err();
+            let err = ledger.assign(&root, "next", writer, Some(&reuse), true).unwrap_err();
             assert!(err.contains("being removed"), "{err}");
         }
         ledger.state.lock().unwrap().removing.remove(&path);
-        let (again, lease) = ledger.assign(&root, "next", true, Some(&reuse)).unwrap();
+        let (again, lease) = ledger.assign(&root, "next", true, Some(&reuse), true).unwrap();
         assert_eq!(again.root, ws.root);
         assert!(!ledger.claim(&path), "a busy worktree is never claimed");
         drop(lease);
@@ -2869,7 +2909,7 @@ mod git_tests {
     fn a_reuse_of_a_worktree_swept_meanwhile_is_refused() {
         let Some(root) = repo("swept") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         let wt = ws.worktree.clone().unwrap();
         // The sweep's effect, landing between the lookup and the record.
@@ -2878,7 +2918,7 @@ mod git_tests {
 
         let reuse = WorkspaceRequest::Reuse("general".to_string());
         for writer in [true, false] {
-            let err = ledger.assign(&root, "next", writer, Some(&reuse)).unwrap_err();
+            let err = ledger.assign(&root, "next", writer, Some(&reuse), true).unwrap_err();
             assert!(err.contains("was removed"), "{err}");
         }
         assert!(ledger.live().is_empty(), "{:?}", ledger.live());
@@ -2898,7 +2938,7 @@ mod git_tests {
         std::fs::write(root.join("scratch/u.txt"), "u\n").unwrap();
         let ledger = Arc::new(Ledger::default());
 
-        let (here, _l) = ledger.assign(&root.join("tracked"), "a", true, None).unwrap();
+        let (here, _l) = ledger.assign(&root.join("tracked"), "a", true, None, true).unwrap();
         let wt = here.worktree.clone().unwrap();
         assert_eq!(here.root, wt.path.join("tracked"), "a tracked subdirectory maps across");
         // Filed under the repository's slug, the one its alternates name, or
@@ -2907,13 +2947,13 @@ mod git_tests {
         assert_eq!(project_worktrees_dir(&root.join("tracked")), project_worktrees_dir(&root));
         assert!(!here.note().contains("not in this checkout"), "{}", here.note());
 
-        let (untracked, _l) = ledger.assign(&root.join("scratch"), "b", true, None).unwrap();
+        let (untracked, _l) = ledger.assign(&root.join("scratch"), "b", true, None, true).unwrap();
         let wt = untracked.worktree.clone().unwrap();
         assert_eq!(untracked.root, wt.path);
         assert!(untracked.note().contains("scratch is not in this checkout"), "{}", untracked.note());
 
         let old = WorkspaceRequest::Ref("old".to_string());
-        let (at_ref, _) = ledger.assign(&root.join("tracked"), "c", false, Some(&old)).unwrap();
+        let (at_ref, _) = ledger.assign(&root.join("tracked"), "c", false, Some(&old), true).unwrap();
         let wt = at_ref.worktree.clone().unwrap();
         assert_eq!(at_ref.root, wt.path);
         assert!(at_ref.note().contains("tracked is not in this checkout"), "{}", at_ref.note());
@@ -2930,10 +2970,10 @@ mod git_tests {
             return;
         }
         let ledger = Arc::new(Ledger::default());
-        let (w, lease) = ledger.assign(&dir, "general", true, None).unwrap();
+        let (w, lease) = ledger.assign(&dir, "general", true, None, true).unwrap();
         assert!(w.worktree.is_none() && !w.read_only && lease.is_none());
         assert!(w.note().contains("not a git repository"), "{}", w.note());
-        let (r, _) = ledger.assign(&dir, "explore", false, Some(&WorkspaceRequest::New)).unwrap();
+        let (r, _) = ledger.assign(&dir, "explore", false, Some(&WorkspaceRequest::New), true).unwrap();
         assert!(r.read_only);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2945,7 +2985,7 @@ mod git_tests {
     fn a_writer_childs_args_point_at_its_worktree() {
         let Some(root) = repo("apply") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, _lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, _lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         let wt = ws.worktree.clone().unwrap();
         let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
         args.session_start = Some(crate::core::agent::context::SessionStart::capture(Some(&root)));
@@ -2969,7 +3009,7 @@ mod git_tests {
         assert!(prompt.contains(&format!("Work directory: `{shown}`")), "{prompt}");
         assert!(prompt.contains(&format!("Current project directory: `{}`", wt.path.display())));
 
-        let (reader, _) = ledger.assign(&root, "explore", false, None).unwrap();
+        let (reader, _) = ledger.assign(&root, "explore", false, None, true).unwrap();
         let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
         let parent_start = args.session_start.clone();
         apply(&mut args, &reader, place(&reader, &root));
@@ -2989,7 +3029,7 @@ mod git_tests {
     fn a_checkout_whose_git_dir_was_swapped_for_a_pointer_is_never_followed() {
         let Some(root) = repo("redirect") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         let wt = ws.worktree.clone().unwrap();
         let marker = root.with_extension("pwned");
@@ -3041,7 +3081,7 @@ mod git_tests {
         let Some(root) = repo("verbatim") else { return };
         let verbatim = std::fs::canonicalize(&root).unwrap();
         let ledger = Arc::new(Ledger::default());
-        let (ws, _lease) = ledger.assign(&verbatim, "general", true, None).unwrap();
+        let (ws, _lease) = ledger.assign(&verbatim, "general", true, None, true).unwrap();
         let wt = ws.worktree.clone().expect("a writer gets a worktree");
         assert!(!wt.path.to_string_lossy().starts_with(r"\\?\"), "{wt:?}");
         assert!(wt.path.join(".git").is_dir(), "{wt:?}");
@@ -3055,7 +3095,7 @@ mod git_tests {
     fn a_writer_is_granted_the_build_dir_and_read_access_to_the_borrowed_objects_only() {
         let Some(root) = repo("scope") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (w, _lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (w, _lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         let scope = scope_for(&w, &root);
         assert!(!scope.read_only);
         // Its commits go to the repository it is, inside its workspace: none
@@ -3065,7 +3105,7 @@ mod git_tests {
         assert_eq!(scope.read_roots, vec![root.join(".git/objects")], "{scope:?}");
         assert!(scope.env_set.iter().any(|(k, v)| k == "CARGO_TARGET_DIR" && Path::new(v) == target));
 
-        let (r, _) = ledger.assign(&root, "explore", false, None).unwrap();
+        let (r, _) = ledger.assign(&root, "explore", false, None, true).unwrap();
         let scope = scope_for(&r, &root);
         assert!(scope.read_only);
         assert_eq!(scope.write_roots, vec![target], "a reader never gets the git dir");
@@ -3156,7 +3196,7 @@ mod git_tests {
         let Some(root) = repo("anyop") else { return };
         assert!(git(&root, &["tag", "v1"]));
         let ledger = Arc::new(Ledger::default());
-        let (ws, _lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, _lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         let id = "-c user.name=t -c user.email=t@t -c commit.gpgSign=false -c tag.gpgSign=false";
         let steps = [
             format!("echo b > b.txt && git add b.txt && git {id} commit -q -m b"),
@@ -3188,7 +3228,7 @@ mod git_tests {
     fn a_sandboxed_writer_cannot_write_the_users_git_dir() {
         let Some(root) = repo("nouser") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, _lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, _lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         let dot = root.join(".git");
         let outside = root.with_extension("outside");
         let _ = std::fs::remove_dir_all(&outside);
@@ -3246,7 +3286,7 @@ mod git_tests {
     fn a_tampered_checkout_runs_nothing_when_jan_inspects_and_fetches_it() {
         let Some(root) = repo("tamper") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         let wt = ws.worktree.clone().unwrap();
         let c = wt.path.clone();
@@ -3321,9 +3361,9 @@ mod git_tests {
     fn a_writers_branch_is_brought_back_and_never_overwrites_the_users() {
         let Some(root) = repo("bring") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (idle, l1) = ledger.assign(&root, "general", true, None).unwrap();
-        let (done, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
-        let (clash, l3) = ledger.assign(&root, "general-3", true, None).unwrap();
+        let (idle, l1) = ledger.assign(&root, "general", true, None, true).unwrap();
+        let (done, l2) = ledger.assign(&root, "general-2", true, None, true).unwrap();
+        let (clash, l3) = ledger.assign(&root, "general-3", true, None, true).unwrap();
         drop((l1, l2, l3));
         commit(&done.root, "b.txt");
         commit(&clash.root, "c.txt");
@@ -3372,7 +3412,7 @@ mod git_tests {
         ] {
             let Some(root) = repo("config") else { return };
             let ledger = Arc::new(Ledger::default());
-            let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+            let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
             drop(lease);
             let wt = ws.worktree.clone().unwrap();
             commit(&wt.path, "b.txt");
@@ -3400,7 +3440,7 @@ mod git_tests {
     fn a_checkout_with_rewritten_alternates_is_not_fetched_from() {
         let Some(root) = repo("alternates") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         let wt = ws.worktree.clone().unwrap();
         commit(&wt.path, "b.txt");
@@ -3427,7 +3467,7 @@ mod git_tests {
     fn a_committed_checkout_whose_branch_was_brought_back_is_trashed_and_named() {
         let Some(root) = repo("brought") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         commit(&ws.root, "b.txt");
         let tip = crate::core::agent::git::head_sha(&ws.root).unwrap();
@@ -3465,8 +3505,8 @@ mod git_tests {
     fn a_brought_back_checkout_keeps_ignored_files_but_not_build_output() {
         let Some(root) = repo("ignored") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (env, l1) = ledger.assign(&root, "general", true, None).unwrap();
-        let (built, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
+        let (env, l1) = ledger.assign(&root, "general", true, None, true).unwrap();
+        let (built, l2) = ledger.assign(&root, "general-2", true, None, true).unwrap();
         drop((l1, l2));
         commit_ignore(&env, ".env\ntarget/\n");
         std::fs::write(env.root.join(".env"), "KEY=1\n").unwrap();
@@ -3510,8 +3550,8 @@ mod git_tests {
     fn work_inside_ignored_build_output_keeps_the_checkout() {
         let Some(root) = repo("inside-ignored") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (env, l1) = ledger.assign(&root, "general", true, None).unwrap();
-        let (nested, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
+        let (env, l1) = ledger.assign(&root, "general", true, None, true).unwrap();
+        let (nested, l2) = ledger.assign(&root, "general-2", true, None, true).unwrap();
         drop((l1, l2));
         commit_ignore(&env, "build/\n");
         std::fs::create_dir_all(env.root.join("build/out")).unwrap();
@@ -3564,7 +3604,7 @@ mod git_tests {
     fn a_forced_prune_of_uncommitted_work_names_the_branch_it_brought_back() {
         let Some(root) = repo("prune-brought") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         commit(&ws.root, "b.txt");
         std::fs::write(ws.root.join("a.txt"), "edited\n").unwrap();
@@ -3603,7 +3643,7 @@ mod git_tests {
     fn a_file_hidden_by_the_checkouts_own_exclude_keeps_it() {
         let Some(root) = repo("info-exclude") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         commit(&ws.root, "b.txt");
         std::fs::write(ws.root.join(".git/info/exclude"), "notes.md\n").unwrap();
@@ -3623,7 +3663,7 @@ mod git_tests {
     fn a_checkout_whose_branch_is_already_in_the_repository_goes_without_a_fetch() {
         let Some(root) = repo("already") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         commit(&ws.root, "b.txt");
         assert_eq!(ws.bring_back(), None);
@@ -3646,8 +3686,8 @@ mod git_tests {
     fn the_settle_brings_branches_back_before_removing_their_checkouts() {
         let Some(root) = repo("brought-two") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (a, l1) = ledger.assign(&root, "general", true, None).unwrap();
-        let (b, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
+        let (a, l1) = ledger.assign(&root, "general", true, None, true).unwrap();
+        let (b, l2) = ledger.assign(&root, "general-2", true, None, true).unwrap();
         drop((l1, l2));
         commit(&a.root, "a2.txt");
         commit(&b.root, "b.txt");
@@ -3672,7 +3712,7 @@ mod git_tests {
     fn a_committed_checkout_with_uncommitted_changes_is_kept() {
         let Some(root) = repo("brought-dirty") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         commit(&ws.root, "b.txt");
         std::fs::write(ws.root.join("a.txt"), "edited\n").unwrap();
@@ -3694,7 +3734,7 @@ mod git_tests {
     fn a_checkout_whose_branch_could_not_be_brought_back_is_kept() {
         let Some(root) = repo("brought-clash") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         commit(&ws.root, "b.txt");
         let branch = ws.worktree.as_ref().unwrap().branch.clone();
@@ -3715,7 +3755,7 @@ mod git_tests {
     fn a_startup_sweep_trashes_an_orphan_once_its_branch_is_brought_back() {
         let Some(root) = repo("crash-brought") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         commit(&ws.root, "b.txt");
         let tip = crate::core::agent::git::head_sha(&ws.root).unwrap();
@@ -3765,7 +3805,7 @@ mod git_tests {
     fn a_build_cache_over_its_cap_is_deleted_at_session_end() {
         let Some(root) = repo("cache-over") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (_ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (_ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         let target = fill_build_cache(&root, 4096);
         let settled = ledger.finish_with(|_| 1024);
@@ -3793,7 +3833,7 @@ mod git_tests {
         let Some(root) = repo("cache-under") else { return };
         for cap in [1 << 20, 0] {
             let ledger = Arc::new(Ledger::default());
-            let (_ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+            let (_ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
             drop(lease);
             let target = fill_build_cache(&root, 4096);
             let settled = ledger.finish_with(|_| cap);
@@ -3811,7 +3851,7 @@ mod git_tests {
     fn a_build_cache_is_not_trimmed_while_a_child_is_busy() {
         let Some(root) = repo("cache-busy") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         let target = fill_build_cache(&root, 4096);
         let busy = ledger.finish_with(|_| 1024);
         let kept = target.is_dir();
@@ -3831,7 +3871,7 @@ mod git_tests {
         let Some(root) = repo("cache-sweep") else { return };
         let target = fill_build_cache(&root, 4096);
         let ledger = Arc::new(Ledger::default());
-        let (_ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (_ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         let live = trim_build_cache(&root, 1024);
         let kept = target.is_dir();
@@ -3868,11 +3908,11 @@ mod git_tests {
         ledger: &Arc<Ledger>,
         other: &Arc<Ledger>,
     ) -> ([ChildWorkspace; 5], Option<WriterLease>) {
-        let (busy, lease) = ledger.assign(root, "busy", true, None).unwrap();
-        let (theirs, l1) = other.assign(root, "theirs", true, None).unwrap();
-        let (dirty, l2) = ledger.assign(root, "dirty", true, None).unwrap();
-        let (committed, l3) = ledger.assign(root, "committed", true, None).unwrap();
-        let (idle, l4) = ledger.assign(root, "idle", true, None).unwrap();
+        let (busy, lease) = ledger.assign(root, "busy", true, None, true).unwrap();
+        let (theirs, l1) = other.assign(root, "theirs", true, None, true).unwrap();
+        let (dirty, l2) = ledger.assign(root, "dirty", true, None, true).unwrap();
+        let (committed, l3) = ledger.assign(root, "committed", true, None, true).unwrap();
+        let (idle, l4) = ledger.assign(root, "idle", true, None, true).unwrap();
         drop((l1, l2, l3, l4));
         std::fs::write(dirty.root.join("a.txt"), "edited\n").unwrap();
         commit(&committed.root, "b.txt");
@@ -3963,8 +4003,8 @@ mod git_tests {
     fn a_checkout_in_use_by_a_live_child_is_never_removed() {
         let Some(root) = repo("prune-busy") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (busy, lease) = ledger.assign(&root, "busy", true, None).unwrap();
-        let (reused, l2) = ledger.assign(&root, "reused", true, None).unwrap();
+        let (busy, lease) = ledger.assign(&root, "busy", true, None, true).unwrap();
+        let (reused, l2) = ledger.assign(&root, "reused", true, None, true).unwrap();
         drop(l2);
         let id = id_of(&busy);
         // A reader holds no lease: while any subagent runs, none of the
@@ -4020,13 +4060,13 @@ mod git_tests {
         let Some(root) = repo("clear-cache") else { return };
         let target = fill_build_cache(&root, 4096);
         let (ledger, other) = (Arc::new(Ledger::default()), Arc::new(Ledger::default()));
-        let (_mine, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (_mine, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         let session = Session { ledger: &ledger, children_running: &|| false };
         let busy = clear_build_cache(&root, Some(&session));
         drop(lease);
         let running = Session { ledger: &ledger, children_running: &|| true };
         let reading = clear_build_cache(&root, Some(&running));
-        let (_theirs, l2) = other.assign(&root, "general", true, None).unwrap();
+        let (_theirs, l2) = other.assign(&root, "general", true, None, true).unwrap();
         drop(l2);
         let elsewhere = clear_build_cache(&root, Some(&session));
         let kept = target.join("debug/deps/lib.rlib").is_file();
@@ -4089,7 +4129,7 @@ mod git_tests {
     fn a_checkout_held_after_a_conversation_end_is_labelled_as_this_sessions() {
         let Some(root) = repo("settling") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         std::fs::write(ws.root.join("a.txt"), "edited\n").unwrap();
         let settled = ledger.end_conversation().settle();
@@ -4185,14 +4225,14 @@ mod git_tests {
     fn a_new_conversation_cannot_reuse_an_earlier_conversations_worktree_by_name() {
         let Some(root) = repo("names") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (kept, l1) = ledger.assign(&root, "general", true, None).unwrap();
-        let (_idle, l2) = ledger.assign(&root, "explore", true, None).unwrap();
+        let (kept, l1) = ledger.assign(&root, "general", true, None, true).unwrap();
+        let (_idle, l2) = ledger.assign(&root, "explore", true, None, true).unwrap();
         drop((l1, l2));
         std::fs::write(kept.root.join("a.txt"), "edited\n").unwrap();
         assert_eq!(ledger.end_conversation().settle().kept.len(), 1);
         for earlier in ["general", "explore"] {
             let reuse = WorkspaceRequest::Reuse(earlier.to_string());
-            let err = ledger.assign(&root, "next", true, Some(&reuse)).unwrap_err();
+            let err = ledger.assign(&root, "next", true, Some(&reuse), true).unwrap_err();
             assert!(err.contains("no earlier subagent"), "{earlier}: {err}");
         }
         assert!(ledger.live().is_empty(), "{:?}", ledger.live());
@@ -4207,7 +4247,7 @@ mod git_tests {
     fn a_replaced_conversations_kept_worktree_is_marked_only_once_reported() {
         let Some(root) = repo("conv-unsent") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         std::fs::write(ws.root.join("a.txt"), "edited\n").unwrap();
         let untold = ledger.end_conversation().settle();
@@ -4232,10 +4272,10 @@ mod git_tests {
     fn ending_a_conversation_leaves_the_next_conversations_worktrees_alone() {
         let Some(root) = repo("next") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (old, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (old, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         let batch = ledger.end_conversation();
-        let (new, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (new, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         assert!(batch.settle().kept.is_empty());
         assert!(!old.root.exists(), "the old conversation's empty worktree goes");
@@ -4251,14 +4291,14 @@ mod git_tests {
     fn a_late_undo_keeps_the_next_conversations_name() {
         let Some(root) = repo("late-undo") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (old, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (old, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         let batch = ledger.end_conversation();
-        let (new, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (new, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         ledger.undo("general", &old);
         let reuse = WorkspaceRequest::Reuse("general".to_string());
-        let again = ledger.assign(&root, "next", false, Some(&reuse)).map(|(ws, _)| ws.root);
+        let again = ledger.assign(&root, "next", false, Some(&reuse), true).map(|(ws, _)| ws.root);
         drop(batch.settle());
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
@@ -4271,7 +4311,7 @@ mod git_tests {
     fn a_busy_worktree_survives_a_conversation_end_and_goes_at_the_next() {
         let Some(root) = repo("busyend") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         assert!(ledger.end_conversation().settle().kept.is_empty());
         assert!(ws.root.is_dir(), "a writer is still in it");
         drop(lease);
@@ -4287,7 +4327,7 @@ mod git_tests {
     fn an_empty_worktree_is_moved_to_trash_not_deleted_in_place() {
         let Some(root) = repo("trash") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         let settled = ledger.finish_session();
         assert!(settled.kept.is_empty());
@@ -4322,7 +4362,7 @@ mod git_tests {
     fn an_untracked_directory_keeps_a_worktree_under_the_fast_check() {
         let Some(root) = repo("untracked-dir") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         std::fs::create_dir_all(ws.root.join("node_modules/x")).unwrap();
         std::fs::write(ws.root.join("node_modules/x/y.js"), "y\n").unwrap();
@@ -4345,7 +4385,7 @@ mod git_tests {
         let ledger = Arc::new(Ledger::default());
         let mut roots = Vec::new();
         for name in ["general", "general-2", "general-3"] {
-            let (ws, lease) = ledger.assign(&root, name, true, None).unwrap();
+            let (ws, lease) = ledger.assign(&root, name, true, None, true).unwrap();
             drop(lease);
             std::fs::write(ws.root.join("a.txt"), "edited\n").unwrap();
             if !slow_status(&ws.root) {
@@ -4370,8 +4410,8 @@ mod git_tests {
     fn each_worktree_records_its_metadata_beside_not_inside_its_checkout() {
         let Some(root) = repo("meta") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (kept, l1) = ledger.assign(&root, "general", true, None).unwrap();
-        let (idle, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
+        let (kept, l1) = ledger.assign(&root, "general", true, None, true).unwrap();
+        let (idle, l2) = ledger.assign(&root, "general-2", true, None, true).unwrap();
         drop((l1, l2));
         let wt = kept.worktree.clone().unwrap();
         let json = meta_of(&root).join(format!("{}.json", id_of(&kept)));
@@ -4405,9 +4445,9 @@ mod git_tests {
     fn a_startup_sweep_settles_what_a_crashed_session_left() {
         let Some(root) = repo("crash") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (idle, l1) = ledger.assign(&root, "general", true, None).unwrap();
-        let (committed, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
-        let (dirty, l3) = ledger.assign(&root, "general-3", true, None).unwrap();
+        let (idle, l1) = ledger.assign(&root, "general", true, None, true).unwrap();
+        let (committed, l2) = ledger.assign(&root, "general-2", true, None, true).unwrap();
+        let (dirty, l3) = ledger.assign(&root, "general-3", true, None, true).unwrap();
         drop((l1, l2, l3));
         commit(&committed.root, "b.txt");
         let tip = crate::core::agent::git::head_sha(&committed.root).unwrap();
@@ -4439,7 +4479,7 @@ mod git_tests {
     fn an_orphan_is_marked_reported_only_once_its_notice_is_taken() {
         let Some(root) = repo("crash-unsent") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         std::fs::write(ws.root.join("a.txt"), "edited\n").unwrap();
         drop(ledger);
@@ -4469,7 +4509,7 @@ mod git_tests {
         use std::time::{Duration, Instant};
         let Some(root) = repo("sweep-exit") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         drop(ledger);
         if !slow_status(&ws.root) {
@@ -4494,7 +4534,7 @@ mod git_tests {
     fn a_startup_sweep_skips_worktrees_a_live_session_owns() {
         let Some(root) = repo("live") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         assert!(sweep_orphans(&root).kept.is_empty());
         assert!(ws.root.is_dir(), "a live session's worktree stays");
@@ -4508,7 +4548,7 @@ mod git_tests {
     fn a_startup_sweep_never_removes_a_checkout_git_cannot_read() {
         let Some(root) = repo("crash-unread") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         drop(ledger);
         let alternates = ws.root.join(".git/objects/info/alternates");
@@ -4529,8 +4569,8 @@ mod git_tests {
         let Some(root) = repo("crash-forged") else { return };
         let Some(other) = repo("crash-other") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (a, l1) = ledger.assign(&root, "general", true, None).unwrap();
-        let (b, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
+        let (a, l1) = ledger.assign(&root, "general", true, None, true).unwrap();
+        let (b, l2) = ledger.assign(&root, "general-2", true, None, true).unwrap();
         drop((l1, l2));
         commit(&b.root, "b.txt");
         drop(ledger);
@@ -4636,7 +4676,7 @@ mod git_tests {
     fn a_sweep_never_takes_a_checkout_reserved_without_a_lock() {
         let Some(root) = repo("nolock-sweep") else { return };
         let ledger = Arc::new(Ledger::default());
-        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(&root, "general", true, None, true).unwrap();
         drop(lease);
         commit(&ws.root, "b.txt");
         let dir = meta_of(&root).parent().unwrap().to_path_buf();

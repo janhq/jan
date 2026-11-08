@@ -261,9 +261,12 @@ task, and record anything worth keeping from its answer yourself.";
 /// `child_workspace`), so there it would describe branches that never exist.
 /// A constant per build, so the prefix stays byte-stable.
 const SUBAGENT_WORKSPACE_GUIDE: &str = if cfg!(feature = "cli") {
-    "\n\nEach subagent's workspace is set when you dispatch it. One that can write or edit files works in its own \
-checkout (a clone) on its own branch, started from HEAD, so parallel writers never share a checkout and \
-your uncommitted changes are not in it; its branch is in your repository when it is done, to merge. \
+    "\n\nEach subagent's workspace is set when you dispatch it. By default one that can write or edit files works in your checkout, shared with you and with any \
+other writer, so parallel writers can overwrite each other: give them disjoint files, or `workspace: \"new\"`. \
+When the user turned on subagent worktrees (`--subagent-worktrees`, or `subagent_worktrees` under `[agent]` in \
+agent.toml) it instead works in its own checkout (a clone) on its own branch, started from HEAD, so parallel \
+writers never share a checkout and your uncommitted changes are not in it; its branch is in your repository \
+when it is done, to merge. \
 Any other subagent works in your checkout read-only. The dispatch result says where each one works. Override with `workspace`: \"new\", \
 \"shared\", the name of an earlier subagent to continue in its worktree, or `workspace: {\"ref\": \"<git \
 ref>\"}` to review or test a branch or pull request in a checkout of its own. In a later phase, \
@@ -1296,6 +1299,10 @@ mod tests {
         let with = default_prompt(None, &root, None, true).expect("prompt");
         assert!(with.contains("own checkout"), "{with}");
         assert!(with.contains("is in your repository"), "{with}");
+        // Off by default: a writer shares the checkout unless worktrees are on.
+        assert!(with.contains("works in your checkout, shared with you"), "{with}");
+        assert!(with.contains("overwrite each other"), "{with}");
+        assert!(with.contains("subagent_worktrees"), "{with}");
         assert!(with.contains("read-only"), "{with}");
         assert!(with.contains("workspace: {\"ref\""), "{with}");
         assert!(with.contains("means that sibling's checkout"), "{with}");

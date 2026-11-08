@@ -37506,6 +37506,7 @@ fn a() {}
             project_memory: true,
             subagents_enabled: true,
             max_parallel_subagents: 4,
+            subagent_worktrees: false,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
@@ -43806,7 +43807,7 @@ fn a() {}
         assert!(git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]));
         let mut app = test_app();
         let ledger = app.subagent_set.workspaces.clone();
-        let (ws, lease) = ledger.assign(root.path(), "general", true, None).unwrap();
+        let (ws, lease) = ledger.assign(root.path(), "general", true, None, true).unwrap();
         drop(lease);
         let branch = ws.worktree.as_ref().unwrap().branch.clone();
 
@@ -43851,8 +43852,8 @@ fn a() {}
         root: &std::path::Path,
     ) -> (std::path::PathBuf, std::path::PathBuf, String) {
         let ledger = app.subagent_set.workspaces.clone();
-        let (idle, l1) = ledger.assign(root, "general", true, None).unwrap();
-        let (work, l2) = ledger.assign(root, "general-2", true, None).unwrap();
+        let (idle, l1) = ledger.assign(root, "general", true, None, true).unwrap();
+        let (work, l2) = ledger.assign(root, "general-2", true, None, true).unwrap();
         drop((l1, l2));
         let ok = std::process::Command::new("git")
             .arg("-C")
@@ -43894,7 +43895,7 @@ fn a() {}
         let err = app
             .subagent_set
             .workspaces
-            .assign(root.path(), "next", true, Some(&reuse))
+            .assign(root.path(), "next", true, Some(&reuse), true)
             .unwrap_err();
         assert!(err.contains("no earlier subagent"), "{err}");
         // Shown as the kept notice, one worktree per row.
@@ -43931,7 +43932,7 @@ fn a() {}
         assert!(idle.is_dir() && kept.is_dir());
         let reuse = crate::core::agent::child_workspace::WorkspaceRequest::Reuse("general".into());
         let ledger = app.subagent_set.workspaces.clone();
-        assert!(ledger.assign(root.path(), "next", true, Some(&reuse)).is_ok());
+        assert!(ledger.assign(root.path(), "next", true, Some(&reuse), true).is_ok());
         let _ = tokio::task::spawn_blocking(move || ledger.finish_session()).await;
         let _ = std::fs::remove_dir_all(&kept);
     }
@@ -44131,8 +44132,8 @@ fn a() {}
         let mut app = test_app();
         app.project_root = root.path().to_path_buf();
         let ledger = app.subagent_set.workspaces.clone();
-        let (busy, lease) = ledger.assign(root.path(), "busy", true, None).unwrap();
-        let (idle, l2) = ledger.assign(root.path(), "idle", true, None).unwrap();
+        let (busy, lease) = ledger.assign(root.path(), "busy", true, None, true).unwrap();
+        let (idle, l2) = ledger.assign(root.path(), "idle", true, None, true).unwrap();
         drop(l2);
         let run = |app: &mut App| {
             let job = app.worktrees_request.take().expect("a job was asked for");
