@@ -230,7 +230,7 @@
     "title": "Elimina fornitore",
     "description": "Elimina questo fornitore e tutti i suoi modelli. Questa azione non può essere annullata.",
     "success": "Il fornitore {{provider}} è stato eliminato definitivamente.",
-      "confirmTitle": "Elimina fornitore: {{provider}}",
+    "confirmTitle": "Elimina fornitore: {{provider}}",
     "confirmDescription": "Sei sicuro di voler eliminare questo fornitore? Questa azione non può essere annullata.",
     "cancel": "Annulla",
     "delete": "Elimina"
@@ -260,10 +260,6 @@
       "newLocation": "Nuova posizione:",
       "cancel": "Annulla",
       "changeLocation": "Modifica posizione"
-    },
-    "deleteAllThreads": {
-      "title": "Elimina tutte le conversazioni",
-      "description": "Tutte le conversazioni saranno eliminate. Questa azione non può essere annullata."
     },
     "deleteAllThreadsInProject": {
       "title": "Elimina tutte le conversazioni",
@@ -315,7 +311,6 @@
     "uploadingFiles": "Caricamento file in corso…",
     "deleteProjectDialog": {
       "title": "Elimina progetto",
-      "permanentDelete": "Questo eliminerà definitivamente tutte le conversazioni.",
       "permanentDeleteWarning": "Questa azione eliminerà definitivamente TUTTE le conversazioni all'interno del progetto!",
       "deleteEmptyProject": "Questa azione eliminerà il progetto \"{{projectName}}\".",
       "saveThreadsAdvice": "Per salvare le conversazioni, spostale nell'elenco delle conversazioni o in un altro progetto prima di procedere con l'eliminazione.",
@@ -342,7 +337,6 @@
       "updateSuccess": "Progetto \"{{projectName}}\" aggiornato con successo"
     },
     "noConversationsIn": "Nessuna conversazione in {{projectName}}",
-    "startNewConversation": "Avvia una nuova conversazione con {{projectName}} qui sotto",
     "conversationsIn": "Conversazioni in {{projectName}}",
     "conversationsDescription": "Fai clic su una conversazione per continuare a chattare, oppure avviane una nuova qui sotto.",
     "conversation": "Conversazione",
@@ -358,7 +352,8 @@
     "update": "Aggiorna",
     "searchProjects": "Cerca progetti...",
     "noProjectsFound": "Nessun progetto trovato",
-    "tryDifferentSearch": "Prova con un termine di ricerca diverso"
+    "tryDifferentSearch": "Prova con un termine di ricerca diverso",
+    "viewProject": "Visualizza progetto"
   },
   "attachmentsIngestion": {
     "title": "Scegli come elaborare gli allegati",
@@ -501,5 +496,14 @@
     "forceQuit": "Uscita forzata",
     "forcing": "Chiusura forzata in corso…",
     "shuttingDown": "Arresto in corso…"
+  },
+  "chatsAndTasks": "Chat e attività",
+  "artifacts": "Artefatti",
+  "skills": "Competenze",
+  "deleteSession": "Elimina sessione",
+  "deleteSessionTitle": "Eliminare la sessione?",
+  "deleteSessionBody": "«{{title}}» e la sua trascrizione verranno eliminate definitivamente. L'operazione non può essere annullata.",
+  "sidebar": {
+    "more": "Altro"
   }
 }

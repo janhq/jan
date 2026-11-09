@@ -233,10 +233,6 @@
       "cancel": "Cancelar",
       "changeLocation": "Alterar Localização"
     },
-    "deleteAllThreads": {
-      "title": "Remover Todas as Conversas",
-      "description": "Todas as conversas serão removidas. Esta ação não pode ser desfeita."
-    },
     "deleteThread": {
       "description": "Tem certeza de que deseja remover esta conversa? Esta ação não pode ser desfeita."
     },
@@ -265,7 +261,6 @@
     "projectNotFoundDesc": "O projeto que você está procurando não existe ou foi removido.",
     "deleteProjectDialog": {
       "title": "Remover Projeto",
-      "permanentDelete": "ThiIsso removerá permanentemente todas as conversas.",
       "permanentDeleteWarning": "Esta ação removerá permanentemente TODAS as conversas dentro do projeto!",
       "deleteEmptyProject": "Esta ação removerá o projeto \"{{projectName}}\".",
       "saveThreadsAdvice": "Para salvar conversas, mova-as para sua lista de conversas ou outro projeto antes de remover.",
@@ -288,7 +283,6 @@
       "renameSuccess": "Projeto renomeado de \"{{oldName}}\" para \"{{newName}}\""
     },
     "noConversationsIn": "Nenhuma Conversa em {{projectName}}",
-    "startNewConversation": "Inicie uma nova conversa com {{projectName}} abaixo",
     "conversationsIn": "Conversas em {{projectName}}",
     "conversationsDescription": "Clique em qualquer conversa para continuar o chat, ou inicie uma nova abaixo.",
     "thread": "conversa",
@@ -301,7 +295,8 @@
     "noProjectsFound": "Nenhum projeto encontrado",
     "tryDifferentSearch": "Tente um termo de busca diferente",
     "uploadingFiles": "Processando arquivos…",
-    "processButton": "Adicionar"
+    "processButton": "Adicionar",
+    "viewProject": "Ver projeto"
   },
   "errorDialog": {
     "titleFallback": "Algo deu errado",
@@ -407,5 +402,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "chatsAndTasks": "Conversas e tarefas",
+  "artifacts": "Artefatos",
+  "skills": "Habilidades",
+  "deleteSession": "Excluir sessão",
+  "deleteSessionTitle": "Excluir sessão?",
+  "deleteSessionBody": "“{{title}}” e a transcrição dela serão excluídas permanentemente. Esta ação não pode ser desfeita.",
+  "sidebar": {
+    "more": "Mais"
   }
 }

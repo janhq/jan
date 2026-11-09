@@ -235,10 +235,6 @@
       "cancel": "Abbrechen",
       "changeLocation": "Speicherort ändern"
     },
-    "deleteAllThreads": {
-      "title": "Alle Threads löschen",
-      "description": "Alle Threads werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
-    },
     "deleteThread": {
       "description": "Bist Du sicher, daß Du diesen Thread löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden."
     },
@@ -247,6 +243,10 @@
     },
     "messageMetadata": {
       "title": "Nachricht Metadaten"
+    },
+    "deleteAllChats": {
+      "title": "Unterhaltungen außerhalb von Projekten löschen",
+      "description": "Dadurch werden Unterhaltungen gelöscht, die nicht in einem Projekt liegen. Projektunterhaltungen, markierte Unterhaltungen und Aufgaben bleiben erhalten. Diese Aktion kann nicht rückgängig gemacht werden."
     }
   },
   "projects": {
@@ -267,7 +267,7 @@
     "projectNotFoundDesc": "Das gesuchte Projekt existiert nicht oder wurde gelöscht.",
     "deleteProjectDialog": {
       "title": "Projekt löschen",
-      "permanentDelete": "Dies wird alle Threads permanent löschen.",
+      "permanentDelete": "Dadurch werden \"{{projectName}}\" und alle zugehörigen Unterhaltungen dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
       "permanentDeleteWarning": "Diese Aktion wird ALLE Threads innerhalb des Projekts permanent löschen!",
       "deleteEmptyProject": "Diese Aktion wird das Projekt \"{{projectName}}\" löschen.",
       "saveThreadsAdvice": "Um Threads zu speichern, verschiebe sie zu deiner Threadliste oder zu einem anderen Projekt, bevor du löschst.",
@@ -291,7 +291,6 @@
       "renameSuccess": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt"
     },
     "noConversationsIn": "Keine Gespräche in {{projectName}}",
-    "startNewConversation": "Starten Sie ein neues Gespräch mit {{projectName}} unten",
     "conversationsIn": "Gespräche in {{projectName}}",
     "conversationsDescription": "Klicken Sie auf ein Gespräch, um weiterzuchatten, oder starten Sie unten ein neues.",
     "thread": "Thread",
@@ -304,7 +303,9 @@
     "noProjectsFound": "Keine Projekte gefunden",
     "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff",
     "uploadingFiles": "Dateien werden verarbeitet…",
-    "processButton": "Hinzufügen"
+    "processButton": "Hinzufügen",
+    "viewProject": "Projekt ansehen",
+    "sendMessageToStart": "Sende oben eine Nachricht, um eine zu beginnen."
   },
   "errorDialog": {
     "titleFallback": "Etwas ist schiefgelaufen",
@@ -398,6 +399,10 @@
     "downloadAndVerificationComplete": {
       "title": "Download abgeschlossen",
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
+    },
+    "deleteAllChats": {
+      "title": "Unterhaltungen gelöscht",
+      "description": "Unterhaltungen außerhalb von Projekten wurden gelöscht. Projektunterhaltungen und Aufgaben wurden behalten."
     }
   },
   "llamacppBusyOnExit": {
@@ -419,5 +424,15 @@
     "notReadyTitle": "Diese Unterhaltung ist noch nicht bereit",
     "notReadyDescription": "Jan konnte nicht bestätigen, ob diese Unterhaltung ein Chat oder eine Cowork-Aufgabe ist. Versuche es erneut; falls das Problem bestehen bleibt, starte die App neu.",
     "retry": "Erneut versuchen"
+  },
+  "agentSettings": "Agent",
+  "chatsAndTasks": "Chats und Aufgaben",
+  "artifacts": "Artefakte",
+  "skills": "Skills",
+  "deleteSession": "Sitzung löschen",
+  "deleteSessionTitle": "Sitzung löschen?",
+  "deleteSessionBody": "„{{title}}“ und das zugehörige Protokoll werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.",
+  "sidebar": {
+    "more": "Mehr"
   }
 }

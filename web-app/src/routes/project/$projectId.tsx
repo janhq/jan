@@ -175,7 +175,7 @@ function ProjectPageContent() {
                 {t('projects.noConversationsIn', { projectName: project.name })}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {t('projects.startNewConversation', { projectName: project.name })}
+                {t('projects.sendMessageToStart')}
               </p>
             </div>
           )}
