@@ -18,7 +18,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
+import { threadWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
 import {
   ARTIFACT_GROUP_NAMES,
   artifactsFromTurns,
@@ -59,7 +59,7 @@ function useSessionWorkspaces(sessionIds: string[]): Record<string, string> {
           .filter(Boolean)
           .map(async (id) => {
             try {
-              return [id, await sessionWorkspacePath(dataFolder, id)] as const
+              return [id, await threadWorkspacePath(dataFolder, id)] as const
             } catch {
               return [id, ''] as const
             }

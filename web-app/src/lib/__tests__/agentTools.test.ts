@@ -10,6 +10,8 @@ const memoryCatalog = vi.fn()
 const memoryRead = vi.fn()
 const subagentResultReserve = vi.fn()
 const subagentResultFill = vi.fn()
+const attachmentImport = vi.fn()
+const startMonitor = vi.fn()
 const getJanDataFolder = vi.fn()
 
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
@@ -24,7 +26,8 @@ vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   memoryRead: (...args: unknown[]) => memoryRead(...args),
   subagentResultReserve: (...args: unknown[]) => subagentResultReserve(...args),
   subagentResultFill: (...args: unknown[]) => subagentResultFill(...args),
-  attachmentImport: vi.fn(),
+  attachmentImport: (...args: unknown[]) => attachmentImport(...args),
+  startMonitor: (...args: unknown[]) => startMonitor(...args),
 }))
 
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -53,6 +56,8 @@ describe('agentTools', () => {
     memoryRead.mockReset().mockResolvedValue('')
     subagentResultReserve.mockReset()
     subagentResultFill.mockReset()
+    attachmentImport.mockReset()
+    startMonitor.mockReset()
     getJanDataFolder.mockReset().mockResolvedValue('/data')
   })
 
@@ -498,6 +503,30 @@ describe('agentTools', () => {
     const { sweepThreadWorkspaces } = await import('../agentTools')
     await expect(sweepThreadWorkspaces(['a', 'b'])).resolves.toBe(3)
     expect(threadWorkspaceSweep).toHaveBeenCalledWith('/data', ['a', 'b'])
+  })
+
+  // A Cowork conversation is a thread now, so an attachment must land in the
+  // sandbox its tools run in, not the legacy sessions/ tree.
+  it('imports an attachment into the thread sandbox', async () => {
+    attachmentImport.mockResolvedValue({ path: '/p/a.txt', textPath: null })
+    const { importAttachment } = await import('../agentTools')
+    await importAttachment('c1', '/src/a.txt', 'text')
+    expect(attachmentImport).toHaveBeenCalledWith(
+      '/data',
+      'c1',
+      '/src/a.txt',
+      'text',
+      'thread'
+    )
+  })
+
+  it('starts a monitor in the thread sandbox', async () => {
+    startMonitor.mockResolvedValue('m1')
+    const { startAgentMonitor } = await import('../agentTools')
+    await startAgentMonitor('c1', { path: 'a' }, () => {})
+    expect(startMonitor.mock.calls.at(-1)?.[4]).toMatchObject({
+      scope: 'thread',
+    })
   })
 
   it('copies a session sandbox into the thread workspace of the same id', async () => {
