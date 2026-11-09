@@ -529,8 +529,8 @@ pub async fn blackboard_write(
     .map_err(|e| AgentToolsError::from(format!("blackboard write failed: {e}")))?
 }
 
-/// An attachment imported into a session workspace: host paths, which are also
-/// the model-visible spelling since the workspace is the tools' root.
+/// An attachment imported into a conversation's workspace: host paths, which
+/// are also the model-visible spelling since the workspace is the tools' root.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportedAttachment {
@@ -538,20 +538,27 @@ pub struct ImportedAttachment {
     pub text_path: Option<String>,
 }
 
-/// Copy a user attachment into the Cowork session workspace, with its extracted
+/// Copy a user attachment into the conversation's workspace, with its extracted
 /// text beside it, so the agent's file tools can reach a file the picker found
 /// outside every root they may read. Host-side rather than a model tool: the
 /// source path is the user's, never the model's to name.
+///
+/// `scope` defaults to the thread sandbox: Cowork conversations are threads and
+/// run there, so that is where their tools look. `Session` remains only for a
+/// caller that still holds a legacy `sessions/<id>` sandbox.
 #[tauri::command]
 pub async fn attachment_import(
     data_folder: String,
     session_id: String,
     source: String,
     text: Option<String>,
+    scope: Option<WorkspaceScope>,
 ) -> Result<ImportedAttachment, AgentToolsError> {
     let data_folder = workspace::host_data_folder(&data_folder);
-    let workspace =
-        workspace::ensure_session_workspace(Path::new(&data_folder), &session_id).await?;
+    let workspace = scope
+        .unwrap_or_default()
+        .ensure(Path::new(&data_folder), &session_id)
+        .await?;
     let imported = tokio::task::spawn_blocking(move || {
         crate::tools::attachments::import_attachment(
             &workspace,
@@ -2083,6 +2090,67 @@ mod tests {
         let _ = std::fs::remove_dir_all(&data);
         let _ = std::fs::remove_dir_all(&repo);
     }
+    // ---- attachment import scope ---------------------------------------------
+
+    /// Cowork threads run in the thread sandbox the migration populated, so an
+    /// attachment imported without a scope must land where the agent's file
+    /// tools look, not in the legacy `sessions/` tree.
+    #[tokio::test]
+    async fn attachment_import_defaults_to_the_thread_sandbox() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let src = data.join("outside");
+        std::fs::create_dir_all(&src).unwrap();
+        let file = src.join("notes.txt");
+        std::fs::write(&file, b"hello").unwrap();
+
+        let imported = attachment_import(
+            df.clone(),
+            "t-import".into(),
+            file.to_string_lossy().into_owned(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let thread_dir = workspace::thread_workspace(&data, "t-import").unwrap();
+        assert!(
+            Path::new(&imported.path).starts_with(&thread_dir),
+            "{} is not under {}",
+            imported.path,
+            thread_dir.display()
+        );
+        assert!(!workspace::session_workspace(&data, "t-import")
+            .unwrap()
+            .exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[tokio::test]
+    async fn attachment_import_honours_an_explicit_session_scope() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let src = data.join("outside");
+        std::fs::create_dir_all(&src).unwrap();
+        let file = src.join("notes.txt");
+        std::fs::write(&file, b"hello").unwrap();
+
+        let imported = attachment_import(
+            df,
+            "s-import".into(),
+            file.to_string_lossy().into_owned(),
+            None,
+            Some(WorkspaceScope::Session),
+        )
+        .await
+        .unwrap();
+
+        let session_dir = workspace::session_workspace(&data, "s-import").unwrap();
+        assert!(Path::new(&imported.path).starts_with(&session_dir));
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
     // ---- read-only attached folder, end to end ------------------------------
 
     /// The contract the workspace UI promises: the agent reads your folder and
