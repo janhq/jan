@@ -373,6 +373,8 @@ impl EngineServer {
     async fn route(&self, req: Request<Incoming>) -> HttpResponse<Body> {
         let path = req.uri().path().to_string();
         let method = req.method().clone();
+        // Taken before `req` is consumed for its body.
+        let query = req.uri().query().map(str::to_string);
 
         if !authorized(&self.api_key, req.headers()) {
             return json_error(StatusCode::UNAUTHORIZED, "invalid api key");
@@ -442,9 +444,9 @@ impl EngineServer {
         };
         let body = String::from_utf8_lossy(&body).into_owned();
 
-        // Routes that do not name a model are answered by any resident engine;
-        // health has to work even when nothing is loaded.
-        let model = extract_model(&body);
+        // Routes that name no model, in the body or the query, are answered by
+        // any resident engine; health has to work even when nothing is loaded.
+        let model = request_model(&body, query.as_deref());
         self.dispatch(route, model, body).await
     }
 
@@ -929,7 +931,8 @@ fn authorized(api_key: &str, headers: &hyper::HeaderMap) -> bool {
 }
 
 /// The `model` field OpenAI requests carry, used to pick the engine. Absent for
-/// `/health`, `/props` and single-model callers.
+/// `/health` and single-model callers; `/props` names its model in the query
+/// string instead (see [`request_model`]).
 fn extract_model(body: &str) -> Option<String> {
     serde_json::from_str::<serde_json::Value>(body)
         .ok()?
@@ -937,6 +940,50 @@ fn extract_model(body: &str) -> Option<String> {
         .as_str()
         .map(str::to_string)
         .filter(|s| !s.is_empty())
+}
+
+/// The model a request addresses: the body's `model` field when it has one, else
+/// the `model` query parameter.
+///
+/// The query is what lets a body-less `GET /props?model=<id>` reach the right
+/// engine. Without it such a request has no model and `dispatch_any` answers it
+/// from the first resident engine in id order, so the chat window, slot count
+/// and modalities came from whichever model sorted first -- the embedding model
+/// as soon as an attachment had loaded one.
+fn request_model(body: &str, query: Option<&str>) -> Option<String> {
+    extract_model(body).or_else(|| query_param(query?, "model"))
+}
+
+/// First non-empty value of `key` in a query string, percent-decoded.
+///
+/// `+` stays a plus: the caller writes ids with `encodeURIComponent`, which
+/// spells a space `%20` and a literal plus `%2B`, and an imported model's id is
+/// a file path where a plus is ordinary.
+fn query_param(query: &str, key: &str) -> Option<String> {
+    query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .filter(|(k, _)| *k == key)
+        .find_map(|(_, v)| percent_decode(v).filter(|s| !s.is_empty()))
+}
+
+/// `None` for a malformed escape or a result that is not UTF-8, so a bad
+/// request is treated as naming no model rather than naming a wrong one.
+fn percent_decode(raw: &str) -> Option<String> {
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = bytes.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
 }
 
 fn json_ok(v: &serde_json::Value) -> HttpResponse<Body> {
@@ -959,6 +1006,53 @@ fn json_error(status: StatusCode, message: &str) -> HttpResponse<Body> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_get_names_its_model_in_the_query_string() {
+        // `getModelProps` asks `/props?model=<id>`; that request has no body.
+        assert_eq!(
+            request_model("", Some("model=qwen")).as_deref(),
+            Some("qwen")
+        );
+    }
+
+    #[test]
+    fn a_query_model_is_percent_decoded_like_encodeuricomponent_writes_it() {
+        // Imported models are ids like a Windows path: `\`, `:` and spaces.
+        assert_eq!(
+            request_model("", Some("model=E%3A%5CML%5Cembed%5Cbge-m3%20Q6_K.gguf")).as_deref(),
+            Some(r"E:\ML\embed\bge-m3 Q6_K.gguf")
+        );
+        // `+` is a literal plus in encodeURIComponent output, spelled %2B.
+        assert_eq!(
+            request_model("", Some("model=a%2Bb")).as_deref(),
+            Some("a+b")
+        );
+    }
+
+    #[test]
+    fn the_body_wins_over_the_query() {
+        assert_eq!(
+            request_model(r#"{"model":"from-body"}"#, Some("model=from-query")).as_deref(),
+            Some("from-body")
+        );
+    }
+
+    #[test]
+    fn no_model_anywhere_stays_unaddressed() {
+        assert_eq!(request_model("", None), None);
+        assert_eq!(request_model("", Some("reload=1")), None);
+        assert_eq!(request_model("", Some("model=")), None);
+        assert_eq!(request_model("", Some("a=b&model=x&model=y")).as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn a_malformed_query_names_no_model_rather_than_a_wrong_one() {
+        // Truncated escape, non-hex escape, and bytes that are not UTF-8.
+        assert_eq!(request_model("", Some("model=ab%2")), None);
+        assert_eq!(request_model("", Some("model=%zz")), None);
+        assert_eq!(request_model("", Some("model=%E0%A4")), None);
+    }
 
     #[test]
     fn extract_model_reads_the_openai_field() {
