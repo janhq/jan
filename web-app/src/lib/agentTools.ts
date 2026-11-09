@@ -323,7 +323,7 @@ function isMemoryChange(args: Record<string, unknown>): boolean {
 export type { MonitorUpdate }
 
 /**
- * Start a file monitor for a Cowork session. `onUpdate` receives every match
+ * Start a file monitor for a Cowork conversation (a thread). `onUpdate` receives every match
  * (and the terminal all-met/timeout update) as it happens; the returned string
  * is the model-facing `monitor` tool result. An error comes back as an
  * `ERROR:`-prefixed output rather than a throw, matching the tool contract.
@@ -345,7 +345,7 @@ export async function startAgentMonitor(
       allowNetwork,
       readOnlyProject: readOnlyProject ?? undefined,
       projectWritable,
-      scope: 'session',
+      scope: 'thread',
     })
     return { output }
   } catch (e) {
@@ -485,7 +485,8 @@ export async function importAttachment(
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
     if (!dataFolder) return null
-    return await attachmentImport(dataFolder, sessionId, source, text)
+    // Thread scope: the sandbox the conversation's tools run in.
+    return await attachmentImport(dataFolder, sessionId, source, text, 'thread')
   } catch (e) {
     console.warn('[agentTools] Failed to import attachment:', messageOf(e))
     return null

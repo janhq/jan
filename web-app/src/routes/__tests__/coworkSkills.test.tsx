@@ -112,7 +112,7 @@ vi.mock('@/lib/coworkSubagentRegistry', () => ({
 }))
 vi.mock('@/lib/model-factory', () => ({ ModelFactory: {} }))
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
-  sessionWorkspacePath: async () => '/sandbox',
+  threadWorkspacePath: async () => '/sandbox',
 }))
 vi.mock('@/containers/ChatInput', () => ({
   default: ({
