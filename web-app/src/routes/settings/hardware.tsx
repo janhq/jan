@@ -153,11 +153,13 @@ function selectedDevice(group: GpuGroup): ActiveDevice {
 function GpuGroupCard({
   group,
   gpus,
+  allDevices,
   onToggle,
   onSelect,
 }: {
   group: GpuGroup
   gpus: GPU[]
+  allDevices: DeviceList[]
   onToggle: () => void
   onSelect: (deviceId: string) => void
 }) {
@@ -165,7 +167,7 @@ function GpuGroupCard({
   const activated = group.devices.some((device) => device.activated)
   const device = selectedDevice(group)
   const { backend } = parseDeviceId(device.id)
-  const gpuInfo = findGpuForDevice(device, gpus)
+  const gpuInfo = findGpuForDevice(device, gpus, allDevices)
   const used = Math.max(0, device.mem - device.free)
   const usedPercent = device.mem > 0 ? (used / device.mem) * 100 : 0
 
@@ -658,6 +660,7 @@ function HardwareContent() {
                           key={group.key}
                           group={group}
                           gpus={gpus}
+                          allDevices={llamacppDevices}
                           onToggle={() => handleToggleGroup(group)}
                           onSelect={(deviceId) =>
                             handleSelectBackend(group, deviceId)

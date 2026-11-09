@@ -41,6 +41,25 @@ describe('findGpuForDevice', () => {
     expect(findGpuForDevice({ id: 'Vulkan1', name: 'Twin' }, [a, b])).toBe(b)
   })
 
+  it('pairs the one leftover device and GPU when an NVML name differs', () => {
+    const devices = [
+      { id: 'Vulkan0', name: 'NVIDIA GeForce RTX 4060 Ti' },
+      { id: 'Vulkan1', name: 'Intel UHD 770' },
+    ]
+    expect(findGpuForDevice(devices[0], [intel, nvidia], devices)).toBe(nvidia)
+    expect(findGpuForDevice(devices[1], [intel, nvidia], devices)).toBe(intel)
+  })
+
+  it('does not guess when several devices are unmatched', () => {
+    const devices = [
+      { id: 'Vulkan0', name: 'A' },
+      { id: 'Vulkan1', name: 'B' },
+    ]
+    expect(
+      findGpuForDevice(devices[0], [nvidia, gpu('Other', 1)], devices)
+    ).toBeUndefined()
+  })
+
   it('returns nothing when the name matches no GPU', () => {
     expect(
       findGpuForDevice({ id: 'Vulkan0', name: 'Mystery' }, [nvidia, intel])
