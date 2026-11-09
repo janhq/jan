@@ -551,5 +551,42 @@
   "deleteSessionBody": "「{{title}}」とそのトランスクリプトは完全に削除されます。この操作は元に戻せません。",
   "sidebar": {
     "more": "その他"
+  },
+  "composer": {
+    "addControls": "添付ファイルとコントロールを追加",
+    "assistant": "アシスタント",
+    "allTools": "すべてのツール",
+    "samplingParameters": "サンプリングパラメータ",
+    "samplingSaveFailed": "サンプリングパラメータを保存できませんでした。もう一度お試しください。",
+    "context": "コンテキスト: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "モデルを選択",
+    "none": "なし",
+    "triggerLabel": "モデルを選択: {{name}}",
+    "dialogLabel": "モデルを選択",
+    "searchLabel": "モデルまたはプロバイダーを検索",
+    "searchPlaceholder": "モデルまたはプロバイダーを検索…",
+    "listLabel": "モデル",
+    "noMatches": "一致するモデルがありません",
+    "noModels": "モデルが設定されていません",
+    "optionsLabel": "モデルのオプション",
+    "reasoning": "推論",
+    "reasoningMode": "推論モード",
+    "reasoningEffort": "推論の強度",
+    "thinkingBudget": "思考バジェット",
+    "modelSettings": "モデル設定",
+    "manageModels": "モデルを管理",
+    "effort": {
+      "default": "デフォルト",
+      "auto": "自動",
+      "on": "オン",
+      "off": "オフ",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "xhigh": "最高",
+      "unlimited": "無制限"
+    }
   }
 }

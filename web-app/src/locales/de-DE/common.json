@@ -434,5 +434,42 @@
   "deleteSessionBody": "„{{title}}“ und das zugehörige Protokoll werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.",
   "sidebar": {
     "more": "Mehr"
+  },
+  "composer": {
+    "addControls": "Anhänge und Steuerelemente hinzufügen",
+    "assistant": "Assistent",
+    "allTools": "Alle Tools",
+    "samplingParameters": "Sampling-Parameter",
+    "samplingSaveFailed": "Die Sampling-Parameter konnten nicht gespeichert werden. Bitte versuchen Sie es erneut.",
+    "context": "Kontext: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Modell auswählen",
+    "none": "Keines",
+    "triggerLabel": "Modell auswählen: {{name}}",
+    "dialogLabel": "Modell wählen",
+    "searchLabel": "Modelle oder Anbieter suchen",
+    "searchPlaceholder": "Modelle oder Anbieter suchen…",
+    "listLabel": "Modelle",
+    "noMatches": "Keine passenden Modelle",
+    "noModels": "Keine Modelle konfiguriert",
+    "optionsLabel": "Modelloptionen",
+    "reasoning": "Reasoning",
+    "reasoningMode": "Reasoning-Modus",
+    "reasoningEffort": "Reasoning-Aufwand",
+    "thinkingBudget": "Denkbudget",
+    "modelSettings": "Modelleinstellungen",
+    "manageModels": "Modelle verwalten",
+    "effort": {
+      "default": "Standard",
+      "auto": "Automatisch",
+      "on": "An",
+      "off": "Aus",
+      "low": "Niedrig",
+      "medium": "Mittel",
+      "high": "Hoch",
+      "xhigh": "Sehr hoch",
+      "unlimited": "Unbegrenzt"
+    }
   }
 }

@@ -434,5 +434,42 @@
   "deleteSessionBody": "“{{title}}”及其记录将被永久删除，此操作无法撤销。",
   "sidebar": {
     "more": "更多"
+  },
+  "composer": {
+    "addControls": "添加附件和控件",
+    "assistant": "助手",
+    "allTools": "所有工具",
+    "samplingParameters": "采样参数",
+    "samplingSaveFailed": "无法保存采样参数，请重试。",
+    "context": "上下文：{{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "选择模型",
+    "none": "无",
+    "triggerLabel": "选择模型：{{name}}",
+    "dialogLabel": "选择模型",
+    "searchLabel": "搜索模型或提供商",
+    "searchPlaceholder": "搜索模型或提供商…",
+    "listLabel": "模型",
+    "noMatches": "没有匹配的模型",
+    "noModels": "尚未配置模型",
+    "optionsLabel": "模型选项",
+    "reasoning": "推理",
+    "reasoningMode": "推理模式",
+    "reasoningEffort": "推理强度",
+    "thinkingBudget": "思考预算",
+    "modelSettings": "模型设置",
+    "manageModels": "管理模型",
+    "effort": {
+      "default": "默认",
+      "auto": "自动",
+      "on": "开",
+      "off": "关",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "xhigh": "极高",
+      "unlimited": "不限"
+    }
   }
 }

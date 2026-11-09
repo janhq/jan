@@ -13,7 +13,6 @@ import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
 import { FolderPenIcon, MessageCircle, MoreHorizontal, PencilIcon, Trash2 } from 'lucide-react'
 import ProjectFiles from '@/containers/ProjectFiles'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,11 +86,7 @@ function ProjectPageContent() {
 
   return (
     <div className="flex flex-col h-svh w-full">
-      <HeaderPage>
-        <div className="flex items-center justify-between w-full">
-          <DropdownModelProvider />
-        </div>
-      </HeaderPage>
+      <HeaderPage />
 
       <div className="h-full relative flex flex-col px-4 md:px-8 py-4 overflow-y-auto">
         <div className="mx-auto w-full md:w-4/5 xl:w-4/6">

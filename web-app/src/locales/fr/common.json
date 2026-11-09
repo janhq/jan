@@ -437,5 +437,42 @@
   "deleteSessionBody": "« {{title}} » et sa transcription seront supprimées définitivement. Cette action est irréversible.",
   "sidebar": {
     "more": "Plus"
+  },
+  "composer": {
+    "addControls": "Ajouter des pièces jointes et des commandes",
+    "assistant": "Assistant",
+    "allTools": "Tous les outils",
+    "samplingParameters": "Paramètres d'échantillonnage",
+    "samplingSaveFailed": "Impossible d'enregistrer les paramètres d'échantillonnage. Veuillez réessayer.",
+    "context": "Contexte : {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Sélectionner un modèle",
+    "none": "Aucun",
+    "triggerLabel": "Sélectionner un modèle : {{name}}",
+    "dialogLabel": "Choisir un modèle",
+    "searchLabel": "Rechercher des modèles ou des fournisseurs",
+    "searchPlaceholder": "Rechercher des modèles ou des fournisseurs…",
+    "listLabel": "Modèles",
+    "noMatches": "Aucun modèle correspondant",
+    "noModels": "Aucun modèle configuré",
+    "optionsLabel": "Options du modèle",
+    "reasoning": "Raisonnement",
+    "reasoningMode": "Mode de raisonnement",
+    "reasoningEffort": "Effort de raisonnement",
+    "thinkingBudget": "Budget de réflexion",
+    "modelSettings": "Paramètres du modèle",
+    "manageModels": "Gérer les modèles",
+    "effort": {
+      "default": "Par défaut",
+      "auto": "Auto",
+      "on": "Activé",
+      "off": "Désactivé",
+      "low": "Faible",
+      "medium": "Moyen",
+      "high": "Élevé",
+      "xhigh": "Très élevé",
+      "unlimited": "Illimité"
+    }
   }
 }

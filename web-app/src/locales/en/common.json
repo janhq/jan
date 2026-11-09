@@ -812,5 +812,42 @@
   "chatsAndTasks": "Chats and tasks",
   "sidebar": {
     "more": "More"
+  },
+  "composer": {
+    "addControls": "Add attachments and controls",
+    "assistant": "Assistant",
+    "allTools": "All Tools",
+    "samplingParameters": "Sampling parameters",
+    "samplingSaveFailed": "Could not save sampling parameters. Please try again.",
+    "context": "Context: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Select a model",
+    "none": "None",
+    "triggerLabel": "Select model: {{name}}",
+    "dialogLabel": "Choose a model",
+    "searchLabel": "Search models or providers",
+    "searchPlaceholder": "Search models or providers…",
+    "listLabel": "Models",
+    "noMatches": "No matching models",
+    "noModels": "No models configured",
+    "optionsLabel": "Model options",
+    "reasoning": "Reasoning",
+    "reasoningMode": "Reasoning mode",
+    "reasoningEffort": "Reasoning effort",
+    "thinkingBudget": "Thinking budget",
+    "modelSettings": "Model settings",
+    "manageModels": "Manage models",
+    "effort": {
+      "default": "Default",
+      "auto": "Auto",
+      "on": "On",
+      "off": "Off",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "xhigh": "Very high",
+      "unlimited": "Unlimited"
+    }
   }
 }

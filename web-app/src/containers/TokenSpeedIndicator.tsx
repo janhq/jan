@@ -93,7 +93,7 @@ export const TokenSpeedIndicator = memo(
               column (small window, Cowork's docked rail) they give way to the
               compact gauge rather than wrapping it, so the numbers stay one
               click away. Queries the footer's @container. */}
-          <div className="flex items-center gap-2 text-muted-foreground text-xs @max-md:hidden">
+          <div className="flex items-center gap-2 text-muted-foreground text-sm @max-md:hidden">
             {displaySpeed > 0 && (
               <div className="flex items-center gap-1">
                 <Gauge size={16} />

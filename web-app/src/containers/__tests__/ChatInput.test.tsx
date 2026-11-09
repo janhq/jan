@@ -272,8 +272,18 @@ vi.mock('@/containers/MovingBorder', () => ({
 vi.mock('@/components/TokenCounter', () => ({
   TokenCounter: () => <div data-testid="stub-token-counter" />,
 }))
+// Model selection/effort is covered by ComposerModelPicker's own suite.
+vi.mock('@/containers/ComposerModelPicker', () => ({
+  default: ({ className }: { className?: string }) => (
+    <button aria-label="Select model" className={className}>
+      Model
+    </button>
+  ),
+}))
 vi.mock('@/components/AssistantsMenu', () => ({
-  AssistantsMenu: () => <div data-testid="stub-assistants-menu" />,
+  AssistantsMenu: ({ selectedAssistant }: any) => (
+    <div data-testid="stub-assistants-menu">{selectedAssistant}</div>
+  ),
 }))
 
 // Minimal dropdown/tooltip stubs (pass-throughs to keep DOM shallow)
@@ -289,6 +299,11 @@ vi.mock('@/components/ui/dropdown-menu', () => {
     ),
     DropdownMenuTrigger: Pass,
     DropdownMenuSeparator: () => null,
+    DropdownMenuCheckboxItem: ({ children, onCheckedChange, checked, disabled }: any) => (
+      <button role="menuitemcheckbox" aria-checked={checked} disabled={disabled} onClick={() => onCheckedChange?.(!checked)}>
+        {children}
+      </button>
+    ),
     DropdownMenuSub: Pass,
     DropdownMenuSubContent: Pass,
     DropdownMenuSubTrigger: Pass,
@@ -311,6 +326,7 @@ vi.mock('@/lib/platform/utils', () => ({
 // Import component AFTER all mocks
 import ChatInput from '../ChatInput'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
+import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 
 // Helpers -------------------------------------------------------------------
 
@@ -335,6 +351,7 @@ const resetAll = () => {
   for (const k of Object.keys(queueState)) delete queueState[k]
   getCurrentThreadMock.mockReturnValue(undefined)
   useImageAttachmentConfig.setState({ maxImageSizeMB: 10 })
+  useWebSearchConfig.setState({ webSearchEnabled: false })
 }
 
 const getTextarea = () =>
@@ -361,9 +378,8 @@ describe('ChatInput', () => {
   it('shows the project assistant for a new conversation', () => {
     renderInput({ projectId: 'project-1', projectAssistantId: 'a2' })
 
-    expect(
-      screen.getByRole('button', { name: 'Switch assistant' })
-    ).toHaveTextContent('Project assistant')
+    // The assistant list now lives in the composer's options menu.
+    expect(screen.getByTestId('stub-assistants-menu')).toHaveTextContent('a2')
   })
 
   it('disables the send button when prompt is empty', () => {
@@ -694,8 +710,10 @@ describe('ChatInput', () => {
     // Web access is a global capability both surfaces honour -- Cowork reads
     // the same store when it builds its tool set -- so the toggle travels.
     it('offers the web-search toggle on every surface', () => {
+      useWebSearchConfig.setState({ webSearchEnabled: true })
       renderInput()
-      expect(icons('world-search')).toBe(1)
+      // One menu entry plus the inline shortcut shown while it is on.
+      expect(icons('world-search')).toBe(2)
       renderInput({ ownsToolSet: false })
       expect(icons('world-search')).toBeGreaterThan(0)
     })
