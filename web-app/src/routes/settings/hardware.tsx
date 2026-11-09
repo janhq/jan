@@ -19,6 +19,7 @@ import type {
 } from '@/services/hardware/types'
 import { cn, formatMegaBytes } from '@/lib/utils'
 import { toNumber } from '@/utils/number'
+import { findGpuForDevice, parseDeviceId } from '@/lib/gpuDeviceMatch'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAppState } from '@/hooks/useAppState'
 import { Button } from '@/components/ui/button'
@@ -39,31 +40,8 @@ const BACKEND_LABELS: Record<string, string> = {
   cpu: 'CPU',
 }
 
-function parseDeviceId(id: string): { backend: string; index: number } {
-  const match = /^([A-Za-z]+?)(\d+)$/.exec(id ?? '')
-  if (!match) return { backend: id ?? '', index: 0 }
-  return { backend: match[1], index: Number(match[2]) }
-}
-
 function backendLabel(backend: string): string {
   return BACKEND_LABELS[backend.toLowerCase()] ?? backend.toUpperCase()
-}
-
-// Devices are joined to hardware-plugin GPUs by per-backend index, not by name:
-// the same physical GPU appears at different indices under different backends.
-function findGpuForDevice(
-  backend: string,
-  index: number,
-  gpus: GPU[]
-): GPU | undefined {
-  const key = backend.toLowerCase()
-  if (key === 'vulkan') {
-    return gpus.find((gpu) => gpu.vulkan_info?.index === index)
-  }
-  if (key === 'cuda') {
-    return gpus.find((gpu) => gpu.nvidia_info?.index === index)
-  }
-  return undefined
 }
 
 function BackendChip({ label, active }: { label: string; active: boolean }) {
@@ -175,19 +153,21 @@ function selectedDevice(group: GpuGroup): ActiveDevice {
 function GpuGroupCard({
   group,
   gpus,
+  allDevices,
   onToggle,
   onSelect,
 }: {
   group: GpuGroup
   gpus: GPU[]
+  allDevices: DeviceList[]
   onToggle: () => void
   onSelect: (deviceId: string) => void
 }) {
   const { t } = useTranslation()
   const activated = group.devices.some((device) => device.activated)
   const device = selectedDevice(group)
-  const { backend, index } = parseDeviceId(device.id)
-  const gpuInfo = findGpuForDevice(backend, index, gpus)
+  const { backend } = parseDeviceId(device.id)
+  const gpuInfo = findGpuForDevice(device, gpus, allDevices)
   const used = Math.max(0, device.mem - device.free)
   const usedPercent = device.mem > 0 ? (used / device.mem) * 100 : 0
 
@@ -680,6 +660,7 @@ function HardwareContent() {
                           key={group.key}
                           group={group}
                           gpus={gpus}
+                          allDevices={llamacppDevices}
                           onToggle={() => handleToggleGroup(group)}
                           onSelect={(deviceId) =>
                             handleSelectBackend(group, deviceId)
