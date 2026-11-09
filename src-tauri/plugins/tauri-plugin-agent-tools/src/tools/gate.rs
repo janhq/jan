@@ -1367,7 +1367,7 @@ mod tests {
     /// but walks the whole target, so the budget meters the real walk: many
     /// distinct such tokens (which ordinary approved commands can set up)
     /// stalled the gate for minutes before ending in an exec prompt.
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn tokens_through_a_link_into_a_deep_directory_are_decided_quickly() {
         let home = unique_root();
@@ -1415,7 +1415,7 @@ mod tests {
     /// through a chain of links, each leading back into a deep directory,
     /// took the gate 20 s. It is refused as too complex instead, never let
     /// through on a check cut short; a shallow path is decided as before.
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn a_path_through_links_into_a_deep_directory_is_decided_quickly_unsandboxed() {
         let project = std::fs::canonicalize(unique_root()).unwrap();
@@ -1708,6 +1708,7 @@ mod tests {
     /// `/proc/self/cwd` names the shell's own start directory, not Jan's: a
     /// command spelling a path through it is checked as if it were relative,
     /// with or without a held directory.
+    #[cfg(unix)]
     #[test]
     fn proc_self_cwd_resolves_against_where_the_shell_starts() {
         let home = std::fs::canonicalize(unique_root()).unwrap();

@@ -1760,6 +1760,8 @@ mod tests {
     fn resolve_cost_grows_with_depth() {
         assert_eq!(resolve_cost(10, "word"), 11);
         assert_eq!(resolve_cost(10, "src/a/b/c.rs"), 4 * 14);
+        // Windows spells an absolute path with a drive, not a leading slash.
+        #[cfg(unix)]
         assert_eq!(resolve_cost(10, "/usr/lib/x.so"), 4 * 4);
         assert!(resolve_cost(0, &"a/".repeat(2048)) > MAX_RESOLVE_COST);
         assert!(resolve_cost(10, &"a/".repeat(2000)) <= MAX_RESOLVE_COST);
