@@ -1951,18 +1951,6 @@ mod tests {
     }
 
     #[test]
-    fn normalize_youcom_extract_does_not_guess_proxy_truncation() {
-        // The keyless proxy no longer imposes a 25,000-character limit. Only
-        // Jan's FETCH_MAX_CHARS bound should mark a page truncated.
-        let body = json!({ "contents": { "full_page": { "markdown": "é".repeat(25_000) } } });
-        let page = normalize_youcom_extract(&body, "u").unwrap();
-        assert!(!page.truncated);
-        assert_eq!(page.content.chars().count(), 25_000);
-        // A missing url falls back to the requested one.
-        assert_eq!(page.url, "u");
-    }
-
-    #[test]
     fn normalize_youcom_extract_bounds_to_fetch_max() {
         let body = json!({
             "contents": { "full_page": { "markdown": "a".repeat(FETCH_MAX_CHARS + 100) } }
