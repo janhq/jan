@@ -103,8 +103,6 @@
     "threadScrollFlowHint": "보낸 최신 메시지에 뷰포트를 고정합니다.",
     "threadScrollStickyTitle": "고정 스크롤",
     "threadScrollStickyHint": "답변이 실시간으로 스트리밍될 때 자동으로 따라갑니다.",
-    "tokenCounterCompact": "컴팩트 토큰 카운터",
-    "tokenCounterCompactDesc": "채팅 입력란 안에 토큰 카운터를 표시합니다. 비활성화 시 토큰 카운터가 입력란 아래에 표시됩니다.",
     "codeBlockTitle": "코드 블록",
     "codeBlockDesc": "구문 강조 스타일을 선택합니다.",
     "showLineNumbers": "줄 번호 표시",

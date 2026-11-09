@@ -93,8 +93,6 @@
     "resetToDefaultDesc": "Redefinir todas as configurações de aparência para padrão.",
     "resetAppearanceSuccess": "Aparência redefinida com sucesso",
     "resetAppearanceSuccessDesc": "Todas as configurações de aparência foram restauradas para padrão.",
-    "tokenCounterCompact": "Contador de Tokens Compacto",
-    "tokenCounterCompactDesc": "Mostrar contador de tokens dentro da entrada do chat. Quando desabilitado, contador de tokens aparece abaixo da entrada.",
     "codeBlockTitle": "Bloco de Código",
     "codeBlockDesc": "Escolher um estilo de realce de sintaxe.",
     "showLineNumbers": "Mostrar Números de Linha",

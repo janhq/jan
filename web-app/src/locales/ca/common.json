@@ -257,7 +257,6 @@
     "deleteProjectDialog": {
       "title": "Suprimeix el projecte",
       "permanentDeleteWarning": "Aquesta acció suprimirà TOTS els fils del projecte!",
-      "deleteEmptyProject": "Aquesta acció suprimirà el projecte \"{{projectName}}\".",
       "saveThreadsAdvice": "Per conservar els fils, mou-los a la llista de fils o a un altre projecte abans de suprimir-lo.",
       "starredWarning": "Encara tens fils marcats com a preferits al projecte.",
       "deleteButton": "Suprimeix",

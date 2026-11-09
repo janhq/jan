@@ -358,7 +358,6 @@
     "deleteProjectDialog": {
       "title": "Hapus Proyek",
       "permanentDeleteWarning": "Tindakan ini akan menghapus SEMUA utas dalam proyek secara permanen!",
-      "deleteEmptyProject": "Tindakan ini akan menghapus proyek \"{{projectName}}\".",
       "saveThreadsAdvice": "Untuk menyimpan utas, pindahkan ke daftar utas Anda atau proyek lain sebelum menghapus.",
       "starredWarning": "Anda masih memiliki utas yang dibintangi dalam proyek.",
       "description": "Apakah Anda yakin ingin menghapus proyek ini? Tindakan ini tidak dapat dibatalkan.",

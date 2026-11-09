@@ -111,8 +111,6 @@
     "threadScrollFlowHint": "Mantiene la schermata ancorata all'ultimo messaggio che hai inviato.",
     "threadScrollStickyTitle": "Scorrimento fisso (Sticky)",
     "threadScrollStickyHint": "Segue automaticamente lo scorrimento del testo mentre le risposte vengono generate in tempo reale.",
-    "tokenCounterCompact": "Contatore token compatto",
-    "tokenCounterCompactDesc": "Mostra il contatore dei token all'interno del campo di input della chat. Se disabilitato, il contatore dei token apparirà sotto il campo di input.",
     "codeBlockTitle": "Blocco di codice",
     "codeBlockDesc": "Scegli uno stile per l'evidenziazione della sintassi.",
     "showLineNumbers": "Mostra numeri di riga",

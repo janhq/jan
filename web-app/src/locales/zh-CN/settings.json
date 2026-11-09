@@ -128,8 +128,6 @@
     "threadScrollFlowHint": "Keeps the viewport anchored to the latest message you send.",
     "threadScrollStickyTitle": "Sticky scroll",
     "threadScrollStickyHint": "Automatically follows along as replies stream in real time.",
-    "tokenCounterCompact": "紧凑 token 计数器",
-    "tokenCounterCompactDesc": "在聊天输入框内显示 token 计数器。禁用时，token 计数器显示在输入框下方。",
     "codeBlockTitle": "代码块",
     "codeBlockDesc": "选择语法高亮样式。",
     "showLineNumbers": "显示行号",

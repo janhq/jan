@@ -100,9 +100,7 @@
     "resetCodeBlockStyle": "Przywróć Domyślny Styl Bloków Kodu",
     "resetCodeBlockStyleDesc": "Przywraca domyślny styl bloku kodu.",
     "resetCodeBlockSuccess": "Pomyślnie Przywrócono Styl Bloku Kodu",
-    "resetCodeBlockSuccessDesc": "Styl bloku kodu został przywrócony do ustawień domyślnych.",
-    "tokenCounterCompact": "Kompaktowy Licznik Tokenów",
-    "tokenCounterCompactDesc": "Pokaż licznik tokenów wewnątrz pola wprowadzania czatu. Po wyłączeniu, licznik tokenów pojawia się poniżej pola wprowadzania."
+    "resetCodeBlockSuccessDesc": "Styl bloku kodu został przywrócony do ustawień domyślnych."
   },
   "hardware": {
     "os": "System Operacyjny",
