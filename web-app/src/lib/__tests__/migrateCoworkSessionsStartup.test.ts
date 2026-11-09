@@ -2,12 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const h = vi.hoisted(() => ({
   isTauri: true,
+  isIOS: false,
+  isAndroid: false,
   invoke: vi.fn(),
   getServiceHub: vi.fn(),
 }))
 
 vi.mock('@/lib/platform/utils', () => ({
   isPlatformTauri: () => h.isTauri,
+  isPlatformIOS: () => h.isIOS,
+  isPlatformAndroid: () => h.isAndroid,
 }))
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: h.getServiceHub,
@@ -22,6 +26,8 @@ import {
 describe('migrateCoworkSessionsOnStartup', () => {
   beforeEach(() => {
     h.isTauri = true
+    h.isIOS = false
+    h.isAndroid = false
     h.invoke.mockReset()
     h.getServiceHub.mockReset()
     h.getServiceHub.mockReturnValue({ core: () => ({ invoke: h.invoke }) })
@@ -33,6 +39,17 @@ describe('migrateCoworkSessionsOnStartup', () => {
     expect(h.getServiceHub).not.toHaveBeenCalled()
     expect(h.invoke).not.toHaveBeenCalled()
   })
+
+  it.each([['iOS'], ['Android']])(
+    'does nothing on %s: sidecars and message replacement are desktop-only',
+    async (platform) => {
+      h.isIOS = platform === 'iOS'
+      h.isAndroid = platform === 'Android'
+      await expect(migrateCoworkSessionsOnStartup()).resolves.toBeNull()
+      expect(h.getServiceHub).not.toHaveBeenCalled()
+      expect(h.invoke).not.toHaveBeenCalled()
+    }
+  )
 
   it('runs the migration through the service hub invoke', async () => {
     h.invoke.mockImplementation(async (_cmd: string, args?: { key?: string }) =>
