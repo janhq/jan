@@ -31,7 +31,11 @@ export class DefaultThreadsService implements ThreadsService {
     // wiping the list with [].
     const threads: StoredThread[] | null | undefined =
       await window.core?.api?.listThreads()
-    if (!Array.isArray(threads)) return []
+    // A non-array is a malformed/not-ready response, not "zero threads": only
+    // a real [] may be reported as an empty listing.
+    if (!Array.isArray(threads)) {
+      throw new Error('Thread listing returned a non-array response')
+    }
 
     // new String("id") !== "id"
     threads.forEach((e) => {

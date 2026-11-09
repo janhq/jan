@@ -239,6 +239,11 @@ import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { answerAsk } from '@/lib/coworkRunner'
+import {
+  sessionFromThread,
+  sessionToThreadRecord,
+} from '@/lib/coworkPersistence'
+import { sessionToSidecar } from '@/lib/migrateCoworkSessions'
 import { localStorageKey } from '@/constants/localStorage'
 // The router mock returns the supplied component options directly.
 const routeOptions = Route as unknown as { component: () => ReactNode }
@@ -484,10 +489,16 @@ it('restores each session model after switching and persisted-store rehydration'
     expect(document.querySelector('header')).toHaveTextContent('second-model')
   )
   view.unmount()
-  const savedSessions = backend.storage.get(localStorageKey.coworkSessions)!
+  // A restart: every session goes through the record it is stored as (thread
+  // record + sidecar) and back, which is what write-through hydration does.
+  const restored = useCoworkSessions.getState().sessions.map((session) =>
+    sessionFromThread(
+      sessionToThreadRecord(session),
+      sessionToSidecar(session)
+    )
+  )
   useCoworkSessions.setState({ sessions: [], currentId: null })
-  backend.storage.set(localStorageKey.coworkSessions, savedSessions)
-  await useCoworkSessions.persist.rehydrate()
+  useCoworkSessions.setState({ sessions: restored, currentId: a })
   render(<CoworkPage />)
   await waitFor(() =>
     expect(document.querySelector('header')).toHaveTextContent('second-model')

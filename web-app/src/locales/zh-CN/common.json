@@ -585,5 +585,13 @@
   "askSelectedCount": "已选 {{count}} 个",
   "askSomethingElse": "其他",
   "askSomethingElsePlaceholder": "键入您自己的回答",
-  "submit": "提交"
+  "submit": "提交",
+  "coworkSync": {
+    "journalUnreadableTitle": "部分已导入的 Cowork 对话被隐藏",
+    "journalUnreadableDescription": "Jan 无法读取其删除记录，为避免恢复您已删除的对话，从旧版本导入的对话将保持隐藏，并且暂时无法删除任何 Cowork 对话。您的数据未受影响。恢复方法：请先完全退出 Jan，因为 Jan 运行时会用内存中的内容重写 settings.json，会撤销您的修改。然后修正或删除 settings.json 中的 'cowork_deleted_ids' 条目。删除该条目会恢复所有已导入的对话，包括您已删除的对话。",
+    "missingThreadTitle": "无法保存 Cowork 对话",
+    "missingThreadDescription": "其存储的会话线程已丢失，因此不再保存更改。您仍可阅读、导出或删除它。",
+    "writeRefusedTitle": "无法保存 Cowork 对话",
+    "writeRefusedDescription": "Jan 无法以当前 ID 存储此对话，因此不会保存更改。您仍可阅读、导出或删除它。"
+  }
 }

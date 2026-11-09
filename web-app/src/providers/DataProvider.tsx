@@ -9,6 +9,7 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events, HUGGINGFACE_TOKEN_SECRET_KEY } from '@janhq/core'
@@ -311,6 +312,10 @@ export function DataProvider() {
           }
           setThreads(threads)
           setThreadsLoading(false)
+          // SUCCESS branch only (never the retry-exhaustion catch): the service
+          // throws on a non-array response, so reaching here means a validated
+          // listing, including a genuinely empty one.
+          useThreads.getState().markThreadsHydrated()
           // Collect agent sandboxes whose thread is gone (crash, or a thread
           // deleted while the app was closed). Once per session, and only on a
           // non-empty result: sweeping against an empty list would delete live
@@ -318,7 +323,15 @@ export function DataProvider() {
           // Leftovers then wait for the next startup that does see threads.
           if (!sweptWorkspaces.current && threads.length > 0) {
             sweptWorkspaces.current = true
-            sweepThreadWorkspaces(threads.map((t) => t.id))
+            // A Cowork session that already started running keeps its sandbox
+            // before its thread.json exists (first write is debounced), so the
+            // live session ids are kept as well.
+            sweepThreadWorkspaces([
+              ...new Set([
+                ...threads.map((t) => t.id),
+                ...useCoworkSessions.getState().sessions.map((x) => x.id),
+              ]),
+            ])
           }
         })
         .catch(() => {

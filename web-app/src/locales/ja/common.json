@@ -523,5 +523,13 @@
     "forceQuit": "強制終了",
     "forcing": "強制終了しています…",
     "shuttingDown": "シャットダウンしています…"
+  },
+  "coworkSync": {
+    "journalUnreadableTitle": "インポートした一部のCowork会話が非表示になっています",
+    "journalUnreadableDescription": "Janが削除記録を読み取れないため、削除済みの会話を誤って復元しないよう、以前のバージョンからインポートした会話は非表示のままです。また、Cowork会話の削除は一時的にブロックされています。データは変更されていません。復旧するには、まずJanを完全に終了してください。Janは実行中にメモリからsettings.jsonを書き直すため、編集内容が元に戻ってしまいます。その後、settings.jsonの 'cowork_deleted_ids' を修正するか削除してください。削除すると、すでに削除した会話を含め、インポートしたすべての会話が復元されます。",
+    "missingThreadTitle": "Cowork会話を保存できませんでした",
+    "missingThreadDescription": "保存されているスレッドが見つからないため、変更は保存されなくなりました。読み取り、エクスポート、削除は引き続き可能です。",
+    "writeRefusedTitle": "Cowork会話を保存できません",
+    "writeRefusedDescription": "Janはこの会話を現在のIDで保存できないため、変更は保存されません。読み取り、エクスポート、削除は引き続き可能です。"
   }
 }

@@ -9,11 +9,21 @@ import { ServiceKeys } from '@janhq/core'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
 import { cleanupThreadWorkspace } from '@/lib/agentTools'
+import { isCoworkThread } from '@/lib/threadMode'
+import {
+  deleteCoworkConversation,
+  hasCoworkSession,
+} from '@/lib/coworkDelete'
 
 type ThreadState = {
   threads: Record<string, Thread>
   isLoadingThreads: boolean
   setThreadsLoading: (loading: boolean) => void
+  /** Set once a thread listing succeeded (an empty one counts). Unlike
+   * `isLoadingThreads` it is never set by the retry-exhaustion path, so it
+   * means "the list is real", not "we stopped waiting". */
+  threadsHydrated: boolean
+  markThreadsHydrated: () => void
   currentThreadId?: string
   getCurrentThread: () => Thread | undefined
   setThreads: (threads: Thread[]) => void
@@ -88,10 +98,36 @@ const cleanupThreadArtifacts = (threadId: string) => {
   cleanupThreadWorkspace(threadId)
 }
 
+/**
+ * What the sidebar's Delete All removes: plain chats only. Favorites, anything
+ * with project metadata (even a project that no longer exists, so no data is
+ * lost to a dangling reference) and Cowork threads are kept.
+ */
+export const isDeletedByDeleteAll = (thread: Thread): boolean =>
+  !thread.isFavorite && !thread.metadata?.project && !isCoworkThread(thread)
+
+/**
+ * The deletion of one thread plus its out-of-store artifacts. A Cowork thread
+ * that is live in the session store is deleted through that store (see
+ * `deleteCoworkConversation`), which journals it, removes the thread and
+ * reclaims the sandbox itself; everything else goes straight to the thread
+ * service.
+ */
+const deleteThreadEverywhere = (threadId: string, thread: Thread | undefined) => {
+  if (isCoworkThread(thread) && hasCoworkSession(threadId)) {
+    deleteCoworkConversation(threadId)
+    return
+  }
+  cleanupThreadArtifacts(threadId)
+  getServiceHub().threads().deleteThread(threadId)
+}
+
 export const useThreads = create<ThreadState>()((set, get) => ({
   threads: {},
   isLoadingThreads: true,
   setThreadsLoading: (loading) => set({ isLoadingThreads: loading }),
+  threadsHydrated: false,
+  markThreadsHydrated: () => set({ threadsHydrated: true }),
   searchIndex: null,
   setThreads: (threads) => {
     const threadMap = threads.reduce(
@@ -194,8 +230,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       useAgentMode.getState().removeThread(threadId)
       useChatSessions.getState().removeSession(threadId)
       useAppState.getState().clearThreadState(threadId)
-      cleanupThreadArtifacts(threadId)
-      getServiceHub().threads().deleteThread(threadId)
+      deleteThreadEverywhere(threadId, state.threads[threadId])
 
       return {
         threads: remainingThreads,
@@ -214,18 +249,13 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
 
-      // Identify threads to keep (favorites OR have project metadata)
+      // Threads to keep: everything Delete All does not delete (favorites,
+      // project threads and Cowork conversations).
       const threadsToKeepIds = allThreadIds.filter(
-        (threadId) =>
-          state.threads[threadId].isFavorite ||
-          state.threads[threadId].metadata?.project
+        (threadId) => !isDeletedByDeleteAll(state.threads[threadId])
       )
-
-      // Identify threads to delete (non-favorites AND no project metadata)
-      const threadsToDeleteIds = allThreadIds.filter(
-        (threadId) =>
-          !state.threads[threadId].isFavorite &&
-          !state.threads[threadId].metadata?.project
+      const threadsToDeleteIds = allThreadIds.filter((threadId) =>
+        isDeletedByDeleteAll(state.threads[threadId])
       )
 
       // Delete threads and clean up their out-of-store artifacts. As in
@@ -235,8 +265,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
-        getServiceHub().threads().deleteThread(threadId)
+        deleteThreadEverywhere(threadId, state.threads[threadId])
       })
 
       // Keep favorite threads and threads with project metadata
@@ -269,8 +298,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
-        getServiceHub().threads().deleteThread(threadId)
+        deleteThreadEverywhere(threadId, state.threads[threadId])
       })
 
       return {
@@ -295,8 +323,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       threadsToDeleteIds.forEach((threadId) => {
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
-        getServiceHub().threads().deleteThread(threadId)
+        deleteThreadEverywhere(threadId, state.threads[threadId])
       })
 
       // Keep threads that don't belong to this project
