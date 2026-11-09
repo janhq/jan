@@ -1,4 +1,5 @@
 import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
+import { coworkSessionToThreadMessages } from '@/lib/coworkThreadMessages'
 import type { CoworkSession } from '@/hooks/useCoworkSessions'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { isPlatformTauri } from '@/lib/platform/utils'
@@ -10,7 +11,12 @@ import { isPlatformTauri } from '@/lib/platform/utils'
  * Rules:
  * - Copy, never move: `code-sessions` is left untouched as the rollback source.
  * - Idempotent and resumable. `thread.json` is the commit marker and is written
- *   LAST; a directory holding only the sidecar is not committed and is redone.
+ *   LAST; a directory holding only the sidecar and messages is not committed
+ *   and is redone.
+ * - The transcript is converted to main chat's messages.jsonl records and
+ *   written with `replace_thread_messages` (replace, not append) before the
+ *   commit. The conversion is a pure function of the session, so a retry after
+ *   a crash rewrites identical bytes and the prompt prefix stays stable.
  * - A thread id that already exists and is not a migrated Cowork thread is a
  *   collision: it is reported, never overwritten, and keeps the marker unset.
  * - The completion marker is set only when every session migrated. Failures
@@ -196,6 +202,21 @@ export async function migrateCoworkSessionsToThreads(
         })
         if (canonical(back) !== canonical(sidecar)) {
           throw new Error('sidecar did not read back identically')
+        }
+
+        // The transcript main chat opens the thread with. Replace, not
+        // append: a retry after a crash here must not duplicate it.
+        const messages = coworkSessionToThreadMessages(session)
+        await invoke('replace_thread_messages', {
+          threadId: session.id,
+          messages,
+          create: true,
+        })
+        const stored = await invoke<unknown>('list_messages', {
+          threadId: session.id,
+        })
+        if (canonical(stored) !== canonical(messages)) {
+          throw new Error('messages did not read back identically')
         }
 
         // Commit: thread.json last.
