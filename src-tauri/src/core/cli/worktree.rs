@@ -51,6 +51,14 @@ pub fn resolve_enabled(flag: Option<bool>, configured: Option<bool>) -> bool {
         .unwrap_or(DEFAULT_WORKTREE)
 }
 
+/// Resolve whether a subagent that can write, and asked for no `workspace`, gets
+/// a worktree of its own: the per-invocation flag, then the project's
+/// `[agent].subagent_worktrees`, then off, where it shares the session's
+/// checkout.
+pub fn resolve_subagent_worktrees(flag: Option<bool>, configured: Option<bool>) -> bool {
+    flag.or(configured).unwrap_or(false)
+}
+
 /// `~/.jan/worktrees`, the user-wide home for agent checkouts.
 pub fn worktrees_root() -> Result<PathBuf, String> {
     Ok(crate::core::agent::global_config::global_jan_dir()?.join("worktrees"))
@@ -196,6 +204,16 @@ mod tests {
         assert!(resolve_enabled(Some(true), Some(false)));
         assert!(!resolve_enabled(Some(false), Some(true)));
         assert!(resolve_enabled(None, Some(true)));
+    }
+
+    #[test]
+    fn subagent_worktrees_follow_flag_then_config_then_off() {
+        assert!(!resolve_subagent_worktrees(None, None));
+        assert!(resolve_subagent_worktrees(None, Some(true)));
+        assert!(!resolve_subagent_worktrees(None, Some(false)));
+        assert!(resolve_subagent_worktrees(Some(true), None));
+        assert!(resolve_subagent_worktrees(Some(true), Some(false)));
+        assert!(!resolve_subagent_worktrees(Some(false), Some(true)));
     }
 
     #[test]

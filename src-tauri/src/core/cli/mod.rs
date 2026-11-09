@@ -1440,6 +1440,40 @@ pub fn cli_web_search_status() -> serde_json::Value {
     })
 }
 
+/// `jan cli worktrees list`: `project`'s subagent checkouts, each with its
+/// branch, size and state, then the build cache and trash; JSON with `json`.
+/// This process owns no checkout, so one a live session holds reads as in use.
+pub fn cli_worktrees_list(project: &str, json: bool) -> String {
+    use crate::core::agent::child_workspace as cw;
+    let report = cw::list_worktrees(&resolve_project_root(project), None);
+    match json {
+        true => serde_json::to_string_pretty(&report).unwrap_or_default(),
+        false => report.lines().join("\n"),
+    }
+}
+
+/// `jan cli worktrees prune`: move `project`'s subagent checkouts that are
+/// safe to remove (the session-end rule) to the trash, or with `all` delete
+/// every one no live session holds, work included; with `build_cache`, then
+/// clear the shared build cache. What happened, for the user; `Err` only when the cache was
+/// asked for and could not be cleared.
+pub fn cli_worktrees_prune(project: &str, build_cache: bool, all: bool) -> Result<String, String> {
+    use crate::core::agent::child_workspace as cw;
+    let root = resolve_project_root(project);
+    let which = if all { cw::Prune::All } else { cw::Prune::Safe };
+    let notice = cw::prune_worktrees(&root, None, &which).notice();
+    if !build_cache {
+        return Ok(notice);
+    }
+    match cw::clear_build_cache(&root, None) {
+        Ok(bytes) => Ok(format!(
+            "{notice}\ncleared the subagent build cache, freed {}",
+            cw::human_bytes(bytes)
+        )),
+        Err(why) => Err(format!("{notice}\nbuild cache not cleared: {why}")),
+    }
+}
+
 /// List plugins installed for a project.
 pub fn cli_plugin_list(project: &str) -> Vec<crate::core::agent::plugins::InstalledPlugin> {
     crate::core::agent::plugins::installed(&resolve_project_root(project))
@@ -1566,6 +1600,8 @@ fn build_cli_orchestration_args(
         project_memory: true,
         subagents_enabled: true,
         max_parallel_subagents,
+        // Filled in by `prepare_agent_session`, which reads the flag and agent.toml.
+        subagent_worktrees: false,
         auto_approve,
         run_mode: if plan {
             crate::core::agent::plan::RunMode::Plan
@@ -1590,6 +1626,9 @@ fn build_cli_orchestration_args(
         parent_link: None,
         // Headless: nobody types mid-run. The TUI installs its own.
         shell_detach: None,
+        // Kept on `args`, which a multi-turn caller reuses, so a `cd` holds
+        // into the next turn. The TUI installs its own per conversation.
+        shell_cwd: Some(Default::default()),
         // `--sandbox` only when passed; unset falls through to the project's
         // `[tools].sandbox` and then the user's global `sandbox`.
         sandbox,
@@ -1815,6 +1854,11 @@ pub struct SessionFlags {
     /// defers to `[agent].worktree`, then the global `worktree`, then the CLI
     /// default of off.
     pub worktree: Option<bool>,
+    /// `--subagent-worktrees`: a subagent that can write gets its own worktree
+    /// unless it asks for another workspace. `None` (not passed) defers to
+    /// `[agent].subagent_worktrees`, then the default of off: it shares the
+    /// session's checkout.
+    pub subagent_worktrees: Option<bool>,
     /// `--max-turns`: hard cap on agentic turns, and the only setting that
     /// ends a run. `None` (not passed) leaves the run unbounded by turns; `0`
     /// is unbounded as well.
@@ -2159,6 +2203,9 @@ fn prepare_agent_session(
         reserve_tokens: cfg.agent.compaction_reserve_tokens,
         window_pinned: cfg.agent.context_window.is_some(),
     });
+
+    args.subagent_worktrees =
+        worktree::resolve_subagent_worktrees(flags.subagent_worktrees, cfg.agent.subagent_worktrees);
 
     let session_budget = resolve_session_budget(
         flags.max_session_tokens,
@@ -3652,10 +3699,13 @@ fn permission_detail(
     path: Option<String>,
     justification: Option<String>,
 ) -> String {
-    let target = command
-        .map(|c| format!(" ({c})"))
-        .or_else(|| path.map(|p| format!(" on {p}")))
-        .unwrap_or_default();
+    // A command's path is the directory it runs in (a `cd` moved the shell).
+    let target = match (command, path) {
+        (Some(c), Some(dir)) => format!(" ({c}) in {dir}"),
+        (Some(c), None) => format!(" ({c})"),
+        (None, Some(p)) => format!(" on {p}"),
+        (None, None) => String::new(),
+    };
     match justification {
         Some(why) => format!("{target} because: {why}"),
         None => target,
@@ -3708,6 +3758,10 @@ mod tests {
             " (cargo build) because: fetch crates"
         );
         assert_eq!(permission_detail(None, None, None), "");
+        assert_eq!(
+            permission_detail(s("rm -rf build"), s("/repo/pkg"), None),
+            " (rm -rf build) in /repo/pkg"
+        );
     }
 
     /// A prompt a subagent raised, as the printer receives it: wrapped in
@@ -5561,6 +5615,65 @@ mod tests {
         let (workspace, note) = resolve_workspace(dir.path(), None, None);
         assert_eq!(workspace, None);
         assert_eq!(note, None);
+    }
+
+    /// `jan cli worktrees list` names what a crashed session left, and
+    /// `prune` removes it while `--build-cache` clears the cache; a checkout
+    /// a live session holds is listed as in use and survives `--all`.
+    #[test]
+    fn cli_worktrees_lists_and_prunes_what_no_live_session_holds() {
+        use crate::core::agent::child_workspace::Ledger;
+        let dir = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir.path())
+                .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+                .args(args)
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        std::fs::write(dir.path().join("a.txt"), "a\n").unwrap();
+        if !(git(&["init", "-q"]) && git(&["add", "a.txt"])
+            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
+        {
+            return;
+        }
+        let root = dunce::canonicalize(dir.path()).unwrap();
+        let project = root.to_string_lossy().into_owned();
+        let (live, crashed) = (Arc::new(Ledger::default()), Arc::new(Ledger::default()));
+        let (held, _) = live.assign(&root, "held", true, None, true).unwrap();
+        let (left, _) = crashed.assign(&root, "left", true, None, true).unwrap();
+        // Its process died: the lock drops, the checkout stays.
+        drop(crashed);
+        let target = crate::core::agent::child_workspace::project_worktrees_dir(&root)
+            .unwrap()
+            .join("cargo-target");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("lib.rlib"), vec![0u8; 2048]).unwrap();
+
+        let listed = cli_worktrees_list(&project, false);
+        let json: serde_json::Value =
+            serde_json::from_str(&cli_worktrees_list(&project, true)).unwrap();
+        let busy_cache = cli_worktrees_prune(&project, true, true);
+        let after = (held.root.is_dir(), left.root.exists(), target.is_dir());
+        let _ = live.finish_session();
+        let cleared = cli_worktrees_prune(&project, true, false);
+
+        assert!(listed.contains("in use by another live jan session"), "{listed}");
+        assert!(listed.contains("removable (no work in it)"), "{listed}");
+        assert!(listed.contains("build cache  2.0 KB"), "{listed}");
+        assert_eq!(json["build_cache_bytes"], 2048);
+        let states: Vec<&str> =
+            json["checkouts"].as_array().unwrap().iter().filter_map(|c| c["state"].as_str()).collect();
+        assert_eq!(states.len(), 2, "{json}");
+        assert!(states.contains(&"in_use") && states.contains(&"removable"), "{json}");
+        let refused = busy_cache.unwrap_err();
+        assert!(refused.starts_with("removed 1 subagent worktree(s)"), "{refused}");
+        assert!(refused.contains("build cache not cleared"), "{refused}");
+        assert_eq!(after, (true, false, true), "the live one and the cache stay");
+        assert!(cleared.is_ok_and(|text| text.contains("freed 2.0 KB")));
+        assert!(!target.exists());
     }
 
     /// Asking for a worktree outside a repository is not fatal: the session runs

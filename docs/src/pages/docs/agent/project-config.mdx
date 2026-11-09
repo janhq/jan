@@ -118,6 +118,8 @@ set `fallback_files = []`.
 # compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
 # max_tokens = 4096
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# subagent_worktrees = false  # true: a subagent that can write gets its own git worktree; false: it edits this checkout
+# subagent_build_cache_max_gb = 20  # clear the subagents' shared build cache past this size; 0 never
 # show_reasoning = false  # unfold thinking blocks in the transcript (Ctrl-O still toggles)
 # send_reasoning = true   # resend prior reasoning to the model; false drops it from the request
 # worktree = true         # give each session its own git checkout instead of editing this one
@@ -165,6 +167,8 @@ The running agent reads this file at startup. After editing `context_window`, `c
 | `compaction_reserve_tokens` | unset | Absolute headroom instead of the ratio, in tokens. Wins over `compaction_ratio` when set |
 | `max_tokens` | unset | Cap on tokens generated per response. Omitted from the request when unset |
 | `max_parallel_subagents` | `10` | Subagents that may run at once (min 1); extra dispatches queue FIFO |
+| `subagent_worktrees` | `false` | Give a subagent that can write or edit, and names no `workspace`, its own git worktree. Off, it works in your checkout, shared with other writers (nothing serializes them). `workspace: "new"` or a `ref` still get a worktree. Overridden by `--subagent-worktrees` / `--no-subagent-worktrees`. See [Where a subagent works](/docs/agent/subagents#where-a-subagent-works) |
+| `subagent_build_cache_max_gb` | `20` | Size in GB past which the subagents' shared build cache (`cargo-target` under `~/.jan/worktrees/<project>/`) is moved to the trash, at session end or the next start, so the next build starts cold. Skipped while any subagent of any session may be building there. `0` never clears it. Falls back to the same key in `~/.jan/config.toml` |
 | `thread_retention_days` | `90` | Saved threads untouched for this many days are deleted at session start, once `prune_threads = true` in `~/.jan/config.toml` turns pruning on (it is off by default); `0` disables. The newest few, the resumed thread, a fork's parent, worktree-owning threads and threads with no timestamp are always kept |
 | `max_threads` | `500` | Most saved threads a project keeps; with pruning on, the oldest past it are deleted at session start, with the same exemptions. `0` disables |
 | `show_reasoning` | `false` | Unfold model reasoning (`<thinking>`) blocks in the transcript instead of folding them to a summary row. <kbd>Ctrl</kbd>+<kbd>O</kbd> still toggles a folded block |

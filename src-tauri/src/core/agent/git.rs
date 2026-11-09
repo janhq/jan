@@ -1073,26 +1073,45 @@ impl Checkout {
     /// `git <args>` in the checkout, its git dir and work tree named
     /// explicitly.
     fn run(&self, args: &[&str]) -> Result<String, String> {
-        let out = self.output(args)?;
+        let out = self.output(args, &[])?;
         outcome(&out, args)
     }
 
     /// [`Self::run`] with stdout as git wrote it: paths are bytes, and a
-    /// lossy decoding can name a file that does not exist.
-    fn run_raw(&self, args: &[&str]) -> Result<Vec<u8>, String> {
-        let out = self.output(args)?;
+    /// lossy decoding can name a file that does not exist. `input`, when not
+    /// empty, is git's stdin (a `--stdin` list).
+    fn run_raw(&self, args: &[&str], input: &[u8]) -> Result<Vec<u8>, String> {
+        let out = self.output(args, input)?;
         outcome(&out, args)?;
         Ok(out.stdout)
     }
 
-    fn output(&self, args: &[&str]) -> Result<std::process::Output, String> {
+    fn output(&self, args: &[&str], input: &[u8]) -> Result<std::process::Output, String> {
+        use std::process::Stdio;
         let opts = self.hardened();
         let mut full: Vec<&str> = opts.iter().map(String::as_str).collect();
         full.extend_from_slice(args);
         let mut cmd = repo_command(&self.path, &full)?;
         cmd.env("GIT_DIR", self.path.join(".git"))
             .env("GIT_WORK_TREE", &self.path);
-        cmd.output().map_err(|e| format!("failed to launch git: {e}"))
+        if input.is_empty() {
+            return cmd.output().map_err(|e| format!("failed to launch git: {e}"));
+        }
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = cmd.spawn().map_err(|e| format!("failed to launch git: {e}"))?;
+        let stdin = child.stdin.take();
+        let input = input.to_vec();
+        // Written while git runs: it answers as it reads, and a long list
+        // would fill both pipes and stall the two of us if written first.
+        let feed = std::thread::spawn(move || {
+            if let Some(mut stdin) = stdin {
+                // A git that exits early closes the pipe; its status says why.
+                let _ = std::io::Write::write_all(&mut stdin, &input);
+            }
+        });
+        let out = child.wait_with_output().map_err(|e| format!("failed to run git: {e}"));
+        let _ = feed.join();
+        out
     }
 
     /// The branch checked out there, `None` when detached or unreadable.
@@ -1124,21 +1143,38 @@ impl Checkout {
         self.run(&["rev-list", "--count", "--all", "--not", base, "--"]).ok()?.parse().ok()
     }
 
-    /// [`try_changed_paths`] for this checkout. A nested repository (or a
-    /// recorded submodule) is never opened: its own config can name a program
-    /// (`core.fsmonitor`) that its status would run.
-    pub(crate) fn try_changed_paths(&self) -> Result<Vec<String>, String> {
-        changed_paths_with(|args| {
-            let mut full = args.to_vec();
-            full.push("--ignore-submodules=all");
-            self.run(&full)
-        })
+    /// What removing the checkout would lose besides its commits: every path
+    /// [`work_with`] reports, as one list for both the clean check and the
+    /// count the user is shown, so the two never disagree. A nested
+    /// repository (or a recorded submodule) is never opened: its own config
+    /// can name a program (`core.fsmonitor`) that its status would run.
+    pub(crate) fn uncommitted(&self) -> Result<Vec<String>, String> {
+        work_with(
+            &self.path,
+            |args, input| Ok(String::from_utf8_lossy(&self.run_raw(args, input)?).into_owned()),
+            |path| std::fs::read(self.path.join(path)).ok(),
+        )
+        .map(|work| work.paths)
+    }
+
+    /// Everything removal would lose or delete, read once: [`Self::uncommitted`],
+    /// the ignored build output, and whether a submodule holds work.
+    pub(crate) fn work(&self) -> Result<Work, String> {
+        let submodule = self.holds_submodule_work()?;
+        let work = work_with(
+            &self.path,
+            |args, input| Ok(String::from_utf8_lossy(&self.run_raw(args, input)?).into_owned()),
+            |path| std::fs::read(self.path.join(path)).ok(),
+        )?;
+        Ok(Work { submodule, ..work })
     }
 
     /// Whether the checkout has no uncommitted change. `Err` when git cannot
     /// tell, which a caller deciding on removal must never read as clean.
+    /// Tests only: a removal reads [`Self::work`] once, for its paths too.
+    #[cfg(test)]
     pub(crate) fn is_clean(&self) -> Result<bool, String> {
-        Ok(!self.holds_submodule_work()? && clean_with(|args| self.run(args))?)
+        Ok(self.work()?.is_empty())
     }
 
     /// Whether a submodule holds anything: status never looks inside one (see
@@ -1156,7 +1192,7 @@ impl Checkout {
             return Ok(true);
         }
         // `<mode> <object> <stage>\t<path>`; mode 160000 is a submodule.
-        let listed = self.run_raw(&["ls-files", "--stage", "-z"])?;
+        let listed = self.run_raw(&["ls-files", "--stage", "-z"], &[])?;
         for entry in listed.split(|&b| b == 0) {
             let Some(tab) = entry.iter().position(|&b| b == b'\t') else { continue };
             if !entry.starts_with(b"160000 ") {
@@ -1243,23 +1279,452 @@ pub(crate) fn try_changed_paths(worktree: &Path) -> Result<Vec<String>, String> 
     changed_paths_with(|args| run(worktree, None, args))
 }
 
-/// The status [`Checkout::is_clean`] runs, split out so its arguments are
-/// testable. `--untracked-files=normal` shows a new directory as one `?? dir/`
-/// line instead of walking every file a child left in it (`node_modules`,
-/// build output), and still overrides a user's `status.showUntrackedFiles=no`,
-/// under which new files would read as clean and be deleted. The user's
-/// global excludes file is emptied too: what it hides is still the child's.
+/// What an ignored build directory holds, which decides what inside it is
+/// work. Either may go with its checkout: rebuilt or reinstalled by the next
+/// build, and never what a person wrote. Kept short on purpose: an ignored
+/// file anywhere else (a `.env`, local config, notes) is the child's work,
+/// since removal would delete it.
 #[cfg(feature = "cli")]
-fn clean_with(git: impl Fn(&[&str]) -> Result<String, String>) -> Result<bool, String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuildKind {
+    /// Dependencies or a tool's cache ([`DEPENDENCY_DIRS`]). Packages ship
+    /// certificates (pip's vendored `cacert.pem`), key fixtures and
+    /// `.env.example` files, so a secret-like name there means nothing; only
+    /// a nested repository is work, as a clone a person made in it.
+    Dependency,
+    /// What a build writes for the project ([`OUTPUT_DIRS`]), where a person
+    /// may also have dropped a `.env` or a key: those are work too.
+    Output,
+}
+
+#[cfg(feature = "cli")]
+const DEPENDENCY_DIRS: [&str; 5] = ["node_modules", ".venv", "target", "__pycache__", ".gradle"];
+
+#[cfg(feature = "cli")]
+const OUTPUT_DIRS: [&str; 3] = ["build", "dist", ".next"];
+
+/// Extensions of ignored files that are build output wherever they are.
+#[cfg(feature = "cli")]
+const BUILD_OUTPUT_EXTS: [&str; 3] = ["o", "pyc", "class"];
+
+#[cfg(feature = "cli")]
+impl BuildKind {
+    /// The kind of a directory named `name`, if it is a build directory.
+    fn of(name: &str) -> Option<Self> {
+        match name {
+            n if DEPENDENCY_DIRS.contains(&n) => Some(Self::Dependency),
+            n if OUTPUT_DIRS.contains(&n) => Some(Self::Output),
+            _ => None,
+        }
+    }
+
+    /// Whether a file named `name` somewhere inside such a directory is work.
+    /// `top` says it sits directly in the build folder itself, where no
+    /// package ever puts a file (they all live in a folder of their own), so
+    /// a secret there (`node_modules/.env`) is one a person dropped even in a
+    /// dependency tree.
+    fn holds_work(self, name: &str, top: bool) -> bool {
+        name == ".git" || ((self == Self::Output || top) && looks_like_secret(name))
+    }
+}
+
+/// How [`work_with`] treats an ignored path that is build output.
+#[cfg(feature = "cli")]
+#[derive(Debug, PartialEq, Eq)]
+enum BuildOutput {
+    /// A build directory, looked inside (see [`work_inside`]).
+    Dir(BuildKind),
+    /// A file that is build output as it is.
+    File,
+}
+
+/// The ignore rule that matched a path, as `check-ignore -v` reports it.
+#[cfg(feature = "cli")]
+#[derive(Debug)]
+struct IgnoreRule {
+    /// The file the rule is in.
+    source: String,
+    pattern: String,
+    /// Whether `source` is a `.gitignore` in HEAD, one the child did not
+    /// write unseen (see [`named_folder`]).
+    committed: bool,
+}
+
+/// Whether the ignored `path` (as status names it, `/`-separated, a
+/// directory with a trailing `/`) is build output, given the `rule` that
+/// matched it (see [`named_folder`]), when known.
+///
+/// A directory is so by its own name, and a file by one of
+/// [`BUILD_OUTPUT_EXTS`], whatever the rule. Otherwise an ancestor named
+/// like a build folder counts only when the rule names that folder: with
+/// `dist/*` git lists each built entry of `dist/` apart, so `dist/app.js` is
+/// build output and `dist/assets/` is walked as `dist/` would be (see
+/// [`work_inside`]), while a `*.local` rule says nothing of the tracked
+/// source folder `tools/build/` its `my.local` sits in, so that file is
+/// work. A file still is when [`BuildKind::holds_work`] says so, so
+/// `dist/.env` is work.
+#[cfg(feature = "cli")]
+fn build_output(path: &str, rule: Option<&IgnoreRule>) -> Option<BuildOutput> {
+    let trimmed = path.trim_end_matches('/');
+    let (parent, last) = trimmed.rsplit_once('/').unwrap_or(("", trimmed));
+    let dir = path.ends_with('/');
+    if let (true, Some(kind)) = (dir, BuildKind::of(last)) {
+        return Some(BuildOutput::Dir(kind));
+    }
+    if !dir && last.rsplit_once('.').is_some_and(|(_, ext)| BUILD_OUTPUT_EXTS.contains(&ext)) {
+        return Some(BuildOutput::File);
+    }
+    let rule = rule?;
+    let name = named_folder(&rule.source, &rule.pattern, rule.committed)?;
+    let kind = BuildKind::of(name)?;
+    // How far up the folder the rule names is; 0 is the path's own parent.
+    // The nearest ancestor so named is taken: `build/` matches at any depth,
+    // and that is the folder it hid.
+    let depth = parent.rsplit('/').position(|part| part == name)?;
+    if dir {
+        return Some(BuildOutput::Dir(kind));
+    }
+    (!kind.holds_work(last, depth == 0)).then_some(BuildOutput::File)
+}
+
+/// The folder an ignore rule names, as `check-ignore -v` reports it: the
+/// rule's `pattern` and the `source` file it is in. That is the last folder
+/// in the pattern's directory part that is not a bare `*` or `**` (`dist`
+/// for `dist/*`, `/dist/**`, `dist/`, `**/dist/*` and `dist/*/`); a
+/// pattern's last part is the entry itself unless it ends in `/`. A rule
+/// with no leading or inner `/` matches at any depth, so `build/` names a
+/// tracked `tools/build/` too: its ignored files are build output then,
+/// though a secret there is still work. A pattern with no directory part
+/// (`*.local`) names no folder, except one that matches everything (`*`)
+/// in a nested `.gitignore`, which names the folder that file sits in:
+/// `python -m venv` writes such a file into `.venv/`. A negated pattern
+/// never ignored anything.
+///
+/// Only a rule someone could have reviewed names anything, since the child
+/// can write a rule to exempt its own files. So `.git/info/exclude`, the one
+/// source besides `.gitignore` files the clean check reads (see
+/// [`in_git_dir`]), names nothing, and a `.gitignore` that is not
+/// `committed` (in HEAD) names only a venv's own: a `*` directly in a
+/// `.venv/`, which `python -m venv` writes there and no one commits. No tool
+/// writes such a file into another dependency folder (`target/`), so there
+/// it is one the child wrote to exempt its files.
+#[cfg(feature = "cli")]
+fn named_folder<'a>(source: &'a str, pattern: &'a str, committed: bool) -> Option<&'a str> {
+    let wild = |part: &str| matches!(part, "*" | "**");
+    if pattern.starts_with('!') || in_git_dir(source) {
+        return None;
+    }
+    let mut parts: Vec<&str> = pattern.trim_matches('/').split('/').collect();
+    let last = match pattern.ends_with('/') {
+        true => None,
+        false => parts.pop(),
+    };
+    let bare = parts.iter().all(|part| part.is_empty());
+    // A nested `.gitignore` of `*` names the folder it sits in.
+    let own = || match (last, source.rsplit_once('/')) {
+        (Some(last), Some((base, ".gitignore"))) if bare && wild(last) => base.rsplit('/').next(),
+        _ => None,
+    };
+    if !committed {
+        return own().filter(|name| *name == ".venv");
+    }
+    if last.is_some() && bare {
+        return own();
+    }
+    parts.into_iter().rev().find(|part| !part.is_empty() && !wild(part))
+}
+
+/// Whether a rule's `source` is in the checkout's git dir rather than its
+/// work tree, as `.git/info/exclude` is: git names it by its absolute path
+/// (`GIT_DIR` is absolute), while a `.gitignore` is named relative to the
+/// top. A relative `.git/...` is caught too, should git ever name it so.
+#[cfg(feature = "cli")]
+fn in_git_dir(source: &str) -> bool {
+    Path::new(source).is_absolute() || source.split('/').next() == Some(".git")
+}
+
+/// Whether a file named `name`, found inside ignored build output, looks
+/// like a secret or local config a person put there rather than a build
+/// wrote: `.env` and its variants (`.env.local`), a key or certificate
+/// (`*.pem`, `*.key`), a package registry token file (`.npmrc`, `.pypirc`),
+/// or a credentials file (`credentials`, `credentials.json`). Kept small on
+/// purpose: every match keeps a checkout. `credentials.*` is not matched
+/// whole, since SDKs ship `credentials.js`. A name with an example part
+/// (`.env.example`, `.env.sample`, `key.pem.template`) is a
+/// placeholder shipped to be copied, not a secret.
+#[cfg(feature = "cli")]
+fn looks_like_secret(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    let example = name.split('.').any(|part| ["example", "sample", "template"].contains(&part));
+    !example
+        && (name.starts_with(".env")
+            || name.ends_with(".pem")
+            || name.ends_with(".key")
+            || [".npmrc", ".pypirc", "credentials", "credentials.json"].contains(&name.as_str()))
+}
+
+/// How many entries [`work_inside`] reads before it gives up. A dependency
+/// tree or a build directory can hold hundreds of thousands.
+#[cfg(feature = "cli")]
+const INSIDE_LIMIT: usize = 200_000;
+
+/// The first work inside the ignored build directory `dir` of `kind`
+/// (relative to `root`, with its trailing `/`), as a path for the user: a
+/// nested repository (any `.git`, named by the directory holding it) or a
+/// file [`BuildKind::holds_work`] says is work. Status never looks inside an
+/// ignored directory, so this is the only place either is seen. Walks the
+/// names as the filesystem gives them, never a lossy spelling that would
+/// name a directory that does not exist. Never follows a link.
+///
+/// Past `limit` entries an output folder is `dir` itself: what the walk did
+/// not see is not known to be build output. A dependency tree is let go
+/// instead: it is regenerable, and a monorepo's often passes the limit, so
+/// keeping it would keep every such checkout forever; a nested repository
+/// seen before the limit still keeps it. A directory that cannot be read is
+/// `dir` for either kind, since that is not a matter of size. A directory
+/// gone meanwhile holds nothing.
+#[cfg(feature = "cli")]
+fn work_inside(root: &Path, dir: &str, kind: BuildKind, limit: usize) -> Option<String> {
+    let shown = |path: &Path| {
+        let rel = path.strip_prefix(root).unwrap_or(path).to_string_lossy();
+        rel.replace(std::path::MAIN_SEPARATOR, "/")
+    };
+    let start = root.join(dir.trim_end_matches('/'));
+    let last = dir.trim_end_matches('/').rsplit('/').next().unwrap_or_default();
+    // Only the build folder itself has a top that no package writes into; a
+    // folder listed below one (`node_modules/x/`) is a package's own.
+    let top_folder = BuildKind::of(last).is_some();
+    let mut pending = vec![start.clone()];
+    let mut seen = 0;
+    while let Some(next) = pending.pop() {
+        let top = top_folder && next == start;
+        let entries = match std::fs::read_dir(&next) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return Some(dir.to_string()),
+        };
+        for entry in entries {
+            seen += 1;
+            if seen > limit {
+                return (kind == BuildKind::Output).then(|| dir.to_string());
+            }
+            let Ok(entry) = entry else { return Some(dir.to_string()) };
+            let name = entry.file_name();
+            if name == ".git" {
+                return Some(format!("{}/", shown(&next)));
+            }
+            // The entry's own type, not its target's: a link is not walked.
+            match entry.file_type() {
+                Ok(file) if file.is_dir() => pending.push(entry.path()),
+                Ok(_) if kind.holds_work(&name.to_string_lossy(), top) => {
+                    return Some(shown(&entry.path()));
+                }
+                Ok(_) => {}
+                Err(_) => return Some(dir.to_string()),
+            }
+        }
+    }
+    None
+}
+
+/// What a checkout holds that its commits do not (see [`Checkout::work`]).
+#[cfg(feature = "cli")]
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct Work {
+    /// Every path removal would lose.
+    pub(crate) paths: Vec<String>,
+    /// The ignored build output removal would delete as well, relative to
+    /// the checkout: nothing anyone wrote, but the user confirming a forced
+    /// removal is told its size.
+    pub(crate) build_output: Vec<String>,
+    /// Whether a submodule holds work, which is not a path status lists.
+    pub(crate) submodule: bool,
+}
+
+#[cfg(feature = "cli")]
+impl Work {
+    /// Whether removal would lose nothing.
+    pub(crate) fn is_empty(&self) -> bool {
+        !self.submodule && self.paths.is_empty()
+    }
+}
+
+/// The status [`Checkout::uncommitted`] runs and how it is read, split out so
+/// both are testable. `--untracked-files=normal` shows a new directory as one
+/// `?? dir/` line instead of walking every file a child left in it, and still
+/// overrides a user's `status.showUntrackedFiles=no`, under which new files
+/// would read as clean and be deleted. Ignored paths are listed too
+/// (`--ignored=matching`, a wholly ignored directory as one line), and any
+/// that is not build output counts: an ignore rule says what not to commit,
+/// not what may be deleted. That also covers whatever the user's global
+/// excludes file (emptied anyway) or the checkout's own `.git/info/exclude`,
+/// which the child can write, hides. An ignored build-output directory is
+/// looked inside (see [`work_inside`]), relative to the checkout at `root`.
+/// `-z`, so a path is never quoted and a rename's old name is its own field.
+///
+/// Which rule ignored each ignored path is asked once, with the same
+/// excludes, for [`build_output`]. `git` is given its args and its stdin.
+#[cfg(feature = "cli")]
+fn work_with(
+    root: &Path,
+    git: impl Fn(&[&str], &[u8]) -> Result<String, String>,
+    read: impl Fn(&str) -> Option<Vec<u8>>,
+) -> Result<Work, String> {
     let args = [
         "-c",
         "core.excludesFile=",
         "status",
         "--porcelain",
+        "-z",
         "--untracked-files=normal",
+        "--ignored=matching",
         "--ignore-submodules=all",
     ];
-    Ok(git(&args)?.trim().is_empty())
+    let out = git(&args, &[])?;
+    let mut entries = Vec::new();
+    let mut fields = out.split('\0').filter(|f| !f.is_empty());
+    while let Some(field) = fields.next() {
+        let (code, path) = (field.get(..2).unwrap_or(field), field.get(3..).unwrap_or_default());
+        if code.contains(['R', 'C']) {
+            fields.next();
+        }
+        entries.push((field, code, path));
+    }
+    // Status gives raw bytes and the caller reads them lossily: a name that
+    // was not UTF-8 cannot be judged by its spelling, found on disk or asked
+    // about by it, so it is work rather than a guess.
+    let judged = |code: &str, path: &str| code == "!!" && !path.contains('\u{FFFD}');
+    let asked: Vec<&str> = entries
+        .iter()
+        .filter(|(_, code, path)| judged(code, path) && build_output(path, None).is_none())
+        .map(|(_, _, path)| *path)
+        .collect();
+    let rules = ignore_rules(&asked, &git, read);
+    let mut work = Work::default();
+    for (field, code, path) in entries {
+        let built = match judged(code, path) {
+            true => build_output(path, rules.get(path)),
+            false => None,
+        };
+        if let Some(built) = built {
+            work.build_output.push(path.to_string());
+            if let BuildOutput::Dir(kind) = built {
+                work.paths.extend(work_inside(root, path, kind, INSIDE_LIMIT));
+            }
+            continue;
+        }
+        // A line git wrote in a shape not read here is still a change.
+        work.paths.push(if path.is_empty() { field.to_string() } else { path.to_string() });
+    }
+    Ok(work)
+}
+
+/// The rule that ignores each of `paths`, by path, from one `check-ignore`.
+/// `--no-index`, since status lists a file that is tracked yet ignored only
+/// when it is not, and with the same excludes [`work_with`] reads (its own
+/// `.git/info/exclude`, never the user's global file). Which `.gitignore`
+/// sources are committed is decided by [`committed_sources`]. If git fails,
+/// nothing is known, so no ancestor exempts anything (and an unknown source
+/// counts as written by the child): the fallback keeps rather than deletes.
+#[cfg(feature = "cli")]
+fn ignore_rules(
+    paths: &[&str],
+    git: impl Fn(&[&str], &[u8]) -> Result<String, String>,
+    read: impl Fn(&str) -> Option<Vec<u8>>,
+) -> std::collections::HashMap<String, IgnoreRule> {
+    if paths.is_empty() {
+        return Default::default();
+    }
+    let input: Vec<u8> = paths.iter().flat_map(|p| p.bytes().chain([0])).collect();
+    let args = ["-c", "core.excludesFile=", "check-ignore", "-v", "--no-index", "--stdin", "-z"];
+    let Ok(out) = git(&args, &input) else { return Default::default() };
+    // Four fields a path: source, line number, pattern, path.
+    let fields: Vec<&str> = out.split('\0').collect();
+    let (rules, _) = fields.as_chunks::<4>();
+    let mut sources: Vec<&str> =
+        rules.iter().map(|[source, ..]| *source).filter(|s| !in_git_dir(s)).collect();
+    sources.sort_unstable();
+    sources.dedup();
+    let committed = committed_sources(&sources, &git, read);
+    rules
+        .iter()
+        .map(|[source, _, pattern, path]| {
+            let rule = IgnoreRule {
+                source: source.to_string(),
+                pattern: pattern.to_string(),
+                committed: committed.contains(source),
+            };
+            (path.to_string(), rule)
+        })
+        .collect()
+}
+
+/// Which of the `.gitignore` `sources` (relative to the top) hold, in the
+/// work tree, exactly what HEAD holds: rules someone could have reviewed.
+/// Asked of HEAD, never of the index, which the child controls: it can
+/// `git add` a rule of its own, or edit a tracked `.gitignore` and hide that
+/// from status with `update-index --skip-worktree` or `--assume-unchanged`.
+/// So a source counts only if it is a blob in HEAD (one `ls-tree`) whose id
+/// matches the file on disk (one `hash-object` of its bytes on stdin).
+/// `--no-filters`, since a clean filter is config the child could set; Jan
+/// does the one conversion a checkout makes itself, CRLF to LF, because Git
+/// for Windows checks a tracked file out as CRLF under its default
+/// `core.autocrlf=true` while the blob is LF (git reads a rule line without
+/// its CR, so the two spell the same rules). Any other difference counts as
+/// edited, which keeps rather than deletes. Any git error, or a file that
+/// cannot be read, means it is not committed.
+#[cfg(feature = "cli")]
+fn committed_sources<'a>(
+    sources: &[&'a str],
+    git: impl Fn(&[&str], &[u8]) -> Result<String, String>,
+    read: impl Fn(&str) -> Option<Vec<u8>>,
+) -> std::collections::HashSet<&'a str> {
+    if sources.is_empty() {
+        return Default::default();
+    }
+    // Literal, so a folder named with `*` or `[` matches only itself.
+    let mut args = vec!["--literal-pathspecs", "ls-tree", "-r", "-z", "HEAD", "--"];
+    args.extend(sources);
+    let Ok(listed) = git(&args, &[]) else { return Default::default() };
+    // Each entry reads `<mode> <type> <id>\t<path>`; only a blob is a file.
+    let in_head: Vec<(&str, &str)> = listed
+        .split('\0')
+        .filter_map(|entry| entry.split_once('\t'))
+        .filter_map(|(meta, path)| match meta.split(' ').collect::<Vec<_>>()[..] {
+            [_, "blob", id] => Some((path, id)),
+            _ => None,
+        })
+        .collect();
+    // Only a path git was asked about, so a reply cannot add a source.
+    let in_head: Vec<(&'a str, &str)> = in_head
+        .into_iter()
+        .filter_map(|(path, id)| Some((*sources.iter().find(|s| **s == path)?, id)))
+        .collect();
+    if in_head.is_empty() {
+        return Default::default();
+    }
+    in_head
+        .into_iter()
+        .filter(|(path, id)| {
+            let Some(bytes) = read(path) else { return false };
+            let args = ["hash-object", "--no-filters", "--stdin"];
+            git(&args, &lf_only(&bytes)).is_ok_and(|disk| disk.trim() == *id)
+        })
+        .map(|(path, _)| path)
+        .collect()
+}
+
+/// `bytes` with each CRLF as LF: the one conversion a Windows checkout makes
+/// to a tracked text file, undone here without running any git filter.
+#[cfg(feature = "cli")]
+fn lf_only(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for (i, b) in bytes.iter().enumerate() {
+        if !(*b == b'\r' && bytes.get(i + 1) == Some(&b'\n')) {
+            out.push(*b);
+        }
+    }
+    out
 }
 
 #[cfg(feature = "cli")]
@@ -1840,7 +2305,7 @@ mod tests {
         assert_eq!(child.commits_on(&head, "--all"), None, "never an option");
         assert_eq!(child.commits_anywhere(&head), Some(1));
         std::fs::write(wt.join("c.txt"), "c\n").unwrap();
-        assert_eq!(child.try_changed_paths(), Ok(vec!["c.txt".to_string()]));
+        assert_eq!(child.uncommitted(), Ok(vec!["c.txt".to_string()]));
 
         assert_eq!(resolve_commit(&root, "jan/agent/child-1"), None, "not there yet");
         child.fetch_branch(&root, "jan/agent/child-1", LIMIT).unwrap();
@@ -1931,18 +2396,513 @@ mod tests {
     #[test]
     fn the_emptiness_check_lists_untracked_files_normally() {
         let seen = std::cell::RefCell::new(Vec::new());
-        let answer = |out: Result<&str, &str>| {
-            clean_with(|args| {
+        // No checkout on disk: an ignored directory there holds nothing.
+        let root = std::env::temp_dir().join("jan_no_such_checkout");
+        // `rules` is what check-ignore answers, as `source\0line\0pattern\0path\0`;
+        // ls-tree lists every source it is asked about as a blob in HEAD,
+        // unless `untracked`, and hash-object finds each unchanged on disk.
+        let untracked = std::cell::Cell::new(false);
+        let ask = |out: Result<&str, &str>, rules: Result<&str, &str>| {
+            work_with(&root, |args, input| {
                 seen.borrow_mut().extend(args.iter().map(|a| a.to_string()));
-                out.map(str::to_string).map_err(str::to_string)
-            })
+                let asked = args.iter().skip_while(|a| **a != "--").skip(1);
+                if args.contains(&"ls-tree") {
+                    assert!(args.contains(&"HEAD"), "{args:?}");
+                    let listed = asked.map(|a| format!("100644 blob id-{a}\t{a}\0")).collect();
+                    return Ok(if untracked.get() { String::new() } else { listed });
+                }
+                if args.contains(&"hash-object") {
+                    // The stand-in file holds its own name.
+                    assert!(args.contains(&"--stdin"), "{args:?}");
+                    return Ok(format!("id-{}\n", String::from_utf8_lossy(input)));
+                }
+                let answer = match args.contains(&"check-ignore") {
+                    true => {
+                        assert!(input.ends_with(b"\0"), "{input:?}");
+                        rules
+                    }
+                    false => out,
+                };
+                answer.map(str::to_string).map_err(str::to_string)
+            }, |path| Some(path.as_bytes().to_vec()))
+            .map(|work| work.paths)
         };
-        assert_eq!(answer(Ok("")), Ok(true));
+        let answer = |out| ask(out, Err("not asked"));
+        assert_eq!(answer(Ok("")), Ok(vec![]));
         assert!(seen.borrow().iter().any(|a| a == "--untracked-files=normal"), "{seen:?}");
         assert!(seen.borrow().iter().any(|a| a == "core.excludesFile="), "{seen:?}");
+        assert!(seen.borrow().iter().any(|a| a == "--ignored=matching"), "{seen:?}");
         assert!(!seen.borrow().iter().any(|a| a == "--untracked-files=all"), "{seen:?}");
-        assert_eq!(answer(Ok("?? node_modules/")), Ok(false));
+        assert_eq!(answer(Ok("?? node_modules/\0")), Ok(vec!["node_modules/".to_string()]));
+        // A rename's second field is its old name, never a path of its own.
+        assert_eq!(answer(Ok("R  b.txt\0a.txt\0")), Ok(vec!["b.txt".to_string()]));
+        // Ignored build output is not work; any other ignored file is.
+        let ignored = "!! target/\0!! web/node_modules/\0!! src/x.o\0!! .env\0!! conf/\0";
+        assert_eq!(answer(Ok(ignored)), Ok(vec![".env".to_string(), "conf/".to_string()]));
+        // A path below a build folder is build output by it only when the
+        // rule that ignored it names that folder, and a file is not when it
+        // looks like a secret.
+        let below = "!! dist/a.txt\0!! web/dist/js/b.js\0!! dist/.env\0!! dist/assets/\0\
+                     !! tools/build/my.local\0!! dist/x.local\0";
+        let rules = ".gitignore\x001\0dist/*\0dist/a.txt\0\
+                     web/.gitignore\x002\0/dist/**\0web/dist/js/b.js\0\
+                     .gitignore\x001\0dist/*\0dist/.env\0\
+                     .gitignore\x001\0dist/*\0dist/assets/\0\
+                     .gitignore\x003\0*.local\0tools/build/my.local\0\
+                     .gitignore\x003\0*.local\0dist/x.local\0";
+        let listed = vec![
+            "dist/.env".to_string(),
+            "tools/build/my.local".to_string(),
+            "dist/x.local".to_string(),
+        ];
+        assert_eq!(ask(Ok(below), Ok(rules)), Ok(listed));
+        assert!(seen.borrow().iter().any(|a| a == "--no-index"), "{seen:?}");
+        assert!(seen.borrow().iter().any(|a| a == "--literal-pathspecs"), "{seen:?}");
+        // A `.gitignore` the child wrote and never committed names nothing.
+        untracked.set(true);
+        let listed = vec!["dist/a.txt".to_string()];
+        let rules = ".gitignore\x001\0dist/*\0dist/a.txt\0";
+        assert_eq!(ask(Ok("!! dist/a.txt\0"), Ok(rules)), Ok(listed));
+        untracked.set(false);
+        // When git cannot say which rule it was, no ancestor exempts anything.
+        let listed = vec!["dist/a.txt".to_string(), "dist/assets/".to_string()];
+        assert_eq!(ask(Ok("!! dist/a.txt\0!! dist/assets/\0"), Err("broken")), Ok(listed));
+        // A name git gave as bytes that are not UTF-8 is not judged by its
+        // lossy spelling: it is work.
+        let lossy = "!! dist/a\u{FFFD}.js\0!! x\u{FFFD}.o\0";
+        let listed = vec!["dist/a\u{FFFD}.js".to_string(), "x\u{FFFD}.o".to_string()];
+        assert_eq!(answer(Ok(lossy)), Ok(listed));
         assert!(answer(Err("broken")).is_err());
+    }
+
+    /// A file only an ignore rule hides (a `.env`, local config) is work, as
+    /// is one hidden by the checkout's own `.git/info/exclude`, which a child
+    /// can write; ignored build output is not, so it never keeps a checkout.
+    #[test]
+    fn the_clean_check_sees_ignored_files_that_are_not_build_output() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("ignored");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/ignored-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".gitignore"), "ignored/\ntarget/\n.env\n").unwrap();
+        run(&wt, None, &["commit", "-qam", "ignore", "--no-gpg-sign"]).unwrap();
+        assert_eq!(child.is_clean(), Ok(true));
+
+        std::fs::create_dir_all(wt.join("target/debug")).unwrap();
+        std::fs::write(wt.join("target/debug/app"), "x").unwrap();
+        assert_eq!(child.is_clean(), Ok(true), "build output is not work");
+
+        std::fs::write(wt.join(".env"), "KEY=1\n").unwrap();
+        assert_eq!(child.is_clean(), Ok(false), "an ignored .env is");
+        assert_eq!(child.uncommitted(), Ok(vec![".env".to_string()]));
+        std::fs::remove_file(wt.join(".env")).unwrap();
+
+        std::fs::write(wt.join(".git/info/exclude"), "secret.txt\n").unwrap();
+        std::fs::write(wt.join("secret.txt"), "s\n").unwrap();
+        assert_eq!(child.is_clean(), Ok(false), "the checkout's own excludes hide nothing");
+        assert_eq!(child.uncommitted(), Ok(vec!["secret.txt".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Status names a wholly ignored directory in one line, so what is inside
+    /// an ignored build-output directory is looked at: a secret-like file or
+    /// a nested repository there is work. A folder listed apart below one, by
+    /// a rule naming it (`dist/*`), is walked the same way.
+    #[test]
+    fn work_inside_ignored_build_output_is_seen() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("inside");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/inside-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".gitignore"), "build/\nnode_modules/\ndist/*\n").unwrap();
+        run(&wt, None, &["commit", "-qam", "ignore", "--no-gpg-sign"]).unwrap();
+        std::fs::create_dir_all(wt.join("build/out")).unwrap();
+        std::fs::write(wt.join("build/out/app.js"), "x").unwrap();
+        assert_eq!(child.is_clean(), Ok(true), "plain build output is not work");
+
+        std::fs::write(wt.join("build/out/.env"), "KEY=1\n").unwrap();
+        assert_eq!(child.is_clean(), Ok(false), "a .env inside ignored build/ is");
+        assert_eq!(child.uncommitted(), Ok(vec!["build/out/.env".to_string()]));
+        std::fs::remove_file(wt.join("build/out/.env")).unwrap();
+
+        std::fs::create_dir_all(wt.join("node_modules/x/.git")).unwrap();
+        assert_eq!(child.is_clean(), Ok(false), "a nested repository there is");
+        assert_eq!(child.uncommitted(), Ok(vec!["node_modules/x/".to_string()]));
+        std::fs::remove_dir_all(wt.join("node_modules")).unwrap();
+
+        // `dist/*` lists each entry of `dist/` apart, and names `dist/`, so
+        // `dist/notes/` is walked as output: only a secret in it is work.
+        std::fs::create_dir_all(wt.join("dist/notes")).unwrap();
+        std::fs::write(wt.join("dist/notes/todo.md"), "x\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec![]));
+        std::fs::write(wt.join("dist/notes/id.key"), "x\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["dist/notes/id.key".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A dependency tree is regenerable and ships certificates, key fixtures
+    /// and example env files: only a nested repository in one is work. An
+    /// output folder is still searched for secrets, but an example file is
+    /// not one.
+    #[test]
+    fn dependency_trees_hold_only_nested_repositories_as_work() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("deps");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/deps-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".gitignore"), ".venv/\nnode_modules/\nbuild/\n").unwrap();
+        run(&wt, None, &["commit", "-qam", "ignore", "--no-gpg-sign"]).unwrap();
+        let certifi = wt.join(".venv/lib/python3.12/site-packages/pip/_vendor/certifi");
+        std::fs::create_dir_all(&certifi).unwrap();
+        std::fs::write(certifi.join("cacert.pem"), "x").unwrap();
+        std::fs::create_dir_all(wt.join("node_modules/x/test")).unwrap();
+        std::fs::write(wt.join("node_modules/x/test/fixture.key"), "x").unwrap();
+        std::fs::write(wt.join("node_modules/x/.env"), "x").unwrap();
+        std::fs::create_dir_all(wt.join("build")).unwrap();
+        std::fs::write(wt.join("build/.env.example"), "KEY=\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec![]), "none of these is work");
+
+        std::fs::write(wt.join("build/.env"), "KEY=1\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["build/.env".to_string()]));
+        std::fs::remove_file(wt.join("build/.env")).unwrap();
+
+        // No package puts a file in the tree's top folder: a secret there
+        // is one a person dropped.
+        std::fs::write(wt.join("node_modules/.env"), "KEY=1\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["node_modules/.env".to_string()]));
+        std::fs::remove_file(wt.join("node_modules/.env")).unwrap();
+
+        std::fs::create_dir_all(wt.join("node_modules/x/.git")).unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["node_modules/x/".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `python -m venv` writes a `.gitignore` of `*` into the venv, so with
+    /// no rule of the project's own git lists each entry of `.venv/` apart.
+    /// That rule names `.venv/`, so its folders are walked as a dependency
+    /// tree; a secret listed directly in it is still work.
+    #[test]
+    fn a_venv_ignored_by_its_own_gitignore_is_a_dependency_tree() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("venv");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/venv-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        let certifi = wt.join(".venv/lib/python3.12/site-packages/pip/_vendor/certifi");
+        std::fs::create_dir_all(&certifi).unwrap();
+        std::fs::write(certifi.join("cacert.pem"), "x").unwrap();
+        std::fs::create_dir_all(wt.join(".venv/bin")).unwrap();
+        std::fs::write(wt.join(".venv/bin/python"), "x").unwrap();
+        std::fs::write(wt.join(".venv/pyvenv.cfg"), "x").unwrap();
+        std::fs::write(wt.join(".venv/.gitignore"), "*\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec![]), "a venv is not work");
+        std::fs::write(wt.join(".venv/.env"), "KEY=1\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec![".venv/.env".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The child writes `.git/info/exclude` and no one reviews it, so a rule
+    /// there exempts nothing, even one naming a build folder.
+    #[test]
+    fn a_rule_in_the_checkouts_own_exclude_file_exempts_nothing() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("exclude");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/exclude-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".git/info/exclude"), "sub/build/*\n").unwrap();
+        std::fs::create_dir_all(wt.join("sub/build")).unwrap();
+        std::fs::write(wt.join("sub/build/todo.md"), "mine\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["sub/build/todo.md".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A nested `.gitignore` the child wrote and never committed names no
+    /// folder, except the `*` one `python -m venv` writes into `.venv/` (see
+    /// [`a_venv_ignored_by_its_own_gitignore_is_a_dependency_tree`]). A
+    /// committed one still does.
+    #[test]
+    fn an_untracked_nested_gitignore_names_no_folder() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("nested");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/nested-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::create_dir_all(wt.join("web")).unwrap();
+        std::fs::write(wt.join("web/.gitignore"), "**/build/\ndist/*\n").unwrap();
+        run(&wt, None, &["add", "-A"]).unwrap();
+        run(&wt, None, &["commit", "-qm", "web", "--no-gpg-sign"]).unwrap();
+        std::fs::create_dir_all(wt.join("web/build/out")).unwrap();
+        std::fs::write(wt.join("web/build/out/app.js"), "x").unwrap();
+        std::fs::create_dir_all(wt.join("web/dist")).unwrap();
+        std::fs::write(wt.join("web/dist/app.js"), "x").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec![]), "a committed rule still exempts");
+
+        std::fs::create_dir_all(wt.join("src/build")).unwrap();
+        std::fs::write(wt.join("src/build/.gitignore"), "*\n").unwrap();
+        std::fs::write(wt.join("src/build/mine.md"), "mine\n").unwrap();
+        let both = vec!["src/build/.gitignore".to_string(), "src/build/mine.md".to_string()];
+        assert_eq!(child.uncommitted(), Ok(both));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The child controls the index, so a tracked `.gitignore` it edited and
+    /// hid from status with `update-index --skip-worktree` is not committed:
+    /// what HEAD holds decides, and its new rules exempt nothing.
+    #[test]
+    fn a_gitignore_edit_hidden_from_the_index_exempts_nothing() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("skipwt");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/skipwt-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".gitignore"), "ignored/\nnotes/*\ndist/*\n").unwrap();
+        run(&wt, None, &["update-index", "--skip-worktree", ".gitignore"]).unwrap();
+        std::fs::create_dir_all(wt.join("notes")).unwrap();
+        std::fs::write(wt.join("notes/x.md"), "mine\n").unwrap();
+        // `dist/*` would name a build folder, had a reviewed file said it.
+        std::fs::create_dir_all(wt.join("dist")).unwrap();
+        std::fs::write(wt.join("dist/plan.md"), "mine\n").unwrap();
+        let both = vec!["dist/plan.md".to_string(), "notes/x.md".to_string()];
+        assert_eq!(child.uncommitted(), Ok(both));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A tracked source folder that happens to be named like a build folder
+    /// exempts nothing: an ignored file in it is hand-written unless the rule
+    /// that ignored it names that folder.
+    #[test]
+    fn ignored_files_in_a_source_folder_named_build_are_work() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("srcbuild");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/srcbuild-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".gitignore"), "*.local\n").unwrap();
+        std::fs::create_dir_all(wt.join("tools/build")).unwrap();
+        std::fs::write(wt.join("tools/build/run.sh"), "x").unwrap();
+        run(&wt, None, &["add", "-A"]).unwrap();
+        run(&wt, None, &["commit", "-qm", "tools", "--no-gpg-sign"]).unwrap();
+        std::fs::write(wt.join("tools/build/my.local"), "mine\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["tools/build/my.local".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Over the walk's limit a dependency tree is let go, since it is
+    /// regenerable, unless a nested repository was already seen; an output
+    /// folder over it is kept, since what was not seen may be a secret.
+    #[test]
+    fn the_walk_limit_lets_a_dependency_tree_go_but_not_an_output_folder() {
+        let root = tempfile::tempdir().unwrap();
+        for i in 0..5 {
+            std::fs::create_dir_all(root.path().join(format!("node_modules/p{i}"))).unwrap();
+            std::fs::create_dir_all(root.path().join(format!("dist/p{i}"))).unwrap();
+        }
+        let deps = BuildKind::Dependency;
+        assert_eq!(work_inside(root.path(), "node_modules/", deps, 3), None);
+        assert_eq!(
+            work_inside(root.path(), "dist/", BuildKind::Output, 3),
+            Some("dist/".to_string())
+        );
+        assert_eq!(work_inside(root.path(), "dist/", BuildKind::Output, 100), None);
+        std::fs::create_dir_all(root.path().join("node_modules/.git")).unwrap();
+        let found = work_inside(root.path(), "node_modules/", deps, 100);
+        assert_eq!(found, Some("node_modules/".to_string()));
+    }
+
+    /// A source is committed only as a HEAD blob the file on disk still
+    /// matches, and any git error or odd reply means none is.
+    #[test]
+    fn a_source_is_committed_only_as_head_holds_it() {
+        let sources = [".gitignore", "web/.gitignore", "new/.gitignore"];
+        let head = "100644 blob a\t.gitignore\x00100644 blob b\tweb/.gitignore\0\
+                    040000 tree c\tnew/.gitignore\x00100644 blob d\tother\0";
+        let ask = |tree: Result<&str, &str>, disk: Result<&str, &str>| {
+            let mut got: Vec<&str> = committed_sources(&sources, |args, input| {
+                if args.contains(&"hash-object") {
+                    // The stand-in file holds its own name; `disk` says which
+                    // ids git would give the files, in order.
+                    let name = String::from_utf8_lossy(input).into_owned();
+                    let at = sources.iter().position(|s| *s == name).unwrap();
+                    return disk.map(|d| d.lines().nth(at).unwrap_or("").to_string()).map_err(str::to_string);
+                }
+                tree.map(str::to_string).map_err(str::to_string)
+            }, |path| Some(path.as_bytes().to_vec()))
+            .into_iter()
+            .collect();
+            got.sort_unstable();
+            got
+        };
+        assert_eq!(ask(Ok(head), Ok("a\nb\n")), vec![".gitignore", "web/.gitignore"]);
+        // An edit hidden from the index still changes what is on disk.
+        assert_eq!(ask(Ok(head), Ok("a\nx\n")), vec![".gitignore"]);
+        // Each file is judged on its own: a missing id is one that differs.
+        assert_eq!(ask(Ok(head), Ok("a\n")), vec![".gitignore"]);
+        assert_eq!(ask(Ok(head), Err("broken")), Vec::<&str>::new());
+        assert_eq!(ask(Err("broken"), Ok("a\nb\n")), Vec::<&str>::new());
+    }
+
+    /// CRLF is the only difference a checkout may make to a tracked rule file.
+    #[test]
+    fn crlf_is_undone_and_nothing_else() {
+        assert_eq!(lf_only(b"dist/*\r\n!dist/.gitkeep\r\n"), b"dist/*\n!dist/.gitkeep\n");
+        assert_eq!(lf_only(b"a\rb\r\r\n"), b"a\rb\r\n");
+        assert_eq!(lf_only(b"a\n"), b"a\n");
+    }
+
+    /// Git for Windows checks a tracked `.gitignore` out as CRLF under its
+    /// default `core.autocrlf=true`: it is still the rules HEAD holds, so a
+    /// built file under `dist/*` stays build output, while an edit does not.
+    #[test]
+    fn a_rule_file_a_checkout_converted_to_crlf_is_still_committed() {
+        let Some(root) = init_repo() else { return };
+        std::fs::write(root.join(".gitignore"), "dist/*\n!dist/.gitkeep\n").unwrap();
+        std::fs::create_dir_all(root.join("dist")).unwrap();
+        std::fs::write(root.join("dist/.gitkeep"), "").unwrap();
+        run(&root, None, &["add", "-A"]).unwrap();
+        run(&root, None, &["commit", "-qm", "ignore", "--no-gpg-sign"]).unwrap();
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("crlf");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = with_global_config("[core]\n\tautocrlf = true\n", || {
+            clone_shared(&root, &wt, "jan/agent/crlf-1", &head).unwrap()
+        });
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let on_disk = std::fs::read(wt.join(".gitignore")).unwrap();
+        assert!(on_disk.windows(2).any(|w| w == b"\r\n"), "the checkout converted it");
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join("dist/app.js"), "x").unwrap();
+        // The user's own config reaches every git Jan runs, so status reads
+        // the converted files as the clean checkout they are.
+        let config = "[core]\n\tautocrlf = true\n";
+        let work = || with_global_config(config, || child.uncommitted());
+        assert_eq!(work(), Ok(vec![]), "a built file is not work");
+        // A rule the child added is an edit, converted line endings or not.
+        let mut edited = on_disk.clone();
+        edited.extend_from_slice(b"extra\r\n");
+        std::fs::write(wt.join(".gitignore"), edited).unwrap();
+        assert_eq!(work(), Ok(vec![".gitignore".to_string(), "dist/app.js".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Which folder each rule shape names, so a file below a folder named
+    /// like a build folder is exempt only by a rule about that folder.
+    #[test]
+    fn the_folder_a_rule_names() {
+        for pattern in ["dist/*", "/dist/**", "dist/", "**/dist/*", "dist/*/", "web/dist/**"] {
+            assert_eq!(named_folder(".gitignore", pattern, true), Some("dist"), "{pattern}");
+            assert_eq!(named_folder(".gitignore", pattern, false), None, "{pattern}");
+        }
+        for pattern in ["*.local", "*", "!dist/*", "/notes.txt", "*/"] {
+            assert_eq!(named_folder(".gitignore", pattern, true), None, "{pattern}");
+        }
+        assert_eq!(named_folder(".venv/.gitignore", "*", true), Some(".venv"));
+        assert_eq!(named_folder(".venv/.gitignore", "*", false), Some(".venv"));
+        assert_eq!(named_folder("src/build/.gitignore", "*", true), Some("build"));
+        assert_eq!(named_folder("src/build/.gitignore", "*", false), None);
+        // Only a venv is let write its own: no tool commits a `*` elsewhere.
+        assert_eq!(named_folder("src/target/.gitignore", "*", false), None);
+        assert_eq!(named_folder("web/node_modules/.gitignore", "*", false), None);
+        assert_eq!(named_folder("web/.venv/.gitignore", "*", false), Some(".venv"));
+        assert_eq!(named_folder("tools/build/.gitignore", "*.local", true), None);
+        let exclude = std::env::temp_dir().join("x/.git/info/exclude");
+        for pattern in ["*", "build/", "sub/build/*"] {
+            assert_eq!(named_folder(&exclude.to_string_lossy(), pattern, true), None);
+            assert_eq!(named_folder(".git/info/exclude", pattern, true), None);
+        }
+    }
+
+    #[test]
+    fn example_files_do_not_look_like_secrets() {
+        for name in [".env", ".env.local", "server.pem", "id.key", ".npmrc"] {
+            assert!(looks_like_secret(name), "{name}");
+        }
+        for name in [".env.example", ".env.sample", ".env.template", "key.pem.example"] {
+            assert!(!looks_like_secret(name), "{name}");
+        }
+    }
+
+    /// With `dist/*` and a kept `.gitkeep`, git lists each built file on its
+    /// own: one is build output by its `dist/` ancestor, but a secret there
+    /// is still work.
+    #[test]
+    fn files_listed_below_an_output_folder_are_build_output_unless_secret() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("listed");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/listed-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".gitignore"), "dist/*\n!dist/.gitkeep\n").unwrap();
+        std::fs::create_dir_all(wt.join("dist")).unwrap();
+        std::fs::write(wt.join("dist/.gitkeep"), "").unwrap();
+        run(&wt, None, &["add", "-A"]).unwrap();
+        run(&wt, None, &["commit", "-qm", "ignore", "--no-gpg-sign"]).unwrap();
+        std::fs::write(wt.join("dist/app.js"), "x").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec![]), "a built file is not work");
+        // The build's own subfolder is listed as one line by the same rule.
+        std::fs::create_dir_all(wt.join("dist/assets")).unwrap();
+        std::fs::write(wt.join("dist/assets/index.css"), "x").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec![]), "a built subfolder is not work");
+        std::fs::write(wt.join("dist/.env"), "KEY=1\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["dist/.env".to_string()]));
+        std::fs::remove_file(wt.join("dist/.env")).unwrap();
+        std::fs::write(wt.join("dist/assets/.env"), "KEY=1\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["dist/assets/.env".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A directory whose name is not UTF-8 is walked by its real name, so a
+    /// secret inside it is still seen.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_named_in_raw_bytes_is_walked() {
+        use std::os::unix::ffi::OsStrExt;
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("raw");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/raw-1", &head).unwrap();
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join(".gitignore"), "build/\n").unwrap();
+        run(&wt, None, &["commit", "-qam", "ignore", "--no-gpg-sign"]).unwrap();
+        let raw = wt.join("build").join(std::ffi::OsStr::from_bytes(b"bad\xff"));
+        std::fs::create_dir_all(&raw).unwrap();
+        std::fs::write(raw.join(".env"), "KEY=1\n").unwrap();
+        assert_eq!(child.uncommitted(), Ok(vec!["build/bad\u{FFFD}/.env".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A new directory full of files is work, even for a user who hides

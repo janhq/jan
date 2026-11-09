@@ -1,0 +1,59 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+| 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ● [ready]                                    |
+|╭ subagent worktrees ──────────────────────────────────────────────────────────────────────────────╮|
+|│ ▶ Remove what is safe to remove  1 checkout(s), 2.0 KB                                           │|
+|│   Clear build cache  3.0 GB                                                                      │|
+|│   jan/agent/child-0001  2.0 KB  in use by a running subagent                                     │|
+|│   jan/agent/other-0002  2.0 KB  in use by another live jan session                               │|
+|│   jan/agent/dirty-0003  2.0 KB  holds uncommitted work: a.txt, .env; 1 commit(s)                 │|
+|│   jan/agent/ahead-0004  2.0 KB  holds 3 commit(s) not in your repository                         │|
+|│   jan/agent/idle-0005  2.0 KB  removable (no work in it)                                         │|
+|╰──────────────────────────────────────────────────────────────────────────────────────────────────╯|
+|                                                                                                    |
+|────────────────────────────────────────────────────────────────────────────────────────────────────|
+|selecting…                                                                                          |
+|                                                                                                    |
+|📂 /snapshot/repo                                       ↑/↓ select   Enter run or remove   Esc close|
+
+ 0 0..2 fg=Yellow
+ 0 3..14 mod=BOLD
+ 0 14..29 fg=#E5C07B
+ 0 55..64 fg=#98C379
+ 1 0..100 fg=#56B6C2
+ 2 0..1 fg=#56B6C2
+ 2 2..98 fg=Cyan mod=BOLD
+ 2 99..100 fg=#56B6C2
+ 3 0..1 fg=#56B6C2
+ 3 21..29 fg=#808080
+ 3 99..100 fg=#56B6C2
+ 4 0..1 fg=#56B6C2
+ 4 4..24 fg=#56B6C2
+ 4 24..62 fg=#808080
+ 4 99..100 fg=#56B6C2
+ 5 0..1 fg=#56B6C2
+ 5 4..24 fg=#56B6C2
+ 5 24..68 fg=#808080
+ 5 99..100 fg=#56B6C2
+ 6 0..1 fg=#56B6C2
+ 6 4..24 fg=#56B6C2
+ 6 24..32 fg=#808080
+ 6 32..82 fg=#E5C07B
+ 6 99..100 fg=#56B6C2
+ 7 0..1 fg=#56B6C2
+ 7 4..24 fg=#56B6C2
+ 7 24..32 fg=#808080
+ 7 32..74 fg=#E5C07B
+ 7 99..100 fg=#56B6C2
+ 8 0..1 fg=#56B6C2
+ 8 4..23 fg=#56B6C2
+ 8 23..31 fg=#808080
+ 8 31..58 fg=#98C379
+ 8 99..100 fg=#56B6C2
+ 9 0..100 fg=#56B6C2
+12 0..10 mod=DIM | ITALIC
+14 0..1 fg=#808080
+14 2..17 fg=#808080
+14 55..100 mod=DIM

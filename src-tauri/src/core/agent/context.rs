@@ -26,8 +26,10 @@ const GUIDELINES: &str =
 - Call `ask` when the user's answer would materially change scope, behavior, or an irreversible action and it cannot be safely inferred from the request or project context. Ask concise, decision-ready questions; otherwise make the reasonable choice and proceed.\n\
 - Tool output is complete and verbatim. Trust it. Do not re-run a command to check for hidden or \
 missing output: when output is cut it always carries an explicit `[output truncated ...]` notice, so \
-its absence means you have everything. A command's `[exit N]` line is the authoritative result -- \
-`[exit 0]` is success even if there is text on stderr (many tools write normal status there).\n\
+its absence means you have everything. A shell result's `[exit N]` line is the authoritative result, \
+and a nonzero exit or a signal is always reported; a command that printed output and succeeded comes \
+back without `[exit 0]`. Text on stderr is not failure on its own (many tools write normal status \
+there).\n\
 - You may end your turn while background work is still running -- a backgrounded shell command, a \
 dispatched subagent, a monitor. You are notified automatically when each one finishes, and the \
 notice reaches you as a `<SYSTEM>` note that resumes the conversation, so nothing is lost by \
@@ -243,7 +245,10 @@ that could pull in a lot of file content or tool output (broad codebase search, 
 multi-step research), prefer `dispatch_subagent` over doing it inline: the subagent absorbs that context \
 in its own window and returns only the distilled answer. For read-only codebase questions set `agent: \"explore\"` \
 and for web lookups `agent: \"research\"`: both run on a cheaper model; use `agent: \"general\"` when no \
-other agent fits. Dispatch independent subagents in parallel when \
+other agent fits. A difficult task -- a change spanning several subsystems, a hard bug, a large \
+refactor or migration -- is where subagents pay off most: split it into independent parts and hand them \
+out (parallel investigations up front, a `debug` agent on a failure, a `review` of the finished change) \
+instead of carrying the whole task in one context. Dispatch independent subagents in parallel when \
 their work doesn't depend on each other; each returns in the background and a note carries its answer when \
 it finishes. Once you delegate a task it belongs to that subagent -- do not do the same work yourself; \
 spend the wait on other steps, and only `await_subagent` when nothing else is left to do. Do inline work \
@@ -256,15 +261,51 @@ task, and record anything worth keeping from its answer yourself.";
 /// `child_workspace`), so there it would describe branches that never exist.
 /// A constant per build, so the prefix stays byte-stable.
 const SUBAGENT_WORKSPACE_GUIDE: &str = if cfg!(feature = "cli") {
-    "\n\nEach subagent's workspace is set when you dispatch it. One that can write or edit files works in its own \
-checkout (a clone) on its own branch, started from HEAD, so parallel writers never share a checkout and \
-your uncommitted changes are not in it; its branch is in your repository when it is done, to merge. \
+    "\n\nEach subagent's workspace is set when you dispatch it. By default one that can write or edit files works in your checkout, shared with you and with any \
+other writer, so parallel writers can overwrite each other: give them disjoint files, or `workspace: \"new\"`. \
+When the user turned on subagent worktrees (`--subagent-worktrees`, or `subagent_worktrees` under `[agent]` in \
+agent.toml) it instead works in its own checkout (a clone) on its own branch, started from HEAD, so parallel \
+writers never share a checkout and your uncommitted changes are not in it; its branch is in your repository \
+when it is done, to merge. \
 Any other subagent works in your checkout read-only. The dispatch result says where each one works. Override with `workspace`: \"new\", \
 \"shared\", the name of an earlier subagent to continue in its worktree, or `workspace: {\"ref\": \"<git \
-ref>\"}` to review or test a branch or pull request in a checkout of its own."
+ref>\"}` to review or test a branch or pull request in a checkout of its own. In a later phase, \
+`workspace` naming the agent of an earlier-phase subagent of the same plan (e.g. \"general\") means \
+that sibling's checkout, so a review phase checks exactly what the implementer wrote."
 } else {
     ""
 };
+
+/// How to split, coordinate and verify parallel work. Kept apart from
+/// [`SUBAGENT_GUIDE`] (when to delegate at all) because these are the failures
+/// seen once several children run at once: siblings editing the same file, a
+/// contract one changes that the others never hear of, and children that each
+/// verify only their own slice so nobody checks the combined result.
+const SUBAGENT_COORDINATION_GUIDE: &str = "\n\n## Parallel work\n\n\
+- Split by ownership, not by step: give each parallel subagent a disjoint set of files or \
+subsystems, say in its task which files it owns and which ones siblings are editing, and tell it \
+to change nothing else. Work that must follow other work goes in a later `phase` (implement, \
+then review), not in the same one.\n\
+- Write each task as a complete brief: the goal, the relevant paths and facts you already know, \
+the project rules that apply, the checks to run, and the shape of the report you want back \
+(what changed, commit, what was run and its result). A child that has to rediscover context \
+you already have wastes its window.\n\
+- You are the hub between siblings: they cannot talk to each other. When one reports a decision \
+another depends on (an event shape, a renamed function, a changed signature), relay it with \
+`message_subagent` at once instead of fixing the mismatch after both finish. A later-phase \
+subagent can be messaged before it starts.\n\
+- Read each answer as soon as it arrives and act on it while the others still run: relay, \
+merge, or correct a child heading the wrong way.\n\n\
+## Verification\n\n\
+- Ask every implementing subagent to prove its change: a failing test first where it fits, then \
+the project's checks for what it touched, reported with the exact commands, their results, and \
+what was not run and why.\n\
+- A child's report is evidence, not proof. Check claims that matter (a reported commit, a \
+passing suite) before you build on them.\n\
+- Each child sees only its slice. After merging parallel work, run the checks on the combined \
+result yourself, then hand the combined change to a fresh `review` subagent that wrote none of \
+it. Point it at the exact range or commit to review and at the risky parts, and verify each \
+finding before acting on it.";
 
 /// The `# Subagents` block: the guide, then the predefined agents the
 /// `dispatch_subagent` `agent` enum accepts, each with its model and purpose.
@@ -275,9 +316,10 @@ fn subagent_guide(project_root: &Path) -> String {
     let registry = crate::core::agent::subagent::SubagentRegistry::load(project_root);
     match crate::core::agent::subagent::agent_catalog(&registry) {
         Some(catalog) => format!(
-            "{SUBAGENT_GUIDE}{SUBAGENT_WORKSPACE_GUIDE}\n\nPredefined agents (`agent` field):\n{catalog}"
+            "{SUBAGENT_GUIDE}{SUBAGENT_WORKSPACE_GUIDE}{SUBAGENT_COORDINATION_GUIDE}\n\n\
+             Predefined agents (`agent` field):\n{catalog}"
         ),
-        None => format!("{SUBAGENT_GUIDE}{SUBAGENT_WORKSPACE_GUIDE}"),
+        None => format!("{SUBAGENT_GUIDE}{SUBAGENT_WORKSPACE_GUIDE}{SUBAGENT_COORDINATION_GUIDE}"),
     }
 }
 
@@ -345,7 +387,9 @@ fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> Str
     // name it too.
     let scratch_line = match scratch {
         Some(scratch) => format!(
-            "\nScratch: `{}` is a writable scratch space for temporary work; it persists for this session.",
+            "\nScratch: `{}` is a writable scratch space for temporary work; it persists for this session. \
+Put temporary files, clones and worktrees there, not in `/tmp`: under the sandbox `/tmp` can be \
+private to a single command and gone once it exits.",
             display_path(scratch)
         ),
         None => String::new(),
@@ -1222,6 +1266,30 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // Parallel work fails at the seams: siblings editing the same file, a
+    // contract one changes that the other never hears of, and each child
+    // verifying only its own slice. The guide must cover all three, plus an
+    // independent review of the combined result.
+    #[test]
+    fn subagent_guide_covers_splitting_coordination_and_verification() {
+        let root = scratch_project("subagent-coordination");
+        let with = default_prompt(None, &root, None, true).expect("prompt");
+        for needle in [
+            "## Parallel work",
+            "which files it owns",
+            "relay it with `message_subagent`",
+            "## Verification",
+            "what was not run",
+            "combined result yourself",
+            "a fresh `review` subagent",
+        ] {
+            assert!(with.contains(needle), "missing {needle:?}");
+        }
+        let guide = with.find("## Parallel work").unwrap();
+        assert!(guide < with.find("Predefined agents").unwrap_or(usize::MAX));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     // Where a child works is decided at dispatch, and the CLI guide says so,
     // ahead of the agent catalog.
     #[cfg(feature = "cli")]
@@ -1231,8 +1299,13 @@ mod tests {
         let with = default_prompt(None, &root, None, true).expect("prompt");
         assert!(with.contains("own checkout"), "{with}");
         assert!(with.contains("is in your repository"), "{with}");
+        // Off by default: a writer shares the checkout unless worktrees are on.
+        assert!(with.contains("works in your checkout, shared with you"), "{with}");
+        assert!(with.contains("overwrite each other"), "{with}");
+        assert!(with.contains("subagent_worktrees"), "{with}");
         assert!(with.contains("read-only"), "{with}");
         assert!(with.contains("workspace: {\"ref\""), "{with}");
+        assert!(with.contains("means that sibling's checkout"), "{with}");
         let guide = with.find("Each subagent's workspace").expect("workspace paragraph");
         assert!(guide < with.find("Predefined agents").unwrap(), "{with}");
         let _ = std::fs::remove_dir_all(&root);

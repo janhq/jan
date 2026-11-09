@@ -67,6 +67,10 @@ pub fn resolve_for(project: Option<&Path>) -> HookSet {
 /// and a run must not stall on one that never returns.
 pub const DEFAULT_TIMEOUT_SECS: u64 = 60;
 
+/// How a load notice begins when it rides on a tool result, so a reader can
+/// tell it from the tool's own output.
+pub const NOTICE_TAG: &str = "[hook config:";
+
 /// Upper bound on a hook's stdout that is parsed. A hook answers with a small
 /// JSON object; anything past this is a runaway and is truncated rather than
 /// buffered without limit.

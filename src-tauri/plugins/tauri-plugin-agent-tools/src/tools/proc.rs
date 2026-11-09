@@ -630,6 +630,23 @@ where
     out
 }
 
+/// Whether `bash` can carry its working directory between calls here: a known
+/// POSIX shell on unix, whose `pwd -P` names the path the next call can `cd` to.
+/// git-bash on Windows prints `/c/...` instead, and PowerShell and cmd have no
+/// `EXIT` trap to report from.
+pub fn shell_cwd_supported() -> bool {
+    cfg!(unix) && speaks_posix(&shell().program)
+}
+
+/// Whether `program` is a shell the cwd wrapper's POSIX syntax runs in.
+/// [`kind_of`] calls anything not PowerShell or cmd POSIX, which is right for
+/// handing it `-c`; a `JAN_AGENT_SHELL` of fish or nu takes `-c` too but would
+/// reject the wrapper, so only names known to speak POSIX sh qualify.
+fn speaks_posix(program: &Path) -> bool {
+    let name = program.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    matches!(name, "sh" | "bash" | "dash" | "zsh" | "ksh" | "mksh" | "ash" | "busybox")
+}
+
 pub async fn spawn(
     cfg: &ShellConfig,
     command: &str,
@@ -1019,15 +1036,27 @@ pub fn unregister(thread: Option<&str>, pid: u32) {
     }
 }
 
-/// Flag a still-running command as backgrounded: it outran its `bash` call's
-/// timeout and is now detached, so `/shells` should list it. A no-op if the pid
-/// already finished (the detached task unregistered it in the race).
-pub fn mark_backgrounded(thread: Option<&str>, pid: u32) {
+/// Apply `change` to a registered shell; a no-op if the pid already finished
+/// (its task unregistered it in the race).
+fn update(thread: Option<&str>, pid: u32, change: impl FnOnce(&mut ShellProc)) {
     if let Some(set) = running().lock().unwrap().get_mut(thread.unwrap_or(NO_THREAD)) {
         if let Some(proc) = set.get_mut(&pid) {
-            proc.backgrounded = true;
+            change(proc);
         }
     }
+}
+
+/// List a registered shell under `command` instead of the script it was
+/// spawned with, for a caller that wraps what the user wrote (the shell-cwd
+/// wrapper) and wants `/shells` to show the original.
+pub fn relabel(thread: Option<&str>, pid: u32, command: &str) {
+    update(thread, pid, |proc| proc.command = command.to_string());
+}
+
+/// Flag a still-running command as backgrounded: it outran its `bash` call's
+/// timeout and is now detached, so `/shells` should list it.
+pub fn mark_backgrounded(thread: Option<&str>, pid: u32) {
+    update(thread, pid, |proc| proc.backgrounded = true);
 }
 
 /// Every currently-running bash command across all sessions, pid-sorted for a
@@ -1677,6 +1706,18 @@ mod tests {
         assert!(!is_registered(Some("sess-a"), a), "own session must be reaped");
         assert!(is_registered(Some("sess-b"), b), "other session must survive");
         unregister(Some("sess-b"), b);
+    }
+
+    /// Only shells known to speak POSIX sh run the cwd wrapper; fish and nu
+    /// take `-c` but would reject its syntax.
+    #[test]
+    fn only_known_posix_shells_carry_the_cwd() {
+        for posix in ["/bin/sh", "/usr/bin/bash", "/bin/dash", "/bin/zsh", "/bin/busybox"] {
+            assert!(speaks_posix(Path::new(posix)), "{posix}");
+        }
+        for other in ["/usr/bin/fish", "/usr/bin/nu", "/usr/bin/xonsh", "pwsh"] {
+            assert!(!speaks_posix(Path::new(other)), "{other}");
+        }
     }
 
     #[cfg(unix)]

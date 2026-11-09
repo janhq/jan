@@ -13,7 +13,7 @@ expression: render_snapshot(buf)
 | 1 monitor watching     |
 |  └ mon-3 CI done #9487 |
 | 2 subagents running    |
-|  └ kv-review           |
+|  └ kv-review · Read... |
 |    perf-scan           |
 |    docs-writer         |
 | 2 background shells ...|
@@ -38,6 +38,7 @@ expression: render_snapshot(buf)
  9 0..20 fg=#808080
 10 0..4 fg=DarkGray
 10 4..13 fg=#56B6C2 mod=BOLD
+10 13..23 fg=#808080
 11 0..4 fg=DarkGray
 11 4..13 fg=#56B6C2 mod=BOLD
 12 0..4 fg=DarkGray

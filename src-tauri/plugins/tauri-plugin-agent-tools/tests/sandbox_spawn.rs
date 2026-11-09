@@ -224,7 +224,9 @@ mod shell_tool {
             .unwrap_or_else(|| panic!("notice names the output file: {started}"));
         let body = wait_for(&path).expect("output file must appear after the command finishes");
         assert!(body.contains("done"), "unexpected: {body}");
-        assert!(body.contains("[exit 0]"), "carries the exit marker: {body}");
+        // The model reads this file, so it gets the result a direct call
+        // would: output present, so no exit marker.
+        assert!(!body.contains("[exit"), "a clean exit carries no marker: {body}");
         let _ = std::fs::remove_file(&path);
 
         eprintln!("sandbox_spawn: shell tool ok");

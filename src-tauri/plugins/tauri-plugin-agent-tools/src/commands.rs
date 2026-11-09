@@ -91,7 +91,7 @@ fn with_renamed_tool_notices(
     for notice in hooks.renamed_notices(tool) {
         crate::tools::handlers::insert_before_exit_marker(
             &mut content,
-            &format!("\n[hook config: {notice}]"),
+            &format!("\n{} {notice}]", crate::tools::hooks::NOTICE_TAG),
         );
     }
     content
@@ -944,8 +944,17 @@ async fn execute_tool_inner(
         Decision::HardDeny(gate::DenyReason::Policy) => {
             return Err(format!("tool '{name}' is denied by policy").into());
         }
-        Decision::HardDeny(gate::DenyReason::Hidden) => {
+        // No held shell cwd here, so `HiddenShellCwd` never comes up.
+        Decision::HardDeny(gate::DenyReason::Hidden | gate::DenyReason::HiddenShellCwd) => {
             return Err(format!("tool '{name}' is denied: the Jan home (~/.jan) is hidden").into());
+        }
+        Decision::HardDeny(gate::DenyReason::TooComplex) => {
+            return Err(format!(
+                "tool '{name}' is denied: the command or path is too large or deeply nested to \
+                 check; split it or shorten the path, or \
+                 write a long script to a file and run that"
+            )
+            .into());
         }
         // An exec prompt asks the user to vouch for a command that could reach
         // anything. Under an enforcing sandbox it cannot: writes stay in the

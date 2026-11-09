@@ -73,6 +73,11 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # under each project's agent.toml
 #                                     # thread_retention_days / max_threads.
 #                                     # Off by default: nothing is deleted
+# subagent_build_cache_max_gb = 20    # clear a project's shared subagent
+#                                     # cargo-target at session end once it
+#                                     # is larger than this (default 20; 0
+#                                     # never). A project's agent.toml
+#                                     # [agent] key of the same name wins
 #
 # [tui]
 # animations = false                  # hold the TUI still: no shimmer and
@@ -195,6 +200,12 @@ struct GlobalConfigToml {
     /// something they turn on, not something they find out about.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     prune_threads: Option<bool>,
+    /// The user-wide default for how large, in GB, a project's shared
+    /// subagent build directory may grow before a session end clears it.
+    /// `None` = the default, 20; `0` never clears. A project's
+    /// `[agent].subagent_build_cache_max_gb` wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    subagent_build_cache_max_gb: Option<u64>,
     /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit
     /// beyond the fixed base allowlist. Empty by default, so the shell env is
     /// unchanged. Merged with a project's `[tools].env_passthrough`; a secret-
@@ -549,6 +560,13 @@ pub(crate) fn context_fallback_files_setting() -> Option<Vec<String>> {
 /// [`sandbox_setting`]: a preference must not block a session from starting.
 pub(crate) fn worktree_setting() -> Option<bool> {
     load_raw().ok().and_then(|config| config.worktree)
+}
+
+/// `subagent_build_cache_max_gb` in `~/.jan/config.toml`; `None` when unset
+/// or unreadable, so the project's setting or the default decides.
+#[cfg(feature = "cli")]
+pub(crate) fn subagent_build_cache_max_gb_setting() -> Option<u64> {
+    load_raw().ok().and_then(|config| config.subagent_build_cache_max_gb)
 }
 
 /// Whether saved threads are pruned at TUI start (`prune_threads` in

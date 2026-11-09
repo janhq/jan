@@ -509,6 +509,16 @@ fn monitors_inspector_empty() {
     assert_buffer("monitors_inspector_empty", &frame(&mut app, DARK, 60, 9));
 }
 
+/// `/worktrees`: the actions, then each checkout coloured by what may be
+/// done with it (removable green, holding work amber, in use dim).
+#[test]
+fn worktrees_inspector_lists_each_state() {
+    let mut app = snapshot_app();
+    app.worktrees = Some(worktrees_fixture());
+    open_worktrees_picker(&mut app);
+    assert_buffer("worktrees_inspector_list", &frame(&mut app, DARK, 100, 15));
+}
+
 #[test]
 fn monitor_group_overflow_counts_the_rest() {
     let mut app = snapshot_app();
@@ -612,6 +622,71 @@ fn subagents_running_after_the_turn() {
         error: None,
     });
     assert_buffer("subagents_idle_one_finished", &background_rows_buffer(&mut app, 80, now));
+}
+
+/// A child that issues several calls in one request, as its stream delivers
+/// them: every call announced before any runs, then the results out of order.
+/// The row names the newest call still running, in continuous tense, and a
+/// label too long for the row is cut after its verb rather than dropped; each
+/// result retires its own call by id, so the row follows whatever is still
+/// running and flips to the past tense only once the last one answers.
+#[test]
+fn subagent_parallel_calls_stay_visible_until_the_last_result() {
+    let now = Instant::now();
+    let mut app = idle_fan_out(now);
+    app.subagents.truncate(1);
+    let child = |event: StreamEvent| StreamEvent::Subagent {
+        run_id: "sub-kv-review-1".into(),
+        name: "kv-review".into(),
+        event: Box::new(event),
+    };
+    let cmd = "cargo test --locked --no-default-features --features cli --lib tui";
+    let calls = [
+        ("a", "read", json!({ "path": "src/a.rs" })),
+        ("b", "read", json!({ "path": "src/b.rs" })),
+        ("c", "bash", json!({ "command": cmd })),
+    ];
+    for (id, tool, args) in calls {
+        app.apply(child(StreamEvent::ToolCall {
+            id: id.into(),
+            name: tool.into(),
+            args,
+        }));
+    }
+    let row = |app: &mut App, w: u16| {
+        let text = render_snapshot(&background_rows_buffer(app, w, now));
+        text.lines().nth(1).unwrap_or_default().to_string()
+    };
+    // The newest call's whole command does not fit, so the row keeps its verb
+    // and cuts the rest with a visible mark rather than going blank.
+    for w in [80, 50, 36] {
+        let shown = row(&mut app, w);
+        assert!(shown.contains("1m 05s \u{b7} Running"), "@{w}: {shown}");
+        assert!(shown.trim_end_matches([' ', '|']).ends_with("..."), "@{w}: {shown}");
+        assert!(!shown.contains("in flight"), "@{w}: {shown}");
+    }
+    assert!(row(&mut app, 120).contains(&format!("1m 05s \u{b7} Running {cmd}")));
+    assert_buffer("subagents_idle_parallel", &background_rows_buffer(&mut app, 80, now));
+    let result = |id: &str| {
+        child(StreamEvent::ToolResult {
+            id: id.into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        })
+    };
+    app.apply(result("c"));
+    let shown = row(&mut app, 80);
+    assert!(shown.contains("1m 05s \u{b7} Reading b.rs "), "{shown}");
+    app.apply(result("b"));
+    let shown = row(&mut app, 80);
+    assert!(shown.contains("1m 05s \u{b7} Reading a.rs "), "{shown}");
+    // The batch is done: the call the row last named stays, its verb now in
+    // the past tense.
+    app.apply(result("a"));
+    assert!(app.subagents[0].in_flight.is_empty());
+    let shown = row(&mut app, 120);
+    assert!(shown.contains("1m 05s \u{b7} Read a.rs "), "{shown}");
 }
 
 /// Where the block sits: over the rule, subagents over shells, the rule on
@@ -864,6 +939,90 @@ fn agents_inspector_detail_for_a_richer_child() {
         "agents_inspector_detail_rich",
         &frame(&mut app, DARK, 80, 30),
     );
+}
+
+/// The detail's input is the composer, aimed at the child: a parked child
+/// offers the placeholder addressed to it, and a draft shows with the main
+/// composer's prompt and cursor under the panel.
+#[test]
+fn agents_inspector_detail_takes_a_message() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    child(&mut app, StreamEvent::Step { index: 1, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Token {
+            text: "Waiting on the test run.".into(),
+        },
+    );
+    child(&mut app, StreamEvent::Parked);
+    open_kv_review_detail(&mut app);
+    assert_buffer("agents_inspector_detail_idle_input", &frame(&mut app, DARK, 80, 16));
+    app.input = "check the lock order too".into();
+    app.cursor = app.input.len();
+    assert_buffer("agents_inspector_detail_draft", &frame(&mut app, DARK, 80, 16));
+}
+
+/// A permission request from the child lands while its detail is open: it is
+/// drawn over the detail, and the footer says only a picked option answers.
+#[test]
+fn agents_inspector_detail_under_a_permission_prompt() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    child(&mut app, StreamEvent::Step { index: 1, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Token {
+            text: "Running the tests.".into(),
+        },
+    );
+    open_kv_review_detail(&mut app);
+    app.input = "also".into();
+    app.cursor = app.input.len();
+    child(
+        &mut app,
+        StreamEvent::PermissionRequest {
+            request_id: "p1".into(),
+            tool_name: "bash".into(),
+            capability: "execute".into(),
+            path: None,
+            command: Some("cargo test --lib".into()),
+            diff: None,
+            prompt_kind: "exec".into(),
+            offers_always: true,
+            justification: None,
+        },
+    );
+    assert_buffer(
+        "agents_inspector_detail_permission",
+        &frame(&mut app, DARK, 80, 20),
+    );
+}
+
+/// The same for an `ask`: drawn over the detail, its help line naming the
+/// detail's keys.
+#[test]
+fn agents_inspector_detail_under_an_ask() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    open_kv_review_detail(&mut app);
+    let request = crate::core::agent::interaction::AskRequest::parse(&json!({
+        "questions": [{
+            "id": "scope",
+            "question": "Which scope?",
+            "options": [{"label": "Small"}, {"label": "Large"}]
+        }]
+    }))
+    .unwrap();
+    app.apply(StreamEvent::AskRequest {
+        request_id: "a1".into(),
+        request,
+        timeout_secs: None,
+    });
+    assert_buffer("agents_inspector_detail_ask", &frame(&mut app, DARK, 80, 20));
 }
 
 // ---- Model picker -----------------------------------------------------------

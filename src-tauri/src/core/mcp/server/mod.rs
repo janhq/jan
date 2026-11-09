@@ -258,7 +258,18 @@ impl JanToolServer {
             Decision::HardDeny(DenyReason::Policy) => {
                 return (format!("ERROR: tool '{name}' is denied by policy"), Vec::new())
             }
-            Decision::HardDeny(DenyReason::Hidden) => {
+            Decision::HardDeny(DenyReason::TooComplex) => {
+                return (
+                    format!(
+                        "ERROR: tool '{name}' was refused: the command or path is too large or \
+                         deeply nested to check; split it or shorten the path, or write a \
+                         long script to a file and run that"
+                    ),
+                    Vec::new(),
+                )
+            }
+            // No held shell cwd here, so `HiddenShellCwd` never comes up.
+            Decision::HardDeny(DenyReason::Hidden | DenyReason::HiddenShellCwd) => {
                 let offered: Vec<&str> = tauri_plugin_agent_tools::tools::JAN_HOME_TOOLS
                     .into_iter()
                     .filter(|t| self.opts.served.is_served(t))
