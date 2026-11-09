@@ -57,7 +57,7 @@ interface SamplerPopoverProps {
     currentThread: Thread | undefined
     selectedAssistantId: string | undefined
     setSelectedAssistantId: (id: string) => void
-    updateCurrentThreadAssistant: (assistant: Assistant) => void
+    updateCurrentThreadAssistant: (assistant: Assistant | undefined) => void
   }
 }
 
