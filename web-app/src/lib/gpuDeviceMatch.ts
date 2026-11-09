@@ -21,8 +21,9 @@ const isVulkan = (id: string) =>
  * plugin keeps the NVML name for NVIDIA cards and Vulkan's `deviceName` for the
  * rest. So when exactly one Vulkan device and one GPU are left unmatched by
  * name, they are paired. Identical twin cards, which a name cannot tell apart,
- * fall back to the index. CUDA numbering is the plugin's own, so it stays
- * index-based.
+ * are paired by rank among same-named devices. Two or more differently named
+ * mismatches are left blank rather than guessed. CUDA numbering is the
+ * plugin's own, so it stays index-based.
  */
 export function findGpuForDevice(
   device: { id: string; name: string },
@@ -39,7 +40,16 @@ export function findGpuForDevice(
   const named = vulkanGpus.filter((gpu) => gpu.name === device.name)
   if (named.length === 1) return named[0]
   if (named.length > 1) {
-    return named.find((gpu) => gpu.vulkan_info?.index === index)
+    // The plugin numbers every physical device, llama.cpp only the ones it
+    // kept, so the raw numbers disagree. Pair twins by rank instead.
+    const rank = allDevices
+      .filter((d) => isVulkan(d.id) && d.name === device.name)
+      .map((d) => parseDeviceId(d.id).index)
+      .sort((a, b) => a - b)
+      .indexOf(index)
+    return [...named].sort(
+      (a, b) => (a.vulkan_info?.index ?? 0) - (b.vulkan_info?.index ?? 0)
+    )[rank]
   }
 
   const vulkanDevices = allDevices.filter((d) => isVulkan(d.id))

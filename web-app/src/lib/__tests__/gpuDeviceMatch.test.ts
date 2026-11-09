@@ -35,10 +35,16 @@ describe('findGpuForDevice', () => {
     expect(found).toBe(intel)
   })
 
-  it('falls back to the index for identical twin cards', () => {
-    const a = gpu('Twin', 0)
-    const b = gpu('Twin', 1)
-    expect(findGpuForDevice({ id: 'Vulkan1', name: 'Twin' }, [a, b])).toBe(b)
+  it('pairs identical twin cards by rank, not raw index', () => {
+    // iGPU at raw index 0, twin dGPUs at 1 and 2; llama.cpp keeps only the twins.
+    const a = gpu('Twin', 1)
+    const b = gpu('Twin', 2)
+    const devices = [
+      { id: 'Vulkan0', name: 'Twin' },
+      { id: 'Vulkan1', name: 'Twin' },
+    ]
+    expect(findGpuForDevice(devices[0], [intel, b, a], devices)).toBe(a)
+    expect(findGpuForDevice(devices[1], [intel, b, a], devices)).toBe(b)
   })
 
   it('pairs the one leftover device and GPU when an NVML name differs', () => {
