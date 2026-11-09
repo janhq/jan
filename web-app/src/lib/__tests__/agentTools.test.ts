@@ -4,6 +4,7 @@ const toolSchemas = vi.fn()
 const executeTool = vi.fn()
 const threadWorkspaceDelete = vi.fn()
 const threadWorkspaceSweep = vi.fn()
+const sessionWorkspaceCopyToThread = vi.fn()
 const sandboxStatus = vi.fn()
 const memoryCatalog = vi.fn()
 const memoryRead = vi.fn()
@@ -16,6 +17,8 @@ vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   executeTool: (...args: unknown[]) => executeTool(...args),
   threadWorkspaceDelete: (...args: unknown[]) => threadWorkspaceDelete(...args),
   threadWorkspaceSweep: (...args: unknown[]) => threadWorkspaceSweep(...args),
+  sessionWorkspaceCopyToThread: (...args: unknown[]) =>
+    sessionWorkspaceCopyToThread(...args),
   sandboxStatus: () => sandboxStatus(),
   memoryCatalog: (...args: unknown[]) => memoryCatalog(...args),
   memoryRead: (...args: unknown[]) => memoryRead(...args),
@@ -40,6 +43,9 @@ describe('agentTools', () => {
     executeTool.mockReset()
     threadWorkspaceDelete.mockReset().mockResolvedValue(undefined)
     threadWorkspaceSweep.mockReset().mockResolvedValue(0)
+    sessionWorkspaceCopyToThread
+      .mockReset()
+      .mockResolvedValue({ copied: true, files: 2, skipped: 0 })
     sandboxStatus
       .mockReset()
       .mockResolvedValue({ backend: 'bubblewrap', enforces: true })
@@ -492,6 +498,32 @@ describe('agentTools', () => {
     const { sweepThreadWorkspaces } = await import('../agentTools')
     await expect(sweepThreadWorkspaces(['a', 'b'])).resolves.toBe(3)
     expect(threadWorkspaceSweep).toHaveBeenCalledWith('/data', ['a', 'b'])
+  })
+
+  it('copies a session sandbox into the thread workspace of the same id', async () => {
+    const { copySessionWorkspaceToThread } = await import('../agentTools')
+    await expect(copySessionWorkspaceToThread('s1')).resolves.toMatchObject({
+      copied: true,
+    })
+    expect(sessionWorkspaceCopyToThread).toHaveBeenCalledWith('/data', 's1')
+  })
+
+  // The migration must not commit a thread whose files did not arrive.
+  it('lets a failed sandbox copy reject instead of swallowing it', async () => {
+    sessionWorkspaceCopyToThread.mockRejectedValue({ message: 'disk full' })
+    const { copySessionWorkspaceToThread } = await import('../agentTools')
+    await expect(copySessionWorkspaceToThread('s1')).rejects.toEqual({
+      message: 'disk full',
+    })
+  })
+
+  it('copies nothing when there is no data folder', async () => {
+    getJanDataFolder.mockResolvedValue('')
+    const { copySessionWorkspaceToThread } = await import('../agentTools')
+    await expect(copySessionWorkspaceToThread('s1')).resolves.toEqual({
+      copied: false,
+    })
+    expect(sessionWorkspaceCopyToThread).not.toHaveBeenCalled()
   })
 
   it('reports zero swept when the sweep fails', async () => {

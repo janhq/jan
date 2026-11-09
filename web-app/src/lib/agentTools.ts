@@ -3,6 +3,7 @@ import {
   executeTool,
   sandboxStatus,
   threadWorkspaceDelete,
+  sessionWorkspaceCopyToThread,
   threadWorkspaceSweep,
   memoryCatalog,
   memoryRead,
@@ -507,6 +508,20 @@ export async function cleanupThreadWorkspace(threadId: string): Promise<void> {
       messageOf(e)
     )
   }
+}
+
+/**
+ * Copy a Cowork session's sandbox into the thread workspace of the same id
+ * (Cowork migration). Unlike the cleanup helpers this THROWS: the migration
+ * must not commit a thread whose files did not arrive. With no data folder
+ * there is nothing to copy.
+ */
+export async function copySessionWorkspaceToThread(
+  sessionId: string
+): Promise<{ copied: boolean }> {
+  const dataFolder = await getServiceHub().app().getJanDataFolder()
+  if (!dataFolder) return { copied: false }
+  return await sessionWorkspaceCopyToThread(dataFolder, sessionId)
 }
 
 /**
