@@ -3,6 +3,11 @@ use std::path::{Path, PathBuf};
 
 use super::constants::{MESSAGES_FILE, THREADS_DIR, THREADS_FILE};
 
+/// Prefix of an error that retrying can never fix (an id the store refuses, a
+/// directory that is someone else's, an unsupported sidecar). Stable: the web
+/// app's Cowork migration classifies failures by it, not by message text.
+pub const PERMANENT_PREFIX: &str = "PERMANENT: ";
+
 /// Longest thread id accepted. Real ids are UUIDs (36 chars) or ULIDs (26).
 const MAX_THREAD_ID_LEN: usize = 128;
 
@@ -29,17 +34,17 @@ fn is_windows_device_name(name: &str) -> bool {
 /// empty names, so the id can never resolve outside its own directory.
 pub fn validate_thread_id(thread_id: &str) -> Result<(), String> {
     if thread_id.is_empty() {
-        return Err("Invalid thread id: empty".to_string());
+        return Err(format!("{PERMANENT_PREFIX}Invalid thread id: empty"));
     }
     if thread_id.len() > MAX_THREAD_ID_LEN {
-        return Err("Invalid thread id: too long".to_string());
+        return Err(format!("{PERMANENT_PREFIX}Invalid thread id: too long"));
     }
     if !thread_id
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
         || is_windows_device_name(thread_id)
     {
-        return Err(format!("Invalid thread id: {thread_id:?}"));
+        return Err(format!("{PERMANENT_PREFIX}Invalid thread id: {thread_id:?}"));
     }
     Ok(())
 }
