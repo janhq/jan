@@ -52,7 +52,8 @@ const projects = vi.hoisted(() => ({
 vi.mock('@/hooks/useThreadManagement', () => ({
   useThreadManagement: () => projects,
 }))
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
+vi.mock('sonner', () => ({ toast }))
 vi.mock('@/containers/dialogs/DeleteAllThreadsDialog', () => ({
   DeleteAllThreadsDialog: () => <div data-testid="delete-all" />,
 }))
@@ -121,6 +122,7 @@ beforeEach(() => {
   projects.foldersLoaded = true
   useThreads.setState({ threads: {} })
   router.navigate.mockClear()
+  toast.error.mockClear()
   router.sessionId = undefined
   useCoworkSessions.setState({ sessions: [session('open', 'Open one'), session('other', 'Other one')] })
 })
@@ -294,6 +296,26 @@ describe('NavHistory one row per conversation (write-through mirror)', () => {
     useThreads.setState({ threads: { solo: mirror('solo', 'Solo') } })
     render(<NavHistory />)
     expect(screen.getByTestId('history-cowork-solo')).toHaveTextContent('Solo')
+  })
+
+  it('tells the user instead of bouncing home when the session behind a row is missing', () => {
+    useCoworkSessions.setState({ sessions: [] })
+    useThreads.setState({ threads: { solo: mirror('solo', 'Solo') } })
+    render(<NavHistory />)
+    fireEvent.click(screen.getByTestId('history-cowork-solo'))
+    expect(router.navigate).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith('common:coworkSessionUnavailable')
+  })
+
+  it('tells the user instead of bouncing home when the session is untouched', () => {
+    useCoworkSessions.setState({
+      sessions: [{ ...session('blank', 'Blank'), turns: [] }],
+    })
+    useThreads.setState({ threads: { blank: mirror('blank', 'Blank') } })
+    render(<NavHistory />)
+    fireEvent.click(screen.getByTestId('history-cowork-blank'))
+    expect(router.navigate).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith('common:coworkSessionUnavailable')
   })
 
   it('deletes a mirrored session through the session store', () => {
