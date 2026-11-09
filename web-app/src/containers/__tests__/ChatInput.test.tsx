@@ -806,6 +806,69 @@ describe('ChatInput', () => {
     })
   })
 
+  describe('menuWorkspace', () => {
+    it('adds the surface-owned workspace entries to the + menu', () => {
+      renderInput({ menuWorkspace: <button>add-folder</button> })
+      expect(screen.getByText('add-folder')).toBeInTheDocument()
+    })
+
+    it('adds nothing when the surface supplies none', () => {
+      renderInput()
+      expect(screen.queryByText('add-folder')).toBeNull()
+    })
+  })
+
+  describe('onFolderDraft (home composer with a folder)', () => {
+    const submit = () =>
+      fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+
+    it('hands the draft over and creates no chat thread when the surface starts it', async () => {
+      promptState = 'work on this'
+      const onFolderDraft = vi.fn().mockResolvedValue('started')
+      renderInput({ onSubmit: undefined, onFolderDraft })
+      submit()
+      await waitFor(() => expect(onFolderDraft).toHaveBeenCalledTimes(1))
+      expect(onFolderDraft).toHaveBeenCalledWith({
+        text: 'work on this',
+        draft: 'work on this',
+        files: undefined,
+        documents: undefined,
+      })
+      expect(createThreadMock).not.toHaveBeenCalled()
+      expect(clearAttachmentsMock).toHaveBeenCalled()
+    })
+
+    it('keeps the attachments and creates no thread when the surface refuses', async () => {
+      promptState = 'work on this'
+      const onFolderDraft = vi.fn().mockResolvedValue('refused')
+      renderInput({ onSubmit: undefined, onFolderDraft })
+      submit()
+      await waitFor(() => expect(onFolderDraft).toHaveBeenCalledTimes(1))
+      expect(createThreadMock).not.toHaveBeenCalled()
+      expect(clearAttachmentsMock).not.toHaveBeenCalled()
+    })
+
+    it('falls through to an ordinary chat thread when there is no folder', async () => {
+      promptState = 'just chat'
+      createThreadMock.mockResolvedValue({ id: 'new-thread' })
+      const onFolderDraft = vi.fn().mockResolvedValue('chat')
+      renderInput({ onSubmit: undefined, onFolderDraft })
+      submit()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      expect(onFolderDraft).toHaveBeenCalledTimes(1)
+    })
+
+    it('is not consulted by a surface that submits through onSubmit', async () => {
+      promptState = 'in a thread'
+      const onSubmit = vi.fn()
+      const onFolderDraft = vi.fn().mockResolvedValue('started')
+      renderInput({ onSubmit, onFolderDraft })
+      submit()
+      await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+      expect(onFolderDraft).not.toHaveBeenCalled()
+    })
+  })
+
   describe('image size limit', () => {
     const MB = 1024 * 1024
     const imageFile = (name: string, bytes: number, type = 'image/png') => {
