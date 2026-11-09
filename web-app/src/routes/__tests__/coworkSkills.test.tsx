@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, expect, it, vi } from 'vitest'
-import type { ReactNode } from 'react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { StrictMode, type ReactNode } from 'react'
 import type { UIMessage } from 'ai'
 import type * as CoworkRunner from '@/lib/coworkRunner'
 
@@ -258,6 +258,11 @@ import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { answerAsk } from '@/lib/coworkRunner'
+import {
+  claimCoworkHandoff,
+  peekCoworkHandoff,
+  writeCoworkHandoff,
+} from '@/lib/coworkHandoff'
 import {
   sessionFromThread,
   sessionToThreadRecord,
@@ -653,3 +658,63 @@ it.each([
     ).toBe(planMode)
   }
 )
+
+describe('first-prompt handoff from the home composer', () => {
+  const handoffSession = (text: string) => {
+    const id = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().setFolder(id, '/project')
+    writeCoworkHandoff(id, { text, draft: text })
+    return id
+  }
+
+  it('runs the handed-over prompt exactly once under StrictMode', async () => {
+    const id = handoffSession('First from home')
+    render(
+      <StrictMode>
+        <CoworkPage />
+      </StrictMode>
+    )
+    await waitFor(() => expect(backend.received).toHaveLength(1))
+    await act(async () => {})
+    expect(backend.received).toHaveLength(1)
+    expect(backend.received[0].at(-1)?.parts).toContainEqual({
+      type: 'text',
+      text: 'First from home',
+    })
+    expect(peekCoworkHandoff(id)).toBeNull()
+  })
+
+  it('does not run it again when the page remounts after the run was accepted', async () => {
+    handoffSession('Only once')
+    const view = render(<CoworkPage />)
+    await waitFor(() => expect(backend.received).toHaveLength(1))
+    view.unmount()
+    render(<CoworkPage />)
+    await act(async () => {})
+    expect(backend.received).toHaveLength(1)
+  })
+
+  it('hands a refused first prompt back to the composer and keeps it retryable', async () => {
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'test',
+          active: true,
+          api_key: 'test',
+          models: [{ id: 'test-model', capabilities: [] }],
+          settings: [],
+        },
+      ],
+      selectedModel: { id: 'test-model', capabilities: [] },
+    } as never)
+    const id = handoffSession('Refused draft')
+    render(<CoworkPage />)
+    await waitFor(() =>
+      expect(usePrompt.getState().prompt).toBe('Refused draft')
+    )
+    expect(backend.received).toHaveLength(0)
+    expect(peekCoworkHandoff(id)).toBeNull()
+    // A later handoff for the same session id is claimable again.
+    expect(claimCoworkHandoff(id)).toBe(true)
+  })
+})

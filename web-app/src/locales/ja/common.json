@@ -592,5 +592,21 @@
       "xhigh": "最高",
       "unlimited": "無制限"
     }
-  }
+  },
+  "homeMode": {
+    "addToProject": "プロジェクトに追加",
+    "newProject": "新しいプロジェクト",
+    "noProjects": "プロジェクトはまだありません",
+    "addFolderAction": "フォルダーを追加",
+    "startFailed": "会話を開始できませんでした。メッセージは入力欄に残っています。"
+  },
+  "conversationScope": {
+    "folderSelectModel": "フォルダーへのアクセスを追加する前に、ツール対応モデルを選択してください。",
+    "folderUnsupported": "このモデルはツールを使用できないため、フォルダーを追加できません。通常のチャットは引き続き使えます。",
+    "removeProject": "プロジェクトの選択を解除",
+    "temporary": "一時チャットではフォルダーへのアクセスは保持されません。"
+  },
+  "skillDestination": "新しいスキルの保存先",
+  "skillDestinationFolder": "このフォルダー",
+  "skillDestinationGlobal": "グローバル（すべての会話）"
 }

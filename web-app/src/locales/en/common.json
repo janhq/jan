@@ -853,5 +853,21 @@
       "xhigh": "Very high",
       "unlimited": "Unlimited"
     }
-  }
+  },
+  "homeMode": {
+    "addToProject": "Add to a project",
+    "newProject": "New project",
+    "noProjects": "No projects yet",
+    "addFolderAction": "Add folder",
+    "startFailed": "Could not start the conversation. Your message is still in the box."
+  },
+  "conversationScope": {
+    "folderSelectModel": "Select a tool-capable model before adding folder access.",
+    "folderUnsupported": "This model can't use tools, so a folder can't be added. Regular chat still works.",
+    "removeProject": "Remove project selection",
+    "temporary": "A temporary chat keeps no folder access."
+  },
+  "skillDestination": "Save new skills to",
+  "skillDestinationFolder": "This folder",
+  "skillDestinationGlobal": "Global (every conversation)"
 }
