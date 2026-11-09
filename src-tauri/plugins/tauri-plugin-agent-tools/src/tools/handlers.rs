@@ -4446,6 +4446,8 @@ mod tests {
         let out = run_in(&ctx, "set -eu; cd sub; echo $JAN_UNSET_VAR").await;
         assert!(out.contains("shell cwd is now"), "{out}");
         assert!(!out.contains("Bad file descriptor"), "{out}");
+        // bash 3.2 (macOS) exits 0 after a fatal `set -u` error under `eval`.
+        #[cfg(not(target_os = "macos"))]
         assert!(!out.ends_with("[exit 0]"), "{out}");
         let lock = scratch.join("lock");
         let out = run_in(&ctx, &format!("cd ..; exec 9>{}; set -e; false", shell_quote(&lock.to_string_lossy()))).await;
