@@ -4,6 +4,9 @@ import {
   CODE_SESSIONS_KEY,
   COWORK_MIGRATION_FLAG_KEY,
   COWORK_MIGRATION_ABANDONED_KEY,
+  COWORK_MIGRATED_IDS_KEY,
+  COWORK_MIGRATION_ATTEMPTS_KEY,
+  COWORK_MAX_ATTEMPTS,
   sameJson,
   type Invoke,
 } from '../migrateCoworkSessions'
@@ -291,7 +294,7 @@ describe('migrateCoworkSessionsToThreads', () => {
     const invoke: Invoke = async <T = unknown>(cmd: string, args?: Args) => {
       if (cmd === 'write_thread_extra')
         throw new Error(
-          "Thread 's1' has messages but no thread.json; refusing to overwrite its messages"
+          "PERMANENT: Thread 's1' has messages but no thread.json; refusing to overwrite its messages"
         )
       return b.invoke<T>(cmd, args)
     }
@@ -537,24 +540,24 @@ describe('sandbox workspace copy', () => {
     expect(b.settings.has(COWORK_MIGRATION_FLAG_KEY)).toBe(false)
   })
 
-  it('a refusal to merge into a thread workspace with its own files is permanent', async () => {
+  it('a PERMANENT: copy refusal is permanent', async () => {
     const b = makeBackend()
     b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
     const r = await run(b, async () => {
-      throw new Error('already holds files of its own; refusing to merge into it')
+      throw new Error('PERMANENT: x already holds files of its own; refusing to merge into it')
     })
     expect(r.abandoned.map((a) => a.id)).toEqual(['s1'])
     expect(b.threads.has('s1')).toBe(false)
     expect(b.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
   })
 
-  it('reads the message of a plugin error object, so a merge refusal is still permanent', async () => {
+  it('reads the message of a plugin error object, so a PERMANENT: code is still seen', async () => {
     const b = makeBackend()
     b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
     const r = await run(b, async () => {
       // The plugin rejects with { message }, not an Error.
       throw {
-        message: 'x already holds files of its own; refusing to merge into it',
+        message: 'PERMANENT: x already holds files of its own; refusing to merge into it',
       }
     })
     expect(r.abandoned).toEqual([
@@ -571,6 +574,123 @@ describe('sandbox workspace copy', () => {
 
   it('without a copy function (no sandbox backend) the migration still runs', async () => {
     const b = makeBackend()
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const r = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(r.migrated).toEqual(['s1'])
+  })
+})
+
+describe('classification by stable code', () => {
+  const run = (copy: () => Promise<{ copied: boolean }>) => {
+    const b = makeBackend()
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    return migrateCoworkSessionsToThreads(b.invoke, { copyWorkspace: copy })
+  }
+
+  it('does not classify by message wording: the old phrases without the code are transient', async () => {
+    for (const text of [
+      'already holds files of its own; refusing to merge into it',
+      'Invalid thread id: "x"',
+      'x is a symlink; refusing to follow it',
+      'x is not a directory',
+    ]) {
+      const r = await run(async () => {
+        throw new Error(text)
+      })
+      expect(r.failed.map((f) => f.id), text).toEqual(['s1'])
+      expect(r.abandoned, text).toEqual([])
+    }
+  })
+
+  it('every PERMANENT: error is abandoned, whatever its text', async () => {
+    for (const text of [
+      'PERMANENT: x is a symlink; refusing to follow it',
+      'PERMANENT: x is not a directory',
+      'PERMANENT: invalid thread id',
+    ]) {
+      const r = await run(async () => {
+        throw { message: text }
+      })
+      expect(r.abandoned.map((a) => a.id), text).toEqual(['s1'])
+    }
+  })
+
+  it('a PERMANENT: error from a threads command is abandoned too', async () => {
+    const b = makeBackend()
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const invoke: Invoke = async <T = unknown>(cmd: string, args?: Args) => {
+      if (cmd === 'replace_thread_messages')
+        throw 'PERMANENT: Duplicate message id "m"'
+      return b.invoke<T>(cmd, args)
+    }
+    const r = await migrateCoworkSessionsToThreads(invoke)
+    expect(r.abandoned.map((a) => a.id)).toEqual(['s1'])
+  })
+})
+
+describe('retry cap', () => {
+  it('abandons a session that keeps failing transiently after N launches', async () => {
+    const b = makeBackend({ failWriteFor: 's1' })
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1'), session('s2')]))
+    for (let launch = 1; launch < COWORK_MAX_ATTEMPTS; launch++) {
+      const r = await migrateCoworkSessionsToThreads(b.invoke)
+      expect(r.status, `launch ${launch}`).toBe('partial')
+      expect(r.failed.map((f) => f.id)).toEqual(['s1'])
+      expect(b.settings.has(COWORK_MIGRATION_FLAG_KEY)).toBe(false)
+    }
+    const last = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(last.failed).toEqual([])
+    expect(last.abandoned.map((a) => a.id)).toEqual(['s1'])
+    expect(last.status).toBe('complete')
+    expect(b.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
+    expect(JSON.parse(b.settings.get(COWORK_MIGRATION_ABANDONED_KEY)!)).toEqual([
+      expect.objectContaining({ id: 's1' }),
+    ])
+    expect(b.threads.has('s2')).toBe(true)
+    expect(b.settings.has(COWORK_MIGRATION_ATTEMPTS_KEY)).toBe(true)
+  })
+
+  it('counts launches, not sessions: a session that succeeds is never abandoned', async () => {
+    const b = makeBackend({ crashFirstCreate: true })
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    await migrateCoworkSessionsToThreads(b.invoke)
+    const r = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(r.migrated).toEqual(['s1'])
+    expect(r.abandoned).toEqual([])
+  })
+})
+
+describe('migrated ids survive a user deleting the thread', () => {
+  it('a migrated thread deleted in main chat is not recreated while the flag is unset', async () => {
+    const b = makeBackend({ failWriteFor: 's2' })
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1'), session('s2')]))
+    const first = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(first.migrated).toEqual(['s1'])
+    expect(b.settings.has(COWORK_MIGRATION_FLAG_KEY)).toBe(false)
+    expect(JSON.parse(b.settings.get(COWORK_MIGRATED_IDS_KEY)!)).toEqual(['s1'])
+
+    // The user deletes the migrated thread; s2 still fails, so the flag stays unset.
+    b.threads.delete('s1')
+    b.extras.delete('s1/cowork')
+    b.logs.delete('s1')
+    const second = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(second.migrated).toEqual([])
+    expect(second.skipped).toContain('s1')
+    expect(b.threads.has('s1')).toBe(false)
+    expect(b.extras.has('s1/cowork')).toBe(false)
+  })
+
+  it('an id found committed (crash before it was recorded) is recorded on the next run', async () => {
+    const b = makeBackend()
+    b.threads.set('s1', { id: 's1', title: 'x', metadata: { mode: 'cowork' } })
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    await migrateCoworkSessionsToThreads(b.invoke)
+    expect(JSON.parse(b.settings.get(COWORK_MIGRATED_IDS_KEY)!)).toEqual(['s1'])
+  })
+
+  it('an unreadable ids record is treated as empty, not as a failure', async () => {
+    const b = makeBackend()
+    b.settings.set(COWORK_MIGRATED_IDS_KEY, '{not json')
     b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
     const r = await migrateCoworkSessionsToThreads(b.invoke)
     expect(r.migrated).toEqual(['s1'])

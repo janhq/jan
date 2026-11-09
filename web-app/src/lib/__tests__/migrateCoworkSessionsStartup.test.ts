@@ -85,6 +85,40 @@ describe('migrateCoworkSessionsOnStartup', () => {
     expect(r?.status).toBe('partial')
   })
 
+  it('runs one migration at a time: a second start (StrictMode, reload) shares the in-flight one', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    h.invoke.mockImplementation(async (_cmd: string, args?: { key?: string }) => {
+      await gate
+      return args?.key === COWORK_MIGRATION_FLAG_KEY ? 'true' : null
+    })
+    const first = migrateCoworkSessionsOnStartup()
+    const second = migrateCoworkSessionsOnStartup()
+    release()
+    const [a, b] = await Promise.all([first, second])
+    expect(b).toBe(a)
+    expect(
+      h.invoke.mock.calls.filter(
+        (c) => c[0] === 'settings_get' && c[1]?.key === COWORK_MIGRATION_FLAG_KEY
+      )
+    ).toHaveLength(1)
+
+    // Once it has finished, the next start runs afresh (and is a cheap no-op).
+    h.invoke.mockClear()
+    await migrateCoworkSessionsOnStartup()
+    expect(h.invoke).toHaveBeenCalled()
+  })
+
+  it('forgets a migration that returned null, so the next start can run', async () => {
+    h.getServiceHub.mockImplementationOnce(() => {
+      throw new Error('hub not ready')
+    })
+    await expect(migrateCoworkSessionsOnStartup()).resolves.toBeNull()
+    h.invoke.mockResolvedValue('true')
+    const r = await migrateCoworkSessionsOnStartup()
+    expect(r?.status).toBe('already-migrated')
+  })
+
   it('wires the sandbox copy through the agent-tools helper, not a raw invoke', async () => {
     const envelope = JSON.stringify({
       state: {
