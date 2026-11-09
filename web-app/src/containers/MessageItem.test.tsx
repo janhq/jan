@@ -72,6 +72,73 @@ describe('what a turn shows besides its messages', () => {
   })
 })
 
+describe('a migrated Cowork ping', () => {
+  const PING = '<SYSTEM>\nSubagent researcher (c1) finished.\n</SYSTEM>'
+  // Stored as a user message (the model saw a user turn) and flagged, so the
+  // history replays unchanged while the row shows as a system note.
+  const ping = {
+    id: 'p1',
+    role: 'user',
+    parts: [{ type: 'text', text: PING }],
+    metadata: { systemNotice: true },
+  } as UIMessage
+
+  it('renders through the system-note template, not as a raw <SYSTEM> user bubble', () => {
+    render(
+      <MessageItem
+        message={ping}
+        isFirstMessage={false}
+        isLastMessage={false}
+        status="ready"
+      />
+    )
+    expect(screen.getByText(/Subagent researcher \(c1\) finished\./)).toBeInTheDocument()
+    expect(screen.queryByText(/<SYSTEM>/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('message-item')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('looks the same as a native system note', () => {
+    const native = render(
+      <MessageItem
+        message={{ ...ping, id: 'n1', role: 'system', metadata: undefined } as UIMessage}
+        isFirstMessage={false}
+        isLastMessage={false}
+        status="ready"
+      />
+    )
+    const nativeHtml = native.container.innerHTML
+    native.unmount()
+    const flagged = render(
+      <MessageItem
+        message={ping}
+        isFirstMessage={false}
+        isLastMessage={false}
+        status="ready"
+      />
+    )
+    expect(flagged.container.innerHTML).toBe(nativeHtml)
+  })
+
+  it('an ordinary user message that mentions the tag is still a user bubble', () => {
+    render(
+      <MessageItem
+        message={
+          {
+            id: 'u1',
+            role: 'user',
+            parts: [{ type: 'text', text: 'what does <SYSTEM> mean?' }],
+          } as UIMessage
+        }
+        isFirstMessage={false}
+        isLastMessage={false}
+        status="ready"
+      />
+    )
+    expect(screen.getByTestId('message-item')).toBeInTheDocument()
+  })
+})
+
 describe('extension message actions', () => {
   const reply = {
     id: 'm2',

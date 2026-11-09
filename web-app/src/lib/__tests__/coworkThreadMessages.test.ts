@@ -5,6 +5,7 @@ import type { CoworkSession } from '@/hooks/useCoworkSessions'
 import { convertThreadMessageToUIMessage } from '@/lib/messages'
 import { STOPPED_TOOL_ERROR } from '@/lib/stopped-tool-calls'
 import { coworkSessionToThreadMessages } from '../coworkThreadMessages'
+import { SYSTEM_NOTICE_KEY, isSystemNotice } from '../coworkPing'
 
 const UPDATED_MS = 1_700_000_000_000
 
@@ -277,5 +278,62 @@ describe('coworkSessionToThreadMessages', () => {
       'from reasoning',
       'only text',
     ])
+  })
+
+  describe('<SYSTEM> pings', () => {
+    const PING = '<SYSTEM>\nSubagent researcher (c1) finished.\n</SYSTEM>'
+    const withPing = () =>
+      session([
+        msg('u-1', 'user', [{ type: 'text', text: 'research it' }]),
+        msg('a-1', 'assistant', [{ type: 'text', text: 'Started.' }]),
+        msg('ping-2', 'user', [{ type: 'text', text: PING }]),
+        msg('a-2', 'assistant', [{ type: 'text', text: 'It finished.' }]),
+      ])
+
+    it('keeps the ping in the history, as a user message with its text byte-identical', () => {
+      const out = coworkSessionToThreadMessages(withPing())
+      expect(out).toHaveLength(4)
+      const ping = out[2]
+      // Still what the model saw: a user turn carrying the exact same text, so
+      // the replayed prompt prefix is unchanged.
+      expect(ping.role).toBe('user')
+      expect(ping.content).toEqual([
+        { type: ContentType.Text, text: { value: PING, annotations: [] } },
+      ])
+    })
+
+    it('flags the ping as a system notice and nothing else', () => {
+      const out = coworkSessionToThreadMessages(withPing())
+      expect(out[2].metadata).toEqual({ [SYSTEM_NOTICE_KEY]: true })
+      for (const i of [0, 1, 3]) {
+        expect(out[i].metadata?.[SYSTEM_NOTICE_KEY]).toBeUndefined()
+      }
+    })
+
+    it('is deterministic: the same session gives the same bytes', () => {
+      const a = JSON.stringify(coworkSessionToThreadMessages(withPing()))
+      const b = JSON.stringify(coworkSessionToThreadMessages(withPing()))
+      expect(a).toBe(b)
+    })
+
+    it('does not flag a message a user typed, even one that mentions the tag later', () => {
+      const s = session([
+        msg('u-1', 'user', [{ type: 'text', text: 'what does <SYSTEM> mean?' }]),
+        msg('u-2', 'user', [
+          { type: 'text', text: 'hi' },
+          { type: 'text', text: PING },
+        ]),
+      ])
+      const out = coworkSessionToThreadMessages(s)
+      expect(out.map((m) => isSystemNotice(m))).toEqual([false, false])
+    })
+
+    it('survives the reload main chat does: the UI message still carries the flag', () => {
+      const [, , ping] = coworkSessionToThreadMessages(withPing())
+      const ui = convertThreadMessageToUIMessage(ping)
+      expect(ui.role).toBe('user')
+      expect(isSystemNotice(ui)).toBe(true)
+      expect(ui.parts).toEqual([{ type: 'text', text: PING }])
+    })
   })
 })
