@@ -7,7 +7,7 @@ use uuid::Uuid;
 use super::db;
 use super::helpers::{
     get_lock_for_thread, read_messages_from_file, should_use_sqlite, update_thread_metadata,
-    write_atomic, write_messages_to_file,
+    write_atomic, write_atomic_durable, write_messages_to_file,
 };
 use super::{
     constants::THREADS_FILE,
@@ -116,7 +116,8 @@ pub async fn create_thread<R: Runtime>(
         fs::create_dir_all(&thread_dir).map_err(|e| e.to_string())?;
     }
     let data = serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())?;
-    write_atomic(&path, data.as_bytes())?;
+    // The commit: strict about the directory sync (see `write_atomic_durable`).
+    write_atomic_durable(&path, data.as_bytes())?;
     Ok(thread)
 }
 
