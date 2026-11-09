@@ -550,6 +550,7 @@
   "artifacts": "アーティファクト",
   "skills": "スキル",
   "deleteSession": "セッションを削除",
+  "coworkSessionUnavailable": "この会話にはまだ表示できる内容がありません。",
   "deleteSessionTitle": "セッションを削除しますか？",
   "deleteSessionBody": "「{{title}}」とそのトランスクリプトは完全に削除されます。この操作は元に戻せません。",
   "sidebar": {

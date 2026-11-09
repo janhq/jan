@@ -38,6 +38,8 @@ import { ThreadItem } from '@/containers/ThreadList'
 import { RenameThreadDialog } from '@/containers/dialogs/RenameThreadDialog'
 import { DeleteAllThreadsDialog } from '@/containers/dialogs/DeleteAllThreadsDialog'
 import { mergeHistory } from '@/lib/mergeHistory'
+import { canOpenCoworkSession } from '@/lib/coworkOpenable'
+import { toast } from 'sonner'
 
 /**
  * One history for every conversation, newest first. It replaces the Home/Cowork
@@ -77,12 +79,17 @@ const CoworkRow = memo(function CoworkRow({
         isActive={isCurrent}
         className="data-[active=true]:bg-sidebar-foreground/10 dark:data-[active=true]:bg-sidebar-accent"
         data-testid={`history-cowork-${id}`}
-        onClick={() =>
+        onClick={() => {
+          // The route would redirect home for these; say why instead.
+          if (!canOpenCoworkSession(id)) {
+            toast.error(t('common:coworkSessionUnavailable'))
+            return
+          }
           navigate({
             to: route.coworkSession,
             params: { sessionId: id },
           })
-        }
+        }}
       >
         {isRunning && (
           <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
