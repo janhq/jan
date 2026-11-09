@@ -1398,3 +1398,54 @@ async fn test_write_thread_extra_create_refuses_a_foreign_log_without_thread_jso
     .await
     .unwrap();
 }
+
+/// Refusals that retrying can never fix carry the stable `PERMANENT: ` prefix,
+/// so the Cowork migration classifies them by code, not by message text.
+#[tokio::test]
+async fn test_permanent_refusals_carry_the_stable_prefix() {
+    use super::utils::PERMANENT_PREFIX;
+    assert_eq!(PERMANENT_PREFIX, "PERMANENT: ");
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let handle = || app.handle().clone();
+
+    // Invalid id, through the validator and through a command.
+    assert!(validate_thread_id("a/b").unwrap_err().starts_with(PERMANENT_PREFIX));
+    assert!(validate_thread_id("").unwrap_err().starts_with(PERMANENT_PREFIX));
+    let err = write_thread_extra(handle(), "../x".into(), "cowork".into(), json!({}), Some(true))
+        .await
+        .unwrap_err();
+    assert!(err.starts_with(PERMANENT_PREFIX), "{err}");
+
+    // An unknown sidecar name.
+    let err = read_thread_extra(handle(), "ok-id".into(), "other".into())
+        .await
+        .unwrap_err();
+    assert!(err.starts_with(PERMANENT_PREFIX), "{err}");
+
+    // A directory holding someone's messages with no thread.json.
+    create_thread(handle(), json!({"id": "other-thread", "title": "t"}))
+        .await
+        .unwrap();
+    create_message(handle(), create_test_message("clash-code", "keep me"))
+        .await
+        .unwrap();
+    let batch = vec![migrated_message("clash-code", "clash-code-msg-0", "x")];
+    let err = replace_thread_messages(handle(), "clash-code".into(), batch, Some(true))
+        .await
+        .unwrap_err();
+    assert!(err.starts_with(PERMANENT_PREFIX), "{err}");
+
+    // A batch that can never be valid.
+    let bad = vec![migrated_message("someone-else", "m-0", "x")];
+    let err = replace_thread_messages(handle(), "mine".into(), bad, Some(true))
+        .await
+        .unwrap_err();
+    assert!(err.starts_with(PERMANENT_PREFIX), "{err}");
+
+    // An I/O style failure is not permanent: a write to a missing thread
+    // without `create` stays a plain message (retry after the thread exists).
+    let err = write_thread_extra(handle(), "ghost-2".into(), "cowork".into(), json!({}), None)
+        .await
+        .unwrap_err();
+    assert!(!err.starts_with(PERMANENT_PREFIX), "{err}");
+}
