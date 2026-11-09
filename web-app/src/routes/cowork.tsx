@@ -20,7 +20,7 @@ import { Bot, Command, Sparkles } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
-import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
+import { threadWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
 import { getModelDisplayName, getProviderTitle } from '@/lib/utils'
 import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
@@ -281,7 +281,7 @@ function CoworkPage() {
       try {
         const dataFolder = await serviceHub.app().getJanDataFolder()
         if (!dataFolder) return
-        const path = await sessionWorkspacePath(dataFolder, session.id)
+        const path = await threadWorkspacePath(dataFolder, session.id)
         if (alive) setWorkspacePath(path)
       } catch {
         // A missing path only costs the pill a subtitle.
