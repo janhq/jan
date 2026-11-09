@@ -176,6 +176,51 @@ pub async fn write_thread_extra<R: Runtime>(
     write_atomic(&path, &data)
 }
 
+/// Replaces a thread's whole messages.jsonl atomically (temp file + rename)
+/// under the thread's lock. Unlike `create_message` it never appends, so
+/// writing the same batch twice leaves identical bytes: the Cowork migration
+/// relies on that to retry after a crash between this write and the thread.json
+/// commit without duplicating the transcript. `create` has the same meaning as
+/// in `write_thread_extra`. The batch is refused unless every message carries a
+/// unique string id and this thread's id, the invariants `create_message` and
+/// `modify_message` maintain for the log.
+#[tauri::command]
+pub async fn replace_thread_messages<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    thread_id: String,
+    messages: Vec<serde_json::Value>,
+    create: Option<bool>,
+) -> Result<(), String> {
+    if should_use_sqlite() {
+        return Err("Replacing thread messages is not supported on mobile".to_string());
+    }
+    let mut seen = std::collections::HashSet::new();
+    for message in &messages {
+        let id = message
+            .get("id")
+            .and_then(|v| v.as_str())
+            .ok_or("Every message needs a string id")?;
+        if !seen.insert(id) {
+            return Err(format!("Duplicate message id {id:?}"));
+        }
+        if message.get("thread_id").and_then(|v| v.as_str()) != Some(thread_id.as_str()) {
+            return Err(format!("Message {id:?} does not belong to thread {thread_id:?}"));
+        }
+    }
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let path = get_messages_path(&data_folder, &thread_id)?;
+    let lock = get_lock_for_thread(&thread_id).await;
+    let _guard = lock.lock().await;
+    if create.unwrap_or(false) {
+        ensure_thread_dir_exists(&data_folder, &thread_id)?;
+    } else if !get_thread_metadata_path(&data_folder, &thread_id)?.exists() {
+        return Err(format!(
+            "Thread '{thread_id}' has no thread.json; refusing to create it from a messages write"
+        ));
+    }
+    write_messages_to_file(&messages, &path)
+}
+
 /// Modifies an existing thread's metadata by overwriting its thread.json file.
 /// Returns an error if the thread directory does not exist.
 #[tauri::command]
