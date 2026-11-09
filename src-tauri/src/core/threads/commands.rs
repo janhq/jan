@@ -123,6 +123,42 @@ fn thread_extra_path(
     Ok(get_thread_dir(data_folder, thread_id)?.join(format!("{name}.json")))
 }
 
+/// Guard for the `create: true` writes that run before thread.json commits a
+/// thread. `create_message` makes the directory too, so a directory can hold a
+/// real chat log with no thread.json yet, and an uncommitted migration must not
+/// overwrite it. A non-empty messages.jsonl is only treated as the migration's
+/// own when a sidecar is already there (the migration writes the sidecar first,
+/// so any retry after a crash finds it) or, for a messages write, when the file
+/// is byte-identical to the batch about to be written. Absent or empty logs
+/// belong to nobody. `incoming` is the exact messages.jsonl body being written,
+/// or `None` for a sidecar write.
+fn ensure_uncommitted_dir_is_ours(
+    data_folder: &std::path::Path,
+    thread_id: &str,
+    incoming: Option<&[u8]>,
+) -> Result<(), String> {
+    if get_thread_metadata_path(data_folder, thread_id)?.exists() {
+        return Ok(());
+    }
+    let log = get_messages_path(data_folder, thread_id)?;
+    let existing = match fs::read(&log) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.to_string()),
+    };
+    if existing.is_empty() || incoming == Some(existing.as_slice()) {
+        return Ok(());
+    }
+    for name in THREAD_EXTRA_NAMES {
+        if thread_extra_path(data_folder, thread_id, name)?.exists() {
+            return Ok(());
+        }
+    }
+    Err(format!(
+        "Thread '{thread_id}' has messages but no thread.json; refusing to overwrite its messages"
+    ))
+}
+
 /// Reads a per-thread sidecar (for example the Cowork transcript).
 /// Returns `Ok(None)` when the sidecar does not exist.
 #[tauri::command]
@@ -166,6 +202,7 @@ pub async fn write_thread_extra<R: Runtime>(
     let lock = get_lock_for_thread(&thread_id).await;
     let _guard = lock.lock().await;
     if create.unwrap_or(false) {
+        ensure_uncommitted_dir_is_ours(&data_folder, &thread_id, None)?;
         ensure_thread_dir_exists(&data_folder, &thread_id)?;
     } else if !get_thread_metadata_path(&data_folder, &thread_id)?.exists() {
         return Err(format!(
@@ -211,14 +248,20 @@ pub async fn replace_thread_messages<R: Runtime>(
     let path = get_messages_path(&data_folder, &thread_id)?;
     let lock = get_lock_for_thread(&thread_id).await;
     let _guard = lock.lock().await;
+    let mut body = String::new();
+    for message in &messages {
+        body.push_str(&serde_json::to_string(message).map_err(|e| e.to_string())?);
+        body.push('\n');
+    }
     if create.unwrap_or(false) {
+        ensure_uncommitted_dir_is_ours(&data_folder, &thread_id, Some(body.as_bytes()))?;
         ensure_thread_dir_exists(&data_folder, &thread_id)?;
     } else if !get_thread_metadata_path(&data_folder, &thread_id)?.exists() {
         return Err(format!(
             "Thread '{thread_id}' has no thread.json; refusing to create it from a messages write"
         ));
     }
-    write_messages_to_file(&messages, &path)
+    write_atomic(&path, body.as_bytes())
 }
 
 /// Modifies an existing thread's metadata by overwriting its thread.json file.
