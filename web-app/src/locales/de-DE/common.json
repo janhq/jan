@@ -343,6 +343,10 @@
       "title": "Thread entfernt",
       "description": "Thread erfolgreich von \"{{projectName}}\" entfernt"
     },
+    "threadProjectMoveFailed": {
+      "title": "Verschieben fehlgeschlagen",
+      "description": "Diese Unterhaltung konnte nicht verschoben werden. Ihre Sitzung ist nicht verfügbar."
+    },
     "deleteAllThreads": {
       "title": "Alle Threads löschen",
       "description": "Alle deine Threads wurden permanent gelöscht."

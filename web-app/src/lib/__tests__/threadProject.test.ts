@@ -25,14 +25,14 @@ describe('updateThreadProject', () => {
 
   it('updates a chat thread through the thread list', () => {
     state.threads = { t: { id: 't', metadata: { a: 1 } } }
-    updateThreadProject('t', project)
+    expect(updateThreadProject('t', project)).toBe(true)
     expect(updateThread).toHaveBeenCalledWith('t', { metadata: { a: 1, project } })
   })
 
   it('persists a Cowork conversation from its session and updates the mirror', () => {
     state.threads = { c: { id: 'c', metadata: { mode: 'cowork' } } }
     useCoworkSessions.setState({ sessions: [session('c')] })
-    updateThreadProject('c', project)
+    expect(updateThreadProject('c', project)).toBe(true)
     expect(useCoworkSessions.getState().sessions[0].project).toEqual(project)
     expect(updateThread).not.toHaveBeenCalled()
     expect(setThreads).toHaveBeenCalled()
@@ -41,7 +41,7 @@ describe('updateThreadProject', () => {
   it('removes the project from a Cowork session with an explicit clear', () => {
     state.threads = { c: { id: 'c', metadata: { mode: 'cowork', project } } }
     useCoworkSessions.setState({ sessions: [session('c', { project })] })
-    updateThreadProject('c', undefined)
+    expect(updateThreadProject('c', undefined)).toBe(true)
     const s = useCoworkSessions.getState().sessions[0]
     expect('project' in s).toBe(true)
     expect(s.project).toBeUndefined()
@@ -50,13 +50,19 @@ describe('updateThreadProject', () => {
   it('refuses an unavailable session: its assignment would be undone by persistence', () => {
     state.threads = { c: { id: 'c', metadata: { mode: 'cowork' } } }
     useCoworkSessions.setState({ sessions: [session('c', { unavailable: 'missing-thread' })] })
-    updateThreadProject('c', project)
+    expect(updateThreadProject('c', project)).toBe(false)
     expect(useCoworkSessions.getState().sessions[0].project).toBeUndefined()
     expect(updateThread).not.toHaveBeenCalled()
   })
 
+  it('refuses a Cowork thread whose session is missing', () => {
+    state.threads = { c: { id: 'c', metadata: { mode: 'cowork' } } }
+    expect(updateThreadProject('c', project)).toBe(false)
+    expect(setThreads).not.toHaveBeenCalled()
+  })
+
   it('does nothing for an unknown id', () => {
-    updateThreadProject('nope', project)
+    expect(updateThreadProject('nope', project)).toBe(false)
     expect(updateThread).not.toHaveBeenCalled()
     expect(setThreads).not.toHaveBeenCalled()
   })
