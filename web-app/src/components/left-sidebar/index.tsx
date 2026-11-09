@@ -19,7 +19,6 @@ import { cn } from '@/lib/utils'
 import { useTitlebarLayout } from '@/stores/titlebar-layout-store'
 import { useLocation } from '@tanstack/react-router'
 import { isCoworkRoute, route } from '@/constants/routes'
-import { isCoworkEnabled } from '@/lib/version'
 
 export function LeftSidebar() {
   const { open: isLeftPanelOpen } = useLeftPanel()
@@ -29,7 +28,7 @@ export function LeftSidebar() {
   const [lastSurfacePath, setLastSurfacePath] = useState(pathname)
   if (!inSettings && lastSurfacePath !== pathname) setLastSurfacePath(pathname)
   const surfacePath = inSettings ? lastSurfacePath : pathname
-  const isCowork = isCoworkRoute(surfacePath) && isCoworkEnabled()
+  const isCowork = isCoworkRoute(surfacePath)
   // Right-align the header and hide "Jan" when native controls own the top-left
   // (macOS, or a Linux DE placing buttons left).
   const leftButtons = useTitlebarLayout((s) => s.layout.left.length)

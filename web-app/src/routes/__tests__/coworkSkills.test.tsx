@@ -231,7 +231,7 @@ vi.mock('@/containers/CoworkParkedNotice', () => ({
   CoworkParkedNotice: () => null,
 }))
 
-import { Route } from '../cowork'
+import { CoworkPage } from '@/containers/CoworkPage'
 import { useSkills } from '@/hooks/useSkills'
 import { usePrompt } from '@/hooks/usePrompt'
 import { startNewSession, useCoworkSessions } from '@/hooks/useCoworkSessions'
@@ -246,8 +246,6 @@ import {
 import { sessionToSidecar } from '@/lib/migrateCoworkSessions'
 import { localStorageKey } from '@/constants/localStorage'
 // The router mock returns the supplied component options directly.
-const routeOptions = Route as unknown as { component: () => ReactNode }
-const CoworkPage = routeOptions.component
 function Manager() {
   const { write } = useSkills(null)
   return (

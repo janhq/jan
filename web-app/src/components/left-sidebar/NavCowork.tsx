@@ -49,7 +49,6 @@ import {
   type AnimatedLucidePreset,
 } from '@/components/animated-icon/animated-lucide'
 import {
-  startNewSession,
   useCoworkSessions,
   type CoworkSession,
 } from '@/hooks/useCoworkSessions'
@@ -181,20 +180,20 @@ export function NavCowork() {
     title: string
   } | null>(null)
 
-  const goCowork = useCallback(() => navigate({ to: route.cowork }), [navigate])
   const newSessionIconRef = useRef<MessageCircleIconHandle>(null)
   const settingsIconRef = useRef<SettingsIconHandle>(null)
+  // A new conversation starts on the home composer; /cowork/$sessionId only
+  // opens sessions that already exist.
   const newSession = () => {
-    startNewSession(Object.keys(useCoworkRun.getState().runId))
-    goCowork()
+    navigate({ to: route.home })
   }
   const selectSession = useCallback(
     (id: string) => {
       useCoworkSessions.getState().selectSession(id)
       pruneEmpty()
-      goCowork()
+      navigate({ to: route.coworkSession, params: { sessionId: id } })
     },
-    [goCowork]
+    [navigate]
   )
 
   const items: CoworkNavItem[] = [

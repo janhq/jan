@@ -414,5 +414,10 @@
     "missingThreadDescription": "其存储的会话线程已丢失，因此不再保存更改。您仍可阅读、导出或删除它。",
     "writeRefusedTitle": "无法保存 Cowork 对话",
     "writeRefusedDescription": "Jan 无法以当前 ID 存储此对话，因此不会保存更改。您仍可阅读、导出或删除它。"
+  },
+  "threadRoute": {
+    "notReadyTitle": "此对话尚未就绪",
+    "notReadyDescription": "Jan 无法确认此对话是聊天还是 Cowork 任务。请重试；如果问题仍然存在，请重启应用。",
+    "retry": "重试"
   }
 }
