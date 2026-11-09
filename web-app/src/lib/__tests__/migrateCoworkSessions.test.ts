@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   migrateCoworkSessionsToThreads,
   CODE_SESSIONS_KEY,
   COWORK_MIGRATION_FLAG_KEY,
   COWORK_MIGRATION_ABANDONED_KEY,
+  sameJson,
   type Invoke,
 } from '../migrateCoworkSessions'
 import type { CoworkSession } from '@/hooks/useCoworkSessions'
@@ -467,5 +468,54 @@ describe('migrateCoworkSessionsToThreads', () => {
       expect(r.status).toBe('partial')
       expect(b.threads.has('s1')).toBe(false)
     })
+  })
+})
+
+describe('sameJson', () => {
+  it('compares without re-sorting keys on the happy path', () => {
+    const entries = vi.spyOn(Object, 'entries')
+    try {
+      const big = { a: [1, 2, { b: 'x'.repeat(1000), c: null }], d: { e: 1 } }
+      expect(sameJson(big, JSON.parse(JSON.stringify(big)))).toBe(true)
+      expect(entries).not.toHaveBeenCalled()
+    } finally {
+      entries.mockRestore()
+    }
+  })
+
+  it('still accepts a backend that reordered object keys', () => {
+    expect(sameJson({ a: 1, b: { c: 2, d: 3 } }, { b: { d: 3, c: 2 }, a: 1 })).toBe(
+      true
+    )
+  })
+
+  it('rejects real differences', () => {
+    expect(sameJson({ a: 1 }, { a: 2 })).toBe(false)
+    expect(sameJson([1, 2], [2, 1])).toBe(false)
+    expect(sameJson({ a: 1 }, { a: 1, b: 2 })).toBe(false)
+  })
+})
+
+describe('read-back cost', () => {
+  it('does not re-canonicalise payloads that already match byte for byte', async () => {
+    const b = makeBackend()
+    const big = session('big', {
+      messages: [
+        {
+          id: 'm',
+          role: 'user',
+          parts: [{ type: 'text', text: 'x'.repeat(100_000) }],
+        },
+      ],
+    } as unknown as Partial<CoworkSession>)
+    b.settings.set(CODE_SESSIONS_KEY, envelope([big]))
+    const entries = vi.spyOn(Object, 'entries')
+    try {
+      const r = await migrateCoworkSessionsToThreads(b.invoke)
+      expect(r.status).toBe('complete')
+      expect(entries).not.toHaveBeenCalled()
+    } finally {
+      entries.mockRestore()
+    }
   })
 })

@@ -80,6 +80,17 @@ type StoredThread = {
   metadata?: { mode?: unknown } | null
 }
 
+/**
+ * Whether the backend returned what was sent. The backend keeps key order
+ * (serde_json preserve_order), so one plain serialization of each side
+ * normally settles it and big payloads (image data URLs) are walked once.
+ * Only when those differ is the slower key-order-insensitive form tried.
+ */
+export function sameJson(a: unknown, b: unknown): boolean {
+  if (JSON.stringify(a) === JSON.stringify(b)) return true
+  return canonical(a) === canonical(b)
+}
+
 // Key-order-insensitive serialization: the backend may reorder object keys.
 function canonical(v: unknown): string {
   return JSON.stringify(v, (_k, val) =>
@@ -270,7 +281,7 @@ export async function migrateCoworkSessionsToThreads(
           threadId: session.id,
           name: COWORK_SIDECAR,
         })
-        if (canonical(back) !== canonical(sidecar)) {
+        if (!sameJson(back, sidecar)) {
           throw new Error('sidecar did not read back identically')
         }
 
@@ -285,7 +296,7 @@ export async function migrateCoworkSessionsToThreads(
         const stored = await invoke<unknown>('list_messages', {
           threadId: session.id,
         })
-        if (canonical(stored) !== canonical(messages)) {
+        if (!sameJson(stored, messages)) {
           throw new Error('messages did not read back identically')
         }
 
