@@ -83,7 +83,7 @@ export const usePrompt = create<PromptStoreState>()(
       },
 
       resetHistoryNavigation: () => set({ historyIndex: -1, draftPrompt: '' }),
-      }),
+    }),
     {
       name: 'chat-prompt-draft',
       storage: createJSONStorage(() => sessionStorage),
