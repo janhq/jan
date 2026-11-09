@@ -1720,6 +1720,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn confine_limits_caps_child_resource_limits() {
         // The rlimit mounting must reach the spawned child before its shell runs.
