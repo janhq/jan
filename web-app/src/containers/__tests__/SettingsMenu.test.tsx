@@ -111,9 +111,10 @@ describe('SettingsMenu', () => {
     expect(screen.getByText('common:privacy')).toBeInTheDocument()
   })
 
-  it('lists the Cowork settings entry on every channel', () => {
+  it('lists the Agent settings entry on every channel', () => {
     render(<SettingsMenu />)
-    expect(screen.getByText('common:cowork')).toBeInTheDocument()
+    expect(screen.getByText('common:agentSettings')).toBeInTheDocument()
+    expect(screen.queryByText('common:cowork')).not.toBeInTheDocument()
   })
 
   it('links to the Extensions settings page', () => {

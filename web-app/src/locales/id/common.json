@@ -235,10 +235,6 @@
       "cancel": "Batal",
       "changeLocation": "Ubah Lokasi"
     },
-    "deleteAllThreads": {
-      "title": "Hapus Semua Utas",
-      "description": "Semua utas akan dihapus. Tindakan ini tidak dapat dibatalkan."
-    },
     "deleteThread": {
       "description": "Apakah Anda yakin ingin menghapus thread ini? Tindakan ini tidak dapat dibatalkan."
     },
@@ -361,7 +357,6 @@
     "projectNotFoundDesc": "Proyek yang Anda cari tidak ada atau telah dihapus.",
     "deleteProjectDialog": {
       "title": "Hapus Proyek",
-      "permanentDelete": "Ini akan menghapus semua utas secara permanen.",
       "permanentDeleteWarning": "Tindakan ini akan menghapus SEMUA utas dalam proyek secara permanen!",
       "deleteEmptyProject": "Tindakan ini akan menghapus proyek \"{{projectName}}\".",
       "saveThreadsAdvice": "Untuk menyimpan utas, pindahkan ke daftar utas Anda atau proyek lain sebelum menghapus.",
@@ -385,7 +380,6 @@
       "renameSuccess": "Proyek diubah dari \"{{oldName}}\" menjadi \"{{newName}}\""
     },
     "noConversationsIn": "Tidak Ada Percakapan di {{projectName}}",
-    "startNewConversation": "Mulai percakapan baru dengan {{projectName}} di bawah",
     "conversationsIn": "Percakapan di {{projectName}}",
     "conversationsDescription": "Klik percakapan mana pun untuk melanjutkan chatting, atau mulai yang baru di bawah.",
     "thread": "utas",
@@ -398,7 +392,8 @@
     "noProjectsFound": "Tidak ada proyek ditemukan",
     "tryDifferentSearch": "Coba kata kunci pencarian lain",
     "uploadingFiles": "Memproses file…",
-    "processButton": "Tambah"
+    "processButton": "Tambah",
+    "viewProject": "Lihat Proyek"
   },
   "llamacppBusyOnExit": {
     "title": "llama.cpp is still busy",
@@ -406,5 +401,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "chatsAndTasks": "Obrolan dan tugas",
+  "artifacts": "Artefak",
+  "skills": "Keahlian",
+  "deleteSession": "Hapus sesi",
+  "deleteSessionTitle": "Hapus sesi?",
+  "deleteSessionBody": "\"{{title}}\" dan transkripnya akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.",
+  "sidebar": {
+    "more": "Lainnya"
   }
 }

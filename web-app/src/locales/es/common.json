@@ -248,10 +248,6 @@
       "cancel": "Cancelar",
       "changeLocation": "Cambiar ubicación"
     },
-    "deleteAllThreads": {
-      "title": "Eliminar todos los hilos",
-      "description": "Todos los hilos serán eliminados. Esta acción no se puede deshacer."
-    },
     "deleteAllThreadsInProject": {
       "title": "Eliminar todas las conversaciones",
       "description": "Se eliminarán {{count}} conversaciones en \"{{projectName}}\". Esta acción no se puede deshacer."
@@ -290,7 +286,6 @@
     "processButton": "Añadir",
     "deleteProjectDialog": {
       "title": "Eliminar proyecto",
-      "permanentDelete": "Esto eliminará permanentemente todos los hilos.",
       "permanentDeleteWarning": "¡Esta acción eliminará permanentemente TODOS los hilos dentro del proyecto!",
       "deleteEmptyProject": "Esta acción eliminará el proyecto \"{{projectName}}\".",
       "saveThreadsAdvice": "Para guardar hilos, muévelos a tu lista de hilos o a otro proyecto antes de eliminar.",
@@ -317,7 +312,6 @@
       "updateSuccess": "Proyecto \"{{projectName}}\" actualizado correctamente"
     },
     "noConversationsIn": "No hay conversaciones en {{projectName}}",
-    "startNewConversation": "Inicia una nueva conversación con {{projectName}} a continuación",
     "conversationsIn": "Conversaciones en {{projectName}}",
     "conversationsDescription": "Haz clic en cualquier conversación para continuar chateando, o inicia una nueva a continuación.",
     "conversation": "Conversación",
@@ -333,7 +327,8 @@
     "update": "Actualizar",
     "searchProjects": "Buscar proyectos...",
     "noProjectsFound": "No se encontraron proyectos",
-    "tryDifferentSearch": "Prueba con un término de búsqueda diferente"
+    "tryDifferentSearch": "Prueba con un término de búsqueda diferente",
+    "viewProject": "Ver proyecto"
   },
   "attachmentsIngestion": {
     "title": "Elige cómo procesar los adjuntos",
@@ -476,5 +471,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "chatsAndTasks": "Chats y tareas",
+  "artifacts": "Artefactos",
+  "skills": "Habilidades",
+  "deleteSession": "Eliminar sesión",
+  "deleteSessionTitle": "¿Eliminar la sesión?",
+  "deleteSessionBody": "«{{title}}» y su transcripción se eliminarán de forma permanente. Esta acción no se puede deshacer.",
+  "sidebar": {
+    "more": "Más"
   }
 }

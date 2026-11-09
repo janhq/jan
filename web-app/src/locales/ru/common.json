@@ -236,10 +236,6 @@
       "cancel": "Отмена",
       "changeLocation": "Изменить расположение"
     },
-    "deleteAllThreads": {
-      "title": "Удаление всех обсуждений",
-      "description": "Все обсуждения будут удалены. Это действие нельзя отменить."
-    },
     "deleteThread": {
       "description": "Вы уверены, что хотите удалить это обсуждение? Это действие нельзя отменить."
     },
@@ -268,7 +264,6 @@
     "projectNotFoundDesc": "Проект, который вы ищете, не существует или был удалён.",
     "deleteProjectDialog": {
       "title": "Удалить проект",
-      "permanentDelete": "Это навсегда удалит все обсуждения.",
       "permanentDeleteWarning": "Это действие навсегда удалит ВСЕ обсуждения в проекте!",
       "deleteEmptyProject": "Это действие удалит проект \"{{projectName}}\".",
       "saveThreadsAdvice": "Чтобы сохранить обсуждения, переместите их в общий список или в другой проект перед удалением.",
@@ -291,7 +286,6 @@
       "renameSuccess": "Проект переименован с \"{{oldName}}\" на \"{{newName}}\""
     },
     "noConversationsIn": "В проекте {{projectName}} нет диалогов",
-    "startNewConversation": "Начните новый диалог с {{projectName}} ниже",
     "conversationsIn": "Диалоги в {{projectName}}",
     "conversationsDescription": "Нажмите на любой диалог, чтобы продолжить общение, или начните новый ниже.",
     "thread": "обсуждение",
@@ -304,7 +298,8 @@
     "noProjectsFound": "Проекты не найдены",
     "tryDifferentSearch": "Попробуйте другой поисковый запрос",
     "uploadingFiles": "Обработка файлов…",
-    "processButton": "Добавить"
+    "processButton": "Добавить",
+    "viewProject": "Открыть проект"
   },
   "attachmentsIngestion": {
     "title": "Выберите способ обработки вложений",
@@ -416,5 +411,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "chatsAndTasks": "Чаты и задачи",
+  "artifacts": "Артефакты",
+  "skills": "Навыки",
+  "deleteSession": "Удалить сеанс",
+  "deleteSessionTitle": "Удалить сеанс?",
+  "deleteSessionBody": "«{{title}}» и его стенограмма будут удалены безвозвратно. Это действие нельзя отменить.",
+  "sidebar": {
+    "more": "Ещё"
   }
 }

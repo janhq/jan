@@ -272,10 +272,6 @@
       "cancel": "キャンセル",
       "changeLocation": "場所を変更"
     },
-    "deleteAllThreads": {
-      "title": "すべてのスレッドを削除",
-      "description": "すべてのスレッドが削除されます。この操作は元に戻せません。"
-    },
     "deleteAllThreadsInProject": {
       "title": "すべての会話を削除",
       "description": "「{{projectName}}」内の{{count}}件の会話が削除されます。この操作は元に戻せません。"
@@ -288,6 +284,10 @@
     },
     "messageMetadata": {
       "title": "メッセージメタデータ"
+    },
+    "deleteAllChats": {
+      "title": "プロジェクト外の会話を削除",
+      "description": "プロジェクトに属していない会話を削除します。プロジェクト内の会話、スター付きの会話、タスクは残ります。この操作は元に戻せません。"
     }
   },
   "errorDialog": {
@@ -327,7 +327,7 @@
     "processButton": "追加",
     "deleteProjectDialog": {
       "title": "プロジェクトを削除",
-      "permanentDelete": "これにより、すべてのスレッドが完全に削除されます。",
+      "permanentDelete": "「{{projectName}}」とそのすべての会話が完全に削除されます。この操作は元に戻せません。",
       "permanentDeleteWarning": "この操作は、プロジェクト内のすべてのスレッドを完全に削除します！",
       "deleteEmptyProject": "この操作は、プロジェクト「{{projectName}}」を削除します。",
       "saveThreadsAdvice": "スレッドを残すには、削除する前にスレッドリストまたは別のプロジェクトに移動してください。",
@@ -354,7 +354,6 @@
       "updateSuccess": "プロジェクト「{{projectName}}」を正常に更新しました"
     },
     "noConversationsIn": "{{projectName}}には会話がありません",
-    "startNewConversation": "以下で{{projectName}}との新しい会話を開始します",
     "conversationsIn": "{{projectName}}での会話",
     "conversationsDescription": "会話をクリックしてチャットを続けるか、以下で新しい会話を開始してください。",
     "conversation": "会話",
@@ -370,7 +369,9 @@
     "update": "更新",
     "searchProjects": "プロジェクトを検索...",
     "noProjectsFound": "プロジェクトが見つかりません",
-    "tryDifferentSearch": "別の検索語をお試しください"
+    "tryDifferentSearch": "別の検索語をお試しください",
+    "viewProject": "プロジェクトを表示",
+    "sendMessageToStart": "上でメッセージを送信すると会話を始められます。"
   },
   "attachmentsIngestion": {
     "title": "添付ファイルの取り込み方法を選択",
@@ -508,6 +509,10 @@
     "attachmentsDisabledInfo": {
       "title": "添付ファイルが無効です",
       "description": "添付ファイルは設定で無効になっています"
+    },
+    "deleteAllChats": {
+      "title": "会話を削除しました",
+      "description": "プロジェクト外の会話を削除しました。プロジェクト内の会話とタスクは残しています。"
     }
   },
   "errors": {
@@ -536,5 +541,15 @@
     "notReadyTitle": "この会話はまだ準備できていません",
     "notReadyDescription": "この会話がチャットかCoworkタスクかをJanが確認できませんでした。再試行してください。解決しない場合はアプリを再起動してください。",
     "retry": "再試行"
+  },
+  "agentSettings": "エージェント",
+  "chatsAndTasks": "チャットとタスク",
+  "artifacts": "アーティファクト",
+  "skills": "スキル",
+  "deleteSession": "セッションを削除",
+  "deleteSessionTitle": "セッションを削除しますか？",
+  "deleteSessionBody": "「{{title}}」とそのトランスクリプトは完全に削除されます。この操作は元に戻せません。",
+  "sidebar": {
+    "more": "その他"
   }
 }

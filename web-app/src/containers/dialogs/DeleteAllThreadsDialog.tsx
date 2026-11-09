@@ -42,9 +42,9 @@ export function DeleteAllThreadsDialog({
     onDeleteAll()
     setIsOpen(false)
     if (onDropdownClose) onDropdownClose()
-    toast.success(t('common:toast.deleteAllThreads.title'), {
+    toast.success(t('common:toast.deleteAllChats.title'), {
       id: 'delete-all-threads',
-      description: t('common:toast.deleteAllThreads.description'),
+      description: t('common:toast.deleteAllChats.description'),
     })
     setTimeout(() => {
       navigate({ to: route.home })
@@ -73,10 +73,10 @@ export function DeleteAllThreadsDialog({
       >
         <DialogHeader>
           <DialogTitle>
-            {t('common:dialogs.deleteAllThreads.title')}
+            {t('common:dialogs.deleteAllChats.title')}
           </DialogTitle>
           <DialogDescription>
-            {t('common:dialogs.deleteAllThreads.description')}
+            {t('common:dialogs.deleteAllChats.description')}
           </DialogDescription>
           <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
