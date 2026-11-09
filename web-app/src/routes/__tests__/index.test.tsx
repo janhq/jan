@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   search: { threadModel: undefined as any },
   setCurrentThreadId: vi.fn(),
   useTools: vi.fn(),
+  folder: null as string | null,
   providerHasRemoteApiKeys: vi.fn(() => false),
   predefinedProviders: [
     { provider: 'openai' },
@@ -32,6 +33,33 @@ vi.mock('@/hooks/useModelProvider', () => ({
 
 vi.mock('@/hooks/useThreads', () => ({
   useThreads: () => ({ setCurrentThreadId: h.setCurrentThreadId }),
+}))
+
+vi.mock('@/hooks/useFolderDraft', () => ({
+  useFolderDraft: () => ({
+    available: true,
+    folder: h.folder,
+    attach: vi.fn(),
+    detach: vi.fn(),
+    onFolderDraft: vi.fn(),
+  }),
+}))
+
+vi.mock('@/hooks/useThreadManagement', () => ({
+  useThreadManagement: () => ({ addFolder: vi.fn(), folders: [] }),
+}))
+
+vi.mock('@/containers/dialogs/AddProjectDialog', () => ({
+  default: () => null,
+}))
+
+vi.mock('@/containers/CoworkComposerMenu', () => ({
+  CoworkComposerMenu: () => null,
+}))
+
+vi.mock('@/containers/DraftWorkspacePill', () => ({
+  DraftWorkspacePill: ({ folder }: any) =>
+    folder ? <div data-testid="draft-pill">{folder}</div> : null,
 }))
 
 vi.mock('@/hooks/useTools', () => ({
@@ -82,6 +110,7 @@ describe('Index route', () => {
     vi.clearAllMocks()
     h.providers = []
     h.search = { threadModel: undefined }
+    h.folder = null
     h.providerHasRemoteApiKeys.mockReturnValue(false)
   })
 
@@ -159,5 +188,16 @@ describe('Index route', () => {
     renderComponent()
     expect(h.setCurrentThreadId).toHaveBeenCalledWith(undefined)
     expect(h.useTools).toHaveBeenCalled()
+  })
+
+  it('shows the folder pill only once a folder is attached', () => {
+    h.providers = [{ provider: 'openai', models: [] }]
+    h.providerHasRemoteApiKeys.mockReturnValue(true)
+    const { unmount } = renderComponent()
+    expect(screen.queryByTestId('draft-pill')).toBeNull()
+    unmount()
+    h.folder = '/home/u/project'
+    renderComponent()
+    expect(screen.getByTestId('draft-pill')).toHaveTextContent('/home/u/project')
   })
 })

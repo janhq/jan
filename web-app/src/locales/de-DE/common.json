@@ -475,5 +475,21 @@
       "xhigh": "Sehr hoch",
       "unlimited": "Unbegrenzt"
     }
-  }
+  },
+  "homeMode": {
+    "addToProject": "Zu einem Projekt hinzufügen",
+    "newProject": "Neues Projekt",
+    "noProjects": "Noch keine Projekte",
+    "addFolderAction": "Ordner hinzufügen",
+    "startFailed": "Die Unterhaltung konnte nicht gestartet werden. Deine Nachricht steht weiterhin im Eingabefeld."
+  },
+  "conversationScope": {
+    "folderSelectModel": "Wähle ein Modell mit Werkzeugunterstützung, bevor du Ordnerzugriff hinzufügst.",
+    "folderUnsupported": "Dieses Modell kann keine Werkzeuge nutzen, daher lässt sich kein Ordner hinzufügen. Normales Chatten funktioniert weiterhin.",
+    "removeProject": "Projektauswahl entfernen",
+    "temporary": "Ein temporärer Chat behält keinen Ordnerzugriff."
+  },
+  "skillDestination": "Neue Skills speichern in",
+  "skillDestinationFolder": "Diesem Ordner",
+  "skillDestinationGlobal": "Global (jede Unterhaltung)"
 }

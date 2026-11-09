@@ -13,6 +13,7 @@ import {
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
 import { useThreads } from '@/hooks/useThreads'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { discardStaleCoworkHandoffs } from '@/lib/coworkHandoff'
 import {
   isPlatformAndroid,
   isPlatformIOS,
@@ -142,7 +143,8 @@ export async function flushCowork(): Promise<void> {
   await persistence?.flush()
 }
 
-const supportsCowork = () =>
+/** Cowork needs the desktop host (native folder dialog, sandboxed tools). */
+export const supportsCowork = () =>
   isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid()
 
 /** Resolves with the work's outcome, or with `'timeout'` after `ms`. */
@@ -271,6 +273,16 @@ async function doStart() {
   // Cowork conversations also live in the shared thread list so search and the
   // sidebar see them. Do this once; later writes upsert through onThreadWritten.
   for (const t of loaded.threads) upsertThread(t)
+
+  // A first prompt handed over from the home composer for a session that no
+  // longer exists (reload before its first commit) must not linger.
+  try {
+    discardStaleCoworkHandoffs(
+      new Set(useCoworkSessions.getState().sessions.map((x) => x.id))
+    )
+  } catch {
+    /* sessionStorage unavailable */
+  }
 
   // 4. Write-through from here on.
   let prev = useCoworkSessions.getState()

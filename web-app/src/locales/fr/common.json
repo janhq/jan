@@ -478,5 +478,21 @@
       "xhigh": "Très élevé",
       "unlimited": "Illimité"
     }
-  }
+  },
+  "homeMode": {
+    "addToProject": "Ajouter à un projet",
+    "newProject": "Nouveau projet",
+    "noProjects": "Aucun projet pour le moment",
+    "addFolderAction": "Ajouter un dossier",
+    "startFailed": "Impossible de démarrer la conversation. Votre message est toujours dans la zone de saisie."
+  },
+  "conversationScope": {
+    "folderSelectModel": "Sélectionnez un modèle compatible avec les outils avant d’ajouter l’accès à un dossier.",
+    "folderUnsupported": "Ce modèle ne peut pas utiliser d’outils : impossible d’ajouter un dossier. La discussion normale fonctionne toujours.",
+    "removeProject": "Retirer la sélection du projet",
+    "temporary": "Une discussion temporaire ne conserve aucun accès aux dossiers."
+  },
+  "skillDestination": "Enregistrer les nouvelles compétences dans",
+  "skillDestinationFolder": "Ce dossier",
+  "skillDestinationGlobal": "Global (toutes les conversations)"
 }

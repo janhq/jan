@@ -475,5 +475,21 @@
       "xhigh": "极高",
       "unlimited": "不限"
     }
-  }
+  },
+  "homeMode": {
+    "addToProject": "添加到项目",
+    "newProject": "新建项目",
+    "noProjects": "暂无项目",
+    "addFolderAction": "添加文件夹",
+    "startFailed": "无法开始对话。您的消息仍保留在输入框中。"
+  },
+  "conversationScope": {
+    "folderSelectModel": "添加文件夹访问权限前，请先选择支持工具的模型。",
+    "folderUnsupported": "此模型无法使用工具，因此无法添加文件夹。普通聊天仍可使用。",
+    "removeProject": "取消选择项目",
+    "temporary": "临时聊天不会保留文件夹访问权限。"
+  },
+  "skillDestination": "新技能保存到",
+  "skillDestinationFolder": "此文件夹",
+  "skillDestinationGlobal": "全局（所有对话）"
 }

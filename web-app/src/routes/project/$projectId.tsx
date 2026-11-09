@@ -25,6 +25,9 @@ import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { DeleteProjectDialog } from '@/containers/dialogs/DeleteProjectDialog'
 import { DeleteAllThreadsInProjectDialog } from '@/containers/dialogs/DeleteAllThreadsInProjectDialog'
 import { SidebarMenu } from '@/components/ui/sidebar'
+import { CoworkComposerMenu } from '@/containers/CoworkComposerMenu'
+import { DraftWorkspacePill } from '@/containers/DraftWorkspacePill'
+import { useFolderDraft } from '@/hooks/useFolderDraft'
 
 export const Route = createFileRoute('/project/$projectId')({
   component: ProjectPageContent,
@@ -44,6 +47,9 @@ function ProjectPageContent() {
 
   // Find the project
   const project = getFolderById(projectId)
+  // A folder attached here starts the project's next conversation on the Cowork
+  // runner, filed under this project.
+  const workspace = useFolderDraft(project)
 
   // Find the assigned assistant
   const projectAssistant = useMemo(() => {
@@ -126,6 +132,17 @@ function ProjectPageContent() {
               initialMessage={true}
               projectId={projectId}
               projectAssistantId={project.assistantId}
+              menuWorkspace={
+                <CoworkComposerMenu
+                  onAttachFolder={workspace.available ? workspace.attach : undefined}
+                />
+              }
+              onFolderDraft={workspace.onFolderDraft}
+            />
+            <DraftWorkspacePill
+              folder={workspace.folder}
+              onPickFolder={workspace.attach}
+              onDetach={workspace.detach}
             />
           </div>
 

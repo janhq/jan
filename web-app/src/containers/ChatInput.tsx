@@ -109,6 +109,10 @@ import {
 } from '@/lib/path-references'
 import { FilePickerPopover } from '@/components/FilePickerPopover'
 import { ContributedMenuItems } from '@/containers/extensions/ContributedMenuItems'
+import type {
+  FolderDraftOutcome,
+  FolderDraftSubmission,
+} from '@/lib/startCoworkFromDraft'
 
 type ChatInputProps = {
   className?: string
@@ -167,6 +171,19 @@ type ChatInputProps = {
    */
   tokenSource?: TokenUsageSource
   highlightedPrefix?: string | null
+  /**
+   * Extra entries for the + menu that the surface owns (workspace and project
+   * actions). Rendered as menu items; ChatInput adds the separator.
+   */
+  menuWorkspace?: ReactNode
+  /**
+   * Home-style surfaces only. Called instead of creating a chat thread when
+   * the draft carries a folder, so the surface can start the conversation on
+   * the runner that can use it. `'chat'` falls through to an ordinary chat.
+   */
+  onFolderDraft?: (
+    submission: FolderDraftSubmission
+  ) => Promise<FolderDraftOutcome> | FolderDraftOutcome
 }
 
 // Video containers llama-server can decode via ffmpeg/ffprobe into frames.
@@ -204,6 +221,8 @@ const ChatInput = memo(function ChatInput({
   surfaceControls,
   tokenSource,
   highlightedPrefix,
+  menuWorkspace,
+  onFolderDraft,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
@@ -617,6 +636,42 @@ const ChatInput = memo(function ChatInput({
     {}
   )
 
+  // Media go to the model as file parts; documents travel as attachments.
+  const collectMedia = () => {
+    const imageFiles = attachments
+      .filter((att) => att.type === 'image' && att.dataUrl)
+      .map((att) => ({
+        type: 'file' as const,
+        mediaType: att.mimeType ?? 'image/jpeg',
+        url: att.dataUrl!,
+      }))
+    const audioFiles = attachments
+      .filter((att) => att.type === 'audio' && att.dataUrl)
+      .map((att) => ({
+        type: 'file' as const,
+        mediaType: att.audioFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav',
+        url: att.dataUrl!,
+      }))
+    const videoFiles = attachments
+      .filter((att) => att.type === 'video' && att.dataUrl)
+      .map((att) => ({
+        type: 'file' as const,
+        mediaType: att.mimeType ?? 'video/mp4',
+        url: att.dataUrl!,
+      }))
+    const files = [...imageFiles, ...audioFiles, ...videoFiles]
+    const documents = attachments.filter(
+      (att) => att.type === 'document' && att.path
+    )
+
+    return {
+      files: files.length > 0 ? files : undefined,
+      documents: documents.length > 0 ? documents : undefined,
+    }
+  }
+
+  const folderStarting = useRef(false)
+
   const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
@@ -657,36 +712,12 @@ const ChatInput = memo(function ChatInput({
         return
       }
 
-      const imageFiles = attachments
-        .filter((att) => att.type === 'image' && att.dataUrl)
-        .map((att) => ({
-          type: 'file' as const,
-          mediaType: att.mimeType ?? 'image/jpeg',
-          url: att.dataUrl!,
-        }))
-      const audioFiles = attachments
-        .filter((att) => att.type === 'audio' && att.dataUrl)
-        .map((att) => ({
-          type: 'file' as const,
-          mediaType: att.audioFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav',
-          url: att.dataUrl!,
-        }))
-      const videoFiles = attachments
-        .filter((att) => att.type === 'video' && att.dataUrl)
-        .map((att) => ({
-          type: 'file' as const,
-          mediaType: att.mimeType ?? 'video/mp4',
-          url: att.dataUrl!,
-        }))
-      const files = [...imageFiles, ...audioFiles, ...videoFiles]
-      const documents = attachments.filter(
-        (att) => att.type === 'document' && att.path
-      )
+      const { files, documents } = collectMedia()
 
       onSubmit(
         effectivePrompt,
-        files.length > 0 ? files : undefined,
-        documents.length > 0 ? documents : undefined,
+        files,
+        documents,
         prompt
       )
       setPrompt('')
@@ -725,6 +756,31 @@ const ChatInput = memo(function ChatInput({
           params: { threadId: TEMPORARY_CHAT_ID },
         })
       } else {
+        // A draft with a folder starts on the Cowork runner (the surface decides
+        // and navigates); anything else is an ordinary chat thread.
+        if (onFolderDraft) {
+          if (folderStarting.current) return
+          folderStarting.current = true
+          try {
+            const { files, documents } = collectMedia()
+            const outcome = await onFolderDraft({
+              text: effectivePrompt,
+              draft: prompt,
+              files,
+              documents,
+            })
+            if (outcome === 'refused') return
+            if (outcome === 'started') {
+              setPrompt('')
+              // The run owns its copies now (handoff), so the draft's go.
+              clearAttachmentsForThread(attachmentsKey)
+              return
+            }
+          } finally {
+            folderStarting.current = false
+          }
+        }
+
         // Get project metadata and assistant if projectId is provided
         let projectMetadata:
           | { id: string; name: string; updated_at: number }
@@ -2402,6 +2458,12 @@ const ChatInput = memo(function ChatInput({
                                   : 'Add documents or files'}
                               </span>
                             </DropdownMenuItem>
+                          </>
+                        )}
+                        {menuWorkspace && (
+                          <>
+                            <DropdownMenuSeparator />
+                            {menuWorkspace}
                           </>
                         )}
                         {/* Only chat threads: a scoped surface (Cowork) has no thread id. */}
