@@ -55,6 +55,7 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::thread_workspace_delete,
             commands::thread_workspace_sweep,
             commands::session_workspace_path,
+            commands::session_workspace_copy_to_thread,
             commands::session_workspace_delete,
             commands::session_workspace_sweep,
             commands::skill_list,

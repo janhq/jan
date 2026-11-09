@@ -1362,7 +1362,11 @@ pub async fn remove_thread_workspace(
     jan_data_folder: &Path,
     thread_id: &str,
 ) -> Result<(), String> {
-    remove_workspace_at(thread_workspace(jan_data_folder, thread_id)?, thread_id).await
+    remove_workspace_at(thread_workspace(jan_data_folder, thread_id)?, thread_id).await?;
+    // What a Cowork copy left beside the sandbox goes with the thread.
+    let _ = tokio::fs::remove_file(copy_marker(jan_data_folder, thread_id)?).await;
+    let _ = tokio::fs::remove_dir_all(copy_staging_dir(jan_data_folder, thread_id)?).await;
+    Ok(())
 }
 
 /// Delete a Cowork session's sandbox. Idempotent: a missing sandbox is Ok.
@@ -1396,7 +1400,16 @@ pub async fn sweep_thread_workspaces(
     jan_data_folder: &Path,
     keep: &[String],
 ) -> Result<usize, String> {
-    sweep_workspaces_in(threads_dir(jan_data_folder), keep).await
+    // Same fail-safe as `sweep_workspaces_in`: an empty list does nothing, so
+    // the recently copied ids must not turn it into a non-empty one.
+    if keep.is_empty() {
+        return Ok(0);
+    }
+    let mut keep = keep.to_vec();
+    keep.extend(recently_copied_ids(jan_data_folder).await);
+    let removed = sweep_workspaces_in(threads_dir(jan_data_folder), &keep).await?;
+    sweep_copy_leftovers(jan_data_folder).await;
+    Ok(removed)
 }
 
 /// Delete every Cowork session sandbox whose id is not in `keep`.
@@ -1408,6 +1421,225 @@ pub async fn sweep_session_workspaces(
     keep: &[String],
 ) -> Result<usize, String> {
     sweep_workspaces_in(sessions_dir(jan_data_folder), keep).await
+}
+
+/// What a Cowork sandbox copy did.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceCopy {
+    /// False when the session never had a sandbox, so there was nothing to copy.
+    pub copied: bool,
+    /// Regular files copied.
+    pub files: usize,
+    /// Symlinks and special files that were not copied.
+    pub skipped: usize,
+}
+
+/// Hidden siblings of the thread sandboxes in `threads/`. A dot-led name is
+/// never a valid thread id ([`thread_segment`]), so they cannot collide with a
+/// thread and the sweep never mistakes them for one.
+const COPY_STAGING_PREFIX: &str = ".copy-";
+const COPY_MARKER_PREFIX: &str = ".copied-";
+
+/// How long a copied workspace is protected from the thread sweep while no
+/// thread lists it. The Cowork migration copies before it commits thread.json,
+/// and may still be running when the startup sweep reads the thread list.
+pub const COPY_GRACE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+fn copy_staging_dir(jan_data_folder: &Path, id: &str) -> Result<PathBuf, String> {
+    Ok(threads_dir(jan_data_folder).join(format!("{COPY_STAGING_PREFIX}{}", thread_segment(id)?)))
+}
+
+fn copy_marker(jan_data_folder: &Path, id: &str) -> Result<PathBuf, String> {
+    Ok(threads_dir(jan_data_folder).join(format!("{COPY_MARKER_PREFIX}{}", thread_segment(id)?)))
+}
+
+/// Copy a Cowork session's sandbox (`sessions/<id>`) into the thread workspace
+/// of the same id (`threads/<id>`), the one main chat's `Thread` scope uses, so
+/// a migrated Cowork thread opens its files without sharing a directory with
+/// the legacy session scope.
+///
+/// - A copy, never a move: `sessions/<id>` is intentionally left behind as the
+///   rollback source, like the `code-sessions` blob.
+/// - Idempotent. The tree is built in a hidden staging sibling and renamed into
+///   place, so an interrupted run leaves either nothing or the whole copy, and a
+///   retry rebuilds it from the source. A `.copied-<id>` marker, written before
+///   the rename, records that `threads/<id>` is this copy's: a retry replaces
+///   it, while a non-empty directory with no marker (the thread's own files) is
+///   refused, never merged into.
+/// - Symlinks (and other non-regular files) are neither followed nor copied, so
+///   nothing outside the session tree can land in the thread's sandbox. A
+///   session or thread root that is itself a symlink is refused.
+/// - A session with no sandbox is `copied: false` and nothing is created.
+pub async fn copy_session_workspace_to_thread(
+    jan_data_folder: &Path,
+    id: &str,
+) -> Result<WorkspaceCopy, String> {
+    let source = session_workspace(jan_data_folder, id)?;
+    let dest = thread_workspace(jan_data_folder, id)?;
+    let staging = copy_staging_dir(jan_data_folder, id)?;
+    let marker = copy_marker(jan_data_folder, id)?;
+    tokio::task::spawn_blocking(move || copy_tree_into_place(&source, &dest, &staging, &marker))
+        .await
+        .map_err(|e| format!("ERROR: {e}"))?
+        .map_err(|e| format!("ERROR: {e}"))
+}
+
+fn copy_tree_into_place(
+    source: &Path,
+    dest: &Path,
+    staging: &Path,
+    marker: &Path,
+) -> Result<WorkspaceCopy, String> {
+    use std::fs;
+    let e = |err: std::io::Error| err.to_string();
+    match fs::symlink_metadata(source) {
+        Ok(meta) if meta.is_dir() => {}
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(format!("{} is a symlink; refusing to follow it", source.display()))
+        }
+        Ok(_) => return Err(format!("{} is not a directory", source.display())),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(WorkspaceCopy::default())
+        }
+        Err(err) => return Err(e(err)),
+    }
+
+    // Ownership of threads/<id>, decided before anything is touched.
+    let owned = marker.exists();
+    match fs::symlink_metadata(dest) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(format!("{} is a symlink; refusing to write through it", dest.display()))
+        }
+        Ok(meta) if meta.is_dir() => {
+            let empty = fs::read_dir(dest).map_err(e)?.next().is_none();
+            if !empty && !owned {
+                return Err(format!(
+                    "{} already holds files of its own; refusing to merge into it",
+                    dest.display()
+                ));
+            }
+        }
+        Ok(_) => return Err(format!("{} is not a directory", dest.display())),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(e(err)),
+    }
+
+    let threads = dest.parent().ok_or("thread workspace has no parent")?;
+    fs::create_dir_all(threads).map_err(e)?;
+    // A staging directory left by a crash is this id's alone to clear.
+    match fs::remove_dir_all(staging) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(e(err)),
+    }
+    fs::create_dir(staging).map_err(e)?;
+    let mut stats = WorkspaceCopy { copied: true, ..WorkspaceCopy::default() };
+    if let Err(err) = copy_dir_contents(source, staging, &mut stats) {
+        let _ = fs::remove_dir_all(staging);
+        return Err(err);
+    }
+
+    // The marker lands before the rename: a crash between the two leaves an
+    // owned (empty or old-copy) directory a retry may replace, never a copy
+    // that reads as the thread's own files.
+    fs::write(marker, b"").map_err(e)?;
+    crate::tools::appcontainer::release(dest);
+    match fs::remove_dir_all(dest) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            let _ = fs::remove_dir_all(staging);
+            return Err(e(err));
+        }
+    }
+    fs::rename(staging, dest).map_err(e)?;
+    Ok(stats)
+}
+
+/// Copy `from`'s entries into the existing directory `to`: directories and
+/// regular files only. Entries are classified with `symlink_metadata`, so a
+/// link is counted as skipped and never opened.
+fn copy_dir_contents(from: &Path, to: &Path, stats: &mut WorkspaceCopy) -> Result<(), String> {
+    use std::fs;
+    for entry in fs::read_dir(from).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let meta = fs::symlink_metadata(entry.path()).map_err(|e| e.to_string())?;
+        let target = to.join(entry.file_name());
+        if meta.is_dir() {
+            fs::create_dir(&target).map_err(|e| e.to_string())?;
+            copy_dir_contents(&entry.path(), &target, stats)?;
+        } else if meta.is_file() {
+            fs::copy(entry.path(), &target).map_err(|e| e.to_string())?;
+            stats.files += 1;
+        } else {
+            stats.skipped += 1;
+        }
+    }
+    Ok(())
+}
+
+/// Sweep what the copy leaves in `threads/` besides sandboxes: a staging
+/// directory or a marker nobody completed or cleaned up, once it is older than
+/// [`COPY_GRACE`]. A marker whose sandbox still exists is kept: its thread
+/// owns it.
+async fn sweep_copy_leftovers(jan_data_folder: &Path) {
+    let Ok(mut entries) = tokio::fs::read_dir(threads_dir(jan_data_folder)).await else {
+        return;
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        let path = entry.path();
+        let Ok(meta) = tokio::fs::symlink_metadata(&path).await else {
+            continue;
+        };
+        let old = meta
+            .modified()
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .is_some_and(|age| age >= COPY_GRACE);
+        if !old {
+            continue;
+        }
+        if name.starts_with(COPY_STAGING_PREFIX) && meta.is_dir() {
+            let _ = tokio::fs::remove_dir_all(&path).await;
+        } else if let Some(id) = name.strip_prefix(COPY_MARKER_PREFIX) {
+            let workspace = threads_dir(jan_data_folder).join(id);
+            if !workspace.exists() && meta.is_file() {
+                let _ = tokio::fs::remove_file(&path).await;
+            }
+        }
+    }
+}
+
+/// Ids whose workspace was copied in less than [`COPY_GRACE`] ago: the
+/// migration may not have committed their thread yet.
+async fn recently_copied_ids(jan_data_folder: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(mut entries) = tokio::fs::read_dir(threads_dir(jan_data_folder)).await else {
+        return out;
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        let Some(id) = name.strip_prefix(COPY_MARKER_PREFIX) else {
+            continue;
+        };
+        let fresh = entry
+            .metadata()
+            .await
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|m| m.elapsed().ok())
+            .is_some_and(|age| age < COPY_GRACE);
+        if fresh && thread_segment(id).is_ok() {
+            out.push(id.to_string());
+        }
+    }
+    out
 }
 
 async fn sweep_workspaces_in(dir: PathBuf, keep: &[String]) -> Result<usize, String> {
@@ -2697,6 +2929,290 @@ mod tests {
         remove_session_workspace(&data, "s1").await.unwrap();
         assert!(!dir.exists());
         remove_session_workspace(&data, "s1").await.unwrap();
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    // ---- Cowork sandbox -> thread workspace copy ---------------------------
+
+    fn seed_session(data: &Path, id: &str) -> PathBuf {
+        let dir = session_workspace(data, id).unwrap();
+        std::fs::create_dir_all(dir.join("src/deep")).unwrap();
+        std::fs::create_dir_all(dir.join("empty-dir")).unwrap();
+        std::fs::write(dir.join("notes.md"), b"the agent's notes").unwrap();
+        std::fs::write(dir.join("src/deep/a.rs"), b"fn a() {}").unwrap();
+        dir
+    }
+
+    /// Every entry under `root` with its content, links marked `@`.
+    fn tree(root: &Path) -> Vec<String> {
+        fn walk(dir: &Path, base: &Path, out: &mut Vec<String>) {
+            let mut entries: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().collect();
+            entries.sort_by_key(|e| e.file_name());
+            for e in entries {
+                let rel = e.path().strip_prefix(base).unwrap().to_string_lossy().into_owned();
+                let ft = e.file_type().unwrap();
+                if ft.is_dir() {
+                    out.push(format!("{rel}/"));
+                    walk(&e.path(), base, out);
+                } else if ft.is_symlink() {
+                    out.push(format!("{rel}@"));
+                } else {
+                    out.push(format!("{rel}={}", std::fs::read_to_string(e.path()).unwrap()));
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(root, root, &mut out);
+        out
+    }
+
+    fn age_file(path: &Path, age: std::time::Duration) {
+        let when = std::time::SystemTime::now() - age;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(when)
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_session_sandbox_is_copied_into_the_thread_workspace_and_left_in_place() {
+        let data = unique_data_folder();
+        let src = seed_session(&data, "cw-1");
+        let before = tree(&src);
+
+        let r = copy_session_workspace_to_thread(&data, "cw-1").await.unwrap();
+        assert_eq!(r, WorkspaceCopy { copied: true, files: 2, skipped: 0 });
+
+        let dst = thread_workspace(&data, "cw-1").unwrap();
+        assert_eq!(tree(&dst), before);
+        // Rollback source: the legacy folder is intentionally left behind.
+        assert_eq!(tree(&src), before);
+        // The staging directory is gone; only the thread sandbox and its marker remain.
+        assert!(!copy_staging_dir(&data, "cw-1").unwrap().exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[tokio::test]
+    async fn a_session_with_no_sandbox_copies_nothing_and_creates_nothing() {
+        let data = unique_data_folder();
+        let r = copy_session_workspace_to_thread(&data, "never-ran").await.unwrap();
+        assert!(!r.copied);
+        assert!(!thread_workspace(&data, "never-ran").unwrap().exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[tokio::test]
+    async fn the_copy_refuses_ids_that_are_not_one_path_segment() {
+        let data = unique_data_folder();
+        for bad in ["../escape", "a/b", "..", "", "nul"] {
+            assert!(copy_session_workspace_to_thread(&data, bad).await.is_err(), "{bad:?}");
+        }
+        assert!(!data.exists() || std::fs::read_dir(&data).unwrap().count() == 0);
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// A retry after a crash (or a second run) leaves the same tree, and
+    /// replaces the earlier copy rather than merging into it: a file the first
+    /// run copied and the source no longer has does not linger.
+    #[tokio::test]
+    async fn a_retry_replaces_its_own_earlier_copy_deterministically() {
+        let data = unique_data_folder();
+        let src = seed_session(&data, "cw-2");
+        copy_session_workspace_to_thread(&data, "cw-2").await.unwrap();
+        let dst = thread_workspace(&data, "cw-2").unwrap();
+        let first = tree(&dst);
+        copy_session_workspace_to_thread(&data, "cw-2").await.unwrap();
+        assert_eq!(tree(&dst), first);
+
+        std::fs::write(dst.join("partial.tmp"), b"left by a crashed run").unwrap();
+        std::fs::remove_file(src.join("notes.md")).unwrap();
+        copy_session_workspace_to_thread(&data, "cw-2").await.unwrap();
+        let after = tree(&dst);
+        assert!(!after.iter().any(|e| e.starts_with("partial.tmp") || e.starts_with("notes.md")));
+        assert_eq!(after, tree(&src));
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// Never merge into a workspace the migration did not produce: a thread
+    /// that already has files of its own keeps them untouched.
+    #[tokio::test]
+    async fn a_foreign_non_empty_thread_workspace_is_never_merged_into() {
+        let data = unique_data_folder();
+        seed_session(&data, "cw-3");
+        let dst = ensure_thread_workspace(&data, "cw-3").await.unwrap();
+        std::fs::write(dst.join("mine.txt"), b"not the migration's").unwrap();
+
+        let err = copy_session_workspace_to_thread(&data, "cw-3").await.unwrap_err();
+        assert!(err.contains("refusing to merge"), "{err}");
+        assert_eq!(tree(&dst), vec!["mine.txt=not the migration's".to_string()]);
+        assert!(!copy_staging_dir(&data, "cw-3").unwrap().exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[tokio::test]
+    async fn an_empty_thread_workspace_is_filled() {
+        let data = unique_data_folder();
+        seed_session(&data, "cw-4");
+        let dst = ensure_thread_workspace(&data, "cw-4").await.unwrap();
+        copy_session_workspace_to_thread(&data, "cw-4").await.unwrap();
+        assert!(dst.join("notes.md").is_file());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// A symlink in the session sandbox is never followed and never copied, so
+    /// nothing outside the tree is read into the thread's sandbox: file links,
+    /// directory links, links within the tree and dangling ones alike.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlinks_are_neither_followed_nor_copied() {
+        let data = unique_data_folder();
+        let outside = unique_data_folder();
+        std::fs::create_dir_all(outside.join("secrets")).unwrap();
+        std::fs::write(outside.join("secrets/key"), b"TOP SECRET").unwrap();
+        std::fs::write(outside.join("file.txt"), b"outside file").unwrap();
+        let src = seed_session(&data, "cw-5");
+        std::os::unix::fs::symlink(outside.join("file.txt"), src.join("link-file")).unwrap();
+        std::os::unix::fs::symlink(outside.join("secrets"), src.join("src/link-dir")).unwrap();
+        std::os::unix::fs::symlink("notes.md", src.join("inside-link")).unwrap();
+        std::os::unix::fs::symlink(outside.join("missing"), src.join("dangling")).unwrap();
+
+        let r = copy_session_workspace_to_thread(&data, "cw-5").await.unwrap();
+        assert_eq!(r.skipped, 4);
+        assert_eq!(r.files, 2);
+        let dst = thread_workspace(&data, "cw-5").unwrap();
+        let got = tree(&dst);
+        assert!(got.iter().all(|e| !e.contains("TOP SECRET") && !e.contains("outside file")), "{got:?}");
+        assert!(got.iter().all(|e| !e.ends_with('@')), "no link was recreated: {got:?}");
+        assert_eq!(std::fs::read(outside.join("secrets/key")).unwrap(), b"TOP SECRET");
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A session sandbox that is itself a symlink is refused, not followed.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_symlinked_session_root_is_refused() {
+        let data = unique_data_folder();
+        let outside = unique_data_folder();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("x"), b"x").unwrap();
+        std::fs::create_dir_all(sessions_dir(&data)).unwrap();
+        std::os::unix::fs::symlink(&outside, session_workspace(&data, "cw-6").unwrap()).unwrap();
+        assert!(copy_session_workspace_to_thread(&data, "cw-6").await.is_err());
+        assert!(!thread_workspace(&data, "cw-6").unwrap().exists());
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A thread workspace that is a symlink is refused: the copy would
+    /// otherwise be written through it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_symlinked_thread_workspace_is_refused() {
+        let data = unique_data_folder();
+        let outside = unique_data_folder();
+        std::fs::create_dir_all(&outside).unwrap();
+        seed_session(&data, "cw-7");
+        std::fs::create_dir_all(threads_dir(&data)).unwrap();
+        std::os::unix::fs::symlink(&outside, thread_workspace(&data, "cw-7").unwrap()).unwrap();
+        assert!(copy_session_workspace_to_thread(&data, "cw-7").await.is_err());
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A staging directory left by a crash is cleared by the retry; another
+    /// id's is not this retry's to remove.
+    #[tokio::test]
+    async fn a_stale_staging_directory_is_cleared_by_the_retry() {
+        let data = unique_data_folder();
+        seed_session(&data, "cw-8");
+        let stale = copy_staging_dir(&data, "cw-8").unwrap();
+        std::fs::create_dir_all(stale.join("half")).unwrap();
+        let other = copy_staging_dir(&data, "cw-8-b").unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        copy_session_workspace_to_thread(&data, "cw-8").await.unwrap();
+        assert!(!stale.exists());
+        assert!(other.is_dir());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// Deleting the migrated thread removes its workspace like any thread's,
+    /// and the session sandbox it was copied from stays (rollback source).
+    #[tokio::test]
+    async fn deleting_the_thread_removes_the_migrated_workspace_not_the_source() {
+        let data = unique_data_folder();
+        let src = seed_session(&data, "cw-9");
+        copy_session_workspace_to_thread(&data, "cw-9").await.unwrap();
+        let dst = thread_workspace(&data, "cw-9").unwrap();
+        assert!(dst.is_dir());
+
+        remove_thread_workspace(&data, "cw-9").await.unwrap();
+        assert!(!dst.exists());
+        assert!(!copy_marker(&data, "cw-9").unwrap().exists());
+        assert!(src.join("notes.md").is_file());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// The startup sweep keeps the migrated workspace of a live thread, and
+    /// collects it (with its marker) once the thread is gone and the copy is
+    /// older than the grace.
+    #[tokio::test]
+    async fn the_thread_sweep_collects_a_migrated_workspace_only_when_its_thread_is_gone() {
+        let data = unique_data_folder();
+        seed_session(&data, "cw-10");
+        ensure_thread_workspace(&data, "other").await.unwrap();
+        copy_session_workspace_to_thread(&data, "cw-10").await.unwrap();
+        let dst = thread_workspace(&data, "cw-10").unwrap();
+        let marker = copy_marker(&data, "cw-10").unwrap();
+        age_file(&marker, COPY_GRACE + std::time::Duration::from_secs(60));
+
+        sweep_thread_workspaces(&data, &["cw-10".to_string(), "other".to_string()])
+            .await
+            .unwrap();
+        assert!(dst.join("notes.md").is_file(), "a live thread's workspace stays");
+
+        sweep_thread_workspaces(&data, &["other".to_string()]).await.unwrap();
+        assert!(!dst.exists());
+        assert!(!marker.exists(), "the marker goes with its workspace");
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// The migration copies before it commits thread.json, so for a while the
+    /// copied workspace has no thread in the list the sweep is given. A sweep
+    /// in that window (the app's startup one, while the migration finishes in
+    /// the background) must not delete it.
+    #[tokio::test]
+    async fn a_fresh_copy_survives_a_sweep_that_runs_before_its_thread_commits() {
+        let data = unique_data_folder();
+        seed_session(&data, "cw-11");
+        ensure_thread_workspace(&data, "other").await.unwrap();
+        copy_session_workspace_to_thread(&data, "cw-11").await.unwrap();
+        sweep_thread_workspaces(&data, &["other".to_string()]).await.unwrap();
+        assert!(thread_workspace(&data, "cw-11").unwrap().join("notes.md").is_file());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// Staging and marker leftovers of ids that never retry do not accumulate,
+    /// and a fresh one (a copy in progress) is left alone.
+    #[tokio::test]
+    async fn the_sweep_collects_old_staging_and_marker_leftovers_only() {
+        let data = unique_data_folder();
+        ensure_thread_workspace(&data, "keep-me").await.unwrap();
+        let old = copy_staging_dir(&data, "gone").unwrap();
+        let fresh = copy_staging_dir(&data, "busy").unwrap();
+        let old_marker = copy_marker(&data, "gone").unwrap();
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&fresh).unwrap();
+        std::fs::write(&old_marker, b"").unwrap();
+        age_file(&old_marker, COPY_GRACE + std::time::Duration::from_secs(60));
+        age_by(&old, COPY_GRACE + std::time::Duration::from_secs(60));
+        sweep_thread_workspaces(&data, &["keep-me".to_string()]).await.unwrap();
+        assert!(!old.exists());
+        assert!(!old_marker.exists());
+        assert!(fresh.is_dir());
         let _ = std::fs::remove_dir_all(&data);
     }
 
