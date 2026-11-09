@@ -3,6 +3,7 @@ import {
   migrateCoworkSessionsToThreads,
   CODE_SESSIONS_KEY,
   COWORK_MIGRATION_FLAG_KEY,
+  COWORK_MIGRATION_ABANDONED_KEY,
   type Invoke,
 } from '../migrateCoworkSessions'
 import type { CoworkSession } from '@/hooks/useCoworkSessions'
@@ -230,15 +231,83 @@ describe('migrateCoworkSessionsToThreads', () => {
     expect(b.threads.has('s1')).toBe(false)
   })
 
-  it('an id collision with a chat thread is reported, not overwritten', async () => {
+  it('an id collision with a chat thread is reported, never overwritten, and settles the marker', async () => {
     b.threads.set('s1', { id: 's1', title: 'My chat', metadata: {} })
     b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
     const r = await migrateCoworkSessionsToThreads(b.invoke)
-    expect(r.status).toBe('partial')
-    expect(r.failed[0].id).toBe('s1')
+    // A collision cannot fix itself, so it must not keep the marker unset
+    // (and the migration redoing work) on every launch.
+    expect(r.status).toBe('complete')
+    expect(r.failed).toEqual([])
+    expect(r.abandoned.map((a) => a.id)).toEqual(['s1'])
     expect(b.threads.get('s1')!.title).toBe('My chat')
     expect(b.extras.has('s1/cowork')).toBe(false)
+    expect(b.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
+    expect(JSON.parse(b.settings.get(COWORK_MIGRATION_ABANDONED_KEY)!)).toEqual([
+      expect.objectContaining({ id: 's1' }),
+    ])
+  })
+
+  it('a permanent failure is remembered while a transient one keeps the marker unset and is retried', async () => {
+    b = makeBackend({ failCreateFor: 's2' })
+    b.threads.set('s1', { id: 's1', title: 'My chat', metadata: {} })
+    b.settings.set(
+      CODE_SESSIONS_KEY,
+      envelope([session('s1'), session('s2'), session('s3')])
+    )
+    const first = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(first.status).toBe('partial')
+    expect(first.failed.map((f) => f.id)).toEqual(['s2'])
+    expect(first.abandoned.map((a) => a.id)).toEqual(['s1'])
     expect(b.settings.has(COWORK_MIGRATION_FLAG_KEY)).toBe(false)
+
+    // Next launch (same stored state, the transient fault gone): only the
+    // transient failure is retried; the abandoned session is not examined.
+    const heal = makeBackend()
+    for (const [k, v] of b.settings) heal.settings.set(k, v)
+    for (const [k, v] of b.threads) heal.threads.set(k, v)
+    for (const [k, v] of b.extras) heal.extras.set(k, v)
+    for (const [k, v] of b.logs) heal.logs.set(k, v)
+    const second = await migrateCoworkSessionsToThreads(heal.invoke)
+    expect(second.status).toBe('complete')
+    expect(second.migrated).toEqual(['s2'])
+    expect(second.abandoned.map((a) => a.id)).toEqual(['s1'])
+    expect(heal.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
+    // s1 was not even examined again: no write was attempted for it.
+    expect(heal.extras.has('s1/cowork')).toBe(false)
+  })
+
+  it('a session id the backend would refuse is abandoned before any write', async () => {
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('../escape')]))
+    const r = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(r.abandoned.map((a) => a.id)).toEqual(['../escape'])
+    expect(r.status).toBe('complete')
+    expect(b.calls).not.toContain('write_thread_extra')
+    expect(b.calls).not.toContain('create_thread')
+  })
+
+  it('a refusal to overwrite a foreign messages log is permanent too', async () => {
+    const invoke: Invoke = async <T = unknown>(cmd: string, args?: Args) => {
+      if (cmd === 'write_thread_extra')
+        throw new Error(
+          "Thread 's1' has messages but no thread.json; refusing to overwrite its messages"
+        )
+      return b.invoke<T>(cmd, args)
+    }
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const r = await migrateCoworkSessionsToThreads(invoke)
+    expect(r.abandoned.map((a) => a.id)).toEqual(['s1'])
+    expect(b.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
+  })
+
+  it('transient write errors keep being retried and never settle the marker', async () => {
+    b = makeBackend({ failWriteFor: 's1' })
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const r = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(r.status).toBe('partial')
+    expect(r.abandoned).toEqual([])
+    expect(b.settings.has(COWORK_MIGRATION_FLAG_KEY)).toBe(false)
+    expect(b.settings.has(COWORK_MIGRATION_ABANDONED_KEY)).toBe(false)
   })
 
   it('fails a session when the backend assigns a different thread id', async () => {
@@ -248,9 +317,9 @@ describe('migrateCoworkSessionsToThreads', () => {
         : b.invoke<T>(cmd, args)
     b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
     const r = await migrateCoworkSessionsToThreads(invoke)
-    expect(r.status).toBe('partial')
-    expect(r.failed[0].id).toBe('s1')
-    expect(b.settings.has(COWORK_MIGRATION_FLAG_KEY)).toBe(false)
+    // The backend would answer the same way every launch.
+    expect(r.abandoned.map((x) => x.id)).toEqual(['s1'])
+    expect(r.status).toBe('complete')
   })
 
   it('rebuilds messages for version-0 sessions that have none', async () => {
