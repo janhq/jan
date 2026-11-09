@@ -56,6 +56,8 @@ export interface WorkspaceCopy {
   files: number
   /** Symlinks and special files that were not copied. */
   skipped: number
+  /** Entries the copy was not permitted to read; left out, not fatal. */
+  unreadable?: number
 }
 
 /** One fragment of a tool's live output. */
