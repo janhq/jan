@@ -357,19 +357,22 @@ export type ImportedAttachment = {
 /**
  * Copy a user attachment into `sessionId`'s workspace, writing `text` beside
  * it when given, so the agent can read a file picked from outside its roots.
- * Same-named files are suffixed, never overwritten.
+ * Same-named files are suffixed, never overwritten. `scope` defaults to the
+ * thread sandbox, where every conversation (Cowork included) runs.
  */
 export async function attachmentImport(
   dataFolder: string,
   sessionId: string,
   source: string,
-  text?: string
+  text?: string,
+  scope?: WorkspaceScope
 ): Promise<ImportedAttachment> {
   return await invoke('plugin:agent-tools|attachment_import', {
     dataFolder,
     sessionId,
     source,
     text: text ?? null,
+    scope,
   })
 }
 
