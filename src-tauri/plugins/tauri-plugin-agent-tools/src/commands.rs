@@ -176,6 +176,21 @@ pub async fn session_workspace_path(
     Ok(dir.to_string_lossy().to_string())
 }
 
+/// Copy a Cowork session's sandbox into the thread workspace of the same id,
+/// for the Cowork-to-threads migration. A copy: the session sandbox is left in
+/// place as the rollback source. See [`workspace::copy_session_workspace_to_thread`]
+/// for the idempotence and symlink rules.
+#[cfg_attr(feature = "tauri", tauri::command)]
+pub async fn session_workspace_copy_to_thread(
+    data_folder: String,
+    session_id: String,
+) -> Result<workspace::WorkspaceCopy, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
+    workspace::copy_session_workspace_to_thread(Path::new(&data_folder), &session_id)
+        .await
+        .map_err(Into::into)
+}
+
 /// Delete a Cowork session's sandbox, with its scratch.
 #[cfg_attr(feature = "tauri", tauri::command)]
 pub async fn session_workspace_delete(

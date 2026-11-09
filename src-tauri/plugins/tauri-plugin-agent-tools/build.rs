@@ -4,6 +4,7 @@ const COMMANDS: &[&str] = &[
     "thread_workspace_delete",
     "thread_workspace_sweep",
     "session_workspace_path",
+    "session_workspace_copy_to_thread",
     "session_workspace_delete",
     "session_workspace_sweep",
     "skill_list",
