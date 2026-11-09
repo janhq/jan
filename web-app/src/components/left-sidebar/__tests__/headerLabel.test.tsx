@@ -6,7 +6,8 @@ import { render, screen } from '@testing-library/react'
 const titlebar = vi.hoisted(() => ({ left: [] as string[] }))
 
 vi.mock('@tanstack/react-router', () => ({
-  useLocation: () => ({ pathname: '/' }),
+  useLocation: ({ select }: { select?: (l: { pathname: string }) => unknown } = {}) =>
+    select ? select({ pathname: '/' }) : { pathname: '/' },
   Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
     <a {...props} href={to}>
       {children}
@@ -27,11 +28,10 @@ vi.mock('@/stores/titlebar-layout-store', () => ({
 vi.mock('@/containers/DownloadManegement', () => ({
   DownloadManagement: () => null,
 }))
-vi.mock('../NavCowork', () => ({ NavCowork: () => null }))
+vi.mock('../NavCoworkTools', () => ({ NavCoworkTools: () => null }))
+vi.mock('../NavHistory', () => ({ NavHistory: () => null }))
 vi.mock('../NavMain', () => ({ NavMain: () => null }))
-vi.mock('../NavChats', () => ({ NavChats: () => null }))
 vi.mock('../NavProjects', () => ({ NavProjects: () => null }))
-vi.mock('../NavTabs', () => ({ NavTabs: () => null }))
 vi.mock('@/components/ui/sidebar', () => {
   const Box = ({ children }: { children: ReactNode }) => <div>{children}</div>
   return {
@@ -40,6 +40,7 @@ vi.mock('@/components/ui/sidebar', () => {
     SidebarHeader: Box,
     SidebarTrigger: () => null,
     SidebarRail: () => null,
+    useSidebar: () => ({ isMobile: false, setOpenMobile: vi.fn(), closeMobileForNavigation: vi.fn() }),
   }
 })
 

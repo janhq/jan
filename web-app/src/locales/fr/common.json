@@ -235,10 +235,6 @@
       "cancel": "Annuler",
       "changeLocation": "Changer l'emplacement"
     },
-    "deleteAllThreads": {
-      "title": "Supprimer toutes les discussions",
-      "description": "Toutes les discussions seront supprimées. Cette action ne peut pas être annulée."
-    },
     "deleteThread": {
       "description": "Êtes-vous sûr de vouloir supprimer cette discussion ? Cette action ne peut pas être annulée."
     },
@@ -247,6 +243,10 @@
     },
     "messageMetadata": {
       "title": "Métadonnées du message"
+    },
+    "deleteAllChats": {
+      "title": "Supprimer les conversations hors projets",
+      "description": "Cela supprime les conversations qui ne sont pas dans un projet. Les conversations de projet, les conversations favorites et les tâches sont conservées. Cette action est irréversible."
     }
   },
   "projects": {
@@ -267,7 +267,7 @@
     "projectNotFoundDesc": "Le projet que vous recherchez n'existe pas ou a été supprimé.",
     "deleteProjectDialog": {
       "title": "Supprimer le projet",
-      "permanentDelete": "Cela supprimera définitivement toutes les discussions.",
+      "permanentDelete": "Cela supprimera définitivement « {{projectName}} » et toutes ses conversations. Cette action est irréversible.",
       "permanentDeleteWarning": "Cette action supprimera définitivement TOUTES les discussions au sein du projet !",
       "deleteEmptyProject": "Cette action supprimera le projet \"{{projectName}}\".",
       "saveThreadsAdvice": "Pour sauvegarder les discussions, déplacez-les vers votre liste de discussions ou un autre projet avant de les supprimer.",
@@ -290,7 +290,6 @@
       "renameSuccess": "Projet renommé de \"{{oldName}}\" en \"{{newName}}\""
     },
     "noConversationsIn": "Aucune conversation dans {{projectName}}",
-    "startNewConversation": "Commencez une nouvelle conversation avec {{projectName}} ci-dessous",
     "conversationsIn": "Conversations dans {{projectName}}",
     "conversationsDescription": "Cliquez sur n'importe quelle conversation pour continuer à discuter, ou commencez-en une nouvelle ci-dessous.",
     "thread": "discussion",
@@ -303,7 +302,9 @@
     "noProjectsFound": "Aucun projet trouvé",
     "tryDifferentSearch": "Essayez un autre terme de recherche",
     "uploadingFiles": "Traitement des fichiers…",
-    "processButton": "Ajouter"
+    "processButton": "Ajouter",
+    "viewProject": "Afficher le projet",
+    "sendMessageToStart": "Envoyez un message ci-dessus pour en démarrer une."
   },
   "errorDialog": {
     "titleFallback": "Une erreur s'est produite",
@@ -397,6 +398,10 @@
     "threadRemovedFromProject": {
       "title": "Discussion retirée",
       "description": "Discussion retirée de \"{{projectName}}\" avec succès"
+    },
+    "deleteAllChats": {
+      "title": "Conversations supprimées",
+      "description": "Les conversations hors projets ont été supprimées. Les conversations de projet et les tâches ont été conservées."
     }
   },
   "attachmentInjectedIndicator": "Injecté dans la discussion",
@@ -422,5 +427,15 @@
     "notReadyTitle": "Cette conversation n'est pas encore prête",
     "notReadyDescription": "Jan n'a pas pu confirmer si cette conversation est un chat ou une tâche Cowork. Réessayez ; si le problème persiste, redémarrez l'application.",
     "retry": "Réessayer"
+  },
+  "agentSettings": "Agent",
+  "chatsAndTasks": "Discussions et tâches",
+  "artifacts": "Artefacts",
+  "skills": "Compétences",
+  "deleteSession": "Supprimer la session",
+  "deleteSessionTitle": "Supprimer la session ?",
+  "deleteSessionBody": "« {{title}} » et sa transcription seront supprimées définitivement. Cette action est irréversible.",
+  "sidebar": {
+    "more": "Plus"
   }
 }

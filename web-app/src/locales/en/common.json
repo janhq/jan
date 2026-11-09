@@ -383,10 +383,6 @@
       "cancel": "Cancel",
       "changeLocation": "Change Location"
     },
-    "deleteAllThreads": {
-      "title": "Delete All Threads",
-      "description": "All threads will be deleted. This action cannot be undone."
-    },
     "deleteAllThreadsInProject": {
       "title": "Delete All Conversations",
       "description": "{{count}} conversations in \"{{projectName}}\" will be deleted. This action cannot be undone."
@@ -399,6 +395,10 @@
     },
     "messageMetadata": {
       "title": "Message Metadata"
+    },
+    "deleteAllChats": {
+      "title": "Delete Conversations Outside Projects",
+      "description": "This deletes conversations that are not in a project. Project conversations, starred conversations and tasks are kept. This action cannot be undone."
     }
   },
   "errorDialog": {
@@ -438,7 +438,7 @@
     "processButton": "Add",
     "deleteProjectDialog": {
       "title": "Delete Project",
-      "permanentDelete": "This will permanently delete all threads.",
+      "permanentDelete": "This will permanently delete \"{{projectName}}\" and all of its conversations. This action cannot be undone.",
       "permanentDeleteWarning": "This action will permanently delete ALL threads within the project!",
       "deleteEmptyProject": "This action will delete project \"{{projectName}}\".",
       "saveThreadsAdvice": "To save threads, move them to your thread list or another project before deleting.",
@@ -465,7 +465,6 @@
       "updateSuccess": "Project \"{{projectName}}\" updated successfully"
     },
     "noConversationsIn": "No Conversations in {{projectName}}",
-    "startNewConversation": "Start a new conversation with {{projectName}} below",
     "conversationsIn": "Conversations in {{projectName}}",
     "conversationsDescription": "Click on any conversation to continue chatting, or start a new one below.",
     "conversation": "Conversation",
@@ -481,7 +480,9 @@
     "update": "Update",
     "searchProjects": "Search projects...",
     "noProjectsFound": "No projects found",
-    "tryDifferentSearch": "Try a different search term"
+    "tryDifferentSearch": "Try a different search term",
+    "viewProject": "View Project",
+    "sendMessageToStart": "Send a message above to start one."
   },
   "attachmentsIngestion": {
     "title": "Choose how to ingest attachments",
@@ -643,6 +644,10 @@
     "attachmentsDisabledInfo": {
       "title": "Attachments Disabled",
       "description": "Attachments are disabled in Settings"
+    },
+    "deleteAllChats": {
+      "title": "Conversations deleted",
+      "description": "Conversations outside projects were deleted. Project conversations and tasks were kept."
     }
   },
   "errors": {
@@ -802,5 +807,10 @@
     "notReadyTitle": "This conversation isn't ready yet",
     "notReadyDescription": "Jan could not confirm whether this conversation is a chat or a Cowork task. Retry; if this persists, restart the app.",
     "retry": "Retry"
+  },
+  "agentSettings": "Agent",
+  "chatsAndTasks": "Chats and tasks",
+  "sidebar": {
+    "more": "More"
   }
 }

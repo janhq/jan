@@ -247,10 +247,6 @@
       "cancel": "취소",
       "changeLocation": "위치 변경"
     },
-    "deleteAllThreads": {
-      "title": "모든 스레드 삭제",
-      "description": "모든 스레드가 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
-    },
     "deleteAllThreadsInProject": {
       "title": "모든 대화 삭제",
       "description": "\"{{projectName}}\"의 대화 {{count}}개가 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
@@ -289,7 +285,6 @@
     "processButton": "추가",
     "deleteProjectDialog": {
       "title": "프로젝트 삭제",
-      "permanentDelete": "모든 스레드가 영구적으로 삭제됩니다.",
       "permanentDeleteWarning": "이 작업은 프로젝트 내의 모든 스레드를 영구적으로 삭제합니다!",
       "deleteEmptyProject": "이 작업은 \"{{projectName}}\" 프로젝트를 삭제합니다.",
       "saveThreadsAdvice": "스레드를 저장하려면 삭제하기 전에 스레드 목록이나 다른 프로젝트로 이동하세요.",
@@ -316,7 +311,6 @@
       "updateSuccess": "\"{{projectName}}\" 프로젝트가 성공적으로 업데이트되었습니다"
     },
     "noConversationsIn": "{{projectName}}에 대화가 없습니다",
-    "startNewConversation": "아래에서 {{projectName}}와(과) 새 대화를 시작하세요",
     "conversationsIn": "{{projectName}}의 대화",
     "conversationsDescription": "대화를 클릭하여 채팅을 계속하거나 아래에서 새 대화를 시작하세요.",
     "conversation": "대화",
@@ -332,7 +326,8 @@
     "update": "업데이트",
     "searchProjects": "프로젝트 검색...",
     "noProjectsFound": "프로젝트를 찾을 수 없습니다",
-    "tryDifferentSearch": "다른 검색어를 시도해 보세요"
+    "tryDifferentSearch": "다른 검색어를 시도해 보세요",
+    "viewProject": "프로젝트 보기"
   },
   "attachmentsIngestion": {
     "title": "첨부 파일 수집 방식 선택",
@@ -475,5 +470,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "chatsAndTasks": "채팅 및 작업",
+  "artifacts": "아티팩트",
+  "skills": "스킬",
+  "deleteSession": "세션 삭제",
+  "deleteSessionTitle": "세션을 삭제할까요?",
+  "deleteSessionBody": "“{{title}}”과(와) 해당 기록이 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+  "sidebar": {
+    "more": "더 보기"
   }
 }

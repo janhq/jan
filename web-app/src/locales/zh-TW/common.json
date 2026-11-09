@@ -242,7 +242,6 @@
     "addToProject": "加入專案",
     "removeFromProject": "從專案中移除",
     "noConversationsIn": "{{projectName}} 中尚無對話",
-    "startNewConversation": "在下方開始與 {{projectName}} 的新對話",
     "conversationsIn": "{{projectName}} 中的對話",
     "conversationsDescription": "點擊任何對話以繼續聊天，或在下方開始新的對話。",
     "thread": "執行緒",
@@ -260,7 +259,6 @@
     "createNewProject": "建立新專案",
     "deleteProjectDialog": {
       "title": "刪除專案",
-      "permanentDelete": "這將永久刪除所有執行緒。",
       "permanentDeleteWarning": "此操作將永久刪除專案內的所有執行緒！",
       "deleteEmptyProject": "此操作將刪除專案「{{projectName}}」。",
       "saveThreadsAdvice": "要儲存執行緒，請在刪除前將它們移至您的執行緒清單或另一個專案。",
@@ -281,7 +279,8 @@
       "alreadyExists": "專案「{{projectName}}」已存在",
       "createSuccess": "專案「{{projectName}}」已成功建立",
       "renameSuccess": "專案已從「{{oldName}}」重新命名為「{{newName}}」"
-    }
+    },
+    "viewProject": "檢視專案"
   },
   "dialogs": {
     "changeDataFolder": {
@@ -291,10 +290,6 @@
       "newLocation": "新位置：",
       "cancel": "取消",
       "changeLocation": "變更位置"
-    },
-    "deleteAllThreads": {
-      "title": "刪除所有對話",
-      "description": "所有對話將被刪除。此操作無法復原。"
     },
     "deleteThread": {
       "description": "您確定要刪除此對話嗎？此操作無法復原。"
@@ -406,5 +401,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "chatsAndTasks": "聊天與任務",
+  "artifacts": "成品",
+  "skills": "技能",
+  "deleteSession": "刪除工作階段",
+  "deleteSessionTitle": "要刪除工作階段嗎？",
+  "deleteSessionBody": "「{{title}}」及其紀錄將被永久刪除，此操作無法復原。",
+  "sidebar": {
+    "more": "更多"
   }
 }

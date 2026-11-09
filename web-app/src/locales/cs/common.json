@@ -236,10 +236,6 @@
       "cancel": "Zrušit",
       "changeLocation": "Změnit umístění"
     },
-    "deleteAllThreads": {
-      "title": "Smazat všechna vlákna",
-      "description": "Všechna vlákna budou smazána. Tuto akci nelze vrátit zpět."
-    },
     "deleteThread": {
       "description": "Opravdu chcete smazat toto vlákno? Tuto akci nelze vrátit zpět."
     },
@@ -268,7 +264,6 @@
     "projectNotFoundDesc": "Projekt, který hledáte, neexistuje nebo byl smazán.",
     "deleteProjectDialog": {
       "title": "Smazat projekt",
-      "permanentDelete": "Tímto trvale smažete všechna vlákna.",
       "permanentDeleteWarning": "Tato akce trvale smaže VŠECHNA vlákna v rámci projektu!",
       "deleteEmptyProject": "Tato akce smaže projekt \"{{projectName}}\".",
       "saveThreadsAdvice": "Chcete-li uložit vlákna, přesuňte je do seznamu vláken nebo jiného projektu před smazáním.",
@@ -291,7 +286,6 @@
       "renameSuccess": "Projekt byl přejmenován z \"{{oldName}}\" na \"{{newName}}\""
     },
     "noConversationsIn": "Žádné konverzace v {{projectName}}",
-    "startNewConversation": "Začněte novou konverzaci s {{projectName}} níže",
     "conversationsIn": "Konverzace v {{projectName}}",
     "conversationsDescription": "Kliknutím na kteroukoli konverzaci pokračujte v chatování nebo začněte novou níže.",
     "thread": "vlákno",
@@ -304,7 +298,8 @@
     "noProjectsFound": "Nebyly nalezeny žádné projekty",
     "tryDifferentSearch": "Zkuste jiný vyhledávací výraz",
     "uploadingFiles": "Zpracování souborů…",
-    "processButton": "Přidat"
+    "processButton": "Přidat",
+    "viewProject": "Zobrazit projekt"
   },
   "errorDialog": {
     "titleFallback": "Něco se pokazilo",
@@ -406,5 +401,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "chatsAndTasks": "Chaty a úlohy",
+  "artifacts": "Artefakty",
+  "skills": "Dovednosti",
+  "deleteSession": "Smazat relaci",
+  "deleteSessionTitle": "Smazat relaci?",
+  "deleteSessionBody": "„{{title}}“ a její přepis budou trvale smazány. Tuto akci nelze vrátit zpět.",
+  "sidebar": {
+    "more": "Více"
   }
 }

@@ -201,7 +201,7 @@ const SettingsMenu = () => {
       icon: IconWorldSearch,
     },
     {
-      title: 'common:cowork',
+      title: 'common:agentSettings',
       route: route.settings.cowork,
       icon: IconFolderCode,
     },
