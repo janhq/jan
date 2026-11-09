@@ -30,9 +30,24 @@ pub async fn get_lock_for_thread(thread_id: &str) -> Arc<Mutex<()>> {
     lock
 }
 
+/// Make a rename in `dir` durable. Syncing the file is not enough: after power
+/// loss the directory entry can still be the old one, so a later rename (the
+/// thread.json commit) could survive while an earlier one (its messages) does
+/// not. Windows cannot open a directory for syncing, so it is a no-op there.
+#[cfg(not(windows))]
+pub(crate) fn sync_dir(dir: &Path) -> std::io::Result<()> {
+    File::open(dir)?.sync_all()
+}
+
+#[cfg(windows)]
+pub(crate) fn sync_dir(_dir: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
 /// Replace `path` with `body` atomically: write a uniquely named sibling temp
-/// file, sync it, then rename it over the target. A crash mid-write leaves the
-/// previous file whole, and two writers never share a temp file.
+/// file, sync it, rename it over the target, then sync the parent directory so
+/// the rename itself survives power loss. A crash mid-write leaves the previous
+/// file whole, and two writers never share a temp file.
 pub fn write_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
     let name = path
         .file_name()
@@ -46,7 +61,10 @@ pub fn write_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
         let _ = fs::remove_file(&tmp);
         return Err(e.to_string());
     }
-    Ok(())
+    // The target is already replaced here, so a failure is reported but the
+    // temp file is gone and the new content is in place.
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
+    sync_dir(parent.unwrap_or_else(|| Path::new("."))).map_err(|e| e.to_string())
 }
 
 /// Write messages to a thread's messages.jsonl file, atomically.
@@ -134,5 +152,35 @@ mod atomic_tests {
         fs::write(path.join("inside"), "x").unwrap();
         assert!(write_atomic(&path, b"body").is_err());
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    /// The directory entry of a rename is made durable by syncing the parent
+    /// directory. A missing directory must surface as an error on Unix, which
+    /// shows the helper really opens and syncs it instead of doing nothing.
+    #[cfg(unix)]
+    #[test]
+    fn sync_dir_syncs_a_real_directory_and_fails_on_a_missing_one() {
+        let dir = tempfile::tempdir().unwrap();
+        sync_dir(dir.path()).unwrap();
+        assert!(sync_dir(&dir.path().join("missing")).is_err());
+    }
+
+    /// Windows cannot open a directory for syncing; there it is a no-op.
+    #[cfg(windows)]
+    #[test]
+    fn sync_dir_is_a_noop_on_windows() {
+        let dir = tempfile::tempdir().unwrap();
+        sync_dir(dir.path()).unwrap();
+        sync_dir(&dir.path().join("missing")).unwrap();
+    }
+
+    /// A write whose parent cannot be synced reports it rather than claiming
+    /// the rename is durable. The parent here is a file, so the write fails first.
+    #[test]
+    fn write_atomic_into_a_non_directory_parent_fails_cleanly() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("plain");
+        fs::write(&file, "x").unwrap();
+        assert!(write_atomic(&file.join("thread.json"), b"body").is_err());
     }
 }
