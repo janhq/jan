@@ -1016,7 +1016,11 @@ function ThreadDetail() {
                     extensionTool.extensionId,
                     extensionTool.name,
                     toolCall.input,
-                    { signal: stopSignal, maxOutputChars }
+                    {
+                      signal: stopSignal,
+                      maxOutputChars,
+                      generation: extensionTool.generation,
+                    }
                   )
                 } else if (mcpToolNames.has(toolName)) {
                   // Give the backend the budget scaled to the window; it narrows
