@@ -1149,9 +1149,11 @@ impl Checkout {
     /// repository (or a recorded submodule) is never opened: its own config
     /// can name a program (`core.fsmonitor`) that its status would run.
     pub(crate) fn uncommitted(&self) -> Result<Vec<String>, String> {
-        work_with(&self.path, |args, input| {
-            Ok(String::from_utf8_lossy(&self.run_raw(args, input)?).into_owned())
-        })
+        work_with(
+            &self.path,
+            |args, input| Ok(String::from_utf8_lossy(&self.run_raw(args, input)?).into_owned()),
+            |path| std::fs::read(self.path.join(path)).ok(),
+        )
         .map(|work| work.paths)
     }
 
@@ -1159,9 +1161,11 @@ impl Checkout {
     /// the ignored build output, and whether a submodule holds work.
     pub(crate) fn work(&self) -> Result<Work, String> {
         let submodule = self.holds_submodule_work()?;
-        let work = work_with(&self.path, |args, input| {
-            Ok(String::from_utf8_lossy(&self.run_raw(args, input)?).into_owned())
-        })?;
+        let work = work_with(
+            &self.path,
+            |args, input| Ok(String::from_utf8_lossy(&self.run_raw(args, input)?).into_owned()),
+            |path| std::fs::read(self.path.join(path)).ok(),
+        )?;
         Ok(Work { submodule, ..work })
     }
 
@@ -1564,6 +1568,7 @@ impl Work {
 fn work_with(
     root: &Path,
     git: impl Fn(&[&str], &[u8]) -> Result<String, String>,
+    read: impl Fn(&str) -> Option<Vec<u8>>,
 ) -> Result<Work, String> {
     let args = [
         "-c",
@@ -1594,7 +1599,7 @@ fn work_with(
         .filter(|(_, code, path)| judged(code, path) && build_output(path, None).is_none())
         .map(|(_, _, path)| *path)
         .collect();
-    let rules = ignore_rules(&asked, &git);
+    let rules = ignore_rules(&asked, &git, read);
     let mut work = Work::default();
     for (field, code, path) in entries {
         let built = match judged(code, path) {
@@ -1625,6 +1630,7 @@ fn work_with(
 fn ignore_rules(
     paths: &[&str],
     git: impl Fn(&[&str], &[u8]) -> Result<String, String>,
+    read: impl Fn(&str) -> Option<Vec<u8>>,
 ) -> std::collections::HashMap<String, IgnoreRule> {
     if paths.is_empty() {
         return Default::default();
@@ -1639,7 +1645,7 @@ fn ignore_rules(
         rules.iter().map(|[source, ..]| *source).filter(|s| !in_git_dir(s)).collect();
     sources.sort_unstable();
     sources.dedup();
-    let committed = committed_sources(&sources, &git);
+    let committed = committed_sources(&sources, &git, read);
     rules
         .iter()
         .map(|[source, _, pattern, path]| {
@@ -1659,14 +1665,19 @@ fn ignore_rules(
 /// `git add` a rule of its own, or edit a tracked `.gitignore` and hide that
 /// from status with `update-index --skip-worktree` or `--assume-unchanged`.
 /// So a source counts only if it is a blob in HEAD (one `ls-tree`) whose id
-/// matches the file on disk (one `hash-object`). `--no-filters`, since a
-/// clean filter is config the child could set; a file whose raw bytes differ
-/// from its blob (CRLF conversion) counts as edited, which keeps rather than
-/// deletes. Any git error means nothing is committed.
+/// matches the file on disk (one `hash-object` of its bytes on stdin).
+/// `--no-filters`, since a clean filter is config the child could set; Jan
+/// does the one conversion a checkout makes itself, CRLF to LF, because Git
+/// for Windows checks a tracked file out as CRLF under its default
+/// `core.autocrlf=true` while the blob is LF (git reads a rule line without
+/// its CR, so the two spell the same rules). Any other difference counts as
+/// edited, which keeps rather than deletes. Any git error, or a file that
+/// cannot be read, means it is not committed.
 #[cfg(feature = "cli")]
 fn committed_sources<'a>(
     sources: &[&'a str],
     git: impl Fn(&[&str], &[u8]) -> Result<String, String>,
+    read: impl Fn(&str) -> Option<Vec<u8>>,
 ) -> std::collections::HashSet<&'a str> {
     if sources.is_empty() {
         return Default::default();
@@ -1692,19 +1703,28 @@ fn committed_sources<'a>(
     if in_head.is_empty() {
         return Default::default();
     }
-    let mut args = vec!["--literal-pathspecs", "hash-object", "--no-filters", "--"];
-    args.extend(in_head.iter().map(|(path, _)| *path));
-    let Ok(hashed) = git(&args, &[]) else { return Default::default() };
-    let on_disk: Vec<&str> = hashed.lines().collect();
-    if on_disk.len() != in_head.len() {
-        return Default::default();
-    }
     in_head
         .into_iter()
-        .zip(on_disk)
-        .filter(|((_, id), disk)| id == disk)
-        .map(|((path, _), _)| path)
+        .filter(|(path, id)| {
+            let Some(bytes) = read(path) else { return false };
+            let args = ["hash-object", "--no-filters", "--stdin"];
+            git(&args, &lf_only(&bytes)).is_ok_and(|disk| disk.trim() == *id)
+        })
+        .map(|(path, _)| path)
         .collect()
+}
+
+/// `bytes` with each CRLF as LF: the one conversion a Windows checkout makes
+/// to a tracked text file, undone here without running any git filter.
+#[cfg(feature = "cli")]
+fn lf_only(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for (i, b) in bytes.iter().enumerate() {
+        if !(*b == b'\r' && bytes.get(i + 1) == Some(&b'\n')) {
+            out.push(*b);
+        }
+    }
+    out
 }
 
 #[cfg(feature = "cli")]
@@ -2392,7 +2412,9 @@ mod tests {
                     return Ok(if untracked.get() { String::new() } else { listed });
                 }
                 if args.contains(&"hash-object") {
-                    return Ok(asked.map(|a| format!("id-{a}\n")).collect());
+                    // The stand-in file holds its own name.
+                    assert!(args.contains(&"--stdin"), "{args:?}");
+                    return Ok(format!("id-{}\n", String::from_utf8_lossy(input)));
                 }
                 let answer = match args.contains(&"check-ignore") {
                     true => {
@@ -2402,7 +2424,7 @@ mod tests {
                     false => out,
                 };
                 answer.map(str::to_string).map_err(str::to_string)
-            })
+            }, |path| Some(path.as_bytes().to_vec()))
             .map(|work| work.paths)
         };
         let answer = |out| ask(out, Err("not asked"));
@@ -2723,10 +2745,16 @@ mod tests {
         let head = "100644 blob a\t.gitignore\x00100644 blob b\tweb/.gitignore\0\
                     040000 tree c\tnew/.gitignore\x00100644 blob d\tother\0";
         let ask = |tree: Result<&str, &str>, disk: Result<&str, &str>| {
-            let mut got: Vec<&str> = committed_sources(&sources, |args, _| {
-                let out = if args.contains(&"ls-tree") { tree } else { disk };
-                out.map(str::to_string).map_err(str::to_string)
-            })
+            let mut got: Vec<&str> = committed_sources(&sources, |args, input| {
+                if args.contains(&"hash-object") {
+                    // The stand-in file holds its own name; `disk` says which
+                    // ids git would give the files, in order.
+                    let name = String::from_utf8_lossy(input).into_owned();
+                    let at = sources.iter().position(|s| *s == name).unwrap();
+                    return disk.map(|d| d.lines().nth(at).unwrap_or("").to_string()).map_err(str::to_string);
+                }
+                tree.map(str::to_string).map_err(str::to_string)
+            }, |path| Some(path.as_bytes().to_vec()))
             .into_iter()
             .collect();
             got.sort_unstable();
@@ -2735,9 +2763,54 @@ mod tests {
         assert_eq!(ask(Ok(head), Ok("a\nb\n")), vec![".gitignore", "web/.gitignore"]);
         // An edit hidden from the index still changes what is on disk.
         assert_eq!(ask(Ok(head), Ok("a\nx\n")), vec![".gitignore"]);
-        assert_eq!(ask(Ok(head), Ok("a\n")), Vec::<&str>::new());
+        // Each file is judged on its own: a missing id is one that differs.
+        assert_eq!(ask(Ok(head), Ok("a\n")), vec![".gitignore"]);
         assert_eq!(ask(Ok(head), Err("broken")), Vec::<&str>::new());
         assert_eq!(ask(Err("broken"), Ok("a\nb\n")), Vec::<&str>::new());
+    }
+
+    /// CRLF is the only difference a checkout may make to a tracked rule file.
+    #[test]
+    fn crlf_is_undone_and_nothing_else() {
+        assert_eq!(lf_only(b"dist/*\r\n!dist/.gitkeep\r\n"), b"dist/*\n!dist/.gitkeep\n");
+        assert_eq!(lf_only(b"a\rb\r\r\n"), b"a\rb\r\n");
+        assert_eq!(lf_only(b"a\n"), b"a\n");
+    }
+
+    /// Git for Windows checks a tracked `.gitignore` out as CRLF under its
+    /// default `core.autocrlf=true`: it is still the rules HEAD holds, so a
+    /// built file under `dist/*` stays build output, while an edit does not.
+    #[test]
+    fn a_rule_file_a_checkout_converted_to_crlf_is_still_committed() {
+        let Some(root) = init_repo() else { return };
+        std::fs::write(root.join(".gitignore"), "dist/*\n!dist/.gitkeep\n").unwrap();
+        std::fs::create_dir_all(root.join("dist")).unwrap();
+        std::fs::write(root.join("dist/.gitkeep"), "").unwrap();
+        run(&root, None, &["add", "-A"]).unwrap();
+        run(&root, None, &["commit", "-qm", "ignore", "--no-gpg-sign"]).unwrap();
+        let head = head_sha(&root).unwrap();
+        let wt = root.with_extension("crlf");
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = with_global_config("[core]\n\tautocrlf = true\n", || {
+            clone_shared(&root, &wt, "jan/agent/crlf-1", &head).unwrap()
+        });
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let on_disk = std::fs::read(wt.join(".gitignore")).unwrap();
+        assert!(on_disk.windows(2).any(|w| w == b"\r\n"), "the checkout converted it");
+        let child = Checkout::open(&wt, &objects).unwrap();
+        std::fs::write(wt.join("dist/app.js"), "x").unwrap();
+        // The user's own config reaches every git Jan runs, so status reads
+        // the converted files as the clean checkout they are.
+        let config = "[core]\n\tautocrlf = true\n";
+        let work = || with_global_config(config, || child.uncommitted());
+        assert_eq!(work(), Ok(vec![]), "a built file is not work");
+        // A rule the child added is an edit, converted line endings or not.
+        let mut edited = on_disk.clone();
+        edited.extend_from_slice(b"extra\r\n");
+        std::fs::write(wt.join(".gitignore"), edited).unwrap();
+        assert_eq!(work(), Ok(vec![".gitignore".to_string(), "dist/app.js".to_string()]));
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Which folder each rule shape names, so a file below a folder named

@@ -17015,12 +17015,16 @@ async fn handle_key_input(
             // `/worktrees`: Enter runs the action row, or removes the
             // checkout row (asking first when that loses work).
             KeyCode::Enter if picker.kind == PickerKind::Worktrees => {
-                let value = picker.items[picker.selected].value.clone();
-                worktrees_action(app, &value);
+                if let Some(item) = picker.items.get(picker.selected) {
+                    let value = item.value.clone();
+                    worktrees_action(app, &value);
+                }
             }
             KeyCode::Enter if picker.kind == PickerKind::WorktreeConfirm => {
-                let value = picker.items[picker.selected].value.clone();
-                confirm_worktree_removal(app, &value);
+                if let Some(item) = picker.items.get(picker.selected) {
+                    let value = item.value.clone();
+                    confirm_worktree_removal(app, &value);
+                }
             }
             KeyCode::Enter if picker.kind == PickerKind::PluginConnect => {
                 let connect = picker.items[picker.selected].value == "connect";
@@ -23952,7 +23956,18 @@ fn finish_worktrees_job(app: &mut App, done: WorktreesDone) {
     match done {
         WorktreesDone::Listed(report) => {
             app.worktrees = Some(report);
-            open_worktrees_picker(app);
+            // The listing walks every checkout, so the user may be typing or
+            // looking at something else when it lands: a picker whose first
+            // row prunes must not appear under their Enter.
+            if app.picker.is_none()
+                && app.model_picker.is_none()
+                && app.readout.is_none()
+                && app.input.trim().is_empty()
+            {
+                open_worktrees_picker(app);
+            } else {
+                app.note("worktree listing ready - /worktrees to view");
+            }
         }
         // The listing no longer says what is on disk: nothing may reopen it.
         WorktreesDone::Pruned(pruned) => {
@@ -44156,6 +44171,35 @@ fn a() {}
         assert!(app.worktrees.is_none(), "the listing it acted on is dropped");
         drop(lease);
         let _ = tokio::task::spawn_blocking(move || ledger.finish_session()).await;
+    }
+
+    /// A listing that lands while the user is typing, or has something else
+    /// open, is kept and announced, never opened under their next Enter (its
+    /// first row prunes).
+    #[tokio::test]
+    async fn a_listing_landing_over_a_draft_or_another_view_does_not_open() {
+        let mut app = test_app();
+        app.input = "half a message".to_string();
+        finish_worktrees_job(&mut app, WorktreesDone::Listed(worktrees_fixture()));
+        assert!(app.picker.is_none());
+        assert!(app.worktrees.is_some(), "kept, so /worktrees shows it at once");
+        let notes: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(notes.contains("worktree listing ready"), "{notes}");
+
+        let mut app = test_app();
+        app.picker = Some(super::Picker {
+            kind: PickerKind::Agents,
+            items: vec![],
+            selected: 0,
+            search: None,
+            armed_delete: None,
+        });
+        finish_worktrees_job(&mut app, WorktreesDone::Listed(worktrees_fixture()));
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Agents));
+
+        let mut app = test_app();
+        finish_worktrees_job(&mut app, WorktreesDone::Listed(worktrees_fixture()));
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Worktrees));
     }
 
     /// Once a prune or a clear lands, the listing it acted on is stale: it is
