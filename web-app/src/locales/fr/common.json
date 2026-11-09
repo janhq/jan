@@ -417,5 +417,10 @@
     "missingThreadDescription": "Son fil enregistré est introuvable, les modifications ne sont donc plus enregistrées. Vous pouvez toujours le lire, l'exporter ou le supprimer.",
     "writeRefusedTitle": "Une conversation Cowork ne peut pas être enregistrée",
     "writeRefusedDescription": "Jan ne peut pas enregistrer cette conversation sous son identifiant actuel, les modifications ne sont donc pas enregistrées. Vous pouvez toujours la lire, l'exporter ou la supprimer."
+  },
+  "threadRoute": {
+    "notReadyTitle": "Cette conversation n'est pas encore prête",
+    "notReadyDescription": "Jan n'a pas pu confirmer si cette conversation est un chat ou une tâche Cowork. Réessayez ; si le problème persiste, redémarrez l'application.",
+    "retry": "Réessayer"
   }
 }

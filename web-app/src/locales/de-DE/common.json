@@ -414,5 +414,10 @@
     "missingThreadDescription": "Der gespeicherte Thread fehlt, daher werden Änderungen nicht mehr gespeichert. Sie können ihn weiterhin lesen, exportieren oder löschen.",
     "writeRefusedTitle": "Eine Cowork-Unterhaltung kann nicht gespeichert werden",
     "writeRefusedDescription": "Jan kann diese Unterhaltung nicht unter ihrer aktuellen ID speichern, daher werden Änderungen nicht gespeichert. Sie können sie weiterhin lesen, exportieren oder löschen."
+  },
+  "threadRoute": {
+    "notReadyTitle": "Diese Unterhaltung ist noch nicht bereit",
+    "notReadyDescription": "Jan konnte nicht bestätigen, ob diese Unterhaltung ein Chat oder eine Cowork-Aufgabe ist. Versuche es erneut; falls das Problem bestehen bleibt, starte die App neu.",
+    "retry": "Erneut versuchen"
   }
 }

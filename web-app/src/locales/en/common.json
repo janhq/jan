@@ -797,5 +797,10 @@
     "missingThreadDescription": "Its stored thread is missing, so changes are no longer saved. You can still read, export or delete it.",
     "writeRefusedTitle": "A Cowork conversation cannot be saved",
     "writeRefusedDescription": "Jan cannot store this conversation under its current id, so changes are not saved. You can still read, export or delete it."
+  },
+  "threadRoute": {
+    "notReadyTitle": "This conversation isn't ready yet",
+    "notReadyDescription": "Jan could not confirm whether this conversation is a chat or a Cowork task. Retry; if this persists, restart the app.",
+    "retry": "Retry"
   }
 }

@@ -531,5 +531,10 @@
     "missingThreadDescription": "保存されているスレッドが見つからないため、変更は保存されなくなりました。読み取り、エクスポート、削除は引き続き可能です。",
     "writeRefusedTitle": "Cowork会話を保存できません",
     "writeRefusedDescription": "Janはこの会話を現在のIDで保存できないため、変更は保存されません。読み取り、エクスポート、削除は引き続き可能です。"
+  },
+  "threadRoute": {
+    "notReadyTitle": "この会話はまだ準備できていません",
+    "notReadyDescription": "この会話がチャットかCoworkタスクかをJanが確認できませんでした。再試行してください。解決しない場合はアプリを再起動してください。",
+    "retry": "再試行"
   }
 }
