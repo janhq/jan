@@ -234,4 +234,48 @@ describe('coworkSessionToThreadMessages', () => {
     )
     expect(viaFile).toEqual(once)
   })
+
+  it('treats a session without `updated` as 0, never NaN', () => {
+    const s = session([msg('u', 'user', [{ type: 'text', text: 'hi' }])])
+    delete (s as Partial<CoworkSession>).updated
+    const out = coworkSessionToThreadMessages(s)
+    expect(out[0].created_at).toBe(0)
+    expect(JSON.stringify(out)).not.toContain('null')
+  })
+
+  it('lets the converter own toolErrors: stale source errors do not survive', () => {
+    const s = session([
+      {
+        id: 'a',
+        role: 'assistant',
+        metadata: { toolErrors: { stale: 'old failure' }, keep: 1 },
+        parts: [
+          toolPart('read', 'ok', { state: 'output-available', output: 'x' }),
+        ],
+      },
+      {
+        id: 'b',
+        role: 'assistant',
+        metadata: { toolErrors: { stale: 'old failure' } },
+        parts: [toolPart('read', 'bad', { state: 'output-error', errorText: 'E' })],
+      },
+    ])
+    const [first, second] = coworkSessionToThreadMessages(s)
+    expect(first.metadata).toEqual({ keep: 1 })
+    expect(second.metadata).toEqual({ toolErrors: { bad: 'E' } })
+  })
+
+  it('reads reasoning as `reasoning ?? text`, like extractContentPartsFromUIMessage', () => {
+    const s = session([
+      msg('a', 'assistant', [
+        { type: 'reasoning', reasoning: 'from reasoning', text: 'from text' },
+        { type: 'reasoning', text: 'only text' },
+      ]),
+    ])
+    const [m] = coworkSessionToThreadMessages(s)
+    expect(m.content.map((c) => c.text?.value)).toEqual([
+      'from reasoning',
+      'only text',
+    ])
+  })
 })

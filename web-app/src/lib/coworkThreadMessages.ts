@@ -64,7 +64,11 @@ function stable<T>(value: T): T {
 }
 
 /** Cowork stores `updated` in ms, older data in seconds; threads want ms here. */
-const updatedMs = (updated: number) => (updated > 1e12 ? updated : updated * 1000)
+const updatedMs = (updated: number | undefined) => {
+  // A session with no usable `updated` is dated 0: NaN would be stored as null.
+  if (typeof updated !== 'number' || !Number.isFinite(updated)) return 0
+  return updated > 1e12 ? updated : updated * 1000
+}
 
 const textItem = (type: ContentType, value: string): ThreadContent => ({
   type,
@@ -136,7 +140,8 @@ function convertMessage(
       return
     }
     if (part.type === 'reasoning') {
-      const text = part.text ?? part.reasoning
+      // Same order as extractContentPartsFromUIMessage.
+      const text = part.reasoning ?? part.text
       if (typeof text === 'string' && text) {
         content.push(textItem(ContentType.Reasoning, text))
       }
@@ -209,8 +214,14 @@ export function coworkSessionToThreadMessages(
     )
     if (content.length === 0) return
 
+    // toolErrors is derived from the parts alone: a stale one in the source
+    // metadata would mark a call that has a result as failed.
+    const sourceMetadata: Record<string, unknown> = isRecord(message.metadata)
+      ? { ...message.metadata }
+      : {}
+    delete sourceMetadata.toolErrors
     const metadata = {
-      ...(isRecord(message.metadata) ? message.metadata : {}),
+      ...sourceMetadata,
       ...(Object.keys(toolErrors).length > 0 && { toolErrors }),
     }
     const createdAt = base + index
