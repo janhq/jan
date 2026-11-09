@@ -825,6 +825,108 @@ async fn test_thread_commands_refuse_ids_outside_threads_dir() {
 }
 
 #[tokio::test]
+async fn test_modify_thread_missing_thread_uses_stable_error_code() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let err = modify_thread(app.handle().clone(), json!({"id": "ghost-modify"}))
+        .await
+        .unwrap_err();
+    assert!(err.starts_with("thread_missing:"), "{err}");
+
+    // A bare directory without thread.json is also "missing", and must not be
+    // turned into a thread by a modify.
+    let data_folder = get_jan_data_folder_path(app.handle().clone());
+    ensure_thread_dir_exists(&data_folder, "ghost-modify-dir").unwrap();
+    let err = modify_thread(app.handle().clone(), json!({"id": "ghost-modify-dir"}))
+        .await
+        .unwrap_err();
+    assert!(err.starts_with("thread_missing:"), "{err}");
+    assert!(!get_thread_metadata_path(&data_folder, "ghost-modify-dir")
+        .unwrap()
+        .exists());
+}
+
+#[tokio::test]
+async fn test_write_thread_extra_and_messages_missing_thread_use_stable_error_code() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let err = write_thread_extra(
+        app.handle().clone(),
+        "ghost-extra".into(),
+        "cowork".into(),
+        json!({}),
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(err.starts_with("thread_missing:"), "{err}");
+    let err = replace_thread_messages(app.handle().clone(), "ghost-extra".into(), vec![], None)
+        .await
+        .unwrap_err();
+    assert!(err.starts_with("thread_missing:"), "{err}");
+    let data_folder = get_jan_data_folder_path(app.handle().clone());
+    assert!(!get_thread_dir(&data_folder, "ghost-extra").unwrap().exists());
+}
+
+#[tokio::test]
+async fn test_thread_json_writes_leave_no_temp_files() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Atomic");
+    thread["id"] = json!("atomic-thread");
+    create_thread(app.handle().clone(), thread.clone())
+        .await
+        .unwrap();
+    thread["title"] = json!("Atomic 2");
+    modify_thread(app.handle().clone(), thread).await.unwrap();
+
+    let data_folder = get_jan_data_folder_path(app.handle().clone());
+    let dir = get_thread_dir(&data_folder, "atomic-thread").unwrap();
+    let names: Vec<String> = fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(names.iter().all(|n| !n.ends_with(".tmp")), "{names:?}");
+    let on_disk: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dir.join(THREADS_FILE)).unwrap()).unwrap();
+    assert_eq!(on_disk["title"], "Atomic 2");
+}
+
+#[tokio::test]
+async fn test_modify_thread_waits_for_the_thread_lock() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Locked");
+    thread["id"] = json!("locked-modify");
+    create_thread(app.handle().clone(), thread.clone())
+        .await
+        .unwrap();
+
+    let lock = get_lock_for_thread("locked-modify").await;
+    let guard = lock.lock().await;
+    thread["title"] = json!("Locked 2");
+    let handle = app.handle().clone();
+    let pending = tokio::spawn(async move { modify_thread(handle, thread).await });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(!pending.is_finished(), "modify_thread must take the thread lock");
+    drop(guard);
+    pending.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn test_delete_thread_waits_for_the_thread_lock() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Locked delete");
+    thread["id"] = json!("locked-delete");
+    create_thread(app.handle().clone(), thread).await.unwrap();
+
+    let lock = get_lock_for_thread("locked-delete").await;
+    let guard = lock.lock().await;
+    let handle = app.handle().clone();
+    let pending = tokio::spawn(async move { delete_thread(handle, "locked-delete".into()).await });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(!pending.is_finished(), "delete_thread must take the thread lock");
+    drop(guard);
+    pending.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn test_create_thread_honours_valid_supplied_id() {
     let (app, _data_dir) = mock_app_with_temp_data_dir();
     let mut thread = create_test_thread("Supplied id");

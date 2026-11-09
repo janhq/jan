@@ -121,6 +121,15 @@ pub async fn create_thread<R: Runtime>(
     Ok(thread)
 }
 
+/// Stable prefix of errors meaning the thread no longer exists on disk. The web
+/// layer matches it to tell a deleted thread (stop writing, mark unavailable)
+/// from a transient failure (keep dirty, retry).
+pub const THREAD_MISSING_ERROR_CODE: &str = "thread_missing";
+
+fn thread_missing_error(detail: impl std::fmt::Display) -> String {
+    format!("{THREAD_MISSING_ERROR_CODE}: {detail}")
+}
+
 /// Sidecar files a thread directory may hold besides thread.json and
 /// messages.jsonl. Allowlisted so the commands can never address an arbitrary
 /// file name.
@@ -219,9 +228,9 @@ pub async fn write_thread_extra<R: Runtime>(
         ensure_uncommitted_dir_is_ours(&data_folder, &thread_id, None)?;
         ensure_thread_dir_exists(&data_folder, &thread_id)?;
     } else if !get_thread_metadata_path(&data_folder, &thread_id)?.exists() {
-        return Err(format!(
+        return Err(thread_missing_error(format!(
             "Thread '{thread_id}' has no thread.json; refusing to create it from a sidecar write"
-        ));
+        )));
     }
     let data = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
     write_atomic(&path, &data)
@@ -273,15 +282,18 @@ pub async fn replace_thread_messages<R: Runtime>(
         ensure_uncommitted_dir_is_ours(&data_folder, &thread_id, Some(body.as_bytes()))?;
         ensure_thread_dir_exists(&data_folder, &thread_id)?;
     } else if !get_thread_metadata_path(&data_folder, &thread_id)?.exists() {
-        return Err(format!(
+        return Err(thread_missing_error(format!(
             "Thread '{thread_id}' has no thread.json; refusing to create it from a messages write"
-        ));
+        )));
     }
     write_atomic(&path, body.as_bytes())
 }
 
-/// Modifies an existing thread's metadata by overwriting its thread.json file.
-/// Returns an error if the thread directory does not exist.
+/// Modifies an existing thread's metadata by replacing its thread.json.
+/// Runs under the thread's lock and writes atomically, so it cannot interleave
+/// with a delete or a sidecar/messages write, and a crash leaves either the old
+/// or the new record. Fails with the `thread_missing:` code when thread.json is
+/// absent; it never creates a thread.
 #[tauri::command]
 pub async fn modify_thread<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
@@ -298,14 +310,18 @@ pub async fn modify_thread<R: Runtime>(
         .get("id")
         .and_then(|id| id.as_str())
         .ok_or("Missing thread id")?;
+    let lock = get_lock_for_thread(thread_id).await;
+    let _guard = lock.lock().await;
     let thread_dir = get_thread_dir(&data_folder, thread_id)?;
     if !thread_dir.exists() {
-        return Err("Thread directory does not exist".to_string());
+        return Err(thread_missing_error("Thread directory does not exist"));
     }
     let path = get_thread_metadata_path(&data_folder, thread_id)?;
+    if !path.is_file() {
+        return Err(thread_missing_error("Thread does not exist"));
+    }
     let data = serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())?;
-    fs::write(path, data).map_err(|e| e.to_string())?;
-    Ok(())
+    write_atomic(&path, data.as_bytes())
 }
 
 /// Deletes a thread and all its associated files by removing its directory.
@@ -321,7 +337,12 @@ pub async fn delete_thread<R: Runtime>(
 
     // Use file-based storage on desktop
     let data_folder = get_jan_data_folder_path(app_handle);
+    // `get_thread_dir` validates the id before anything is keyed on it. The
+    // lock orders the removal against an in-flight write-through (sidecar,
+    // messages, modify), which would otherwise race `remove_dir_all`.
     let thread_dir = get_thread_dir(&data_folder, &thread_id)?;
+    let lock = get_lock_for_thread(&thread_id).await;
+    let _guard = lock.lock().await;
     if thread_dir.exists() {
         let _ = fs::remove_dir_all(thread_dir);
     }
