@@ -15,6 +15,7 @@ const tool = (name: string, bound = true) => ({
   handler: bound
     ? async () => ({ content: [] })
     : undefined,
+  generation: bound ? 1 : undefined,
 })
 
 const state = (
@@ -69,6 +70,22 @@ describe('listExtensionTools', () => {
     for (const t of tools)
       expect(t.wireName).toBe(toolWireName(t.extensionId, t.name))
     expect(tools[0].server).toBe('ext:acme.one')
+  })
+
+  it('exposes the host generation and omits a handler without one', () => {
+    const [one] = listExtensionTools(
+      state({ 'acme.one': { t: { ...tool('t'), generation: 7 } } })
+    )
+    expect(one.generation).toBe(7)
+    const [two] = listExtensionTools(
+      state({ 'acme.one': { t: { ...tool('t'), generation: 8 } } })
+    )
+    expect(JSON.stringify(two)).not.toBe(JSON.stringify(one))
+    expect(
+      listExtensionTools(
+        state({ 'acme.one': { t: { ...tool('t'), generation: undefined } } })
+      )
+    ).toEqual([])
   })
 
   it('never moves a wire name to another extension when one loads', () => {
