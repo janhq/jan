@@ -1073,6 +1073,18 @@ async fn test_replace_thread_messages_replaces_instead_of_appending() {
         migrated_message("replace-thread", "replace-thread-msg-1", "two"),
     ];
 
+    // The migration writes the sidecar first, so a retry always finds it; that
+    // marks a later uncommitted log as the migration's own.
+    write_thread_extra(
+        app.handle().clone(),
+        "replace-thread".into(),
+        "cowork".into(),
+        json!({"turns": []}),
+        Some(true),
+    )
+    .await
+    .unwrap();
+
     // The migration writes before thread.json exists, so it must be allowed to
     // create the directory.
     replace_thread_messages(
@@ -1120,7 +1132,9 @@ async fn test_replace_thread_messages_replaces_instead_of_appending() {
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(names, vec![MESSAGES_FILE.to_string()]);
+    assert_eq!(names.len(), 2, "{names:?}");
+    assert!(names.contains(&MESSAGES_FILE.to_string()));
+    assert!(names.contains(&"cowork.json".to_string()));
     let threads = list_threads(app.handle().clone()).await.unwrap();
     assert!(threads.iter().all(|t| t["id"] != "replace-thread"));
 }
@@ -1264,4 +1278,123 @@ async fn test_thread_extra_and_messages_roundtrip_non_representable_doubles() {
     {
         assert_eq!(got.as_f64().unwrap().to_bits(), want.to_bits());
     }
+}
+
+fn thread_dir_of(app: &tauri::App<MockRuntime>, id: &str) -> PathBuf {
+    let data_folder = get_jan_data_folder_path(app.handle().clone());
+    get_thread_dir(&data_folder, id).unwrap()
+}
+
+#[tokio::test]
+async fn test_replace_thread_messages_create_refuses_a_foreign_log_without_thread_json() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    // A chat message landed first (create_message makes the directory) but its
+    // thread.json is not there: a migration must not overwrite that log.
+    create_message(
+        app.handle().clone(),
+        create_test_message("clash-thread", "keep me"),
+    )
+    .await
+    .unwrap();
+    let path = get_messages_path(
+        &get_jan_data_folder_path(app.handle().clone()),
+        "clash-thread",
+    )
+    .unwrap();
+    let before = fs::read(&path).unwrap();
+
+    let batch = vec![migrated_message("clash-thread", "clash-thread-msg-0", "x")];
+    let err = replace_thread_messages(
+        app.handle().clone(),
+        "clash-thread".into(),
+        batch,
+        Some(true),
+    )
+    .await
+    .unwrap_err();
+    assert!(err.contains("messages"), "{err}");
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[tokio::test]
+async fn test_replace_thread_messages_create_allows_the_migrations_own_retry() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let batch = vec![migrated_message("retry-thread", "retry-thread-msg-0", "x")];
+    // First run crashed before thread.json: the log holds exactly this batch.
+    replace_thread_messages(
+        app.handle().clone(),
+        "retry-thread".into(),
+        batch.clone(),
+        Some(true),
+    )
+    .await
+    .unwrap();
+    // The retry writes the same bytes again and is allowed.
+    replace_thread_messages(
+        app.handle().clone(),
+        "retry-thread".into(),
+        batch.clone(),
+        Some(true),
+    )
+    .await
+    .unwrap();
+    // A different batch over that uncommitted log is not the same run.
+    let other = vec![migrated_message("retry-thread", "retry-thread-msg-0", "y")];
+    assert!(replace_thread_messages(
+        app.handle().clone(),
+        "retry-thread".into(),
+        other,
+        Some(true),
+    )
+    .await
+    .is_err());
+    // An empty leftover log is not anyone's data.
+    let empty = thread_dir_of(&app, "empty-thread");
+    fs::create_dir_all(&empty).unwrap();
+    fs::write(empty.join(MESSAGES_FILE), "").unwrap();
+    replace_thread_messages(
+        app.handle().clone(),
+        "empty-thread".into(),
+        vec![migrated_message("empty-thread", "empty-thread-msg-0", "x")],
+        Some(true),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_write_thread_extra_create_refuses_a_foreign_log_without_thread_json() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    create_message(
+        app.handle().clone(),
+        create_test_message("extra-clash", "keep me"),
+    )
+    .await
+    .unwrap();
+    let dir = thread_dir_of(&app, "extra-clash");
+
+    let err = write_thread_extra(
+        app.handle().clone(),
+        "extra-clash".into(),
+        "cowork".into(),
+        json!({"turns": []}),
+        Some(true),
+    )
+    .await
+    .unwrap_err();
+    assert!(err.contains("messages"), "{err}");
+    assert!(!dir.join("cowork.json").exists());
+
+    // Once the migration's own sidecar is there, the retry after a crash that
+    // came after the messages write is allowed to rewrite it.
+    fs::write(dir.join("cowork.json"), "{}").unwrap();
+    write_thread_extra(
+        app.handle().clone(),
+        "extra-clash".into(),
+        "cowork".into(),
+        json!({"turns": []}),
+        Some(true),
+    )
+    .await
+    .unwrap();
 }
