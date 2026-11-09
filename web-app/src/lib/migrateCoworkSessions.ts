@@ -24,7 +24,16 @@ import {
  *   a crash rewrites identical bytes and the prompt prefix stays stable.
  * - A thread id that already exists and is not a migrated Cowork thread is a
  *   collision: it is reported and never overwritten. Such permanent failures
- *   are recorded under COWORK_MIGRATION_ABANDONED_KEY and not retried.
+ *   are recorded under COWORK_MIGRATION_ABANDONED_KEY and not retried. Backend
+ *   errors are classified by their stable `PERMANENT: ` prefix, never by text.
+ * - A session that keeps failing transiently is abandoned after
+ *   COWORK_MAX_ATTEMPTS launches (counted under COWORK_MIGRATION_ATTEMPTS_KEY),
+ *   so one bad session cannot repeat a full copy on every launch forever.
+ * - Every id is recorded under COWORK_MIGRATED_IDS_KEY when its thread
+ *   commits. A recorded id is never migrated again, so a thread the user
+ *   deletes in main chat does not come back while the completion marker is
+ *   still unset (some other session failing). Deleting a thread in the Cowork
+ *   UI is covered by the same record.
  * - The completion marker is set once every session has either migrated or been
  *   abandoned. Transient failures keep it unset so the next launch retries.
  *   Failures never throw into app startup; they are returned.
@@ -35,9 +44,8 @@ import {
  *   not touched when the migrated thread is deleted.
  * - Talks to the backend commands directly. `DefaultThreadsService.createThread`
  *   swallows errors and would hide a failed write.
- * - No deletion journal: on this build the Cowork store removes a deleted
- *   session from `code-sessions` itself, so a deleted session is never in the
- *   blob this reads and nothing can be resurrected from it.
+ * - A session deleted in the Cowork UI is removed from `code-sessions` itself,
+ *   so it is never in the blob this reads.
  */
 
 export const CODE_SESSIONS_KEY = 'code-sessions'
@@ -51,6 +59,19 @@ export const COWORK_SIDECAR = 'cowork'
  */
 export const COWORK_MIGRATION_ABANDONED_KEY =
   'cowork_threads_migration_abandoned_v1'
+
+/** Ids whose thread this migration has committed (JSON array of strings). */
+export const COWORK_MIGRATED_IDS_KEY = 'cowork_threads_migrated_ids_v1'
+/** Launches in which a session failed transiently: JSON `{ [id]: count }`. */
+export const COWORK_MIGRATION_ATTEMPTS_KEY = 'cowork_threads_migration_attempts_v1'
+/** A session failing transiently on this many launches is abandoned. */
+export const COWORK_MAX_ATTEMPTS = 5
+/**
+ * Stable prefix of a backend/plugin error that retrying cannot fix. Set by the
+ * Rust side (`PERMANENT_PREFIX` in core::threads::utils and the agent-tools
+ * workspace module); the migration matches it, not the message wording.
+ */
+export const PERMANENT_ERROR_PREFIX = 'PERMANENT: '
 
 export type Invoke = <T = unknown>(
   cmd: string,
@@ -131,11 +152,9 @@ export function isValidThreadId(id: unknown): id is string {
   )
 }
 
-// Backend refusals that will repeat on every launch.
+// Backend refusals that will repeat on every launch, by stable code.
 const isPermanentBackendError = (e: unknown) =>
-  /refusing to overwrite its messages|refusing to merge into|Invalid thread id/.test(
-    toErrorMessage(e)
-  )
+  toErrorMessage(e).trimStart().startsWith(PERMANENT_ERROR_PREFIX)
 
 function toErrorMessage(e: unknown): string {
   if (e instanceof Error) return e.message
@@ -159,6 +178,34 @@ function readAbandoned(raw: string | null): { id: string; error: string }[] {
       : []
   } catch {
     return []
+  }
+}
+
+function readIds(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
+function readAttempts(raw: string | null): Record<string, number> {
+  if (!raw) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
+      return {}
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (e): e is [string, number] => typeof e[1] === 'number'
+      )
+    )
+  } catch {
+    return {}
   }
 }
 
@@ -252,6 +299,32 @@ export async function migrateCoworkSessionsToThreads(
         key: COWORK_MIGRATION_ABANDONED_KEY,
       })
     )
+    const migratedIds = new Set(
+      readIds(
+        await invoke<string | null>('settings_get', {
+          key: COWORK_MIGRATED_IDS_KEY,
+        })
+      )
+    )
+    const attempts = readAttempts(
+      await invoke<string | null>('settings_get', {
+        key: COWORK_MIGRATION_ATTEMPTS_KEY,
+      })
+    )
+    let attemptsChanged = false
+    // Best effort: a failed write must not turn a committed thread into a
+    // failure. The next run finds the committed thread and records it then.
+    const persistIds = async () => {
+      try {
+        await invoke('settings_set', {
+          key: COWORK_MIGRATED_IDS_KEY,
+          value: JSON.stringify([...migratedIds]),
+        })
+      } catch (e) {
+        console.warn('[cowork-migration] could not record migrated ids:', e)
+      }
+    }
+    let idsChanged = false
     const nonEmpty = sessions.filter((s) => !isEmptySession(s))
     result.skipped = sessions.filter(isEmptySession).map((s) => s.id)
 
@@ -275,6 +348,12 @@ export async function migrateCoworkSessionsToThreads(
         result.abandoned.push(before)
         continue
       }
+      if (migratedIds.has(session.id)) {
+        // Committed by an earlier launch. If the user has deleted the thread
+        // since, it stays deleted.
+        result.skipped.push(session.id)
+        continue
+      }
       try {
         if (!isValidThreadId(session.id)) {
           throw new PermanentMigrationError(
@@ -287,6 +366,8 @@ export async function migrateCoworkSessionsToThreads(
           // run). Anything else is a different conversation.
           if (committed.metadata?.mode === 'cowork') {
             result.skipped.push(session.id)
+            migratedIds.add(session.id)
+            idsChanged = true
             continue
           }
           throw new PermanentMigrationError(
@@ -342,14 +423,47 @@ export async function migrateCoworkSessionsToThreads(
           )
         }
         result.migrated.push(session.id)
+        migratedIds.add(session.id)
+        await persistIds()
+        idsChanged = false
+        if (session.id in attempts) {
+          delete attempts[session.id]
+          attemptsChanged = true
+        }
       } catch (e) {
         const entry = { id: String(session.id), error: toErrorMessage(e) }
         if (e instanceof PermanentMigrationError || isPermanentBackendError(e)) {
           result.abandoned.push(entry)
           newlyAbandoned.push(entry)
         } else {
-          result.failed.push(entry)
+          // Transient: count the launch, and give up on a session that has
+          // failed on too many of them.
+          const count = (attempts[entry.id] ?? 0) + 1
+          attempts[entry.id] = count
+          attemptsChanged = true
+          if (count >= COWORK_MAX_ATTEMPTS) {
+            const capped = {
+              id: entry.id,
+              error: `gave up after ${count} launches: ${entry.error}`,
+            }
+            result.abandoned.push(capped)
+            newlyAbandoned.push(capped)
+          } else {
+            result.failed.push(entry)
+          }
         }
+      }
+    }
+
+    if (idsChanged) await persistIds()
+    if (attemptsChanged) {
+      try {
+        await invoke('settings_set', {
+          key: COWORK_MIGRATION_ATTEMPTS_KEY,
+          value: JSON.stringify(attempts),
+        })
+      } catch (e) {
+        console.warn('[cowork-migration] could not record attempts:', e)
       }
     }
 
@@ -391,7 +505,24 @@ export async function migrateCoworkSessionsToThreads(
  * throws: a failed migration stays unflagged and is retried next launch, and
  * must not stop the app from rendering. Returns `null` when it did not run.
  */
-export async function migrateCoworkSessionsOnStartup(): Promise<CoworkMigrationResult | null> {
+let inFlight: Promise<CoworkMigrationResult | null> | null = null
+
+export function migrateCoworkSessionsOnStartup(): Promise<CoworkMigrationResult | null> {
+  // One migration at a time: React StrictMode runs effects twice in dev and a
+  // webview reload starts another while the first's backend work goes on, and
+  // two overlapping runs would redo the same copies. Later callers share the
+  // running one; it is forgotten once it settles, so a later start (a retry)
+  // runs afresh.
+  if (!inFlight) {
+    const run = runCoworkMigrationOnStartup().finally(() => {
+      if (inFlight === run) inFlight = null
+    })
+    inFlight = run
+  }
+  return inFlight
+}
+
+async function runCoworkMigrationOnStartup(): Promise<CoworkMigrationResult | null> {
   if (!isPlatformTauri()) return null
   // Sidecars and message replacement are file-backed and desktop-only; mobile
   // stores threads in SQLite and Cowork does not exist there.
