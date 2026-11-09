@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  redirect,
+  useParams,
+  useRouter,
+  useSearch,
+} from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 
 import HeaderPage from '@/containers/HeaderPage'
@@ -12,10 +18,17 @@ import { MessageItem } from '@/containers/MessageItem'
 import { useMessages } from '@/hooks/useMessages'
 import { useMessageErrors } from '@/stores/message-errors'
 import { buildLoadDiagnosticsReport } from '@/lib/loadDiagnosticsReport'
-import { useServiceHub } from '@/hooks/useServiceHub'
+import { getServiceHub, useServiceHub } from '@/hooks/useServiceHub'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import GlobalError from '@/containers/GlobalError'
+import { shouldRedirectThreadToCowork } from '@/lib/threadRouteGuard'
+import {
+  ThreadClassificationUnavailableError,
+  resolveThreadForRoute,
+} from '@/lib/threadRouteClassification'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
-import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
+import { SESSION_STORAGE_PREFIX, TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { engineSlotsIdle } from '@janhq/tauri-plugin-llamacpp-api'
@@ -431,9 +444,80 @@ type SearchParams = {
   threadModel?: ThreadModel
 }
 
+/**
+ * Route-local error screen. A classification failure (the conversation backend
+ * never answered within the startup retry window) is recoverable: Retry re-runs
+ * `beforeLoad` via router.invalidate(), so the deep link is not stranded on the
+ * root GlobalError, which only offers a full reload. Any other error keeps the
+ * root boundary's presentation.
+ */
+function ThreadRouteError({ error }: { error: Error }) {
+  const router = useRouter()
+  const { t } = useTranslation()
+  if (error instanceof ThreadClassificationUnavailableError) {
+    return (
+      <div className="flex h-full w-full items-center justify-center p-5">
+        <div className="max-w-md text-center">
+          <IconAlertCircle className="mx-auto size-8 text-destructive" />
+          <h2 className="mt-3 text-base font-semibold text-main-view-fg">
+            {t('common:threadRoute.notReadyTitle')}
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t('common:threadRoute.notReadyDescription')}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => void router.invalidate()}
+          >
+            <IconRefresh className="size-4 mr-2" />
+            {t('common:threadRoute.retry')}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  return <GlobalError error={error} />
+}
+
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
+  // A Cowork conversation runs on the Cowork runner and its transcript has a
+  // sidecar authority: mounting the writable chat view over it would fork the
+  // transcript into messages.jsonl. Decide before the chat view mounts.
+  beforeLoad: async ({ params }) => {
+    const { threadId } = params as { threadId: string }
+    let thread: Thread | undefined = useThreads.getState().threads[threadId]
+    // A deep link can load before the threads store hydrates, so a Cowork
+    // thread would look like a chat. Look it up from the backend (bounded
+    // retries, store re-read around every await; nothing fetched is written
+    // back). An undecidable thread throws a typed error, rendered as Retry,
+    // instead of mounting a writable chat. The temporary chat is never stored.
+    if (!thread && threadId !== TEMPORARY_CHAT_ID) {
+      thread = await resolveThreadForRoute<Thread>({
+        threadId,
+        readThread: () => useThreads.getState().threads[threadId],
+        fetchThreads: () => getServiceHub().threads().fetchThreads(),
+        isHydrated: () => useThreads.getState().threadsHydrated,
+      })
+    }
+    if (
+      shouldRedirectThreadToCowork(
+        threadId,
+        useCoworkSessions.getState().sessions,
+        thread
+      )
+    ) {
+      throw redirect({
+        to: '/cowork/$sessionId',
+        params: { sessionId: threadId },
+        replace: true,
+      })
+    }
+  },
   component: ThreadDetail,
+  errorComponent: ThreadRouteError,
   validateSearch: (search: Record<string, unknown>): SearchParams => {
     return {
       threadModel: search.threadModel as ThreadModel | undefined,

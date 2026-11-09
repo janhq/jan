@@ -28,6 +28,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('../routeTree.gen', () => ({
   routeTree: 'mocked-route-tree',
 }))
+vi.mock('../providers/StartupProvider', () => ({
+  StartupProvider: ({ children }: { children: unknown }) => children,
+}))
 vi.mock('../index.css', () => ({}))
 vi.mock('../i18n', () => ({}))
 
