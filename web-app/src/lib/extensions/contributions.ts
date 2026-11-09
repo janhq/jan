@@ -22,7 +22,15 @@ import type { L10nTables } from './l10n'
 export type RegisteredCommand = CommandContribution & {
   handler?: CommandHandler
 }
-export type RegisteredTool = ToolContribution & { handler?: ToolHandler }
+export type RegisteredTool = ToolContribution & {
+  handler?: ToolHandler
+  /**
+   * Host-assigned identity of the live binding: set on every bind, cleared on
+   * dispose, never reused. Not extension-provided (`bind` overwrites whatever
+   * a manifest carried), so two bindings of an identical declaration differ.
+   */
+  generation?: number
+}
 export type RegisteredProvider = ProviderContribution & {
   handler?: ProviderHandlers
 }
@@ -102,6 +110,9 @@ const without = <T>(
   delete next[id]
   return next
 }
+
+// Process-wide, so bindings of different stores or reloads never share one.
+let lastGeneration = 0
 
 /** The app-wide contributions, read by the host renderers. */
 export const useContributions = create<ContributionState>()(emptyState)
@@ -254,6 +265,7 @@ export class ContributionStore {
         'E_INVALID_ARGS',
         `'${entryId}' is already registered`
       )
+    const generation = slice === 'tools' ? ++lastGeneration : undefined
     const set = (next: typeof value | undefined) =>
       this.store.setState((s) => {
         const entries = handlerSlices(s)[slice]
@@ -266,6 +278,10 @@ export class ContributionStore {
             [extensionId]: withEntry<HandlerEntries[S]>(current, entryId, {
               ...entry,
               handler: next,
+              // Always overwritten, never inherited from the declaration.
+              ...(slice === 'tools'
+                ? { generation: next === undefined ? undefined : generation }
+                : {}),
             }),
           },
         }
