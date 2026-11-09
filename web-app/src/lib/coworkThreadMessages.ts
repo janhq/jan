@@ -3,6 +3,7 @@ import type { ThreadContent, ThreadMessage } from '@janhq/core'
 import type { CoworkSession } from '@/hooks/useCoworkSessions'
 import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
 import { STOPPED_TOOL_ERROR } from '@/lib/stopped-tool-calls'
+import { SYSTEM_NOTICE_KEY, isPingOnly } from '@/lib/coworkPing'
 
 /**
  * Converts a Cowork session's transcript into the records main chat persists
@@ -220,9 +221,17 @@ export function coworkSessionToThreadMessages(
       ? { ...message.metadata }
       : {}
     delete sourceMetadata.toolErrors
+    delete sourceMetadata[SYSTEM_NOTICE_KEY]
     const metadata = {
       ...sourceMetadata,
       ...(Object.keys(toolErrors).length > 0 && { toolErrors }),
+      // A ping (`<SYSTEM>...</SYSTEM>`, a subagent finishing) is in the model's
+      // history as a user turn, so it is kept as one with its text unchanged
+      // and only flagged; main chat then shows it as a system note instead of
+      // a raw user bubble. Dropping it would change what the model is replayed.
+      ...(isPingOnly({ role: String(message.role), parts: message.parts }) && {
+        [SYSTEM_NOTICE_KEY]: true,
+      }),
     }
     const createdAt = base + index
     out.push(

@@ -35,7 +35,7 @@ import {
   IconChevronRight,
   IconBellRinging,
 } from '@tabler/icons-react'
-import { PING_OPEN, PING_CLOSE } from '@/lib/coworkPing'
+import { PING_OPEN, PING_CLOSE, isSystemNotice } from '@/lib/coworkPing'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
@@ -632,7 +632,9 @@ export const MessageItem = memo(
     // said: no actions, no trace, no timestamp. It is on screen because it is
     // what the next turn is replying to -- a turn that reacts to a subagent
     // finishing reads as a non sequitur without it.
-    if (message.role === 'system') {
+    // A migrated Cowork ping is stored as the user turn the model saw and
+    // flagged (see SYSTEM_NOTICE_KEY), so it takes the same template.
+    if (message.role === 'system' || isSystemNotice(message)) {
       const note = getFullTextContent()
         .split(PING_OPEN)
         .join('')
