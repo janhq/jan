@@ -60,6 +60,14 @@ export const COWORK_SIDECAR = 'cowork'
 export const COWORK_MIGRATION_ABANDONED_KEY =
   'cowork_threads_migration_abandoned_v1'
 
+/**
+ * Ids the user deleted from the Cowork UI while the legacy `code-sessions`
+ * blob was still being read (JSON array of strings). The blob is never edited
+ * (it is the rollback source), so without this journal a deleted session that
+ * only exists in the blob would come back on the next launch.
+ */
+export const COWORK_DELETED_IDS_KEY = 'cowork_deleted_ids'
+
 /** Ids whose thread this migration has committed (JSON array of strings). */
 export const COWORK_MIGRATED_IDS_KEY = 'cowork_threads_migrated_ids_v1'
 /** Launches in which a session failed transiently: JSON `{ [id]: count }`. */
@@ -95,6 +103,13 @@ export type CoworkMigrationResult = {
   abandoned: { id: string; error: string }[]
   /** Transient failures: the marker stays unset and the next launch retries. */
   failed: { id: string; error: string }[]
+}
+
+/** The deletion journal could not be read; see `readDeletedIds`. */
+class JournalUnreadableError extends Error {
+  constructor(cause: unknown) {
+    super(`deletion journal unreadable: ${toErrorMessage(cause)}`)
+  }
 }
 
 /** A failure retrying cannot fix. */
@@ -166,7 +181,40 @@ function toErrorMessage(e: unknown): string {
   return String(e)
 }
 
-function readAbandoned(raw: string | null): { id: string; error: string }[] {
+/**
+ * Read the deletion journal STRICTLY. Only an absent key is an empty journal;
+ * an empty string or a non-array is damage, and reading it as empty could
+ * resurrect deleted sessions, so it throws. Every caller fails closed: the
+ * migration stays `partial` and the load path skips the legacy-blob merge.
+ * Writers must never replace an unreadable journal with a fresh empty set.
+ */
+export async function readDeletedIds(invoke: Invoke): Promise<Set<string>> {
+  const raw = await invoke<string | null>('settings_get', {
+    key: COWORK_DELETED_IDS_KEY,
+  })
+  const parsed: unknown = raw == null ? [] : JSON.parse(raw)
+  if (!Array.isArray(parsed) || !parsed.every((id) => typeof id === 'string')) {
+    throw new Error(
+      'Invalid Cowork deletion journal: expected an array of strings'
+    )
+  }
+  return new Set(parsed)
+}
+
+/**
+ * Whether the legacy blob may stop being read: the migration finished (every
+ * session migrated or abandoned), or there never was anything to migrate.
+ */
+export async function isCoworkMigrationSettled(
+  invoke: Invoke
+): Promise<boolean> {
+  const flag = await invoke<string | null>('settings_get', {
+    key: COWORK_MIGRATION_FLAG_KEY,
+  })
+  return flag === 'true'
+}
+
+export function readAbandoned(raw: string | null): { id: string; error: string }[] {
   if (!raw) return []
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -181,7 +229,7 @@ function readAbandoned(raw: string | null): { id: string; error: string }[] {
   }
 }
 
-function readIds(raw: string | null): string[] {
+export function readIds(raw: string | null): string[] {
   if (!raw) return []
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -360,6 +408,20 @@ export async function migrateCoworkSessionsToThreads(
             `session id ${JSON.stringify(session.id)} is not a valid thread id`
           )
         }
+        // Deleted in the Cowork UI while this blob was still live. Re-read per
+        // session, not once: the migration can run in the background while the
+        // user deletes, and a copy must not bring a deleted session back. An
+        // unreadable journal throws here and fails the run closed (partial).
+        let deleted: Set<string>
+        try {
+          deleted = await readDeletedIds(invoke)
+        } catch (e) {
+          throw new JournalUnreadableError(e)
+        }
+        if (deleted.has(session.id)) {
+          result.skipped.push(session.id)
+          continue
+        }
         const committed = existing.get(session.id)
         if (committed) {
           // A cowork thread with this id is already ours (copied by an earlier
@@ -431,6 +493,9 @@ export async function migrateCoworkSessionsToThreads(
           attemptsChanged = true
         }
       } catch (e) {
+        // Not this session's fault and not countable against it: fail the whole
+        // run closed (outer catch -> partial) without burning its attempts.
+        if (e instanceof JournalUnreadableError) throw e
         const entry = { id: String(session.id), error: toErrorMessage(e) }
         if (e instanceof PermanentMigrationError || isPermanentBackendError(e)) {
           result.abandoned.push(entry)

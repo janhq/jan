@@ -7,6 +7,9 @@ import {
   COWORK_MIGRATED_IDS_KEY,
   COWORK_MIGRATION_ATTEMPTS_KEY,
   COWORK_MAX_ATTEMPTS,
+  COWORK_DELETED_IDS_KEY,
+  readDeletedIds,
+  isCoworkMigrationSettled,
   sameJson,
   type Invoke,
 } from '../migrateCoworkSessions'
@@ -743,5 +746,67 @@ describe('read-back cost', () => {
     } finally {
       entries.mockRestore()
     }
+  })
+})
+
+describe('deletion journal (cowork_deleted_ids)', () => {
+  let b: ReturnType<typeof makeBackend>
+  beforeEach(() => {
+    b = makeBackend()
+  })
+
+  it('readDeletedIds: absent is empty, a valid array is read, anything else throws', async () => {
+    expect([...(await readDeletedIds(b.invoke))]).toEqual([])
+    b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['a', 'b']))
+    expect([...(await readDeletedIds(b.invoke))]).toEqual(['a', 'b'])
+    for (const bad of ['', '{x', '{"a":1}', JSON.stringify([1])]) {
+      b.settings.set(COWORK_DELETED_IDS_KEY, bad)
+      await expect(readDeletedIds(b.invoke)).rejects.toThrow()
+    }
+  })
+
+  it('skips a session the user deleted while the blob was live, and still settles', async () => {
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('gone'), session('keep')]))
+    b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['gone']))
+    const r = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(r.status).toBe('complete')
+    expect(r.migrated).toEqual(['keep'])
+    expect(r.skipped).toContain('gone')
+    expect(b.threads.has('gone')).toBe(false)
+    expect(b.extras.has('gone/cowork')).toBe(false)
+  })
+
+  it('a deletion that lands mid-run (after the run started) is honored for the sessions not yet copied', async () => {
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('first'), session('second')]))
+    const inner = b.invoke
+    const racing: typeof b.invoke = async (cmd, args) => {
+      const out = await inner(cmd, args)
+      // The user deletes `second` while `first` is being copied.
+      if (cmd === 'create_thread') {
+        b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['second']))
+      }
+      return out
+    }
+    const r = await migrateCoworkSessionsToThreads(racing)
+    expect(r.migrated).toEqual(['first'])
+    expect(b.threads.has('second')).toBe(false)
+  })
+
+  it('an unreadable journal fails the run closed: nothing copied, marker unset, attempts not burned, bytes untouched', async () => {
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('a')]))
+    b.settings.set(COWORK_DELETED_IDS_KEY, '{corrupt')
+    const r = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(r.status).toBe('partial')
+    expect(b.threads.size).toBe(0)
+    expect(b.extras.size).toBe(0)
+    expect(b.settings.has(COWORK_MIGRATION_FLAG_KEY)).toBe(false)
+    expect(b.settings.has(COWORK_MIGRATION_ATTEMPTS_KEY)).toBe(false)
+    expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe('{corrupt')
+  })
+
+  it('isCoworkMigrationSettled follows the completion marker', async () => {
+    expect(await isCoworkMigrationSettled(b.invoke)).toBe(false)
+    b.settings.set(COWORK_MIGRATION_FLAG_KEY, 'true')
+    expect(await isCoworkMigrationSettled(b.invoke)).toBe(true)
   })
 })

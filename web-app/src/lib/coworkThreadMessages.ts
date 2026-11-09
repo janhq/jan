@@ -188,8 +188,39 @@ function convertMessage(
   return { content, toolErrors }
 }
 
+export type ThreadMessagesOptions = {
+  /**
+   * Anchor for `created_at`, in ms: message `i` is stamped `anchorMs + i`.
+   * Without it the stamps end at `session.updated`, which is right for a
+   * one-shot conversion but moves EVERY message each time the session is
+   * updated. A live session that is re-converted on each turn passes its
+   * thread's immutable `created` here, so the stamps of the messages already
+   * written never change when one is appended and the replayed prompt prefix
+   * stays byte-identical.
+   */
+  anchorMs?: number
+}
+
+/**
+ * The anchor a one-shot conversion of `session` uses (see `anchorMs`). The
+ * migration stamped its messages with it, so a live session that adopts a
+ * migrated thread keeps those exact stamps by reusing it. `updatedOverrideMs`
+ * is the exact `updated` the migration saw (its record keeps it in
+ * `metadata.migratedFrom.updated`; the thread's own `updated` is only seconds).
+ */
+export function defaultAnchorMs(
+  session: CoworkSession,
+  updatedOverrideMs?: number
+): number {
+  const length = session.messages?.length
+    ? session.messages.length
+    : coworkTurnsToUIMessages(session.turns ?? [], session.id).length
+  return updatedMs(updatedOverrideMs ?? session.updated) - (length - 1)
+}
+
 export function coworkSessionToThreadMessages(
-  session: CoworkSession
+  session: CoworkSession,
+  options: ThreadMessagesOptions = {}
 ): ThreadMessage[] {
   const source: SourceMessage[] = (
     session.messages?.length
@@ -199,7 +230,10 @@ export function coworkSessionToThreadMessages(
 
   // Strictly increasing and ending at the last update, so the order survives
   // the sort-by-created_at main chat applies when it merges stored messages.
-  const base = updatedMs(session.updated) - (source.length - 1)
+  const base =
+    options.anchorMs !== undefined && Number.isFinite(options.anchorMs)
+      ? options.anchorMs
+      : updatedMs(session.updated) - (source.length - 1)
   const usedCallIds = new Set<string>()
   const out: ThreadMessage[] = []
 
