@@ -99,8 +99,6 @@
     "threadScrollFlowHint": "Ukotvuje viewport k poslední zprávě, kterou odešlete.",
     "threadScrollStickyTitle": "Lepkavé rolování",
     "threadScrollStickyHint": "Automaticky sleduje příchozí odpovědi v reálném čase.",
-    "tokenCounterCompact": "Kompaktní počítadlo tokenů",
-    "tokenCounterCompactDesc": "Zobrazit počítadlo tokenů uvnitř chatového vstupu. Pokud je zakázáno, počítadlo tokenů se zobrazí pod vstupem.",
     "codeBlockTitle": "Blok kódu",
     "codeBlockDesc": "Vybrat styl zvýraznění syntaxe.",
     "showLineNumbers": "Zobrazit čísla řádků",

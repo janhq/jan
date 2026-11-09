@@ -162,9 +162,8 @@ type ChatInputProps = {
   surfaceControls?: ReactNode
   /**
    * Usage for a surface that keeps no thread messages (Cowork). Rendering the
-   * counter here rather than in the caller is what keeps its placement, the
-   * `tokenCounterCompact` setting and the spacing to the send button identical
-   * across surfaces.
+   * counter here rather than in the caller is what keeps its placement and the
+   * spacing to the send button identical across surfaces.
    */
   tokenSource?: TokenUsageSource
   highlightedPrefix?: string | null

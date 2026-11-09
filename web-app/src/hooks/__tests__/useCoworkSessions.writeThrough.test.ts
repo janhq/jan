@@ -76,9 +76,7 @@ describe('rewind, drop and clear keep the todo list in step with the transcript'
     expect(get().turns).toEqual([])
     expect(get().todos).toEqual({ phases: [] })
     expect(get().cleared).toBe(true)
-    // A cleared session is a used one: it survives the empty-session sweep.
-    useCoworkSessions.setState({ currentId: null })
-    useCoworkSessions.getState().pruneEmptySessions([])
+    // A cleared session is a used one: it stays listed.
     expect(useCoworkSessions.getState().sessions).toHaveLength(1)
   })
 

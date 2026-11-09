@@ -101,8 +101,6 @@
     "threadScrollFlowHint": "Manté la finestra ancorada a l’últim missatge que envies.",
     "threadScrollStickyTitle": "Desplaçament adherent",
     "threadScrollStickyHint": "Segueix automàticament les respostes mentre arriben en temps real.",
-    "tokenCounterCompact": "Comptador de tokens compacte",
-    "tokenCounterCompactDesc": "Mostra el comptador de tokens dins de l’entrada del xat. Si es desactiva, apareix sota el camp.",
     "codeBlockTitle": "Bloc de codi",
     "codeBlockDesc": "Tria un estil de ressaltat de sintaxi.",
     "showLineNumbers": "Mostra els números de línia",

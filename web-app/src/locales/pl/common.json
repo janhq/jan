@@ -259,7 +259,6 @@
       "title": "Usuń Projekt",
       "description": "Na pewno chcesz usunąć ten projekt? Tej operacji nie można cofnąć.",
       "permanentDeleteWarning": "Ta operacja spowoduje trwałe usunięcie WSZYSTKICH wątków w projekcie!",
-      "deleteEmptyProject": "Ta operacja usunie projekt \"{{projectName}}\".",
       "saveThreadsAdvice": "Aby zapisać wątki, przenieś je do listy wątków lub innego projektu przed usunięciem.",
       "starredWarning": "Nadal masz oznaczone gwiazdką wątki w projekcie.",
       "deleteButton": "Usuń",

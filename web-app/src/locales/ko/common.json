@@ -286,7 +286,6 @@
     "deleteProjectDialog": {
       "title": "프로젝트 삭제",
       "permanentDeleteWarning": "이 작업은 프로젝트 내의 모든 스레드를 영구적으로 삭제합니다!",
-      "deleteEmptyProject": "이 작업은 \"{{projectName}}\" 프로젝트를 삭제합니다.",
       "saveThreadsAdvice": "스레드를 저장하려면 삭제하기 전에 스레드 목록이나 다른 프로젝트로 이동하세요.",
       "starredWarning": "프로젝트 내에 아직 즐겨찾기한 스레드가 있습니다.",
       "deleteButton": "삭제",

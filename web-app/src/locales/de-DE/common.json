@@ -269,7 +269,6 @@
       "title": "Projekt löschen",
       "permanentDelete": "Dadurch werden \"{{projectName}}\" und alle zugehörigen Unterhaltungen dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
       "permanentDeleteWarning": "Diese Aktion wird ALLE Threads innerhalb des Projekts permanent löschen!",
-      "deleteEmptyProject": "Diese Aktion wird das Projekt \"{{projectName}}\" löschen.",
       "saveThreadsAdvice": "Um Threads zu speichern, verschiebe sie zu deiner Threadliste oder zu einem anderen Projekt, bevor du löschst.",
       "starredWarning": "Du hast noch favorisierte Threads innerhalb des Projekts.",
       "description": "Sind Sie sicher, dass Sie dieses Projekt löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",

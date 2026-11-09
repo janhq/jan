@@ -329,7 +329,6 @@
       "title": "プロジェクトを削除",
       "permanentDelete": "「{{projectName}}」とそのすべての会話が完全に削除されます。この操作は元に戻せません。",
       "permanentDeleteWarning": "この操作は、プロジェクト内のすべてのスレッドを完全に削除します！",
-      "deleteEmptyProject": "この操作は、プロジェクト「{{projectName}}」を削除します。",
       "saveThreadsAdvice": "スレッドを残すには、削除する前にスレッドリストまたは別のプロジェクトに移動してください。",
       "starredWarning": "プロジェクト内にスター付きのスレッドが残っています。",
       "deleteButton": "削除",

@@ -440,7 +440,6 @@
       "title": "Delete Project",
       "permanentDelete": "This will permanently delete \"{{projectName}}\" and all of its conversations. This action cannot be undone.",
       "permanentDeleteWarning": "This action will permanently delete ALL threads within the project!",
-      "deleteEmptyProject": "This action will delete project \"{{projectName}}\".",
       "saveThreadsAdvice": "To save threads, move them to your thread list or another project before deleting.",
       "starredWarning": "You still have starred threads within the project.",
       "deleteButton": "Delete",

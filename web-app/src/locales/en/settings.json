@@ -119,8 +119,6 @@
     "threadScrollFlowHint": "Keeps the viewport anchored to the latest message you send.",
     "threadScrollStickyTitle": "Sticky scroll",
     "threadScrollStickyHint": "Automatically follows along as replies stream in real time.",
-    "tokenCounterCompact": "Compact Token Counter",
-    "tokenCounterCompactDesc": "Show token counter inside chat input. When disabled, token counter appears below the input.",
     "codeBlockTitle": "Code Block",
     "codeBlockDesc": "Choose a syntax highlighting style.",
     "showLineNumbers": "Show Line Numbers",

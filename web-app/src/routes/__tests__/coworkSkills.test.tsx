@@ -253,7 +253,7 @@ vi.mock('@/containers/CoworkParkedNotice', () => ({
 import { CoworkPage } from '@/containers/CoworkPage'
 import { useSkills } from '@/hooks/useSkills'
 import { usePrompt } from '@/hooks/usePrompt'
-import { startNewSession, useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -386,6 +386,14 @@ it('invokes the project skill when it shadows a global skill', async () => {
   )
 })
 
+/** A second session while the first one is still streaming: the in-flight
+ * session has no committed turns, so it must be deselected for createSession
+ * not to hand it back as the untouched blank one. */
+const openOtherSession = (): string => {
+  useCoworkSessions.setState({ currentId: null })
+  return useCoworkSessions.getState().createSession()
+}
+
 it('isolates concurrent session streams and stops only the viewed session', async () => {
   backend.hold = true
   const a = useCoworkSessions.getState().createSession()
@@ -395,7 +403,7 @@ it('isolates concurrent session streams and stops only the viewed session', asyn
   await waitFor(() => expect(backend.runs).toHaveLength(1))
   let b = ''
   act(() => {
-    b = startNewSession(Object.keys(useCoworkRun.getState().runId))
+    b = openOtherSession()
   })
   expect(screen.getByLabelText('Composer status')).toHaveTextContent('ready')
   act(() => usePrompt.getState().setPrompt('Question B'))
@@ -559,7 +567,7 @@ it('requires plan approval before a failed-read loop can create the requested fi
   ).toBe(true)
   let other = ''
   act(() => {
-    other = startNewSession(Object.keys(useCoworkRun.getState().runId))
+    other = openOtherSession()
     useCoworkSessions.getState().setPlanMode(other, true)
   })
   act(() => {

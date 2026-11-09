@@ -125,10 +125,6 @@ type CoworkSessionsState = {
    * question cannot outlive it, so there is nowhere else to cut. */
   dropFromTurn: (id: string, turnIndex: number) => void
   clearSession: (id: string) => void
-  /** Drop sessions that never got a message, except the current one and any in
-   * `keepIds` — callers pass sessions with a run in flight, whose first turns
-   * are still transient in useCoworkRun until the run commits them. */
-  pruneEmptySessions: (keepIds: string[]) => void
 }
 
 const now = () => Date.now()
@@ -372,37 +368,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()((set, get) => ({
             : x
         ),
       })),
-
-    pruneEmptySessions: (keepIds) =>
-      set((s) => {
-        const keep = new Set(keepIds)
-        const sessions = s.sessions.filter(
-          (x) =>
-            x.turns.length > 0 ||
-            x.cleared ||
-            x.id === s.currentId ||
-            keep.has(x.id)
-        )
-        return sessions.length === s.sessions.length ? {} : { sessions }
-      }),
 }))
-
-/**
- * Open the start page: a fresh session (or the untouched current one), with the
- * empty sessions left behind swept out. `runningIds` keeps a session whose
- * first run is still streaming its turns and so has nothing committed yet.
- */
-export function startNewSession(runningIds: string[]): string {
-  const store = useCoworkSessions.getState()
-  // A first response has no committed turns yet, but its session is not
-  // untouched. Do not let createSession reuse the in-flight conversation.
-  if (store.currentId && runningIds.includes(store.currentId)) {
-    useCoworkSessions.setState({ currentId: null })
-  }
-  const id = store.createSession()
-  store.pruneEmptySessions(runningIds)
-  return id
-}
 
 /** Return the current session, creating one if none is selected. */
 export function ensureCurrentSession(): string {

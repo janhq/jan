@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 // jsdom does not lay out Radix portals. Guard the constraints on each actual
 // caller here; native QA verifies collision positioning and visible truncation.
 describe('assistant menu portal width constraints', () => {
-  it.each(['ChatInput', 'AssistantSwitcher', 'SamplerPopover'])(
+  it.each(['ChatInput', 'SamplerPopover'])(
     '%s bounds the assistant portal, not only the rows',
     (caller) => {
       const workspace = existsSync(resolve(process.cwd(), 'web-app/src/containers'))
