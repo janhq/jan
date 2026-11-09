@@ -48,7 +48,28 @@ pub(crate) fn sync_dir(_dir: &Path) -> std::io::Result<()> {
 /// file, sync it, rename it over the target, then sync the parent directory so
 /// the rename itself survives power loss. A crash mid-write leaves the previous
 /// file whole, and two writers never share a temp file.
+///
+/// The parent sync is best-effort here: some filesystems refuse fsync on a
+/// directory (EINVAL/ENOTSUP), and failing every chat write although the data
+/// landed would be worse than a weaker durability promise. The thread.json
+/// commit uses [`write_atomic_durable`] instead.
 pub fn write_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
+    write_atomic_with(path, body, sync_dir, false)
+}
+
+/// [`write_atomic`] for the thread.json commit: a failed parent sync is an
+/// error, since the migration's ordering (messages before thread.json) relies
+/// on it. The content is in place either way.
+pub fn write_atomic_durable(path: &Path, body: &[u8]) -> Result<(), String> {
+    write_atomic_with(path, body, sync_dir, true)
+}
+
+fn write_atomic_with(
+    path: &Path,
+    body: &[u8],
+    sync: fn(&Path) -> std::io::Result<()>,
+    strict: bool,
+) -> Result<(), String> {
     let name = path
         .file_name()
         .ok_or_else(|| format!("{} has no file name", path.display()))?
@@ -61,10 +82,17 @@ pub fn write_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
         let _ = fs::remove_file(&tmp);
         return Err(e.to_string());
     }
-    // The target is already replaced here, so a failure is reported but the
-    // temp file is gone and the new content is in place.
+    // The target is already replaced here, so a failure leaves the temp file
+    // gone and the new content in place.
     let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
-    sync_dir(parent.unwrap_or_else(|| Path::new("."))).map_err(|e| e.to_string())
+    match sync(parent.unwrap_or_else(|| Path::new("."))) {
+        Ok(()) => Ok(()),
+        Err(e) if strict => Err(e.to_string()),
+        Err(e) => {
+            log::debug!("directory sync after writing {} failed: {e}", path.display());
+            Ok(())
+        }
+    }
 }
 
 /// Write messages to a thread's messages.jsonl file, atomically.
@@ -172,6 +200,33 @@ mod atomic_tests {
         let dir = tempfile::tempdir().unwrap();
         sync_dir(dir.path()).unwrap();
         sync_dir(&dir.path().join("missing")).unwrap();
+    }
+
+    fn refused_sync(_: &Path) -> std::io::Result<()> {
+        Err(std::io::Error::from_raw_os_error(22))
+    }
+
+    /// Some filesystems refuse fsync on a directory (EINVAL/ENOTSUP). The
+    /// rename has already replaced the file by then, so an ordinary write must
+    /// still succeed with the new content in place.
+    #[test]
+    fn write_atomic_ignores_a_refused_directory_sync() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("messages.jsonl");
+        write_atomic_with(&path, b"body", refused_sync, false).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"body");
+    }
+
+    /// The thread.json commit asks for the strict form: there a refused
+    /// directory sync is reported (the content is in place either way).
+    #[test]
+    fn the_strict_write_reports_a_refused_directory_sync() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("thread.json");
+        assert!(write_atomic_with(&path, b"body", refused_sync, true).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"body");
+        write_atomic_durable(&path, b"again").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"again");
     }
 
     /// A write whose parent cannot be synced reports it rather than claiming
