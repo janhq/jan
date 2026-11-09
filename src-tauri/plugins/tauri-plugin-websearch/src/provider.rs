@@ -50,8 +50,6 @@ const YOU_COM_CLIENT_INFO: &str = concat!(
 const YOU_COM_SEARCH_URL: &str = "https://ydc-index.io/v1/search";
 const YOU_COM_CONTENTS_URL: &str = "https://ydc-index.io/v1/contents";
 const YOU_COM_EXTRACT_URL: &str = "https://api.you.com/v1/extract";
-// The keyless extract endpoint cuts page markdown at this many characters.
-const YOU_COM_EXTRACT_MAX_CHARS: usize = 25_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearchResult {
@@ -948,8 +946,7 @@ fn normalize_youcom_extract(body: &Value, requested_url: &str) -> Result<Fetched
             .unwrap_or("")
             .to_string(),
         content,
-        // The endpoint cuts long pages silently; a page at its limit was cut.
-        truncated: truncated || raw.chars().count() >= YOU_COM_EXTRACT_MAX_CHARS,
+        truncated,
     })
 }
 
@@ -1954,18 +1951,15 @@ mod tests {
     }
 
     #[test]
-    fn normalize_youcom_extract_marks_proxy_truncation() {
-        // The keyless proxy cuts markdown at 25,000 characters without saying
-        // so; a page at that length was cut. Multi-byte text, so the check
-        // must count characters, not bytes.
-        let page_of =
-            |n: usize| json!({ "contents": { "full_page": { "markdown": "é".repeat(n) } } });
-        let cut = normalize_youcom_extract(&page_of(YOU_COM_EXTRACT_MAX_CHARS), "u").unwrap();
-        assert!(cut.truncated);
-        let whole = normalize_youcom_extract(&page_of(YOU_COM_EXTRACT_MAX_CHARS - 1), "u").unwrap();
-        assert!(!whole.truncated);
+    fn normalize_youcom_extract_does_not_guess_proxy_truncation() {
+        // The keyless proxy no longer imposes a 25,000-character limit. Only
+        // Jan's FETCH_MAX_CHARS bound should mark a page truncated.
+        let body = json!({ "contents": { "full_page": { "markdown": "é".repeat(25_000) } } });
+        let page = normalize_youcom_extract(&body, "u").unwrap();
+        assert!(!page.truncated);
+        assert_eq!(page.content.chars().count(), 25_000);
         // A missing url falls back to the requested one.
-        assert_eq!(whole.url, "u");
+        assert_eq!(page.url, "u");
     }
 
     #[test]
