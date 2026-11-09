@@ -612,6 +612,7 @@
   "artifacts": "产物",
   "skills": "技能",
   "deleteSession": "删除会话",
+  "coworkSessionUnavailable": "此对话暂无可显示的内容。",
   "deleteSessionTitle": "删除会话？",
   "deleteSessionBody": "“{{title}}”及其记录将被永久删除，此操作无法撤销。",
   "sidebar": {
