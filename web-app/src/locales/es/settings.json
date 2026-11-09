@@ -103,8 +103,6 @@
     "threadScrollFlowHint": "Mantiene la ventana anclada al último mensaje que envías.",
     "threadScrollStickyTitle": "Desplazamiento adhesivo",
     "threadScrollStickyHint": "Sigue automáticamente a medida que las respuestas llegan en tiempo real.",
-    "tokenCounterCompact": "Contador de tokens compacto",
-    "tokenCounterCompactDesc": "Mostrar el contador de tokens dentro de la entrada del chat. Cuando está desactivado, el contador aparece debajo de la entrada.",
     "codeBlockTitle": "Bloque de código",
     "codeBlockDesc": "Elige un estilo de resaltado de sintaxis.",
     "showLineNumbers": "Mostrar números de línea",

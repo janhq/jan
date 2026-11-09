@@ -1231,7 +1231,7 @@ export function CoworkPage() {
   const prompt = usePrompt((s) => s.prompt)
   const [menuIndex, setMenuIndex] = useState(0)
 
-  // Switchable models for /models — mirrors DropdownModelProvider's filtering
+  // Switchable models for /models — mirrors the model picker's filtering
   // (active providers, no embedding models, remote providers only with a key),
   // narrowed to tool-capable models since runRequest refuses the rest anyway.
   const allModels = useMemo(() => {

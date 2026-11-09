@@ -312,7 +312,6 @@
     "deleteProjectDialog": {
       "title": "Elimina progetto",
       "permanentDeleteWarning": "Questa azione eliminerà definitivamente TUTTE le conversazioni all'interno del progetto!",
-      "deleteEmptyProject": "Questa azione eliminerà il progetto \"{{projectName}}\".",
       "saveThreadsAdvice": "Per salvare le conversazioni, spostale nell'elenco delle conversazioni o in un altro progetto prima di procedere con l'eliminazione.",
       "starredWarning": "Hai ancora conversazioni preferite all'interno del progetto.",
       "deleteButton": "Elimina",

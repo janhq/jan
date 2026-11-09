@@ -100,9 +100,7 @@
     "resetCodeBlockStyle": "重設程式碼區塊樣式",
     "resetCodeBlockStyleDesc": "將程式碼區塊樣式重設為預設值。",
     "resetCodeBlockSuccess": "程式碼區塊樣式重設成功",
-    "resetCodeBlockSuccessDesc": "程式碼區塊樣式已還原為預設值。",
-    "tokenCounterCompact": "緊湊型代幣計數器",
-    "tokenCounterCompactDesc": "在聊天輸入框內顯示代幣計數器。停用時，代幣計數器會顯示在輸入框下方。"
+    "resetCodeBlockSuccessDesc": "程式碼區塊樣式已還原為預設值。"
   },
   "hardware": {
     "os": "作業系統",

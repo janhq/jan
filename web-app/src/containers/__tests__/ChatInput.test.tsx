@@ -64,7 +64,6 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
   useGeneralSetting: (selector: any) =>
     selector({
       spellCheckChatInput: false,
-      tokenCounterCompact: false,
     }),
 }))
 

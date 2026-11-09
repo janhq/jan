@@ -99,8 +99,6 @@
     "threadScrollFlowHint": "Maintient la fenêtre ancrée au dernier message que vous envoyez.",
     "threadScrollStickyTitle": "Défilement collant",
     "threadScrollStickyHint": "Suit automatiquement au fur et à mesure que les réponses arrivent en temps réel.",
-    "tokenCounterCompact": "Compteur de jetons compact",
-    "tokenCounterCompactDesc": "Affichez le compteur de jetons à l'intérieur de la saisie de discussion. Lorsqu'il est désactivé, le compteur de jetons apparaît sous la saisie.",
     "codeBlockTitle": "Bloc de code",
     "codeBlockDesc": "Choisissez un style de coloration syntaxique.",
     "showLineNumbers": "Afficher les numéros de ligne",

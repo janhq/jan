@@ -287,7 +287,6 @@
     "deleteProjectDialog": {
       "title": "Eliminar proyecto",
       "permanentDeleteWarning": "¡Esta acción eliminará permanentemente TODOS los hilos dentro del proyecto!",
-      "deleteEmptyProject": "Esta acción eliminará el proyecto \"{{projectName}}\".",
       "saveThreadsAdvice": "Para guardar hilos, muévelos a tu lista de hilos o a otro proyecto antes de eliminar.",
       "starredWarning": "Aún tienes hilos destacados dentro del proyecto.",
       "deleteButton": "Eliminar",
