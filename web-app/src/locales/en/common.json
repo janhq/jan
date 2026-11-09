@@ -605,6 +605,10 @@
       "title": "Thread Removed",
       "description": "Thread removed from \"{{projectName}}\" successfully"
     },
+    "threadProjectMoveFailed": {
+      "title": "Move Failed",
+      "description": "This conversation could not be moved. Its session is unavailable."
+    },
     "fileUploaded": {
       "title": "File Processed",
       "description": "File has been processed and indexed successfully"

@@ -454,6 +454,10 @@
       "title": "对话已移除",
       "description": "对话已成功从\"{{projectName}}\"中移除"
     },
+    "threadProjectMoveFailed": {
+      "title": "移动失败",
+      "description": "无法移动此对话，其会话不可用。"
+    },
     "deleteAllChats": {
       "title": "对话已删除",
       "description": "已删除项目外的对话，项目中的对话和任务已保留。"
