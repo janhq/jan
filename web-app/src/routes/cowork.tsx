@@ -109,6 +109,7 @@ import {
   writeBlackboard,
   importAttachment,
   cancelAgentThreadBash,
+  cancelAgentThreadBashStrict,
   activeAgentMonitorIds,
 } from '@/lib/agentTools'
 import { monitorLaneFor, type MonitorLane } from '@/lib/coworkMonitor'
@@ -127,7 +128,11 @@ import {
   type StreamSink,
   type ToolOutcome,
 } from '@/lib/coworkRunner'
-import { useCoworkRun } from '@/hooks/useCoworkRun'
+import {
+  useCoworkRun,
+  registerCoworkRunForClose,
+  isCoworkClosing,
+} from '@/hooks/useCoworkRun'
 import {
   listSubagents,
   type SubagentDefinition,
@@ -454,7 +459,15 @@ function CoworkPage() {
   ) => {
     const store = useCoworkSessions.getState()
     const current = store.sessions.find((s) => s.id === sid)
-    if (!current || useCoworkRun.getState().runId[sid]) return
+    // A closing window has already stopped its runs; a new one would start a
+    // turn nobody awaits. An unavailable session is read-only by design.
+    if (
+      isCoworkClosing() ||
+      !current ||
+      current.unavailable ||
+      useCoworkRun.getState().runId[sid]
+    )
+      return
     if (!text && !(current?.messages?.length ?? 0)) return
     const modelState = useModelProvider.getState()
     const modelChoice =
@@ -495,6 +508,47 @@ function CoworkPage() {
     useCoworkRun
       .getState()
       .beginRun(sid, handle.runId, text ?? '', attachments?.media)
+    // The window-close handshake (see coworkSync) must stop this run and wait
+    // for its final commit: until the `finally` below commits, the transcript
+    // and wire history exist only in this closure. Registered synchronously with
+    // the claim so a background or unmounted run participates too.
+    let resolveDone!: () => void
+    const done = new Promise<void>((resolve) => {
+      resolveDone = resolve
+    })
+    let closeRequested = false
+    let cancellationConfirmed = false
+    let committed = false
+    const unregisterClose = registerCoworkRunForClose(async () => {
+      closeRequested = true
+      abortRun(sid)
+      // A JS abort cannot kill native shells, nor force a stalled promise to
+      // settle. Refuse the close if teardown cannot be confirmed in time and
+      // stay registered so a later close can retry.
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([
+          Promise.all([
+            done,
+            cancelAgentThreadBashStrict(sid).then(() => {
+              cancellationConfirmed = true
+              if (committed) unregisterClose()
+            }),
+          ]),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(
+              () =>
+                reject(
+                  new Error('Cowork teardown did not settle; keeping the window open')
+                ),
+              5000
+            )
+          }),
+        ])
+      } finally {
+        clearTimeout(timeout)
+      }
+    })
     let runTurns: CoworkTurn[] = []
     let liveFrame: number | null = null
     const syncLive = () => {
@@ -547,10 +601,15 @@ function CoworkPage() {
           return
         }
       }
-      if (text && current?.title === 'New session')
-        // Collapse newlines/runs of whitespace so a pasted multi-line prompt
-        // doesn't become an unreadable sidebar title.
-        store.setTitle(sid, text.trim().replace(/\s+/g, ' ').slice(0, 40))
+      // Only while the title is still the default: a rename made during the
+      // awaits above (skill expansion) must win. Newlines and runs of
+      // whitespace are collapsed so a pasted multi-line prompt does not become
+      // an unreadable sidebar title.
+      if (text)
+        store.setTitleIfDefault(
+          sid,
+          text.trim().replace(/\s+/g, ' ').slice(0, 40)
+        )
 
       runTurns = text
         ? [userTurn(text, attachments?.media, attachments?.files)]
@@ -1042,6 +1101,9 @@ function CoworkPage() {
           useCoworkRun.getState().subagents[sid] ?? [],
           outcome?.usage ?? undefined
         )
+      committed = true
+      resolveDone()
+      if (!closeRequested || cancellationConfirmed) unregisterClose()
       if (liveFrame != null) cancelAnimationFrame(liveFrame)
       for (const resolve of handle.pendingAsks.values()) resolve(null)
       handle.pendingAsks.clear()
@@ -1061,7 +1123,7 @@ function CoworkPage() {
       // budget halt leaves the queue in place, visible as chips in the input.
       if (stop === 'error') {
         useMessageQueue.getState().clearQueue(sid)
-      } else if (stop === 'done') {
+      } else if (stop === 'done' && !isCoworkClosing()) {
         // Continue the originating session with its captured model and skill
         // context, even when a different session is now being viewed.
         setTimeout(() => {
