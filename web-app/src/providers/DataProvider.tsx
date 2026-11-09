@@ -401,79 +401,84 @@ export function DataProvider() {
       )
   }, [serviceHub, runInBackground])
 
-  // Auto-start Local API Server on app startup if enabled
+  // Reconcile the UI with the backend server on every webview boot (the Rust
+  // server outlives the webview, e.g. across a hide-to-tray reload), then
+  // auto-start it only if enabled and not already running.
   useEffect(() => {
-    if (enableOnStartup) {
-      // Check if server is already running
-      serviceHub
-        .app()
-        .getServerStatus()
-        .then(async (isRunning) => {
-          if (isRunning) {
-            console.log('Local API Server is already running')
-            setServerStatus('running')
-            return
+    // Only a start this effect began may be rolled back to 'stopped': a failed
+    // status query must not clobber a start the user began elsewhere.
+    let startedPending = false
+    serviceHub
+      .app()
+      .getServerStatus()
+      .then(async (isRunning) => {
+        if (isRunning) {
+          console.log('Local API Server is already running')
+          setServerStatus('running')
+          return
+        }
+
+        if (!enableOnStartup) return
+
+        setServerStatus('pending')
+        startedPending = true
+
+        // Start model(s): prefer user-configured default, fall back to last session's models
+        const modelsToStart = (() => {
+          if (defaultModelLocalApiServer) {
+            return [defaultModelLocalApiServer]
           }
+          return lastServerModels
+        })()
 
-          setServerStatus('pending')
+        if (modelsToStart.length > 0) {
+          await Promise.allSettled(
+            modelsToStart.map(async ({ model, provider: providerName }) => {
+              const provider = getProviderByName(providerName)
+              if (!provider) return
+              try {
+                await serviceHub.models().startModel(provider, model, true)
+                console.log(`Auto-started server model: ${model}`)
+              } catch (err) {
+                console.warn(`Failed to auto-start server model ${model}:`, err)
+              }
+            })
+          )
+        }
 
-          // Start model(s): prefer user-configured default, fall back to last session's models
-          const modelsToStart = (() => {
-            if (defaultModelLocalApiServer) {
-              return [defaultModelLocalApiServer]
+        return window.core?.api
+          ?.startServer({
+            host: serverHost,
+            port: serverPort,
+            prefix: apiPrefix,
+            apiKey,
+            trustedHosts,
+            isCorsEnabled: corsEnabled,
+            isVerboseEnabled: verboseLogs,
+            proxyTimeout: proxyTimeout,
+          })
+          .then(async (actualPort: number) => {
+            // Store the actual port that was assigned (important for mobile with port 0)
+            if (actualPort && actualPort !== serverPort) {
+              setServerPort(actualPort)
             }
-            return lastServerModels
-          })()
-
-          if (modelsToStart.length > 0) {
-            await Promise.allSettled(
-              modelsToStart.map(async ({ model, provider: providerName }) => {
-                const provider = getProviderByName(providerName)
-                if (!provider) return
-                try {
-                  await serviceHub.models().startModel(provider, model, true)
-                  console.log(`Auto-started server model: ${model}`)
-                } catch (err) {
-                  console.warn(`Failed to auto-start server model ${model}:`, err)
-                }
+            setServerStatus('running')
+            // Persist whichever models are actually running so next startup can restore them
+            const activeModels = await serviceHub.models().getActiveModels().catch(() => [] as string[])
+            if (activeModels.length > 0) {
+              const allProviders = useModelProvider.getState().providers
+              const serverModels = activeModels.flatMap((id) => {
+                const p = allProviders.find((p) => p?.models?.some((m: { id: string }) => m.id === id))
+                return p ? [{ model: id, provider: p.provider }] : []
               })
-            )
-          }
-
-          return window.core?.api
-            ?.startServer({
-              host: serverHost,
-              port: serverPort,
-              prefix: apiPrefix,
-              apiKey,
-              trustedHosts,
-              isCorsEnabled: corsEnabled,
-              isVerboseEnabled: verboseLogs,
-              proxyTimeout: proxyTimeout,
-            })
-            .then(async (actualPort: number) => {
-              // Store the actual port that was assigned (important for mobile with port 0)
-              if (actualPort && actualPort !== serverPort) {
-                setServerPort(actualPort)
-              }
-              setServerStatus('running')
-              // Persist whichever models are actually running so next startup can restore them
-              const activeModels = await serviceHub.models().getActiveModels().catch(() => [] as string[])
-              if (activeModels.length > 0) {
-                const allProviders = useModelProvider.getState().providers
-                const serverModels = activeModels.flatMap((id) => {
-                  const p = allProviders.find((p) => p?.models?.some((m: { id: string }) => m.id === id))
-                  return p ? [{ model: id, provider: p.provider }] : []
-                })
-                if (serverModels.length > 0) setLastServerModels(serverModels)
-              }
-            })
-        })
-        .catch((error: unknown) => {
-          console.error('Failed to start Local API Server on startup:', error)
-          setServerStatus('stopped')
-        })
-    }
+              if (serverModels.length > 0) setLastServerModels(serverModels)
+            }
+          })
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to sync or start Local API Server on startup:', error)
+        if (startedPending) setServerStatus('stopped')
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceHub])
 

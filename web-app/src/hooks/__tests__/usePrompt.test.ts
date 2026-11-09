@@ -91,3 +91,22 @@ describe('usePrompt', () => {
     })
   })
 })
+
+describe('usePrompt draft persistence', () => {
+  it('writes only the prompt to sessionStorage so a reload can restore it', () => {
+    usePrompt.setState({ prompt: '', promptHistory: [], historyIndex: -1, draftPrompt: '' })
+    act(() => usePrompt.getState().setPrompt('unsent draft'))
+
+    const stored = JSON.parse(sessionStorage.getItem('chat-prompt-draft') ?? '{}')
+    expect(stored.state).toEqual({ prompt: 'unsent draft' })
+  })
+
+  it('rehydrates the draft from sessionStorage', async () => {
+    sessionStorage.setItem(
+      'chat-prompt-draft',
+      JSON.stringify({ state: { prompt: 'restored' }, version: 0 })
+    )
+    await usePrompt.persist.rehydrate()
+    expect(usePrompt.getState().prompt).toBe('restored')
+  })
+})

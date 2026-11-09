@@ -7,10 +7,11 @@ import { toast } from 'sonner'
 
 const ensureModelForServer = vi.hoisted(() => vi.fn())
 const startServer = vi.hoisted(() => vi.fn())
+const getServerStatus = vi.hoisted(() => vi.fn())
 // One stable object: the page re-runs an effect whenever the hub identity changes.
 const hub = vi.hoisted(() => ({
   models: () => ({ getActiveModels: () => Promise.resolve([]) }),
-  app: () => ({ getServerStatus: () => Promise.resolve(false) }),
+  app: () => ({ getServerStatus }),
   window: () => ({ openLocalApiServerLogsWindow: () => Promise.resolve() }),
 }))
 
@@ -51,7 +52,23 @@ describe('Local API server page: starting on a public address', () => {
     ensureModelForServer.mockResolvedValue({ status: 'loaded' })
     startServer.mockResolvedValue(1337)
     ;(window as unknown as { core: unknown }).core = { api: { startServer } }
+    getServerStatus.mockResolvedValue(false)
     useAppState.setState({ serverStatus: 'stopped' })
+  })
+
+  it('corrects a stale running status when the backend server is stopped', async () => {
+    useAppState.setState({ serverStatus: 'running' })
+    render(<Page />)
+
+    await waitFor(() => expect(useAppState.getState().serverStatus).toBe('stopped'))
+  })
+
+  it('leaves a pending status alone when the backend is not running yet', async () => {
+    useAppState.setState({ serverStatus: 'pending' })
+    render(<Page />)
+
+    await waitFor(() => expect(getServerStatus).toHaveBeenCalled())
+    expect(useAppState.getState().serverStatus).toBe('pending')
   })
 
   it.each(['', '   '])(
