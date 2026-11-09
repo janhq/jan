@@ -13,7 +13,7 @@ use super::{
     constants::THREADS_FILE,
     utils::{
         ensure_data_dirs, ensure_thread_dir_exists, get_data_dir, get_messages_path,
-        get_thread_dir, get_thread_metadata_path, validate_thread_id,
+        get_thread_dir, get_thread_metadata_path, validate_thread_id, PERMANENT_PREFIX,
     },
 };
 use crate::core::app::commands::get_jan_data_folder_path;
@@ -132,7 +132,7 @@ fn thread_extra_path(
     name: &str,
 ) -> Result<std::path::PathBuf, String> {
     if !THREAD_EXTRA_NAMES.contains(&name) {
-        return Err(format!("Unsupported thread extra: {name:?}"));
+        return Err(format!("{PERMANENT_PREFIX}Unsupported thread extra: {name:?}"));
     }
     Ok(get_thread_dir(data_folder, thread_id)?.join(format!("{name}.json")))
 }
@@ -169,7 +169,7 @@ fn ensure_uncommitted_dir_is_ours(
         }
     }
     Err(format!(
-        "Thread '{thread_id}' has messages but no thread.json; refusing to overwrite its messages"
+        "{PERMANENT_PREFIX}Thread '{thread_id}' has messages but no thread.json; refusing to overwrite its messages"
     ))
 }
 
@@ -250,12 +250,14 @@ pub async fn replace_thread_messages<R: Runtime>(
         let id = message
             .get("id")
             .and_then(|v| v.as_str())
-            .ok_or("Every message needs a string id")?;
+            .ok_or_else(|| format!("{PERMANENT_PREFIX}Every message needs a string id"))?;
         if !seen.insert(id) {
-            return Err(format!("Duplicate message id {id:?}"));
+            return Err(format!("{PERMANENT_PREFIX}Duplicate message id {id:?}"));
         }
         if message.get("thread_id").and_then(|v| v.as_str()) != Some(thread_id.as_str()) {
-            return Err(format!("Message {id:?} does not belong to thread {thread_id:?}"));
+            return Err(format!(
+                "{PERMANENT_PREFIX}Message {id:?} does not belong to thread {thread_id:?}"
+            ));
         }
     }
     let data_folder = get_jan_data_folder_path(app_handle);
