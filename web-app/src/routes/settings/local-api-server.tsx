@@ -98,6 +98,9 @@ function LocalAPIServerContent() {
         console.log('Server status check:', running)
         if (running) {
           setServerStatus('running')
+        } else if (useAppState.getState().serverStatus === 'running') {
+          // Never touch 'pending': a start/stop of ours is still in flight.
+          setServerStatus('stopped')
         }
       } catch (error) {
         console.error('Failed to check server status:', error)

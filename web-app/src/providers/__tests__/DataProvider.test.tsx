@@ -473,10 +473,19 @@ describe('DataProvider', () => {
 
   it('does not start server on mount when enableOnStartup is false', async () => {
     render(<DataProvider />)
-    await act(async () => {
-      await Promise.resolve()
+    await waitFor(() => {
+      expect(hubState.getServerStatus).toHaveBeenCalled()
     })
-    expect(hubState.getServerStatus).not.toHaveBeenCalled()
+    expect(h.setServerStatus).not.toHaveBeenCalledWith('pending')
+    expect(hubState.startServer).not.toHaveBeenCalled()
+  })
+
+  it('reflects an already-running server on boot even when enableOnStartup is false', async () => {
+    hubState.getServerStatus.mockResolvedValue(true)
+    render(<DataProvider />)
+    await waitFor(() => {
+      expect(h.setServerStatus).toHaveBeenCalledWith('running')
+    })
     expect(hubState.startServer).not.toHaveBeenCalled()
   })
 
