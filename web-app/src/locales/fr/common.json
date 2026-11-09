@@ -398,6 +398,10 @@
       "title": "Discussion retirée",
       "description": "Discussion retirée de \"{{projectName}}\" avec succès"
     },
+    "threadProjectMoveFailed": {
+      "title": "Échec du déplacement",
+      "description": "Cette conversation n'a pas pu être déplacée. Sa session est indisponible."
+    },
     "deleteAllChats": {
       "title": "Conversations supprimées",
       "description": "Les conversations hors projets ont été supprimées. Les conversations de projet et les tâches ont été conservées."

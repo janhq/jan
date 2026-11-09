@@ -471,6 +471,10 @@
       "title": "スレッドが削除されました",
       "description": "スレッドは「{{projectName}}」から正常に削除されました"
     },
+    "threadProjectMoveFailed": {
+      "title": "移動に失敗しました",
+      "description": "この会話を移動できませんでした。セッションを利用できません。"
+    },
     "fileUploaded": {
       "title": "ファイルを処理しました",
       "description": "ファイルは正常に処理され、インデックス化されました"

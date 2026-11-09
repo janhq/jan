@@ -143,14 +143,21 @@ export const ThreadItem = memo(
     const assignThreadToProject = (threadId: string, projectId: string) => {
       const project = getFolderById(projectId)
       if (project) {
-        // Cowork persists from its session, so the move goes through it.
-        updateThreadProject(threadId, {
+        // Cowork persists from its session, so the move goes through it and
+        // can be refused; only a move that happened is reported as success.
+        const moved = updateThreadProject(threadId, {
           id: project.id,
           name: project.name,
           updated_at: project.updated_at,
         })
 
-        toast.success(`Thread assigned to "${project.name}" successfully`)
+        if (moved) {
+          toast.success(t('common:toast.threadAssignedToProject.description', {
+            projectName: project.name,
+          }))
+        } else {
+          toast.error(t('common:toast.threadProjectMoveFailed.description'))
+        }
       }
     }
 
@@ -259,14 +266,21 @@ export const ThreadItem = memo(
                   onClick={(e) => {
                     e.stopPropagation()
                     const projectName = thread.metadata?.project?.name
-                    updateThreadProject(thread.id, undefined)
-                    toast.success(
-                      `Thread removed from "${projectName}" successfully`
-                    )
+                    if (updateThreadProject(thread.id, undefined)) {
+                      toast.success(
+                        t('common:toast.threadRemovedFromProject.description', {
+                          projectName,
+                        })
+                      )
+                    } else {
+                      toast.error(
+                        t('common:toast.threadProjectMoveFailed.description')
+                      )
+                    }
                   }}
                 >
                   <X className="size-4" />
-                  <span>Remove from project</span>
+                  <span>{t('common:projects.removeFromProject')}</span>
                 </DropdownMenuItem>
               </>
             )}
