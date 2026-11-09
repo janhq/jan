@@ -3,6 +3,7 @@ import { initializeServiceHub } from '@/services'
 import { initializeServiceHubStore } from '@/hooks/useServiceHub'
 import { hydrateBackendStores } from '@/lib/hydrateStores'
 import { migrateLocalStorageToBackend } from '@/lib/migrateLocalStorageSettings'
+import { migrateCoworkSessionsOnStartup } from '@/lib/migrateCoworkSessions'
 
 interface ServiceHubProviderProps {
   children: React.ReactNode
@@ -22,6 +23,9 @@ export function ServiceHubProvider({ children }: ServiceHubProviderProps) {
         // Settings stores use async backend storage; hydrate before rendering
         // children so no component reads pre-hydration defaults.
         await hydrateBackendStores()
+        // One-time copy of Cowork sessions into threads. It must finish before
+        // children render because they list threads on mount. It never throws.
+        await migrateCoworkSessionsOnStartup()
         setIsReady(true)
       })
       .catch((error) => {
