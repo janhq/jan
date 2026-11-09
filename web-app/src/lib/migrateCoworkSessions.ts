@@ -2,6 +2,7 @@ import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
 import { coworkSessionToThreadMessages } from '@/lib/coworkThreadMessages'
 import type { CoworkSession } from '@/hooks/useCoworkSessions'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { copySessionWorkspaceToThread } from '@/lib/agentTools'
 import {
   isPlatformAndroid,
   isPlatformIOS,
@@ -27,6 +28,11 @@ import {
  * - The completion marker is set once every session has either migrated or been
  *   abandoned. Transient failures keep it unset so the next launch retries.
  *   Failures never throw into app startup; they are returned.
+ * - The session's sandbox files (agent-workspace/sessions/<id>) are COPIED
+ *   into the thread's own workspace (agent-workspace/threads/<id>) before the
+ *   commit. The thread uses the normal Thread scope; it is not linked to the
+ *   session directory, which is left in place as the rollback source and is
+ *   not touched when the migrated thread is deleted.
  * - Talks to the backend commands directly. `DefaultThreadsService.createThread`
  *   swallows errors and would hide a failed write.
  * - No deletion journal: on this build the Cowork store removes a deleted
@@ -50,6 +56,15 @@ export type Invoke = <T = unknown>(
   cmd: string,
   args?: Record<string, unknown>
 ) => Promise<T>
+
+/**
+ * Copies a session's sandbox into the thread workspace of the same id. Injected
+ * so the migration stays a pure sequence of backend calls; the startup entry
+ * point wires it to the agent-tools plugin.
+ */
+export type CopyWorkspace = (id: string) => Promise<{ copied: boolean }>
+
+export type MigrationDeps = { copyWorkspace?: CopyWorkspace }
 
 export type CoworkMigrationResult = {
   status: 'already-migrated' | 'nothing-to-migrate' | 'complete' | 'partial'
@@ -118,10 +133,19 @@ export function isValidThreadId(id: unknown): id is string {
 
 // Backend refusals that will repeat on every launch.
 const isPermanentBackendError = (e: unknown) =>
-  /refusing to overwrite its messages|Invalid thread id/.test(toErrorMessage(e))
+  /refusing to overwrite its messages|refusing to merge into|Invalid thread id/.test(
+    toErrorMessage(e)
+  )
 
-const toErrorMessage = (e: unknown) =>
-  e instanceof Error ? e.message : String(e)
+function toErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message
+  // Tauri plugin commands reject with `{ message }`, not an Error.
+  if (typeof e === 'object' && e !== null && 'message' in e) {
+    const { message } = e as { message: unknown }
+    if (typeof message === 'string') return message
+  }
+  return String(e)
+}
 
 function readAbandoned(raw: string | null): { id: string; error: string }[] {
   if (!raw) return []
@@ -201,7 +225,8 @@ const isEmptySession = (s: CoworkSession) =>
   (s.turns?.length ?? 0) === 0 && (s.messages?.length ?? 0) === 0
 
 export async function migrateCoworkSessionsToThreads(
-  invoke: Invoke
+  invoke: Invoke,
+  deps: MigrationDeps = {}
 ): Promise<CoworkMigrationResult> {
   const result: CoworkMigrationResult = {
     status: 'complete',
@@ -300,6 +325,13 @@ export async function migrateCoworkSessionsToThreads(
           throw new Error('messages did not read back identically')
         }
 
+        // The sandbox files move into the thread's own workspace
+        // (agent-workspace/threads/<id>, main chat's Thread scope), before the
+        // commit so an interrupted run redoes it. It is a copy done in Rust:
+        // sessions/<id> is intentionally left behind as the rollback source,
+        // and the two scopes never share a directory.
+        await deps.copyWorkspace?.(session.id)
+
         // Commit: thread.json last.
         const created = await invoke<StoredThread>('create_thread', {
           thread: sessionToThread(session),
@@ -366,7 +398,9 @@ export async function migrateCoworkSessionsOnStartup(): Promise<CoworkMigrationR
   if (isPlatformIOS() || isPlatformAndroid()) return null
   try {
     const core = getServiceHub().core()
-    return await migrateCoworkSessionsToThreads(core.invoke.bind(core) as Invoke)
+    return await migrateCoworkSessionsToThreads(core.invoke.bind(core) as Invoke, {
+      copyWorkspace: copySessionWorkspaceToThread,
+    })
   } catch (e) {
     console.warn('[cowork-migration] could not start; will retry next launch:', e)
     return null
