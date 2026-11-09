@@ -458,7 +458,7 @@ const ChatInput = memo(function ChatInput({
       : selectedAssistantId
     const index = assistants.findIndex((assistant) => assistant.id === activeId)
     const next = assistants[index + 1]
-    if (currentThread) updateCurrentThreadAssistant(next as Assistant)
+    if (currentThread) updateCurrentThreadAssistant(next)
     else setSelectedAssistantId(next?.id || '')
   }
   useEffect(() => {
