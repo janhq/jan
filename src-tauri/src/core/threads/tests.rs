@@ -1050,3 +1050,140 @@ async fn test_create_thread_write_leaves_no_temp_files() {
         .collect();
     assert_eq!(names, vec![THREADS_FILE.to_string()]);
 }
+
+fn migrated_message(thread_id: &str, id: &str, text: &str) -> serde_json::Value {
+    json!({
+        "id": id,
+        "object": "thread.message",
+        "thread_id": thread_id,
+        "role": "user",
+        "content": [{"type": "text", "text": {"value": text, "annotations": []}}],
+        "status": "ready",
+        "created_at": 1,
+        "completed_at": 1
+    })
+}
+
+#[tokio::test]
+async fn test_replace_thread_messages_replaces_instead_of_appending() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let data_folder = get_jan_data_folder_path(app.handle().clone());
+    let batch = vec![
+        migrated_message("replace-thread", "replace-thread-msg-0", "one"),
+        migrated_message("replace-thread", "replace-thread-msg-1", "two"),
+    ];
+
+    // The migration writes before thread.json exists, so it must be allowed to
+    // create the directory.
+    replace_thread_messages(
+        app.handle().clone(),
+        "replace-thread".into(),
+        batch.clone(),
+        Some(true),
+    )
+    .await
+    .unwrap();
+    let path = get_messages_path(&data_folder, "replace-thread").unwrap();
+    let first = fs::read(&path).unwrap();
+
+    // A retry after a crash writes the same batch again: same bytes, no duplicates.
+    replace_thread_messages(
+        app.handle().clone(),
+        "replace-thread".into(),
+        batch.clone(),
+        Some(true),
+    )
+    .await
+    .unwrap();
+    assert_eq!(fs::read(&path).unwrap(), first);
+    let listed = list_messages(app.handle().clone(), "replace-thread".into())
+        .await
+        .unwrap();
+    assert_eq!(listed, batch);
+
+    // A shorter batch replaces the file whole.
+    replace_thread_messages(
+        app.handle().clone(),
+        "replace-thread".into(),
+        batch[..1].to_vec(),
+        Some(true),
+    )
+    .await
+    .unwrap();
+    let listed = list_messages(app.handle().clone(), "replace-thread".into())
+        .await
+        .unwrap();
+    assert_eq!(listed, batch[..1].to_vec());
+
+    // No temp file is left beside it, and the thread is still uncommitted.
+    let names: Vec<String> = fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec![MESSAGES_FILE.to_string()]);
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    assert!(threads.iter().all(|t| t["id"] != "replace-thread"));
+}
+
+#[tokio::test]
+async fn test_replace_thread_messages_creates_the_directory_only_on_request() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let data_folder = get_jan_data_folder_path(app.handle().clone());
+    let batch = vec![migrated_message("late-thread", "late-thread-msg-0", "x")];
+
+    // Without thread.json a late write (for example after a delete) must not
+    // resurrect a thread directory.
+    let err = replace_thread_messages(
+        app.handle().clone(),
+        "late-thread".into(),
+        batch.clone(),
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(err.contains("thread.json"), "{err}");
+    assert!(!get_thread_dir(&data_folder, "late-thread").unwrap().exists());
+
+    // Once the thread is committed a plain replace is allowed.
+    let mut thread = create_test_thread("Late");
+    thread["id"] = json!("late-thread");
+    create_thread(app.handle().clone(), thread).await.unwrap();
+    replace_thread_messages(app.handle().clone(), "late-thread".into(), batch.clone(), None)
+        .await
+        .unwrap();
+    let listed = list_messages(app.handle().clone(), "late-thread".into())
+        .await
+        .unwrap();
+    assert_eq!(listed, batch);
+}
+
+#[tokio::test]
+async fn test_replace_thread_messages_rejects_a_batch_that_would_corrupt_the_log() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let ok = migrated_message("guard-thread", "guard-thread-msg-0", "x");
+
+    // A message for another thread, a missing id and a repeated id would each
+    // break the per-thread log create_message and modify_message maintain.
+    let foreign = migrated_message("other-thread", "other-msg-0", "x");
+    let mut anonymous = ok.clone();
+    anonymous.as_object_mut().unwrap().remove("id");
+    for bad in [
+        vec![ok.clone(), foreign],
+        vec![ok.clone(), anonymous],
+        vec![ok.clone(), ok.clone()],
+    ] {
+        assert!(replace_thread_messages(
+            app.handle().clone(),
+            "guard-thread".into(),
+            bad,
+            Some(true),
+        )
+        .await
+        .is_err());
+    }
+    // Nothing was written for a refused batch.
+    let listed = list_messages(app.handle().clone(), "guard-thread".into())
+        .await
+        .unwrap();
+    assert!(listed.is_empty());
+}
