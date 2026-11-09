@@ -2993,7 +2993,11 @@ describe('ThreadDetail route', () => {
         })
         renderComponent()
         await act(async () => {
-          await (h as any).capturedOnToolCall(extToolCall('te7'))
+          await (
+            h as unknown as {
+              capturedOnToolCall: (call: unknown) => Promise<void>
+            }
+          ).capturedOnToolCall(extToolCall('te7'))
         })
         await act(async () => {
           await finishWithToolCalls()
