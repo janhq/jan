@@ -10,13 +10,21 @@ import type { CoworkSession } from '@/hooks/useCoworkSessions'
 type Json = Record<string, unknown>
 type Args = Record<string, unknown>
 
-type BackendOptions = { failCreateFor?: string; failWriteFor?: string }
+type BackendOptions = {
+  failCreateFor?: string
+  failWriteFor?: string
+  // Fails the first create_thread only, like a crash before the commit.
+  crashFirstCreate?: boolean
+}
 
 // In-memory backend with the same command surface the migration uses.
 function makeBackend(opts: BackendOptions = {}) {
   const settings = new Map<string, string>()
   const threads = new Map<string, Json>()
   const extras = new Map<string, unknown>()
+  // The messages.jsonl text per thread, so tests can compare bytes.
+  const logs = new Map<string, string>()
+  let crashPending = opts.crashFirstCreate ?? false
   const calls: string[] = []
   const invoke: Invoke = async <T = unknown>(cmd: string, args: Args = {}) => {
     calls.push(cmd)
@@ -42,9 +50,26 @@ function makeBackend(opts: BackendOptions = {}) {
         return undefined as T
       case 'read_thread_extra':
         return (extras.get(`${threadId}/${args.name}`) ?? null) as T
+      case 'replace_thread_messages': {
+        if (!args.create && !threads.has(threadId))
+          throw new Error('no thread.json')
+        // Replace, never append: the same contract as the Rust command.
+        const lines = (args.messages as Json[]).map((m) => JSON.stringify(m))
+        logs.set(threadId, lines.map((l) => `${l}\n`).join(''))
+        return undefined as T
+      }
+      case 'list_messages':
+        return (logs.get(threadId) ?? '')
+          .split('\n')
+          .filter(Boolean)
+          .map((l) => JSON.parse(l)) as T
       case 'create_thread': {
         const thread = args.thread as Json & { id: string }
         if (thread.id === opts.failCreateFor) throw new Error('boom')
+        if (crashPending) {
+          crashPending = false
+          throw new Error('crash before commit')
+        }
         threads.set(thread.id, thread)
         return thread as T
       }
@@ -52,7 +77,7 @@ function makeBackend(opts: BackendOptions = {}) {
         throw new Error(`unexpected command ${cmd}`)
     }
   }
-  return { invoke, settings, threads, extras, calls }
+  return { invoke, settings, threads, extras, logs, calls }
 }
 
 const session = (id: string, extra: Partial<CoworkSession> = {}) =>
@@ -254,5 +279,124 @@ describe('migrateCoworkSessionsToThreads', () => {
     const r = await migrateCoworkSessionsToThreads(invoke)
     expect(r.status).toBe('partial')
     expect(r.failed[0].error).toContain('backend not ready')
+  })
+
+  describe('transcript in messages.jsonl', () => {
+    const rich = () =>
+      session('s1', {
+        messages: [
+          { id: 'u', role: 'user', parts: [{ type: 'text', text: 'read it' }] },
+          {
+            id: 'a',
+            role: 'assistant',
+            parts: [
+              { type: 'reasoning', text: 'hmm' },
+              {
+                type: 'tool-read',
+                toolCallId: 'c1',
+                input: { path: 'a' },
+                state: 'output-available',
+                output: 'body',
+              },
+              { type: 'tool-shell', toolCallId: 'c2', input: {}, state: 'input-available' },
+              { type: 'text', text: 'done' },
+            ],
+          },
+        ],
+      } as unknown as Partial<CoworkSession>)
+
+    const logOf = (id: string) =>
+      b.invoke<Json[]>('list_messages', { threadId: id })
+
+    it('writes the converted transcript before thread.json commits the thread', async () => {
+      b.settings.set(CODE_SESSIONS_KEY, envelope([rich()]))
+      await migrateCoworkSessionsToThreads(b.invoke)
+      expect(b.calls.indexOf('replace_thread_messages')).toBeGreaterThan(-1)
+      expect(b.calls.indexOf('replace_thread_messages')).toBeLessThan(
+        b.calls.indexOf('create_thread')
+      )
+      const log = await logOf('s1')
+      expect(log.map((m) => m.id)).toEqual(['s1-msg-0', 's1-msg-1'])
+    })
+
+    it('replaces rather than appends, even through the create path', async () => {
+      b.settings.set(CODE_SESSIONS_KEY, envelope([rich()]))
+      const calls = new Map<string, Args>()
+      const invoke: Invoke = async <T = unknown>(cmd: string, args?: Args) => {
+        if (cmd === 'replace_thread_messages') calls.set(cmd, args!)
+        return b.invoke<T>(cmd, args)
+      }
+      await migrateCoworkSessionsToThreads(invoke)
+      expect(calls.get('replace_thread_messages')?.create).toBe(true)
+      expect(b.calls).not.toContain('create_message')
+    })
+
+    it('a crash between the messages write and the commit retries to identical bytes with no duplicates', async () => {
+      b = makeBackend({ crashFirstCreate: true })
+      b.settings.set(CODE_SESSIONS_KEY, envelope([rich()]))
+
+      const first = await migrateCoworkSessionsToThreads(b.invoke)
+      expect(first.status).toBe('partial')
+      expect(b.threads.has('s1')).toBe(false)
+      const afterCrash = b.logs.get('s1')
+      expect(afterCrash).toBeTruthy()
+
+      const retry = await migrateCoworkSessionsToThreads(b.invoke)
+      expect(retry.status).toBe('complete')
+      expect(b.threads.has('s1')).toBe(true)
+      expect(b.logs.get('s1')).toBe(afterCrash)
+      expect(await logOf('s1')).toHaveLength(2)
+    })
+
+    it('a retry replaces a stale partial log left by an older run', async () => {
+      b.logs.set('s1', '{"id":"junk","thread_id":"s1"}\n')
+      b.settings.set(CODE_SESSIONS_KEY, envelope([rich()]))
+      await migrateCoworkSessionsToThreads(b.invoke)
+      expect((await logOf('s1')).map((m) => m.id)).toEqual(['s1-msg-0', 's1-msg-1'])
+    })
+
+    it('two independent migrations of the same session write identical bytes', async () => {
+      const other = makeBackend()
+      b.settings.set(CODE_SESSIONS_KEY, envelope([rich()]))
+      other.settings.set(CODE_SESSIONS_KEY, envelope([rich()]))
+      await migrateCoworkSessionsToThreads(b.invoke)
+      await migrateCoworkSessionsToThreads(other.invoke)
+      expect(b.logs.get('s1')).toBeTruthy()
+      expect(other.logs.get('s1')).toBe(b.logs.get('s1'))
+    })
+
+    it('every persisted tool call has its result or a recorded error', async () => {
+      b.settings.set(CODE_SESSIONS_KEY, envelope([rich()]))
+      await migrateCoworkSessionsToThreads(b.invoke)
+      const assistant = (await logOf('s1'))[1] as {
+        content: { type: string; tool_call_id?: string; output?: unknown }[]
+        metadata: { toolErrors: Record<string, string> }
+      }
+      for (const c of assistant.content.filter((x) => x.type === 'tool_call')) {
+        const answered =
+          c.output !== undefined || c.tool_call_id! in assistant.metadata.toolErrors
+        expect(answered).toBe(true)
+      }
+    })
+
+    it('a failed messages write never commits thread.json', async () => {
+      const invoke: Invoke = async <T = unknown>(cmd: string, args?: Args) => {
+        if (cmd === 'replace_thread_messages') throw new Error('disk full')
+        return b.invoke<T>(cmd, args)
+      }
+      b.settings.set(CODE_SESSIONS_KEY, envelope([rich()]))
+      const r = await migrateCoworkSessionsToThreads(invoke)
+      expect(r.status).toBe('partial')
+      expect(b.threads.has('s1')).toBe(false)
+    })
+
+    it('fails the session when the messages do not read back identically', async () => {
+      const invoke: Invoke = async <T = unknown>(cmd: string, args?: Args) =>
+        cmd === 'list_messages' ? ([] as T) : b.invoke<T>(cmd, args)
+      b.settings.set(CODE_SESSIONS_KEY, envelope([rich()]))
+      const r = await migrateCoworkSessionsToThreads(invoke)
+      expect(r.status).toBe('partial')
+      expect(b.threads.has('s1')).toBe(false)
+    })
   })
 })
