@@ -525,14 +525,26 @@ describe('DataProvider', () => {
     })
   })
 
-  it('sets server status to stopped on startup failure', async () => {
+  it('sets server status to stopped when the startup start fails', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     h.localApi.enableOnStartup = true
-    hubState.getServerStatus.mockRejectedValue(new Error('fail'))
+    hubState.getServerStatus.mockResolvedValue(false)
+    hubState.startServer.mockRejectedValue(new Error('fail'))
     render(<DataProvider />)
     await waitFor(() => {
       expect(h.setServerStatus).toHaveBeenCalledWith('stopped')
     })
+    err.mockRestore()
+  })
+
+  it('leaves the status alone when only the status query fails', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    hubState.getServerStatus.mockRejectedValue(new Error('fail'))
+    render(<DataProvider />)
+    await waitFor(() => {
+      expect(err).toHaveBeenCalled()
+    })
+    expect(h.setServerStatus).not.toHaveBeenCalled()
     err.mockRestore()
   })
 

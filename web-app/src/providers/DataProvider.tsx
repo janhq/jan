@@ -405,6 +405,9 @@ export function DataProvider() {
   // server outlives the webview, e.g. across a hide-to-tray reload), then
   // auto-start it only if enabled and not already running.
   useEffect(() => {
+    // Only a start this effect began may be rolled back to 'stopped': a failed
+    // status query must not clobber a start the user began elsewhere.
+    let startedPending = false
     serviceHub
       .app()
       .getServerStatus()
@@ -418,6 +421,7 @@ export function DataProvider() {
         if (!enableOnStartup) return
 
         setServerStatus('pending')
+        startedPending = true
 
         // Start model(s): prefer user-configured default, fall back to last session's models
         const modelsToStart = (() => {
@@ -472,8 +476,8 @@ export function DataProvider() {
           })
       })
       .catch((error: unknown) => {
-        console.error('Failed to start Local API Server on startup:', error)
-        setServerStatus('stopped')
+        console.error('Failed to sync or start Local API Server on startup:', error)
+        if (startedPending) setServerStatus('stopped')
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceHub])
