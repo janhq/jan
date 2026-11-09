@@ -6,6 +6,9 @@ const h = vi.hoisted(() => ({
   isAndroid: false,
   invoke: vi.fn(),
   getServiceHub: vi.fn(),
+  copyWorkspace: vi.fn(),
+  lastExtra: undefined as unknown,
+  lastMessages: [] as unknown[],
 }))
 
 vi.mock('@/lib/platform/utils', () => ({
@@ -15,6 +18,9 @@ vi.mock('@/lib/platform/utils', () => ({
 }))
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: h.getServiceHub,
+}))
+vi.mock('@/lib/agentTools', () => ({
+  copySessionWorkspaceToThread: h.copyWorkspace,
 }))
 
 import {
@@ -29,6 +35,7 @@ describe('migrateCoworkSessionsOnStartup', () => {
     h.isIOS = false
     h.isAndroid = false
     h.invoke.mockReset()
+    h.copyWorkspace.mockReset().mockResolvedValue({ copied: true })
     h.getServiceHub.mockReset()
     h.getServiceHub.mockReturnValue({ core: () => ({ invoke: h.invoke }) })
   })
@@ -76,5 +83,47 @@ describe('migrateCoworkSessionsOnStartup', () => {
     h.invoke.mockRejectedValue(new Error('boom'))
     const r = await migrateCoworkSessionsOnStartup()
     expect(r?.status).toBe('partial')
+  })
+
+  it('wires the sandbox copy through the agent-tools helper, not a raw invoke', async () => {
+    const envelope = JSON.stringify({
+      state: {
+        sessions: [
+          {
+            id: 's1',
+            title: 'T',
+            turns: [{ role: 'user', content: 'hi' }],
+            messages: [
+              { id: 'm', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+            ],
+            updated: 1_700_000_000_000,
+          },
+        ],
+      },
+      version: 1,
+    })
+    h.invoke.mockImplementation(async (cmd: string, args?: { key?: string }) => {
+      if (cmd === 'settings_get')
+        return args?.key === CODE_SESSIONS_KEY ? envelope : null
+      if (cmd === 'list_threads') return []
+      if (cmd === 'read_thread_extra') return h.lastExtra
+      if (cmd === 'write_thread_extra') {
+        h.lastExtra = (args as unknown as { value: unknown }).value
+        return undefined
+      }
+      if (cmd === 'replace_thread_messages') {
+        h.lastMessages = (args as unknown as { messages: unknown[] }).messages
+        return undefined
+      }
+      if (cmd === 'list_messages') return h.lastMessages
+      if (cmd === 'create_thread') return (args as unknown as { thread: unknown }).thread
+      return undefined
+    })
+    const r = await migrateCoworkSessionsOnStartup()
+    expect(r?.migrated).toEqual(['s1'])
+    expect(h.copyWorkspace).toHaveBeenCalledWith('s1')
+    expect(h.invoke.mock.calls.map((c) => c[0])).not.toContain(
+      'plugin:agent-tools|session_workspace_copy_to_thread'
+    )
   })
 })

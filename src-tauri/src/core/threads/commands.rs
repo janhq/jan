@@ -64,11 +64,24 @@ pub async fn list_threads<R: Runtime>(
 /// Creates a new thread and persists its metadata.
 /// Ensures the thread directory exists and writes thread.json.
 ///
-/// A caller-supplied `id` is kept when it is a valid thread id (a migrated
-/// Cowork session keeps its id so its sandbox stays linked). A missing or
+/// A caller-supplied `id` is kept when it is a valid thread id; a missing or
 /// invalid id gets a fresh UUID. Creation is idempotent: when thread.json
 /// already exists for the id, that record is returned untouched. thread.json
 /// is written atomically because it is the commit marker of a thread.
+///
+/// Two consequences of keeping the id:
+/// - A migrated Cowork session keeps its session id as its thread id. Its
+///   sandbox files under `agent-workspace/sessions/<id>` are NOT linked to the
+///   thread: the thread uses the normal thread workspace
+///   (`agent-workspace/threads/<id>`), and the migration COPIES the session's
+///   files there (`session_workspace_copy_to_thread`). `sessions/<id>` is left
+///   behind untouched as the rollback source.
+/// - Every normal chat now keeps the ULID the web app mints (`ulid()` in
+///   useThreads / ChatInput / conversations) instead of getting a backend UUID,
+///   so thread directory names are ULIDs for new chats and UUIDs for old ones
+///   (F6). Nothing in jan-cli or core/cli parses a thread id as a UUID: they
+///   only mint UUIDs and treat ids as opaque `[A-Za-z0-9_-]` names
+///   (`validate_thread_id`).
 #[tauri::command]
 pub async fn create_thread<R: Runtime>(
     app_handle: tauri::AppHandle<R>,

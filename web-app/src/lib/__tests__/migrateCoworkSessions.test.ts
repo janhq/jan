@@ -471,6 +471,112 @@ describe('migrateCoworkSessionsToThreads', () => {
   })
 })
 
+describe('sandbox workspace copy', () => {
+  type Copy = (id: string) => Promise<{ copied: boolean }>
+  const run = (b: ReturnType<typeof makeBackend>, copyWorkspace: Copy) =>
+    migrateCoworkSessionsToThreads(b.invoke, { copyWorkspace })
+
+  it('copies the sandbox into the thread workspace before thread.json commits', async () => {
+    const b = makeBackend()
+    const order: string[] = []
+    const invoke: Invoke = async <T = unknown>(cmd: string, args?: Args) => {
+      order.push(cmd)
+      return b.invoke<T>(cmd, args)
+    }
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const copyWorkspace = vi.fn(async (id: string) => {
+      order.push(`copy:${id}`)
+      return { copied: true }
+    })
+    const r = await migrateCoworkSessionsToThreads(invoke, { copyWorkspace })
+    expect(r.status).toBe('complete')
+    expect(copyWorkspace).toHaveBeenCalledWith('s1')
+    expect(order.indexOf('copy:s1')).toBeGreaterThan(-1)
+    expect(order.indexOf('copy:s1')).toBeLessThan(order.indexOf('create_thread'))
+  })
+
+  it('leaves the thread on Thread scope: no session scope marker in its metadata', async () => {
+    const b = makeBackend()
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    await run(b, async () => ({ copied: true }))
+    const meta = (b.threads.get('s1') as { metadata: Json }).metadata
+    expect(meta).not.toHaveProperty('sandboxScope')
+    expect(JSON.stringify(meta)).not.toContain('"session"')
+  })
+
+  it('an interrupted run redoes the copy: it is not skipped before the commit', async () => {
+    const b = makeBackend({ crashFirstCreate: true })
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const copyWorkspace = vi.fn(async () => ({ copied: true }))
+    await run(b, copyWorkspace)
+    expect(b.threads.has('s1')).toBe(false)
+    await run(b, copyWorkspace)
+    expect(copyWorkspace).toHaveBeenCalledTimes(2)
+    expect(b.threads.has('s1')).toBe(true)
+  })
+
+  it('does not copy again for a thread that is already committed', async () => {
+    const b = makeBackend()
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const copyWorkspace = vi.fn(async () => ({ copied: true }))
+    await run(b, copyWorkspace)
+    b.settings.delete(COWORK_MIGRATION_FLAG_KEY)
+    await run(b, copyWorkspace)
+    expect(copyWorkspace).toHaveBeenCalledTimes(1)
+  })
+
+  it('a transient copy failure never commits the thread and is retried', async () => {
+    const b = makeBackend()
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const r = await run(b, async () => {
+      throw new Error('ERROR: disk full')
+    })
+    expect(r.status).toBe('partial')
+    expect(r.failed.map((f) => f.id)).toEqual(['s1'])
+    expect(b.threads.has('s1')).toBe(false)
+    expect(b.settings.has(COWORK_MIGRATION_FLAG_KEY)).toBe(false)
+  })
+
+  it('a refusal to merge into a thread workspace with its own files is permanent', async () => {
+    const b = makeBackend()
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const r = await run(b, async () => {
+      throw new Error('already holds files of its own; refusing to merge into it')
+    })
+    expect(r.abandoned.map((a) => a.id)).toEqual(['s1'])
+    expect(b.threads.has('s1')).toBe(false)
+    expect(b.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
+  })
+
+  it('reads the message of a plugin error object, so a merge refusal is still permanent', async () => {
+    const b = makeBackend()
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const r = await run(b, async () => {
+      // The plugin rejects with { message }, not an Error.
+      throw {
+        message: 'x already holds files of its own; refusing to merge into it',
+      }
+    })
+    expect(r.abandoned).toEqual([
+      expect.objectContaining({ error: expect.stringContaining('refusing to merge') }),
+    ])
+  })
+
+  it('sessions without a sandbox migrate normally', async () => {
+    const b = makeBackend()
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const r = await run(b, async () => ({ copied: false }))
+    expect(r.migrated).toEqual(['s1'])
+  })
+
+  it('without a copy function (no sandbox backend) the migration still runs', async () => {
+    const b = makeBackend()
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const r = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(r.migrated).toEqual(['s1'])
+  })
+})
+
 describe('sameJson', () => {
   it('compares without re-sorting keys on the happy path', () => {
     const entries = vi.spyOn(Object, 'entries')
