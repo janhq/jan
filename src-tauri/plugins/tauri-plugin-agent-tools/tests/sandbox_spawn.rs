@@ -123,6 +123,29 @@ mod windows {
         let (ok, out) = rt.block_on(spawn(&shells[2].1, &ws, r#"echo "a b""#));
         assert!(ok && out.contains(r#""a b""#), "cmd quoting: {out}");
 
+        // #9612: "Allow Network Access" must change what the container may do. The
+        // capability was once attached without SE_GROUP_ENABLED, so Windows ignored
+        // it and the switch did nothing. A connect to TEST-NET-1 needs no internet:
+        // without the capability the stack refuses it locally (AccessDenied); with
+        // it the attempt is allowed out and merely goes unanswered.
+        let connect = "try { $c = [Net.Sockets.TcpClient]::new(); \
+             [void]$c.ConnectAsync('192.0.2.1', 443).Wait(1500); 'allowed' } \
+             catch { $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }; \
+             if ($e -is [Net.Sockets.SocketException]) { 'socket:' + $e.SocketErrorCode } \
+             else { 'other:' + $e.GetType().Name } }";
+        let powershell = &shells[1].1;
+        let (_, off) = rt.block_on(spawn_net(powershell, &ws, connect, false));
+        assert!(
+            off.contains("socket:AccessDenied"),
+            "network off must be refused by the container: {off}"
+        );
+        let (_, on) = rt.block_on(spawn_net(powershell, &ws, connect, true));
+        assert!(
+            on.contains("allowed") && !on.contains("AccessDenied"),
+            "network on must let the container connect out: {on}"
+        );
+        eprintln!("sandbox_spawn: network switch ok");
+
         let _ = std::fs::remove_dir_all(&ws);
     }
 
@@ -136,7 +159,17 @@ mod windows {
 
     /// [`spawn`] with the exit code itself.
     async fn spawn_code(shell: &ShellConfig, ws: &Path, command: &str) -> (Option<i32>, String) {
-        let policy = Policy::new(ws, false);
+        spawn_net(shell, ws, command, false).await
+    }
+
+    /// [`spawn_code`] with the network switch, which the Cowork setting drives.
+    async fn spawn_net(
+        shell: &ShellConfig,
+        ws: &Path,
+        command: &str,
+        allow_network: bool,
+    ) -> (Option<i32>, String) {
+        let policy = Policy::new(ws, allow_network);
         let wrapped = jail::wrap(shell, &policy).expect("AppContainer wrapper");
         let child = proc::spawn(&wrapped, command, ws, None, ShellEnv::default(), None)
             .await
