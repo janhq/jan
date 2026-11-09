@@ -58,7 +58,9 @@ function AssistantContent() {
 
   const handleSave = (assistant: Assistant) => {
     if (editingKey) {
-      updateAssistant(assistant)
+      updateAssistant(assistant).catch((error) => {
+        console.error('Failed to update assistant:', error)
+      })
     } else {
       addAssistant(assistant)
     }

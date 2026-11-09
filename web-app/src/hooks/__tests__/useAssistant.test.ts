@@ -48,7 +48,7 @@ describe('useAssistant', () => {
     expect(result.current.assistants).toContain(newAssistant)
   })
 
-  it('should update assistant', () => {
+  it('should update assistant', async () => {
     const { result } = renderHook(() => useAssistant())
 
     const updatedAssistant = {
@@ -57,8 +57,8 @@ describe('useAssistant', () => {
       description: 'Updated description',
     }
 
-    act(() => {
-      result.current.updateAssistant(updatedAssistant)
+    await act(async () => {
+      await result.current.updateAssistant(updatedAssistant)
     })
 
     expect(result.current.assistants[0].name).toBe('Updated Jan')
@@ -171,7 +171,7 @@ describe('useAssistant', () => {
     expect(result.current.assistants).toEqual([])
   })
 
-  it('should update assistant in current assistant if it matches', () => {
+  it('should update assistant in current assistant if it matches', async () => {
     const { result } = renderHook(() => useAssistant())
 
     const updatedDefaultAssistant = {
@@ -179,8 +179,8 @@ describe('useAssistant', () => {
       name: 'Updated Jan Name',
     }
 
-    act(() => {
-      result.current.updateAssistant(updatedDefaultAssistant)
+    await act(async () => {
+      await result.current.updateAssistant(updatedDefaultAssistant)
     })
 
     expect(result.current.currentAssistant.name).toBe('Updated Jan Name')

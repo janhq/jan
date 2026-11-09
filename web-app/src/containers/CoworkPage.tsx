@@ -41,7 +41,6 @@ import type {
   CoworkTurn,
 } from '@/types/coworkSession'
 import type { Attachment } from '@/types/attachment'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
@@ -1549,18 +1548,7 @@ export function CoworkPage() {
       data-testid="cowork-surface"
       className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]"
     >
-      <HeaderPage>
-        <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider
-            key={session?.id ?? 'new'}
-            model={session?.model}
-            useLastUsedModel={!session?.model}
-            onModelChange={(model) =>
-              useCoworkSessions.getState().setModel(ensureCurrentSession(), model)
-            }
-          />
-        </div>
-      </HeaderPage>
+      <HeaderPage />
 
       <div className="flex flex-1 h-full overflow-hidden">
         <div className="flex min-w-0 flex-1 flex-col h-full overflow-hidden">
@@ -1782,9 +1770,16 @@ export function CoworkPage() {
                 )}
                 <ChatInput
                   showSpeedToken={false}
+                  model={session?.model}
+                  onModelChange={(model) =>
+                    useCoworkSessions
+                      .getState()
+                      .setModel(ensureCurrentSession(), model)
+                  }
                   initialMessage={true}
                   scopeKey={session?.id}
                   ownsToolSet={false}
+                  supportsAssistants={false}
                   highlightedPrefix={skillCommandPrefix(prompt, skillCommands)}
                   onSubmit={handleSubmit}
                   onStop={handleStop}

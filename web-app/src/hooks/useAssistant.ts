@@ -9,7 +9,7 @@ interface AssistantState {
   loading: boolean
   defaultAssistantId: string
   addAssistant: (assistant: Assistant) => void
-  updateAssistant: (assistant: Assistant) => void
+  updateAssistant: (assistant: Assistant) => Promise<void>
   deleteAssistant: (id: string) => void
   setCurrentAssistant: (
     assistant: Assistant | undefined,
@@ -121,9 +121,14 @@ export const useAssistant = create<AssistantState>((set, get) => ({
         console.error('Failed to create assistant:', error)
       })
   },
-  updateAssistant: (assistant) => {
-    const state = get()
-    set({
+  // Persist first: a failed write rejects and leaves the store untouched, so the
+  // UI never shows a saved state that was not stored.
+  updateAssistant: async (assistant) => {
+    // Create assistant already covers update logic
+    await getServiceHub()
+      .assistants()
+      .createAssistant(assistant as unknown as CoreAssistant)
+    set((state) => ({
       assistants: state.assistants.map((a) =>
         a.id === assistant.id ? assistant : a
       ),
@@ -132,14 +137,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
         state.currentAssistant?.id === assistant.id
           ? assistant
           : state.currentAssistant,
-    })
-    // Create assistant already cover update logic
-    getServiceHub()
-      .assistants()
-      .createAssistant(assistant as unknown as CoreAssistant)
-      .catch((error) => {
-        console.error('Failed to update assistant:', error)
-      })
+    }))
   },
   deleteAssistant: (id) => {
     const state = get()
