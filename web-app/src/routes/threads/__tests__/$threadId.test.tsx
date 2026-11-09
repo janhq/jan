@@ -58,6 +58,7 @@ const h = vi.hoisted(() => {
       extensionId: string
       name: string
       server: string
+      generation?: number
     }>,
     setOomError: vi.fn(),
     setBackendError: vi.fn(),
@@ -2972,6 +2973,37 @@ describe('ThreadDetail route', () => {
             errorText:
               'Tool call refused: the tool changed while it was waiting for approval.',
           })
+        )
+      })
+
+      // The host refuses a call approved for a replaced handler binding, so
+      // the route must hand it the generation the tool was advertised with.
+      it('passes the advertised binding generation to callTool for an approved tool', async () => {
+        h.appStateState.extensionTools = [
+          {
+            wireName,
+            extensionId: 'acme.one',
+            name: 'echo',
+            server: 'ext:acme.one',
+            generation: 7,
+          },
+        ]
+        extensionHost.callTool.mockResolvedValue({
+          content: [{ type: 'text', text: 'HI' }],
+        })
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall(extToolCall('te7'))
+        })
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(extensionHost.callTool).toHaveBeenCalledTimes(1)
+        expect(extensionHost.callTool).toHaveBeenCalledWith(
+          'acme.one',
+          'echo',
+          { text: 'hi' },
+          expect.objectContaining({ generation: 7 })
         )
       })
 
