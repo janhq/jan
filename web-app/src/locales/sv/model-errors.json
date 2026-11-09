@@ -1,0 +1,32 @@
+{
+  "title": "Fel: kontexten är full",
+  "description": "Den här chatten närmar sig AI:ns minnesgräns, ungefär som en whiteboard som fylls. Vi kan utöka minnesfönstret (kontextstorleken) så att modellen minns mer, men det kan använda mer av datorns minne. Vi kan också trunkera inmatningen, vilket innebär att en del av chatthistoriken glöms bort för att ge plats åt nya meddelanden.",
+  "increaseContextSizeDescription": "Vill du öka kontextstorleken?",
+  "truncateInput": "Trunkera inmatning",
+  "increaseContextSize": "Öka kontextstorleken",
+  "lastRequestOverflowed": "Den senaste begäran överskred kontextfönstret.",
+  "contextOverflowDetail": "Den här begäran behövde {{request}} token, men modellens kontextfönster rymmer bara {{context}}.",
+  "contextOverflowGeneric": "Begäran överskrider den tillgängliga kontextstorleken.",
+  "engine": {
+    "unknown": "Modellmotorn rapporterade ett oväntat fel.",
+    "MODEL_LOAD_FAILED": "Modellen kunde inte läsas in.",
+    "MODEL_ARCH_NOT_SUPPORTED": "Den här modellarkitekturen stöds inte av den aktuella motorn. En uppdatering av motorn från Inställningar kan lägga till stöd.",
+    "MODEL_LOAD_TIMED_OUT": "Det tog för lång tid att läsa in modellen och den stoppades. En mindre modell eller mindre kontextstorlek hjälper vanligen.",
+    "MISSING_SHARED_LIBRARY": "Ett bibliotek som motorn behöver saknas, så den kan inte starta.",
+    "GPU_DRIVER_TOO_OLD": "Din GPU-drivrutin är för gammal för den här motorn. Uppdatera drivrutinen eller byt till CPU-motorn i Inställningar för att lösa problemet.",
+    "OUT_OF_MEMORY": "Det finns inte tillräckligt med minne för att köra modellen. En mindre modell eller mindre kontextstorlek hjälper vanligen.",
+    "INVALID_ARGUMENT": "En av modellens inställningar är inte giltig.",
+    "IO_ERROR": "En fil kunde inte läsas eller skrivas när modellen startades.",
+    "INTERNAL_ERROR": "Något gick fel i Jan när modellen startades."
+  },
+  "engineMissingLibraries": "Saknas: {{libraries}}",
+  "engineReportedDetail": "Motorn rapporterade: {{detail}}",
+  "startModelFailed": "Det gick inte att starta modellen: {{reason}}",
+  "createModelFailed": "Det gick inte att skapa modellen: {{reason}}",
+  "noRunningSession": "Ingen aktiv session hittades för modellen: {{model}}",
+  "serverPortOccupied": "Porten är upptagen",
+  "serverPortOccupiedDescription": "Port {{port}} används redan. Försök med en annan port.",
+  "serverInvalidModelPath": "Ogiltig eller otillgänglig modellsökväg",
+  "serverStartModelFailed": "Det gick inte att starta modellen",
+  "serverStartFailed": "Det gick inte att starta servern"
+}
