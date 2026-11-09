@@ -203,7 +203,7 @@ describe('useAssistant - coverage', () => {
     expect(result.current.defaultAssistantId).toBe('')
   })
 
-  it('updateAssistant should not change currentAssistant when different assistant updated', () => {
+  it('updateAssistant should not change currentAssistant when different assistant updated', async () => {
     const { result } = renderHook(() => useAssistant())
 
     const a2 = { id: 'a2', name: 'A2', avatar: '', description: '', instructions: '', created_at: 1, parameters: {} }
@@ -211,8 +211,8 @@ describe('useAssistant - coverage', () => {
       result.current.addAssistant(a2 as any)
     })
 
-    act(() => {
-      result.current.updateAssistant({ ...a2, name: 'Updated A2' } as any)
+    await act(async () => {
+      await result.current.updateAssistant({ ...a2, name: 'Updated A2' } as any)
     })
 
     // currentAssistant should still be jan

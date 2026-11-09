@@ -122,7 +122,6 @@ import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
 import { getExtensionHost } from '@/lib/extensions/host'
 import { extensionAuthorOf } from '@/lib/extensions/authorship'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ServiceKeys } from '@janhq/core'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useMessageQueue } from '@/stores/message-queue-store'
@@ -2497,11 +2496,7 @@ function ThreadDetail() {
 
   return (
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
-      <HeaderPage>
-        <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider model={threadModel} />
-        </div>
-      </HeaderPage>
+      <HeaderPage />
       <div className="flex flex-1 flex-col h-full overflow-hidden">
         {/* Messages Area */}
         <div
