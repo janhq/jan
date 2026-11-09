@@ -2,7 +2,11 @@ import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
 import { coworkSessionToThreadMessages } from '@/lib/coworkThreadMessages'
 import type { CoworkSession } from '@/hooks/useCoworkSessions'
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { isPlatformTauri } from '@/lib/platform/utils'
+import {
+  isPlatformAndroid,
+  isPlatformIOS,
+  isPlatformTauri,
+} from '@/lib/platform/utils'
 
 /**
  * One-time copy of Cowork sessions (`code-sessions` in settings.json) into
@@ -254,12 +258,16 @@ export async function migrateCoworkSessionsToThreads(
 /**
  * Startup entry point: runs the migration through the service hub's backend
  * `invoke`, the same seam `migrateLocalStorageToBackend` uses. On web there is
- * no backend and no `code-sessions` blob in it, so nothing runs. It never
+ * no backend and no `code-sessions` blob in it, so nothing runs; mobile is
+ * skipped too. It never
  * throws: a failed migration stays unflagged and is retried next launch, and
  * must not stop the app from rendering. Returns `null` when it did not run.
  */
 export async function migrateCoworkSessionsOnStartup(): Promise<CoworkMigrationResult | null> {
   if (!isPlatformTauri()) return null
+  // Sidecars and message replacement are file-backed and desktop-only; mobile
+  // stores threads in SQLite and Cowork does not exist there.
+  if (isPlatformIOS() || isPlatformAndroid()) return null
   try {
     const core = getServiceHub().core()
     return await migrateCoworkSessionsToThreads(core.invoke.bind(core) as Invoke)
