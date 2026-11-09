@@ -409,5 +409,13 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "coworkSync": {
+    "journalUnreadableTitle": "Certaines conversations Cowork importées sont masquées",
+    "journalUnreadableDescription": "Jan ne peut pas lire son registre de suppressions : les conversations importées d'une ancienne version restent donc masquées plutôt que de risquer de restaurer celles que vous avez déjà supprimées, et la suppression d'une conversation Cowork est temporairement bloquée. Vos données sont intactes. Pour rétablir la situation : quittez d'abord complètement Jan, car il réécrit settings.json depuis la mémoire pendant son exécution et annulerait votre modification. Corrigez ou supprimez ensuite l'entrée 'cowork_deleted_ids' dans settings.json. La supprimer restaure toutes les conversations importées, y compris celles que vous aviez supprimées.",
+    "missingThreadTitle": "Une conversation Cowork n'a pas pu être enregistrée",
+    "missingThreadDescription": "Son fil enregistré est introuvable, les modifications ne sont donc plus enregistrées. Vous pouvez toujours le lire, l'exporter ou le supprimer.",
+    "writeRefusedTitle": "Une conversation Cowork ne peut pas être enregistrée",
+    "writeRefusedDescription": "Jan ne peut pas enregistrer cette conversation sous son identifiant actuel, les modifications ne sont donc pas enregistrées. Vous pouvez toujours la lire, l'exporter ou la supprimer."
   }
 }

@@ -789,5 +789,13 @@
   "askRecommended": "Recommended",
   "askSelectedCount": "{{count}} selected",
   "askSomethingElse": "Something else",
-  "submit": "Submit"
+  "submit": "Submit",
+  "coworkSync": {
+    "journalUnreadableTitle": "Some imported Cowork conversations are hidden",
+    "journalUnreadableDescription": "Jan can't read its deletion record, so conversations imported from an older version stay hidden rather than risk restoring ones you already deleted, and deleting any Cowork conversation is temporarily blocked. Your data is untouched. To recover: quit Jan completely first, because Jan rewrites settings.json from memory while it runs and would undo your edit. Then fix or remove the 'cowork_deleted_ids' entry in settings.json. Removing it restores every imported conversation, including any you had deleted.",
+    "missingThreadTitle": "A Cowork conversation could not be saved",
+    "missingThreadDescription": "Its stored thread is missing, so changes are no longer saved. You can still read, export or delete it.",
+    "writeRefusedTitle": "A Cowork conversation cannot be saved",
+    "writeRefusedDescription": "Jan cannot store this conversation under its current id, so changes are not saved. You can still read, export or delete it."
+  }
 }

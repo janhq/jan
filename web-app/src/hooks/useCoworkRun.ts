@@ -703,3 +703,48 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
 // changes, not on every other session's.
 export const useIsSessionActive = (sid: string | undefined) =>
   useCoworkRun((s) => (sid ? s.runId[sid] != null : false))
+
+// Run closures own their transcript and wire history until their finally block
+// commits them. Keep this registry outside React so background/unmounted runs
+// participate in close just like the session currently on screen.
+const closeParticipants = new Set<() => Promise<void>>()
+let closing = false
+let quiescePromise: Promise<void> | null = null
+
+export function isCoworkClosing(): boolean {
+  return closing
+}
+
+/** Register synchronously when a run is claimed; unregister AFTER its commit. */
+export function registerCoworkRunForClose(stopAndCommit: () => Promise<void>): () => void {
+  closeParticipants.add(stopAndCommit)
+  return () => { closeParticipants.delete(stopAndCommit) }
+}
+
+/** Stop every run before waiting, then await all final commits (even on error). */
+export function quiesceCoworkRuns(): Promise<void> {
+  closing = true
+  quiescePromise ??= (async () => {
+    const settled = await Promise.allSettled(
+      [...closeParticipants].map(async (stopAndCommit) => stopAndCommit())
+    )
+    const failed = settled.find((result) => result.status === 'rejected')
+    if (failed?.status === 'rejected') {
+      quiescePromise = null
+      throw failed.reason
+    }
+  })()
+  return quiescePromise
+}
+
+/** A prevented close leaves the application usable and the next close retries. */
+export function resumeCoworkAfterPreventedClose(): void {
+  closing = false
+  quiescePromise = null
+}
+
+export function __resetCoworkRunCloseForTests(): void {
+  closeParticipants.clear()
+  closing = false
+  quiescePromise = null
+}
