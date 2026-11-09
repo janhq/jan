@@ -45,7 +45,7 @@ type ThreadState = {
   ) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
-  updateCurrentThreadAssistant: (assistant: Assistant) => void
+  updateCurrentThreadAssistant: (assistant: Assistant | undefined) => void
   /**
    * Persist new sampling parameters on one thread's assistant. Resolves to the
    * saved assistant, or undefined when the thread's assistant changed (identity)

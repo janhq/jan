@@ -326,6 +326,7 @@ vi.mock('@/lib/platform/utils', () => ({
 import ChatInput from '../ChatInput'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { useAssistantSwitcher } from '@/hooks/useAssistantSwitcher'
 
 // Helpers -------------------------------------------------------------------
 
@@ -349,6 +350,7 @@ const resetAll = () => {
   clearQueueMock.mockClear()
   for (const k of Object.keys(queueState)) delete queueState[k]
   getCurrentThreadMock.mockReturnValue(undefined)
+  updateCurrentThreadAssistantMock.mockClear()
   useImageAttachmentConfig.setState({ maxImageSizeMB: 10 })
   useWebSearchConfig.setState({ webSearchEnabled: false })
 }
@@ -379,6 +381,60 @@ describe('ChatInput', () => {
 
     // The assistant list now lives in the composer's options menu.
     expect(screen.getByTestId('stub-assistants-menu')).toHaveTextContent('a2')
+  })
+
+  describe('Cmd/Ctrl+J assistant cycle', () => {
+    const cycle = () =>
+      act(() => {
+        useAssistantSwitcher.getState().cycleHandler?.()
+      })
+
+    it('cycles a1 -> a2 -> None -> a1 on a home composer', () => {
+      renderInput()
+      const shown = () => screen.getByTestId('stub-assistants-menu').textContent
+      expect(shown()).toBe('a1')
+      cycle()
+      expect(shown()).toBe('a2')
+      cycle()
+      expect(shown()).toBe('')
+      cycle()
+      expect(shown()).toBe('a1')
+    })
+
+    it('cycles a1 -> a2 -> None -> a1 on an open thread', () => {
+      const withAssistant = (id?: string) => ({
+        id: 'thread-1',
+        assistants: id ? [{ id }] : [],
+      })
+      getCurrentThreadMock.mockReturnValue(withAssistant('a1') as never)
+      // ChatInput is memoized and takes no thread prop, so a changed store
+      // value only shows after a fresh mount.
+      const remount = (v: ReturnType<typeof renderInput>) => {
+        v.unmount()
+        return renderInput()
+      }
+      let view = renderInput()
+
+      cycle()
+      expect(updateCurrentThreadAssistantMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: 'a2' })
+      )
+
+      getCurrentThreadMock.mockReturnValue(withAssistant('a2') as never)
+      view = remount(view)
+      cycle()
+      expect(updateCurrentThreadAssistantMock).toHaveBeenLastCalledWith(
+        undefined
+      )
+
+      getCurrentThreadMock.mockReturnValue(withAssistant() as never)
+      view = remount(view)
+      cycle()
+      expect(updateCurrentThreadAssistantMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: 'a1' })
+      )
+      expect(updateCurrentThreadAssistantMock).toHaveBeenCalledTimes(3)
+    })
   })
 
   it('disables the send button when prompt is empty', () => {

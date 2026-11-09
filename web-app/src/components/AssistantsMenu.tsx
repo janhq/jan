@@ -5,7 +5,7 @@ type AssistantMenuProps = {
   selectedAssistant: string | undefined
   setSelectedAssistant: (assistant: string) => void
   currentThread: Thread | undefined
-  updateCurrentThreadAssistant: (assistant: Assistant) => void
+  updateCurrentThreadAssistant: (assistant: Assistant | undefined) => void
   assistants: Assistant[]
 }
 
@@ -48,7 +48,7 @@ export function AssistantsMenu({
         onClick={() => {
           setSelectedAssistant('')
           if (currentThread) {
-            updateCurrentThreadAssistant(undefined as unknown as Assistant)
+            updateCurrentThreadAssistant(undefined)
           }
         }}
       >
