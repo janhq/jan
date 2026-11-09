@@ -1187,3 +1187,81 @@ async fn test_replace_thread_messages_rejects_a_batch_that_would_corrupt_the_log
         .unwrap();
     assert!(listed.is_empty());
 }
+
+/// Doubles whose shortest decimal text serde_json parses one ULP off unless
+/// `float_roundtrip` is on. A deterministic spread of arithmetic results plus
+/// the classic 0.1 + 0.2.
+fn awkward_doubles() -> Vec<f64> {
+    let mut out = vec![0.1 + 0.2];
+    let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+    for _ in 0..4000 {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        out.push((x >> 11) as f64 / (1u64 << 53) as f64 * 1e3);
+    }
+    out
+}
+
+#[test]
+fn test_serde_json_parses_floats_back_to_the_same_double() {
+    for n in awkward_doubles() {
+        let text = serde_json::to_string(&n).unwrap();
+        let back: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.as_f64().unwrap().to_bits(), n.to_bits(), "{text}");
+    }
+}
+
+#[tokio::test]
+async fn test_thread_extra_and_messages_roundtrip_non_representable_doubles() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let doubles = awkward_doubles();
+
+    // Through the command boundary the value arrives as parsed JSON text.
+    let text = serde_json::to_string(&json!({ "usage": doubles })).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    write_thread_extra(
+        app.handle().clone(),
+        "float-thread".into(),
+        "cowork".into(),
+        value.clone(),
+        Some(true),
+    )
+    .await
+    .unwrap();
+    let back = read_thread_extra(
+        app.handle().clone(),
+        "float-thread".into(),
+        "cowork".into(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    for (got, want) in back["usage"].as_array().unwrap().iter().zip(&doubles) {
+        assert_eq!(got.as_f64().unwrap().to_bits(), want.to_bits());
+    }
+
+    let mut message = migrated_message("float-thread", "float-thread-msg-0", "x");
+    message["metadata"] = json!({ "usage": doubles });
+    let message: serde_json::Value =
+        serde_json::from_str(&serde_json::to_string(&message).unwrap()).unwrap();
+    replace_thread_messages(
+        app.handle().clone(),
+        "float-thread".into(),
+        vec![message],
+        Some(true),
+    )
+    .await
+    .unwrap();
+    let listed = list_messages(app.handle().clone(), "float-thread".into())
+        .await
+        .unwrap();
+    for (got, want) in listed[0]["metadata"]["usage"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(&doubles)
+    {
+        assert_eq!(got.as_f64().unwrap().to_bits(), want.to_bits());
+    }
+}

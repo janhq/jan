@@ -164,7 +164,10 @@ serde = { version = "1.0", features = ["derive"] }
 # `raw_value` keeps a JSON number as the text the server sent. Money fields in
 # the Tokamak usage API must round-trip exactly, and a plain parse routes every
 # number through f64 (see core/cli/tokamak/usage.rs).
-serde_json = { version = "1.0", features = ["raw_value"] }
+# `float_roundtrip` makes a parsed double equal the one that was written; the
+# default parser can be one ULP off, which breaks byte-stable thread storage
+# and the Cowork migration's read-back check.
+serde_json = { version = "1.0", features = ["raw_value", "float_roundtrip"] }
 serde_yaml = "0.9.34"
 toml = "0.8"
 toml_edit = "0.23"
