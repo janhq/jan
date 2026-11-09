@@ -823,3 +823,230 @@ async fn test_thread_commands_refuse_ids_outside_threads_dir() {
     assert!(!outside.path().join("messages.jsonl").exists());
     assert!(!outside.path().join("thread.json").exists());
 }
+
+#[tokio::test]
+async fn test_create_thread_honours_valid_supplied_id() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Supplied id");
+    thread["id"] = json!("0b6f1c1e-5a0e-4a53-9c1e-7f7d2a3b4c5d");
+    let created = create_thread(app.handle().clone(), thread).await.unwrap();
+    assert_eq!(created["id"], "0b6f1c1e-5a0e-4a53-9c1e-7f7d2a3b4c5d");
+
+    let data_folder = get_jan_data_folder_path(app.handle().clone());
+    assert!(
+        get_thread_metadata_path(&data_folder, "0b6f1c1e-5a0e-4a53-9c1e-7f7d2a3b4c5d")
+            .unwrap()
+            .is_file()
+    );
+}
+
+#[tokio::test]
+async fn test_create_thread_keeps_ulid_ids_from_the_web_app() {
+    // The web app mints ULIDs; they are valid thread ids and must round-trip.
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Ulid");
+    thread["id"] = json!("01HZX3Y9K2M4N6P8Q0R2S4T6V8");
+    let created = create_thread(app.handle().clone(), thread).await.unwrap();
+    assert_eq!(created["id"], "01HZX3Y9K2M4N6P8Q0R2S4T6V8");
+}
+
+#[tokio::test]
+async fn test_create_thread_invalid_or_missing_id_gets_uuid() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut bad = create_test_thread("Bad id");
+    bad["id"] = json!("../escape");
+    let created = create_thread(app.handle().clone(), bad).await.unwrap();
+    let id = created["id"].as_str().unwrap();
+    assert_ne!(id, "../escape");
+    assert!(validate_thread_id(id).is_ok());
+
+    let created = create_thread(app.handle().clone(), create_test_thread("No id"))
+        .await
+        .unwrap();
+    assert!(validate_thread_id(created["id"].as_str().unwrap()).is_ok());
+}
+
+#[tokio::test]
+async fn test_create_thread_with_existing_id_is_idempotent() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut first = create_test_thread("Original");
+    first["id"] = json!("idem-thread-1");
+    create_thread(app.handle().clone(), first).await.unwrap();
+
+    let mut second = create_test_thread("Overwrite attempt");
+    second["id"] = json!("idem-thread-1");
+    let again = create_thread(app.handle().clone(), second).await.unwrap();
+    assert_eq!(again["title"], "Original");
+
+    let threads = list_threads(app.handle().clone()).await.unwrap();
+    let stored = threads.iter().find(|t| t["id"] == "idem-thread-1").unwrap();
+    assert_eq!(stored["title"], "Original");
+}
+
+#[tokio::test]
+async fn test_concurrent_create_thread_with_same_id_keeps_the_first_record() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let creates = (0..8).map(|n| {
+        let mut thread = create_test_thread(&format!("Racer {n}"));
+        thread["id"] = json!("race-thread-1");
+        create_thread(app.handle().clone(), thread)
+    });
+    let results = future::join_all(creates).await;
+    let titles: std::collections::HashSet<String> = results
+        .into_iter()
+        .map(|r| r.unwrap()["title"].as_str().unwrap().to_string())
+        .collect();
+    // Every caller sees the one record that won; none sees its own overwrite.
+    assert_eq!(titles.len(), 1, "{titles:?}");
+
+    let data_folder = get_jan_data_folder_path(app.handle().clone());
+    let path = get_thread_metadata_path(&data_folder, "race-thread-1").unwrap();
+    let on_disk: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(
+        on_disk["title"].as_str().unwrap(),
+        titles.into_iter().next().unwrap()
+    );
+}
+
+#[tokio::test]
+async fn test_thread_extra_roundtrip_and_allowlist() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Extra");
+    thread["id"] = json!("extra-thread-1");
+    create_thread(app.handle().clone(), thread).await.unwrap();
+
+    let absent = read_thread_extra(
+        app.handle().clone(),
+        "extra-thread-1".into(),
+        "cowork".into(),
+    )
+    .await
+    .unwrap();
+    assert!(absent.is_none());
+
+    let value = json!({"turns": [{"role": "user", "content": "hi"}], "messages": [], "n": 1.5});
+    write_thread_extra(
+        app.handle().clone(),
+        "extra-thread-1".into(),
+        "cowork".into(),
+        value.clone(),
+        None,
+    )
+    .await
+    .unwrap();
+    let back = read_thread_extra(
+        app.handle().clone(),
+        "extra-thread-1".into(),
+        "cowork".into(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(back, Some(value));
+
+    // A name outside the allowlist, or an id that escapes the threads dir, is refused.
+    assert!(write_thread_extra(
+        app.handle().clone(),
+        "extra-thread-1".into(),
+        "thread".into(),
+        json!({}),
+        None,
+    )
+    .await
+    .is_err());
+    assert!(
+        read_thread_extra(app.handle().clone(), "../x".into(), "cowork".into())
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn test_write_thread_extra_creates_the_directory_only_on_request() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let data_folder = get_jan_data_folder_path(app.handle().clone());
+
+    // Without thread.json a late write (for example after a delete) must not
+    // resurrect a directory holding a lone sidecar.
+    let err = write_thread_extra(
+        app.handle().clone(),
+        "ghost-thread".into(),
+        "cowork".into(),
+        json!({"turns": []}),
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(err.contains("thread.json"), "{err}");
+    assert!(!get_thread_dir(&data_folder, "ghost-thread").unwrap().exists());
+
+    // The migration opts in: the sidecar lands first, thread.json is the commit marker.
+    write_thread_extra(
+        app.handle().clone(),
+        "ghost-thread".into(),
+        "cowork".into(),
+        json!({"turns": []}),
+        Some(true),
+    )
+    .await
+    .unwrap();
+    assert!(get_thread_dir(&data_folder, "ghost-thread").unwrap().exists());
+
+    // A directory holding only the sidecar is not a thread yet.
+    let listed = list_threads(app.handle().clone()).await.unwrap();
+    assert!(listed.iter().all(|t| t["id"] != "ghost-thread"));
+}
+
+#[tokio::test]
+async fn test_deleted_thread_cannot_be_resurrected_by_sidecar_write() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Doomed");
+    thread["id"] = json!("doomed-thread");
+    create_thread(app.handle().clone(), thread).await.unwrap();
+    write_thread_extra(
+        app.handle().clone(),
+        "doomed-thread".into(),
+        "cowork".into(),
+        json!({"turns": []}),
+        None,
+    )
+    .await
+    .unwrap();
+    delete_thread(app.handle().clone(), "doomed-thread".into())
+        .await
+        .unwrap();
+
+    assert!(write_thread_extra(
+        app.handle().clone(),
+        "doomed-thread".into(),
+        "cowork".into(),
+        json!({}),
+        None,
+    )
+    .await
+    .is_err());
+    assert!(read_thread_extra(
+        app.handle().clone(),
+        "doomed-thread".into(),
+        "cowork".into(),
+    )
+    .await
+    .unwrap()
+    .is_none());
+}
+
+#[tokio::test]
+async fn test_create_thread_write_leaves_no_temp_files() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Atomic");
+    thread["id"] = json!("atomic-thread");
+    create_thread(app.handle().clone(), thread).await.unwrap();
+
+    let data_folder = get_jan_data_folder_path(app.handle().clone());
+    let dir = get_thread_dir(&data_folder, "atomic-thread").unwrap();
+    let names: Vec<String> = fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec![THREADS_FILE.to_string()]);
+}
