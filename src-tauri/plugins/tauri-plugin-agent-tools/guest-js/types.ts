@@ -49,6 +49,15 @@ export interface MemoryCatalogEntry {
 /** Which sandbox namespace an id belongs to. */
 export type WorkspaceScope = 'thread' | 'session'
 
+/** What `sessionWorkspaceCopyToThread` did. */
+export interface WorkspaceCopy {
+  /** False when the session never had a sandbox. */
+  copied: boolean
+  files: number
+  /** Symlinks and special files that were not copied. */
+  skipped: number
+}
+
 /** One fragment of a tool's live output. */
 export type ToolOutputChunk = {
   /** Monotonic per call, so a receiver can assert ordering. */

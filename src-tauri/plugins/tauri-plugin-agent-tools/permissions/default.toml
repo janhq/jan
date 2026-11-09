@@ -6,6 +6,7 @@ permissions = [
     "allow-thread-workspace-delete",
     "allow-thread-workspace-sweep",
     "allow-session-workspace-path",
+    "allow-session-workspace-copy-to-thread",
     "allow-session-workspace-delete",
     "allow-session-workspace-sweep",
     "allow-skill-list",

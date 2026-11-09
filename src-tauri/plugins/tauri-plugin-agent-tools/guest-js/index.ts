@@ -6,6 +6,7 @@ import {
   ToolOutputChunk,
   ToolResult,
   ToolSchema,
+  WorkspaceCopy,
   WorkspaceScope,
 } from './types'
 
@@ -17,6 +18,7 @@ export {
   ToolOutputChunk,
   ToolResult,
   ToolSchema,
+  WorkspaceCopy,
   WorkspaceScope,
 } from './types'
 
@@ -118,6 +120,22 @@ export async function sessionWorkspacePath(
   sessionId: string
 ): Promise<string> {
   return await invoke('plugin:agent-tools|session_workspace_path', {
+    dataFolder,
+    sessionId,
+  })
+}
+
+/**
+ * Copy a Cowork session's sandbox into the thread workspace of the same id
+ * (`threads/<id>`), for the Cowork-to-threads migration. A copy: the session
+ * sandbox stays where it was as the rollback source. Symlinks are skipped, and
+ * a thread workspace that holds files the copy did not make is refused.
+ */
+export async function sessionWorkspaceCopyToThread(
+  dataFolder: string,
+  sessionId: string
+): Promise<WorkspaceCopy> {
+  return await invoke('plugin:agent-tools|session_workspace_copy_to_thread', {
     dataFolder,
     sessionId,
   })
