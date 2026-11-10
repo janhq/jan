@@ -271,6 +271,51 @@ pub fn settings_flush() -> Result<(), String> {
     flush_settings()
 }
 
+/// Copy the current settings, once, to `settings.<label>.json` beside
+/// `settings.json`, before a one-way change such as the Cowork migration. An
+/// existing backup is never overwritten, so it keeps the oldest state. Returns
+/// whether this call wrote it.
+#[tauri::command]
+pub fn settings_backup_once(label: String) -> Result<bool, String> {
+    let path = backup_path(&settings_file_path(), &label)?;
+    backup_once_to(store(), &path)
+}
+
+fn backup_path(settings: &std::path::Path, label: &str) -> Result<PathBuf, String> {
+    let valid = !label.is_empty()
+        && label.len() <= 64
+        && label
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    if !valid {
+        return Err(format!("invalid settings backup label: {label:?}"));
+    }
+    Ok(settings.with_file_name(format!("settings.{label}.json")))
+}
+
+fn backup_once_to(store: &Store, path: &PathBuf) -> Result<bool, String> {
+    // Under WRITE, like a flush: a factory reset waits for it, and one that
+    // already ran leaves nothing to back up.
+    let _write = WRITE.lock().unwrap_or_else(|e| e.into_inner());
+    let snapshot = {
+        let guard = lock(store);
+        if guard.discarded {
+            return Ok(false);
+        }
+        guard.map.clone()
+    };
+    if path.exists() {
+        return Ok(false);
+    }
+    write_map_atomic(path, &snapshot)?;
+    // This file is the only copy of what the change replaces: make it durable
+    // before the caller goes ahead.
+    fs::File::open(path)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,5 +466,37 @@ mod tests {
         let empty = dir.path().join("empty.json");
         fs::write(&empty, "   ").unwrap();
         assert!(read_map(&empty).is_empty());
+    }
+
+    #[test]
+    fn backup_is_written_once_and_never_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = backup_path(&dir.path().join("settings.json"), "pre-x").unwrap();
+        assert!(path.ends_with("settings.pre-x.json"));
+        let store: Store = (Mutex::new(new_map()), Condvar::new());
+        store.0.lock().unwrap().set("code-sessions".into(), "old".into());
+
+        assert_eq!(backup_once_to(&store, &path), Ok(true));
+        store.0.lock().unwrap().set("code-sessions".into(), "new".into());
+        assert_eq!(backup_once_to(&store, &path), Ok(false));
+        assert_eq!(read_map(&path).get("code-sessions"), Some(&"old".to_string()));
+    }
+
+    #[test]
+    fn backup_label_cannot_leave_the_data_folder_or_replace_settings() {
+        let settings = std::path::Path::new("/data/settings.json");
+        for bad in ["", "../x", "a/b", "A", "x.json", "a\\b"] {
+            assert!(backup_path(settings, bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn no_backup_after_a_factory_reset() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.pre-x.json");
+        let store: Store = (Mutex::new(new_map()), Condvar::new());
+        store.0.lock().unwrap().discard();
+        assert_eq!(backup_once_to(&store, &path), Ok(false));
+        assert!(!path.exists());
     }
 }
