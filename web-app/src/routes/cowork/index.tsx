@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { ensureCoworkEnabled } from '@/lib/coworkAccess'
 
 /**
  * `/cowork` has no conversation of its own any more: it forwards to the
@@ -11,6 +12,7 @@ import { useCoworkSessions } from '@/hooks/useCoworkSessions'
  */
 export const Route = createFileRoute('/cowork/')({
   beforeLoad: () => {
+    ensureCoworkEnabled()
     const { currentId, sessions } = useCoworkSessions.getState()
     if (currentId && sessions.some((s) => s.id === currentId)) {
       throw redirect({
