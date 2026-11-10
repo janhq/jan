@@ -502,6 +502,33 @@ describe('coworkSync', () => {
       expect(backend.threads.has('b')).toBe(true)
     })
 
+    it('a session the background run gives up on turns read-only with its reason', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      putBlob(legacy('a'), legacy('b'))
+      let release!: () => void
+      const gate = new Promise<void>((r) => (release = r))
+      backend.hooks.before = async (cmd) => {
+        if (cmd === 'replace_thread_messages') await gate
+      }
+      agentTools.copySessionWorkspaceToThread.mockRejectedValueOnce(
+        new Error('PERMANENT: a already holds files of its own')
+      )
+      const started = startCoworkSync()
+      await vi.advanceTimersByTimeAsync(COWORK_MIGRATION_BUDGET_MS + 100)
+      await started
+      expect(useCoworkSessions.getState().sessions.find((s) => s.id === 'a')!.unavailable).toBeUndefined()
+      release()
+      await vi.advanceTimersByTimeAsync(200)
+      await flushCowork()
+      const a = useCoworkSessions.getState().sessions.find((s) => s.id === 'a')!
+      expect([a.unavailable, a.importError]).toEqual([
+        'not-imported',
+        'PERMANENT: a already holds files of its own',
+      ])
+      expect(backend.threads.has('a')).toBe(false)
+      expect(backend.threads.has('b')).toBe(true)
+    })
+
     it('a session deleted while the migration was still running does not come back', async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       putBlob(legacy('a'), legacy('b'))
