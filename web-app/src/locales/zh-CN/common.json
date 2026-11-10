@@ -616,7 +616,10 @@
   "deleteSessionTitle": "删除会话？",
   "deleteSessionBody": "“{{title}}”及其记录将被永久删除，此操作无法撤销。",
   "sidebar": {
-    "more": "更多"
+    "more": "更多",
+    "toggle": "切换侧边栏",
+    "navigation": "导航",
+    "navigationDescription": "跳转到聊天、项目、产物、技能和设置。"
   },
   "composer": {
     "addControls": "添加附件和控件",
@@ -670,5 +673,13 @@
   },
   "skillDestination": "新技能保存到",
   "skillDestinationFolder": "此文件夹",
-  "skillDestinationGlobal": "全局（所有对话）"
+  "skillDestinationGlobal": "全局（所有对话）",
+  "overview": {
+    "description": "此对话的进度、文件和后台任务。"
+  },
+  "artifactsLibraryDescription": "你在所有对话中创建的文件，集中在一处。",
+  "artifactsLibraryCount_one": "{{count}} 个文件",
+  "artifactsLibraryCount_other": "{{count}} 个文件",
+  "artifactsLibraryFilter": "按文件类型筛选",
+  "artifactsLibraryReset": "清除筛选"
 }

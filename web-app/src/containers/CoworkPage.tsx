@@ -2,6 +2,10 @@
 import { useNavigate } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
+import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
+import { CoworkOverviewPanel } from '@/containers/CoworkOverviewPanel'
+import { ConversationColumn } from '@/components/ai-elements/conversation-column'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -15,7 +19,7 @@ import {
 } from 'react'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
-import { Bot, Command, Sparkles } from 'lucide-react'
+import { Bot, Command, PanelRight, Sparkles } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
@@ -257,6 +261,9 @@ export function CoworkPage() {
   )
   // The rail holds one panel at a time: they all want the width, so showing
   // two together starves the transcript (C7).
+  const desktopOverview = useMediaQuery('(min-width: 1280px)', true)
+  const [overviewOpen, setOverviewOpen] = useState(true)
+  const [overviewRequested, setOverviewRequested] = useState(false)
   const [rail, setRail] = useState<
     | { kind: 'preview'; path: string }
     | { kind: 'diff' }
@@ -267,7 +274,10 @@ export function CoworkPage() {
     | null
   >(null)
   const showPreview = useCallback(
-    (path: string) => setRail({ kind: 'preview', path }),
+    (path: string) => {
+      setOverviewOpen(false)
+      setRail({ kind: 'preview', path })
+    },
     []
   )
   const ask = useCoworkRun((s) =>
@@ -1616,9 +1626,44 @@ export function CoworkPage() {
   return (
     <div
       data-testid="cowork-surface"
-      className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]"
+      className="relative flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]"
     >
-      <HeaderPage />
+      <HeaderPage>
+        <div className="flex items-center justify-between w-full pr-2">
+          <ConversationHeaderTitle
+            title={session?.title}
+            project={session?.project}
+          />
+          <button
+            type="button"
+            aria-label={t(
+              overviewOpen && !dockedRail
+                ? 'common:overview.close'
+                : 'common:overview.title'
+            )}
+            data-testid="overview-toggle"
+            aria-pressed={overviewOpen && !dockedRail}
+            onClick={() => {
+              setOverviewRequested(true)
+              if (!desktopOverview && !overviewRequested) {
+                setRail(null)
+                setOverviewOpen(true)
+                return
+              }
+              if (dockedRail) {
+                setRail(null)
+                setOverviewOpen(true)
+              } else setOverviewOpen((open) => !open)
+            }}
+            className={cn(
+              'ml-auto flex size-8 shrink-0 items-center justify-center rounded-full bg-muted/70 text-muted-foreground transition-[margin,background-color,color] duration-250 ease-out motion-reduce:transition-none hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              overviewOpen && !dockedRail && 'xl:mr-80'
+            )}
+          >
+            <PanelRight className="size-4" />
+          </button>
+        </div>
+      </HeaderPage>
 
       <div className="flex flex-1 h-full overflow-hidden">
         <div className="flex min-w-0 flex-1 flex-col h-full overflow-hidden">
@@ -1634,16 +1679,7 @@ export function CoworkPage() {
                     so with no bottom padding the last row -- the live
                     "Working..." indicator -- rests flush against the input and
                     reads as tucked behind it. */}
-                <ConversationContent
-                  className={cn(
-                    'mx-auto w-full px-6 pb-4',
-                    // The centering fractions assume the transcript owns the
-                    // width; with a side panel open the column is already
-                    // narrow, so keeping them crushes the message and composer
-                    // into an unreadable sliver.
-                    !dockedRail && 'md:w-4/5 xl:w-4/6'
-                  )}
-                >
+                <ConversationContent column className="pb-4">
                   {uiMessages.map((message, i) => (
                     <Fragment key={message.id}>
                       <MessageItem
@@ -1766,7 +1802,7 @@ export function CoworkPage() {
 
           {/* pb-only: the scroll area runs right up to the composer. */}
           <div className="pb-4 shrink-0">
-            <div className={cn('mx-auto w-full px-6', !dockedRail && 'md:w-4/5 xl:w-4/6')}>
+            <ConversationColumn reserveScrollGutter>
               {/* The card rises in when a question arrives and folds away once
                   answered, so the chat box glides instead of jumping. A card
                   already pending when the view mounts just appears. */}
@@ -1927,10 +1963,18 @@ export function CoworkPage() {
                   }
                 />
               </div>
-            </div>
+            </ConversationColumn>
           </div>
         </div>
 
+        <div
+          className={cn(
+            'hidden shrink-0 transition-[width] duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none xl:block',
+            overviewOpen && !dockedRail ? 'w-80' : 'w-0'
+          )}
+          aria-hidden="true"
+        />
+        <AnimatePresence initial={false}>
         {rail?.kind === 'preview' && (
           <CoworkPreviewPanel
             roots={[folder, workspacePath]}
@@ -1962,6 +2006,7 @@ export function CoworkPage() {
             onClose={() => setRail(null)}
           />
         )}
+        </AnimatePresence>
         {/* Always mounted so Radix can play the close animation; the sheet
             overlays the page, so it is not a docked rail. */}
         {localModel && modelProvider && (
@@ -1975,6 +2020,28 @@ export function CoworkPage() {
           />
         )}
       </div>
+      <AnimatePresence initial={false}>
+        {overviewOpen && !dockedRail && (desktopOverview || overviewRequested) && (
+          <CoworkOverviewPanel
+            todos={session?.todos}
+            attachments={attachments}
+            artifacts={artifacts}
+            files={fileDiffs}
+            subagents={subagents}
+            monitorCount={monitors.length}
+            onPreview={showPreview}
+            onChanges={() => {
+              setOverviewOpen(false)
+              setRail({ kind: 'diff' })
+            }}
+            onAgents={() => {
+              setOverviewOpen(false)
+              setRail({ kind: 'tasks' })
+            }}
+            onClose={() => setOverviewOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
