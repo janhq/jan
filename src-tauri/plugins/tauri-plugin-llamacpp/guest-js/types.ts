@@ -105,8 +105,8 @@ export type LlamacppConfig = {
   flash_attn: string
   parallel: number
   cont_batching: boolean
-  no_mmap: boolean
-  mlock: boolean
+  /** How weights are read: `auto` | `none` | `mmap` | `mlock` | `mmap+mlock` | `dio`. */
+  load_mode: string
   cache_type_k: string
   cache_type_v: string
   rope_scaling: string
