@@ -542,7 +542,9 @@
     "closeFailedTitle": "Janはすべてを保存できなかったため、開いたままです",
     "closeFailedDescription": "最新の変更はまだメモリ上にあります。もう一度ウィンドウを閉じると、保存を再試行します。",
     "closeForceDescription": "保存が失敗し続けています。保存せずに閉じることもできますが、書き込めなかった変更は失われます。",
-    "closeAnyway": "保存せずに閉じる"
+    "closeAnyway": "保存せずに閉じる",
+    "quitFailedDescription": "最新の変更はまだメモリ上にあります。もう一度終了すると保存を再試行します。",
+    "quitAnyway": "保存せずに終了"
   },
   "messageWrites": {
     "failedTitle": "保存できなかったメッセージがあります",
