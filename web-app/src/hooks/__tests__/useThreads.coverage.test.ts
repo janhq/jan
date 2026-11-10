@@ -24,7 +24,7 @@ vi.mock('fzf', () => ({
 }))
 
 const mockCreateThread = vi.fn()
-const mockDeleteThread = vi.fn()
+const mockDeleteThread = vi.fn().mockResolvedValue(undefined)
 const mockUpdateThread = vi.fn()
 
 vi.mock('@/hooks/useServiceHub', () => ({
