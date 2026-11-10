@@ -8,6 +8,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
+import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
 import ThreadList from '@/containers/ThreadList'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
@@ -92,7 +93,11 @@ function ProjectPageContent() {
 
   return (
     <div className="flex flex-col h-svh w-full">
-      <HeaderPage />
+      <HeaderPage>
+        <div className="flex items-center justify-between w-full">
+          <ConversationHeaderTitle project={project} />
+        </div>
+      </HeaderPage>
 
       <div className="h-full relative flex flex-col px-4 md:px-8 py-4 overflow-y-auto">
         <div className="mx-auto w-full md:w-4/5 xl:w-4/6">

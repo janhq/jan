@@ -41,6 +41,7 @@ import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { PlatformShortcuts, ShortcutAction } from '@/lib/shortcuts'
+import { useSidebar } from '@/components/ui/sidebar'
 
 type AnimatedIconHandle =
   | SearchIconHandle
@@ -181,6 +182,7 @@ export function NavMain({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const { closeMobileForNavigation } = useSidebar()
   const { addFolder } = useThreadManagement()
   const { open: searchOpen, setOpen: setSearchOpen } = useSearchDialog()
   const { open: projectDialogOpen, setOpen: setProjectDialogOpen } =
@@ -190,6 +192,8 @@ export function NavMain({
     () => setSearchOpen(true),
     () => {
       useAgentMode.getState().removeThread(TEMPORARY_CHAT_ID)
+      // Already on home the path does not change, so close the overlay here.
+      closeMobileForNavigation()
       navigate({ to: route.home })
     },
     () => {

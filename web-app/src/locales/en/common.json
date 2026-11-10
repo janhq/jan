@@ -815,7 +815,10 @@
   "agentSettings": "Agent",
   "chatsAndTasks": "Chats and tasks",
   "sidebar": {
-    "more": "More"
+    "more": "More",
+    "toggle": "Toggle sidebar",
+    "navigation": "Navigation",
+    "navigationDescription": "Jump to chats, projects, artifacts, skills and settings."
   },
   "composer": {
     "addControls": "Add attachments and controls",
@@ -869,5 +872,23 @@
   },
   "skillDestination": "Save new skills to",
   "skillDestinationFolder": "This folder",
-  "skillDestinationGlobal": "Global (every conversation)"
+  "skillDestinationGlobal": "Global (every conversation)",
+  "overview": {
+    "title": "Conversation overview",
+    "description": "Progress, files and background tasks for this conversation.",
+    "resize": "Resize side panel",
+    "close": "Hide conversation overview",
+    "progress": "Progress",
+    "files": "Files",
+    "backgroundTasks": "Background tasks",
+    "monitorCount_one": "{{count}} monitor",
+    "monitorCount_other": "{{count}} monitors",
+    "noProgress": "Steps will appear as Jan works.",
+    "noFiles": "Files will appear here."
+  },
+  "artifactsLibraryDescription": "Files created across your conversations, all in one place.",
+  "artifactsLibraryCount_one": "{{count}} file",
+  "artifactsLibraryCount_other": "{{count}} files",
+  "artifactsLibraryFilter": "Filter by file type",
+  "artifactsLibraryReset": "Clear filters"
 }

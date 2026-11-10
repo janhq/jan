@@ -554,7 +554,10 @@
   "deleteSessionTitle": "セッションを削除しますか？",
   "deleteSessionBody": "「{{title}}」とそのトランスクリプトは完全に削除されます。この操作は元に戻せません。",
   "sidebar": {
-    "more": "その他"
+    "more": "その他",
+    "toggle": "サイドバーの表示を切り替え",
+    "navigation": "ナビゲーション",
+    "navigationDescription": "チャット、プロジェクト、アーティファクト、スキル、設定に移動します。"
   },
   "composer": {
     "addControls": "添付ファイルとコントロールを追加",
@@ -608,5 +611,13 @@
   },
   "skillDestination": "新しいスキルの保存先",
   "skillDestinationFolder": "このフォルダー",
-  "skillDestinationGlobal": "グローバル（すべての会話）"
+  "skillDestinationGlobal": "グローバル（すべての会話）",
+  "overview": {
+    "description": "この会話の進捗、ファイル、バックグラウンドタスク。"
+  },
+  "artifactsLibraryDescription": "すべての会話で作成されたファイルを一か所にまとめて表示します。",
+  "artifactsLibraryCount_one": "{{count}} 件のファイル",
+  "artifactsLibraryCount_other": "{{count}} 件のファイル",
+  "artifactsLibraryFilter": "ファイルの種類で絞り込む",
+  "artifactsLibraryReset": "フィルターをクリア"
 }

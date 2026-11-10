@@ -437,7 +437,10 @@
   "deleteSessionTitle": "Sitzung löschen?",
   "deleteSessionBody": "„{{title}}“ und das zugehörige Protokoll werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.",
   "sidebar": {
-    "more": "Mehr"
+    "more": "Mehr",
+    "toggle": "Seitenleiste ein- oder ausblenden",
+    "navigation": "Navigation",
+    "navigationDescription": "Zu Chats, Projekten, Artefakten, Skills und Einstellungen springen."
   },
   "composer": {
     "addControls": "Anhänge und Steuerelemente hinzufügen",
@@ -491,5 +494,13 @@
   },
   "skillDestination": "Neue Skills speichern in",
   "skillDestinationFolder": "Diesem Ordner",
-  "skillDestinationGlobal": "Global (jede Unterhaltung)"
+  "skillDestinationGlobal": "Global (jede Unterhaltung)",
+  "overview": {
+    "description": "Fortschritt, Dateien und Hintergrundaufgaben dieser Unterhaltung."
+  },
+  "artifactsLibraryDescription": "Dateien aus all deinen Unterhaltungen an einem Ort.",
+  "artifactsLibraryCount_one": "{{count}} Datei",
+  "artifactsLibraryCount_other": "{{count}} Dateien",
+  "artifactsLibraryFilter": "Nach Dateityp filtern",
+  "artifactsLibraryReset": "Filter zurücksetzen"
 }

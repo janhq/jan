@@ -210,6 +210,12 @@ vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: any) => <div data-testid="header-page">{children}</div>,
 }))
 
+vi.mock('@/containers/ConversationHeaderTitle', () => ({
+  ConversationHeaderTitle: ({ title }: { title?: string }) => (
+    <span data-testid="conversation-title">{title}</span>
+  ),
+}))
+
 vi.mock('@/containers/ChatInput', () => ({
   default: ({ onSubmit, onStop, chatStatus }: any) => (
     <div data-testid="chat-input">
