@@ -277,8 +277,12 @@ pub fn run() {
     // test binary would hand over its argv and exit before the embedded
     // WebDriver server ever bound.
     #[cfg(all(desktop, not(feature = "e2e")))]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
         println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
+        // The second process exits right after this runs, so whatever the user
+        // expected from launching Jan again has to happen here: bring the
+        // running window back, even when it was minimized or hidden to the tray.
+        core::system::commands::show_main_window(app);
         // when defining deep link schemes at runtime, you must also check `argv` here
     }));
 
