@@ -321,6 +321,7 @@ function toolOriginOf(toolName: string) {
       origin: 'extension' as const,
       server: extensionTool.server,
       extensionTool,
+      mcpGeneration: undefined,
     }
   }
   const mcpTool = useAppState
@@ -330,6 +331,10 @@ function toolOriginOf(toolName: string) {
     origin: 'mcp' as const,
     server: mcpTool?.server,
     extensionTool: undefined,
+    // The connection that listed the tool. The call carries it, so a server
+    // restarted between the call arriving and it running refuses it rather
+    // than the new process running a call it never offered.
+    mcpGeneration: mcpTool?.generation,
   }
 }
 
@@ -1113,6 +1118,8 @@ function ThreadDetail() {
                   // Stop ends the call on the backend as well as in this loop.
                   const call = serviceHub.mcp().callToolWithCancellation({
                     toolName,
+                    serverName: origin.server,
+                    serverGeneration: origin.mcpGeneration,
                     arguments: toolCall.input,
                     maxOutputChars,
                   })
