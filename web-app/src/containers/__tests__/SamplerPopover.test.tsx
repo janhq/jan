@@ -127,3 +127,11 @@ describe('SamplerPopover asynchronous sampling', () => {
     await waitFor(() => expect(useThreads.getState().threads.A.assistants?.[0].parameters?.temperature).toBe('0.9'))
   })
 })
+
+describe('SamplerPopover labels', () => {
+  it('labels the trigger through i18n instead of a literal', () => {
+    render(<SamplerPopover />)
+    expect(screen.getByRole('button', { name: 'common:composer.samplingParameters' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Sampling parameters')).toBeNull()
+  })
+})

@@ -834,6 +834,7 @@
     "assistant": "Assistant",
     "allTools": "All Tools",
     "samplingParameters": "Sampling parameters",
+    "openAssistantSettings": "Open assistant settings",
     "samplingSaveFailed": "Could not save sampling parameters. Please try again.",
     "context": "Context: {{tokens}}"
   },

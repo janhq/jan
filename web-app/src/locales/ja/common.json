@@ -573,6 +573,7 @@
     "assistant": "アシスタント",
     "allTools": "すべてのツール",
     "samplingParameters": "サンプリングパラメータ",
+    "openAssistantSettings": "アシスタント設定を開く",
     "samplingSaveFailed": "サンプリングパラメータを保存できませんでした。もう一度お試しください。",
     "context": "コンテキスト: {{tokens}}"
   },
