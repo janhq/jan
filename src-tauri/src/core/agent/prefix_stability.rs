@@ -551,20 +551,20 @@ fn a_restart_advertises_the_same_tool_bytes() {
     let fs = || vec![tool("read_file")];
 
     let walks = [
-        vec![("git".to_string(), git()), ("fs".to_string(), fs())],
-        vec![("fs".to_string(), fs()), ("git".to_string(), git())],
+        vec![("git".to_string(), 1, git()), ("fs".to_string(), 2, fs())],
+        vec![("fs".to_string(), 2, fs()), ("git".to_string(), 1, git())],
         vec![
-            ("git".to_string(), vec![tool("status"), tool("commit")]),
-            ("fs".to_string(), fs()),
+            ("git".to_string(), 1, vec![tool("status"), tool("commit")]),
+            ("fs".to_string(), 2, fs()),
         ],
         vec![
-            ("fs".to_string(), fs()),
-            ("git".to_string(), vec![tool("status"), tool("commit")]),
+            ("fs".to_string(), 2, fs()),
+            ("git".to_string(), 1, vec![tool("status"), tool("commit")]),
         ],
     ];
 
     let mut bodies: Vec<String> = Vec::new();
-    let mut mappings: Vec<HashMap<String, String>> = Vec::new();
+    let mut mappings: Vec<crate::core::mcp::identity::ToolRoutes> = Vec::new();
     for walk in walks {
         let (tools, mapping) = assemble_tool_array(walk);
         bodies.push(turn(project.root(), &[], "", &tools).body);
@@ -595,12 +595,12 @@ fn a_failed_listing_keeps_the_advertised_tools() {
     let project = Project::new("listing-failure");
     let mut cache = HashMap::new();
 
-    let listed = vec![("git".to_string(), Some(vec![tool("commit")]))];
+    let listed = vec![("git".to_string(), 1, Some(vec![tool("commit")]))];
     let warm = reuse_last_good_listings(&mut cache, listed);
     let (warm_tools, _) = assemble_tool_array(warm);
     let before = turn(project.root(), &[], "", &warm_tools);
 
-    let timed_out = reuse_last_good_listings(&mut cache, vec![("git".to_string(), None)]);
+    let timed_out = reuse_last_good_listings(&mut cache, vec![("git".to_string(), 1, None)]);
     let (reused_tools, _) = assemble_tool_array(timed_out);
     let after = turn(project.root(), &[], "", &reused_tools);
 
@@ -612,7 +612,7 @@ fn a_failed_listing_keeps_the_advertised_tools() {
 
     // A server that has never listed successfully has nothing to reuse, so a
     // first-run failure still omits it rather than advertising a guess.
-    let never_listed = reuse_last_good_listings(&mut cache, vec![("new".to_string(), None)]);
+    let never_listed = reuse_last_good_listings(&mut cache, vec![("new".to_string(), 3, None)]);
     assert!(never_listed.is_empty());
 }
 
