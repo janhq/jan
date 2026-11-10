@@ -10304,10 +10304,7 @@ mod tests {
             mcp: McpToolInvoker {
                 // The MCP tool the prompting tests call; no server is live, so
                 // an approved call still fails to execute.
-                tool_to_server: HashMap::from([(
-                    "web_search_exa".to_string(),
-                    "exa".to_string(),
-                )]),
+                tool_to_server: HashMap::from([("web_search_exa".to_string(), route("exa"))]),
                 mcp_servers: Arc::new(Mutex::new(HashMap::new())),
                 mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             },
@@ -10744,7 +10741,7 @@ mod tests {
         invoker
             .mcp
             .tool_to_server
-            .insert("mcp__srv__doit".to_string(), "srv".to_string());
+            .insert("mcp__srv__doit".to_string(), route("srv"));
         let out = invoker
             .invoke(&[hooked_tool_call("mcp__srv__doit", "{}")])
             .await
@@ -10782,7 +10779,7 @@ mod tests {
         invoker
             .mcp
             .tool_to_server
-            .insert("mcp__srv__doit".to_string(), "srv".to_string());
+            .insert("mcp__srv__doit".to_string(), route("srv"));
         // The call goes on to the empty MCP registry and fails there, which is
         // the point: the hook did not stop it.
         let _ = invoker
