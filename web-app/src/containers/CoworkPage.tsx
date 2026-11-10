@@ -1265,7 +1265,7 @@ export function CoworkPage() {
     text: string,
     files?: CoworkMediaPart[],
     documents?: Attachment[]
-  ) => {
+  ): 'refused' | undefined => {
     const skillCommand = parseSkillCommand(text)
     const isBuiltInCommand = skillCommand
       ? SLASH_COMMANDS.some((command) => command.name === `/${skillCommand.name}`)
@@ -1278,7 +1278,7 @@ export function CoworkPage() {
       toast.error(
         t('common:coworkSlash.skillUnavailable', { name: skillCommand.name })
       )
-      return
+      return 'refused'
     }
 
     // Non-skill slash commands are client-side actions.
@@ -1293,17 +1293,28 @@ export function CoworkPage() {
       })
       return
     }
-    void runRequest(text, {
-      media: files,
-      files: documents
-        ?.filter((d): d is Attachment & { path: string } => !!d.path)
-        .map((d) => ({
-          name: d.name,
-          path: d.path,
-          fileType: d.fileType,
-          size: d.size,
-        })),
-    })
+    // Every refusal in runRequest happens before its first await, so whether
+    // the run was claimed is known by the time the call returns.
+    let accepted = false
+    void runRequest(
+      text,
+      {
+        media: files,
+        files: documents
+          ?.filter((d): d is Attachment & { path: string } => !!d.path)
+          .map((d) => ({
+            name: d.name,
+            path: d.path,
+            fileType: d.fileType,
+            size: d.size,
+          })),
+      },
+      undefined,
+      () => {
+        accepted = true
+      }
+    )
+    return accepted ? undefined : 'refused'
   }
 
 
