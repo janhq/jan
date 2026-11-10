@@ -1,3 +1,4 @@
+import type { ThreadMessage } from '@janhq/core'
 import type { CoworkSession } from '@/hooks/useCoworkSessions'
 import {
   CODE_SESSIONS_KEY,
@@ -18,30 +19,32 @@ import {
 import {
   coworkSessionToThreadMessages,
   defaultAnchorMs,
+  transcriptFromThreadMessages,
+  type CoworkTranscript,
 } from '@/lib/coworkThreadMessages'
 
 /**
  * Persistence for Cowork sessions stored as threads (`metadata.mode =
- * "cowork"`): `thread.json` for the list fields, `cowork.json` for the
- * transcript.
+ * "cowork"`): `thread.json` for the list fields, `messages.jsonl` for the
+ * transcript, `cowork.json` for the rest of the session state.
  *
  * Protocol:
  * - One serialized write queue per session; a newer snapshot never races an
  *   older one. Writes are debounced; `flush()` awaits queued AND in-flight work.
  * - A failed write keeps the session dirty and retries; nothing is dropped.
- * - First commit is sidecar-first, `thread.json` last. Later writes go sidecar
- *   then `thread.json`, which is a read-modify-write that spreads the metadata
- *   already on disk.
+ * - First commit is sidecar, messages, `thread.json` last. Later writes go
+ *   messages, sidecar, then `thread.json`, which is a read-modify-write that
+ *   spreads the metadata already on disk.
  * - Deleting tombstones the id first: pending timers are cancelled, an
  *   in-flight write is drained, late writes for the id are dropped, then the
  *   thread directory is deleted. The backend refuses sidecar writes for a thread
  *   with no `thread.json`, so a straggler cannot resurrect it.
- * - The sidecar is the transcript authority and what hydration reads. After it
- *   is written, the transcript is also mirrored into `messages.jsonl`
- *   (`replace_thread_messages`, converted by `coworkSessionToThreadMessages`) so
- *   the CLI, search and extensions can read the thread. The mirror is a derived
- *   projection: a failed mirror never blocks the sidecar or the thread record,
- *   it only keeps the session dirty so the next attempt retries it.
+ * - messages.jsonl is the transcript authority: the provider-facing records
+ *   (`coworkSessionToThreadMessages`, which the CLI, search and extensions
+ *   read) with the whole transcript carried verbatim on the last record. The
+ *   `cowork.json` sidecar (v2) holds the rest of the session state. Threads
+ *   the migration or an older build wrote keep a v1 sidecar with the
+ *   transcript arrays until their next write; `storedSession` resolves the two.
  * - A session never persisted and still empty is not written; a persisted
  *   session that becomes empty (/clear, rewind) IS written.
  * - Sessions flagged `unavailable` are shown but never written back.
@@ -192,21 +195,65 @@ export function sessionFromThread(
 }
 
 /**
- * Only consume a sidecar whose shape is the one this build writes
- * (`sessionToSidecar`: `version: 1` with array `turns`/`messages`, every
- * sidecar writer since the format exists has written both arrays). Anything
- * else, a newer format from a future build after a downgrade, or a malformed
- * v1, must NOT load as an empty-but-writable session: the next touch (rename,
- * `updated` bump, /clear) would serialize an empty v1 snapshot over the
- * on-disk bytes. Such sessions are contained as `unreadable-sidecar`: shown
- * read-only, never written back, bytes preserved.
+ * The sidecar a live write leaves once the transcript lives in messages.jsonl:
+ * only the session state that is not part of the conversation. A v1 sidecar
+ * (`sessionToSidecar`, what the migration and older builds write) still holds
+ * the transcript arrays itself.
  */
-function isConsumableSidecar(side: Partial<CoworkSidecar>): boolean {
-  return (
-    side.version === 1 &&
-    Array.isArray(side.turns) &&
-    Array.isArray(side.messages)
-  )
+export type CoworkStateSidecar = {
+  version: 2
+  subagents?: CoworkSession['subagents']
+  lastUsage?: CoworkSession['lastUsage']
+  todos?: CoworkSession['todos']
+}
+
+export function sessionToStateSidecar(s: CoworkSession): CoworkStateSidecar {
+  return {
+    version: 2,
+    ...(s.subagents !== undefined && { subagents: s.subagents }),
+    ...(s.lastUsage !== undefined && { lastUsage: s.lastUsage }),
+    ...(s.todos !== undefined && { todos: s.todos }),
+  }
+}
+
+type StoredSidecar = Partial<CoworkSidecar> | Partial<CoworkStateSidecar>
+
+/**
+ * Only consume a sidecar whose shape this build writes: v1 with array
+ * `turns`/`messages` (every v1 writer has written both), or v2. Anything else,
+ * a newer format from a future build after a downgrade, or a malformed v1,
+ * must NOT load as an empty-but-writable session: the next touch (rename,
+ * `updated` bump, /clear) would serialize an empty snapshot over the on-disk
+ * bytes. Such sessions are contained as `unreadable-sidecar`: shown read-only,
+ * never written back, bytes preserved. An older build sees a v2 sidecar the
+ * same way, so a downgrade cannot overwrite a transcript it cannot find.
+ */
+function isConsumableSidecar(side: StoredSidecar): boolean {
+  if (side.version === 2) return true
+  const v1 = side as Partial<CoworkSidecar>
+  return v1.version === 1 && Array.isArray(v1.turns) && Array.isArray(v1.messages)
+}
+
+/**
+ * The stored session state, transcript included. Resolution is deterministic:
+ * a transcript carried by the last messages.jsonl record wins (a live write
+ * puts it there BEFORE the sidecar, so it is never older than the sidecar);
+ * otherwise a v1 sidecar's own arrays (a migrated thread not yet written live,
+ * or an older build's write, which replaces messages.jsonl without a carrier);
+ * otherwise a v2 sidecar means an empty transcript.
+ */
+function storedSession(
+  side: StoredSidecar,
+  carried: CoworkTranscript | null
+): Partial<CoworkSidecar> {
+  const state = {
+    ...(side.subagents !== undefined && { subagents: side.subagents }),
+    ...(side.lastUsage !== undefined && { lastUsage: side.lastUsage }),
+    ...(side.todos !== undefined && { todos: side.todos }),
+  }
+  if (carried) return { ...state, ...carried, version: 1 }
+  if (side.version === 1) return side as Partial<CoworkSidecar>
+  return { ...state, version: 1, turns: [], messages: [] }
 }
 
 /** Control flow only: the legacy blob does not need to be read. */
@@ -268,7 +315,7 @@ export async function loadCoworkSessions(
   const sessions: CoworkSession[] = await Promise.all(
     coworkThreads.map(async (t) => {
       try {
-        const side = await invoke<CoworkSidecar | null>('read_thread_extra', {
+        const side = await invoke<StoredSidecar | null>('read_thread_extra', {
           threadId: t.id,
           name: COWORK_SIDECAR,
         })
@@ -279,7 +326,18 @@ export async function loadCoworkSessions(
           )
           return sessionFromThread(t, null, 'unreadable-sidecar')
         }
-        const session = sessionFromThread(t, side)
+        // Read even beside a v1 sidecar: a live write that crashed before
+        // rewriting the sidecar left the newer transcript only here. A failed
+        // read lands in the catch below (read-only): loading the sidecar alone
+        // could show, and then write back, an older transcript.
+        const records = await invoke<Array<{ metadata?: unknown }>>(
+          'list_messages',
+          { threadId: t.id }
+        )
+        const session = sessionFromThread(
+          t,
+          storedSession(side, transcriptFromThreadMessages(records ?? []))
+        )
         // A thread the migration created carries no anchor: its messages were
         // stamped from the session's exact `updated`. Record that on the
         // adopted record (in memory; the first write persists it) so the live
@@ -536,7 +594,7 @@ export function createCoworkPersistence(
   let currentIdChain: Promise<void> = Promise.resolve()
 
   // Dirty ids a flush must not report success over.
-  const blocking = () => [...dirty].filter((id) => !mirrorOnly.has(id))
+  const blocking = () => [...dirty]
 
   const clearTimer = (id: string) => {
     const t = timers.get(id)
@@ -544,10 +602,6 @@ export function createCoworkPersistence(
     timers.delete(id)
   }
 
-  // What the last successful mirror was built from. The projection is a pure
-  // function of these, so an unchanged transcript (a title or folder edit) is
-  // not rewritten: the sidecar already carries the whole transcript, and a
-  // second full rewrite per keystroke-sized change would double the cost.
   // The record on disk can also be edited from the shared thread list (rename,
   // favorite, order, project), which writes thread.json itself. Overlay the
   // freshest of those fields onto the record this layer last wrote, so the next
@@ -571,22 +625,22 @@ export function createCoworkPersistence(
     }
   }
 
-  const mirrored = new Map<
+  // What the last successful messages.jsonl write was built from. The records
+  // are a pure function of these, so an unchanged transcript (a title or folder
+  // edit) is not rewritten: a full rewrite per keystroke-sized change would
+  // double the cost of every write.
+  const written = new Map<
     string,
-    { messages: CoworkSession['messages']; turns: CoworkSession['turns'] }
+    {
+      messages: CoworkSession['messages']
+      turns: CoworkSession['turns']
+      history: CoworkSession['history']
+    }
   >()
 
-  // Ids whose only unfinished work is the derived messages.jsonl mirror: the
-  // authoritative sidecar and thread record are already durable. They retry on
-  // the timer and on every flush, but a flush does not REJECT for them, so a
-  // persistently failing projection can never trap the window open on close.
-  const mirrorOnly = new Set<string>()
-
-  const scheduleRetry = (id: string, isMirror: boolean, error?: unknown) => {
+  const scheduleRetry = (id: string, error: unknown) => {
     dirty.add(id)
-    if (isMirror) mirrorOnly.add(id)
-    else mirrorOnly.delete(id)
-    opts.onError?.(id, error ?? new Error('messages mirror failed'))
+    opts.onError?.(id, error)
     if (!timers.has(id) && !tombstones.has(id)) {
       timers.set(
         id,
@@ -599,44 +653,33 @@ export function createCoworkPersistence(
   }
 
   /**
-   * Mirror the transcript into messages.jsonl. Resolves true when it failed
-   * transiently and must be retried; a missing thread propagates (the caller
-   * treats it exactly like a missing sidecar target); a PERMANENT refusal
-   * (a foreign log the backend will not overwrite) is reported once and not
-   * retried, because retrying cannot fix it and the sidecar stays authoritative.
+   * Write the transcript into messages.jsonl, carried verbatim on the last
+   * record (see `transcriptFromThreadMessages`). This is the transcript
+   * authority, so any failure propagates and keeps the session dirty. Skipped
+   * when the transcript is unchanged since the last write this session.
    */
-  const mirrorMessages = async (
+  const writeMessages = async (
     id: string,
     session: CoworkSession,
-    create: boolean,
-    anchorMs: number
-  ): Promise<boolean> => {
-    const last = mirrored.get(id)
+    records: ThreadMessage[],
+    create: boolean
+  ) => {
+    const last = written.get(id)
     if (
       !create &&
       last &&
       last.messages === session.messages &&
-      last.turns === session.turns
+      last.turns === session.turns &&
+      last.history === session.history
     ) {
-      return false
+      return
     }
-    try {
-      await invoke('replace_thread_messages', {
-        threadId: id,
-        messages: coworkSessionToThreadMessages(session, { anchorMs }),
-        create,
-      })
-      mirrored.set(id, { messages: session.messages, turns: session.turns })
-      return false
-    } catch (e) {
-      if (isMissingThreadError(e)) throw e
-      if (isPermanentError(e)) {
-        console.warn(`[cowork] messages mirror refused for ${id}; not retrying:`, e)
-        opts.onError?.(id, e)
-        return false
-      }
-      return true
-    }
+    await invoke('replace_thread_messages', { threadId: id, messages: records, create })
+    written.set(id, {
+      messages: session.messages,
+      turns: session.turns,
+      history: session.history,
+    })
   }
 
   const writeOnce = async (id: string) => {
@@ -654,31 +697,47 @@ export function createCoworkPersistence(
     // A mutation that lands while this write is in flight re-marks the id dirty
     // and queues the next write behind this one.
     dirty.delete(id)
-    mirrorOnly.delete(id)
     const { session, legacy } = entry
     try {
       if (legacy && opts.legacyGate) await opts.legacyGate.catch(() => undefined)
       const existing = withLive(id, persisted.get(id))
       const record = sessionToThreadRecord(session, existing, legacy)
-      // Re-check right before ANY write: a late flush after delete must not
-      // recreate the sidecar (`create: true`) of a deleted session.
-      if (tombstones.has(id)) return
-      await invoke('write_thread_extra', {
-        threadId: id,
-        name: COWORK_SIDECAR,
-        value: sessionToSidecar(session),
-        create: !existing,
-      })
-      if (tombstones.has(id)) return
-      // The derived messages.jsonl projection. Never blocks the record below.
       // Stamped from the record's fixed anchor, not from the moving `updated`,
       // so appending never rewrites earlier message stamps.
-      const mirrorFailed = await mirrorMessages(
-        id,
-        session,
-        !existing,
-        Number(record.metadata.messagesAnchorMs)
-      )
+      const records = coworkSessionToThreadMessages(session, {
+        anchorMs: Number(record.metadata.messagesAnchorMs),
+        carrier: true,
+      })
+      // A transcript with no record to ride on (only system notes, say) keeps
+      // the v1 sidecar that holds the arrays itself.
+      const carried =
+        records.length > 0 ||
+        ((session.turns?.length ?? 0) === 0 &&
+          (session.messages?.length ?? 0) === 0 &&
+          (session.history?.length ?? 0) === 0)
+      const sidecar = carried ? sessionToStateSidecar(session) : sessionToSidecar(session)
+      const writeSidecar = () =>
+        invoke('write_thread_extra', {
+          threadId: id,
+          name: COWORK_SIDECAR,
+          value: sidecar,
+          create: !existing,
+        })
+      // Order. A new thread is sidecar first: the backend only lets a thread
+      // directory it does not know be created by the sidecar's owner. An
+      // existing one writes the transcript first, so a crash in between leaves
+      // a carried transcript that is never older than the sidecar beside it
+      // (which is what lets the loader prefer it). A v1 sidecar goes before its
+      // emptied log for the same reason: the log's stale carrier would then
+      // win, showing the previous write rather than an empty transcript.
+      // Re-check the tombstone right before ANY write: a late flush after
+      // delete must not recreate (`create: true`) a deleted session.
+      if (tombstones.has(id)) return
+      if (!existing || !carried) await writeSidecar()
+      if (tombstones.has(id)) return
+      await writeMessages(id, session, records, !existing)
+      if (tombstones.has(id)) return
+      if (existing && carried) await writeSidecar()
       if (tombstones.has(id)) return
       if (existing) {
         await invoke('modify_thread', { thread: record })
@@ -698,7 +757,6 @@ export function createCoworkPersistence(
           opts.onThreadWritten?.(record)
         }
       }
-      if (mirrorFailed) scheduleRetry(id, true)
     } catch (e) {
       // The host confirmed the thread is gone (not a transient failure). Never
       // recreate it (a deleted chat must not resurrect) and never retry: drop the
@@ -724,7 +782,7 @@ export function createCoworkPersistence(
         opts.onWriteRefused?.(id, session)
         return
       }
-      scheduleRetry(id, false, e)
+      scheduleRetry(id, e)
     }
   }
 
@@ -765,7 +823,6 @@ export function createCoworkPersistence(
       const prev = latest.get(id)
       latest.set(id, { session, legacy: o?.legacy ?? prev?.legacy ?? false })
       dirty.add(id)
-      mirrorOnly.delete(id)
       clearTimer(id)
       // The sync layer restores failed removals immediately. Retain that
       // snapshot, but do not write it or claim recovery before compensation.
@@ -786,8 +843,7 @@ export function createCoworkPersistence(
       tombstones.add(id)
       clearTimer(id)
       dirty.delete(id)
-      mirrorOnly.delete(id)
-      mirrored.delete(id)
+      written.delete(id)
       const snapshot = latest.get(id)
       latest.delete(id)
       await (chains.get(id) ?? Promise.resolve())
@@ -876,7 +932,7 @@ export function createCoworkPersistence(
         }
         await (chains.get(id) ?? Promise.resolve())
         assertUsable()
-        if (!dirty.has(id) || mirrorOnly.has(id)) return
+        if (!dirty.has(id)) return
       }
       throw new Error(`Cowork persistence flush failed; pending writes: ${id}`)
     },
