@@ -477,6 +477,15 @@ describe('ChatInput', () => {
     expect(setPromptMock).toHaveBeenCalledWith('')
   })
 
+  it('keeps the draft when the surface refuses the send', async () => {
+    promptState = 'keep me'
+    const onSubmit = vi.fn(() => 'refused' as const)
+    renderInput({ onSubmit })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(setPromptMock).not.toHaveBeenCalledWith('')
+  })
+
   it('does NOT submit on Shift+Enter (newline behavior)', () => {
     promptState = 'hello'
     const onSubmit = vi.fn()
