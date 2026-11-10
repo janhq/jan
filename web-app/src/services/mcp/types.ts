@@ -74,6 +74,8 @@ export interface MCPService {
   callToolWithCancellation(args: {
     toolName: string
     serverName?: string
+    /** `MCPTool.generation` of the tool being called. */
+    serverGeneration?: number
     arguments: object
     cancellationToken?: string
     maxOutputChars?: number
