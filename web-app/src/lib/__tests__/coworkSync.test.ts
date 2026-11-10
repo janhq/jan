@@ -64,6 +64,7 @@ const backend = vi.hoisted(() => {
         return window.hidesOnClose
       case 'exit_after_save':
       case 'cancel_exit_save':
+      case 'exit_without_saving':
         return
       default:
         throw new Error(`unexpected ${cmd}`)
@@ -762,7 +763,7 @@ describe('coworkSync', () => {
         const action = errorOptions().at(-1).action
         expect(action.label).toBe('common:coworkSync.quitAnyway')
         action.onClick()
-        await vi.waitFor(() => expect(backend.log).toContain('exit_after_save'))
+        await vi.waitFor(() => expect(backend.log).toContain('exit_without_saving'))
       })
     })
   })
