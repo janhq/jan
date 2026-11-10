@@ -522,14 +522,20 @@ export async function cleanupThreadWorkspace(threadId: string): Promise<void> {
 /**
  * Copy a Cowork session's sandbox into the thread workspace of the same id
  * (Cowork migration). Unlike the cleanup helpers this THROWS: the migration
- * must not commit a thread whose files did not arrive. With no data folder
- * there is nothing to copy.
+ * must not commit a thread whose files did not arrive.
+ *
+ * The data folder comes from the backend command, not `window.core.api`: the
+ * migration starts before the extension API is installed, and reading the
+ * folder there returned nothing, which skipped the copy and committed threads
+ * without their files.
  */
 export async function copySessionWorkspaceToThread(
   sessionId: string
 ): Promise<WorkspaceCopy> {
-  const dataFolder = await getServiceHub().app().getJanDataFolder()
-  if (!dataFolder) return { copied: false, files: 0, skipped: 0 }
+  const dataFolder = await getServiceHub()
+    .core()
+    .invoke<string>('get_jan_data_folder_path')
+  if (!dataFolder) throw new Error('the Jan data folder is not known yet')
   return await sessionWorkspaceCopyToThread(dataFolder, sessionId)
 }
 
