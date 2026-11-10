@@ -20,6 +20,7 @@ use tokio::{
 use crate::core::{
     app::commands::get_jan_data_folder_path,
     mcp::models::{extract_active_status, extract_command_args, McpSettings},
+    mcp::identity,
     mcp::oauth,
     mcp::progress::JanClientHandler,
     state::{AppState, RunningMcpService, SharedMcpServers},
@@ -454,7 +455,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
         match client {
             Ok(client) => {
                 log::info!("Connected to server: {:?}", client.peer_info());
-                servers.lock().await.insert(name.clone(), client);
+                identity::insert_server(&mut *servers.lock().await, &name, client);
 
                 emit_mcp_update_event(&app, &name);
             }
@@ -637,10 +638,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
             });
         }
         log::trace!("Connected to server: {:#?}", server.peer_info());
-        servers
-            .lock()
-            .await
-            .insert(name.clone(), server);
+        identity::insert_server(&mut *servers.lock().await, &name, server);
         log::info!("Server {name} started successfully.");
 
         // Wait a short time to verify the server is stable before marking as connected
