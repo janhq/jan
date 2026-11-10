@@ -125,6 +125,7 @@ type ChatInputProps = {
   projectAssistantId?: string
   /** Whether this surface applies assistant instructions and selection. */
   supportsAssistants?: boolean
+  /** Returning `'refused'` keeps the draft and attachments: nothing was sent. */
   onSubmit?: (
     text: string,
     files?: Array<{ type: 'file'; mediaType: string; url: string }>,
@@ -134,7 +135,7 @@ type ChatInputProps = {
     /** What the user typed, before @path references were expanded into
      * `text`, so a cancelled send can hand it back unchanged. */
     draft?: string
-  ) => void
+  ) => void | 'refused'
   onStop?: () => void
   chatStatus?: ChatStatus
   /**
@@ -714,12 +715,13 @@ const ChatInput = memo(function ChatInput({
 
       const { files, documents } = collectMedia()
 
-      onSubmit(
+      const outcome = onSubmit(
         effectivePrompt,
         files,
         documents,
         prompt
       )
+      if (outcome === 'refused') return
       setPrompt('')
       clearAttachmentsForThread(attachmentsKey)
     } else {
