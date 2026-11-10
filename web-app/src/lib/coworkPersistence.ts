@@ -49,8 +49,39 @@ import {
 
 export const COWORK_CURRENT_ID_KEY = 'cowork_current_id'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Json = Record<string, any>
+/** The metadata keys Cowork owns or reads; any other key must round-trip. */
+export type ThreadMetadata = {
+  mode?: string
+  folder?: string | null
+  folderAccess?: string
+  project?: CoworkSession['project']
+  planMode?: boolean
+  goal?: CoworkSession['goal']
+  cleared?: boolean
+  migratedFrom?: { store: string; updated?: number }
+  messagesAnchorMs?: number
+  titleSetManually?: boolean
+  is_favorite?: boolean
+  order?: number
+  [key: string]: unknown
+}
+
+/**
+ * A thread record as the backend stores it. Only the fields Cowork reads are
+ * typed; everything else must round-trip untouched, hence the index signature.
+ */
+export type ThreadRecord = {
+  id: string
+  title?: string
+  created?: number
+  updated?: number
+  assistants?: Array<{
+    model?: { id?: string; engine?: string }
+    [key: string]: unknown
+  }>
+  metadata?: ThreadMetadata
+  [key: string]: unknown
+}
 
 const toSeconds = (ms: number) => (ms > 1e12 ? Math.floor(ms / 1000) : ms)
 
@@ -65,11 +96,11 @@ const isEmpty = (s: CoworkSession) =>
  */
 export function sessionToThreadRecord(
   s: CoworkSession,
-  existing?: Json,
+  existing?: ThreadRecord,
   legacy = false
-): Json {
+): ThreadRecord & { metadata: ThreadMetadata } {
   const seconds = toSeconds(s.updated)
-  const metadata: Json = {
+  const metadata: ThreadMetadata = {
     ...(existing?.metadata ?? {}),
     mode: 'cowork',
     folder: s.folder ?? null,
@@ -123,7 +154,7 @@ export function sessionToThreadRecord(
 
 /** Rebuild a session from its thread record and sidecar. */
 export function sessionFromThread(
-  thread: Json,
+  thread: ThreadRecord,
   sidecar: Partial<CoworkSidecar> | null,
   unavailable?: CoworkSession['unavailable']
 ): CoworkSession {
@@ -183,7 +214,7 @@ export type LoadedCoworkSessions = {
   /** Sessions sourced from the legacy `code-sessions` blob, not yet threads. */
   legacyIds: Set<string>
   /** Thread records of the sessions that are already persisted. */
-  threads: Json[]
+  threads: ThreadRecord[]
   /**
    * Set when the deletion journal was unreadable and the legacy-blob merge was
    * therefore skipped (fail closed against resurrecting deleted sessions).
@@ -218,7 +249,7 @@ export async function loadCoworkSessions(
     console.warn('[cowork] could not read the abandoned list:', e)
   }
   const readBlob = !opts.migrationSettled || abandonedIds.size > 0
-  const all = (await invoke<Json[]>('list_threads')) ?? []
+  const all = (await invoke<ThreadRecord[]>('list_threads')) ?? []
   const coworkThreads = all.filter(
     (t) => typeof t?.id === 'string' && t.metadata?.mode === 'cowork'
   )
@@ -387,7 +418,7 @@ export type CoworkPersistence = {
   remove(id: string, opts?: { recordDeleted?: boolean; preserveThread?: boolean }): Promise<void>
   setCurrentId(id: string | null): void
   /** Seed the known on-disk thread records after hydration. */
-  adopt(threads: Json[]): void
+  adopt(threads: ThreadRecord[]): void
   isPersisted(id: string): boolean
   /** Drains queued/in-flight work; rejects if writes remain after bounded retries. */
   flush(): Promise<void>
@@ -404,7 +435,7 @@ export function createCoworkPersistence(
   opts: {
     debounceMs?: number
     retryMs?: number
-    onThreadWritten?: (thread: Json) => void
+    onThreadWritten?: (thread: ThreadRecord) => void
     onThreadRemoved?: (id: string) => void
     onError?: (id: string, error: unknown) => void
     /**
@@ -423,7 +454,7 @@ export function createCoworkPersistence(
      * The freshest thread-list copy of a thread, in disk shape, so edits made
      * through the shared thread list are not reverted by the next write.
      */
-    liveRecord?: (id: string) => Json | undefined
+    liveRecord?: (id: string) => Pick<ThreadRecord, 'title' | 'metadata'> | undefined
     /** The host permanently refuses this session's writes (`PERMANENT: ...`). */
     onWriteRefused?: (id: string, session: CoworkSession) => void
   } = {}
@@ -442,7 +473,7 @@ export function createCoworkPersistence(
   // plugin; cowork rows expose no rename/favorite UI); a second writer would
   // need a re-read or a merge-on-live-record here (as the create-conflict
   // branch below already does).
-  const persisted = new Map<string, Json>()
+  const persisted = new Map<string, ThreadRecord>()
   const tombstones = new Set<string>()
   // Failed compensation stays queued until flush (no background busy-loop).
   // Keep its tombstone until the durable deletion intent really is removed.
@@ -506,7 +537,7 @@ export function createCoworkPersistence(
   // favorite, order, project), which writes thread.json itself. Overlay the
   // freshest of those fields onto the record this layer last wrote, so the next
   // write-through does not revert them.
-  const withLive = (id: string, existing: Json | undefined) => {
+  const withLive = (id: string, existing: ThreadRecord | undefined) => {
     const live = existing ? opts.liveRecord?.(id) : undefined
     if (!existing || !live) return existing
     return {
@@ -639,7 +670,7 @@ export function createCoworkPersistence(
         persisted.set(id, record)
         opts.onThreadWritten?.(record)
       } else {
-        const created = await invoke<Json>('create_thread', { thread: record })
+        const created = await invoke<ThreadRecord>('create_thread', { thread: record })
         if (created && !sameJson(created, record)) {
           // The thread already existed on disk (e.g. migrated earlier): apply
           // this snapshot on top of what is there.
