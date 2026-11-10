@@ -121,7 +121,7 @@ describe('AssistantsMenu', () => {
     expect(row).toHaveClass('min-w-0', 'w-full')
     expect(row.firstElementChild).toHaveClass('size-4', 'shrink-0')
     expect(row.lastElementChild).toHaveClass('size-4', 'shrink-0')
-    expect(row.lastElementChild).toHaveTextContent('✓')
+    expect(row.lastElementChild?.querySelector('svg.tabler-icon-check')).not.toBeNull()
     const unselectedRow = screen.getByText('Alice').parentElement!
     expect(unselectedRow.lastElementChild).toHaveClass('size-4', 'shrink-0')
     expect(unselectedRow.lastElementChild).toBeEmptyDOMElement()
