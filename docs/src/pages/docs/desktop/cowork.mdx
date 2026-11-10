@@ -49,13 +49,16 @@ See [Linux installation](/docs/desktop/install/linux) for the install commands.
 </Tabs.Tab>
 </Tabs>
 
-## Starting a Session
+## Starting a Task
 
 <Steps>
 
-### Open Cowork
+### Start from a Folder
 
-Click **Cowork** in the left sidebar, then **New session**.
+Click **New Chat** in the left sidebar. Click **+** beside the message input,
+then **Add folder**, and choose the project folder Jan should work in. The
+conversation becomes a Cowork task. Tasks and chats share one history list,
+**Chats**, in the sidebar.
 
 ### Choose a Model and Workspace
 
@@ -64,9 +67,9 @@ existing project, use the folder control beside the message input to attach a
 project folder. Jan can read and edit files in the attached folder, so review
 its changes before keeping them.
 
-Without an attached project, Jan uses a separate workspace for the session in
-your Jan data folder. Files it creates there are available from **Files** and
-from artifact cards in the conversation.
+When no project folder is attached, for example after you remove it, Jan uses a separate workspace
+for the task in your Jan data folder. Files it creates there are available
+from **Files** and from artifact cards in the conversation.
 
 ### Describe Your Task
 
@@ -227,6 +230,37 @@ work is still pending. A watching or waiting notice replaces the working
 spinner. The model is idle, not generating more text. A monitor notification
 or subagent result can wake the agent to continue.
 
+## Sessions from Earlier Versions
+
+Earlier nightly builds kept Cowork sessions in a separate list. On the first
+launch of a version with the shared **Chats** list, Jan copies each session
+into a conversation with the same id. Large histories finish in the
+background, so some tasks can appear a few seconds after the window opens.
+
+Nothing is moved or deleted:
+
+- Before the first copy, Jan saves `settings.pre-cowork-migration.json` next
+  to `settings.json` in your data folder. It holds the old session list and is
+  never overwritten.
+- Each session's files are copied from `agent-workspace/sessions/<session_id>`
+  to `agent-workspace/threads/<session_id>`. The original folder stays. Jan
+  checks for enough free disk space first and tries again on the next launch
+  if there is not.
+- Links and files Jan is not allowed to read are not copied. The task then
+  shows **Some files were not copied** with a button to open the original
+  folder.
+
+If a session cannot be copied after several launches, it stays in the list as
+read-only with **This task could not be imported** and the reason. Click
+**Try again** after fixing the cause (for example, freeing disk space), or
+**Export** to save it as a JSON file under `cowork-exports/` in your data
+folder.
+
+<Callout type="warning">
+Going back to an older Jan version afterward shows your sessions as they were
+before the upgrade. Work done after the upgrade is not visible there.
+</Callout>
+
 ## Configuring Cowork
 
 Open **Settings** in the left sidebar, then select **Cowork**.
@@ -238,8 +272,8 @@ Open **Settings** in the left sidebar, then select **Cowork**.
 
 ### Sandbox and Network
 
-Each session has a workspace in
-`agent-workspace/sessions/<session_id>` inside your Jan data folder. An attached
+Each task has a workspace in
+`agent-workspace/threads/<thread_id>` inside your Jan data folder. An attached
 project folder gives Jan additional read and write access to that project.
 
 Under **Shell Commands**, check whether an OS sandbox is available. When it
