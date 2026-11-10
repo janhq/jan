@@ -173,6 +173,7 @@ function useModelSettingControls(model: Model, provider: ProviderObject) {
         key === 'chat_template' ||
         key === 'offload_mmproj' ||
         key === 'batch_size' ||
+        key === 'load_mode' ||
         key === 'cpu_moe' ||
         key === 'n_cpu_moe' ||
         key === 'n_cpu_ffn' ||

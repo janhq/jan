@@ -393,6 +393,23 @@ describe('useModelProvider - coverage', () => {
       }, (migrated: any) => {
         expect(migrated.providers[0].models[0].settings.moe_cache_mib).toBeDefined()
       }],
+      [21, 'adding the per-model load_mode control', {
+        providers: [{
+          provider: 'llamacpp',
+          models: [
+            { id: 'm1', settings: {} },
+            { id: 'm2', settings: { load_mode: { key: 'load_mode', controller_props: { value: 'dio' } } } },
+          ],
+          settings: [],
+        }],
+        deletedModels: [],
+      }, (migrated: any) => {
+        const [m1, m2] = migrated.providers[0].models
+        // Inherit by default, so an existing model keeps whatever the global says.
+        expect(m1.settings.load_mode.controller_props.value).toBe('')
+        expect(m1.settings.load_mode.controller_props.options.length).toBeGreaterThan(1)
+        expect(m2.settings.load_mode.controller_props.value).toBe('dio')
+      }],
       [4, 'adding cpu_moe and n_cpu_moe', {
         providers: [{ provider: 'llamacpp', models: [{ id: 'm1', settings: {} }], settings: [] }],
         deletedModels: [],
