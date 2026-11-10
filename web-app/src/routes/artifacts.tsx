@@ -7,6 +7,7 @@ import HeaderPage from '@/containers/HeaderPage'
 import { Button } from '@/components/ui/button'
 import { CoworkArtifactCard } from '@/containers/CoworkArtifactCard'
 import { route } from '@/constants/routes'
+import { ensureCoworkEnabled } from '@/lib/coworkAccess'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
@@ -24,6 +25,7 @@ import {
 } from '@/lib/coworkArtifacts'
 
 export const Route = createFileRoute(route.artifacts as any)({
+  beforeLoad: () => ensureCoworkEnabled(),
   component: ArtifactsPage,
 })
 

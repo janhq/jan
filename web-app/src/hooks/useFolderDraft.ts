@@ -6,6 +6,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { isTemporaryChatSearch } from '@/constants/chat'
 import { supportsCowork } from '@/lib/coworkSync'
+import { isCoworkEnabled } from '@/lib/version'
 import {
   startCoworkFromDraft,
   type FolderDraftOutcome,
@@ -26,8 +27,9 @@ export function useFolderDraft(project?: ThreadFolder | null) {
   const [folder, setFolder] = useState<string | null>(null)
   const searchStr = useLocation({ select: (location) => location.searchStr })
   const isTemporaryChat = isTemporaryChatSearch(searchStr)
-  // Folders need the desktop host; the browser build never offers one.
-  const available = supportsCowork()
+  // Folders need the desktop host; the browser build never offers one, and
+  // builds without Cowork have no runner to hand the task to.
+  const available = supportsCowork() && isCoworkEnabled()
   const activeFolder = available && !isTemporaryChat ? folder : null
 
   const attach = useCallback(async () => {

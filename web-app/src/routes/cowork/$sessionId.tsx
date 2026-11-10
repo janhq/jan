@@ -4,9 +4,11 @@ import { canOpenCoworkSession } from '@/lib/coworkOpenable'
 import { route } from '@/constants/routes'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { CoworkPage } from '@/containers/CoworkPage'
+import { ensureCoworkEnabled } from '@/lib/coworkAccess'
 
 export const Route = createFileRoute('/cowork/$sessionId')({
   beforeLoad: ({ params }) => {
+    ensureCoworkEnabled()
     const { sessionId } = params as { sessionId: string }
     // Sessions are hydrated before routes render, so an id that is not in the
     // store is unknown, not "not loaded yet".

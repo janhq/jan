@@ -28,10 +28,10 @@ vi.mock('@/lib/backendStorage', () => {
   }
   return { backendStorage: store, default: store }
 })
-// Not the dev server: the old gate let `isDev()` through, which hid the bug.
-vi.mock('@/lib/utils', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/utils')>()),
-  isDev: () => false,
+const channel = vi.hoisted(() => ({ cowork: true }))
+vi.mock('@/lib/version', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/version')>()),
+  isCoworkEnabled: () => channel.cowork,
 }))
 vi.mock('@/lib/agentTools', () => ({
   stopAgentSessionMonitors: vi.fn(),
@@ -118,6 +118,7 @@ function deleteRow(id: string) {
 }
 
 beforeEach(() => {
+  channel.cowork = true
   projects.folders = []
   projects.foldersLoaded = true
   useThreads.setState({ threads: {} })
@@ -127,13 +128,21 @@ beforeEach(() => {
   useCoworkSessions.setState({ sessions: [session('open', 'Open one'), session('other', 'Other one')] })
 })
 
-describe('NavHistory legacy Cowork sessions', () => {
-  // vitest defines VERSION as 'test', i.e. a stable-style build with no channel
-  // suffix: sessions used to be hidden here.
-  it('lists legacy Cowork sessions on every channel, including stable', () => {
+describe('NavHistory on a build without Cowork', () => {
+  it('hides Cowork sessions and mirrored Cowork threads but keeps chats', () => {
+    channel.cowork = false
+    useThreads.setState({
+      threads: {
+        chat: { id: 'chat', title: 'Chat', updated: 2, metadata: {} },
+        other: { id: 'other', title: 'Other one', updated: 1, metadata: { mode: 'cowork' } },
+        mirror: { id: 'mirror', title: 'Mirror', updated: 3, metadata: { mode: 'cowork' } },
+      },
+    } as never)
     render(<NavHistory />)
-    expect(screen.getByTestId('history-cowork-open')).toBeInTheDocument()
-    expect(screen.getByTestId('history-cowork-other')).toBeInTheDocument()
+    expect(screen.getByTestId('thread-chat')).toBeInTheDocument()
+    expect(screen.queryByTestId('history-cowork-open')).toBeNull()
+    expect(screen.queryByTestId('history-cowork-other')).toBeNull()
+    expect(screen.queryByTestId('history-cowork-mirror')).toBeNull()
   })
 })
 
