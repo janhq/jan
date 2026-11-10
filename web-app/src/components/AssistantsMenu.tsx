@@ -1,5 +1,6 @@
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
+import { IconCheck, IconMinus } from '@tabler/icons-react'
 
 type AssistantMenuProps = {
   selectedAssistant: string | undefined
@@ -39,7 +40,7 @@ export function AssistantsMenu({
             >
               {deletedAssistant.name || 'Unnamed Assistant'} (deleted)
             </span>
-            <span className="flex size-4 shrink-0 items-center justify-center text-xs text-muted-foreground">✓</span>
+            <span className="flex size-4 shrink-0 items-center justify-center text-xs text-muted-foreground"><IconCheck size={14} aria-hidden /></span>
           </div>
         </DropdownMenuItem>
       )}
@@ -53,10 +54,10 @@ export function AssistantsMenu({
         }}
       >
         <div className="flex min-w-0 w-full items-center gap-2 leading-5">
-          <span className="flex size-4 shrink-0 items-center justify-center leading-none text-muted-foreground">—</span>
+          <span className="flex size-4 shrink-0 items-center justify-center leading-none text-muted-foreground"><IconMinus size={14} aria-hidden /></span>
           <span className="min-w-0 flex-1 truncate">None</span>
           <span className="flex size-4 shrink-0 items-center justify-center text-xs text-muted-foreground">
-            {noSelectedAssistant ? '✓' : null}
+            {noSelectedAssistant ? <IconCheck size={14} aria-hidden /> : null}
           </span>
         </div>
       </DropdownMenuItem>
@@ -87,7 +88,7 @@ export function AssistantsMenu({
                   {assistant.name || 'Unnamed Assistant'}
                 </span>
                 <span className="flex size-4 shrink-0 items-center justify-center text-xs text-muted-foreground">
-                  {isSelected ? '✓' : null}
+                  {isSelected ? <IconCheck size={14} aria-hidden /> : null}
                 </span>
               </div>
             </DropdownMenuItem>
