@@ -41,6 +41,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
 import { isCoworkClosing, registerCoworkRunForClose } from '@/hooks/useCoworkRun'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { startCoworkSync, __resetCoworkSyncForTests } from '../coworkSync'
+import { transcriptFromThreadMessages } from '../coworkThreadMessages'
 
 type CloseEvent = { event: string; id: number; payload: null }
 let dispatchClose: (event: CloseEvent) => Promise<void>
@@ -158,6 +159,7 @@ describe('Cowork close with the installed Tauri API', () => {
       storage.invoke.mockImplementation(async (command, args) => {
         if (failing && command === failingCommand) throw new Error('disk full')
         if (command === 'write_thread_extra') disk.set('sidecar', args.value)
+        if (command === 'replace_thread_messages') disk.set('log', args.messages)
         if (command === 'create_thread') {
           disk.set('thread', args.thread)
           return args.thread
@@ -178,7 +180,8 @@ describe('Cowork close with the installed Tauri API', () => {
 
       failing = false
       await dispatchClose(closeEvent)
-      expect(disk.get('sidecar')).toMatchObject({ messages })
+      expect(transcriptFromThreadMessages(disk.get('log') as never[])).toMatchObject({ messages })
+      expect(disk.get('sidecar')).toMatchObject({ version: 2 })
       expect(disk.get('thread')).toMatchObject({ id })
       expect(disk.get('cowork_current_id')).toBe(id)
       expect(invoke).toHaveBeenCalledWith('plugin:window|destroy', { label: 'main' }, undefined)
