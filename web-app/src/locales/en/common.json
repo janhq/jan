@@ -939,5 +939,6 @@
       "body_other": "{{count}} items from this task's old folder (links, or files Jan was not allowed to read) were not copied. The original folder is kept as it was.",
       "show": "Show original folder"
     }
-  }
+  },
+  "deleteThreadFailed": "Could not delete the conversation. It may come back after a restart."
 }
