@@ -58,6 +58,9 @@ const backend = vi.hoisted(() => {
         return
       case 'main_window_hides_on_close':
         return window.hidesOnClose
+      case 'exit_after_save':
+      case 'cancel_exit_save':
+        return
       default:
         throw new Error(`unexpected ${cmd}`)
     }
@@ -100,6 +103,8 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 const closeWindow = vi.hoisted(() => ({
   callback: null as null | ((event: { preventDefault: () => void }) => Promise<void>),
+  // The `app-exit-requested` listener Rust fires on tray Quit / Cmd+Q.
+  onExitRequested: null as null | (() => Promise<void>),
   destroy: vi.fn(async () => {}),
 }))
 vi.mock('@tauri-apps/api/window', () => ({
@@ -107,6 +112,10 @@ vi.mock('@tauri-apps/api/window', () => ({
     destroy: closeWindow.destroy,
     onCloseRequested: vi.fn(async (callback) => {
       closeWindow.callback = callback
+      return () => {}
+    }),
+    listen: vi.fn(async (event: string, callback: () => Promise<void>) => {
+      if (event === 'app-exit-requested') closeWindow.onExitRequested = callback
       return () => {}
     }),
   }),
@@ -629,6 +638,55 @@ describe('coworkSync', () => {
       await closeWindow.callback!(event)
       expect(event.preventDefault).not.toHaveBeenCalled()
       expect(backend.extras.has(id)).toBe(true)
+    })
+
+    describe('quit (tray Quit, Cmd+Q)', () => {
+      it('stops live runs and saves, then lets Rust finish the held exit', async () => {
+        await startCoworkSync()
+        const id = useCoworkSessions.getState().createSession()
+        let commit!: () => void
+        const committed = new Promise<void>((r) => (commit = r))
+        registerCoworkRunForClose(async () => {
+          await committed
+          useCoworkSessions.getState().commitTurns(id, [{ role: 'user', content: 'last words' }], legacy('x').messages, [])
+        })
+        const quitting = closeWindow.onExitRequested!()
+        await Promise.resolve()
+        expect(backend.log).not.toContain('exit_after_save')
+        commit()
+        await quitting
+        expect(backend.extras.get(id).turns).toEqual([{ role: 'user', content: 'last words' }])
+        // Exit is released only after the save landed.
+        expect(backend.log.indexOf('exit_after_save')).toBeGreaterThan(
+          backend.log.lastIndexOf('write_thread_extra')
+        )
+        expect(backend.log).not.toContain('cancel_exit_save')
+      })
+
+      it('cancels the exit when a write fails, and offers quit-without-saving after repeated failures', async () => {
+        await startCoworkSync()
+        const id = useCoworkSessions.getState().createSession()
+        useCoworkSessions.getState().commitTurns(id, [{ role: 'user', content: 'keep' }], legacy('x').messages, [])
+        backend.hooks.before = async (cmd) => {
+          if (cmd === 'write_thread_extra') throw new Error('disk full')
+        }
+        const errorOptions = () => sonner.error.mock.calls.map((call) => call[1])
+        for (let attempt = 1; attempt <= COWORK_CLOSE_FAILURES_BEFORE_FORCE; attempt += 1) {
+          await closeWindow.onExitRequested!()
+          expect(backend.log.filter((c) => c === 'cancel_exit_save')).toHaveLength(attempt)
+          expect(errorOptions().at(-1)?.description).toBe(
+            attempt < COWORK_CLOSE_FAILURES_BEFORE_FORCE
+              ? 'common:coworkSync.quitFailedDescription'
+              : 'common:coworkSync.closeForceDescription'
+          )
+        }
+        expect(backend.log).not.toContain('exit_after_save')
+        expect(isCoworkClosing()).toBe(false)
+        const action = errorOptions().at(-1).action
+        expect(action.label).toBe('common:coworkSync.quitAnyway')
+        action.onClick()
+        await vi.waitFor(() => expect(backend.log).toContain('exit_after_save'))
+      })
     })
   })
 })

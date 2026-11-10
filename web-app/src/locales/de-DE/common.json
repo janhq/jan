@@ -425,7 +425,9 @@
     "closeFailedTitle": "Jan konnte nicht alles speichern und bleibt daher geöffnet",
     "closeFailedDescription": "Ihre letzten Änderungen befinden sich noch im Arbeitsspeicher. Schließen Sie das Fenster erneut, um das Speichern zu wiederholen.",
     "closeForceDescription": "Das Speichern schlägt weiterhin fehl. Sie können ohne Speichern schließen; dabei gehen die Änderungen verloren, die nicht geschrieben werden konnten.",
-    "closeAnyway": "Ohne Speichern schließen"
+    "closeAnyway": "Ohne Speichern schließen",
+    "quitFailedDescription": "Ihre letzten Änderungen befinden sich noch im Arbeitsspeicher. Beenden Sie Jan erneut, um das Speichern zu wiederholen.",
+    "quitAnyway": "Ohne Speichern beenden"
   },
   "messageWrites": {
     "failedTitle": "Einige Nachrichten konnten nicht gespeichert werden",

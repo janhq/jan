@@ -487,56 +487,89 @@ async function installCloseHandlers() {
       // and in-flight write has settled. On failure keep the window (and the
       // unsaved state) alive; another close request retries storage rather
       // than losing the run.
-      try {
-        // A live run has not committed its transcript or wire history yet: stop
-        // it and await its final commit BEFORE draining storage, or the last
-        // turn would be written after the flush. Still flush the other sessions
-        // if one participant fails to settle cleanly.
-        await withChatCloseDeadline(
-          (async () => {
-            const runs = await Promise.allSettled([quiesceCoworkRuns(), quiesceChats()])
-            const writes = await flushAllWrites()
-            const failed = [...runs, ...writes].find((r) => r.status === 'rejected')
-            if (failed?.status === 'rejected') throw failed.reason
-          })()
-        )
-        closeFailures = 0
-        toast.dismiss(CLOSE_FAILED_TOAST_ID)
-      } catch (e) {
-        event.preventDefault()
-        resumeCoworkAfterPreventedClose()
-        resumeChatsAfterPreventedClose()
-        console.warn('[cowork] flush on close failed:', e)
-        closeFailures += 1
-        // Keeping the window is the default (data loss is worse than a stuck
-        // window), but the user must always see why it did not close, and after
-        // repeated failures get an explicit way out that names the cost.
-        const canForce = closeFailures >= COWORK_CLOSE_FAILURES_BEFORE_FORCE
-        toast.error(i18n.t('common:coworkSync.closeFailedTitle'), {
-          id: CLOSE_FAILED_TOAST_ID,
-          duration: Infinity,
-          description: i18n.t(
-            canForce
-              ? 'common:coworkSync.closeForceDescription'
-              : 'common:coworkSync.closeFailedDescription'
-          ),
-          action: canForce
-            ? {
-                label: i18n.t('common:coworkSync.closeAnyway'),
-                // destroy() skips the close-requested event that would block it.
-                onClick: () => {
-                  void appWindow.destroy().catch((error) => {
-                    console.warn('[cowork] could not close the window:', error)
-                  })
-                },
-              }
-            : undefined,
+      if (await saveBeforeExit()) return
+      event.preventDefault()
+      reportExitSaveFailure('close', () => {
+        // destroy() skips the close-requested event that would block it.
+        void appWindow.destroy().catch((error) => {
+          console.warn('[cowork] could not close the window:', error)
         })
+      })
+    })
+    // Quit (tray, Cmd+Q): Rust holds the exit until this answers.
+    await appWindow.listen('app-exit-requested', async () => {
+      const invoke = getInvoke()
+      if (await saveBeforeExit()) {
+        await invoke('exit_after_save')
+        return
       }
+      await invoke('cancel_exit_save')
+      reportExitSaveFailure('quit', () => {
+        void invoke('exit_after_save').catch((error) => {
+          console.warn('[cowork] could not quit:', error)
+        })
+      })
     })
   } catch (e) {
     console.warn('[cowork] could not register the close handler:', e)
   }
+}
+
+/**
+ * Stop live runs and save every pending write before the app exits. A live run
+ * has not committed its transcript or wire history yet: stop it and await its
+ * final commit BEFORE draining storage, or the last turn would be written after
+ * the flush. Still flush the other sessions if one participant fails to settle
+ * cleanly. Returns false (runs resumed) when anything could not be saved.
+ */
+async function saveBeforeExit(): Promise<boolean> {
+  try {
+    await withChatCloseDeadline(
+      (async () => {
+        const runs = await Promise.allSettled([quiesceCoworkRuns(), quiesceChats()])
+        const writes = await flushAllWrites()
+        const failed = [...runs, ...writes].find((r) => r.status === 'rejected')
+        if (failed?.status === 'rejected') throw failed.reason
+      })()
+    )
+    closeFailures = 0
+    toast.dismiss(CLOSE_FAILED_TOAST_ID)
+    return true
+  } catch (e) {
+    resumeCoworkAfterPreventedClose()
+    resumeChatsAfterPreventedClose()
+    console.warn('[cowork] flush on close failed:', e)
+    return false
+  }
+}
+
+/**
+ * Keeping the app open is the default (data loss is worse than a stuck
+ * window), but the user must always see why it did not close or quit, and
+ * after repeated failures get an explicit way out that names the cost.
+ */
+function reportExitSaveFailure(kind: 'close' | 'quit', force: () => void) {
+  closeFailures += 1
+  const canForce = closeFailures >= COWORK_CLOSE_FAILURES_BEFORE_FORCE
+  toast.error(i18n.t('common:coworkSync.closeFailedTitle'), {
+    id: CLOSE_FAILED_TOAST_ID,
+    duration: Infinity,
+    description: i18n.t(
+      canForce
+        ? 'common:coworkSync.closeForceDescription'
+        : kind === 'quit'
+          ? 'common:coworkSync.quitFailedDescription'
+          : 'common:coworkSync.closeFailedDescription'
+    ),
+    action: canForce
+      ? {
+          label: i18n.t(
+            kind === 'quit' ? 'common:coworkSync.quitAnyway' : 'common:coworkSync.closeAnyway'
+          ),
+          onClick: force,
+        }
+      : undefined,
+  })
 }
 
 /** Test seam: forget all module state. */

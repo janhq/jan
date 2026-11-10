@@ -809,7 +809,9 @@
     "closeFailedTitle": "Jan could not save everything, so it stayed open",
     "closeFailedDescription": "Your latest changes are still in memory. Close the window again to retry saving.",
     "closeForceDescription": "Saving keeps failing. You can close without saving, which loses the changes that could not be written.",
-    "closeAnyway": "Close without saving"
+    "closeAnyway": "Close without saving",
+    "quitFailedDescription": "Your latest changes are still in memory. Quit again to retry saving.",
+    "quitAnyway": "Quit without saving"
   },
   "messageWrites": {
     "failedTitle": "Some messages could not be saved",
