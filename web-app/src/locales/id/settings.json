@@ -100,7 +100,8 @@
     "resetCodeBlockStyle": "Setel Ulang Gaya Blok Kode",
     "resetCodeBlockStyleDesc": "Setel ulang gaya blok kode ke default.",
     "resetCodeBlockSuccess": "Gaya blok kode berhasil diatur ulang",
-    "resetCodeBlockSuccessDesc": "Gaya blok kode telah dikembalikan ke default."
+    "resetCodeBlockSuccessDesc": "Gaya blok kode telah dikembalikan ke default.",
+    "themeDescFixed": "Selalu gunakan tema ini. Pilih Sistem untuk menyesuaikan dengan OS."
   },
   "hardware": {
     "os": "Sistem Operasi",

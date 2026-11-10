@@ -260,6 +260,10 @@
     },
     "messageMetadata": {
       "title": "Metadatos del mensaje"
+    },
+    "deleteAllChats": {
+      "title": "Eliminar conversaciones fuera de proyectos",
+      "description": "Esto elimina las conversaciones que no están en un proyecto. Se conservan las conversaciones de proyectos, las destacadas y las tareas. Esta acción no se puede deshacer."
     }
   },
   "projects": {
@@ -327,7 +331,8 @@
     "searchProjects": "Buscar proyectos...",
     "noProjectsFound": "No se encontraron proyectos",
     "tryDifferentSearch": "Prueba con un término de búsqueda diferente",
-    "viewProject": "Ver proyecto"
+    "viewProject": "Ver proyecto",
+    "sendMessageToStart": "Envía un mensaje arriba para empezar una."
   },
   "attachmentsIngestion": {
     "title": "Elige cómo procesar los adjuntos",
@@ -455,6 +460,14 @@
     "attachmentsDisabledInfo": {
       "title": "Adjuntos desactivados",
       "description": "Los adjuntos están desactivados en la Configuración"
+    },
+    "threadProjectMoveFailed": {
+      "title": "No se pudo mover",
+      "description": "No se pudo mover esta conversación. Su sesión no está disponible."
+    },
+    "deleteAllChats": {
+      "title": "Conversaciones eliminadas",
+      "description": "Se eliminaron las conversaciones fuera de proyectos. Se conservaron las conversaciones de proyectos y las tareas."
     }
   },
   "errors": {
@@ -476,6 +489,145 @@
   "deleteSessionTitle": "¿Eliminar la sesión?",
   "deleteSessionBody": "«{{title}}» y su transcripción se eliminarán de forma permanente. Esta acción no se puede deshacer.",
   "sidebar": {
-    "more": "Más"
-  }
+    "more": "Más",
+    "toggle": "Mostrar u ocultar la barra lateral",
+    "navigation": "Navegación",
+    "navigationDescription": "Ve a chats, proyectos, artefactos, habilidades y configuración."
+  },
+  "coworkSessionUnavailable": "Esta conversación todavía no tiene nada que mostrar.",
+  "coworkSync": {
+    "journalUnreadableTitle": "Algunas conversaciones de Cowork importadas están ocultas",
+    "journalUnreadableDescription": "Jan no puede leer su registro de eliminaciones. Por eso, las conversaciones importadas de una versión anterior siguen ocultas para no restaurar las que ya eliminaste, y eliminar cualquier conversación de Cowork está bloqueado temporalmente. Tus datos no se han tocado. Para recuperarlas, primero cierra Jan por completo, porque Jan reescribe settings.json desde la memoria mientras se ejecuta y desharía tu cambio. Después corrige o quita la entrada 'cowork_deleted_ids' de settings.json. Si la quitas, se restaurarán todas las conversaciones importadas, incluidas las que habías eliminado.",
+    "missingThreadTitle": "No se pudo guardar una conversación de Cowork",
+    "missingThreadDescription": "Falta su hilo guardado, así que los cambios ya no se guardan. Aún puedes leerla, exportarla o eliminarla.",
+    "writeRefusedTitle": "No se puede guardar una conversación de Cowork",
+    "writeRefusedDescription": "Jan no puede guardar esta conversación con su id actual, así que los cambios no se guardan. Aún puedes leerla, exportarla o eliminarla.",
+    "closeFailedTitle": "Jan no pudo guardarlo todo, así que sigue abierto",
+    "closeFailedDescription": "Tus últimos cambios siguen en memoria. Vuelve a cerrar la ventana para intentar guardarlos de nuevo.",
+    "closeForceDescription": "El guardado sigue fallando. Puedes cerrar sin guardar, pero perderás los cambios que no se pudieron escribir.",
+    "closeAnyway": "Cerrar sin guardar",
+    "quitFailedDescription": "Tus últimos cambios siguen en memoria. Vuelve a salir para intentar guardarlos de nuevo.",
+    "quitAnyway": "Salir sin guardar"
+  },
+  "messageWrites": {
+    "failedTitle": "No se pudieron guardar algunos mensajes",
+    "failedDescription": "Jan sigue intentándolo. Hasta que lo consiga, los mensajes recientes solo existen en esta ventana.",
+    "retry": "Reintentar ahora"
+  },
+  "threadRoute": {
+    "notReadyTitle": "Esta conversación aún no está lista",
+    "notReadyDescription": "Jan no pudo confirmar si esta conversación es un chat o una tarea de Cowork. Vuelve a intentarlo; si el problema continúa, reinicia la aplicación.",
+    "retry": "Reintentar"
+  },
+  "agentSettings": "Agente",
+  "composer": {
+    "addControls": "Añadir archivos adjuntos y controles",
+    "assistant": "Asistente",
+    "allTools": "Todas las herramientas",
+    "samplingParameters": "Parámetros de muestreo",
+    "openAssistantSettings": "Abrir configuración del asistente",
+    "samplingSaveFailed": "No se pudieron guardar los parámetros de muestreo. Inténtalo de nuevo.",
+    "context": "Contexto: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Selecciona un modelo",
+    "none": "Ninguno",
+    "triggerLabel": "Seleccionar modelo: {{name}}",
+    "dialogLabel": "Elige un modelo",
+    "searchLabel": "Buscar modelos o proveedores",
+    "searchPlaceholder": "Buscar modelos o proveedores...",
+    "listLabel": "Modelos",
+    "noMatches": "No hay modelos que coincidan",
+    "noModels": "No hay modelos configurados",
+    "optionsLabel": "Opciones del modelo",
+    "reasoning": "Razonamiento",
+    "reasoningMode": "Modo de razonamiento",
+    "reasoningEffort": "Esfuerzo de razonamiento",
+    "thinkingBudget": "Presupuesto de pensamiento",
+    "modelSettings": "Configuración del modelo",
+    "manageModels": "Gestionar modelos",
+    "effort": {
+      "default": "Predeterminado",
+      "auto": "Automático",
+      "on": "Activado",
+      "off": "Desactivado",
+      "low": "Bajo",
+      "medium": "Medio",
+      "high": "Alto",
+      "xhigh": "Muy alto",
+      "unlimited": "Ilimitado"
+    }
+  },
+  "homeMode": {
+    "addToProject": "Añadir a un proyecto",
+    "newProject": "Nuevo proyecto",
+    "noProjects": "Aún no hay proyectos",
+    "addFolderAction": "Añadir carpeta",
+    "startFailed": "No se pudo iniciar la conversación. Tu mensaje sigue en el cuadro de texto."
+  },
+  "conversationScope": {
+    "folderSelectModel": "Selecciona un modelo compatible con herramientas antes de añadir acceso a una carpeta.",
+    "folderUnsupported": "Este modelo no puede usar herramientas, así que no se puede añadir una carpeta. El chat normal sigue funcionando.",
+    "removeProject": "Quitar la selección de proyecto",
+    "temporary": "Un chat temporal no tiene acceso a carpetas."
+  },
+  "skillDestination": "Guardar las habilidades nuevas en",
+  "skillDestinationFolder": "Esta carpeta",
+  "skillDestinationGlobal": "Global (todas las conversaciones)",
+  "overview": {
+    "title": "Resumen de la conversación",
+    "description": "Progreso, archivos y tareas en segundo plano de esta conversación.",
+    "resize": "Cambiar el tamaño del panel lateral",
+    "close": "Ocultar el resumen de la conversación",
+    "progress": "Progreso",
+    "files": "Archivos",
+    "backgroundTasks": "Tareas en segundo plano",
+    "monitorCount_one": "{{count}} monitor",
+    "monitorCount_other": "{{count}} monitores",
+    "noProgress": "Los pasos aparecerán a medida que Jan trabaje.",
+    "noFiles": "Los archivos aparecerán aquí."
+  },
+  "artifactsLibraryDescription": "Los archivos creados en tus conversaciones, todos en un solo lugar.",
+  "artifactsLibraryCount_one": "{{count}} archivo",
+  "artifactsLibraryCount_other": "{{count}} archivos",
+  "artifactsLibraryFilter": "Filtrar por tipo de archivo",
+  "artifactsLibraryReset": "Borrar filtros",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "No se pudo importar esta tarea",
+      "body": "Jan no pudo traer esta tarea desde la versión anterior y dejó de intentarlo. No se ha perdido nada: el original se conserva. Puedes volver a intentarlo o exportarla a un archivo."
+    },
+    "id-collision": {
+      "title": "No se pudo importar esta tarea",
+      "body": "Otra conversación ya usa el mismo id, así que esta tarea se muestra en modo de solo lectura y la otra conversación no se modifica. Expórtala para guardar una copia."
+    },
+    "missing-sidecar": {
+      "title": "Falta el historial de esta tarea",
+      "body": "No se encontró el historial guardado de esta tarea, así que se muestra en modo de solo lectura. Sus archivos en el disco se conservan tal como están."
+    },
+    "unreadable-sidecar": {
+      "title": "No se puede leer el historial de esta tarea",
+      "body": "El historial guardado de esta tarea está dañado o es de una versión más reciente de Jan, así que se muestra en modo de solo lectura y nunca se sobrescribe."
+    },
+    "missing-thread": {
+      "title": "Esta tarea se eliminó del almacenamiento",
+      "body": "La conversación de esta tarea ya no está en el disco. Lo que ves es la copia que sigue en memoria; expórtala para conservarla."
+    },
+    "reason": "Motivo: {{reason}}",
+    "retry": "Volver a intentarlo",
+    "retrying": "Intentando...",
+    "export": "Exportar",
+    "exported": "Tarea exportada",
+    "exportFailed": "No se pudo exportar la tarea",
+    "imported": "Tarea importada",
+    "retryFailed": "Todavía no se pudo importar la tarea",
+    "revealFailed": "No se pudo abrir la carpeta",
+    "leftOut": {
+      "title": "Algunos archivos no se copiaron",
+      "body_one": "No se copió {{count}} elemento de la carpeta anterior de esta tarea (un enlace o un archivo que Jan no tenía permiso para leer). La carpeta original se conserva tal como estaba.",
+      "body_other": "No se copiaron {{count}} elementos de la carpeta anterior de esta tarea (enlaces o archivos que Jan no tenía permiso para leer). La carpeta original se conserva tal como estaba.",
+      "show": "Mostrar la carpeta original"
+    }
+  },
+  "deleteThreadFailed": "No se pudo eliminar la conversación. Es posible que vuelva a aparecer tras reiniciar."
 }

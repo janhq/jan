@@ -106,7 +106,8 @@
     "resetCodeBlockStyle": "Obnovit styl bloku kódu",
     "resetCodeBlockStyleDesc": "Obnovit styl bloku kódu na výchozí.",
     "resetCodeBlockSuccess": "Styl bloku kódu úspěšně obnoven",
-    "resetCodeBlockSuccessDesc": "Styl bloku kódu byl obnoven na výchozí."
+    "resetCodeBlockSuccessDesc": "Styl bloku kódu byl obnoven na výchozí.",
+    "themeDescFixed": "Vždy používat tento motiv. Pokud má odpovídat operačnímu systému, zvolte Systém."
   },
   "hardware": {
     "os": "Operační systém",
