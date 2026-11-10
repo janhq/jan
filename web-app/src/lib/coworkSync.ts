@@ -428,6 +428,20 @@ async function finishLateMigration(
   }
 }
 
+/**
+ * Whether Rust hides the main window on this close instead of closing it
+ * (`main_window_hides_on_close`). On error assume a real close: that path
+ * saves everything before the window goes.
+ */
+async function hidesOnClose(): Promise<boolean> {
+  try {
+    return (await getInvoke()<boolean>('main_window_hides_on_close')) === true
+  } catch (e) {
+    console.warn('[cowork] could not read the close behaviour:', e)
+    return false
+  }
+}
+
 async function installCloseHandlers() {
   if (closeListenersInstalled) return
   closeListenersInstalled = true
@@ -456,9 +470,23 @@ async function installCloseHandlers() {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     const appWindow = getCurrentWindow()
     await appWindow.onCloseRequested(async (event) => {
-      // Awaiting here holds the close until every queued and in-flight write
-      // has settled. On failure keep the window (and the unsaved state) alive;
-      // another close request retries storage rather than losing the run.
+      // When Rust only hides the window (macOS, or the background API server
+      // on Windows/Linux) the app keeps running: keep live runs going, save in
+      // the background, and prevent the destroy() that would quit the app.
+      if (await hidesOnClose()) {
+        event.preventDefault()
+        void flushAllWrites().then((writes) => {
+          const failed = writes.find((r) => r.status === 'rejected')
+          if (failed?.status === 'rejected') {
+            console.warn('[cowork] flush on hide failed:', failed.reason)
+          }
+        })
+        return
+      }
+      // A real close quits the app. Awaiting here holds it until every queued
+      // and in-flight write has settled. On failure keep the window (and the
+      // unsaved state) alive; another close request retries storage rather
+      // than losing the run.
       try {
         // A live run has not committed its transcript or wire history yet: stop
         // it and await its final commit BEFORE draining storage, or the last
