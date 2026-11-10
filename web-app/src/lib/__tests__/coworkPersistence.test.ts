@@ -11,6 +11,7 @@ import {
   CODE_SESSIONS_KEY,
   COWORK_DELETED_IDS_KEY,
 } from '../migrateCoworkSessions'
+import { transcriptFromThreadMessages } from '../coworkThreadMessages'
 
 type Json = Record<string, any>
 
@@ -60,6 +61,8 @@ function makeBackend(opts: { failNext?: { cmd: string; times: number } } = {}) {
       }
       case 'read_thread_extra':
         return extras.get(args.threadId) ?? null
+      case 'list_messages':
+        return JSON.parse(JSON.stringify(logs.get(args.threadId) ?? []))
       case 'create_thread': {
         const existing = threads.get(args.thread.id)
         if (existing) return existing
@@ -78,7 +81,12 @@ function makeBackend(opts: { failNext?: { cmd: string; times: number } } = {}) {
         throw new Error(`unexpected ${cmd}`)
     }
   }
-  return { invoke: invoke as any, settings, threads, extras, log, logs, messageFailure }
+  // The transcript as the loader resolves it: carried by messages.jsonl, else
+  // a v1 sidecar's own arrays, else (v2) empty.
+  const stored = (id: string) =>
+    transcriptFromThreadMessages(logs.get(id) ?? []) ??
+    (extras.get(id)?.version === 1 ? extras.get(id) : { turns: [], messages: [] })
+  return { invoke: invoke as any, settings, threads, extras, log, logs, messageFailure, stored }
 }
 
 const session = (id: string, extra: Json = {}): any => ({
@@ -139,11 +147,11 @@ describe('coworkPersistence write protocol', () => {
 
     p.schedule(session('a'))
     await p.flush()
-    expect(b.extras.get('a').turns).toHaveLength(1)
+    expect(b.stored('a').turns).toHaveLength(1)
 
     p.schedule(session('a', { turns: [], messages: [] })) // /clear
     await p.flush()
-    expect(b.extras.get('a').turns).toHaveLength(0)
+    expect(b.stored('a').turns).toHaveLength(0)
   })
 
   it('a cleared session is a used session: written even if never persisted, and it rehydrates as cleared and listed', async () => {
@@ -154,7 +162,7 @@ describe('coworkPersistence write protocol', () => {
     expect(p.isPersisted('a')).toBe(true)
     expect(b.threads.get('a')!.title).toBe('Kept title')
     expect(b.threads.get('a')!.metadata.cleared).toBe(true)
-    const back = sessionFromThread(b.threads.get('a'), b.extras.get('a'))
+    const back = sessionFromThread(b.threads.get('a'), { ...b.extras.get('a'), ...b.stored('a') })
     expect(back).toMatchObject({ id: 'a', title: 'Kept title', cleared: true, turns: [], messages: [] })
     // A blank placeholder carries no marker and is still not written.
     p.schedule(session('blank', { turns: [], messages: [] }))
@@ -172,7 +180,7 @@ describe('coworkPersistence write protocol', () => {
     await p.flush()
     expect(p.isPersisted('a')).toBe(true)
     expect(b.threads.get('a')!.metadata.mode).toBe('cowork')
-    expect(b.extras.get('a').turns).toHaveLength(0)
+    expect(b.stored('a').turns).toHaveLength(0)
   })
 
   it('a failed write keeps the session dirty and retries', async () => {
@@ -209,7 +217,7 @@ describe('coworkPersistence write protocol', () => {
       p.schedule(session('a', { title: 'latest' }))
       await p.flush()
       expect(b.threads.get('a')!.title).toBe('latest')
-      expect(b.extras.get('a').messages).toEqual(session('a').messages)
+      expect(b.stored('a').messages).toEqual(session('a').messages)
       await vi.advanceTimersByTimeAsync(100)
       expect(onError).toHaveBeenCalledTimes(6)
     }
@@ -276,9 +284,9 @@ describe('coworkPersistence write protocol', () => {
   it('a mutation during an in-flight write is written after it, in order', async () => {
     const order: string[] = []
     const slow = async (cmd: string, args: any) => {
-      if (cmd === 'write_thread_extra') {
+      if (cmd === 'replace_thread_messages') {
         await new Promise((r) => setTimeout(r, 50))
-        order.push(`extra:${args.value.turns.length}`)
+        order.push(`log:${transcriptFromThreadMessages(args.messages)!.turns.length}`)
       }
       return b.invoke(cmd, args)
     }
@@ -289,8 +297,8 @@ describe('coworkPersistence write protocol', () => {
     const done = p.flush()
     await vi.advanceTimersByTimeAsync(500)
     await done
-    expect(order).toEqual(['extra:1', 'extra:2'])
-    expect(b.extras.get('a').turns).toHaveLength(2)
+    expect(order).toEqual(['log:1', 'log:2'])
+    expect(b.stored('a').turns).toHaveLength(2)
   })
 
   it('delete cancels a pending write and drops late writes (no resurrection)', async () => {
@@ -1089,11 +1097,11 @@ describe('sidecar version/shape containment', () => {
   }
 
   it('a future-version sidecar loads read-only and its bytes survive a touch', async () => {
-    const v2 = { version: 2, turns: [], messages: [], future: { rich: true } }
-    seed('s', v2)
+    const v3 = { version: 3, turns: [], messages: [], future: { rich: true } }
+    seed('s', v3)
     const s = await loadAndTouch('s')
     expect(s.unavailable).toBe('unreadable-sidecar')
-    expect(b.extras.get('s')).toEqual(v2)
+    expect(b.extras.get('s')).toEqual(v3)
     expect(b.log.filter((l) => l.startsWith('write_thread_extra'))).toHaveLength(0)
   })
 
@@ -1127,8 +1135,76 @@ describe('sidecar version/shape containment', () => {
     p.adopt(r.threads)
     p.schedule({ ...s, title: 'renamed' })
     await p.flush()
-    // The touch wrote through and the rich payload round-tripped intact.
+    // The touch wrote through and the rich payload round-tripped intact: the
+    // transcript moved into messages.jsonl, the rest into a v2 sidecar.
     expect(b.threads.get('s')!.title).toBe('renamed')
-    expect(b.extras.get('s')).toEqual(rich)
+    const { turns, messages, history, ...state } = rich
+    expect(b.stored('s')).toEqual({ version: 1, turns, messages, history })
+    expect(b.extras.get('s')).toEqual({ ...state, version: 2 })
+    const back = await loadCoworkSessions(b.invoke, { migrationSettled: true })
+    expect(back.sessions.find((x) => x.id === 's')).toMatchObject({
+      turns, messages, history, subagents: state.subagents, lastUsage: state.lastUsage, todos: state.todos,
+    })
+  })
+})
+
+describe('transcript authority (messages.jsonl vs sidecar)', () => {
+  let b: ReturnType<typeof makeBackend>
+  beforeEach(() => {
+    b = makeBackend()
+  })
+  const load = async () =>
+    (await loadCoworkSessions(b.invoke, { migrationSettled: true })).sessions.find(
+      (x) => x.id === 's'
+    )!
+  const live = async (s: any) => {
+    const p = createCoworkPersistence(b.invoke, { debounceMs: 1 })
+    p.schedule(s)
+    await p.flush()
+  }
+
+  it('a write that crashed before the sidecar loads the newer carried transcript over an older v1 sidecar', async () => {
+    await live(session('s'))
+    const newer = b.logs.get('s')
+    // An older build's v1 sidecar beside it, as if the v2 rewrite never landed.
+    b.extras.set('s', { version: 1, turns: [], messages: [] })
+    b.logs.set('s', newer!)
+    expect(await load()).toMatchObject({ turns: session('s').turns, messages: session('s').messages })
+  })
+
+  it('a log without a carrier (migrated, or rewritten by an older build) falls back to the v1 sidecar', async () => {
+    b.threads.set('s', sessionToThreadRecord(session('s')))
+    b.extras.set('s', { version: 1, turns: [{ role: 'user', content: 'from sidecar' }], messages: [] })
+    b.logs.set('s', [{ id: 's-msg-0', thread_id: 's', role: 'user', content: [] }])
+    expect((await load()).turns).toEqual([{ role: 'user', content: 'from sidecar' }])
+  })
+
+  it('an unreadable messages.jsonl makes the session read-only rather than loading the sidecar alone', async () => {
+    await live(session('s'))
+    const invoke = b.invoke
+    b.invoke = (async (cmd: string, args: any) => {
+      if (cmd === 'list_messages') throw new Error('corrupt log')
+      return invoke(cmd, args)
+    }) as any
+    expect((await load()).unavailable).toBe('unreadable-sidecar')
+  })
+
+  it('the carrier rides only on metadata: the provider-facing records are unchanged', async () => {
+    await live(session('s'))
+    const [record] = b.logs.get('s')!
+    const { coworkTranscript, ...rest } = record.metadata ?? {}
+    expect(coworkTranscript).toBeDefined()
+    expect(rest).toEqual({})
+    expect(record.content).toEqual([{ type: 'text', text: { value: 'hi', annotations: [] } }])
+  })
+
+  it('a record appended after the carrier by another writer makes the carrier stale: the v1 sidecar wins', async () => {
+    b.threads.set('s', sessionToThreadRecord(session('s')))
+    b.extras.set('s', { version: 1, turns: [{ role: 'user', content: 'sidecar' }], messages: [] })
+    b.logs.set('s', [
+      { id: 's-msg-0', thread_id: 's', metadata: { coworkTranscript: { version: 1, turns: [], messages: [] } } },
+      { id: 'appended', thread_id: 's', role: 'user', content: [] },
+    ])
+    expect((await load()).turns).toEqual([{ role: 'user', content: 'sidecar' }])
   })
 })
