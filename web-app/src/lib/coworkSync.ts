@@ -432,6 +432,27 @@ async function finishLateMigration(
     (s) => !inStore.has(s.id) && !seen.has(s.id) && !deleted.has(s.id)
   )
   if (fresh.length > 0) mergeLoaded(fresh, null)
+  // A session shown as legacy before the background run finished may have been
+  // abandoned by it: show it read-only with the reason, as a fresh launch would.
+  const placeholders = new Map(
+    loaded.sessions
+      .filter(
+        (s) =>
+          inStore.has(s.id) &&
+          (s.unavailable === 'not-imported' || s.unavailable === 'id-collision')
+      )
+      .map((s) => [s.id, s])
+  )
+  if (placeholders.size > 0) {
+    useCoworkSessions.setState((s) => ({
+      sessions: s.sessions.map((x) => {
+        const p = placeholders.get(x.id)
+        return p && !x.unavailable
+          ? { ...x, unavailable: p.unavailable, importError: p.importError }
+          : x
+      }),
+    }))
+  }
   for (const t of loaded.threads) {
     if (!deleted.has(t.id) && (!seen.has(t.id) || inStore.has(t.id))) upsertThread(t)
   }
