@@ -9,7 +9,11 @@ import {
   COWORK_MIGRATED_IDS_KEY,
   COWORK_MIGRATION_ABANDONED_KEY,
 } from '../migrateCoworkSessions'
-import { coworkSessionToThreadMessages } from '../coworkThreadMessages'
+import {
+  COWORK_TRANSCRIPT_KEY,
+  coworkSessionToThreadMessages,
+  transcriptFromThreadMessages,
+} from '../coworkThreadMessages'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Json = Record<string, any>
@@ -53,6 +57,8 @@ function makeBackend() {
         return
       case 'read_thread_extra':
         return extras.get(args.threadId) ?? null
+      case 'list_messages':
+        return JSON.parse(JSON.stringify(logs.get(args.threadId) ?? []))
       case 'create_thread': {
         const existing = threads.get(args.thread.id)
         if (existing) return existing
@@ -87,7 +93,14 @@ const session = (id: string, extra: Json = {}): any => ({
 
 const reply = { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'answer' }] }
 
-describe('messages.jsonl mirror (derived projection)', () => {
+// A record as main chat, the CLI and providers see it: without the carrier.
+const providerFacing = (record: Json) => {
+  const { [COWORK_TRANSCRIPT_KEY]: _carrier, ...metadata } = record.metadata ?? {}
+  const { metadata: _m, ...rest } = record
+  return Object.keys(metadata).length ? { ...rest, metadata } : rest
+}
+
+describe('messages.jsonl transcript writes', () => {
   let b: ReturnType<typeof makeBackend>
   beforeEach(() => {
     vi.useFakeTimers()
@@ -105,8 +118,14 @@ describe('messages.jsonl mirror (derived projection)', () => {
     expect(order).toEqual(['write_thread_extra:a', 'replace_thread_messages', 'create_thread'])
     const anchor = b.threads.get('a')!.metadata.messagesAnchorMs as number
     expect(b.logs.get('a')).toEqual(
-      JSON.parse(JSON.stringify(coworkSessionToThreadMessages(session('a'), { anchorMs: anchor })))
+      JSON.parse(
+        JSON.stringify(coworkSessionToThreadMessages(session('a'), { anchorMs: anchor, carrier: true }))
+      )
     )
+    expect(transcriptFromThreadMessages(b.logs.get('a')!)).toMatchObject({
+      turns: session('a').turns,
+      messages: session('a').messages,
+    })
   })
 
   it('the first mirror creates the directory, later ones need the thread', async () => {
@@ -137,12 +156,12 @@ describe('messages.jsonl mirror (derived projection)', () => {
     expect(b.threads.get('a')!.title).toBe('renamed')
   })
 
-  it('appending a turn never changes the stamps or ids of messages already written (prefix stays byte-stable)', async () => {
+  it('appending a turn never changes the provider-facing stamps or ids of messages already written (prefix stays byte-stable)', async () => {
     const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
     const s1 = session('a')
     p.schedule(s1)
     await p.flush()
-    const first = JSON.stringify(b.logs.get('a')![0])
+    const first = JSON.stringify(providerFacing(b.logs.get('a')![0]))
     p.schedule({
       ...s1,
       updated: s1.updated + 999_000,
@@ -152,33 +171,38 @@ describe('messages.jsonl mirror (derived projection)', () => {
     await p.flush()
     const after = b.logs.get('a')!
     expect(after).toHaveLength(2)
-    expect(JSON.stringify(after[0])).toBe(first)
+    expect(JSON.stringify(providerFacing(after[0]))).toBe(first)
     expect(after[1].created_at).toBeGreaterThan(after[0].created_at)
+    // The carrier moved to the new last record.
+    expect(after[0].metadata?.[COWORK_TRANSCRIPT_KEY]).toBeUndefined()
+    expect(transcriptFromThreadMessages(after)!.messages).toHaveLength(2)
   })
 
-  it('a failed mirror retries on its own, never blocks the sidecar or the record, and does not reject flush', async () => {
+  it('a failed transcript write rejects flush, keeps the session dirty, and lands on retry', async () => {
     const p = createCoworkPersistence(b.invoke, { debounceMs: 10, retryMs: 50 })
     b.messageFailure.error = new Error('disk full')
     p.schedule(session('a'))
-    await p.flush() // resolves: the authoritative data is durable
-    expect(b.extras.has('a')).toBe(true)
-    expect(b.threads.has('a')).toBe(true)
-    expect(b.logs.has('a')).toBe(false)
+    await expect(p.flush()).rejects.toThrow('pending writes: a')
+    // Not committed: no thread.json, so nothing is listed.
+    expect(b.threads.has('a')).toBe(false)
     b.messageFailure.error = null
     await vi.advanceTimersByTimeAsync(100)
     await p.flush()
-    expect(b.logs.has('a')).toBe(true)
+    expect(b.threads.has('a')).toBe(true)
+    expect(transcriptFromThreadMessages(b.logs.get('a')!)!.turns).toHaveLength(1)
   })
 
-  it('a failed mirror does not stop a later sidecar write from landing', async () => {
+  it('a failed transcript write on an existing thread leaves the previous sidecar and record in place', async () => {
     const p = createCoworkPersistence(b.invoke, { debounceMs: 10, retryMs: 10_000 })
     p.schedule(session('a'))
     await p.flush()
+    const sidecar = JSON.stringify(b.extras.get('a'))
     b.messageFailure.error = new Error('disk full')
     p.schedule(session('a', { title: 'newer', turns: [], messages: [], cleared: true }))
-    await p.flush()
-    expect(b.extras.get('a').turns).toHaveLength(0)
-    expect(b.threads.get('a')!.title).toBe('newer')
+    await expect(p.flush()).rejects.toThrow('pending writes: a')
+    expect(JSON.stringify(b.extras.get('a'))).toBe(sidecar)
+    expect(b.threads.get('a')!.title).toBe('T a')
+    expect(transcriptFromThreadMessages(b.logs.get('a')!)!.turns).toHaveLength(1)
   })
 
   it('a PERMANENT mirror refusal is reported once and not retried', async () => {
