@@ -242,6 +242,9 @@ export default function ComposerModelPicker({
     if (!provider || !selectedModel || !settingKey) return
     const settings = { ...selectedModel.settings }
     if (value === undefined) delete settings[settingKey]
+    // The title is persisted into the model's settings and shown by ModelSetting,
+    // like every other provider-supplied setting title (all stored in English).
+    // Translating it here would freeze the locale of the first choice into the data.
     else settings[settingKey] = {
       ...(settings[settingKey] ?? {
         key: settingKey, title: 'Reasoning effort', description: '', controller_type: 'dropdown',

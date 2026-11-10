@@ -459,6 +459,7 @@
     "assistant": "Assistant",
     "allTools": "Tous les outils",
     "samplingParameters": "Paramètres d'échantillonnage",
+    "openAssistantSettings": "Ouvrir les paramètres de l'assistant",
     "samplingSaveFailed": "Impossible d'enregistrer les paramètres d'échantillonnage. Veuillez réessayer.",
     "context": "Contexte : {{tokens}}"
   },
