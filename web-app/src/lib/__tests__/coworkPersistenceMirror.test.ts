@@ -31,6 +31,8 @@ function makeBackend() {
       case 'settings_set':
         settings.set(args.key, args.value)
         return
+      case 'settings_flush':
+        return
       case 'settings_remove':
         settings.delete(args.key)
         return

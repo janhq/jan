@@ -791,6 +791,10 @@ export function createCoworkPersistence(
               value: JSON.stringify([...ids]),
             })
             journalAdded = true
+            // settings.json is written on a debounce; the thread folder goes
+            // right below. Put the journal on disk first, or a crash in between
+            // lets the migration bring the session back on the next launch.
+            await invoke('settings_flush')
           })
         }
         if (!o?.preserveThread) await invoke('delete_thread', { threadId: id })

@@ -37,6 +37,8 @@ function makeBackend(opts: { failNext?: { cmd: string; times: number } } = {}) {
       case 'settings_set':
         settings.set(args.key, args.value)
         return
+      case 'settings_flush':
+        return
       case 'settings_remove':
         settings.delete(args.key)
         return
@@ -322,12 +324,16 @@ describe('coworkPersistence write protocol', () => {
     expect(b.extras.has('a')).toBe(false)
   })
 
-  it('records a deleted id when asked, so the legacy blob cannot resurrect it', async () => {
+  it('records a deleted id on disk before deleting the thread, so the legacy blob cannot resurrect it', async () => {
     const p = createCoworkPersistence(b.invoke, { debounceMs: 5 })
     p.schedule(session('a'))
     await p.flush()
     await p.remove('a', { recordDeleted: true })
     expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['a'])
+    // settings_set alone only reaches a debounced in-memory map; a crash
+    // between it and delete_thread would lose the journal.
+    const order = b.log.filter((cmd) => ['settings_set', 'settings_flush', 'delete_thread'].includes(cmd))
+    expect(order).toEqual(['settings_set', 'settings_flush', 'delete_thread'])
   })
 
   it('serializes the shared deletion journal for concurrent removals', async () => {
@@ -650,6 +656,15 @@ describe('coworkPersistence write protocol', () => {
     expect(b.log).not.toContain('delete_thread')
     await p.remove('b', { recordDeleted: true })
     expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['b'])
+  })
+
+  it('keeps the thread when the journal cannot be written to disk', async () => {
+    b = makeBackend({ failNext: { cmd: 'settings_flush', times: 1 } })
+    const p = createCoworkPersistence(b.invoke)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('settings_flush failed')
+    expect(b.log).not.toContain('delete_thread')
+    // The unflushed intent is rolled back, so the session is not hidden either.
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual([])
   })
 
   it('a failed deletion is surfaced and does not permanently block session writes', async () => {
