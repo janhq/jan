@@ -47,6 +47,8 @@ vi.mock('@/containers/NotificationPositionSwitcher', () => ({
   ),
 }))
 
+const theme = vi.hoisted(() => ({ active: 'auto' }))
+vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ({ activeTheme: theme.active }) }))
 vi.mock('@/hooks/useInterfaceSettings', () => ({
   useInterfaceSettings: () => ({
     resetInterface: vi.fn(),
@@ -100,6 +102,22 @@ describe('Interface Settings Route', () => {
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
     expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('common:settings')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['auto', 'settings:interface.themeDesc'],
+    ['light', 'settings:interface.themeDescFixed'],
+    ['dark', 'settings:interface.themeDescFixed'],
+  ])('describes the %s theme with %s', (active, key) => {
+    theme.active = active
+    const Component = InterfaceRoute.component as React.ComponentType
+    render(<Component />)
+    const descriptions = screen.getAllByTestId('card-item-description').map((n) => n.textContent)
+    expect(descriptions).toContain(key)
+    expect(descriptions).not.toContain(
+      key === 'settings:interface.themeDesc' ? 'settings:interface.themeDescFixed' : 'settings:interface.themeDesc'
+    )
+    theme.active = 'auto'
   })
 
   it('should render interface controls', () => {

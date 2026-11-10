@@ -21,10 +21,14 @@ export class DefaultAssistantsService implements AssistantsService {
   }
 
   async createAssistant(assistant: Assistant): Promise<void> {
-    await assistants()?.createAssistant(assistant)
+    const service = assistants()
+    if (!service) throw new Error('AssistantExtension not found')
+    await service.createAssistant(assistant)
   }
 
   async deleteAssistant(assistant: Assistant): Promise<void> {
-    await assistants()?.deleteAssistant(assistant)
+    const service = assistants()
+    if (!service) throw new Error('AssistantExtension not found')
+    await service.deleteAssistant(assistant)
   }
 }

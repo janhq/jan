@@ -68,10 +68,10 @@ describe('DefaultAssistantsService', () => {
       expect(impl.createAssistant).toHaveBeenCalledWith(a)
     })
 
-    it('does nothing when no Assistants service is provided', async () => {
+    it('rejects when no Assistants service is provided', async () => {
       await expect(
         assistantsService.createAssistant(assistant('new'))
-      ).resolves.toBeUndefined()
+      ).rejects.toThrow('AssistantExtension not found')
       expect(impl.createAssistant).not.toHaveBeenCalled()
     })
 
@@ -93,10 +93,10 @@ describe('DefaultAssistantsService', () => {
       expect(impl.deleteAssistant).toHaveBeenCalledWith(a)
     })
 
-    it('does nothing when no Assistants service is provided', async () => {
+    it('rejects when no Assistants service is provided', async () => {
       await expect(
         assistantsService.deleteAssistant(assistant('gone'))
-      ).resolves.toBeUndefined()
+      ).rejects.toThrow('AssistantExtension not found')
       expect(impl.deleteAssistant).not.toHaveBeenCalled()
     })
 

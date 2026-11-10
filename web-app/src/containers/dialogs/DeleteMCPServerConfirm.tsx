@@ -1,3 +1,5 @@
+import { useRef, useState } from 'react'
+import { normalizeAppError } from '@/utils/appError'
 import {
   Dialog,
   DialogContent,
@@ -13,7 +15,7 @@ interface DeleteMCPServerConfirmProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   serverName: string
-  onConfirm: () => void
+  onConfirm: () => void | Promise<void>
 }
 
 export default function DeleteMCPServerConfirm({
@@ -23,8 +25,26 @@ export default function DeleteMCPServerConfirm({
   onConfirm,
 }: DeleteMCPServerConfirmProps) {
   const { t } = useTranslation()
+  const pending = useRef(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const handleConfirm = async () => {
+    if (pending.current) return
+    pending.current = true
+    setSaving(true)
+    setError(null)
+    try {
+      await onConfirm()
+      onOpenChange(false)
+    } catch (error) {
+      setError(normalizeAppError(error))
+    } finally {
+      pending.current = false
+      setSaving(false)
+    }
+  }
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(value) => { if (!pending.current) onOpenChange(value) }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('mcp-servers:deleteServer.title')}</DialogTitle>
@@ -32,18 +52,17 @@ export default function DeleteMCPServerConfirm({
             {t('mcp-servers:deleteServer.description', { serverName })}
           </DialogDescription>
         </DialogHeader>
+        {error && <div role="alert" className="text-destructive text-sm">{error}</div>}
         <DialogFooter>
-          <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button disabled={saving} size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
             {t('common:cancel')}
           </Button>
           <Button
             size="sm"
             variant="destructive"
             autoFocus
-            onClick={() => {
-              onConfirm()
-              onOpenChange(false)
-            }}
+            disabled={saving}
+            onClick={handleConfirm}
           >
             {t('mcp-servers:deleteServer.delete')}
           </Button>
