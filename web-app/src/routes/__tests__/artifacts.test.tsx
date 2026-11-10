@@ -88,13 +88,6 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('Artifacts page', () => {
-  it('is not gated to builds that ship the Cowork surface', () => {
-    expect(
-      (Route as unknown as { options: { beforeLoad?: unknown } }).options
-        .beforeLoad
-    ).toBeUndefined()
-  })
-
   it('opens the artifact in its conversation URL, not the bare /cowork', async () => {
     render(<Page />)
     fireEvent.click(await screen.findByText('old'))

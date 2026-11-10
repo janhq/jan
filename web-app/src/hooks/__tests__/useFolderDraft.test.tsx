@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({
   searchStr: '',
   picked: '/home/u/app' as unknown,
   tauri: true,
+  cowork: true,
   model: { id: 'm', capabilities: ['tools'] } as unknown,
   navigate: vi.fn(),
   start: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({ dialog: () => ({ open: async () => h.picked }) }),
 }))
 vi.mock('@/lib/coworkSync', () => ({ supportsCowork: () => h.tauri }))
+vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.cowork }))
 vi.mock('@/lib/startCoworkFromDraft', () => ({
   startCoworkFromDraft: (...args: unknown[]) => h.start(...args),
 }))
@@ -41,6 +43,7 @@ describe('useFolderDraft', () => {
     h.searchStr = ''
     h.picked = '/home/u/app'
     h.tauri = true
+    h.cowork = true
     h.model = { id: 'm', capabilities: ['tools'] }
     h.start.mockReset().mockReturnValue('started')
     h.info.mockReset()
@@ -114,5 +117,15 @@ describe('useFolderDraft', () => {
     const { result } = renderHook(() => useFolderDraft())
     expect(result.current.available).toBe(false)
     expect(result.current.onFolderDraft(submission)).toBe('chat')
+  })
+
+  it('is unavailable on builds that do not ship Cowork, even with a folder picked', async () => {
+    h.cowork = false
+    const { result } = renderHook(() => useFolderDraft())
+    expect(result.current.available).toBe(false)
+    await act(async () => result.current.attach())
+    expect(result.current.folder).toBeNull()
+    expect(result.current.onFolderDraft(submission)).toBe('chat')
+    expect(h.start).not.toHaveBeenCalled()
   })
 })

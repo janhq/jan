@@ -39,6 +39,7 @@ import { RenameThreadDialog } from '@/containers/dialogs/RenameThreadDialog'
 import { DeleteAllThreadsDialog } from '@/containers/dialogs/DeleteAllThreadsDialog'
 import { mergeHistory } from '@/lib/mergeHistory'
 import { canOpenCoworkSession } from '@/lib/coworkOpenable'
+import { isCoworkEnabled } from '@/lib/version'
 import { toast } from 'sonner'
 
 /**
@@ -172,16 +173,20 @@ export function NavHistory() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
 
-  const rows = useMemo(
-    () =>
-      mergeHistory(
-        Object.values(threads).filter((t) => t.id !== 'temporary-chat'),
-        sessions,
-        runIds,
-        foldersLoaded ? new Set(folders.map((f) => f.id)) : null
-      ),
-    [threads, sessions, runIds, folders, foldersLoaded]
-  )
+  const coworkEnabled = isCoworkEnabled()
+  const rows = useMemo(() => {
+    const merged = mergeHistory(
+      Object.values(threads).filter((t) => t.id !== 'temporary-chat'),
+      sessions,
+      runIds,
+      foldersLoaded ? new Set(folders.map((f) => f.id)) : null
+    )
+    // Without Cowork there is no page to open these rows on; they stay on disk
+    // and show up again on a build that ships it.
+    return coworkEnabled
+      ? merged
+      : merged.filter((r) => r.kind === 'thread' && !isCoworkThread(r.thread))
+  }, [threads, sessions, runIds, folders, foldersLoaded, coworkEnabled])
 
   const confirmDelete = useCallback(() => {
     if (pendingDelete) {

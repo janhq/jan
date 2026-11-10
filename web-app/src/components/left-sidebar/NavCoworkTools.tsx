@@ -13,6 +13,7 @@ import {
 import SkillsManagerDialog from '@/containers/dialogs/SkillsManagerDialog'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
+import { isCoworkEnabled } from '@/lib/version'
 
 type Item = {
   title: string
@@ -51,7 +52,8 @@ function ToolRow({ item }: { item: Item }) {
 
 /**
  * Artifacts and Skills, the entries of the one sidebar that unified threads use
- * too. They show on every build and never replace the rest of the navigation.
+ * too. They never replace the rest of the navigation, and show only on builds
+ * that ship Cowork.
  */
 export function NavCoworkTools({ section = 'customize' }: { section?: 'artifacts' | 'customize' }) {
   const { t } = useTranslation()
@@ -75,6 +77,7 @@ export function NavCoworkTools({ section = 'customize' }: { section?: 'artifacts
     },
   ]
 
+  if (!isCoworkEnabled()) return null
   const visibleItems = items.filter((item) => item.testId === `nav-${section}`)
   // Both sections are rows in NavMain's menu, not nested menus.
   return (
