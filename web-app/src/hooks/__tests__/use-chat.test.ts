@@ -29,6 +29,9 @@ vi.mock('@ai-sdk/react', () => ({
       this.transport = init.transport
     }
     stop() {}
+    async sendMessage() {}
+    async regenerate() {}
+    async resumeStream() {}
   },
   useChat: () => ({ status: 'ready', messages: [] }),
 }))

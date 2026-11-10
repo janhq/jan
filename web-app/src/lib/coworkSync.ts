@@ -12,6 +12,7 @@ import {
 } from '@/hooks/useCoworkRun'
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
 import { useThreads } from '@/hooks/useThreads'
+import { flushMessageWrites } from '@/hooks/useMessages'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { discardStaleCoworkHandoffs } from '@/lib/coworkHandoff'
 import {
@@ -119,10 +120,6 @@ function diff(prev: CoworkSession[], next: CoworkSession[]) {
   return { changed, removed }
 }
 
-export function getCoworkPersistence(): CoworkPersistence | null {
-  return persistence
-}
-
 export function isCoworkMigrationDone(): boolean {
   return migrationSettled
 }
@@ -141,6 +138,11 @@ export async function flushCoworkDeletes(): Promise<void> {
 /** Await queued and in-flight Cowork writes. */
 export async function flushCowork(): Promise<void> {
   await persistence?.flush()
+}
+
+/** Everything the window must drain before it may go away. */
+function flushAllWrites(): Promise<PromiseSettledResult<void>[]> {
+  return Promise.allSettled([flushCowork(), flushCoworkDeletes(), flushMessageWrites()])
 }
 
 /** Cowork needs the desktop host (native folder dialog, sandboxed tools). */
@@ -430,17 +432,23 @@ async function installCloseHandlers() {
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
-        void Promise.all([flushCowork(), flushCoworkDeletes()]).catch((error) =>
-          console.warn('[cowork] background flush failed:', error)
-        )
+        void flushAllWrites().then((writes) => {
+          const failed = writes.find((r) => r.status === 'rejected')
+          if (failed?.status === 'rejected') {
+            console.warn('[cowork] background flush failed:', failed.reason)
+          }
+        })
       }
     })
   }
   if (typeof window === 'undefined') return
   window.addEventListener('beforeunload', () => {
-    void Promise.all([flushCowork(), flushCoworkDeletes()]).catch((error) =>
-      console.warn('[cowork] unload flush failed:', error)
-    )
+    void flushAllWrites().then((writes) => {
+      const failed = writes.find((r) => r.status === 'rejected')
+      if (failed?.status === 'rejected') {
+        console.warn('[cowork] unload flush failed:', failed.reason)
+      }
+    })
   })
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
@@ -456,7 +464,7 @@ async function installCloseHandlers() {
         await withChatCloseDeadline(
           (async () => {
             const runs = await Promise.allSettled([quiesceCoworkRuns(), quiesceChats()])
-            const writes = await Promise.allSettled([flushCowork(), flushCoworkDeletes()])
+            const writes = await flushAllWrites()
             const failed = [...runs, ...writes].find((r) => r.status === 'rejected')
             if (failed?.status === 'rejected') throw failed.reason
           })()

@@ -34,11 +34,11 @@ export class DefaultMessagesService implements MessagesService {
     return (
       created
         ?.then((persisted) => {
-          if (!persisted) return message
+          // Never acknowledge a write that nothing persisted.
+          if (!persisted) throw new Error('Message storage is unavailable')
           this.created.fire(persisted)
           return persisted
-        })
-        .catch(() => message) ?? message
+        }) ?? Promise.reject(new Error('Message storage is unavailable'))
     )
   }
 
@@ -51,8 +51,10 @@ export class DefaultMessagesService implements MessagesService {
     const modified: Promise<ThreadMessage | null> | undefined =
       window.core?.api?.modifyMessage({ message })
     return (
-      modified?.then((persisted) => persisted ?? message).catch(() => message) ??
-      message
+      modified?.then((persisted) => {
+        if (!persisted) throw new Error('Message storage is unavailable')
+        return persisted
+      }) ?? Promise.reject(new Error('Message storage is unavailable'))
     )
   }
 

@@ -1,0 +1,8 @@
+{
+  "crashed": {
+    "reason": "Gestoppt: {{error}}",
+    "disabled": "Es ist innerhalb von 10 Minuten 3 Mal abgestürzt und bleibt aus, bis Jan neu gestartet wird.",
+    "safeMode": "Installierte Erweiterungen haben den Start von Jan verhindert, daher ist jetzt der abgesicherte Modus aktiv.",
+    "safeModeFailed": "Installierte Erweiterungen haben den Start von Jan verhindert, und der abgesicherte Modus konnte nicht aktiviert werden. Sie werden diesmal nicht geladen."
+  }
+}
