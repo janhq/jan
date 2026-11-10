@@ -61,6 +61,10 @@ const backend = vi.hoisted(() => {
   return { settings, threads, extras, logs, log, hooks, invoke }
 })
 
+const messageStore = vi.hoisted(() => ({
+  create: async (message: unknown): Promise<unknown> => message,
+}))
+
 const platform = vi.hoisted(() => ({ tauri: true }))
 vi.mock('@/lib/platform/utils', () => ({
   isPlatformTauri: () => platform.tauri,
@@ -71,6 +75,11 @@ vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({
     core: () => ({ invoke: backend.invoke }),
     threads: () => ({ deleteThread: vi.fn(async () => {}) }),
+    messages: () => ({
+      createMessage: (message: unknown) => messageStore.create(message),
+      modifyMessage: async (message: unknown) => message,
+      deleteMessage: async () => {},
+    }),
   }),
 }))
 const agentTools = vi.hoisted(() => ({
@@ -100,6 +109,7 @@ vi.mock('@tauri-apps/api/window', () => ({
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { registerCoworkRunForClose, isCoworkClosing } from '@/hooks/useCoworkRun'
 import { useThreads } from '@/hooks/useThreads'
+import { useMessages, __resetMessageWritesForTests } from '@/hooks/useMessages'
 import {
   startCoworkSync,
   flushCowork,
@@ -147,6 +157,8 @@ describe('coworkSync', () => {
     sonner.dismiss.mockClear()
     platform.tauri = true
     closeWindow.callback = null
+    messageStore.create = async (message) => message
+    __resetMessageWritesForTests()
     __resetCoworkSyncForTests()
     useCoworkSessions.setState({ sessions: [], currentId: null })
     useThreads.setState({ threads: {} })
@@ -477,6 +489,46 @@ describe('coworkSync', () => {
       await closeWindow.callback!(second)
       expect(second.preventDefault).not.toHaveBeenCalled()
       expect(backend.extras.get(id).turns).toHaveLength(1)
+    })
+
+    it('drains queued chat message writes before the window closes, and keeps it open when one fails', async () => {
+      await startCoworkSync()
+      __resetMessageWritesForTests()
+      const written: string[] = []
+      let release!: () => void
+      const gate = new Promise<void>((r) => (release = r))
+      messageStore.create = async (message) => {
+        await gate
+        written.push((message as { id: string }).id)
+        return message
+      }
+      useMessages.getState().addMessage({ id: 'chat-1', thread_id: 't-chat' } as any)
+      const event = closeEvent()
+      let done = false
+      const closing = closeWindow.callback!(event).then(() => (done = true))
+      await Promise.resolve()
+      expect(done).toBe(false)
+      release()
+      await closing
+      expect(written).toEqual(['chat-1'])
+      expect(event.preventDefault).not.toHaveBeenCalled()
+
+      messageStore.create = async () => {
+        throw new Error('disk full')
+      }
+      useMessages.getState().addMessage({ id: 'chat-2', thread_id: 't-chat' } as any)
+      const failed = closeEvent()
+      await closeWindow.callback!(failed)
+      expect(failed.preventDefault).toHaveBeenCalled()
+
+      messageStore.create = async (message) => {
+        written.push((message as { id: string }).id)
+        return message
+      }
+      const retry = closeEvent()
+      await closeWindow.callback!(retry)
+      expect(retry.preventDefault).not.toHaveBeenCalled()
+      expect(written).toEqual(['chat-1', 'chat-2'])
     })
 
     it('a failing derived messages mirror never traps the window open', async () => {

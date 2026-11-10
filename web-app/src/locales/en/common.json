@@ -722,7 +722,7 @@
   "skillsUsedLabel": "Skills used",
   "skillsUsed": "Skills used: {{skills}}",
   "artifactsAll": "All",
-  "artifactsEmpty": "Nothing produced yet. Artifacts from Cowork runs show up here.",
+  "artifactsEmpty": "Nothing produced yet. Files created in your conversations show up here.",
   "artifactsNoMatch": "No artifacts match.",
   "artifactsSearch": "Search artifacts",
   "artifactsShowMore": "Show {{count}} more",
@@ -779,7 +779,7 @@
   "budget": {
     "stoppedSteps": "Stopped at {{max}} steps. The agent hasn’t finished.",
     "keepGoing": "Keep going",
-    "stoppedTokens": "Stopped — this session hit its token budget.",
+    "stoppedTokens": "Stopped — this conversation hit its token budget.",
     "compact": "Compact",
     "newSession": "New session"
   },

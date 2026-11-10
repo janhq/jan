@@ -1,7 +1,6 @@
 import type { Chat, UIMessage } from '@ai-sdk/react'
 
 type Participant = { stop: () => void | Promise<void>; settle: () => Promise<void> }
-const finalizers = new WeakMap<Chat<UIMessage>, Set<Promise<unknown>>>()
 const participants = new Map<Chat<UIMessage>, Participant>()
 let closing = false
 export const isChatClosing = () => closing
@@ -9,7 +8,6 @@ export function resumeChatsAfterPreventedClose() { closing = false }
 
 /** Retained Chat objects, not mounted routes, own these registrations. */
 export function trackChat(chat: Chat<UIMessage>, pending: Set<Promise<unknown>>) {
-  finalizers.set(chat, pending)
   const stopped = chat.stop.bind(chat)
   const settle = async () => {
     // SDK sets ready immediately BEFORE calling onFinish. Cross a microtask
@@ -49,14 +47,6 @@ export function observeChatWork<T>(pending: Set<Promise<unknown>>, work: () => T
     void promise.then(() => pending.delete(promise), () => { /* Keep failed finalization fail-closed. */ })
   }
   return result
-}
-export function trackChatFinalization(chat: Chat<UIMessage> | undefined, completion: Promise<unknown>) {
-  const pending = chat && finalizers.get(chat)
-  if (pending) observeChatWork(pending, () => completion)
-}
-export function setChatCloseStop(chat: Chat<UIMessage>, stop: () => void | Promise<void>) {
-  const participant = participants.get(chat)
-  if (participant) participant.stop = stop
 }
 export async function quiesceChats() {
   closing = true

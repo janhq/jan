@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useMessages } from '../useMessages'
+import { useMessages, __resetMessageWritesForTests } from '../useMessages'
 import { ThreadMessage } from '@janhq/core'
 
 const mockCreateMessage = vi.fn()
@@ -19,6 +19,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
 
 describe('useMessages - coverage', () => {
   beforeEach(() => {
+    __resetMessageWritesForTests()
     vi.clearAllMocks()
     useMessages.setState({ messages: {} })
   })
@@ -76,7 +77,7 @@ describe('useMessages - coverage', () => {
     })
 
     await vi.waitFor(() => {
-      expect(consoleSpy).toHaveBeenCalledWith('Failed to persist message update:', expect.any(Error))
+      expect(consoleSpy).toHaveBeenCalledWith('Failed to persist message:', expect.any(Error))
     })
     consoleSpy.mockRestore()
   })
