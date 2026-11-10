@@ -91,6 +91,7 @@ export class TauriMCPService extends DefaultMCPService {
   callToolWithCancellation(args: {
     toolName: string
     serverName?: string
+    serverGeneration?: number
     arguments: object
     cancellationToken?: string
     maxOutputChars?: number
