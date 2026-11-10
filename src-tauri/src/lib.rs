@@ -143,6 +143,8 @@ macro_rules! invoke_commands_with_extras {
         // App lifecycle
         confirm_exit,
         main_window_hides_on_close,
+        exit_after_save,
+        cancel_exit_save,
         // Theme
         core::setup::get_system_theme,
         core::setup::set_gtk_prefer_dark,
@@ -224,6 +226,102 @@ fn hides_main_window_on_close<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> b
 #[tauri::command]
 fn main_window_hides_on_close<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) -> bool {
     hides_main_window_on_close(&app_handle)
+}
+
+#[cfg(not(feature = "cli"))]
+/// Set once the web app has saved (or the user chose to quit without saving),
+/// so the next exit request goes through. Sticky: the exit is under way.
+static EXIT_SAVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[cfg(not(feature = "cli"))]
+/// Non-zero while an exit waits on the web app's save: the attempt's number,
+/// so a stale timeout cannot act on a newer attempt.
+static EXIT_SAVE_PENDING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(not(feature = "cli"))]
+static EXIT_SAVE_ATTEMPTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(not(feature = "cli"))]
+static EXIT_SAVE_CODE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+#[cfg(not(feature = "cli"))]
+/// How long an exit waits for the web app before going ahead anyway. Longer
+/// than the web app's own 10 s save deadline, so this only fires when the page
+/// never answers (not loaded, or hung).
+const EXIT_SAVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+#[cfg(not(feature = "cli"))]
+/// Whether this exit request must first let the web app save. Only explicit
+/// exits (`app.exit`: tray Quit, the app-menu Quit / Cmd+Q) are held. Not a
+/// restart: the factory reset restarts through here after wiping the data
+/// folder, and a save would write it back. Not the exit that follows the last
+/// window closing (`code` is `None`): its close handler already saved.
+fn exit_needs_save(code: Option<i32>) -> bool {
+    use std::sync::atomic::Ordering;
+    matches!(code, Some(c) if c != tauri::RESTART_EXIT_CODE)
+        && !SHUTTING_DOWN.load(Ordering::SeqCst)
+        && !EXIT_SAVED.load(Ordering::SeqCst)
+}
+
+#[cfg(not(feature = "cli"))]
+/// Ask the web app to save before exiting with `code`. It answers with
+/// `exit_after_save` or `cancel_exit_save`; if it never does, exit anyway
+/// after `EXIT_SAVE_TIMEOUT`. A repeat request while one is pending is ignored.
+fn request_save_before_exit<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    window: &tauri::WebviewWindow<R>,
+    code: i32,
+) {
+    use std::sync::atomic::Ordering;
+    let attempt = EXIT_SAVE_ATTEMPTS.fetch_add(1, Ordering::SeqCst) + 1;
+    if EXIT_SAVE_PENDING
+        .compare_exchange(0, attempt, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+    EXIT_SAVE_CODE.store(code, Ordering::SeqCst);
+    log::info!("Holding exit until the web app has saved");
+    if let Err(e) = window.emit("app-exit-requested", ()) {
+        log::warn!("could not ask the web app to save before exit: {e}");
+        EXIT_SAVE_PENDING.store(0, Ordering::SeqCst);
+        EXIT_SAVED.store(true, Ordering::SeqCst);
+        app.exit(code);
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(EXIT_SAVE_TIMEOUT).await;
+        if EXIT_SAVE_PENDING
+            .compare_exchange(attempt, 0, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            log::warn!("web app did not answer the exit save in time; exiting");
+            EXIT_SAVED.store(true, Ordering::SeqCst);
+            app.exit(code);
+        }
+    });
+}
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+/// The web app saved (or the user chose to quit without saving): finish the
+/// held exit. A no-op when no exit is waiting.
+fn exit_after_save<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) {
+    use std::sync::atomic::Ordering;
+    if EXIT_SAVE_PENDING.swap(0, Ordering::SeqCst) == 0 {
+        return;
+    }
+    log::info!("Web app finished saving; exiting");
+    EXIT_SAVED.store(true, Ordering::SeqCst);
+    app_handle.exit(EXIT_SAVE_CODE.load(Ordering::SeqCst));
+}
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+/// The web app could not save: drop the held exit and show the window, so its
+/// "could not save" notice is visible. Quitting again retries the save.
+fn cancel_exit_save<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) {
+    use std::sync::atomic::Ordering;
+    if EXIT_SAVE_PENDING.swap(0, Ordering::SeqCst) != 0 {
+        core::system::commands::show_main_window(&app_handle);
+    }
 }
 
 #[cfg(not(feature = "cli"))]
@@ -495,6 +593,11 @@ pub fn run() {
             store.save().expect("Failed to save store");
             // Migration completed
 
+            #[cfg(all(feature = "desktop", target_os = "macos"))]
+            if let Err(e) = setup::setup_app_menu_quit(app.handle()) {
+                log::warn!("Could not route Cmd+Q through the exit save: {e}");
+            }
+
             #[cfg(feature = "desktop")]
             if setup::tray_always_visible() {
                 log::info!("Enabling system tray icon");
@@ -573,6 +676,13 @@ pub fn run() {
                 log::warn!("Ignoring exit request while a factory reset is running");
                 api.prevent_exit();
                 return;
+            }
+            if exit_needs_save(*code) {
+                if let Some(window) = app.get_webview_window("main") {
+                    api.prevent_exit();
+                    request_save_before_exit(app, &window, code.unwrap_or(0));
+                    return;
+                }
             }
             if SHUTTING_DOWN.load(Ordering::SeqCst) || !is_llamacpp_engine_running(app) {
                 return;
