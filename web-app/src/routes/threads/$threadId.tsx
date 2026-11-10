@@ -11,6 +11,7 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useMessageErrors } from '@/stores/message-errors'
+import { buildLoadDiagnosticsReport } from '@/lib/loadDiagnosticsReport'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
@@ -2326,6 +2327,10 @@ function ThreadDetail() {
       return
     }
     useMessageErrors.getState().setError(targetId, errMessage)
+    const reportTarget = targetId
+    void buildLoadDiagnosticsReport(error).then((report) => {
+      if (report) useMessageErrors.getState().setReport(reportTarget, report)
+    })
     const tm = useMessages.getState().getMessages(threadId).find(
       (m) => m.id === targetId
     )

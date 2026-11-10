@@ -23,15 +23,75 @@ export const ENGINE_ERROR_CODES = [
 
 export type EngineErrorCode = (typeof ENGINE_ERROR_CODES)[number]
 
+/** Mirrors `LoadDiagnostics` in `tauri-plugin-llamacpp/src/diagnostics.rs`. */
+export interface LoadDiagnostics {
+  modelFile?: string
+  architecture?: string
+  quantization?: string
+  request: Record<string, string | undefined>
+  gpus: {
+    name: string
+    driverVersion: string
+    totalMib: number
+    freeMib?: number
+  }[]
+  backends: string[]
+  engine: { version: string; tag: string; commit: string }
+  log: string
+  logTruncated: boolean
+}
+
 export interface EngineError {
   code: EngineErrorCode
   message?: string
   /** Raw engine output. Technical, shown only in a details area. */
   details?: string
   missingLibraries?: string[]
+  diagnostics?: LoadDiagnostics
 }
 
 const KNOWN_CODES: ReadonlySet<string> = new Set(ENGINE_ERROR_CODES)
+
+type Rec = Record<string, unknown>
+
+const asString = (v: unknown): string | undefined =>
+  typeof v === 'string' ? v : undefined
+
+const asNumber = (v: unknown): number | undefined =>
+  typeof v === 'number' ? v : undefined
+
+const asStrings = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+
+function readDiagnostics(value: unknown): LoadDiagnostics | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const d = value as Rec
+  const engine = (d.engine ?? {}) as Rec
+  const request: LoadDiagnostics['request'] = {}
+  for (const [key, v] of Object.entries((d.request ?? {}) as Rec)) {
+    request[key] = asString(v)
+  }
+  return {
+    modelFile: asString(d.model_file),
+    architecture: asString(d.architecture),
+    quantization: asString(d.quantization),
+    request,
+    gpus: (Array.isArray(d.gpus) ? (d.gpus as Rec[]) : []).map((g) => ({
+      name: asString(g.name) ?? '',
+      driverVersion: asString(g.driver_version) ?? '',
+      totalMib: asNumber(g.total_mib) ?? 0,
+      freeMib: asNumber(g.free_mib),
+    })),
+    backends: asStrings(d.backends),
+    engine: {
+      version: asString(engine.version) ?? '',
+      tag: asString(engine.tag) ?? '',
+      commit: asString(engine.commit) ?? '',
+    },
+    log: asString(d.log) ?? '',
+    logTruncated: d.log_truncated === true,
+  }
+}
 
 function readEngineErrorObject(value: unknown): EngineError | undefined {
   if (typeof value !== 'object' || value === null) return undefined
@@ -41,6 +101,7 @@ function readEngineErrorObject(value: unknown): EngineError | undefined {
     message?: unknown
     details?: unknown
     missing_libraries?: unknown
+    diagnostics?: unknown
   }
   if (typeof record.code !== 'string' || !KNOWN_CODES.has(record.code)) {
     return undefined
@@ -57,6 +118,9 @@ function readEngineErrorObject(value: unknown): EngineError | undefined {
     ...(typeof record.message === 'string' ? { message: record.message } : {}),
     ...(typeof record.details === 'string' ? { details: record.details } : {}),
     ...(missingLibraries?.length ? { missingLibraries } : {}),
+    ...(record.diagnostics
+      ? { diagnostics: readDiagnostics(record.diagnostics) }
+      : {}),
   }
 }
 
@@ -167,4 +231,75 @@ export function engineFailure(messageKey: string, error: unknown): Error {
   ) as Error & { cause?: unknown }
   wrapped.cause = error
   return wrapped
+}
+
+/**
+ * Replaces the user's home directory wherever a path shows up, so a pasted
+ * report does not name them. The engine logs full model and library paths,
+ * which is where these come from.
+ */
+export function stripLocalPaths(text: string): string {
+  return text
+    .replace(/\/(?:home|Users)\/[^/\s"'`:;,)]+/g, '~')
+    .replace(/[A-Za-z]:\\Users\\[^\\\s"'`:;,)]+/g, '~')
+}
+
+const FENCE = '```'
+
+const fence = (text: string): string =>
+  `${FENCE}\n${text.split(FENCE).join("'''")}\n${FENCE}`
+
+/**
+ * A markdown report of a failed engine load, for pasting into an issue. Local
+ * only: it is built from the error already in memory and handed to the caller
+ * to put on the clipboard. Undefined when the error carries no diagnostics.
+ */
+export function formatLoadDiagnostics(
+  error: unknown,
+  context: { appVersion?: string; os?: string } = {}
+): string | undefined {
+  const engineError = parseEngineError(error)
+  const d = engineError?.diagnostics
+  if (!engineError || !d) return undefined
+
+  const rows: [string, string | undefined][] = [
+    ['Error', engineError.code],
+    ['Jan', context.appVersion],
+    ['OS', context.os],
+    [
+      'llama.cpp',
+      `${d.engine.version} (${d.engine.tag}, ${d.engine.commit.slice(0, 12)})`,
+    ],
+    ['Model file', d.modelFile],
+    ['Architecture', d.architecture],
+    ['Quantization', d.quantization],
+    ...Object.entries(d.request),
+  ]
+  const lines = ['## Model load failure', '']
+  for (const [key, value] of rows) {
+    if (value) lines.push(`- ${key}: ${value}`)
+  }
+  if (d.gpus.length) {
+    lines.push('', '### Devices')
+    for (const g of d.gpus) {
+      const free = g.freeMib === undefined ? '' : `, ${g.freeMib} MiB free`
+      lines.push(
+        `- ${g.name} (driver ${g.driverVersion || 'unknown'}, ${g.totalMib} MiB${free})`
+      )
+    }
+  }
+  if (d.backends.length) {
+    lines.push('', '### Backend modules', ...d.backends.map((b) => `- ${b}`))
+  }
+  if (engineError.details) {
+    lines.push('', '### Engine message', fence(engineError.details))
+  }
+  if (d.log) {
+    lines.push(
+      '',
+      d.logTruncated ? '### Engine log (older lines dropped)' : '### Engine log',
+      fence(d.log)
+    )
+  }
+  return stripLocalPaths(lines.join('\n'))
 }

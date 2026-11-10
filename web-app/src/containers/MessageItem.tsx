@@ -20,6 +20,7 @@ import {
 } from './message/types'
 import { CopyButton } from './CopyButton'
 import { RememberButton } from './RememberButton'
+import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { formatDate, formatMessageTime } from '@/utils/formatDate'
 import { useTouchDevice } from '@/hooks/useMediaQuery'
@@ -31,6 +32,7 @@ import {
   IconPlayerPlay,
   IconPaperclip,
   IconAlertTriangle,
+  IconCopy,
   IconChevronLeft,
   IconChevronRight,
   IconBellRinging,
@@ -133,6 +135,7 @@ export const MessageItem = memo(
     // network (see lib/extensions/authorship).
     const extensionAuthored = extensionAuthorOf(metadata) !== undefined
     const messageError = useMessageErrors((s) => s.errors[message.id])
+    const loadReport = useMessageErrors((s) => s.reports[message.id])
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
     // Machine-readable stamp for <time>; toISOString throws on an invalid date,
     // which a malformed stored value must not turn into a crashed message.
@@ -706,6 +709,26 @@ export const MessageItem = memo(
                 {messageError}
               </div>
             </div>
+            {loadReport && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard
+                    .writeText(loadReport)
+                    .then(() =>
+                      toast.success(t('model-errors:diagnosticsCopied'))
+                    )
+                    .catch(() =>
+                      toast.error(t('common:toast.errorCopyFailed.title'))
+                    )
+                }}
+                className="shrink-0"
+              >
+                <IconCopy size={14} />
+                <span>{t('model-errors:copyDiagnostics')}</span>
+              </Button>
+            )}
             {selectedModel &&
               onRegenerate &&
               status !== CHAT_STATUS.STREAMING &&

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::{Emitter, Manager, Runtime, State};
 
+use crate::diagnostics;
 use crate::engine::preset;
 use crate::engine::worker::FitMark;
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
@@ -167,6 +168,82 @@ async fn explain_load_failure(
         }
         _ => err,
     }
+}
+
+/// A failed load with everything a bug report needs attached: the settings the
+/// preset asked for, the model's architecture and quantization, the machine's
+/// GPUs, the backends the worker loaded, the engine build and the worker's log
+/// since the load began. Best effort throughout: a piece that cannot be read is
+/// left out rather than hiding the failure it describes.
+async fn diagnose_load_failure(
+    state: &LlamacppState,
+    port: u16,
+    model_id: &str,
+    mark: Option<FitMark>,
+    err: LlamacppError,
+) -> LlamacppError {
+    let mut err = explain_load_failure(state, port, model_id, mark, err).await;
+    let (ini_path, log, log_cut, backends) = {
+        let guard = state.engine.lock().await;
+        match guard.as_ref().filter(|h| h.port == port) {
+            Some(h) => {
+                let (lines, cut) = mark.map(|m| h.log_since(m)).unwrap_or_default();
+                (Some(h.preset_path.clone()), lines, cut, h.backends())
+            }
+            None => (None, Vec::new(), false, Vec::new()),
+        }
+    };
+    let ini = match &ini_path {
+        Some(path) => tokio::fs::read_to_string(path).await.unwrap_or_default(),
+        None => String::new(),
+    };
+    let model_path = preset::value(&ini, model_id, "model");
+    let (architecture, quantization) = match &model_path {
+        Some(path) => match crate::gguf::utils::read_gguf_metadata_internal(path.clone()).await {
+            Ok(meta) => diagnostics::model_traits(&meta.metadata),
+            Err(_) => (None, None),
+        },
+        None => (None, None),
+    };
+    let gpus = tokio::task::spawn_blocking(machine_gpus)
+        .await
+        .unwrap_or_default();
+    let (log, log_truncated) = diagnostics::cap_log(&log, diagnostics::MAX_LOG_BYTES, log_cut);
+    err.diagnostics = Some(Box::new(diagnostics::LoadDiagnostics {
+        model_file: model_path.as_deref().map(diagnostics::file_name),
+        architecture,
+        quantization,
+        request: diagnostics::LoadRequest::from_preset(&ini, model_id),
+        gpus,
+        backends,
+        engine: diagnostics::EngineBuild {
+            version: crate::engine::PINNED_VERSION.to_string(),
+            tag: crate::engine::PINNED_TAG.to_string(),
+            commit: crate::engine::PINNED_COMMIT.to_string(),
+        },
+        log,
+        log_truncated,
+    }));
+    err
+}
+
+/// The GPUs the machine reports, with their driver and memory. Blocking: the
+/// vendor libraries are queried for current usage.
+fn machine_gpus() -> Vec<diagnostics::GpuReport> {
+    tauri_plugin_hardware::get_system_info()
+        .gpus
+        .iter()
+        .map(|gpu| {
+            let usage = gpu.get_usage();
+            diagnostics::GpuReport {
+                name: gpu.name.clone(),
+                driver_version: gpu.driver_version.clone(),
+                total_mib: gpu.total_memory,
+                free_mib: (usage.total_memory > 0)
+                    .then(|| usage.total_memory.saturating_sub(usage.used_memory)),
+            }
+        })
+        .collect()
 }
 
 /// Checks the process, which is the one thing that tells the two causes of an
@@ -568,7 +645,7 @@ async fn post_load<R: Runtime>(
         if !body.to_lowercase().contains("already") {
             progress_task.abort();
             let err = load_rejection_error(status.as_u16(), &body);
-            let err = explain_load_failure(&state, port, model_id, mark, err).await;
+            let err = diagnose_load_failure(&state, port, model_id, mark, err).await;
             return Err(ServerError::Llamacpp(err));
         }
     }
@@ -597,7 +674,7 @@ async fn post_load<R: Runtime>(
     progress_task.abort();
     match result {
         Err(ServerError::Llamacpp(err)) => Err(ServerError::Llamacpp(
-            explain_load_failure(&state, port, model_id, mark, err).await,
+            diagnose_load_failure(&state, port, model_id, mark, err).await,
         )),
         other => other,
     }
@@ -1293,6 +1370,44 @@ mod unreachable_worker_tests {
     #[cfg(unix)]
     async fn stop(state: LlamacppState) {
         state.engine.lock().await.take().unwrap().kill().await;
+    }
+
+    // The bug report for a failed load: what was asked, what the worker said
+    // while it ran, and no directory of the user's in the model name.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_failed_load_carries_the_request_the_backends_and_the_worker_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, port) = fit_worker(
+            dir.path(),
+            "echo 'load_backend: loaded CPU backend from /home/bob/jan/libggml-cpu.so' >&2\n\
+             sleep 0.2\n\
+             echo 'llama_model_load: error loading model: bad tensor' >&2",
+            "[*]\nctx-size = 8192\n[m]\nmodel = /home/bob/models/qwen.gguf\nn-gpu-layers = 12\n",
+        )
+        .await;
+        // The backend line is printed at start, before the load's mark.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let mark = fit_mark(&state, port).await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+
+        let failed = LlamacppError::from_load_failure("failed to load model");
+        let err = diagnose_load_failure(&state, port, "m", mark, failed).await;
+        let d = err.diagnostics.expect("diagnostics are attached");
+        assert_eq!(d.model_file.as_deref(), Some("qwen.gguf"));
+        assert_eq!(d.request.ctx_size.as_deref(), Some("8192"));
+        assert_eq!(d.request.n_gpu_layers.as_deref(), Some("12"));
+        assert_eq!(d.backends, ["CPU (libggml-cpu.so)"]);
+        assert!(d.log.contains("bad tensor"), "{}", d.log);
+        assert!(!d.log.contains("load_backend"), "printed before the mark: {}", d.log);
+        assert_eq!(d.engine.tag, crate::engine::PINNED_TAG);
+        let wire = serde_json::to_string(&json(&LlamacppError {
+            diagnostics: Some(d),
+            ..LlamacppError::from_load_failure("x")
+        }))
+        .unwrap();
+        assert!(!wire.contains("/home/bob"), "{wire}");
+        stop(state).await;
     }
 
     // No GPU: fit gives up out loud, and the load that follows fails with

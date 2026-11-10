@@ -277,10 +277,61 @@ struct FitNotes {
 
 type FitFailure = Arc<Mutex<FitNotes>>;
 
-/// How many fit-failure lines a worker had printed at some moment; see
-/// [`WorkerHandle::fit_failure_since`].
+/// Everything the worker printed to stderr, newest last, for a load-failure
+/// report. `total` counts every line ever seen, so a load can ask for the lines
+/// printed since it started even after older ones were evicted.
+#[derive(Default)]
+struct LogBuffer {
+    total: u64,
+    lines: VecDeque<String>,
+    /// Backend modules ggml announced (`load_backend: loaded CUDA backend from
+    /// ...`), as "CUDA (libggml-cuda.so)". Kept apart from `lines` because they
+    /// are printed once at start and would be evicted long before a load fails.
+    backends: Vec<String>,
+}
+
+type WorkerLog = Arc<Mutex<LogBuffer>>;
+
+/// Lines kept for a failure report. Enough for a verbose load (tensor and
+/// device tables run to a few hundred lines) without growing for the life of a
+/// long-running worker.
+const WORKER_LOG_LINES: usize = 600;
+
+/// Per line, so a runaway progress line cannot fill the buffer.
+const WORKER_LOG_LINE_CHARS: usize = 1000;
+
+fn record_log_line(log: &WorkerLog, line: &str) {
+    let Ok(mut log) = log.lock() else { return };
+    if let Some(backend) = parse_backend_line(line) {
+        if !log.backends.contains(&backend) {
+            log.backends.push(backend);
+        }
+    }
+    log.total += 1;
+    if log.lines.len() == WORKER_LOG_LINES {
+        log.lines.pop_front();
+    }
+    log.lines
+        .push_back(line.chars().take(WORKER_LOG_LINE_CHARS).collect());
+}
+
+/// `load_backend: loaded CUDA backend from /opt/jan/libggml-cuda.so` as
+/// `CUDA (libggml-cuda.so)`; the directory is dropped because it is a local path.
+fn parse_backend_line(line: &str) -> Option<String> {
+    let rest = line.trim().strip_prefix("load_backend: loaded ")?;
+    let (name, path) = rest.split_once(" backend from ")?;
+    let file = path.rsplit(['/', '\\']).next().unwrap_or(path).trim();
+    Some(format!("{} ({file})", name.trim()))
+}
+
+/// How far a worker's output had got at some moment: its fit-failure lines
+/// (see [`WorkerHandle::fit_failure_since`]) and its log (see
+/// [`WorkerHandle::log_since`]).
 #[derive(Debug, Clone, Copy)]
-pub struct FitMark(u64);
+pub struct FitMark {
+    fit: u64,
+    log: u64,
+}
 
 /// Lines that are kept out of the tail, though still logged. ggml prints one
 /// `load_backend: loaded ... from <path>` per backend at start, which says
@@ -555,6 +606,7 @@ pub struct WorkerHandle {
     child: Child,
     stderr_tail: StderrTail,
     fit_failure: FitFailure,
+    log: WorkerLog,
     /// The task filling `stderr_tail`; it ends when the worker's stderr closes.
     stderr_drain: Option<tokio::task::JoinHandle<()>>,
     /// Declared after `child` so it is dropped after it: the graceful stop must
@@ -634,7 +686,29 @@ impl WorkerHandle {
     /// Taken before a load, so only a fit failure printed during that load is
     /// blamed for it: a stale one would pin the next, unrelated failure on fit.
     pub fn fit_mark(&self) -> FitMark {
-        FitMark(self.fit_failure.lock().map(|f| f.count).unwrap_or(0))
+        FitMark {
+            fit: self.fit_failure.lock().map(|f| f.count).unwrap_or(0),
+            log: self.log.lock().map(|l| l.total).unwrap_or(0),
+        }
+    }
+
+    /// Whatever the worker printed after `mark`, oldest first, and whether the
+    /// start of it was already evicted.
+    pub fn log_since(&self, mark: FitMark) -> (Vec<String>, bool) {
+        let Ok(log) = self.log.lock() else {
+            return (Vec::new(), false);
+        };
+        let wanted = log.total.saturating_sub(mark.log) as usize;
+        let skip = log.lines.len().saturating_sub(wanted);
+        (
+            log.lines.iter().skip(skip).cloned().collect(),
+            wanted > log.lines.len(),
+        )
+    }
+
+    /// The backend modules the worker loaded, as ggml announced them.
+    pub fn backends(&self) -> Vec<String> {
+        self.log.lock().map(|l| l.backends.clone()).unwrap_or_default()
     }
 
     /// The latest fit-failure line, if one was printed after `mark`.
@@ -648,7 +722,7 @@ impl WorkerHandle {
     /// frontend loads one chat model at a time.
     pub fn fit_failure_since(&self, mark: FitMark) -> Option<String> {
         let notes = self.fit_failure.lock().ok()?;
-        if notes.count > mark.0 {
+        if notes.count > mark.fit {
             notes.last.clone()
         } else {
             None
@@ -748,10 +822,12 @@ pub async fn spawn(
     // worker mid-generation, which is a hang with no error message.
     let stderr_tail = StderrTail::default();
     let fit_failure = FitFailure::default();
+    let log = WorkerLog::default();
     let mut stderr_drain = None;
     if let Some(stderr) = child.stderr.take() {
         let tail = stderr_tail.clone();
         let fit_note = fit_failure.clone();
+        let worker_log = log.clone();
         stderr_drain = Some(tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             let mut reader = FaultReader::default();
@@ -782,6 +858,7 @@ pub async fn spawn(
                 let Ok(Some(line)) = next else { break };
                 log::debug!("jan-llama-worker: {line}");
                 remember_stderr_line(&tail, &line);
+                record_log_line(&worker_log, &line);
                 if is_fit_failure_line(&line.to_lowercase()) {
                     if let Ok(mut notes) = fit_note.lock() {
                         notes.count += 1;
@@ -858,6 +935,7 @@ pub async fn spawn(
         child,
         stderr_tail,
         fit_failure,
+        log,
         stderr_drain,
         #[cfg(windows)]
         _job: job,
@@ -1296,6 +1374,41 @@ pub(crate) mod tests {
             stderr_lines(&tail),
             vec!["ggml_metal_init: error: failed to allocate".to_string()]
         );
+    }
+
+    #[test]
+    fn the_log_since_a_mark_holds_only_what_came_after_it() {
+        let log = WorkerLog::default();
+        record_log_line(&log, "before");
+        let mark = FitMark { fit: 0, log: log.lock().unwrap().total };
+        record_log_line(&log, "during 1");
+        record_log_line(&log, "during 2");
+        let buf = log.lock().unwrap();
+        let wanted = buf.total.saturating_sub(mark.log) as usize;
+        let tail: Vec<_> = buf.lines.iter().skip(buf.lines.len() - wanted).collect();
+        assert_eq!(tail, ["during 1", "during 2"]);
+    }
+
+    #[test]
+    fn the_log_is_bounded_and_backends_survive_eviction() {
+        let log = WorkerLog::default();
+        record_log_line(&log, "load_backend: loaded CUDA backend from /home/u/jan/libggml-cuda.so");
+        for i in 0..(WORKER_LOG_LINES + 50) {
+            record_log_line(&log, &format!("line {i}"));
+        }
+        let buf = log.lock().unwrap();
+        assert_eq!(buf.lines.len(), WORKER_LOG_LINES);
+        assert_eq!(buf.backends, ["CUDA (libggml-cuda.so)"]);
+    }
+
+    #[test]
+    fn a_backend_line_drops_the_local_directory() {
+        assert_eq!(
+            parse_backend_line(r"load_backend: loaded Vulkan backend from C:\Users\bob\jan\ggml-vulkan.dll")
+                .as_deref(),
+            Some("Vulkan (ggml-vulkan.dll)")
+        );
+        assert_eq!(parse_backend_line("ggml_vulkan: Found 1 Vulkan devices"), None);
     }
 
     #[cfg(unix)]
