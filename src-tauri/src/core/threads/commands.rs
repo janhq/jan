@@ -6,8 +6,9 @@ use uuid::Uuid;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use super::db;
 use super::helpers::{
-    get_lock_for_thread, read_messages_from_file, should_use_sqlite, update_thread_metadata,
-    write_atomic, write_atomic_durable, write_messages_to_file,
+    get_lock_for_thread, read_messages_from_file, should_use_sqlite, sweep_stale_temps,
+    update_thread_metadata, write_atomic, write_atomic_durable, write_messages_to_file,
+    STALE_TEMP_AGE,
 };
 use super::{
     constants::THREADS_FILE,
@@ -40,10 +41,22 @@ pub async fn list_threads<R: Runtime>(
         return Ok(threads);
     }
 
+    let now = std::time::SystemTime::now();
     for entry in fs::read_dir(&data_dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         if path.is_dir() {
+            // A write killed mid-replace leaves its temp file in the thread.
+            // Swept here, at listing (startup), and only when no write of this
+            // process holds the thread; the age bound spares any other writer.
+            if let Some(id) = path.file_name().and_then(|n| n.to_str()) {
+                let lock = get_lock_for_thread(id).await;
+                let guard = lock.try_lock();
+                if guard.is_ok() {
+                    sweep_stale_temps(&path, STALE_TEMP_AGE, now);
+                }
+                drop(guard);
+            }
             let thread_metadata_path = path.join(THREADS_FILE);
             if thread_metadata_path.exists() {
                 let data = fs::read_to_string(&thread_metadata_path).map_err(|e| e.to_string())?;
