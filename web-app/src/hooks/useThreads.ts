@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { toast } from 'sonner'
+import { i18n } from '@/i18n/react-i18next-compat'
 import { ulid } from 'ulidx'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
@@ -131,7 +133,17 @@ const deleteThreadEverywhere = (threadId: string, thread: Thread | undefined) =>
     return
   }
   cleanupThreadArtifacts(threadId)
-  getServiceHub().threads().deleteThread(threadId)
+  // The row is already gone from the list; when the files stay behind the
+  // conversation comes back on restart, so the user is told now.
+  void getServiceHub()
+    .threads()
+    .deleteThread(threadId)
+    .catch((error) => {
+      console.error(`Could not delete thread ${threadId}:`, error)
+      toast.error(i18n.t('common:deleteThreadFailed'), {
+        description: String(error),
+      })
+    })
 }
 
 export const useThreads = create<ThreadState>()((set, get) => ({
