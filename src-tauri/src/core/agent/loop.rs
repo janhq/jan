@@ -734,7 +734,7 @@ impl ModelInvoker for HttpModelInvoker {
 }
 
 struct McpToolInvoker {
-    tool_to_server: HashMap<String, String>,
+    tool_to_server: crate::core::mcp::identity::ToolRoutes,
     mcp_servers: SharedMcpServers,
     mcp_settings: Arc<Mutex<McpSettings>>,
 }
@@ -3312,7 +3312,7 @@ fn tool_names(tools: &[serde_json::Value]) -> Vec<String> {
 
 fn apply_tool_allowlist(
     openai_tools: &mut Vec<serde_json::Value>,
-    tool_to_server: &mut HashMap<String, String>,
+    tool_to_server: &mut crate::core::mcp::identity::ToolRoutes,
     allowed: &[String],
 ) {
     let allow: std::collections::HashSet<&str> = allowed.iter().map(String::as_str).collect();
@@ -3332,7 +3332,7 @@ fn apply_tool_allowlist(
 /// advertisement; only an explicit deny (or `default = "deny"`) does.
 fn retain_advertisable_mcp_tools(
     openai_tools: &mut Vec<serde_json::Value>,
-    tool_to_server: &mut HashMap<String, String>,
+    tool_to_server: &mut crate::core::mcp::identity::ToolRoutes,
     permissions: &tauri_plugin_agent_tools::permissions::ToolPermissions,
 ) {
     openai_tools.retain(|t| {
@@ -10246,6 +10246,13 @@ mod tests {
         assert_eq!(stop_reason_of(&json!({})), "stop");
     }
 
+    fn route(server: &str) -> crate::core::mcp::identity::ToolRoute {
+        crate::core::mcp::identity::ToolRoute {
+            server: server.to_string(),
+            generation: 1,
+        }
+    }
+
     #[test]
     fn tool_allowlist_keeps_only_named_tools() {
         let mut tools = vec![
@@ -10253,8 +10260,8 @@ mod tests {
             json!({ "type": "function", "function": { "name": "write" } }),
         ];
         let mut map = HashMap::from([
-            ("search".to_string(), "srv".to_string()),
-            ("write".to_string(), "srv".to_string()),
+            ("search".to_string(), route("srv")),
+            ("write".to_string(), route("srv")),
         ]);
 
         apply_tool_allowlist(&mut tools, &mut map, &["search".to_string()]);
@@ -13425,7 +13432,7 @@ mod tests {
     #[test]
     fn tool_allowlist_empty_removes_all() {
         let mut tools = vec![json!({ "type": "function", "function": { "name": "search" } })];
-        let mut map = HashMap::from([("search".to_string(), "srv".to_string())]);
+        let mut map = HashMap::from([("search".to_string(), route("srv"))]);
 
         apply_tool_allowlist(&mut tools, &mut map, &[]);
 
@@ -13438,7 +13445,7 @@ mod tests {
         use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools =
             vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
-        let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
+        let mut map = HashMap::from([("web_search_exa".to_string(), route("exa"))]);
         // The scaffolded CLI project default: read-only, no allow-list.
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
 
@@ -13460,8 +13467,8 @@ mod tests {
             json!({ "type": "function", "function": { "name": "dangerous_write" } }),
         ];
         let mut map = HashMap::from([
-            ("web_search_exa".to_string(), "exa".to_string()),
-            ("dangerous_write".to_string(), "exa".to_string()),
+            ("web_search_exa".to_string(), route("exa")),
+            ("dangerous_write".to_string(), route("exa")),
         ]);
         let perms = ToolPermissions::new(
             PermissionDefault::ReadOnly,
@@ -13485,7 +13492,7 @@ mod tests {
         use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools =
             vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
-        let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
+        let mut map = HashMap::from([("web_search_exa".to_string(), route("exa"))]);
         let perms = ToolPermissions::new(PermissionDefault::Deny, &[], &[], &[]);
 
         retain_advertisable_mcp_tools(&mut tools, &mut map, &perms);
