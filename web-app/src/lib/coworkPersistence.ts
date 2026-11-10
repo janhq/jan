@@ -58,7 +58,11 @@ type ThreadMetadata = {
   planMode?: boolean
   goal?: CoworkSession['goal']
   cleared?: boolean
-  migratedFrom?: { store: string; updated?: number }
+  migratedFrom?: {
+    store: string
+    updated?: number
+    leftOut?: { skipped: number; unreadable: number }
+  }
   messagesAnchorMs?: number
   titleSetManually?: boolean
   is_favorite?: boolean
