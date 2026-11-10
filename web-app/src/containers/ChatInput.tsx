@@ -125,7 +125,8 @@ type ChatInputProps = {
   projectAssistantId?: string
   /** Whether this surface applies assistant instructions and selection. */
   supportsAssistants?: boolean
-  /** Returning `'refused'` keeps the draft and attachments: nothing was sent. */
+  /** Returning `'refused'` keeps the draft and attachments: nothing was sent.
+   * An async handler (main chat) always clears them: it never refuses. */
   onSubmit?: (
     text: string,
     files?: Array<{ type: 'file'; mediaType: string; url: string }>,
@@ -135,7 +136,7 @@ type ChatInputProps = {
     /** What the user typed, before @path references were expanded into
      * `text`, so a cancelled send can hand it back unchanged. */
     draft?: string
-  ) => void | 'refused'
+  ) => void | 'refused' | Promise<void>
   onStop?: () => void
   chatStatus?: ChatStatus
   /**
