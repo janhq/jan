@@ -606,7 +606,7 @@ async function installCloseHandlers() {
       }
       await invoke('cancel_exit_save')
       reportExitSaveFailure('quit', () => {
-        void invoke('exit_after_save').catch((error) => {
+        void invoke('exit_without_saving').catch((error) => {
           console.warn('[cowork] could not quit:', error)
         })
       })
