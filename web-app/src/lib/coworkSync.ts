@@ -126,10 +126,6 @@ function diff(prev: CoworkSession[], next: CoworkSession[]) {
   return { changed, removed }
 }
 
-export function isCoworkMigrationDone(): boolean {
-  return migrationSettled
-}
-
 /** Await in-flight Cowork deletions (used before the window closes). */
 export async function flushCoworkDeletes(): Promise<void> {
   if (startPromise) await startPromise
@@ -141,14 +137,14 @@ export async function flushCoworkDeletes(): Promise<void> {
   }
 }
 
-/** Await queued and in-flight Cowork writes. */
-export async function flushCowork(): Promise<void> {
-  await persistence?.flush()
-}
-
 /** Everything the window must drain before it may go away. */
 function flushAllWrites(): Promise<PromiseSettledResult<void>[]> {
-  return Promise.allSettled([flushCowork(), flushCoworkDeletes(), flushMessageWrites()])
+  return Promise.allSettled([
+    // Queued and in-flight Cowork writes.
+    persistence?.flush(),
+    flushCoworkDeletes(),
+    flushMessageWrites(),
+  ])
 }
 
 /** Cowork needs the desktop host (native folder dialog, sandboxed tools). */

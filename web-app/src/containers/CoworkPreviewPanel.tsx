@@ -332,7 +332,7 @@ function Notice({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function PreviewBody({
+function PreviewBody({
   state,
   allowNetwork,
   liveUrl,

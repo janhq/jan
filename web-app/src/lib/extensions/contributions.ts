@@ -22,7 +22,7 @@ import type { L10nTables } from './l10n'
 export type RegisteredCommand = CommandContribution & {
   handler?: CommandHandler
 }
-export type RegisteredTool = ToolContribution & {
+type RegisteredTool = ToolContribution & {
   handler?: ToolHandler
   /**
    * Host-assigned identity of the live binding: set on every bind, cleared on

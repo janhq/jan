@@ -66,7 +66,7 @@ export const threadLookupDelayMs = (attempt: number): number =>
 const defaultSleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-export interface ResolveThreadForRouteOptions<T extends { id: string }> {
+interface ResolveThreadForRouteOptions<T extends { id: string }> {
   threadId: string
   /** Live store read; consulted before every attempt and after every fetch. */
   readThread: () => T | undefined

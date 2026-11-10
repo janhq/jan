@@ -4,7 +4,7 @@
  * before Cowork was merged into threads is a chat. The mode only selects the
  * runner: every thread, whatever its mode, uses the thread sandbox.
  */
-export type ThreadMode = 'chat' | 'cowork'
+type ThreadMode = 'chat' | 'cowork'
 
 type WithMetadata =
   | { metadata?: Record<string, unknown> | null }
