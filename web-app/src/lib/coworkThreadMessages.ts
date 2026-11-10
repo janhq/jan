@@ -199,8 +199,64 @@ type ThreadMessagesOptions = {
    * stays byte-identical.
    */
   anchorMs?: number
+  /**
+   * Attach the session's whole transcript (`turns`, `messages`, `history`)
+   * verbatim to the last record as `metadata[COWORK_TRANSCRIPT_KEY]`, which
+   * makes messages.jsonl the transcript authority for a live Cowork thread
+   * (see `transcriptFromThreadMessages`). The migration leaves it off: its
+   * threads keep the transcript in the v1 sidecar until their first live write.
+   */
+  carrier?: boolean
 }
 
+/**
+ * Metadata key of the lossless Cowork transcript carried on the last record of
+ * messages.jsonl. Display-only state (diffs, tool errors, attached files,
+ * usage, system rows) and the exact wire history the model is replayed both
+ * ride here, so the provider-facing records above are never changed for them;
+ * main chat, the CLI and search read `content` and ignore the key.
+ */
+export const COWORK_TRANSCRIPT_KEY = 'coworkTranscript'
+
+export type CoworkTranscript = {
+  version: 1
+  turns: CoworkSession['turns']
+  messages: CoworkSession['messages']
+  history?: CoworkSession['history']
+}
+
+const transcriptOf = (session: CoworkSession): CoworkTranscript => ({
+  version: 1,
+  turns: session.turns ?? [],
+  messages: session.messages ?? [],
+  ...(session.history !== undefined && { history: session.history }),
+})
+
+/**
+ * The transcript carried by a thread's stored records, or null when the last
+ * record carries none (a migrated thread not yet written live, an older
+ * build's mirror, an empty log). Only the last record counts: a carrier left
+ * on an earlier record belongs to a log some other writer has since appended
+ * to, so it no longer describes the whole file.
+ */
+export function transcriptFromThreadMessages(
+  records: ReadonlyArray<{ metadata?: unknown }>
+): CoworkTranscript | null {
+  const last = records[records.length - 1]
+  const carried = isRecord(last?.metadata)
+    ? last.metadata[COWORK_TRANSCRIPT_KEY]
+    : undefined
+  if (
+    !isRecord(carried) ||
+    carried.version !== 1 ||
+    !Array.isArray(carried.turns) ||
+    !Array.isArray(carried.messages) ||
+    (carried.history !== undefined && !Array.isArray(carried.history))
+  ) {
+    return null
+  }
+  return carried as unknown as CoworkTranscript
+}
 /**
  * The anchor a one-shot conversion of `session` uses (see `anchorMs`). The
  * migration stamped its messages with it, so a live session that adopts a
@@ -286,5 +342,14 @@ export function coworkSessionToThreadMessages(
       })
     )
   })
+  const last = out[out.length - 1]
+  if (options.carrier && last) {
+    // Verbatim, not through `stable`: the carrier is read back as the store's
+    // own state and never replayed to a provider.
+    last.metadata = {
+      ...(last.metadata ?? {}),
+      [COWORK_TRANSCRIPT_KEY]: transcriptOf(session),
+    }
+  }
   return out
 }

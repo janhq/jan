@@ -149,7 +149,13 @@ import {
   COWORK_DELETED_IDS_KEY,
   COWORK_MIGRATION_FLAG_KEY,
 } from '../migrateCoworkSessions'
-import { coworkSessionToThreadMessages } from '../coworkThreadMessages'
+import {
+  coworkSessionToThreadMessages,
+  transcriptFromThreadMessages,
+} from '../coworkThreadMessages'
+
+/** The stored transcript, carried by messages.jsonl. */
+const stored = (id: string) => transcriptFromThreadMessages(backend.logs.get(id) ?? [])
 
 const legacy = (id: string, extra: Json = {}): Json => ({
   id,
@@ -294,7 +300,7 @@ describe('coworkSync', () => {
       )
       expect(order).toEqual(['write_thread_extra', 'replace_thread_messages', 'create_thread'])
       const session = useCoworkSessions.getState().sessions.find((s) => s.id === id)!
-      expect(backend.extras.get(id).messages).toEqual(session.messages)
+      expect(stored(id)?.messages).toEqual(session.messages)
       expect(backend.logs.get(id)!.length).toBe(coworkSessionToThreadMessages(session).length)
       expect(useThreads.getState().threads[id]).toBeTruthy()
     })
@@ -575,7 +581,7 @@ describe('coworkSync', () => {
       await closing
       expect(event.preventDefault).not.toHaveBeenCalled()
       // The run's final commit made it to disk before the close resolved.
-      expect(backend.extras.get(id).turns).toEqual([{ role: 'user', content: 'last words' }])
+      expect(stored(id)?.turns).toEqual([{ role: 'user', content: 'last words' }])
       expect(backend.threads.has(id)).toBe(true)
     })
 
@@ -594,7 +600,7 @@ describe('coworkSync', () => {
       expect(quiesce).not.toHaveBeenCalled()
       expect(isCoworkClosing()).toBe(false)
       await vi.waitFor(() =>
-        expect(backend.extras.get(id)?.turns).toEqual([{ role: 'user', content: 'keep' }])
+        expect(stored(id)?.turns).toEqual([{ role: 'user', content: 'keep' }])
       )
       expect(sonner.error).not.toHaveBeenCalled()
     })
@@ -616,7 +622,7 @@ describe('coworkSync', () => {
       const second = closeEvent()
       await closeWindow.callback!(second)
       expect(second.preventDefault).not.toHaveBeenCalled()
-      expect(backend.extras.get(id).turns).toHaveLength(1)
+      expect(stored(id)?.turns).toHaveLength(1)
     })
 
     it('drains queued chat message writes before the window closes, and keeps it open when one fails', async () => {
@@ -705,19 +711,6 @@ describe('coworkSync', () => {
       expect(sonner.error.mock.calls.at(-1)?.[1].action).toBeUndefined()
     })
 
-    it('a failing derived messages mirror never traps the window open', async () => {
-      await startCoworkSync()
-      const id = useCoworkSessions.getState().createSession()
-      useCoworkSessions.getState().commitTurns(id, [{ role: 'user', content: 'keep' } as any], legacy('x').messages, [])
-      backend.hooks.before = async (cmd) => {
-        if (cmd === 'replace_thread_messages') throw new Error('mirror broke')
-      }
-      const event = closeEvent()
-      await closeWindow.callback!(event)
-      expect(event.preventDefault).not.toHaveBeenCalled()
-      expect(backend.extras.has(id)).toBe(true)
-    })
-
     describe('quit (tray Quit, Cmd+Q)', () => {
       it('stops live runs and saves, then lets Rust finish the held exit', async () => {
         await startCoworkSync()
@@ -733,7 +726,7 @@ describe('coworkSync', () => {
         expect(backend.log).not.toContain('exit_after_save')
         commit()
         await quitting
-        expect(backend.extras.get(id).turns).toEqual([{ role: 'user', content: 'last words' }])
+        expect(stored(id)?.turns).toEqual([{ role: 'user', content: 'last words' }])
         // Exit is released only after the save landed.
         expect(backend.log.indexOf('exit_after_save')).toBeGreaterThan(
           backend.log.lastIndexOf('write_thread_extra')
