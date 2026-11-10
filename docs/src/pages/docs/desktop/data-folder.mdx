@@ -63,6 +63,7 @@ Inside the data folder you will typically find:
   /subagents/
   /sessions/<session_id>/
   /threads/<thread_id>/
+/cowork-exports/
 /assistants/
   /jan/
     assistant.json
@@ -94,9 +95,15 @@ Inside the data folder you will typically find:
 The agent workspace, shared by the [Cowork](/docs/desktop/cowork) surface
 (`nightly` channel only) and the [Jan Agent](/docs/agent). Memories (`memory/`),
 skills (`skills/`), and saved subagent definitions (`subagents/`) live here
-permanently. Each Cowork session gets an ephemeral sandbox under
-`sessions/<session_id>/`, and chat threads that use agent tools get one under
-`threads/<thread_id>/` — the agent can only write inside its own sandbox.
+permanently. Each Cowork task and each chat thread that uses agent tools gets
+a sandbox under `threads/<thread_id>/` - the agent can only write inside its
+own sandbox. `sessions/<session_id>/` holds the sandboxes of Cowork sessions
+from earlier nightly builds; they are kept as a backup after being copied into
+`threads/` (see [Sessions from Earlier Versions](/docs/desktop/cowork#sessions-from-earlier-versions)).
+
+### `cowork-exports/`
+Created when you **Export** a Cowork task that could not be imported. Each file
+is the task's full conversation as JSON.
 
 ### `assistants/`
 Where AI personalities live. The default one (`/assistants/jan/`):
