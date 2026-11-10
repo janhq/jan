@@ -297,7 +297,7 @@ describe('legacy sessions and the deletion journal', () => {
     expect(r.sessions.map((s) => s.id)).toEqual(['m-here'])
   })
 
-  it('an abandoned legacy session stays visible but read-only (never written)', async () => {
+  it('an abandoned legacy session stays visible, read-only, and says why it was not imported', async () => {
     b.settings.set(
       CODE_SESSIONS_KEY,
       JSON.stringify({ state: { sessions: [session('bad')] }, version: 1 })
@@ -308,11 +308,27 @@ describe('legacy sessions and the deletion journal', () => {
     )
     // Even a settled migration shows it: nothing disappears silently.
     const r = await loadCoworkSessions(b.invoke, { migrationSettled: true })
-    expect(r.sessions.map((s) => [s.id, s.unavailable])).toEqual([['bad', 'id-collision']])
+    expect(r.sessions.map((s) => [s.id, s.unavailable, s.importError])).toEqual([
+      ['bad', 'not-imported', 'PERMANENT: nope'],
+    ])
     const p = createCoworkPersistence(b.invoke, { debounceMs: 10 })
     p.schedule(r.sessions[0])
     await p.flush()
     expect(b.extras.has('bad')).toBe(false)
+  })
+
+  it('an abandoned session whose id a chat owns is a collision, not a failed import', async () => {
+    b.threads.set('dup', { id: 'dup', title: 'A chat', metadata: {} })
+    b.settings.set(
+      CODE_SESSIONS_KEY,
+      JSON.stringify({ state: { sessions: [session('dup')] }, version: 1 })
+    )
+    b.settings.set(
+      COWORK_MIGRATION_ABANDONED_KEY,
+      JSON.stringify([{ id: 'dup', error: 'a different conversation already uses this id' }])
+    )
+    const r = await loadCoworkSessions(b.invoke, { migrationSettled: true })
+    expect(r.sessions.map((s) => [s.id, s.unavailable])).toEqual([['dup', 'id-collision']])
   })
 
   it('a PERMANENT write refusal stops retries and reports the session once', async () => {

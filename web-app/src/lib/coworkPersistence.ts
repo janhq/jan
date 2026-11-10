@@ -241,14 +241,16 @@ export async function loadCoworkSessions(
   // leaves blob sessions to show. The blob itself can be huge, so it is only
   // read when it matters.
   let abandonedIds = new Set<string>()
+  const abandonedErrors = new Map<string, string>()
   try {
-    abandonedIds = new Set(
-      readAbandoned(
-        await invoke<string | null>('settings_get', {
-          key: COWORK_MIGRATION_ABANDONED_KEY,
-        })
-      ).map((a) => a.id)
-    )
+    for (const a of readAbandoned(
+      await invoke<string | null>('settings_get', {
+        key: COWORK_MIGRATION_ABANDONED_KEY,
+      })
+    )) {
+      abandonedErrors.set(a.id, a.error)
+    }
+    abandonedIds = new Set(abandonedErrors.keys())
   } catch (e) {
     console.warn('[cowork] could not read the abandoned list:', e)
   }
@@ -350,8 +352,17 @@ export async function loadCoworkSessions(
       if (deleted) {
         for (const s of mergeable) {
           if (deleted.has(s.id)) continue
-          if (chatIds.has(s.id) || abandonedIds.has(s.id)) {
+          if (chatIds.has(s.id)) {
             sessions.push({ ...s, unavailable: 'id-collision' })
+          } else if (abandonedIds.has(s.id)) {
+            // No other conversation owns the id: the migration gave up on it
+            // (a refused copy, too many failed launches). Say why, and let the
+            // user export it or try again.
+            sessions.push({
+              ...s,
+              unavailable: 'not-imported',
+              importError: abandonedErrors.get(s.id),
+            })
           } else {
             sessions.push(s)
             legacyIds.add(s.id)

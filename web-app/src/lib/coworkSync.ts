@@ -27,8 +27,12 @@ import {
   type ThreadRecord,
 } from '@/lib/coworkPersistence'
 import {
+  COWORK_MIGRATION_ABANDONED_KEY,
+  COWORK_MIGRATION_ATTEMPTS_KEY,
+  COWORK_MIGRATION_FLAG_KEY,
   isCoworkMigrationSettled,
   migrateCoworkSessionsOnStartup,
+  readAbandoned,
   readDeletedIds,
   type CoworkMigrationResult,
   type Invoke,
@@ -303,20 +307,25 @@ async function doStart() {
       }
       for (const id of removed) {
         const snapshot = prev.sessions.find((session) => session.id === id)
-        const collision = snapshot?.unavailable === 'id-collision'
+        // Neither placeholder owns what sits under its id: a collision shares
+        // it with an unrelated chat, and a session the migration gave up on may
+        // have been refused because threads/<id> holds files of its own.
+        const placeholder =
+          snapshot?.unavailable === 'id-collision' ||
+          snapshot?.unavailable === 'not-imported'
         const removal = (async () => {
           await p.remove(id, {
             // While the legacy blob can still be read, deletion intent must
             // survive in the journal or the blob brings the session back. An
-            // abandoned legacy session (shown as id-collision) stays in the
-            // blob forever, so it is journaled even after the migration settled.
-            recordDeleted: !migrationSettled || collision,
-            // A collision shares its id with an unrelated chat: never delete it.
-            preserveThread: collision,
+            // abandoned legacy session stays in the blob forever, so it is
+            // journaled even after the migration settled.
+            recordDeleted: !migrationSettled || placeholder,
+            // Never delete a thread or workspace a placeholder does not own.
+            preserveThread: placeholder,
           })
           // Workspace reclamation cannot turn a successful durable deletion back
           // into a visible session. It is best-effort and retried by the sweep.
-          if (!collision) await cleanupThreadWorkspace(id)
+          if (!placeholder) await cleanupThreadWorkspace(id)
         })()
         pendingDeletes.add(removal)
         void removal
@@ -426,6 +435,77 @@ async function finishLateMigration(
   for (const t of loaded.threads) {
     if (!deleted.has(t.id) && (!seen.has(t.id) || inStore.has(t.id))) upsertThread(t)
   }
+}
+
+export type CoworkImportRetry =
+  | { imported: true }
+  | { imported: false; error: string }
+
+/**
+ * Try again to import one session the migration gave up on (`not-imported`).
+ * Its abandoned entry and attempt count are cleared and the migration runs
+ * again; it skips everything already migrated, so only this session (and any
+ * other still-pending one) is copied. On success the placeholder is replaced by
+ * the imported thread; on failure it stays, with the new error.
+ */
+export async function retryCoworkImport(
+  id: string
+): Promise<CoworkImportRetry> {
+  await startCoworkSync()
+  const invoke = getInvoke()
+  const abandoned = readAbandoned(
+    await invoke<string | null>('settings_get', {
+      key: COWORK_MIGRATION_ABANDONED_KEY,
+    })
+  ).filter((a) => a.id !== id)
+  await invoke('settings_set', {
+    key: COWORK_MIGRATION_ABANDONED_KEY,
+    value: JSON.stringify(abandoned),
+  })
+  const rawAttempts = await invoke<string | null>('settings_get', {
+    key: COWORK_MIGRATION_ATTEMPTS_KEY,
+  })
+  if (rawAttempts) {
+    try {
+      const attempts = JSON.parse(rawAttempts) as Record<string, number>
+      delete attempts[id]
+      await invoke('settings_set', {
+        key: COWORK_MIGRATION_ATTEMPTS_KEY,
+        value: JSON.stringify(attempts),
+      })
+    } catch {
+      // An unreadable count only means this session starts again from 0.
+    }
+  }
+  // Until this run settles the legacy blob is live again: deletions journal.
+  migrationSettled = false
+  await invoke('settings_remove', { key: COWORK_MIGRATION_FLAG_KEY })
+  const result = await migrateCoworkSessionsOnStartup()
+  migrationSettled = await settledAfter(invoke, result)
+
+  if (result?.migrated.includes(id)) {
+    const loaded = await loadCoworkSessions(invoke, { migrationSettled })
+    const thread = loaded.threads.find((t) => t.id === id)
+    const session = loaded.sessions.find((s) => s.id === id)
+    if (thread && session) {
+      persistence?.adopt([thread])
+      useCoworkSessions.setState((s) => ({
+        sessions: s.sessions.map((x) => (x.id === id ? session : x)),
+      }))
+      upsertThread(thread)
+      return { imported: true }
+    }
+  }
+  const error =
+    result?.abandoned.find((a) => a.id === id)?.error ??
+    result?.failed.find((f) => f.id === id || f.id === '*')?.error ??
+    'unknown error'
+  useCoworkSessions.setState((s) => ({
+    sessions: s.sessions.map((x) =>
+      x.id === id ? { ...x, importError: error } : x
+    ),
+  }))
+  return { imported: false, error }
 }
 
 /**
