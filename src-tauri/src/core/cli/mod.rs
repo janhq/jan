@@ -187,10 +187,10 @@ pub fn find_resume_thread(
     target: &ResumeTarget,
 ) -> Result<serde_json::Value, String> {
     let mut threads = list_threads_in(base)?;
-    // Cowork conversations keep their transcript in a desktop-only sidecar, so
-    // the CLI cannot resume or fork them. `Latest` skips them; naming one by id
-    // says why it is refused instead of resuming a thread whose messages.jsonl
-    // is only a derived projection.
+    // Cowork conversations carry their transcript on messages.jsonl in a shape
+    // only the desktop Cowork runtime replays (plus its cowork.json state and
+    // thread sandbox), so the CLI cannot resume or fork them. `Latest` skips
+    // them; naming one by id says why it is refused (#9656 tracks resume).
     if let ResumeTarget::Id(id) = target {
         if let Some(t) = threads.iter().find(|t| {
             is_cowork_thread(t)
