@@ -401,10 +401,8 @@
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
   },
-  "chatsAndTasks": "Chaty a úlohy",
   "artifacts": "Artefakty",
   "skills": "Dovednosti",
-  "deleteSession": "Smazat relaci",
   "deleteSessionTitle": "Smazat relaci?",
   "deleteSessionBody": "„{{title}}“ a její přepis budou trvale smazány. Tuto akci nelze vrátit zpět.",
   "sidebar": {

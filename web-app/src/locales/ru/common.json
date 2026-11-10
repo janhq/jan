@@ -411,10 +411,8 @@
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
   },
-  "chatsAndTasks": "Чаты и задачи",
   "artifacts": "Артефакты",
   "skills": "Навыки",
-  "deleteSession": "Удалить сеанс",
   "deleteSessionTitle": "Удалить сеанс?",
   "deleteSessionBody": "«{{title}}» и его стенограмма будут удалены безвозвратно. Это действие нельзя отменить.",
   "sidebar": {

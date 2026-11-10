@@ -401,10 +401,8 @@
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
   },
-  "chatsAndTasks": "Czaty i zadania",
   "artifacts": "Artefakty",
   "skills": "Umiejętności",
-  "deleteSession": "Usuń sesję",
   "deleteSessionTitle": "Usunąć sesję?",
   "deleteSessionBody": "„{{title}}” i jej transkrypcja zostaną trwale usunięte. Tej operacji nie można cofnąć.",
   "sidebar": {
