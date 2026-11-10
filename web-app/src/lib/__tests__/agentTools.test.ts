@@ -551,6 +551,8 @@ describe('agentTools', () => {
     const { copySessionWorkspaceToThread } = await import('../agentTools')
     await expect(copySessionWorkspaceToThread('s1')).resolves.toEqual({
       copied: false,
+      files: 0,
+      skipped: 0,
     })
     expect(sessionWorkspaceCopyToThread).not.toHaveBeenCalled()
   })
