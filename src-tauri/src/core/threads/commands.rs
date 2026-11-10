@@ -64,8 +64,11 @@ pub async fn list_threads<R: Runtime>(
 /// Creates a new thread and persists its metadata.
 /// Ensures the thread directory exists and writes thread.json.
 ///
-/// A caller-supplied `id` is kept when it is a valid thread id; a missing or
-/// invalid id gets a fresh UUID. Creation is idempotent: when thread.json
+/// A caller-supplied `id` is kept; a missing or empty id gets a fresh UUID. An
+/// id that is supplied but not a valid thread id is refused with a
+/// `PERMANENT:` error rather than silently swapped, since the caller (the
+/// Cowork migration, a chat with a minted ULID) addresses the thread by the
+/// id it sent. Creation is idempotent: when thread.json
 /// already exists for the id, that record is returned untouched. thread.json
 /// is written atomically because it is the commit marker of a thread.
 ///
@@ -95,11 +98,13 @@ pub async fn create_thread<R: Runtime>(
     // Use file-based storage on desktop
     let data_folder = get_jan_data_folder_path(app_handle);
     ensure_data_dirs(&data_folder)?;
-    let supplied = thread
-        .get("id")
-        .and_then(|v| v.as_str())
-        .filter(|id| validate_thread_id(id).is_ok())
-        .map(str::to_string);
+    let supplied = match thread.get("id").and_then(|v| v.as_str()) {
+        Some(id) if !id.is_empty() => {
+            validate_thread_id(id)?;
+            Some(id.to_string())
+        }
+        _ => None,
+    };
     let uuid = supplied.unwrap_or_else(|| Uuid::new_v4().to_string());
     // Hold the thread lock across the existence check and the write so two
     // creates for one id cannot both pass the check and overwrite each other.
@@ -343,8 +348,12 @@ pub async fn delete_thread<R: Runtime>(
     let thread_dir = get_thread_dir(&data_folder, &thread_id)?;
     let lock = get_lock_for_thread(&thread_id).await;
     let _guard = lock.lock().await;
-    if thread_dir.exists() {
-        let _ = fs::remove_dir_all(thread_dir);
+    // A failed removal is reported: the caller would otherwise drop the
+    // conversation from the UI while its files stay and return on restart.
+    match fs::remove_dir_all(&thread_dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("could not delete thread {thread_id}: {e}")),
     }
     Ok(())
 }
