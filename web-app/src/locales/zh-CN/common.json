@@ -701,5 +701,43 @@
   "artifactsLibraryCount_one": "{{count}} 个文件",
   "artifactsLibraryCount_other": "{{count}} 个文件",
   "artifactsLibraryFilter": "按文件类型筛选",
-  "artifactsLibraryReset": "清除筛选"
+  "artifactsLibraryReset": "清除筛选",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "无法导入此任务",
+      "body": "Jan 无法从旧版本迁移此任务，已停止尝试。数据没有丢失，原始内容仍然保留。你可以重试，或将其导出为文件。"
+    },
+    "id-collision": {
+      "title": "无法导入此任务",
+      "body": "另一个对话已在使用相同的 ID，因此此任务以只读方式显示，另一个对话不受影响。你可以导出此任务来保留副本。"
+    },
+    "missing-sidecar": {
+      "title": "此任务的历史记录丢失",
+      "body": "找不到此任务已保存的历史记录，因此以只读方式显示。磁盘上的文件会原样保留。"
+    },
+    "unreadable-sidecar": {
+      "title": "无法读取此任务的历史记录",
+      "body": "此任务已保存的历史记录已损坏，或来自更新版本的 Jan，因此以只读方式显示，且不会被覆盖。"
+    },
+    "missing-thread": {
+      "title": "此任务已从存储中移除",
+      "body": "此任务的对话已不在磁盘上。当前显示的是仍在内存中的副本，请导出以保留它。"
+    },
+    "reason": "原因：{{reason}}",
+    "retry": "重试",
+    "retrying": "正在重试...",
+    "export": "导出",
+    "exported": "任务已导出",
+    "exportFailed": "无法导出任务",
+    "imported": "任务已导入",
+    "retryFailed": "仍然无法导入此任务",
+    "revealFailed": "无法打开文件夹",
+    "leftOut": {
+      "title": "部分文件未被复制",
+      "body_one": "此任务旧文件夹中有 {{count}} 个项目（链接，或 Jan 无权读取的文件）未被复制。原始文件夹保持不变。",
+      "body_other": "此任务旧文件夹中有 {{count}} 个项目（链接，或 Jan 无权读取的文件）未被复制。原始文件夹保持不变。",
+      "show": "显示原始文件夹"
+    }
+  },
+  "deleteThreadFailed": "无法删除此对话。重启后它可能会重新出现。"
 }

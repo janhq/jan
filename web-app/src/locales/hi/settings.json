@@ -110,7 +110,8 @@
     "resetCodeBlockStyle": "कोड ब्लॉक शैली रीसेट करें",
     "resetCodeBlockStyleDesc": "कोड ब्लॉक शैली को डिफ़ॉल्ट पर रीसेट करें।",
     "resetCodeBlockSuccess": "कोड ब्लॉक शैली सफलतापूर्वक रीसेट हुई",
-    "resetCodeBlockSuccessDesc": "कोड ब्लॉक शैली को डिफ़ॉल्ट पर पुनर्स्थापित किया गया।"
+    "resetCodeBlockSuccessDesc": "कोड ब्लॉक शैली को डिफ़ॉल्ट पर पुनर्स्थापित किया गया।",
+    "themeDescFixed": "हमेशा यही थीम इस्तेमाल करें। OS के अनुसार थीम के लिए सिस्टम चुनें।"
   },
   "hardware": {
     "os": "ऑपरेटिंग सिस्टम",

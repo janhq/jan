@@ -259,6 +259,10 @@
     },
     "messageMetadata": {
       "title": "메시지 메타데이터"
+    },
+    "deleteAllChats": {
+      "title": "프로젝트 밖의 대화 삭제",
+      "description": "프로젝트에 속하지 않은 대화를 삭제해요. 프로젝트 대화, 별표 표시한 대화, 작업은 그대로 유지돼요. 이 작업은 되돌릴 수 없어요."
     }
   },
   "projects": {
@@ -326,7 +330,8 @@
     "searchProjects": "프로젝트 검색...",
     "noProjectsFound": "프로젝트를 찾을 수 없습니다",
     "tryDifferentSearch": "다른 검색어를 시도해 보세요",
-    "viewProject": "프로젝트 보기"
+    "viewProject": "프로젝트 보기",
+    "sendMessageToStart": "위에서 메시지를 보내 시작해 보세요."
   },
   "attachmentsIngestion": {
     "title": "첨부 파일 수집 방식 선택",
@@ -454,6 +459,14 @@
     "attachmentsDisabledInfo": {
       "title": "첨부 파일 비활성화됨",
       "description": "설정에서 첨부 파일이 비활성화되어 있습니다"
+    },
+    "threadProjectMoveFailed": {
+      "title": "이동 실패",
+      "description": "이 대화를 이동할 수 없어요. 세션을 사용할 수 없는 상태예요."
+    },
+    "deleteAllChats": {
+      "title": "대화가 삭제됨",
+      "description": "프로젝트 밖의 대화를 삭제했어요. 프로젝트 대화와 작업은 그대로 유지했어요."
     }
   },
   "errors": {
@@ -475,6 +488,145 @@
   "deleteSessionTitle": "세션을 삭제할까요?",
   "deleteSessionBody": "“{{title}}”과(와) 해당 기록이 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
   "sidebar": {
-    "more": "더 보기"
-  }
+    "more": "더 보기",
+    "toggle": "사이드바 열기/닫기",
+    "navigation": "탐색",
+    "navigationDescription": "채팅, 프로젝트, 아티팩트, 스킬, 설정으로 바로 이동하세요."
+  },
+  "coworkSessionUnavailable": "이 대화에는 아직 표시할 내용이 없어요.",
+  "coworkSync": {
+    "journalUnreadableTitle": "가져온 Cowork 대화 일부가 숨겨져 있어요",
+    "journalUnreadableDescription": "Jan이 삭제 기록을 읽을 수 없어요. 이미 삭제한 대화가 다시 복원되지 않도록 이전 버전에서 가져온 대화는 숨겨 두었고, Cowork 대화 삭제도 잠시 막아 두었어요. 데이터는 그대로 안전해요. 복구하려면 먼저 Jan을 완전히 종료하세요. Jan은 실행 중에 메모리에 있는 내용으로 settings.json을 다시 쓰기 때문에 수정한 내용이 되돌려질 수 있어요. 그런 다음 settings.json에서 'cowork_deleted_ids' 항목을 고치거나 삭제하세요. 이 항목을 삭제하면 이전에 삭제한 대화를 포함해 가져온 모든 대화가 복원돼요.",
+    "missingThreadTitle": "Cowork 대화를 저장할 수 없었어요",
+    "missingThreadDescription": "저장된 스레드를 찾을 수 없어 더 이상 변경 사항이 저장되지 않아요. 읽기, 내보내기, 삭제는 계속할 수 있어요.",
+    "writeRefusedTitle": "Cowork 대화를 저장할 수 없어요",
+    "writeRefusedDescription": "Jan이 현재 ID로 이 대화를 저장할 수 없어 변경 사항이 저장되지 않아요. 읽기, 내보내기, 삭제는 계속할 수 있어요.",
+    "closeFailedTitle": "Jan이 모든 내용을 저장하지 못해 창을 닫지 않았어요",
+    "closeFailedDescription": "최근 변경 사항은 아직 메모리에 남아 있어요. 창을 다시 닫으면 저장을 다시 시도해요.",
+    "closeForceDescription": "저장이 계속 실패하고 있어요. 저장하지 않고 닫을 수 있지만, 저장하지 못한 변경 사항은 사라져요.",
+    "closeAnyway": "저장하지 않고 닫기",
+    "quitFailedDescription": "최근 변경 사항은 아직 메모리에 남아 있어요. 다시 종료하면 저장을 다시 시도해요.",
+    "quitAnyway": "저장하지 않고 종료"
+  },
+  "messageWrites": {
+    "failedTitle": "일부 메시지를 저장할 수 없었어요",
+    "failedDescription": "Jan이 계속 다시 시도하고 있어요. 저장에 성공하기 전까지 최근 메시지는 이 창에만 남아 있어요.",
+    "retry": "지금 다시 시도"
+  },
+  "threadRoute": {
+    "notReadyTitle": "이 대화는 아직 준비되지 않았어요",
+    "notReadyDescription": "Jan이 이 대화가 채팅인지 Cowork 작업인지 확인하지 못했어요. 다시 시도해 보고, 문제가 계속되면 앱을 다시 시작하세요.",
+    "retry": "다시 시도"
+  },
+  "agentSettings": "에이전트",
+  "composer": {
+    "addControls": "첨부 파일 및 컨트롤 추가",
+    "assistant": "어시스턴트",
+    "allTools": "모든 도구",
+    "samplingParameters": "샘플링 매개변수",
+    "openAssistantSettings": "어시스턴트 설정 열기",
+    "samplingSaveFailed": "샘플링 매개변수를 저장할 수 없어요. 다시 시도해 주세요.",
+    "context": "컨텍스트: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "모델 선택",
+    "none": "없음",
+    "triggerLabel": "모델 선택: {{name}}",
+    "dialogLabel": "모델 선택",
+    "searchLabel": "모델 또는 제공자 검색",
+    "searchPlaceholder": "모델 또는 제공자 검색...",
+    "listLabel": "모델",
+    "noMatches": "일치하는 모델이 없어요",
+    "noModels": "설정된 모델이 없어요",
+    "optionsLabel": "모델 옵션",
+    "reasoning": "추론",
+    "reasoningMode": "추론 모드",
+    "reasoningEffort": "추론 강도",
+    "thinkingBudget": "사고 예산",
+    "modelSettings": "모델 설정",
+    "manageModels": "모델 관리",
+    "effort": {
+      "default": "기본값",
+      "auto": "자동",
+      "on": "켜기",
+      "off": "끄기",
+      "low": "낮음",
+      "medium": "보통",
+      "high": "높음",
+      "xhigh": "매우 높음",
+      "unlimited": "무제한"
+    }
+  },
+  "homeMode": {
+    "addToProject": "프로젝트에 추가",
+    "newProject": "새 프로젝트",
+    "noProjects": "아직 프로젝트가 없어요",
+    "addFolderAction": "폴더 추가",
+    "startFailed": "대화를 시작할 수 없어요. 메시지는 입력창에 그대로 남아 있어요."
+  },
+  "conversationScope": {
+    "folderSelectModel": "폴더 접근 권한을 추가하기 전에 도구를 사용할 수 있는 모델을 선택하세요.",
+    "folderUnsupported": "이 모델은 도구를 사용할 수 없어 폴더를 추가할 수 없어요. 일반 채팅은 계속 사용할 수 있어요.",
+    "removeProject": "프로젝트 선택 해제",
+    "temporary": "임시 채팅에서는 폴더 접근 권한이 유지되지 않아요."
+  },
+  "skillDestination": "새 스킬 저장 위치",
+  "skillDestinationFolder": "이 폴더",
+  "skillDestinationGlobal": "전역 (모든 대화)",
+  "overview": {
+    "title": "대화 개요",
+    "description": "이 대화의 진행 상황, 파일, 백그라운드 작업을 확인하세요.",
+    "resize": "사이드 패널 크기 조절",
+    "close": "대화 개요 숨기기",
+    "progress": "진행 상황",
+    "files": "파일",
+    "backgroundTasks": "백그라운드 작업",
+    "monitorCount_one": "모니터 {{count}}개",
+    "monitorCount_other": "모니터 {{count}}개",
+    "noProgress": "Jan이 작업하는 동안 단계가 여기에 표시돼요.",
+    "noFiles": "파일이 여기에 표시돼요."
+  },
+  "artifactsLibraryDescription": "여러 대화에서 만든 파일을 한곳에서 볼 수 있어요.",
+  "artifactsLibraryCount_one": "파일 {{count}}개",
+  "artifactsLibraryCount_other": "파일 {{count}}개",
+  "artifactsLibraryFilter": "파일 형식으로 필터링",
+  "artifactsLibraryReset": "필터 지우기",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "이 작업을 가져올 수 없었어요",
+      "body": "Jan이 이전 버전에서 이 작업을 옮겨 오지 못해 시도를 중단했어요. 원본은 그대로 보관되어 있으니 잃어버린 건 없어요. 다시 시도하거나 파일로 내보낼 수 있어요."
+    },
+    "id-collision": {
+      "title": "이 작업을 가져올 수 없었어요",
+      "body": "다른 대화가 이미 같은 ID를 사용하고 있어서 이 작업은 읽기 전용으로 표시되고, 다른 대화는 그대로 유지돼요. 사본을 보관하려면 내보내세요."
+    },
+    "missing-sidecar": {
+      "title": "이 작업의 기록이 없어요",
+      "body": "이 작업의 저장된 기록을 찾을 수 없어 읽기 전용으로 표시돼요. 디스크에 있는 파일은 그대로 유지돼요."
+    },
+    "unreadable-sidecar": {
+      "title": "이 작업의 기록을 읽을 수 없어요",
+      "body": "이 작업의 저장된 기록이 손상되었거나 더 새로운 버전의 Jan에서 만들어져서 읽기 전용으로 표시되며, 절대 덮어쓰지 않아요."
+    },
+    "missing-thread": {
+      "title": "이 작업이 저장소에서 삭제되었어요",
+      "body": "이 작업의 대화가 더 이상 디스크에 없어요. 지금 보이는 내용은 메모리에 남아 있는 사본이에요. 보관하려면 내보내세요."
+    },
+    "reason": "이유: {{reason}}",
+    "retry": "다시 시도",
+    "retrying": "시도 중...",
+    "export": "내보내기",
+    "exported": "작업을 내보냈어요",
+    "exportFailed": "작업을 내보낼 수 없어요",
+    "imported": "작업을 가져왔어요",
+    "retryFailed": "여전히 작업을 가져올 수 없어요",
+    "revealFailed": "폴더를 열 수 없어요",
+    "leftOut": {
+      "title": "일부 파일이 복사되지 않았어요",
+      "body_one": "이 작업의 이전 폴더에 있던 항목 {{count}}개(링크 또는 Jan이 읽을 권한이 없는 파일)가 복사되지 않았어요. 원래 폴더는 그대로 유지돼요.",
+      "body_other": "이 작업의 이전 폴더에 있던 항목 {{count}}개(링크 또는 Jan이 읽을 권한이 없는 파일)가 복사되지 않았어요. 원래 폴더는 그대로 유지돼요.",
+      "show": "원래 폴더 보기"
+    }
+  },
+  "deleteThreadFailed": "대화를 삭제할 수 없어요. 앱을 다시 시작하면 다시 나타날 수 있어요."
 }

@@ -522,5 +522,43 @@
   "artifactsLibraryCount_one": "{{count}} Datei",
   "artifactsLibraryCount_other": "{{count}} Dateien",
   "artifactsLibraryFilter": "Nach Dateityp filtern",
-  "artifactsLibraryReset": "Filter zurücksetzen"
+  "artifactsLibraryReset": "Filter zurücksetzen",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "Diese Aufgabe konnte nicht importiert werden",
+      "body": "Jan konnte diese Aufgabe nicht aus der vorherigen Version übernehmen und hat es nicht weiter versucht. Es ist nichts verloren gegangen: Das Original bleibt erhalten. Sie können es erneut versuchen oder die Aufgabe in eine Datei exportieren."
+    },
+    "id-collision": {
+      "title": "Diese Aufgabe konnte nicht importiert werden",
+      "body": "Eine andere Unterhaltung verwendet bereits dieselbe ID. Deshalb wird diese Aufgabe schreibgeschützt angezeigt, und die andere Unterhaltung bleibt unverändert. Exportieren Sie die Aufgabe, um eine Kopie zu behalten."
+    },
+    "missing-sidecar": {
+      "title": "Der Verlauf dieser Aufgabe fehlt",
+      "body": "Der gespeicherte Verlauf dieser Aufgabe wurde nicht gefunden. Deshalb wird sie schreibgeschützt angezeigt. Ihre Dateien auf dem Datenträger bleiben unverändert."
+    },
+    "unreadable-sidecar": {
+      "title": "Der Verlauf dieser Aufgabe kann nicht gelesen werden",
+      "body": "Der gespeicherte Verlauf dieser Aufgabe ist beschädigt oder stammt aus einer neueren Version von Jan. Deshalb wird sie schreibgeschützt angezeigt und nie überschrieben."
+    },
+    "missing-thread": {
+      "title": "Diese Aufgabe wurde aus dem Speicher entfernt",
+      "body": "Die Unterhaltung dieser Aufgabe ist nicht mehr auf dem Datenträger vorhanden. Angezeigt wird die Kopie, die sich noch im Arbeitsspeicher befindet. Exportieren Sie sie, um sie zu behalten."
+    },
+    "reason": "Grund: {{reason}}",
+    "retry": "Erneut versuchen",
+    "retrying": "Wird versucht...",
+    "export": "Exportieren",
+    "exported": "Aufgabe exportiert",
+    "exportFailed": "Die Aufgabe konnte nicht exportiert werden",
+    "imported": "Aufgabe importiert",
+    "retryFailed": "Die Aufgabe konnte weiterhin nicht importiert werden",
+    "revealFailed": "Der Ordner konnte nicht geöffnet werden",
+    "leftOut": {
+      "title": "Einige Dateien wurden nicht kopiert",
+      "body_one": "{{count}} Element aus dem alten Ordner dieser Aufgabe (ein Link oder eine Datei, die Jan nicht lesen durfte) wurde nicht kopiert. Der ursprüngliche Ordner bleibt unverändert erhalten.",
+      "body_other": "{{count}} Elemente aus dem alten Ordner dieser Aufgabe (Links oder Dateien, die Jan nicht lesen durfte) wurden nicht kopiert. Der ursprüngliche Ordner bleibt unverändert erhalten.",
+      "show": "Ursprünglichen Ordner anzeigen"
+    }
+  },
+  "deleteThreadFailed": "Die Unterhaltung konnte nicht gelöscht werden. Sie wird nach einem Neustart möglicherweise wieder angezeigt."
 }
