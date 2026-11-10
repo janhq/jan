@@ -7,6 +7,8 @@ const h = vi.hoisted(() => ({
   select: vi.fn(),
   preview: vi.fn(),
   sessions: [] as unknown[],
+  threads: {} as Record<string, unknown>,
+  messages: {} as Record<string, unknown[]>,
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -39,8 +41,17 @@ vi.mock('@/hooks/useCoworkSessions', () => ({
 vi.mock('@/hooks/useCoworkRun', () => ({
   useCoworkRun: { getState: () => ({ requestPreview: h.preview }) },
 }))
+vi.mock('@/hooks/useThreads', () => ({
+  useThreads: (sel: (s: { threads: unknown }) => unknown) =>
+    sel({ threads: h.threads }),
+}))
 vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({ app: () => ({ getJanDataFolder: async () => '/data' }) }),
+  getServiceHub: () => ({
+    app: () => ({ getJanDataFolder: async () => '/data' }),
+    messages: () => ({
+      fetchMessages: async (id: string) => h.messages[id] ?? [],
+    }),
+  }),
 }))
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   threadWorkspacePath: async (_d: string, id: string) => `/data/threads/${id}`,
@@ -55,6 +66,8 @@ beforeEach(() => {
   h.navigate.mockClear()
   h.select.mockClear()
   h.preview.mockClear()
+  h.threads = {}
+  h.messages = {}
   h.sessions = [
     {
       id: 's1',
@@ -90,6 +103,44 @@ describe('Artifacts page', () => {
     expect(h.navigate).toHaveBeenCalledWith({
       to: '/cowork/$sessionId',
       params: { sessionId: 's1' },
+    })
+  })
+
+  it('lists artifacts of chat threads and opens the thread; a Cowork thread is not listed twice', async () => {
+    h.sessions = []
+    h.threads = {
+      t1: { id: 't1', title: 'Make a page', updated: 10, metadata: {} },
+      c1: { id: 'c1', title: 'Cowork', updated: 11, metadata: { mode: 'cowork' } },
+    }
+    h.messages = {
+      t1: [
+        {
+          id: 'm1',
+          object: 'thread.message',
+          thread_id: 't1',
+          role: 'assistant',
+          status: 'ready',
+          created_at: 1,
+          completed_at: 1,
+          content: [
+            { type: 'text', text: { value: 'done', annotations: [] } },
+            {
+              type: 'tool_call',
+              tool_call_id: 'w1',
+              tool_name: 'write',
+              input: { path: 'page.html' },
+              output: 'Created page.html (2 bytes)',
+            },
+          ],
+        },
+      ],
+      c1: [],
+    }
+    render(<Page />)
+    fireEvent.click(await screen.findByText('page'))
+    expect(h.navigate).toHaveBeenCalledWith({
+      to: '/threads/$threadId',
+      params: { threadId: 't1' },
     })
   })
 })

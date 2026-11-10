@@ -440,7 +440,10 @@
   "deleteSessionTitle": "Supprimer la session ?",
   "deleteSessionBody": "« {{title}} » et sa transcription seront supprimées définitivement. Cette action est irréversible.",
   "sidebar": {
-    "more": "Plus"
+    "more": "Plus",
+    "toggle": "Afficher ou masquer la barre latérale",
+    "navigation": "Navigation",
+    "navigationDescription": "Accéder aux discussions, projets, artefacts, compétences et paramètres."
   },
   "composer": {
     "addControls": "Ajouter des pièces jointes et des commandes",
@@ -494,5 +497,13 @@
   },
   "skillDestination": "Enregistrer les nouvelles compétences dans",
   "skillDestinationFolder": "Ce dossier",
-  "skillDestinationGlobal": "Global (toutes les conversations)"
+  "skillDestinationGlobal": "Global (toutes les conversations)",
+  "overview": {
+    "description": "Progression, fichiers et tâches en arrière-plan de cette conversation."
+  },
+  "artifactsLibraryDescription": "Les fichiers créés dans vos conversations, réunis au même endroit.",
+  "artifactsLibraryCount_one": "{{count}} fichier",
+  "artifactsLibraryCount_other": "{{count}} fichiers",
+  "artifactsLibraryFilter": "Filtrer par type de fichier",
+  "artifactsLibraryReset": "Effacer les filtres"
 }

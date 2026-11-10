@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Button } from '@/components/ui/button'
+import { conversationColumnClassName } from './conversation-column'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { IconArrowDown } from '@tabler/icons-react'
@@ -48,11 +49,17 @@ export const Conversation = memo(
 
 Conversation.displayName = 'Conversation'
 
-export type ConversationContentProps = ComponentProps<typeof StickToBottom.Content>
+export type ConversationContentProps = ComponentProps<typeof StickToBottom.Content> & {
+  column?: boolean
+}
 
-export const ConversationContent = memo(({ className, ...props }: ConversationContentProps) => (
+export const ConversationContent = memo(({ className, column = false, ...props }: ConversationContentProps) => (
   <StickToBottom.Content
-    className={cn('flex flex-col gap-x-8 gap-y-2 px-2', className)}
+    className={cn(
+      'flex flex-col gap-x-8 gap-y-2',
+      column ? conversationColumnClassName : 'px-2',
+      className
+    )}
     {...props}
   />
 ))
@@ -192,13 +199,13 @@ export const ConversationScrollButton = ({
       {/* Mirrors the bottom fade below: text slides out under the header
           instead of being cut at its edge. Hidden at the top so the first
           message is never dimmed. Both fades end in the surface the app layout
-          paints behind the chat (neutral-50 light, background dark), so
+          paints behind the chat (background in both light and dark themes), so
           neither shows as a band, and ease in (40% at the midpoint) so the
           dimming starts gently instead of as a straight ramp. */}
       <div
         aria-hidden="true"
         className={cn(
-          'pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-t from-transparent via-neutral-50/40 via-50% to-neutral-50 dark:via-background/40 dark:to-background transition-opacity duration-200',
+          'pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-t from-transparent via-background/40 via-50% to-background transition-opacity duration-200',
           edges.top ? 'opacity-0' : 'opacity-100'
         )}
       />
@@ -208,7 +215,7 @@ export const ConversationScrollButton = ({
       <div
         aria-hidden="true"
         className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-b from-transparent via-neutral-50/40 via-50% to-neutral-50 dark:via-background/40 dark:to-background transition-opacity duration-200',
+          'pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-b from-transparent via-background/40 via-50% to-background transition-opacity duration-200',
           edges.bottom ? 'opacity-0' : 'opacity-100'
         )}
       />
