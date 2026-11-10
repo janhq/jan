@@ -294,5 +294,8 @@
     }
   },
   "backendInstallSuccess": "Backend instalado com sucesso",
-  "backendInstallError": "Falha ao instalar backend"
+  "backendInstallError": "Falha ao instalar backend",
+  "interface": {
+    "themeDescFixed": "Sempre usar este tema. Escolha Sistema para seguir o sistema operacional."
+  }
 }

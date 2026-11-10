@@ -525,5 +525,43 @@
   "artifactsLibraryCount_one": "{{count}} fichier",
   "artifactsLibraryCount_other": "{{count}} fichiers",
   "artifactsLibraryFilter": "Filtrer par type de fichier",
-  "artifactsLibraryReset": "Effacer les filtres"
+  "artifactsLibraryReset": "Effacer les filtres",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "Cette tâche n'a pas pu être importée",
+      "body": "Jan n'a pas pu transférer cette tâche depuis la version précédente et a cessé d'essayer. Rien n'a été perdu : l'original est toujours conservé. Vous pouvez réessayer ou l'exporter dans un fichier."
+    },
+    "id-collision": {
+      "title": "Cette tâche n'a pas pu être importée",
+      "body": "Une autre discussion utilise déjà le même identifiant. Cette tâche est donc affichée en lecture seule, et l'autre discussion reste intacte. Exportez-la pour en garder une copie."
+    },
+    "missing-sidecar": {
+      "title": "L'historique de cette tâche est introuvable",
+      "body": "L'historique enregistré de cette tâche est introuvable. Elle est donc affichée en lecture seule. Ses fichiers sur le disque sont conservés tels quels."
+    },
+    "unreadable-sidecar": {
+      "title": "L'historique de cette tâche est illisible",
+      "body": "L'historique enregistré de cette tâche est endommagé ou provient d'une version plus récente de Jan. Elle est donc affichée en lecture seule et ne sera jamais écrasée."
+    },
+    "missing-thread": {
+      "title": "Cette tâche a été supprimée du stockage",
+      "body": "La discussion de cette tâche ne se trouve plus sur le disque. Ce qui est affiché est la copie encore en mémoire ; exportez-la pour la conserver."
+    },
+    "reason": "Raison : {{reason}}",
+    "retry": "Réessayer",
+    "retrying": "Nouvelle tentative...",
+    "export": "Exporter",
+    "exported": "Tâche exportée",
+    "exportFailed": "Impossible d'exporter la tâche",
+    "imported": "Tâche importée",
+    "retryFailed": "La tâche n'a toujours pas pu être importée",
+    "revealFailed": "Impossible d'ouvrir le dossier",
+    "leftOut": {
+      "title": "Certains fichiers n'ont pas été copiés",
+      "body_one": "{{count}} élément de l'ancien dossier de cette tâche (un lien, ou un fichier que Jan n'était pas autorisé à lire) n'a pas été copié. Le dossier d'origine est conservé tel quel.",
+      "body_other": "{{count}} éléments de l'ancien dossier de cette tâche (des liens, ou des fichiers que Jan n'était pas autorisé à lire) n'ont pas été copiés. Le dossier d'origine est conservé tel quel.",
+      "show": "Afficher le dossier d'origine"
+    }
+  },
+  "deleteThreadFailed": "Impossible de supprimer la discussion. Elle pourrait réapparaître après un redémarrage."
 }

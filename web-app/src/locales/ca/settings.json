@@ -108,7 +108,8 @@
     "resetCodeBlockStyle": "Restableix l’estil del bloc de codi",
     "resetCodeBlockStyleDesc": "Restableix l’estil del bloc de codi als valors per defecte.",
     "resetCodeBlockSuccess": "S’ha restablert l’estil del bloc de codi",
-    "resetCodeBlockSuccessDesc": "L’estil del bloc de codi s’ha restaurat al valor per defecte."
+    "resetCodeBlockSuccessDesc": "L’estil del bloc de codi s’ha restaurat al valor per defecte.",
+    "themeDescFixed": "Utilitza sempre aquest tema. Tria Sistema per seguir el del sistema operatiu."
   },
   "hardware": {
     "os": "Sistema operatiu",

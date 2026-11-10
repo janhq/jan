@@ -118,7 +118,8 @@
     "resetCodeBlockStyle": "Ripristina stile blocco di codice",
     "resetCodeBlockStyleDesc": "Ripristina lo stile del blocco di codice a quello predefinito.",
     "resetCodeBlockSuccess": "Stile del blocco di codice ripristinato con successo",
-    "resetCodeBlockSuccessDesc": "Lo stile del blocco di codice è stato ripristinato a quello predefinito."
+    "resetCodeBlockSuccessDesc": "Lo stile del blocco di codice è stato ripristinato a quello predefinito.",
+    "themeDescFixed": "Usa sempre questo tema. Scegli Sistema per seguire il sistema operativo."
   },
   "hardware": {
     "os": "Sistema operativo",

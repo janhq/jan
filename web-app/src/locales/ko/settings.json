@@ -110,7 +110,8 @@
     "resetCodeBlockStyle": "코드 블록 스타일 재설정",
     "resetCodeBlockStyleDesc": "코드 블록 스타일을 기본값으로 재설정합니다.",
     "resetCodeBlockSuccess": "코드 블록 스타일 재설정 성공",
-    "resetCodeBlockSuccessDesc": "코드 블록 스타일이 기본값으로 복원되었습니다."
+    "resetCodeBlockSuccessDesc": "코드 블록 스타일이 기본값으로 복원되었습니다.",
+    "themeDescFixed": "항상 이 테마를 사용해요. OS 설정을 따르려면 '시스템'을 선택하세요."
   },
   "hardware": {
     "os": "운영 체제",

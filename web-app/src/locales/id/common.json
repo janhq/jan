@@ -243,6 +243,10 @@
     },
     "messageMetadata": {
       "title": "Metadata Pesan"
+    },
+    "deleteAllChats": {
+      "title": "Hapus Percakapan di Luar Proyek",
+      "description": "Ini akan menghapus percakapan yang tidak berada dalam proyek. Percakapan proyek, percakapan berbintang, dan tugas tetap disimpan. Tindakan ini tidak dapat dibatalkan."
     }
   },
   "errorDialog": {
@@ -337,6 +341,14 @@
     "threadRemovedFromProject": {
       "title": "Thread Dihapus",
       "description": "Thread berhasil dihapus dari \"{{projectName}}\""
+    },
+    "threadProjectMoveFailed": {
+      "title": "Gagal Memindahkan",
+      "description": "Percakapan ini tidak dapat dipindahkan. Sesinya tidak tersedia."
+    },
+    "deleteAllChats": {
+      "title": "Percakapan dihapus",
+      "description": "Percakapan di luar proyek telah dihapus. Percakapan proyek dan tugas tetap disimpan."
     }
   },
   "projects": {
@@ -392,7 +404,8 @@
     "tryDifferentSearch": "Coba kata kunci pencarian lain",
     "uploadingFiles": "Memproses file…",
     "processButton": "Tambah",
-    "viewProject": "Lihat Proyek"
+    "viewProject": "Lihat Proyek",
+    "sendMessageToStart": "Kirim pesan di atas untuk memulainya."
   },
   "llamacppBusyOnExit": {
     "title": "llama.cpp is still busy",
@@ -406,6 +419,145 @@
   "deleteSessionTitle": "Hapus sesi?",
   "deleteSessionBody": "\"{{title}}\" dan transkripnya akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.",
   "sidebar": {
-    "more": "Lainnya"
-  }
+    "more": "Lainnya",
+    "toggle": "Tampilkan/sembunyikan bilah sisi",
+    "navigation": "Navigasi",
+    "navigationDescription": "Buka obrolan, proyek, artefak, keterampilan, dan pengaturan."
+  },
+  "coworkSessionUnavailable": "Belum ada yang bisa ditampilkan di percakapan ini.",
+  "coworkSync": {
+    "journalUnreadableTitle": "Beberapa percakapan Cowork yang diimpor disembunyikan",
+    "journalUnreadableDescription": "Jan tidak dapat membaca catatan penghapusannya, jadi percakapan yang diimpor dari versi lama tetap disembunyikan agar percakapan yang sudah Anda hapus tidak muncul kembali, dan penghapusan percakapan Cowork untuk sementara diblokir. Data Anda tidak diubah. Untuk memulihkan: tutup Jan sepenuhnya terlebih dahulu, karena Jan menulis ulang settings.json dari memori saat berjalan dan akan membatalkan perubahan Anda. Lalu perbaiki atau hapus entri 'cowork_deleted_ids' di settings.json. Menghapusnya akan memulihkan semua percakapan yang diimpor, termasuk yang sudah Anda hapus.",
+    "missingThreadTitle": "Percakapan Cowork tidak dapat disimpan",
+    "missingThreadDescription": "Utas tersimpannya hilang, jadi perubahan tidak lagi disimpan. Anda masih bisa membaca, mengekspor, atau menghapusnya.",
+    "writeRefusedTitle": "Percakapan Cowork tidak dapat disimpan",
+    "writeRefusedDescription": "Jan tidak dapat menyimpan percakapan ini dengan id saat ini, jadi perubahan tidak disimpan. Anda masih bisa membaca, mengekspor, atau menghapusnya.",
+    "closeFailedTitle": "Jan tidak dapat menyimpan semuanya, jadi tetap terbuka",
+    "closeFailedDescription": "Perubahan terbaru Anda masih ada di memori. Tutup jendela lagi untuk mencoba menyimpan ulang.",
+    "closeForceDescription": "Penyimpanan terus gagal. Anda bisa menutup tanpa menyimpan, tetapi perubahan yang belum tertulis akan hilang.",
+    "closeAnyway": "Tutup tanpa menyimpan",
+    "quitFailedDescription": "Perubahan terbaru Anda masih ada di memori. Keluar lagi untuk mencoba menyimpan ulang.",
+    "quitAnyway": "Keluar tanpa menyimpan"
+  },
+  "messageWrites": {
+    "failedTitle": "Beberapa pesan tidak dapat disimpan",
+    "failedDescription": "Jan terus mencoba ulang. Sampai berhasil, pesan terbaru hanya ada di jendela ini.",
+    "retry": "Coba lagi sekarang"
+  },
+  "threadRoute": {
+    "notReadyTitle": "Percakapan ini belum siap",
+    "notReadyDescription": "Jan tidak dapat memastikan apakah percakapan ini adalah obrolan atau tugas Cowork. Coba lagi; jika masih terjadi, mulai ulang aplikasi.",
+    "retry": "Coba lagi"
+  },
+  "agentSettings": "Agen",
+  "composer": {
+    "addControls": "Tambahkan lampiran dan kontrol",
+    "assistant": "Asisten",
+    "allTools": "Semua Alat",
+    "samplingParameters": "Parameter sampling",
+    "openAssistantSettings": "Buka pengaturan asisten",
+    "samplingSaveFailed": "Tidak dapat menyimpan parameter sampling. Silakan coba lagi.",
+    "context": "Konteks: {{tokens}}"
+  },
+  "modelPicker": {
+    "selectModel": "Pilih model",
+    "none": "Tidak ada",
+    "triggerLabel": "Pilih model: {{name}}",
+    "dialogLabel": "Pilih model",
+    "searchLabel": "Cari model atau penyedia",
+    "searchPlaceholder": "Cari model atau penyedia...",
+    "listLabel": "Model",
+    "noMatches": "Tidak ada model yang cocok",
+    "noModels": "Belum ada model yang dikonfigurasi",
+    "optionsLabel": "Opsi model",
+    "reasoning": "Penalaran",
+    "reasoningMode": "Mode penalaran",
+    "reasoningEffort": "Tingkat penalaran",
+    "thinkingBudget": "Anggaran berpikir",
+    "modelSettings": "Pengaturan model",
+    "manageModels": "Kelola model",
+    "effort": {
+      "default": "Bawaan",
+      "auto": "Otomatis",
+      "on": "Aktif",
+      "off": "Nonaktif",
+      "low": "Rendah",
+      "medium": "Sedang",
+      "high": "Tinggi",
+      "xhigh": "Sangat tinggi",
+      "unlimited": "Tanpa batas"
+    }
+  },
+  "homeMode": {
+    "addToProject": "Tambahkan ke proyek",
+    "newProject": "Proyek Baru",
+    "noProjects": "Belum ada proyek",
+    "addFolderAction": "Tambahkan folder",
+    "startFailed": "Tidak dapat memulai percakapan. Pesan Anda masih ada di kotak."
+  },
+  "conversationScope": {
+    "folderSelectModel": "Pilih model yang mendukung alat sebelum menambahkan akses folder.",
+    "folderUnsupported": "Model ini tidak dapat menggunakan alat, jadi folder tidak dapat ditambahkan. Obrolan biasa tetap berfungsi.",
+    "removeProject": "Hapus pilihan proyek",
+    "temporary": "Obrolan sementara tidak memiliki akses folder."
+  },
+  "skillDestination": "Simpan keterampilan baru ke",
+  "skillDestinationFolder": "Folder ini",
+  "skillDestinationGlobal": "Global (semua percakapan)",
+  "overview": {
+    "title": "Ringkasan percakapan",
+    "description": "Progres, file, dan tugas latar belakang untuk percakapan ini.",
+    "resize": "Ubah ukuran panel samping",
+    "close": "Sembunyikan ringkasan percakapan",
+    "progress": "Progres",
+    "files": "File",
+    "backgroundTasks": "Tugas latar belakang",
+    "monitorCount_one": "{{count}} pemantau",
+    "monitorCount_other": "{{count}} pemantau",
+    "noProgress": "Langkah-langkah akan muncul saat Jan bekerja.",
+    "noFiles": "File akan muncul di sini."
+  },
+  "artifactsLibraryDescription": "File yang dibuat di semua percakapan Anda, terkumpul di satu tempat.",
+  "artifactsLibraryCount_one": "{{count}} file",
+  "artifactsLibraryCount_other": "{{count}} file",
+  "artifactsLibraryFilter": "Filter menurut jenis file",
+  "artifactsLibraryReset": "Hapus filter",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "Tugas ini tidak dapat diimpor",
+      "body": "Jan tidak dapat memindahkan tugas ini dari versi sebelumnya dan berhenti mencoba. Tidak ada yang hilang: aslinya tetap disimpan. Anda bisa mencoba lagi, atau mengekspornya ke file."
+    },
+    "id-collision": {
+      "title": "Tugas ini tidak dapat diimpor",
+      "body": "Percakapan lain sudah menggunakan id yang sama, jadi tugas ini ditampilkan dalam mode baca saja dan percakapan lain tersebut tidak diubah. Ekspor untuk menyimpan salinannya."
+    },
+    "missing-sidecar": {
+      "title": "Riwayat tugas ini hilang",
+      "body": "Riwayat tersimpan tugas ini tidak ditemukan, jadi ditampilkan dalam mode baca saja. File-nya di disk tetap dibiarkan apa adanya."
+    },
+    "unreadable-sidecar": {
+      "title": "Riwayat tugas ini tidak dapat dibaca",
+      "body": "Riwayat tersimpan tugas ini rusak atau berasal dari versi Jan yang lebih baru, jadi ditampilkan dalam mode baca saja dan tidak pernah ditimpa."
+    },
+    "missing-thread": {
+      "title": "Tugas ini telah dihapus dari penyimpanan",
+      "body": "Percakapan tugas ini sudah tidak ada di disk. Yang ditampilkan adalah salinan yang masih ada di memori; ekspor untuk menyimpannya."
+    },
+    "reason": "Alasan: {{reason}}",
+    "retry": "Coba lagi",
+    "retrying": "Mencoba...",
+    "export": "Ekspor",
+    "exported": "Tugas diekspor",
+    "exportFailed": "Tidak dapat mengekspor tugas",
+    "imported": "Tugas diimpor",
+    "retryFailed": "Tugas masih tidak dapat diimpor",
+    "revealFailed": "Tidak dapat membuka folder",
+    "leftOut": {
+      "title": "Beberapa file tidak disalin",
+      "body_one": "{{count}} item dari folder lama tugas ini (tautan, atau file yang tidak boleh dibaca oleh Jan) tidak disalin. Folder asli tetap seperti semula.",
+      "body_other": "{{count}} item dari folder lama tugas ini (tautan, atau file yang tidak boleh dibaca oleh Jan) tidak disalin. Folder asli tetap seperti semula.",
+      "show": "Tampilkan folder asli"
+    }
+  },
+  "deleteThreadFailed": "Tidak dapat menghapus percakapan. Percakapan ini mungkin muncul kembali setelah dimulai ulang."
 }

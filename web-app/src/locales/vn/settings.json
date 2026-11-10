@@ -100,7 +100,8 @@
     "resetCodeBlockStyle": "Đặt lại kiểu khối mã",
     "resetCodeBlockStyleDesc": "Đặt lại kiểu khối mã về mặc định.",
     "resetCodeBlockSuccess": "Kiểu khối mã đã được đặt lại thành công",
-    "resetCodeBlockSuccessDesc": "Kiểu khối mã đã được khôi phục về mặc định."
+    "resetCodeBlockSuccessDesc": "Kiểu khối mã đã được khôi phục về mặc định.",
+    "themeDescFixed": "Luôn dùng giao diện này. Chọn Hệ thống để theo hệ điều hành."
   },
   "hardware": {
     "os": "Hệ điều hành",

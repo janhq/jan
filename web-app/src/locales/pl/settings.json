@@ -100,7 +100,8 @@
     "resetCodeBlockStyle": "Przywróć Domyślny Styl Bloków Kodu",
     "resetCodeBlockStyleDesc": "Przywraca domyślny styl bloku kodu.",
     "resetCodeBlockSuccess": "Pomyślnie Przywrócono Styl Bloku Kodu",
-    "resetCodeBlockSuccessDesc": "Styl bloku kodu został przywrócony do ustawień domyślnych."
+    "resetCodeBlockSuccessDesc": "Styl bloku kodu został przywrócony do ustawień domyślnych.",
+    "themeDescFixed": "Zawsze używaj tego motywu. Wybierz System, aby dopasować motyw do systemu operacyjnego."
   },
   "hardware": {
     "os": "System Operacyjny",
