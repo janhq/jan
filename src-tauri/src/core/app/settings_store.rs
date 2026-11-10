@@ -309,8 +309,11 @@ fn backup_once_to(store: &Store, path: &PathBuf) -> Result<bool, String> {
     }
     write_map_atomic(path, &snapshot)?;
     // This file is the only copy of what the change replaces: make it durable
-    // before the caller goes ahead.
-    fs::File::open(path)
+    // before the caller goes ahead. Opened writable: Windows refuses to flush
+    // a read-only handle (FlushFileBuffers needs write access).
+    fs::OpenOptions::new()
+        .write(true)
+        .open(path)
         .and_then(|f| f.sync_all())
         .map_err(|e| e.to_string())?;
     Ok(true)
