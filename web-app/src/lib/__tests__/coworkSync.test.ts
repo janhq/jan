@@ -138,6 +138,7 @@ import {
   startCoworkSync,
   flushCoworkDeletes,
   flushCoworkStartupWarnings,
+  retryCoworkImport,
   COWORK_MIGRATION_BUDGET_MS,
   COWORK_CLOSE_FAILURES_BEFORE_FORCE,
   __resetCoworkSyncForTests,
@@ -356,6 +357,51 @@ describe('coworkSync', () => {
         expect.objectContaining({ id: `cowork-missing-thread-${id}` })
       )
       expect(backend.threads.has(id)).toBe(false)
+    })
+  })
+
+  describe('a session the migration gave up on', () => {
+    it('shows as not imported with the reason, and Try again imports it once the cause is gone', async () => {
+      putBlob(legacy('a'), legacy('b'))
+      agentTools.copySessionWorkspaceToThread.mockRejectedValueOnce(
+        new Error('PERMANENT: a already holds files of its own')
+      )
+      await startCoworkSync()
+      const stuck = useCoworkSessions
+        .getState()
+        .sessions.find((s) => s.id === 'a')!
+      expect([stuck.unavailable, stuck.importError]).toEqual([
+        'not-imported',
+        'PERMANENT: a already holds files of its own',
+      ])
+      expect(backend.threads.has('a')).toBe(false)
+
+      await expect(retryCoworkImport('a')).resolves.toEqual({ imported: true })
+      const fixed = useCoworkSessions
+        .getState()
+        .sessions.find((s) => s.id === 'a')!
+      expect(fixed.unavailable).toBeUndefined()
+      expect(backend.threads.get('a')!.metadata.mode).toBe('cowork')
+      expect(useThreads.getState().threads['a']).toBeTruthy()
+      expect(backend.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
+    })
+
+    it('a retry that fails again keeps the session read-only and reports the new reason', async () => {
+      putBlob(legacy('a'))
+      agentTools.copySessionWorkspaceToThread
+        .mockRejectedValueOnce(new Error('PERMANENT: first'))
+        .mockRejectedValueOnce(new Error('PERMANENT: second'))
+      await startCoworkSync()
+      await expect(retryCoworkImport('a')).resolves.toEqual({
+        imported: false,
+        error: 'PERMANENT: second',
+      })
+      const s = useCoworkSessions.getState().sessions[0]
+      expect([s.unavailable, s.importError]).toEqual([
+        'not-imported',
+        'PERMANENT: second',
+      ])
+      expect(backend.threads.has('a')).toBe(false)
     })
   })
 
