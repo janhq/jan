@@ -15,6 +15,7 @@
 use std::fmt;
 
 pub mod commands;
+pub mod diag;
 pub mod driver;
 pub mod events;
 pub mod http;
@@ -41,6 +42,9 @@ pub enum EngineError {
     VersionMismatch { expected: String, actual: String },
     /// A route name the shim does not know.
     UnknownRoute(String),
+    /// The op diagnostic could not run at all (unknown device, bad filter);
+    /// a case that merely fails is a result, not this.
+    Diagnostic(String),
 }
 
 impl fmt::Display for EngineError {
@@ -56,6 +60,7 @@ impl fmt::Display for EngineError {
                 "linked llama.cpp is {actual}, but this crate is pinned to {expected}"
             ),
             Self::UnknownRoute(r) => write!(f, "unknown engine route: {r}"),
+            Self::Diagnostic(msg) => write!(f, "the ggml op diagnostic could not run: {msg}"),
         }
     }
 }
