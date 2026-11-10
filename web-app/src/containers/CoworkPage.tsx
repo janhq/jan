@@ -74,6 +74,7 @@ import {
 import { CoworkWorkspacePill } from '@/containers/CoworkWorkspacePill'
 import { CoworkPlanToggle } from '@/containers/CoworkPlanToggle'
 import { CoworkEmptyState } from '@/containers/CoworkEmptyState'
+import { CoworkSessionNotice } from '@/containers/CoworkSessionNotice'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
 import {
@@ -1667,6 +1668,7 @@ export function CoworkPage() {
 
       <div className="flex flex-1 h-full overflow-hidden">
         <div className="flex min-w-0 flex-1 flex-col h-full overflow-hidden">
+          <CoworkSessionNotice session={session} />
           <div className="flex-1 relative">
             {displayedTurns.length === 0 ? (
               <CoworkEmptyState

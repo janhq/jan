@@ -902,5 +902,42 @@
   "artifactsLibraryCount_one": "{{count}} file",
   "artifactsLibraryCount_other": "{{count}} files",
   "artifactsLibraryFilter": "Filter by file type",
-  "artifactsLibraryReset": "Clear filters"
+  "artifactsLibraryReset": "Clear filters",
+  "coworkNotice": {
+    "not-imported": {
+      "title": "This task could not be imported",
+      "body": "Jan could not move this task over from the previous version and stopped trying. Nothing was lost: the original is still kept. You can try again, or export it to a file."
+    },
+    "id-collision": {
+      "title": "This task could not be imported",
+      "body": "Another conversation already uses the same id, so this task is shown read-only and the other conversation is left untouched. Export it to keep a copy."
+    },
+    "missing-sidecar": {
+      "title": "This task's history is missing",
+      "body": "The saved history of this task could not be found, so it is shown read-only. Its files on disk are kept as they are."
+    },
+    "unreadable-sidecar": {
+      "title": "This task's history cannot be read",
+      "body": "The saved history of this task is damaged or from a newer version of Jan, so it is shown read-only and never overwritten."
+    },
+    "missing-thread": {
+      "title": "This task was removed from storage",
+      "body": "This task's conversation is no longer on disk. What is shown is the copy still in memory; export it to keep it."
+    },
+    "reason": "Reason: {{reason}}",
+    "retry": "Try again",
+    "retrying": "Trying...",
+    "export": "Export",
+    "exported": "Task exported",
+    "exportFailed": "Could not export the task",
+    "imported": "Task imported",
+    "retryFailed": "The task still could not be imported",
+    "revealFailed": "Could not open the folder",
+    "leftOut": {
+      "title": "Some files were not copied",
+      "body_one": "{{count}} item from this task's old folder (a link, or a file Jan was not allowed to read) was not copied. The original folder is kept as it was.",
+      "body_other": "{{count}} items from this task's old folder (links, or files Jan was not allowed to read) were not copied. The original folder is kept as it was.",
+      "show": "Show original folder"
+    }
+  }
 }

@@ -79,6 +79,9 @@ export type CoworkSession = {
     | 'unreadable-sidecar'
     | 'id-collision'
     | 'missing-thread'
+    | 'not-imported'
+  /** Why the migration gave up on a `not-imported` session (its last error). */
+  importError?: string
   updated: number
 }
 
