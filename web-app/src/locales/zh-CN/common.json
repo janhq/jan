@@ -604,7 +604,9 @@
     "closeFailedTitle": "Jan 未能保存全部内容，因此保持打开",
     "closeFailedDescription": "您最近的更改仍在内存中。再次关闭窗口即可重试保存。",
     "closeForceDescription": "保存持续失败。您可以不保存直接关闭，但无法写入的更改将会丢失。",
-    "closeAnyway": "不保存并关闭"
+    "closeAnyway": "不保存并关闭",
+    "quitFailedDescription": "您最近的更改仍在内存中。再次退出以重试保存。",
+    "quitAnyway": "不保存并退出"
   },
   "messageWrites": {
     "failedTitle": "部分消息未能保存",

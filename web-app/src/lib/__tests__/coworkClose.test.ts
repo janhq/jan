@@ -61,14 +61,15 @@ describe('Cowork close with the installed Tauri API', () => {
     storage.create.mockImplementation(() => storage)
     storage.flush.mockResolvedValue(undefined)
     storage.remove.mockResolvedValue(undefined)
+    const callbacks: Array<typeof dispatchClose> = []
     vi.stubGlobal('__TAURI_INTERNALS__', {
       metadata: { currentWindow: { label: 'main' } },
-      transformCallback: (callback: typeof dispatchClose) => {
-        dispatchClose = callback
-        return 42
-      },
+      transformCallback: (callback: typeof dispatchClose) => callbacks.push(callback) - 1,
       invoke: invoke.mockImplementation(async (command, args) => {
-        if (command === 'plugin:event|listen') return 1
+        if (command === 'plugin:event|listen') {
+          if (args.event === closeEvent.event) dispatchClose = callbacks[args.handler]
+          return 1
+        }
         if (command === 'plugin:window|destroy') {
           // Deliberately only an assertion of file/API alignment, not an ACL
           // emulator. Rust is responsible for enforcing the actual permission.
@@ -100,7 +101,7 @@ describe('Cowork close with the installed Tauri API', () => {
   it('dispatches destroy only after queued writes AND pending deletes settle', async () => {
     await startCoworkSync()
     expect(invoke).toHaveBeenCalledWith('plugin:event|listen', {
-      event: closeEvent.event, target: { kind: 'Window', label: 'main' }, handler: 42,
+      event: closeEvent.event, target: { kind: 'Window', label: 'main' }, handler: expect.any(Number),
     }, undefined)
     const writes = deferred()
     const deletes = deferred()

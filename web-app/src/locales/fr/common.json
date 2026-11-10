@@ -428,7 +428,9 @@
     "closeFailedTitle": "Jan n'a pas pu tout enregistrer et est resté ouvert",
     "closeFailedDescription": "Vos dernières modifications sont encore en mémoire. Fermez à nouveau la fenêtre pour réessayer l'enregistrement.",
     "closeForceDescription": "L'enregistrement échoue toujours. Vous pouvez fermer sans enregistrer, ce qui perd les modifications qui n'ont pas pu être écrites.",
-    "closeAnyway": "Fermer sans enregistrer"
+    "closeAnyway": "Fermer sans enregistrer",
+    "quitFailedDescription": "Vos dernières modifications sont encore en mémoire. Quittez à nouveau pour réessayer l'enregistrement.",
+    "quitAnyway": "Quitter sans enregistrer"
   },
   "messageWrites": {
     "failedTitle": "Certains messages n'ont pas pu être enregistrés",
