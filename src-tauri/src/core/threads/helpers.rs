@@ -95,6 +95,57 @@ fn write_atomic_with(
     }
 }
 
+/// How old an atomic-write temp file must be before a sweep treats it as
+/// abandoned. A write holds its temp file for milliseconds, so this leaves a
+/// wide margin for a live writer, even a slow one on a busy disk.
+pub const STALE_TEMP_AGE: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Whether `name` is a temp file [`write_atomic`] creates: `.<target>.<uuid>.tmp`.
+fn is_atomic_temp_name(name: &str) -> bool {
+    let Some(inner) = name.strip_prefix('.').and_then(|n| n.strip_suffix(".tmp")) else {
+        return false;
+    };
+    let Some((target, id)) = inner.rsplit_once('.') else {
+        return false;
+    };
+    !target.is_empty() && uuid::Uuid::try_parse(id).is_ok()
+}
+
+/// Remove the temp files a killed [`write_atomic`] left directly inside `dir`,
+/// once they are older than `max_age` at `now`. The committed file it was
+/// replacing is never touched, nor is anything else in `dir`; symlinks are not
+/// followed. Returns how many were removed.
+pub fn sweep_stale_temps(dir: &Path, max_age: std::time::Duration, now: std::time::SystemTime) -> usize {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if !name.to_str().is_some_and(is_atomic_temp_name) {
+            continue;
+        }
+        // `DirEntry::metadata` does not follow a symlink.
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let stale = meta
+            .modified()
+            .ok()
+            .and_then(|m| now.duration_since(m).ok())
+            .is_some_and(|age| age >= max_age);
+        if !stale {
+            continue;
+        }
+        match fs::remove_file(entry.path()) {
+            Ok(()) => removed += 1,
+            Err(e) => log::debug!("could not remove stale temp {}: {e}", entry.path().display()),
+        }
+    }
+    removed
+}
+
 /// Write messages to a thread's messages.jsonl file, atomically.
 pub fn write_messages_to_file(
     messages: &[serde_json::Value],
@@ -237,5 +288,49 @@ mod atomic_tests {
         let file = dir.path().join("plain");
         fs::write(&file, "x").unwrap();
         assert!(write_atomic(&file.join("thread.json"), b"body").is_err());
+    }
+
+    /// After a kill mid-write, only the old orphan goes: the committed file,
+    /// a fresh (possibly live) temp, look-alikes and a symlinked temp stay.
+    #[test]
+    fn sweep_removes_only_stale_atomic_temps() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        fs::write(d.join("messages.jsonl"), "committed").unwrap();
+        let orphan = format!(".messages.jsonl.{}.tmp", uuid::Uuid::new_v4());
+        let live = format!(".thread.json.{}.tmp", uuid::Uuid::new_v4());
+        fs::write(d.join(&orphan), "partial").unwrap();
+        fs::write(d.join(&live), "in flight").unwrap();
+        for other in [".notes.tmp", ".messages.jsonl.not-a-uuid.tmp", "user.tmp"] {
+            fs::write(d.join(other), "x").unwrap();
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            d.join("messages.jsonl"),
+            d.join(format!(".x.{}.tmp", uuid::Uuid::new_v4())),
+        )
+        .unwrap();
+        // The orphan is an hour old, the live temp seconds old.
+        let mtime = |name: &str, ago: u64| {
+            let t = std::time::SystemTime::now() - std::time::Duration::from_secs(ago);
+            File::options().write(true).open(d.join(name)).unwrap().set_modified(t).unwrap();
+        };
+        mtime(&orphan, 3600);
+        mtime(&live, 2);
+        for other in [".notes.tmp", ".messages.jsonl.not-a-uuid.tmp", "user.tmp"] {
+            mtime(other, 3600);
+        }
+
+        let removed = sweep_stale_temps(d, STALE_TEMP_AGE, std::time::SystemTime::now());
+
+        assert_eq!(removed, 1);
+        assert!(!d.join(&orphan).exists());
+        assert!(d.join(&live).exists(), "a live writer's temp must survive");
+        assert_eq!(fs::read_to_string(d.join("messages.jsonl")).unwrap(), "committed");
+        for other in [".notes.tmp", ".messages.jsonl.not-a-uuid.tmp", "user.tmp"] {
+            assert!(d.join(other).exists(), "{other} is not ours");
+        }
+        #[cfg(unix)]
+        assert_eq!(fs::read_dir(d).unwrap().count(), 6);
     }
 }
