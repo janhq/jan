@@ -24,6 +24,7 @@ import {
   createCoworkPersistence,
   loadCoworkSessions,
   type CoworkPersistence,
+  type ThreadRecord,
 } from '@/lib/coworkPersistence'
 import {
   isCoworkMigrationSettled,
@@ -57,9 +58,6 @@ import { cleanupThreadWorkspace } from '@/lib/agentTools'
  * the migration keeps running; the sessions are re-loaded when it finishes.
  */
 export const COWORK_MIGRATION_BUDGET_MS = 3000
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Json = Record<string, any>
 
 let persistence: CoworkPersistence | null = null
 let unsubscribe: (() => void) | null = null
@@ -95,7 +93,7 @@ const getInvoke = (): Invoke => {
 }
 
 /** Mirror a persisted Cowork thread into the shared thread list (and search). */
-function upsertThread(thread: Json) {
+function upsertThread(thread: ThreadRecord) {
   const model = thread.assistants?.[0]?.model
   const existing = useThreads.getState().threads[thread.id]
   const next = {
