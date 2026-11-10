@@ -6,7 +6,7 @@ use super::helpers::{
 };
 use super::utils::{
     ensure_data_dirs, ensure_thread_dir_exists, get_data_dir, get_messages_path, get_thread_dir,
-    get_thread_metadata_path, validate_thread_id,
+    get_thread_metadata_path, validate_thread_id, PERMANENT_PREFIX,
 };
 use crate::core::app::commands::get_jan_data_folder_path;
 use futures_util::future;
@@ -953,19 +953,49 @@ async fn test_create_thread_keeps_ulid_ids_from_the_web_app() {
 }
 
 #[tokio::test]
-async fn test_create_thread_invalid_or_missing_id_gets_uuid() {
-    let (app, _data_dir) = mock_app_with_temp_data_dir();
+async fn test_create_thread_refuses_an_invalid_id_and_mints_one_when_missing() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
     let mut bad = create_test_thread("Bad id");
     bad["id"] = json!("../escape");
-    let created = create_thread(app.handle().clone(), bad).await.unwrap();
-    let id = created["id"].as_str().unwrap();
-    assert_ne!(id, "../escape");
-    assert!(validate_thread_id(id).is_ok());
+    let err = create_thread(app.handle().clone(), bad).await.unwrap_err();
+    assert!(err.starts_with(PERMANENT_PREFIX), "{err}");
+    assert!(!data_dir.join("escape").exists());
 
     let created = create_thread(app.handle().clone(), create_test_thread("No id"))
         .await
         .unwrap();
     assert!(validate_thread_id(created["id"].as_str().unwrap()).is_ok());
+
+    let mut empty = create_test_thread("Empty id");
+    empty["id"] = json!("");
+    let created = create_thread(app.handle().clone(), empty).await.unwrap();
+    assert!(validate_thread_id(created["id"].as_str().unwrap()).is_ok());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_delete_thread_reports_a_failed_removal() {
+    use std::os::unix::fs::PermissionsExt;
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Locked");
+    thread["id"] = json!("locked-thread");
+    create_thread(app.handle().clone(), thread).await.unwrap();
+    let dir = data_dir.join(THREADS_DIR).join("locked-thread");
+    std::fs::create_dir_all(dir.join("inner")).unwrap();
+    std::fs::write(dir.join("inner/file"), "x").unwrap();
+    // Removing entries of a read-only directory fails.
+    std::fs::set_permissions(dir.join("inner"), std::fs::Permissions::from_mode(0o500)).unwrap();
+    let result = delete_thread(app.handle().clone(), "locked-thread".to_string()).await;
+    std::fs::set_permissions(dir.join("inner"), std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(result.is_err(), "{result:?}");
+
+    // A thread that is already gone is not an error.
+    delete_thread(app.handle().clone(), "locked-thread".to_string())
+        .await
+        .unwrap();
+    delete_thread(app.handle().clone(), "locked-thread".to_string())
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
