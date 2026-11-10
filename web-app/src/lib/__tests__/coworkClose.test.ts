@@ -131,7 +131,8 @@ describe('Cowork close with the installed Tauri API', () => {
     registerCoworkRunForClose(otherRun)
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const closing = dispatchClose(closeEvent)
-    expect(badRun).toHaveBeenCalledOnce()
+    // The handler first asks Rust whether this close only hides the window.
+    await vi.waitFor(() => expect(badRun).toHaveBeenCalledOnce())
     expect(otherRun).toHaveBeenCalledOnce()
     await Promise.resolve()
     expect(storage.flush).not.toHaveBeenCalled()
