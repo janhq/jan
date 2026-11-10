@@ -1689,18 +1689,21 @@ export function CoworkPage() {
                         isFirstMessage={i === 0}
                         isLastMessage={i === uiMessages.length - 1}
                         status={viewingRun ? 'streaming' : 'ready'}
-                        onRegenerate={handleRegenerate}
+                        // A read-only session takes no new turn and no edit:
+                        // persistence refuses its writes, so any change would
+                        // look saved and vanish on restart.
+                        onRegenerate={sessionUnavailable ? undefined : handleRegenerate}
                         // Questions only. Editing the agent's own answer would
                         // put words in its mouth that its tool calls do not
                         // support, and deleting one alone would strand the
                         // results of the calls it made.
                         onEdit={
-                          message.role === 'user'
+                          message.role === 'user' && !sessionUnavailable
                             ? handleEditQuestion
                             : undefined
                         }
                         onRetry={
-                          message.role === 'user'
+                          message.role === 'user' && !sessionUnavailable
                             ? handleRetryQuestion
                             : undefined
                         }
@@ -1709,7 +1712,7 @@ export function CoworkPage() {
                         // an answer, so it gets no timestamp or actions row.
                         hideActions={uiMessages[i + 1]?.role === 'system'}
                         onDelete={
-                          message.role === 'user'
+                          message.role === 'user' && !sessionUnavailable
                             ? handleDeleteQuestion
                             : undefined
                         }
@@ -1802,7 +1805,9 @@ export function CoworkPage() {
             )}
           </div>
 
-          {/* pb-only: the scroll area runs right up to the composer. */}
+          {/* pb-only: the scroll area runs right up to the composer. A
+              read-only session has no composer: it cannot take a new turn. */}
+          {!sessionUnavailable && (
           <div className="pb-4 shrink-0">
             <ConversationColumn reserveScrollGutter>
               {/* The card rises in when a question arrives and folds away once
@@ -1967,6 +1972,7 @@ export function CoworkPage() {
               </div>
             </ConversationColumn>
           </div>
+          )}
         </div>
 
         <div
