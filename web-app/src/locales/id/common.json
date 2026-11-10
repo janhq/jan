@@ -401,10 +401,8 @@
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
   },
-  "chatsAndTasks": "Obrolan dan tugas",
   "artifacts": "Artefak",
   "skills": "Keahlian",
-  "deleteSession": "Hapus sesi",
   "deleteSessionTitle": "Hapus sesi?",
   "deleteSessionBody": "\"{{title}}\" dan transkripnya akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.",
   "sidebar": {

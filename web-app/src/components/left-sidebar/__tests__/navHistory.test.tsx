@@ -113,7 +113,7 @@ const ids = () => useCoworkSessions.getState().sessions.map((s) => s.id)
 
 function deleteRow(id: string) {
   const row = screen.getByTestId(`history-cowork-${id}`).closest('li') as HTMLElement
-  fireEvent.click(within(row).getByRole('menuitem', { name: 'common:deleteSession' }))
+  fireEvent.click(within(row).getByRole('menuitem', { name: 'common:delete' }))
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'common:delete' }))
 }
 
@@ -246,7 +246,7 @@ describe('NavHistory rename availability', () => {
       render(<NavHistory />)
       const row = screen.getByTestId('history-cowork-open').closest('li') as HTMLElement
       expect(within(row).queryByRole('menuitem', { name: 'common:rename' })).toBeNull()
-      expect(within(row).getByRole('menuitem', { name: 'common:deleteSession' })).toBeInTheDocument()
+      expect(within(row).getByRole('menuitem', { name: 'common:delete' })).toBeInTheDocument()
     }
   )
 })

@@ -470,10 +470,8 @@
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
   },
-  "chatsAndTasks": "채팅 및 작업",
   "artifacts": "아티팩트",
   "skills": "스킬",
-  "deleteSession": "세션 삭제",
   "deleteSessionTitle": "세션을 삭제할까요?",
   "deleteSessionBody": "“{{title}}”과(와) 해당 기록이 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
   "sidebar": {

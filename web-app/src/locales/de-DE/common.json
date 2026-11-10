@@ -440,10 +440,8 @@
     "retry": "Erneut versuchen"
   },
   "agentSettings": "Agent",
-  "chatsAndTasks": "Chats und Aufgaben",
   "artifacts": "Artefakte",
   "skills": "Skills",
-  "deleteSession": "Sitzung löschen",
   "coworkSessionUnavailable": "Diese Unterhaltung hat noch nichts anzuzeigen.",
   "deleteSessionTitle": "Sitzung löschen?",
   "deleteSessionBody": "„{{title}}“ und das zugehörige Protokoll werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.",

@@ -87,7 +87,6 @@
   "skillReimport": "Re-import",
   "skillImported": "Imported {{name}}",
   "sessions": "Sessions",
-  "deleteSession": "Delete session",
   "coworkSessionUnavailable": "This conversation has nothing to show yet.",
   "deleteSessionTitle": "Delete session?",
   "deleteSessionBody": "\"{{title}}\" and its transcript will be permanently deleted. This can't be undone.",
@@ -417,7 +416,7 @@
   },
   "projects": {
     "title": "Projects",
-    "new": "New Projects",
+    "new": "New project",
     "addProject": "Add Project",
     "addToProject": "Add to project",
     "removeFromProject": "Remove from project",
@@ -824,7 +823,6 @@
     "retry": "Retry"
   },
   "agentSettings": "Agent",
-  "chatsAndTasks": "Chats and tasks",
   "sidebar": {
     "more": "More",
     "toggle": "Toggle sidebar",

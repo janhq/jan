@@ -130,7 +130,7 @@ const CoworkRow = memo(function CoworkRow({
             }
           >
             <Trash2 />
-            <span>{t('common:deleteSession')}</span>
+            <span>{t('common:delete')}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -213,7 +213,7 @@ export function NavHistory() {
     if (!isLoadingThreads) return null
     return (
       <SidebarGroup className="px-1 group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel>{t('common:chatsAndTasks')}</SidebarGroupLabel>
+        <SidebarGroupLabel>{t('common:chats')}</SidebarGroupLabel>
         <div className="flex items-center justify-center py-2">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
         </div>
@@ -228,7 +228,7 @@ export function NavHistory() {
 
   return (
     <SidebarGroup className="px-1 group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>{t('common:chatsAndTasks')}</SidebarGroupLabel>
+      <SidebarGroupLabel>{t('common:chats')}</SidebarGroupLabel>
       {deletableCount > 1 && (
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
