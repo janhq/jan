@@ -147,6 +147,7 @@ macro_rules! invoke_commands_with_extras {
         main_window_hides_on_close,
         exit_after_save,
         cancel_exit_save,
+        exit_without_saving,
         // Theme
         core::setup::get_system_theme,
         core::setup::set_gtk_prefer_dark,
@@ -303,8 +304,7 @@ fn request_save_before_exit<R: tauri::Runtime>(
 
 #[cfg(not(feature = "cli"))]
 #[tauri::command]
-/// The web app saved (or the user chose to quit without saving): finish the
-/// held exit. A no-op when no exit is waiting.
+/// The web app saved: finish the held exit. A no-op when no exit is waiting.
 fn exit_after_save<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) {
     use std::sync::atomic::Ordering;
     if EXIT_SAVE_PENDING.swap(0, Ordering::SeqCst) == 0 {
@@ -324,6 +324,19 @@ fn cancel_exit_save<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) {
     if EXIT_SAVE_PENDING.swap(0, Ordering::SeqCst) != 0 {
         core::system::commands::show_main_window(&app_handle);
     }
+}
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+/// The user chose "quit without saving" after repeated save failures. The held
+/// exit was already cancelled by `cancel_exit_save`, so exit unconditionally
+/// with the code of the last quit request.
+fn exit_without_saving<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) {
+    use std::sync::atomic::Ordering;
+    EXIT_SAVE_PENDING.store(0, Ordering::SeqCst);
+    log::warn!("Quitting without saving at the user's request");
+    EXIT_SAVED.store(true, Ordering::SeqCst);
+    app_handle.exit(EXIT_SAVE_CODE.load(Ordering::SeqCst));
 }
 
 #[cfg(not(feature = "cli"))]
