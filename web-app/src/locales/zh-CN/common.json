@@ -635,6 +635,7 @@
     "assistant": "助手",
     "allTools": "所有工具",
     "samplingParameters": "采样参数",
+    "openAssistantSettings": "打开助手设置",
     "samplingSaveFailed": "无法保存采样参数，请重试。",
     "context": "上下文：{{tokens}}"
   },

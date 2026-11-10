@@ -243,7 +243,7 @@ export function SamplerPopover({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Open assistant settings</p>
+                <p>{t('common:composer.openAssistantSettings')}</p>
               </TooltipContent>
             </Tooltip>
           </div>
@@ -288,7 +288,7 @@ export function SamplerPopover({
             <Button
               variant="ghost"
               size="icon-xs"
-              aria-label="Sampling parameters"
+              aria-label={t('common:composer.samplingParameters')}
               className="relative"
               disabled={assistantsLoading}
             >

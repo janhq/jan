@@ -456,6 +456,7 @@
     "assistant": "Assistent",
     "allTools": "Alle Tools",
     "samplingParameters": "Sampling-Parameter",
+    "openAssistantSettings": "Assistenteneinstellungen öffnen",
     "samplingSaveFailed": "Die Sampling-Parameter konnten nicht gespeichert werden. Bitte versuchen Sie es erneut.",
     "context": "Kontext: {{tokens}}"
   },
