@@ -402,10 +402,8 @@
     "shuttingDown": "Shutting down…"
   },
   "agentSettings": "Tác nhân",
-  "chatsAndTasks": "Trò chuyện và tác vụ",
   "artifacts": "Tạo phẩm",
   "skills": "Kỹ năng",
-  "deleteSession": "Xóa phiên",
   "deleteSessionTitle": "Xóa phiên?",
   "deleteSessionBody": "“{{title}}” và bản ghi của phiên sẽ bị xóa vĩnh viễn. Không thể hoàn tác thao tác này.",
   "sidebar": {

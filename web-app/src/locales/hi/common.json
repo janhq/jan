@@ -471,10 +471,8 @@
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
   },
-  "chatsAndTasks": "चैट और कार्य",
   "artifacts": "आर्टिफ़ैक्ट",
   "skills": "स्किल",
-  "deleteSession": "सत्र हटाएँ",
   "deleteSessionTitle": "सत्र हटाएँ?",
   "deleteSessionBody": "\"{{title}}\" और उसका ट्रांसक्रिप्ट स्थायी रूप से हटा दिया जाएगा। इसे वापस नहीं किया जा सकता।",
   "sidebar": {

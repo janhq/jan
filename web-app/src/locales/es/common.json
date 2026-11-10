@@ -471,10 +471,8 @@
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
   },
-  "chatsAndTasks": "Chats y tareas",
   "artifacts": "Artefactos",
   "skills": "Habilidades",
-  "deleteSession": "Eliminar sesión",
   "deleteSessionTitle": "¿Eliminar la sesión?",
   "deleteSessionBody": "«{{title}}» y su transcripción se eliminarán de forma permanente. Esta acción no se puede deshacer.",
   "sidebar": {

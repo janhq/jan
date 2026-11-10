@@ -403,13 +403,12 @@
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
   },
-  "chatsAndTasks": "Xats i tasques",
   "artifacts": "Artefactes",
   "skills": "Habilitats",
-  "deleteSession": "Suprimeix la sessió",
   "deleteSessionTitle": "Vols suprimir la sessió?",
   "deleteSessionBody": "«{{title}}» i la seva transcripció se suprimiran de manera permanent. Aquesta acció no es pot desfer.",
   "sidebar": {
     "more": "Més"
-  }
+  },
+  "chats": "Xats"
 }

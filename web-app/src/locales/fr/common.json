@@ -443,10 +443,8 @@
     "retry": "Réessayer"
   },
   "agentSettings": "Agent",
-  "chatsAndTasks": "Discussions et tâches",
   "artifacts": "Artefacts",
   "skills": "Compétences",
-  "deleteSession": "Supprimer la session",
   "coworkSessionUnavailable": "Cette conversation n'a encore rien à afficher.",
   "deleteSessionTitle": "Supprimer la session ?",
   "deleteSessionBody": "« {{title}} » et sa transcription seront supprimées définitivement. Cette action est irréversible.",

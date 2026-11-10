@@ -496,10 +496,8 @@
     "forcing": "Chiusura forzata in corso…",
     "shuttingDown": "Arresto in corso…"
   },
-  "chatsAndTasks": "Chat e attività",
   "artifacts": "Artefatti",
   "skills": "Competenze",
-  "deleteSession": "Elimina sessione",
   "deleteSessionTitle": "Eliminare la sessione?",
   "deleteSessionBody": "«{{title}}» e la sua trascrizione verranno eliminate definitivamente. L'operazione non può essere annullata.",
   "sidebar": {
