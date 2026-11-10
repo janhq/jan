@@ -421,7 +421,16 @@
     "missingThreadTitle": "Eine Cowork-Unterhaltung konnte nicht gespeichert werden",
     "missingThreadDescription": "Der gespeicherte Thread fehlt, daher werden Änderungen nicht mehr gespeichert. Sie können ihn weiterhin lesen, exportieren oder löschen.",
     "writeRefusedTitle": "Eine Cowork-Unterhaltung kann nicht gespeichert werden",
-    "writeRefusedDescription": "Jan kann diese Unterhaltung nicht unter ihrer aktuellen ID speichern, daher werden Änderungen nicht gespeichert. Sie können sie weiterhin lesen, exportieren oder löschen."
+    "writeRefusedDescription": "Jan kann diese Unterhaltung nicht unter ihrer aktuellen ID speichern, daher werden Änderungen nicht gespeichert. Sie können sie weiterhin lesen, exportieren oder löschen.",
+    "closeFailedTitle": "Jan konnte nicht alles speichern und bleibt daher geöffnet",
+    "closeFailedDescription": "Ihre letzten Änderungen befinden sich noch im Arbeitsspeicher. Schließen Sie das Fenster erneut, um das Speichern zu wiederholen.",
+    "closeForceDescription": "Das Speichern schlägt weiterhin fehl. Sie können ohne Speichern schließen; dabei gehen die Änderungen verloren, die nicht geschrieben werden konnten.",
+    "closeAnyway": "Ohne Speichern schließen"
+  },
+  "messageWrites": {
+    "failedTitle": "Einige Nachrichten konnten nicht gespeichert werden",
+    "failedDescription": "Jan versucht es weiter. Bis es gelingt, existieren die letzten Nachrichten nur in diesem Fenster.",
+    "retry": "Jetzt erneut versuchen"
   },
   "threadRoute": {
     "notReadyTitle": "Diese Unterhaltung ist noch nicht bereit",
