@@ -66,6 +66,7 @@ macro_rules! invoke_commands_with_extras {
         core::app::settings_store::settings_get,
         core::app::settings_store::settings_set,
         core::app::settings_store::settings_remove,
+        core::app::settings_store::settings_flush,
         core::server::provider_secrets::set_secret,
         core::server::provider_secrets::get_secret,
         // System commands

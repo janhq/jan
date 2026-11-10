@@ -161,30 +161,35 @@ fn lock_map(map: &Mutex<SettingsMap>) -> std::sync::MutexGuard<'_, SettingsMap> 
     map.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Write a flush snapshot to disk unless the store was discarded after the
-/// snapshot was taken. Returns whether it wrote. A failed write re-arms the
-/// flush so it is retried, except after a discard, where a retry would write
-/// an empty `{}` file in place of the deleted one.
-fn persist(
-    state: &Mutex<SettingsMap>,
-    path: &PathBuf,
-    snapshot: &BTreeMap<String, String>,
-) -> Result<bool, String> {
+/// Write the current contents to disk if they changed since the last write.
+/// The snapshot is taken under [`WRITE`], so concurrent flushes (the debounced
+/// background one, an immediate `settings_flush`, the exit flush) reach disk
+/// in snapshot order and an older snapshot can never land last. The map lock
+/// is released during disk I/O, so `settings_set` never waits on the disk.
+/// Returns whether it wrote. A failed write re-arms the debounced flush so it
+/// is retried; after a discard nothing is written, since that would bring a
+/// `{}` file back in place of the deleted one.
+fn flush_to(store: &Store, path: &PathBuf) -> Result<bool, String> {
     let _write = WRITE.lock().unwrap_or_else(|e| e.into_inner());
-    if lock_map(state).discarded {
+    let mut guard = lock(store);
+    if guard.discarded || !guard.dirty {
         return Ok(false);
     }
-    write_map_atomic(path, snapshot).map(|()| true).inspect_err(|_| {
-        let mut guard = lock_map(state);
+    let (snapshot, keys) = guard.take_flush_batch();
+    drop(guard);
+    write_map_atomic(path, &snapshot).inspect_err(|_| {
+        let mut guard = lock(store);
         if !guard.discarded {
-            guard.dirty = true;
+            guard.mark_dirty();
+            store.1.notify_one();
         }
-    })
+    })?;
+    log_flushed_keys(&keys);
+    Ok(true)
 }
 
 /// Background thread: waits for dirty state, honors the debounce deadline
-/// (re-waiting if a newer write pushed it forward), then flushes a snapshot
-/// with the lock released during disk I/O.
+/// (re-waiting if a newer write pushed it forward), then flushes.
 fn flush_loop() {
     let store = store();
     let cvar = &store.1;
@@ -204,32 +209,19 @@ fn flush_loop() {
                 _ => break,
             }
         }
-        let (snapshot, keys) = guard.take_flush_batch();
         drop(guard);
-        match persist(&store.0, &settings_file_path(), &snapshot) {
-            Ok(true) => log_flushed_keys(&keys),
-            Ok(false) => {}
-            Err(e) => log::warn!("settings flush failed: {}", e),
+        if let Err(e) = flush_to(store, &settings_file_path()) {
+            log::warn!("settings flush failed: {}", e);
         }
     }
 }
 
 /// Synchronously write pending changes to disk. Call on app exit so the
 /// debounce window can't drop the last writes or strand jan CLI with a stale
-/// file. No-op when nothing is dirty.
-pub fn flush_settings() {
-    let store = store();
-    let mut guard = lock(store);
-    if !guard.dirty {
-        return;
-    }
-    let (snapshot, keys) = guard.take_flush_batch();
-    drop(guard);
-    match persist(&store.0, &settings_file_path(), &snapshot) {
-        Ok(true) => log_flushed_keys(&keys),
-        Ok(false) => {}
-        Err(e) => log::warn!("settings exit flush failed: {}", e),
-    }
+/// file. No-op when nothing is dirty. A failed write stays pending and is
+/// retried by the background flush.
+pub fn flush_settings() -> Result<(), String> {
+    flush_to(store(), &settings_file_path()).map(|_| ())
 }
 
 /// Forget the in-memory settings and stop persisting them for the rest of
@@ -269,6 +261,14 @@ pub fn settings_remove(key: String) -> Result<(), String> {
         store.1.notify_one();
     }
     Ok(())
+}
+
+/// Write pending settings to disk now instead of after the debounce, for a
+/// caller that must not lose a write to a crash (the Cowork deletion journal,
+/// recorded before the thread folder is deleted).
+#[tauri::command]
+pub fn settings_flush() -> Result<(), String> {
+    flush_settings()
 }
 
 #[cfg(test)]
@@ -346,21 +346,50 @@ mod tests {
     }
 
     #[test]
-    fn persist_skips_the_write_once_discarded() {
+    fn flush_writes_pending_changes_once_and_never_after_a_discard() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
-        let mut map = BTreeMap::new();
-        map.insert("theme".to_string(), "\"dark\"".to_string());
-        let state = Mutex::new(new_map());
+        let store: Store = (Mutex::new(new_map()), Condvar::new());
+        {
+            let mut m = store.0.lock().unwrap();
+            m.set("theme".into(), "\"dark\"".into());
+            m.mark_dirty();
+        }
 
-        assert_eq!(persist(&state, &path, &map), Ok(true));
-        assert!(path.is_file());
+        assert_eq!(flush_to(&store, &path), Ok(true));
+        assert_eq!(read_map(&path).get("theme"), Some(&"\"dark\"".to_string()));
+        // Nothing changed since: no second write.
+        assert_eq!(flush_to(&store, &path), Ok(false));
 
-        // A flush that snapshotted before the reset must not recreate the file.
+        // After a factory reset deleted the file, a pending flush must not
+        // recreate it.
         fs::remove_file(&path).unwrap();
-        state.lock().unwrap().discard();
-        assert_eq!(persist(&state, &path, &map), Ok(false));
+        {
+            let mut m = store.0.lock().unwrap();
+            m.set("theme".into(), "\"light\"".into());
+            m.mark_dirty();
+            m.discard();
+        }
+        assert_eq!(flush_to(&store, &path), Ok(false));
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_failed_flush_keeps_the_changes_pending() {
+        let dir = tempfile::tempdir().unwrap();
+        // A directory where the file should be: the rename fails.
+        let path = dir.path().join("settings.json");
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("keep"), "").unwrap();
+        let store: Store = (Mutex::new(new_map()), Condvar::new());
+        {
+            let mut m = store.0.lock().unwrap();
+            m.set("a".into(), "1".into());
+            m.mark_dirty();
+        }
+        assert!(flush_to(&store, &path).is_err());
+        let m = store.0.lock().unwrap();
+        assert!(m.dirty && m.flush_at.is_some(), "retried by the background flush");
     }
 
     #[test]
