@@ -96,9 +96,11 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 const closeWindow = vi.hoisted(() => ({
   callback: null as null | ((event: { preventDefault: () => void }) => Promise<void>),
+  destroy: vi.fn(async () => {}),
 }))
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({
+    destroy: closeWindow.destroy,
     onCloseRequested: vi.fn(async (callback) => {
       closeWindow.callback = callback
       return () => {}
@@ -117,6 +119,7 @@ import {
   flushCoworkStartupWarnings,
   isCoworkMigrationDone,
   COWORK_MIGRATION_BUDGET_MS,
+  COWORK_CLOSE_FAILURES_BEFORE_FORCE,
   __resetCoworkSyncForTests,
 } from '../coworkSync'
 import {
@@ -157,6 +160,8 @@ describe('coworkSync', () => {
     sonner.dismiss.mockClear()
     platform.tauri = true
     closeWindow.callback = null
+    closeWindow.destroy.mockClear()
+    sonner.error.mockClear()
     messageStore.create = async (message) => message
     __resetMessageWritesForTests()
     __resetCoworkSyncForTests()
@@ -529,6 +534,52 @@ describe('coworkSync', () => {
       await closeWindow.callback!(retry)
       expect(retry.preventDefault).not.toHaveBeenCalled()
       expect(written).toEqual(['chat-1', 'chat-2'])
+    })
+
+    it('offers an explicit close-without-saving after repeated failed closes, never silently', async () => {
+      await startCoworkSync()
+      messageStore.create = async () => {
+        throw new Error('disk full')
+      }
+      useMessages.getState().addMessage({ id: 'chat-x', thread_id: 't-stuck' } as any)
+      const errorOptions = () => sonner.error.mock.calls.map((call) => call[1])
+      for (let attempt = 1; attempt <= COWORK_CLOSE_FAILURES_BEFORE_FORCE; attempt += 1) {
+        const event = closeEvent()
+        await closeWindow.callback!(event)
+        expect(event.preventDefault).toHaveBeenCalled()
+        expect(sonner.error).toHaveBeenLastCalledWith(
+          'common:coworkSync.closeFailedTitle',
+          expect.objectContaining({ id: 'cowork-close-failed' })
+        )
+        const action = errorOptions().at(-1)?.action
+        if (attempt < COWORK_CLOSE_FAILURES_BEFORE_FORCE) expect(action).toBeUndefined()
+        else expect(action).toEqual(expect.objectContaining({ label: 'common:coworkSync.closeAnyway' }))
+      }
+      expect(closeWindow.destroy).not.toHaveBeenCalled()
+      errorOptions().at(-1).action.onClick()
+      expect(closeWindow.destroy).toHaveBeenCalledTimes(1)
+    })
+
+    it('a successful close attempt resets the failure count and dismisses the close toast', async () => {
+      await startCoworkSync()
+      let failing = true
+      messageStore.create = async (message) => {
+        if (failing) throw new Error('disk full')
+        return message
+      }
+      useMessages.getState().addMessage({ id: 'chat-y', thread_id: 't-stuck' } as any)
+      for (let attempt = 1; attempt < COWORK_CLOSE_FAILURES_BEFORE_FORCE; attempt += 1) {
+        await closeWindow.callback!(closeEvent())
+      }
+      failing = false
+      const ok = closeEvent()
+      await closeWindow.callback!(ok)
+      expect(ok.preventDefault).not.toHaveBeenCalled()
+      expect(sonner.dismiss).toHaveBeenCalledWith('cowork-close-failed')
+      failing = true
+      useMessages.getState().addMessage({ id: 'chat-z', thread_id: 't-stuck' } as any)
+      await closeWindow.callback!(closeEvent())
+      expect(sonner.error.mock.calls.at(-1)?.[1].action).toBeUndefined()
     })
 
     it('a failing derived messages mirror never traps the window open', async () => {

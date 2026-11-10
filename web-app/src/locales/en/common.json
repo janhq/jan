@@ -805,7 +805,16 @@
     "missingThreadTitle": "A Cowork conversation could not be saved",
     "missingThreadDescription": "Its stored thread is missing, so changes are no longer saved. You can still read, export or delete it.",
     "writeRefusedTitle": "A Cowork conversation cannot be saved",
-    "writeRefusedDescription": "Jan cannot store this conversation under its current id, so changes are not saved. You can still read, export or delete it."
+    "writeRefusedDescription": "Jan cannot store this conversation under its current id, so changes are not saved. You can still read, export or delete it.",
+    "closeFailedTitle": "Jan could not save everything, so it stayed open",
+    "closeFailedDescription": "Your latest changes are still in memory. Close the window again to retry saving.",
+    "closeForceDescription": "Saving keeps failing. You can close without saving, which loses the changes that could not be written.",
+    "closeAnyway": "Close without saving"
+  },
+  "messageWrites": {
+    "failedTitle": "Some messages could not be saved",
+    "failedDescription": "Jan keeps retrying. Until it succeeds, recent messages exist only in this window.",
+    "retry": "Retry now"
   },
   "threadRoute": {
     "notReadyTitle": "This conversation isn't ready yet",

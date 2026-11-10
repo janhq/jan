@@ -538,7 +538,16 @@
     "missingThreadTitle": "Cowork会話を保存できませんでした",
     "missingThreadDescription": "保存されているスレッドが見つからないため、変更は保存されなくなりました。読み取り、エクスポート、削除は引き続き可能です。",
     "writeRefusedTitle": "Cowork会話を保存できません",
-    "writeRefusedDescription": "Janはこの会話を現在のIDで保存できないため、変更は保存されません。読み取り、エクスポート、削除は引き続き可能です。"
+    "writeRefusedDescription": "Janはこの会話を現在のIDで保存できないため、変更は保存されません。読み取り、エクスポート、削除は引き続き可能です。",
+    "closeFailedTitle": "Janはすべてを保存できなかったため、開いたままです",
+    "closeFailedDescription": "最新の変更はまだメモリ上にあります。もう一度ウィンドウを閉じると、保存を再試行します。",
+    "closeForceDescription": "保存が失敗し続けています。保存せずに閉じることもできますが、書き込めなかった変更は失われます。",
+    "closeAnyway": "保存せずに閉じる"
+  },
+  "messageWrites": {
+    "failedTitle": "保存できなかったメッセージがあります",
+    "failedDescription": "Janは再試行を続けます。成功するまで、最近のメッセージはこのウィンドウ内にのみ存在します。",
+    "retry": "今すぐ再試行"
   },
   "threadRoute": {
     "notReadyTitle": "この会話はまだ準備できていません",

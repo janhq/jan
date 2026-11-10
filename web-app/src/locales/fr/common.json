@@ -424,7 +424,16 @@
     "missingThreadTitle": "Une conversation Cowork n'a pas pu être enregistrée",
     "missingThreadDescription": "Son fil enregistré est introuvable, les modifications ne sont donc plus enregistrées. Vous pouvez toujours le lire, l'exporter ou le supprimer.",
     "writeRefusedTitle": "Une conversation Cowork ne peut pas être enregistrée",
-    "writeRefusedDescription": "Jan ne peut pas enregistrer cette conversation sous son identifiant actuel, les modifications ne sont donc pas enregistrées. Vous pouvez toujours la lire, l'exporter ou la supprimer."
+    "writeRefusedDescription": "Jan ne peut pas enregistrer cette conversation sous son identifiant actuel, les modifications ne sont donc pas enregistrées. Vous pouvez toujours la lire, l'exporter ou la supprimer.",
+    "closeFailedTitle": "Jan n'a pas pu tout enregistrer et est resté ouvert",
+    "closeFailedDescription": "Vos dernières modifications sont encore en mémoire. Fermez à nouveau la fenêtre pour réessayer l'enregistrement.",
+    "closeForceDescription": "L'enregistrement échoue toujours. Vous pouvez fermer sans enregistrer, ce qui perd les modifications qui n'ont pas pu être écrites.",
+    "closeAnyway": "Fermer sans enregistrer"
+  },
+  "messageWrites": {
+    "failedTitle": "Certains messages n'ont pas pu être enregistrés",
+    "failedDescription": "Jan continue de réessayer. Tant que cela échoue, les messages récents n'existent que dans cette fenêtre.",
+    "retry": "Réessayer maintenant"
   },
   "threadRoute": {
     "notReadyTitle": "Cette conversation n'est pas encore prête",
