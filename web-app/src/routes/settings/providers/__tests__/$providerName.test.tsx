@@ -356,6 +356,7 @@ beforeEach(() => {
   h.appState.activeModels = []
   h.openaiProvider.api_key = 'sk-primary'
   h.openaiProvider.api_key_fallbacks = ['sk-fallback-1']
+  h.openaiProvider.custom_header = undefined
   h.openaiProvider.active = true
   h.openaiProvider.models = [
     { id: 'gpt-4', model: 'gpt-4', name: 'gpt-4', capabilities: ['completion'], version: '1' },
@@ -581,18 +582,22 @@ describe('ProviderDetail route', () => {
     it('adds and removes key lines in advanced mode', () => {
       renderComponent()
       fireEvent.click(screen.getByText('providers:apiKeys.advanced'))
+      // Password inputs outside the custom header editor are the key rows.
+      const keyInputCount = () =>
+        Array.from(document.querySelectorAll('input[type="password"]')).filter(
+          (i) => !i.closest('[data-testid="custom-headers"]')
+        ).length
       // current rows: primary + 1 fallback = 2 rows
-      const initialPwInputs = document.querySelectorAll('input[type="password"]').length
-      expect(initialPwInputs).toBe(2)
+      expect(keyInputCount()).toBe(2)
       fireEvent.click(screen.getByText(/providers:apiKeys.addKey/))
-      expect(document.querySelectorAll('input[type="password"]').length).toBe(3)
+      expect(keyInputCount()).toBe(3)
       // Removal buttons are "-" for non-first rows
       const removeButtons = Array.from(document.querySelectorAll('button')).filter(
-        (b) => b.textContent === '-'
+        (b) => b.textContent === '-' && !b.closest('[data-testid="custom-headers"]')
       )
       expect(removeButtons.length).toBeGreaterThan(0)
       fireEvent.click(removeButtons[0])
-      expect(document.querySelectorAll('input[type="password"]').length).toBe(2)
+      expect(keyInputCount()).toBe(2)
     })
 
     it('runs handleTestApiKeys and shows OK status', async () => {
@@ -644,6 +649,120 @@ describe('ProviderDetail route', () => {
         expect(screen.getByText(/Invalid \/ revoked key/)).toBeInTheDocument()
       })
       expect(screen.getByText(/Forbidden \(403\)/)).toBeInTheDocument()
+    })
+  })
+
+  describe('Custom request headers', () => {
+    const nameInputs = () =>
+      screen.getAllByPlaceholderText('providers:customHeaders.namePlaceholder')
+    const valueInputs = () =>
+      screen.getAllByPlaceholderText('providers:customHeaders.valuePlaceholder')
+    const removeButtons = () =>
+      screen.getAllByLabelText('providers:customHeaders.removeHeader')
+
+    it('shows one blank row when the provider has no headers', () => {
+      renderComponent()
+      expect(screen.getByText('providers:customHeaders.title')).toBeInTheDocument()
+      expect(nameInputs()).toHaveLength(1)
+      expect(nameInputs()[0]).toHaveValue('')
+      expect(valueInputs()[0]).toHaveValue('')
+    })
+
+    it('lists the stored headers', () => {
+      h.openaiProvider.custom_header = [
+        { header: 'x-portkey-api-key', value: 'pk-1' },
+        { header: 'X-Team', value: 'research' },
+      ]
+      renderComponent()
+      expect(nameInputs().map((i) => (i as HTMLInputElement).value)).toEqual([
+        'x-portkey-api-key',
+        'X-Team',
+      ])
+      expect(valueInputs().map((i) => (i as HTMLInputElement).value)).toEqual([
+        'pk-1',
+        'research',
+      ])
+    })
+
+    it('saves a new header on blur, trimmed', () => {
+      renderComponent()
+      fireEvent.change(nameInputs()[0], { target: { value: ' Proxy-Authorization ' } })
+      fireEvent.change(valueInputs()[0], { target: { value: 'Bearer proxy-token ' } })
+      fireEvent.blur(valueInputs()[0])
+      expect(h.updateProvider).toHaveBeenCalledWith(
+        'openai',
+        expect.objectContaining({
+          custom_header: [
+            { header: 'Proxy-Authorization', value: 'Bearer proxy-token' },
+          ],
+        })
+      )
+    })
+
+    it('does not save on blur when nothing changed', () => {
+      h.openaiProvider.custom_header = [{ header: 'X-A', value: '1' }]
+      renderComponent()
+      fireEvent.blur(nameInputs()[0])
+      fireEvent.blur(valueInputs()[0])
+      expect(h.updateProvider).not.toHaveBeenCalled()
+    })
+
+    it('flags an invalid header name and leaves it out of the saved headers', () => {
+      h.openaiProvider.custom_header = [{ header: 'X-A', value: '1' }]
+      renderComponent()
+      fireEvent.click(screen.getByText(/providers:customHeaders.addHeader/))
+      expect(nameInputs()).toHaveLength(2)
+      fireEvent.change(nameInputs()[1], { target: { value: 'Bad Name' } })
+      fireEvent.change(valueInputs()[1], { target: { value: 'v' } })
+      expect(screen.getByText('providers:customHeaders.invalidName')).toBeInTheDocument()
+      expect(nameInputs()[1]).toHaveAttribute('aria-invalid', 'true')
+      fireEvent.blur(valueInputs()[1])
+      // Stored headers are unchanged (X-A only), so no update is written.
+      expect(h.updateProvider).not.toHaveBeenCalled()
+    })
+
+    it('keeps an in-progress row when a sibling header is saved', () => {
+      h.openaiProvider.custom_header = [{ header: 'X-A', value: '1' }]
+      h.updateProvider.mockImplementation((_name: string, data: any) => {
+        h.openaiProvider.custom_header = data.custom_header
+      })
+      const { rerender } = renderComponent()
+      fireEvent.click(screen.getByText(/providers:customHeaders.addHeader/))
+      fireEvent.change(nameInputs()[1], { target: { value: 'X-B' } })
+      // Save a change to the first row while the second has no value yet.
+      fireEvent.change(valueInputs()[0], { target: { value: '2' } })
+      fireEvent.blur(valueInputs()[0])
+      expect(h.updateProvider).toHaveBeenCalledWith(
+        'openai',
+        expect.objectContaining({
+          custom_header: [
+            { header: 'X-A', value: '2' },
+            { header: 'X-B', value: '' },
+          ],
+        })
+      )
+      const Component = Route.component as React.ComponentType
+      rerender(<Component />)
+      expect(nameInputs()).toHaveLength(2)
+      expect(nameInputs()[1]).toHaveValue('X-B')
+    })
+
+    it('removes a header immediately and keeps one blank row', () => {
+      h.openaiProvider.custom_header = [{ header: 'X-A', value: '1' }]
+      renderComponent()
+      fireEvent.click(removeButtons()[0])
+      expect(h.updateProvider).toHaveBeenCalledWith(
+        'openai',
+        expect.objectContaining({ custom_header: [] })
+      )
+      expect(nameInputs()).toHaveLength(1)
+      expect(nameInputs()[0]).toHaveValue('')
+    })
+
+    it('is not shown for local engines', () => {
+      h.params.providerName = 'llamacpp'
+      renderComponent()
+      expect(screen.queryByText('providers:customHeaders.title')).not.toBeInTheDocument()
     })
   })
 

@@ -104,6 +104,8 @@ If you already have model files on your computer, you can import them directly v
 
 Jan supports connecting to various AI cloud providers. Go to **Settings > Model Providers**, select your provider, and enter your API key.
 
+If your provider sits behind a proxy or API gateway that needs extra headers (for example `Proxy-Authorization` or a gateway's own API key header), add them under **Custom request headers** on the provider's settings page. Jan sends them with every request to that provider, including when it lists models, alongside its own `Authorization` and `Content-Type` headers; a custom header with the same name as one Jan sets replaces Jan's value.
+
 <DocCards cols={2}>
   <DocCard title="OpenAI" href="/docs/desktop/remote-models/openai" icon={<Sparkles size={20} />}>Use GPT-4o, o3, and other OpenAI models.</DocCard>
   <DocCard title="Anthropic" href="/docs/desktop/remote-models/anthropic" icon={<Brain size={20} />}>Use Claude models from Anthropic.</DocCard>

@@ -125,5 +125,14 @@
     "oneKeyHint": "Optional fallback keys are configured in Advanced.",
     "addKey": "Add key",
     "removeKey": "Remove key"
+  },
+  "customHeaders": {
+    "title": "Custom request headers",
+    "description": "Sent with every request to this provider, including model listing. Use them for proxy or gateway authentication and tracking headers. A header with the same name as one Jan sets replaces it.",
+    "namePlaceholder": "Header name",
+    "valuePlaceholder": "Header value",
+    "invalidName": "Header names may only use letters, digits and !#$%&'*+-.^_`|~",
+    "addHeader": "Add header",
+    "removeHeader": "Remove header"
   }
 }

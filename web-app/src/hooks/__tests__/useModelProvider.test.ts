@@ -129,6 +129,74 @@ describe('useModelProvider - displayName functionality', () => {
     expect(provider?.models[0].displayName).toBe('My Custom Model')
   })
 
+  it('should keep the user\'s custom request headers when predefined providers are refreshed', () => {
+    const { result } = renderHook(() => useModelProvider())
+
+    act(() => {
+      useModelProvider.setState({
+        providers: [
+          {
+            provider: 'anthropic',
+            active: true,
+            models: [],
+            settings: [],
+            custom_header: [
+              { header: 'anthropic-version', value: '2023-06-01' },
+              { header: 'x-portkey-api-key', value: 'pk-1' },
+            ],
+          },
+          {
+            provider: 'openai',
+            active: true,
+            models: [],
+            settings: [],
+            custom_header: [],
+          },
+        ] as any,
+        selectedProvider: 'anthropic',
+        selectedModel: null,
+        deletedModels: [],
+      })
+    })
+
+    // The predefined list ships its own defaults (or none at all).
+    act(() => {
+      result.current.setProviders([
+        {
+          provider: 'anthropic',
+          active: true,
+          models: [],
+          settings: [],
+          custom_header: [{ header: 'anthropic-version', value: '2023-06-01' }],
+        },
+        {
+          provider: 'openai',
+          active: true,
+          models: [],
+          settings: [],
+        },
+        {
+          provider: 'groq',
+          active: true,
+          models: [],
+          settings: [],
+          custom_header: [{ header: 'X-Default', value: 'yes' }],
+        },
+      ] as any)
+    })
+
+    expect(result.current.getProviderByName('anthropic')?.custom_header).toEqual([
+      { header: 'anthropic-version', value: '2023-06-01' },
+      { header: 'x-portkey-api-key', value: 'pk-1' },
+    ])
+    // An explicitly emptied list stays empty rather than reverting.
+    expect(result.current.getProviderByName('openai')?.custom_header).toEqual([])
+    // A provider the user never touched takes the shipped headers.
+    expect(result.current.getProviderByName('groq')?.custom_header).toEqual([
+      { header: 'X-Default', value: 'yes' },
+    ])
+  })
+
   it('should preserve user-controlled capabilities but always pick up engine-owned ones (vision/audio/embeddings) on refresh', () => {
     const { result } = renderHook(() => useModelProvider())
 

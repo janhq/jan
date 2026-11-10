@@ -1404,7 +1404,12 @@ export class ModelFactory {
     }
 
     const keyChain = providerRemoteApiKeyChain(provider)
-    if (keyChain.length === 1) {
+    // A custom `Authorization` header is the user's explicit choice (gateways
+    // that take the key elsewhere); only fill it in when they set none.
+    const hasCustomAuthorization = Object.keys(headers).some(
+      (name) => name.toLowerCase() === 'authorization'
+    )
+    if (keyChain.length === 1 && !hasCustomAuthorization) {
       headers['Authorization'] = `Bearer ${keyChain[0]}`
     }
 
