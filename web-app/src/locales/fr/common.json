@@ -508,7 +508,17 @@
   "skillDestinationFolder": "Ce dossier",
   "skillDestinationGlobal": "Global (toutes les conversations)",
   "overview": {
-    "description": "Progression, fichiers et tâches en arrière-plan de cette conversation."
+    "title": "Aperçu de la conversation",
+    "description": "Progression, fichiers et tâches en arrière-plan de cette conversation.",
+    "resize": "Redimensionner le panneau latéral",
+    "close": "Masquer l'aperçu de la conversation",
+    "progress": "Progression",
+    "files": "Fichiers",
+    "backgroundTasks": "Tâches en arrière-plan",
+    "monitorCount_one": "{{count}} moniteur",
+    "monitorCount_other": "{{count}} moniteurs",
+    "noProgress": "Les étapes apparaîtront au fur et à mesure du travail de Jan.",
+    "noFiles": "Les fichiers apparaîtront ici."
   },
   "artifactsLibraryDescription": "Les fichiers créés dans vos conversations, réunis au même endroit.",
   "artifactsLibraryCount_one": "{{count}} fichier",

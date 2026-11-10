@@ -622,7 +622,17 @@
   "skillDestinationFolder": "このフォルダー",
   "skillDestinationGlobal": "グローバル（すべての会話）",
   "overview": {
-    "description": "この会話の進捗、ファイル、バックグラウンドタスク。"
+    "title": "会話の概要",
+    "description": "この会話の進捗、ファイル、バックグラウンドタスク。",
+    "resize": "サイドパネルのサイズを変更",
+    "close": "会話の概要を非表示",
+    "progress": "進捗",
+    "files": "ファイル",
+    "backgroundTasks": "バックグラウンドタスク",
+    "monitorCount_one": "{{count}} 件のモニター",
+    "monitorCount_other": "{{count}} 件のモニター",
+    "noProgress": "Janが作業を進めると、ここに手順が表示されます。",
+    "noFiles": "ファイルはここに表示されます。"
   },
   "artifactsLibraryDescription": "すべての会話で作成されたファイルを一か所にまとめて表示します。",
   "artifactsLibraryCount_one": "{{count}} 件のファイル",
