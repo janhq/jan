@@ -1712,6 +1712,7 @@ fn copy_tree_into_place(
         Err(err) => return Err(e(err)),
     }
 
+    check_free_space(source, threads, tree_size(source), |p| fs4::available_space(p))?;
     fs::create_dir_all(threads).map_err(e)?;
     fs::create_dir(staging).map_err(e)?;
     let mut stats = WorkspaceCopy { copied: true, ..WorkspaceCopy::default() };
@@ -1738,6 +1739,55 @@ fn copy_tree_into_place(
     sync_dir_best_effort(dest);
     sync_dir_best_effort(threads);
     Ok(stats)
+}
+
+/// Room left over after a copy, so a migration never fills the disk the app
+/// and the model downloads still need.
+const COPY_FREE_SPACE_RESERVE: u64 = 256 * 1024 * 1024;
+
+/// Refuse a copy that would not fit. Not permanent: the user can free space and
+/// the next launch retries. When the free space cannot be read the copy goes
+/// ahead, as before this check existed.
+fn check_free_space(
+    source: &Path,
+    threads: &Path,
+    needed: u64,
+    available: impl Fn(&Path) -> std::io::Result<u64>,
+) -> Result<(), String> {
+    // `threads` may not exist yet: ask about the nearest directory that does.
+    let Some(existing) = threads.ancestors().find(|p| p.is_dir()) else {
+        return Ok(());
+    };
+    let Ok(free) = available(existing) else {
+        return Ok(());
+    };
+    if needed.saturating_add(COPY_FREE_SPACE_RESERVE) > free {
+        const MB: u64 = 1024 * 1024;
+        return Err(format!(
+            "not enough free disk space to copy {} ({} MB needed plus {} MB kept free, {} MB available)",
+            source.display(),
+            needed.div_ceil(MB),
+            COPY_FREE_SPACE_RESERVE / MB,
+            free / MB
+        ));
+    }
+    Ok(())
+}
+
+/// Bytes of the regular files `copy_dir_contents` would copy. Symlinks are not
+/// followed and unreadable entries count as nothing, as in the copy.
+fn tree_size(dir: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| match std::fs::symlink_metadata(entry.path()) {
+            Ok(meta) if meta.is_dir() => tree_size(&entry.path()),
+            Ok(meta) if meta.is_file() => meta.len(),
+            _ => 0,
+        })
+        .sum()
 }
 
 /// Copy `from`'s entries into the existing directory `to`: directories and
@@ -3513,6 +3563,41 @@ mod tests {
         let dst = thread_workspace(&data, "cw-perm").unwrap();
         assert!(dst.join("notes.md").is_file());
         assert!(dst.join("src/deep/a.rs").is_file());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// A copy that would leave less than the reserve free is refused before
+    /// anything is written, and the error is retryable (no PERMANENT prefix).
+    #[test]
+    fn a_copy_that_does_not_fit_is_refused_and_retryable() {
+        let data = unique_data_folder();
+        let src = seed_session(&data, "cw-full");
+        let needed = tree_size(&src);
+        assert!(needed > 0);
+        let threads = threads_dir(&data);
+        let fits = |_: &Path| Ok(needed + COPY_FREE_SPACE_RESERVE);
+        assert!(check_free_space(&src, &threads, needed, fits).is_ok());
+        let short = |_: &Path| Ok(needed + COPY_FREE_SPACE_RESERVE - 1);
+        let err = check_free_space(&src, &threads, needed, short).unwrap_err();
+        assert!(err.contains("not enough free disk space"), "{err}");
+        assert!(!err.starts_with(PERMANENT_PREFIX), "{err}");
+        // Unknown free space never blocks the copy.
+        let unknown = |_: &Path| Err(std::io::Error::other("statvfs"));
+        assert!(check_free_space(&src, &threads, u64::MAX, unknown).is_ok());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// The size counts regular files only; a symlink is never followed.
+    #[cfg(unix)]
+    #[test]
+    fn tree_size_does_not_follow_symlinks() {
+        let data = unique_data_folder();
+        let src = seed_session(&data, "cw-size");
+        let before = tree_size(&src);
+        let big = data.join("big");
+        std::fs::write(&big, vec![0u8; 4096]).unwrap();
+        std::os::unix::fs::symlink(&big, src.join("link")).unwrap();
+        assert_eq!(tree_size(&src), before);
         let _ = std::fs::remove_dir_all(&data);
     }
 
