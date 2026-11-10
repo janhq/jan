@@ -1,8 +1,8 @@
 /**
  * Consumption regressions for the /threads/$threadId beforeLoad guard
  * (integrated persistence review R2/R3). These exercise the REAL Route
- * options with the REAL zustand stores — only the component tree around the
- * route is mocked — so they fail if the route stops consuming
+ * options with the REAL zustand stores - only the component tree around the
+ * route is mocked - so they fail if the route stops consuming
  * shouldRedirectThreadToCowork.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -193,7 +193,7 @@ describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
     // The cowork commit (or a hydration) finishes while the deferred backend
     // lookup is in flight: the fetch was issued before the write completed, so
     // the backend snapshot resolves EMPTY. The post-await decision must re-read
-    // the store — code that only consults `fetched.find(...)` classifies the
+    // the store - code that only consults `fetched.find(...)` classifies the
     // just-committed cowork thread as an ordinary chat and mounts a writable
     // chat view over it.
     fetchThreadsMock.mockImplementation(async () => {
@@ -209,7 +209,7 @@ describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
       replace: true,
     })
     expect(fetchThreadsMock).toHaveBeenCalledTimes(1)
-    // beforeLoad itself still never writes the fetched list back globally —
+    // beforeLoad itself still never writes the fetched list back globally -
     // only the externally-landed record is present.
     expect(Object.keys(useThreads.getState().threads)).toEqual(['cw-racing'])
   })
@@ -292,7 +292,7 @@ describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
 
   it('an id unknown to a HEALTHY (non-empty) backend keeps the existing unknown-thread behavior', async () => {
     // fetchThreads resolves the non-empty default list without the id: not
-    // found anywhere → no redirect, same as the pre-existing unknown-id path.
+    // found anywhere -> no redirect, same as the pre-existing unknown-id path.
     expect(await runBeforeLoad('nowhere-id')).toBeNull()
     expect(fetchThreadsMock).toHaveBeenCalledTimes(1)
   })
@@ -323,7 +323,7 @@ describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
     expect(fetchThreadsMock).toHaveBeenCalledTimes(2)
   })
 
-  it('an all-empty window fails closed with the typed error — no writable chat, no silent unknown', async () => {
+  it('an all-empty window fails closed with the typed error - no writable chat, no silent unknown', async () => {
     fetchThreadsMock.mockImplementation(() => Promise.resolve([]))
     vi.useFakeTimers()
     try {

@@ -114,7 +114,7 @@ describe('ComposerModelPicker', () => {
   it('hides effort overrides before narrowing the model label', () => {
     setup({ id: 'gpt-5.2', settings: { thinking_budget_tokens: { key: 'thinking_budget_tokens', title: '', description: '', controller_type: 'dropdown', controller_props: { value: 'high' } } } })
     render(<ComposerModelPicker />)
-    expect(screen.getByText('· High').className).toContain('@max-[520px]/composer:hidden')
+    expect(screen.getByText('\u00b7 High').className).toContain('@max-[520px]/composer:hidden')
   })
   it('shows selected summary and excludes embedding models', () => {
     renderPicker(<ComposerModelPicker />)
@@ -208,7 +208,7 @@ describe('ComposerModelPicker', () => {
   it('clears the setting for Default and displays an active override beside the name', () => {
     setup({ id: 'gpt-5.2', settings: { thinking_budget_tokens: { key: 'thinking_budget_tokens', title: '', description: '', controller_type: 'dropdown', controller_props: { value: 'high' } } } })
     renderPicker(<ComposerModelPicker />)
-    expect(screen.getByTestId('model-selector-trigger').textContent).toContain('· High')
+    expect(screen.getByTestId('model-selector-trigger').textContent).toContain('\u00b7 High')
     choose('Reasoning effort', '')
     expect(mocks.update.mock.calls[0][1].models[0].settings.thinking_budget_tokens).toBeUndefined()
   })
@@ -220,7 +220,7 @@ describe('ComposerModelPicker', () => {
     } }, 'llamacpp')
     renderPicker(<ComposerModelPicker />)
     expect(screen.getByRole('menuitem', { name: 'Reasoning mode' }).textContent).toContain('Off')
-    expect(screen.getByTestId('model-selector-trigger').textContent).toContain('· Off')
+    expect(screen.getByTestId('model-selector-trigger').textContent).toContain('\u00b7 Off')
     choose('Reasoning mode', value ? value[0].toUpperCase() + value.slice(1) : '')
     const settings = mocks.update.mock.calls[0][1].models[0].settings
     expect(settings.reasoning?.controller_props.value).toBe(value || undefined)

@@ -1016,7 +1016,7 @@ describe('loadCoworkSessions', () => {
       )
       const r = await loadCoworkSessions(b.invoke, { migrationSettled: false })
       // Deletion intent is unreadable, so the blob must not be merged (fail
-      // closed against resurrection) — but committed threads still load.
+      // closed against resurrection) - but committed threads still load.
       expect(r.sessions.map((s) => s.id)).toEqual(['committed'])
       expect(r.legacyIds.size).toBe(0)
       // The unreadable journal itself is never replaced or rewritten by a load.

@@ -2454,7 +2454,7 @@ const ChatInput = memo(function ChatInput({
                               )}
                               <span>
                                 {ingestingDocs
-                                  ? 'Indexing documents…'
+                                  ? 'Indexing documents...'
                                   : 'Add documents or files'}
                               </span>
                             </DropdownMenuItem>
@@ -2845,7 +2845,7 @@ const ChatInput = memo(function ChatInput({
                           data-testid="stop-message-button"
                           className="shrink-0 rounded-full mr-1"
                           onClick={() => {
-                            // Stopping with messages queued clears the queue —
+                            // Stopping with messages queued clears the queue -
                             // there is nothing to interrupt yet. The old
                             // `if (!currentThreadId) return` guard made this button
                             // inert for any surface without a thread id.
