@@ -684,7 +684,17 @@
   "skillDestinationFolder": "此文件夹",
   "skillDestinationGlobal": "全局（所有对话）",
   "overview": {
-    "description": "此对话的进度、文件和后台任务。"
+    "title": "对话概览",
+    "description": "此对话的进度、文件和后台任务。",
+    "resize": "调整侧边面板大小",
+    "close": "隐藏对话概览",
+    "progress": "进度",
+    "files": "文件",
+    "backgroundTasks": "后台任务",
+    "monitorCount_one": "{{count}} 个监视器",
+    "monitorCount_other": "{{count}} 个监视器",
+    "noProgress": "Jan 工作时，步骤会显示在这里。",
+    "noFiles": "文件会显示在这里。"
   },
   "artifactsLibraryDescription": "你在所有对话中创建的文件，集中在一处。",
   "artifactsLibraryCount_one": "{{count}} 个文件",

@@ -505,7 +505,17 @@
   "skillDestinationFolder": "Diesem Ordner",
   "skillDestinationGlobal": "Global (jede Unterhaltung)",
   "overview": {
-    "description": "Fortschritt, Dateien und Hintergrundaufgaben dieser Unterhaltung."
+    "title": "Übersicht der Unterhaltung",
+    "description": "Fortschritt, Dateien und Hintergrundaufgaben dieser Unterhaltung.",
+    "resize": "Seitenleiste in der Größe ändern",
+    "close": "Übersicht der Unterhaltung ausblenden",
+    "progress": "Fortschritt",
+    "files": "Dateien",
+    "backgroundTasks": "Hintergrundaufgaben",
+    "monitorCount_one": "{{count}} Monitor",
+    "monitorCount_other": "{{count}} Monitore",
+    "noProgress": "Schritte erscheinen, sobald Jan arbeitet.",
+    "noFiles": "Dateien erscheinen hier."
   },
   "artifactsLibraryDescription": "Dateien aus all deinen Unterhaltungen an einem Ort.",
   "artifactsLibraryCount_one": "{{count}} Datei",
