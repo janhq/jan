@@ -69,6 +69,14 @@ const pendingDeletes = new Set<Promise<void>>()
 let deleteFailure: unknown = null
 let pendingStartupWarning: (() => void) | null = null
 let closeListenersInstalled = false
+let closeFailures = 0
+const CLOSE_FAILED_TOAST_ID = 'cowork-close-failed'
+
+/**
+ * Consecutive failed close attempts (a storage error or the 10 s deadline)
+ * after which the failure toast offers to close without saving.
+ */
+export const COWORK_CLOSE_FAILURES_BEFORE_FORCE = 3
 
 /**
  * Re-raise startup warnings once a sonner `<Toaster>` is mounted. Sonner drops
@@ -452,7 +460,8 @@ async function installCloseHandlers() {
   })
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
-    await getCurrentWindow().onCloseRequested(async (event) => {
+    const appWindow = getCurrentWindow()
+    await appWindow.onCloseRequested(async (event) => {
       // Awaiting here holds the close until every queued and in-flight write
       // has settled. On failure keep the window (and the unsaved state) alive;
       // another close request retries storage rather than losing the run.
@@ -469,11 +478,38 @@ async function installCloseHandlers() {
             if (failed?.status === 'rejected') throw failed.reason
           })()
         )
+        closeFailures = 0
+        toast.dismiss(CLOSE_FAILED_TOAST_ID)
       } catch (e) {
         event.preventDefault()
         resumeCoworkAfterPreventedClose()
         resumeChatsAfterPreventedClose()
         console.warn('[cowork] flush on close failed:', e)
+        closeFailures += 1
+        // Keeping the window is the default (data loss is worse than a stuck
+        // window), but the user must always see why it did not close, and after
+        // repeated failures get an explicit way out that names the cost.
+        const canForce = closeFailures >= COWORK_CLOSE_FAILURES_BEFORE_FORCE
+        toast.error(i18n.t('common:coworkSync.closeFailedTitle'), {
+          id: CLOSE_FAILED_TOAST_ID,
+          duration: Infinity,
+          description: i18n.t(
+            canForce
+              ? 'common:coworkSync.closeForceDescription'
+              : 'common:coworkSync.closeFailedDescription'
+          ),
+          action: canForce
+            ? {
+                label: i18n.t('common:coworkSync.closeAnyway'),
+                // destroy() skips the close-requested event that would block it.
+                onClick: () => {
+                  void appWindow.destroy().catch((error) => {
+                    console.warn('[cowork] could not close the window:', error)
+                  })
+                },
+              }
+            : undefined,
+        })
       }
     })
   } catch (e) {
@@ -493,4 +529,5 @@ export function __resetCoworkSyncForTests() {
   deleteFailure = null
   pendingStartupWarning = null
   closeListenersInstalled = false
+  closeFailures = 0
 }

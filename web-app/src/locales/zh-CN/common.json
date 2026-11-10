@@ -600,7 +600,16 @@
     "missingThreadTitle": "无法保存 Cowork 对话",
     "missingThreadDescription": "其存储的会话线程已丢失，因此不再保存更改。您仍可阅读、导出或删除它。",
     "writeRefusedTitle": "无法保存 Cowork 对话",
-    "writeRefusedDescription": "Jan 无法以当前 ID 存储此对话，因此不会保存更改。您仍可阅读、导出或删除它。"
+    "writeRefusedDescription": "Jan 无法以当前 ID 存储此对话，因此不会保存更改。您仍可阅读、导出或删除它。",
+    "closeFailedTitle": "Jan 未能保存全部内容，因此保持打开",
+    "closeFailedDescription": "您最近的更改仍在内存中。再次关闭窗口即可重试保存。",
+    "closeForceDescription": "保存持续失败。您可以不保存直接关闭，但无法写入的更改将会丢失。",
+    "closeAnyway": "不保存并关闭"
+  },
+  "messageWrites": {
+    "failedTitle": "部分消息未能保存",
+    "failedDescription": "Jan 会继续重试。在成功之前，最近的消息只存在于此窗口中。",
+    "retry": "立即重试"
   },
   "threadRoute": {
     "notReadyTitle": "此对话尚未就绪",

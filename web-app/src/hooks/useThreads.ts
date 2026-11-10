@@ -10,6 +10,7 @@ import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
 import { cleanupThreadWorkspace } from '@/lib/agentTools'
 import { isCoworkThread } from '@/lib/threadMode'
+import { forgetMessageWrites } from '@/hooks/useMessages'
 import {
   deleteCoworkConversation,
   hasCoworkSession,
@@ -124,6 +125,7 @@ export const isDeletedByDeleteAll = (thread: Thread): boolean =>
  * service.
  */
 const deleteThreadEverywhere = (threadId: string, thread: Thread | undefined) => {
+  forgetMessageWrites(threadId)
   if (isCoworkThread(thread) && hasCoworkSession(threadId)) {
     deleteCoworkConversation(threadId)
     return
