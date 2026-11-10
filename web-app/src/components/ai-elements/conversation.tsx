@@ -49,7 +49,7 @@ export const Conversation = memo(
 
 Conversation.displayName = 'Conversation'
 
-export type ConversationContentProps = ComponentProps<typeof StickToBottom.Content> & {
+type ConversationContentProps = ComponentProps<typeof StickToBottom.Content> & {
   column?: boolean
 }
 

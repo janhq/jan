@@ -16,7 +16,7 @@ import type { Attachment } from '@/types/attachment'
 
 export const COWORK_HANDOFF_PREFIX = 'cowork-initial-message:'
 
-export type CoworkHandoff = {
+type CoworkHandoff = {
   text: string
   draft?: string
   files?: Array<{ type: 'file'; mediaType: string; url: string }>

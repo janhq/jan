@@ -50,7 +50,7 @@ import {
 export const COWORK_CURRENT_ID_KEY = 'cowork_current_id'
 
 /** The metadata keys Cowork owns or reads; any other key must round-trip. */
-export type ThreadMetadata = {
+type ThreadMetadata = {
   mode?: string
   folder?: string | null
   folderAccess?: string
@@ -208,7 +208,7 @@ function isConsumableSidecar(side: Partial<CoworkSidecar>): boolean {
 /** Control flow only: the legacy blob does not need to be read. */
 class SkipBlob extends Error {}
 
-export type LoadedCoworkSessions = {
+type LoadedCoworkSessions = {
   sessions: CoworkSession[]
   currentId: string | null
   /** Sessions sourced from the legacy `code-sessions` blob, not yet threads. */
@@ -395,7 +395,7 @@ const LIVE_METADATA_KEYS = [
   'titleSetManually',
 ] as const
 
-export function isPermanentError(error: unknown): boolean {
+function isPermanentError(error: unknown): boolean {
   return toMessage(error).trimStart().startsWith(PERMANENT_ERROR_PREFIX)
 }
 

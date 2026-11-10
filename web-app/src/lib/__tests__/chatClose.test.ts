@@ -6,7 +6,6 @@ import {
   observeChatWork,
   quiesceChats,
   forgetChat,
-  isChatClosing,
   __resetChatCloseForTests,
   resumeChatsAfterPreventedClose,
   withChatCloseDeadline,
@@ -110,11 +109,13 @@ describe('ordinary Chat close barrier using installed SDK', () => {
   it('refuses new operations while closing and accepts them again after a prevented close', async () => {
     const stream = streamChat()
     await quiesceChats()
-    expect(isChatClosing()).toBe(true)
     await stream.chat.sendMessage({ text: 'ignored' }) // guarded: no-op
     expect(stream.chat.messages).toHaveLength(0)
     resumeChatsAfterPreventedClose()
-    expect(isChatClosing()).toBe(false)
+    void stream.chat.sendMessage({ text: 'accepted' })
+    await stream.started.promise
+    expect(stream.chat.messages).toHaveLength(1)
+    stream.chat.stop()
   })
 
   it('a forgotten chat no longer participates', async () => {

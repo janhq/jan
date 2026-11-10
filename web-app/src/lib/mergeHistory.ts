@@ -11,7 +11,7 @@ import type { CoworkSession } from '@/hooks/useCoworkSessions'
  * (an unavailable session, which history is the only way to reach and delete).
  */
 
-export type HistoryRow =
+type HistoryRow =
   | { kind: 'thread'; id: string; updated: number; thread: Thread }
   | { kind: 'session'; id: string; updated: number; session: CoworkSession }
 

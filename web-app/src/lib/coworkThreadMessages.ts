@@ -26,7 +26,7 @@ import { SYSTEM_NOTICE_KEY, isPingOnly } from '@/lib/coworkPing'
  * reloads a call as an error only when its error text is non-empty, so an
  * empty one would come back as a call that never finished.
  */
-export const EMPTY_TOOL_ERROR = 'The tool failed without reporting an error.'
+const EMPTY_TOOL_ERROR = 'The tool failed without reporting an error.'
 
 type Part = {
   type?: unknown
@@ -188,7 +188,7 @@ function convertMessage(
   return { content, toolErrors }
 }
 
-export type ThreadMessagesOptions = {
+type ThreadMessagesOptions = {
   /**
    * Anchor for `created_at`, in ms: message `i` is stamped `anchorMs + i`.
    * Without it the stamps end at `session.updated`, which is right for a

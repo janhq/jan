@@ -16,7 +16,7 @@ import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 
-export interface ComposerModelPickerProps {
+interface ComposerModelPickerProps {
   model?: ThreadModel
   useLastUsedModel?: boolean
   onModelChange?: (model: ThreadModel) => void
@@ -24,7 +24,7 @@ export interface ComposerModelPickerProps {
   disabled?: boolean
 }
 
-export interface ComposerEffortChoice {
+interface ComposerEffortChoice {
   value: string
   /** English fallback; the picker renders the translated label for `value`. */
   label: string
