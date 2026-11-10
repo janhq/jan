@@ -91,7 +91,23 @@ export type Invoke = <T = unknown>(
  * so the migration stays a pure sequence of backend calls; the startup entry
  * point wires it to the agent-tools plugin.
  */
-type CopyWorkspace = (id: string) => Promise<{ copied: boolean }>
+type CopyWorkspace = (
+  id: string
+) => Promise<{ copied: boolean; skipped?: number; unreadable?: number }>
+
+/**
+ * What a sandbox copy left behind in `sessions/<id>`: symlinks and special
+ * files (never recreated) and entries it was not allowed to read. Recorded on
+ * the thread so the conversation can say so; the originals stay in place.
+ */
+export type CopyLeftOut = { skipped: number; unreadable: number }
+
+/**
+ * `settings.json` is copied once to `settings.<label>.json` before the first
+ * migration writes anything: it holds the only copy of the old sessions, and
+ * the file is rewritten whole on every settings change.
+ */
+export const COWORK_SETTINGS_BACKUP_LABEL = 'pre-cowork-migration'
 
 type MigrationDeps = { copyWorkspace?: CopyWorkspace }
 
@@ -286,7 +302,7 @@ export function sessionToSidecar(s: CoworkSession): CoworkSidecar {
   }
 }
 
-export function sessionToThread(s: CoworkSession) {
+export function sessionToThread(s: CoworkSession, leftOut?: CopyLeftOut) {
   // Cowork stores `updated` in ms, threads in seconds. Sessions carry no
   // creation time, so `created` is the last update.
   const seconds = s.updated > 1e12 ? Math.floor(s.updated / 1000) : s.updated
@@ -311,7 +327,11 @@ export function sessionToThread(s: CoworkSession) {
       folder: s.folder ?? null,
       ...(s.planMode !== undefined && { planMode: s.planMode }),
       ...(s.goal !== undefined && { goal: s.goal }),
-      migratedFrom: { store: CODE_SESSIONS_KEY, updated: s.updated },
+      migratedFrom: {
+        store: CODE_SESSIONS_KEY,
+        updated: s.updated,
+        ...(leftOut && { leftOut }),
+      },
     },
   }
 }
@@ -381,6 +401,11 @@ export async function migrateCoworkSessionsToThreads(
       await markDone()
       return { ...result, status: 'nothing-to-migrate' }
     }
+
+    // Before the first write: a backup of the file holding the old sessions.
+    // It is written once and never replaced. A failure stops this run (outer
+    // catch -> partial, no attempt counted) rather than migrate without it.
+    await invoke('settings_backup_once', { label: COWORK_SETTINGS_BACKUP_LABEL })
 
     // thread.json is the commit marker, so "already migrated" is decided from
     // the committed threads, never from a directory that may hold a lone sidecar.
@@ -473,11 +498,15 @@ export async function migrateCoworkSessionsToThreads(
         // commit so an interrupted run redoes it. It is a copy done in Rust:
         // sessions/<id> is intentionally left behind as the rollback source,
         // and the two scopes never share a directory.
-        await deps.copyWorkspace?.(session.id)
+        const copy = await deps.copyWorkspace?.(session.id)
+        const skipped = copy?.skipped ?? 0
+        const unreadable = copy?.unreadable ?? 0
+        const leftOut =
+          skipped > 0 || unreadable > 0 ? { skipped, unreadable } : undefined
 
         // Commit: thread.json last.
         const created = await invoke<StoredThread>('create_thread', {
-          thread: sessionToThread(session),
+          thread: sessionToThread(session, leftOut),
         })
         if (created?.id !== session.id) {
           throw new PermanentMigrationError(

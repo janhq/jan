@@ -23,6 +23,7 @@ import {
   type ToolImage,
   type ToolSchema,
   type WorkspaceScope,
+  type WorkspaceCopy,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
 
@@ -526,9 +527,9 @@ export async function cleanupThreadWorkspace(threadId: string): Promise<void> {
  */
 export async function copySessionWorkspaceToThread(
   sessionId: string
-): Promise<{ copied: boolean }> {
+): Promise<WorkspaceCopy> {
   const dataFolder = await getServiceHub().app().getJanDataFolder()
-  if (!dataFolder) return { copied: false }
+  if (!dataFolder) return { copied: false, files: 0, skipped: 0 }
   return await sessionWorkspaceCopyToThread(dataFolder, sessionId)
 }
 

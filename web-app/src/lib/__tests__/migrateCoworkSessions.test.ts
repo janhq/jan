@@ -19,6 +19,7 @@ type Json = Record<string, unknown>
 type Args = Record<string, unknown>
 
 type BackendOptions = {
+  failBackup?: boolean
   failCreateFor?: string
   failWriteFor?: string
   // Fails the first create_thread only, like a crash before the commit.
@@ -34,6 +35,7 @@ function makeBackend(opts: BackendOptions = {}) {
   const logs = new Map<string, string>()
   let crashPending = opts.crashFirstCreate ?? false
   const calls: string[] = []
+  const backups = new Map<string, Map<string, string>>()
   const invoke: Invoke = async <T = unknown>(cmd: string, args: Args = {}) => {
     calls.push(cmd)
     const threadId = args.threadId as string
@@ -44,6 +46,13 @@ function makeBackend(opts: BackendOptions = {}) {
       case 'settings_set':
         settings.set(key, args.value as string)
         return undefined as T
+      case 'settings_backup_once': {
+        if (opts.failBackup) throw new Error('backup: disk full')
+        const name = `settings.${args.label}.json`
+        if (backups.has(name)) return false as T
+        backups.set(name, new Map(settings))
+        return true as T
+      }
       case 'list_threads':
         return [...threads.values()] as T
       case 'write_thread_extra':
@@ -85,7 +94,7 @@ function makeBackend(opts: BackendOptions = {}) {
         throw new Error(`unexpected command ${cmd}`)
     }
   }
-  return { invoke, settings, threads, extras, logs, calls }
+  return { invoke, settings, threads, extras, logs, calls, backups }
 }
 
 const session = (id: string, extra: Partial<CoworkSession> = {}) =>
@@ -477,8 +486,40 @@ describe('migrateCoworkSessionsToThreads', () => {
   })
 })
 
+describe('settings backup before the first migration', () => {
+  it('backs up the old sessions once, before anything is written', async () => {
+    const b = makeBackend()
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    await migrateCoworkSessionsToThreads(b.invoke)
+    const backup = b.backups.get('settings.pre-cowork-migration.json')
+    expect(backup?.get(CODE_SESSIONS_KEY)).toBe(envelope([session('s1')]))
+    expect(b.calls.indexOf('settings_backup_once')).toBeLessThan(
+      b.calls.indexOf('write_thread_extra')
+    )
+  })
+
+  it('writes nothing and retries next launch when the backup fails', async () => {
+    const b = makeBackend({ failBackup: true })
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const r = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(r.status).toBe('partial')
+    expect(b.calls).not.toContain('write_thread_extra')
+    expect(b.settings.has(COWORK_MIGRATION_FLAG_KEY)).toBe(false)
+    // Not the session's fault: no attempt is counted against it.
+    expect(b.settings.has(COWORK_MIGRATION_ATTEMPTS_KEY)).toBe(false)
+  })
+
+  it('needs no backup when there is nothing to migrate', async () => {
+    const b = makeBackend()
+    await migrateCoworkSessionsToThreads(b.invoke)
+    expect(b.calls).not.toContain('settings_backup_once')
+  })
+})
+
 describe('sandbox workspace copy', () => {
-  type Copy = (id: string) => Promise<{ copied: boolean }>
+  type Copy = (
+    id: string
+  ) => Promise<{ copied: boolean; skipped?: number; unreadable?: number }>
   const run = (b: ReturnType<typeof makeBackend>, copyWorkspace: Copy) =>
     migrateCoworkSessionsToThreads(b.invoke, { copyWorkspace })
 
@@ -508,6 +549,20 @@ describe('sandbox workspace copy', () => {
     const meta = (b.threads.get('s1') as { metadata: Json }).metadata
     expect(meta).not.toHaveProperty('sandboxScope')
     expect(JSON.stringify(meta)).not.toContain('"session"')
+  })
+
+  it('records on the thread what the copy left out, and nothing when it left nothing', async () => {
+    const b = makeBackend()
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1'), session('s2')]))
+    await run(b, async (id) =>
+      id === 's1'
+        ? { copied: true, skipped: 2, unreadable: 1 }
+        : { copied: true, skipped: 0, unreadable: 0 }
+    )
+    const meta = (id: string) =>
+      (b.threads.get(id) as { metadata: { migratedFrom: Json } }).metadata.migratedFrom
+    expect(meta('s1').leftOut).toEqual({ skipped: 2, unreadable: 1 })
+    expect(meta('s2')).not.toHaveProperty('leftOut')
   })
 
   it('an interrupted run redoes the copy: it is not skipped before the commit', async () => {

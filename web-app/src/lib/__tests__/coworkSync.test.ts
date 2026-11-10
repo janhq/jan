@@ -25,6 +25,8 @@ const backend = vi.hoisted(() => {
         return
       case 'settings_flush':
         return
+      case 'settings_backup_once':
+        return true
       case 'settings_remove':
         settings.delete(args.key)
         return
