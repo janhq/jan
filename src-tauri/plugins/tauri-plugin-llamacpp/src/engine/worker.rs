@@ -317,7 +317,7 @@ fn record_log_line(log: &WorkerLog, line: &str) {
 
 /// `load_backend: loaded CUDA backend from /opt/jan/libggml-cuda.so` as
 /// `CUDA (libggml-cuda.so)`; the directory is dropped because it is a local path.
-fn parse_backend_line(line: &str) -> Option<String> {
+pub fn parse_backend_line(line: &str) -> Option<String> {
     let rest = line.trim().strip_prefix("load_backend: loaded ")?;
     let (name, path) = rest.split_once(" backend from ")?;
     let file = path.rsplit(['/', '\\']).next().unwrap_or(path).trim();
@@ -336,7 +336,7 @@ pub struct FitMark {
 /// Lines that are kept out of the tail, though still logged. ggml prints one
 /// `load_backend: loaded ... from <path>` per backend at start, which says
 /// nothing about a crash and would fill the error with local paths.
-fn is_tail_noise(line: &str) -> bool {
+pub fn is_tail_noise(line: &str) -> bool {
     line.starts_with("load_backend:")
 }
 

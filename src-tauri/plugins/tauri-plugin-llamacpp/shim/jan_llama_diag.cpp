@@ -160,7 +160,9 @@ struct json_printer : public printer {
             {"mode", r.test_mode},
             {"status", status},
         };
-        if (!r.error_message.empty()) {
+        // In support mode upstream reuses error_message for "yes"/"no", which
+        // only restates the status and would read as a failure.
+        if (!r.error_message.empty() && r.test_mode != "support") {
             j["error"] = r.error_message;
         }
         if (!noise.empty()) {

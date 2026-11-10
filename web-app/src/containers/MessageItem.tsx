@@ -24,6 +24,8 @@ import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { formatDate, formatMessageTime } from '@/utils/formatDate'
 import { useTouchDevice } from '@/hooks/useMediaQuery'
+import { Link } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { useMessageErrors } from '@/stores/message-errors'
@@ -129,6 +131,7 @@ export const MessageItem = memo(
         // as they appeared and again as they settled.
         'opacity-0 transition-opacity will-change-[opacity] group-hover/message:opacity-100 group-has-[:focus-visible]/message:opacity-100'
     const selectedModel = useModelProvider((state) => state.selectedModel)
+    const selectedProvider = useModelProvider((state) => state.selectedProvider)
     const coloredUserBubble = useInterfaceSettings((s) => s.coloredUserBubble)
     const metadata = message.metadata as Record<string, unknown> | undefined
     // Written by a third-party extension: nothing in it may load from the
@@ -729,6 +732,23 @@ export const MessageItem = memo(
                 <span>{t('model-errors:copyDiagnostics')}</span>
               </Button>
             )}
+            {/* A load report is only built for a llama.cpp engine failure, so
+                its presence is what says the hardware check has something to
+                say about this message. The check itself lives on the provider
+                page; this carries the model over rather than being a second
+                place a minutes-long run can start from. */}
+            {loadReport &&
+              selectedProvider === 'llamacpp' &&
+              selectedModel?.id && (
+                <Link
+                  to={route.settings.providers}
+                  params={{ providerName: 'llamacpp' }}
+                  search={{ diagnoseModel: selectedModel.id }}
+                  className="shrink-0 whitespace-nowrap text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  {t('providers:diagnostics.checkThisModel')}
+                </Link>
+              )}
             {selectedModel &&
               onRegenerate &&
               status !== CHAT_STATUS.STREAMING &&

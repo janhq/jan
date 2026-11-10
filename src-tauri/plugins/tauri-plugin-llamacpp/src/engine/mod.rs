@@ -16,9 +16,12 @@ use std::fmt;
 
 pub mod commands;
 pub mod diag;
+pub mod diagnose;
+pub mod diagnose_commands;
 pub mod driver;
 pub mod events;
 pub mod http;
+pub mod model_plan;
 pub mod preset;
 pub mod registry;
 pub mod slots;

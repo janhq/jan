@@ -12,9 +12,23 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 
 const selectedModelRef = vi.hoisted(() => ({ current: { id: 'm1' } as any }))
+const selectedProviderRef = vi.hoisted(() => ({ current: 'llamacpp' }))
+
+// The failed-load error row links to the provider page's hardware check, so
+// the component reaches the router. Only Link is used here.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, search, ...rest }: any) => (
+    <a data-search={JSON.stringify(search)} {...rest}>
+      {children}
+    </a>
+  ),
+}))
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: (selector: any) =>
-    selector({ selectedModel: selectedModelRef.current }),
+    selector({
+      selectedModel: selectedModelRef.current,
+      selectedProvider: selectedProviderRef.current,
+    }),
 }))
 
 // Stub heavy children: RenderMarkdown
@@ -129,6 +143,7 @@ vi.mock('@/hooks/useToolApprovalRequests', () => ({
 
 // Import after mocks
 import { MessageItem } from '../MessageItem'
+import { useMessageErrors } from '@/stores/message-errors'
 
 const makeMsg = (overrides: any = {}) => ({
   id: 'msg-1',
@@ -142,6 +157,7 @@ describe('MessageItem', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     selectedModelRef.current = { id: 'm1' }
+    selectedProviderRef.current = 'llamacpp'
     pendingApprovalsRef.current = {}
     touchRef.current = false
   })
@@ -903,6 +919,41 @@ describe('MessageItem', () => {
       const regenerate = screen.getByTestId('regenerate-message')
       expect(regenerate.parentElement?.className).toContain('opacity-100')
       expect(regenerate.parentElement?.className).not.toContain('opacity-0')
+    })
+  })
+
+  // #9642: a failed llama.cpp load is the one place the user is holding the
+  // question the hardware check answers, so that is where it is offered.
+  describe('failed model load', () => {
+    const show = () => {
+      useMessageErrors.getState().setError('msg-1', 'failed to load model')
+      useMessageErrors.getState().setReport('msg-1', '## Model load failure')
+      render(
+        <MessageItem
+          message={makeMsg() as any}
+          isFirstMessage
+          isLastMessage
+          status={'ready' as any}
+        />
+      )
+    }
+
+    beforeEach(() => useMessageErrors.getState().clearAll())
+
+    it('offers the hardware check, carrying the model that failed', () => {
+      show()
+      const link = screen.getByText('providers:diagnostics.checkThisModel')
+      expect(link.getAttribute('data-search')).toBe(
+        JSON.stringify({ diagnoseModel: 'm1' })
+      )
+    })
+
+    it('says nothing about llama.cpp hardware on a cloud provider', () => {
+      selectedProviderRef.current = 'anthropic'
+      show()
+      expect(
+        screen.queryByText('providers:diagnostics.checkThisModel')
+      ).not.toBeInTheDocument()
     })
   })
 })

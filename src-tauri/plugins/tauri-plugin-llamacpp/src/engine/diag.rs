@@ -33,6 +33,29 @@ pub struct DiagRunRequest {
     pub workers: u32,
 }
 
+/// One slice of the op list: a family, optionally narrowed to the shapes a
+/// particular model uses.
+///
+/// `params` is upstream's `-p`, a regex searched in each case's parameter
+/// string. Those strings are not a stable contract, so a filter that matches
+/// nothing must never read as a pass; the root reports such a unit as
+/// [`crate::engine::diagnose::FamilyStatus::NoCases`] rather than `Ok`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FamilyFilter {
+    pub family: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<String>,
+}
+
+impl FamilyFilter {
+    pub fn new(family: impl Into<String>, params: Option<&str>) -> Self {
+        Self {
+            family: family.into(),
+            params: params.map(str::to_string),
+        }
+    }
+}
+
 /// A case's outcome. `NotSupported` is not a failure: it is the device saying
 /// ggml will run that op somewhere else, which explains slowness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +65,70 @@ pub enum DiagStatus {
     Fail,
     NotSupported,
     Skipped,
+}
+
+/// One finished case. Its own struct because the root's `case` event
+/// ([`crate::engine::diagnose`]) forwards exactly this, tagged with the device
+/// and family it came from, rather than restating the fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiagCase {
+    pub backend: String,
+    pub op: String,
+    pub params: String,
+    pub mode: String,
+    pub status: DiagStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// The text upstream printed while the case ran (the offending tensor and
+    /// its error), present only on a failure.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// One ggml device, as a `--diagnose-devices` leaf reports it. ggml knows no
+/// driver version; the plugin joins that in by name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiagDevice {
+    pub name: String,
+    pub description: String,
+    #[serde(rename = "type")]
+    pub kind: DiagDeviceKind,
+    pub reg: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_total_mib: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_free_mib: Option<u64>,
+}
+
+/// An entry of `Engine::devices_json`, which reports memory but omits the CPU.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct DiagDeviceMemory {
+    pub id: String,
+    #[serde(rename = "mem")]
+    pub total_mib: u64,
+    #[serde(rename = "free")]
+    pub free_mib: u64,
+}
+
+/// Joins the two listings ggml offers: `diag_backends_json` knows every device
+/// and its kind, `devices_json` knows how much memory the offloadable ones
+/// have. Kept apart upstream of here because asking a CUDA device for its
+/// memory creates a context the process then holds.
+pub fn merge_devices(backends: Vec<DiagBackend>, memory: &[DiagDeviceMemory]) -> Vec<DiagDevice> {
+    backends
+        .into_iter()
+        .map(|b| {
+            let mem = memory.iter().find(|m| m.id == b.name);
+            DiagDevice {
+                name: b.name,
+                description: b.description,
+                kind: b.kind,
+                reg: b.reg,
+                memory_total_mib: mem.map(|m| m.total_mib),
+                memory_free_mib: mem.map(|m| m.free_mib),
+            }
+        })
+        .collect()
 }
 
 /// One line of the wrapper's JSON stream, discriminated by its `event` key.
@@ -69,19 +156,7 @@ pub enum DiagEvent {
         #[serde(default)]
         memory_free_mb: Option<u64>,
     },
-    /// One finished case. `detail` is the text upstream printed while the case
-    /// ran (the offending tensor and its error), present only on a failure.
-    Result {
-        backend: String,
-        op: String,
-        params: String,
-        mode: String,
-        status: DiagStatus,
-        #[serde(default)]
-        error: Option<String>,
-        #[serde(default)]
-        detail: Option<String>,
-    },
+    Result(DiagCase),
     /// Upstream's per-operation report, which only its grad mode and a few
     /// error paths use; kept so nothing the printer interface says is dropped.
     Operation {
@@ -145,8 +220,8 @@ pub struct DiagTally {
 
 impl DiagTally {
     pub fn record(&mut self, event: &DiagEvent) {
-        if let DiagEvent::Result { status, .. } = event {
-            match status {
+        if let DiagEvent::Result(case) = event {
+            match case.status {
                 DiagStatus::Ok => self.ok += 1,
                 DiagStatus::Fail => self.failed += 1,
                 DiagStatus::NotSupported => self.not_supported += 1,
@@ -164,7 +239,7 @@ pub struct DiagOp {
     pub cases: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DiagDeviceKind {
     Cpu,
@@ -199,7 +274,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             e,
-            DiagEvent::Result {
+            DiagEvent::Result(DiagCase {
                 backend: "CPU".into(),
                 op: "ADD".into(),
                 params: "type=f32".into(),
@@ -207,7 +282,7 @@ mod tests {
                 status: DiagStatus::Ok,
                 error: None,
                 detail: None,
-            }
+            })
         );
     }
 
@@ -217,12 +292,12 @@ mod tests {
             r#"{"event":"result","backend":"Vulkan0","op":"MUL_MAT","params":"k=3","mode":"test","status":"fail","error":"compare failed","detail":"[MUL_MAT] ERR = 0.5 > 0.0001"}"#,
         )
         .unwrap();
-        let DiagEvent::Result { status, error, detail, .. } = e else {
+        let DiagEvent::Result(case) = e else {
             panic!("not a result");
         };
-        assert_eq!(status, DiagStatus::Fail);
-        assert_eq!(error.as_deref(), Some("compare failed"));
-        assert!(detail.unwrap().contains("ERR"));
+        assert_eq!(case.status, DiagStatus::Fail);
+        assert_eq!(case.error.as_deref(), Some("compare failed"));
+        assert!(case.detail.unwrap().contains("ERR"));
     }
 
     #[test]
@@ -285,6 +360,33 @@ mod tests {
             t.record(&e);
         }
         assert_eq!(t, DiagTally { ok: 2, failed: 1, not_supported: 1 });
+    }
+
+    #[test]
+    fn a_device_keeps_its_kind_and_gains_memory_only_if_ggml_reports_it() {
+        let backends = vec![
+            DiagBackend {
+                name: "CPU".into(),
+                description: "12th Gen Intel".into(),
+                kind: DiagDeviceKind::Cpu,
+                reg: "CPU".into(),
+            },
+            DiagBackend {
+                name: "CUDA0".into(),
+                description: "RTX 3090".into(),
+                kind: DiagDeviceKind::Gpu,
+                reg: "CUDA".into(),
+            },
+        ];
+        let memory = vec![DiagDeviceMemory {
+            id: "CUDA0".into(),
+            total_mib: 24576,
+            free_mib: 20000,
+        }];
+        let merged = merge_devices(backends, &memory);
+        assert_eq!(merged[0].memory_total_mib, None, "the CPU is not listed");
+        assert_eq!(merged[0].kind, DiagDeviceKind::Cpu);
+        assert_eq!(merged[1].memory_free_mib, Some(20000));
     }
 
     #[test]

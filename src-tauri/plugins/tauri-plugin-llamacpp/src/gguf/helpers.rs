@@ -33,12 +33,46 @@ pub fn find_gguf_tensors<R: Read + Seek>(
     reader: R,
     wanted: &[String],
 ) -> io::Result<Vec<String>> {
-    let mut file = BufReader::new(reader);
-    let meta = read_header(&mut file)?;
-
     if wanted.is_empty() {
         return Ok(Vec::new());
     }
+    let mut found: Vec<String> = Vec::new();
+    walk_tensor_info(reader, |name, _type_id| {
+        if wanted.contains(&name) && !found.contains(&name) {
+            found.push(name);
+        }
+        found.len() < wanted.len()
+    })?;
+    Ok(found)
+}
+
+/// The distinct ggml type ids the tensor block uses, in ascending order.
+///
+/// Ground truth for which quantized kernels a load will exercise, as against
+/// inferring them from `general.file_type`: a file type names a *recipe*
+/// (Q4_K_M mixes q4_K, q5_K, q6_K and f32), and llama.cpp's mixture rules
+/// change, while the tensors themselves cannot be wrong.
+pub fn read_gguf_tensor_types<R: Read + Seek>(reader: R) -> io::Result<Vec<u32>> {
+    let mut types: Vec<u32> = Vec::new();
+    walk_tensor_info(reader, |_name, type_id| {
+        if !types.contains(&type_id) {
+            types.push(type_id);
+        }
+        true
+    })?;
+    types.sort_unstable();
+    Ok(types)
+}
+
+/// Walks the tensor-info block, calling `visit` with each tensor's name and
+/// ggml type. Stops early when `visit` returns false.
+fn walk_tensor_info<R: Read + Seek>(
+    reader: R,
+    mut visit: impl FnMut(String, u32) -> bool,
+) -> io::Result<()> {
+    let mut file = BufReader::new(reader);
+    let meta = read_header(&mut file)?;
+
     // v1 sized strings and dimensions with u32s. llama.cpp refuses that
     // version outright, and reading it as v2 would invent names.
     if meta.version < 2 {
@@ -54,7 +88,6 @@ pub fn find_gguf_tensors<R: Read + Seek>(
         ));
     }
 
-    let mut found: Vec<String> = Vec::new();
     for i in 0..meta.tensor_count {
         let name = read_gguf_string(&mut file).map_err(|e| {
             io::Error::new(
@@ -74,17 +107,14 @@ pub fn find_gguf_tensors<R: Read + Seek>(
         for _ in 0..n_dims {
             file.read_u64::<LittleEndian>()?;
         }
-        file.read_u32::<LittleEndian>()?; // ggml type
+        let type_id = file.read_u32::<LittleEndian>()?;
         file.read_u64::<LittleEndian>()?; // offset into the data section
 
-        if wanted.contains(&name) && !found.contains(&name) {
-            found.push(name);
-            if found.len() == wanted.len() {
-                break;
-            }
+        if !visit(name, type_id) {
+            break;
         }
     }
-    Ok(found)
+    Ok(())
 }
 
 /// Header plus the whole KV section, leaving the reader positioned at the
@@ -245,6 +275,16 @@ mod tests {
     /// Hand-assembled because the point is to pin the byte layout the reader
     /// walks; a fixture file would hide it.
     fn gguf(version: u32, kv: &[(&str, &str)], tensors: &[(&str, &[u64])]) -> Vec<u8> {
+        let typed: Vec<(&str, &[u64], u32)> =
+            tensors.iter().map(|(n, d)| (*n, *d, 0u32)).collect();
+        gguf_typed(version, kv, &typed)
+    }
+
+    fn gguf_typed(
+        version: u32,
+        kv: &[(&str, &str)],
+        tensors: &[(&str, &[u64], u32)],
+    ) -> Vec<u8> {
         let mut b = Vec::new();
         b.extend_from_slice(b"GGUF");
         b.write_u32::<LittleEndian>(version).unwrap();
@@ -260,13 +300,13 @@ mod tests {
             b.write_u32::<LittleEndian>(GgufValueType::String as u32).unwrap();
             string(&mut b, v);
         }
-        for (name, dims) in tensors {
+        for (name, dims, type_id) in tensors {
             string(&mut b, name);
             b.write_u32::<LittleEndian>(dims.len() as u32).unwrap();
             for d in *dims {
                 b.write_u64::<LittleEndian>(*d).unwrap();
             }
-            b.write_u32::<LittleEndian>(0).unwrap(); // ggml type
+            b.write_u32::<LittleEndian>(*type_id).unwrap();
             b.write_u64::<LittleEndian>(0).unwrap(); // offset
         }
         b
@@ -370,6 +410,35 @@ mod tests {
         let bytes = gguf(3, &[], &[("token_embd.weight", &[8])]);
         assert!(find_gguf_tensors(Cursor::new(bytes), &[])
             .expect("tensor scan")
+            .is_empty());
+    }
+
+    // A Q4_K_M file is a mixture, which is the whole reason the types are read
+    // off the tensors rather than inferred from `general.file_type`.
+    #[test]
+    fn the_distinct_tensor_types_are_reported_once_each_in_order() {
+        let bytes = gguf_typed(
+            3,
+            &[],
+            &[
+                ("token_embd.weight", &[8], 14),      // q6_K
+                ("blk.0.attn_norm.weight", &[8], 0),  // f32
+                ("blk.0.attn_q.weight", &[8, 8], 12), // q4_K
+                ("blk.1.attn_q.weight", &[8, 8], 12),
+                ("blk.0.ffn_down.weight", &[8, 8], 13), // q5_K
+            ],
+        );
+        assert_eq!(
+            read_gguf_tensor_types(Cursor::new(bytes)).expect("tensor types"),
+            vec![0, 12, 13, 14]
+        );
+    }
+
+    #[test]
+    fn a_file_with_no_tensors_reports_no_types() {
+        let bytes = gguf(3, &[("general.architecture", "llama")], &[]);
+        assert!(read_gguf_tensor_types(Cursor::new(bytes))
+            .expect("tensor types")
             .is_empty());
     }
 }

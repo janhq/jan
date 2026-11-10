@@ -61,7 +61,7 @@ fn generate_worker_key() -> String {
 /// so its absence always means the install is damaged rather than that the user
 /// has something to configure, and which directory came up empty is the only
 /// thing that distinguishes the ways that happens.
-fn resolve_worker_exe<R: tauri::Runtime>(
+pub(crate) fn resolve_worker_exe<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
 ) -> Result<PathBuf, String> {
     if let Some(p) = std::env::var_os("JAN_LLAMA_WORKER_BIN") {

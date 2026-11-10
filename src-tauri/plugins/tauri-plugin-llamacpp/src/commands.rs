@@ -216,11 +216,7 @@ async fn diagnose_load_failure(
         request: diagnostics::LoadRequest::from_preset(&ini, model_id),
         gpus,
         backends,
-        engine: diagnostics::EngineBuild {
-            version: crate::engine::PINNED_VERSION.to_string(),
-            tag: crate::engine::PINNED_TAG.to_string(),
-            commit: crate::engine::PINNED_COMMIT.to_string(),
-        },
+        engine: diagnostics::EngineBuild::pinned(),
         log,
         log_truncated,
     }));

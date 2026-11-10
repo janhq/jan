@@ -41,6 +41,9 @@ const COMMANDS: &[&str] = &[
     "begin_engine_restart",
     "end_engine_restart",
     "erase_thread_slot_state",
+    // The ggml op diagnostic, orchestrated by the worker
+    "start_diagnostics",
+    "cancel_diagnostics",
     // GGUF commands
     "read_gguf_metadata",
     "find_gguf_tensors",

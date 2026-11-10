@@ -60,6 +60,16 @@ pub struct EngineBuild {
     pub commit: String,
 }
 
+impl EngineBuild {
+    pub fn pinned() -> Self {
+        Self {
+            version: crate::engine::PINNED_VERSION.to_string(),
+            tag: crate::engine::PINNED_TAG.to_string(),
+            commit: crate::engine::PINNED_COMMIT.to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoadDiagnostics {
     /// File name only: the directory is the user's and means nothing to us.
