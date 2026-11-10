@@ -12,6 +12,8 @@ const backend = vi.hoisted(() => {
   const logs = new Map<string, any[]>()
   const log: string[] = []
   const hooks: { before?: (cmd: string, args: Record<string, any>) => Promise<void> } = {}
+  // What Rust answers for `main_window_hides_on_close`.
+  const window = { hidesOnClose: false }
   const invoke = async (cmd: string, args: Record<string, any> = {}) => {
     log.push(cmd)
     await hooks.before?.(cmd, args)
@@ -54,11 +56,13 @@ const backend = vi.hoisted(() => {
         extras.delete(args.threadId)
         logs.delete(args.threadId)
         return
+      case 'main_window_hides_on_close':
+        return window.hidesOnClose
       default:
         throw new Error(`unexpected ${cmd}`)
     }
   }
-  return { settings, threads, extras, logs, log, hooks, invoke }
+  return { settings, threads, extras, logs, log, hooks, window, invoke }
 })
 
 const messageStore = vi.hoisted(() => ({
@@ -166,6 +170,7 @@ describe('coworkSync', () => {
     backend.logs.clear()
     backend.log.length = 0
     backend.hooks.before = undefined
+    backend.window.hidesOnClose = false
     agentTools.cleanupThreadWorkspace.mockClear()
     sonner.warning.mockClear()
     sonner.dismiss.mockClear()
@@ -485,6 +490,26 @@ describe('coworkSync', () => {
       // The run's final commit made it to disk before the close resolved.
       expect(backend.extras.get(id).turns).toEqual([{ role: 'user', content: 'last words' }])
       expect(backend.threads.has(id)).toBe(true)
+    })
+
+    it('a close that only hides the window keeps live runs going and the app alive, and still saves', async () => {
+      backend.window.hidesOnClose = true
+      await startCoworkSync()
+      const id = useCoworkSessions.getState().createSession()
+      useCoworkSessions.getState().commitTurns(id, [{ role: 'user', content: 'keep' }], legacy('x').messages, [])
+      const quiesce = vi.fn(async () => {})
+      registerCoworkRunForClose(quiesce)
+      const event = closeEvent()
+      await closeWindow.callback!(event)
+      // preventDefault stops the Tauri API from destroying the last window,
+      // which would quit the app.
+      expect(event.preventDefault).toHaveBeenCalled()
+      expect(quiesce).not.toHaveBeenCalled()
+      expect(isCoworkClosing()).toBe(false)
+      await vi.waitFor(() =>
+        expect(backend.extras.get(id)?.turns).toEqual([{ role: 'user', content: 'keep' }])
+      )
+      expect(sonner.error).not.toHaveBeenCalled()
     })
 
     it('prevents the close when a write cannot be flushed, keeps the unsaved session, and a retry succeeds', async () => {
