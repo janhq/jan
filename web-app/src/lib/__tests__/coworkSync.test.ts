@@ -109,15 +109,18 @@ vi.mock('@tauri-apps/api/window', () => ({
 }))
 
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
-import { registerCoworkRunForClose, isCoworkClosing } from '@/hooks/useCoworkRun'
+import {
+  registerCoworkRunForClose,
+  isCoworkClosing,
+  resumeCoworkAfterPreventedClose,
+} from '@/hooks/useCoworkRun'
+import { resumeChatsAfterPreventedClose } from '../chatClose'
 import { useThreads } from '@/hooks/useThreads'
 import { useMessages, __resetMessageWritesForTests } from '@/hooks/useMessages'
 import {
   startCoworkSync,
-  flushCowork,
   flushCoworkDeletes,
   flushCoworkStartupWarnings,
-  isCoworkMigrationDone,
   COWORK_MIGRATION_BUDGET_MS,
   COWORK_CLOSE_FAILURES_BEFORE_FORCE,
   __resetCoworkSyncForTests,
@@ -144,6 +147,14 @@ const putBlob = (...sessions: Json[]) =>
     CODE_SESSIONS_KEY,
     JSON.stringify({ state: { sessions }, version: 1 })
   )
+
+// Cowork writes are drained through the window-close handshake, the public way
+// to flush them; its closing barriers are lifted again so a test can keep editing.
+const flushCowork = async () => {
+  await closeWindow.callback!({ preventDefault: vi.fn() })
+  resumeCoworkAfterPreventedClose()
+  resumeChatsAfterPreventedClose()
+}
 
 const reply = { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'ok' }] }
 
@@ -181,7 +192,7 @@ describe('coworkSync', () => {
       expect(backend.threads.get('a')!.metadata.mode).toBe('cowork')
       expect(useCoworkSessions.getState().sessions.map((s) => s.id).sort()).toEqual(['a', 'b'])
       expect(backend.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
-      expect(isCoworkMigrationDone()).toBe(true)
+      expect(backend.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
       // The legacy blob is the rollback source and is never touched.
       expect(backend.settings.has(CODE_SESSIONS_KEY)).toBe(true)
       // Cowork threads reach the shared thread list (search, sidebar) exactly once.
@@ -348,7 +359,7 @@ describe('coworkSync', () => {
       // Make the migration fail transiently so the blob stays live.
       agentTools.copySessionWorkspaceToThread.mockRejectedValueOnce(new Error('disk busy'))
       await startCoworkSync()
-      expect(isCoworkMigrationDone()).toBe(false)
+      expect(backend.settings.get(COWORK_MIGRATION_FLAG_KEY)).not.toBe('true')
       const blob = backend.settings.get(CODE_SESSIONS_KEY)
       useCoworkSessions.getState().deleteSession('a')
       await flushCoworkDeletes()
@@ -411,7 +422,7 @@ describe('coworkSync', () => {
       const started = startCoworkSync()
       await vi.advanceTimersByTimeAsync(COWORK_MIGRATION_BUDGET_MS + 100)
       await started
-      expect(isCoworkMigrationDone()).toBe(false)
+      expect(backend.settings.get(COWORK_MIGRATION_FLAG_KEY)).not.toBe('true')
       // Legacy-only sessions are visible meanwhile, nothing is lost.
       expect(useCoworkSessions.getState().sessions.map((s) => s.id).sort()).toEqual(['a', 'b'])
       // The user edits a legacy session before the migration reaches it.
@@ -421,7 +432,7 @@ describe('coworkSync', () => {
       release()
       await vi.advanceTimersByTimeAsync(200)
       await flushCowork()
-      expect(isCoworkMigrationDone()).toBe(true)
+      expect(backend.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
       // The newer write-through wins over the blob's older copy.
       expect(backend.threads.get('a')!.title).toBe('Edited meanwhile')
       expect(backend.threads.has('b')).toBe(true)

@@ -303,7 +303,7 @@ export function todoProgress(list: TodoList): { done: number; total: number } {
 }
 
 /** Shared snapshot validation for transcript projections without SDK/store imports. */
-export function isTodoList(value: unknown): value is TodoList {
+function isTodoList(value: unknown): value is TodoList {
   if (
     !value ||
     typeof value !== 'object' ||

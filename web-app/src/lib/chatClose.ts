@@ -3,7 +3,6 @@ import type { Chat, UIMessage } from '@ai-sdk/react'
 type Participant = { stop: () => void | Promise<void>; settle: () => Promise<void> }
 const participants = new Map<Chat<UIMessage>, Participant>()
 let closing = false
-export const isChatClosing = () => closing
 export function resumeChatsAfterPreventedClose() { closing = false }
 
 /** Retained Chat objects, not mounted routes, own these registrations. */

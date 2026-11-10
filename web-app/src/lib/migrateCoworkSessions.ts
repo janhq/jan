@@ -91,9 +91,9 @@ export type Invoke = <T = unknown>(
  * so the migration stays a pure sequence of backend calls; the startup entry
  * point wires it to the agent-tools plugin.
  */
-export type CopyWorkspace = (id: string) => Promise<{ copied: boolean }>
+type CopyWorkspace = (id: string) => Promise<{ copied: boolean }>
 
-export type MigrationDeps = { copyWorkspace?: CopyWorkspace }
+type MigrationDeps = { copyWorkspace?: CopyWorkspace }
 
 export type CoworkMigrationResult = {
   status: 'already-migrated' | 'nothing-to-migrate' | 'complete' | 'partial'
@@ -157,7 +157,7 @@ function canonical(v: unknown): string {
 
 // Mirrors validate_thread_id in src-tauri/src/core/threads/utils.rs.
 const WINDOWS_DEVICE = /^(con|prn|aux|nul|(com|lpt)\d)$/i
-export function isValidThreadId(id: unknown): id is string {
+function isValidThreadId(id: unknown): id is string {
   return (
     typeof id === 'string' &&
     id.length > 0 &&
