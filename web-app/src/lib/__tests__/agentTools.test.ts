@@ -13,6 +13,7 @@ const subagentResultFill = vi.fn()
 const attachmentImport = vi.fn()
 const startMonitor = vi.fn()
 const getJanDataFolder = vi.fn()
+const coreInvoke = vi.fn()
 
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   toolSchemas: () => toolSchemas(),
@@ -31,7 +32,10 @@ vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
 }))
 
 vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({ app: () => ({ getJanDataFolder }) }),
+  getServiceHub: () => ({
+    app: () => ({ getJanDataFolder }),
+    core: () => ({ invoke: coreInvoke }),
+  }),
 }))
 
 const schemaFor = (name: string) => ({
@@ -59,6 +63,9 @@ describe('agentTools', () => {
     attachmentImport.mockReset()
     startMonitor.mockReset()
     getJanDataFolder.mockReset().mockResolvedValue('/data')
+    coreInvoke.mockReset().mockImplementation(async (cmd: string) =>
+      cmd === 'get_jan_data_folder_path' ? '/data' : undefined
+    )
   })
 
   // The chat surface offers the sandboxed shell alone; everything else is
@@ -546,14 +553,11 @@ describe('agentTools', () => {
     })
   })
 
-  it('copies nothing when there is no data folder', async () => {
-    getJanDataFolder.mockResolvedValue('')
+  // Skipping the copy would commit the thread without its files.
+  it('rejects when the data folder is not known, so the session is retried', async () => {
+    coreInvoke.mockResolvedValue('')
     const { copySessionWorkspaceToThread } = await import('../agentTools')
-    await expect(copySessionWorkspaceToThread('s1')).resolves.toEqual({
-      copied: false,
-      files: 0,
-      skipped: 0,
-    })
+    await expect(copySessionWorkspaceToThread('s1')).rejects.toThrow()
     expect(sessionWorkspaceCopyToThread).not.toHaveBeenCalled()
   })
 
