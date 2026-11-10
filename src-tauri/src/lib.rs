@@ -142,6 +142,7 @@ macro_rules! invoke_commands_with_extras {
         core::downloads::commands::pause_download_task,
         // App lifecycle
         confirm_exit,
+        main_window_hides_on_close,
         // Theme
         core::setup::get_system_theme,
         core::setup::set_gtk_prefer_dark,
@@ -194,6 +195,35 @@ fn is_proxy_server_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool
     app.try_state::<AppState>()
         .and_then(|s| s.server_handle.try_lock().ok().map(|g| g.is_some()))
         .unwrap_or(false)
+}
+
+#[cfg(not(feature = "cli"))]
+/// Whether closing the main window only hides it, keeping the app running:
+/// always on macOS (quit is Cmd+Q / dock / tray), and on Windows/Linux while
+/// the Local API Server runs with "keep running in background" on. Never once
+/// a shutdown has started. The window-event handler below and the web app's
+/// close handler both ask this, so they agree on whether a close is a quit.
+fn hides_main_window_on_close<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    use std::sync::atomic::Ordering;
+    if SHUTTING_DOWN.load(Ordering::SeqCst) {
+        return false;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        true
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        is_proxy_server_running(app)
+            && core::server::commands::SERVER_RUN_IN_BACKGROUND.load(Ordering::SeqCst)
+    }
+}
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+fn main_window_hides_on_close<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) -> bool {
+    hides_main_window_on_close(&app_handle)
 }
 
 #[cfg(not(feature = "cli"))]
@@ -514,35 +544,18 @@ pub fn run() {
             ..
         } = &event
         {
-            if label == "main" && !SHUTTING_DOWN.load(Ordering::SeqCst) {
-                // macOS: closing the window hides it; the app (and background
-                // services) keep running. Quit happens via Cmd+Q / dock / tray,
-                // which routes through RunEvent::ExitRequested.
-                #[cfg(target_os = "macos")]
-                {
-                    api.prevent_close();
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.hide();
-                    }
-                    return;
+            // Closing the main window hides it when `hides_main_window_on_close`
+            // says so (macOS always; Windows/Linux only while the Local API
+            // Server runs in the background). Otherwise fall through to the
+            // normal quit-on-close. The llamacpp engine is not a reason to keep
+            // the app resident (normal chat usage keeps it alive), so it gets
+            // torn down via the ExitRequested path on quit.
+            if label == "main" && hides_main_window_on_close(app) {
+                api.prevent_close();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
                 }
-                // Windows/Linux: hide to tray only while the Local API Server is
-                // running and the user opted into keeping it alive in the
-                // background; otherwise fall through to the normal quit-on-close.
-                // The llamacpp engine is not a reason to keep the app resident
-                // (normal chat usage keeps it alive), so it gets torn down via
-                // the ExitRequested path on quit.
-                #[cfg(not(target_os = "macos"))]
-                if is_proxy_server_running(app)
-                    && core::server::commands::SERVER_RUN_IN_BACKGROUND
-                        .load(Ordering::SeqCst)
-                {
-                    api.prevent_close();
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.hide();
-                    }
-                    return;
-                }
+                return;
             }
         }
         #[cfg(target_os = "macos")]
