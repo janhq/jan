@@ -161,6 +161,11 @@
     "hostSsl": "SSL del host",
     "hostSslDesc": "Validar los certificados SSL de los hosts de destino."
   },
+  "cowork": {
+    "title": "Agent",
+    "description": "Lo que Jan puede hacer en tu equipo: su shell aislado, además de los recuerdos y las habilidades que se guardan de forma permanente en tu carpeta de datos de Jan.",
+    "networkDesc": "Permite que los comandos del shell accedan a la red, por ejemplo para instalar paquetes u obtener un repositorio. Activado de forma predeterminada. El entorno aislado sigue limitando qué archivos pueden tocar los comandos."
+  },
   "localApiServer": {
     "title": "Servidor API local",
     "description": "Ejecuta un servidor compatible con OpenAI localmente.",

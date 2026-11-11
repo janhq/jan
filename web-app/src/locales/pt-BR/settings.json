@@ -150,6 +150,11 @@
     "hostSsl": "SSL do Host",
     "hostSslDesc": "Validar os certificados SSL dos hosts de destino."
   },
+  "cowork": {
+    "title": "Agent",
+    "description": "O que o Jan pode fazer no seu computador: seu shell isolado, além das memórias e habilidades guardadas permanentemente na sua pasta de dados do Jan.",
+    "networkDesc": "Permite que os comandos do shell acessem a rede, por exemplo para instalar pacotes ou buscar um repositório. Ativado por padrão. O sandbox continua limitando quais arquivos os comandos podem acessar."
+  },
   "localApiServer": {
     "title": "Servidor de API Local",
     "description": "Executar um servidor compatível com OpenAI localmente.",

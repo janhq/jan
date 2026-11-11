@@ -245,6 +245,7 @@
   },
   "projects": {
     "title": "Projectes",
+    "new": "Projecte nou",
     "addProject": "Afegeix un projecte",
     "addToProject": "Afegeix al projecte",
     "removeFromProject": "Elimina del projecte",
@@ -260,6 +261,7 @@
     "projectNotFoundDesc": "El projecte que busques no existeix o s’ha suprimit.",
     "deleteProjectDialog": {
       "title": "Suprimeix el projecte",
+      "permanentDelete": "Això suprimirà permanentment \"{{projectName}}\" i totes les seves converses. Aquesta acció no es pot desfer.",
       "permanentDeleteWarning": "Aquesta acció suprimirà TOTS els fils del projecte!",
       "saveThreadsAdvice": "Per conservar els fils, mou-los a la llista de fils o a un altre projecte abans de suprimir-lo.",
       "starredWarning": "Encara tens fils marcats com a preferits al projecte.",
@@ -415,6 +417,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "Encara no s'ha produït res. Els fitxers creats a les converses apareixen aquí.",
+  "workspace": {
+    "chatFootnote": "Jan llegeix aquesta carpeta lliurement i et demana permís abans de cada edició o ordre que s'hi executi.",
+    "saveFailed": "No s'ha pogut desar la carpeta d'aquest xat"
+  },
+  "budget": {
+    "stoppedTokens": "Aturat: aquesta conversa ha arribat al seu límit de tokens."
   },
   "artifacts": "Artefactes",
   "skills": "Habilitats",

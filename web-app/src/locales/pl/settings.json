@@ -151,6 +151,11 @@
     "hostSsl": "SSL Hosta",
     "hostSslDesc": "Sprawdzaj certyfikaty SSL hostów docelowych."
   },
+  "cowork": {
+    "title": "Agent",
+    "description": "Co Jan może robić na Twoim komputerze: jego odizolowana powłoka oraz wspomnienia i umiejętności trwale przechowywane w folderze danych Jana.",
+    "networkDesc": "Pozwala poleceniom powłoki korzystać z sieci, na przykład do instalowania pakietów lub pobierania repozytorium. Domyślnie włączone. Piaskownica nadal ogranicza, których plików mogą dotykać polecenia."
+  },
   "localApiServer": {
     "title": "Lokalny Serwer API",
     "description": "Używaj lokalnego serwera kompatybilnego z API OpenAI.",

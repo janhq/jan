@@ -369,6 +369,7 @@
     "projectNotFoundDesc": "Proyek yang Anda cari tidak ada atau telah dihapus.",
     "deleteProjectDialog": {
       "title": "Hapus Proyek",
+      "permanentDelete": "Ini akan menghapus \"{{projectName}}\" beserta semua percakapannya secara permanen. Tindakan ini tidak dapat dibatalkan.",
       "permanentDeleteWarning": "Tindakan ini akan menghapus SEMUA utas dalam proyek secara permanen!",
       "saveThreadsAdvice": "Untuk menyimpan utas, pindahkan ke daftar utas Anda atau proyek lain sebelum menghapus.",
       "starredWarning": "Anda masih memiliki utas yang dibintangi dalam proyek.",
@@ -413,6 +414,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "Belum ada yang dihasilkan. File yang dibuat dalam percakapan Anda muncul di sini.",
+  "workspace": {
+    "chatFootnote": "Jan membaca folder ini secara bebas dan meminta izin Anda sebelum setiap pengeditan atau perintah yang dijalankan di dalamnya.",
+    "saveFailed": "Tidak dapat menyimpan folder untuk obrolan ini"
+  },
+  "budget": {
+    "stoppedTokens": "Dihentikan: percakapan ini mencapai batas token-nya."
   },
   "artifacts": "Artefak",
   "skills": "Keahlian",
