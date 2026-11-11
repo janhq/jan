@@ -15,7 +15,7 @@ type ToolGrantsState = SavedGrants & {
 }
 
 /**
- * The configuration-level tool grants ("Allow always" and "allow all MCP"), as
+ * The configuration-level tool grants ("Always allow" and "allow all MCP"), as
  * the settings page shows them. A view only: Rust keeps and enforces them, so
  * every change goes there and is read back.
  */
