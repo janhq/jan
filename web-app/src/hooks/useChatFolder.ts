@@ -5,6 +5,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { folderOf } from '@/lib/chatFolder'
 import { supportsCowork } from '@/lib/coworkSync'
 import { isCoworkEnabled } from '@/lib/version'
 
@@ -23,7 +24,7 @@ export function useChatFolder(threadId: string) {
   // ship the agent tools. A temporary chat keeps no folder.
   const available =
     supportsCowork() && isCoworkEnabled() && threadId !== TEMPORARY_CHAT_ID
-  const folder = typeof stored === 'string' && stored.trim() ? stored : null
+  const folder = folderOf(stored)
 
   const save = useCallback(
     async (next: string | null) => {
