@@ -23,7 +23,7 @@ use std::sync::{LazyLock, Mutex};
 
 /// The generation of a server name no connection was registered for. Never
 /// handed out by [`insert_server`].
-pub const UNREGISTERED: u64 = 0;
+const UNREGISTERED: u64 = 0;
 
 /// Where a call to an advertised tool must go.
 #[derive(Debug, Clone, PartialEq, Eq)]
