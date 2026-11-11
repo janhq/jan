@@ -40,6 +40,8 @@ describe('useToolApproval', () => {
     expect(result.current.allowAllMCPPermissions).toBe(false)
     expect(typeof result.current.approveToolForThread).toBe('function')
     expect(typeof result.current.approveServer).toBe('function')
+    expect(typeof result.current.revokeServer).toBe('function')
+    expect(typeof result.current.isServerApproved).toBe('function')
     expect(typeof result.current.approveToolEverywhere).toBe('function')
     expect(typeof result.current.isToolApproved).toBe('function')
     expect(typeof result.current.setAllowAllMCPPermissions).toBe('function')
@@ -191,6 +193,38 @@ describe('useToolApproval', () => {
       })
 
       expect(result.current.approvedServers).toEqual(['github'])
+    })
+  })
+
+  describe('revokeServer', () => {
+    it('un-trusts a server so its tools prompt again', () => {
+      const { result } = renderHook(() => useToolApproval())
+
+      act(() => {
+        result.current.approveServer('github')
+      })
+      expect(result.current.isServerApproved('github')).toBe(true)
+
+      act(() => {
+        result.current.revokeServer('github')
+      })
+
+      expect(result.current.isServerApproved('github')).toBe(false)
+      expect(
+        result.current.isToolApproved('thread-1', 'create_issue', 'github')
+      ).toBe(false)
+    })
+
+    it('leaves other approved servers intact', () => {
+      const { result } = renderHook(() => useToolApproval())
+
+      act(() => {
+        result.current.approveServer('github')
+        result.current.approveServer('filesystem')
+        result.current.revokeServer('github')
+      })
+
+      expect(result.current.approvedServers).toEqual(['filesystem'])
     })
   })
 
