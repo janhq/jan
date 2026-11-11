@@ -244,7 +244,7 @@ async fn main() {
     // their layout has changed repeatedly upstream.
     if let Err(e) = assert_pinned_version() {
         if diagnosing {
-            diag_root_fail(e);
+            diag_root_fail(e.to_string());
         }
         eprintln!("jan-llama-worker: {e}");
         std::process::exit(3);
