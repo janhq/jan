@@ -259,6 +259,7 @@
     "processButton": "Thêm",
     "deleteProjectDialog": {
       "title": "Xóa dự án",
+      "permanentDelete": "Thao tác này sẽ xóa vĩnh viễn \"{{projectName}}\" cùng tất cả cuộc trò chuyện trong đó. Không thể hoàn tác.",
       "permanentDeleteWarning": "Hành động này sẽ xóa vĩnh viễn TẤT CẢ các chủ đề trong dự án!",
       "saveThreadsAdvice": "Để lưu các chủ đề, hãy di chuyển chúng vào danh sách chủ đề của bạn hoặc dự án khác trước khi xóa.",
       "starredWarning": "Bạn vẫn có các chủ đề đã gắn dấu sao trong dự án.",
@@ -413,6 +414,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "Chưa có gì được tạo. Các tệp được tạo trong cuộc trò chuyện sẽ xuất hiện ở đây.",
+  "workspace": {
+    "chatFootnote": "Jan đọc thư mục này tự do và hỏi bạn trước mỗi lần chỉnh sửa hoặc chạy lệnh trong đó.",
+    "saveFailed": "Không thể lưu thư mục cho cuộc trò chuyện này"
+  },
+  "budget": {
+    "stoppedTokens": "Đã dừng: cuộc trò chuyện này đã đạt giới hạn token."
   },
   "agentSettings": "Tác nhân",
   "artifacts": "Tạo phẩm",

@@ -524,6 +524,8 @@
   "artifactsSearch": "搜索交付",
   "artifactsShowMore": "展示剩余 {{count}} 项",
   "workspace": {
+    "chatFootnote": "Jan 可以随意读取此文件夹，在其中进行任何编辑或运行任何命令前都会先征求你的同意。",
+    "saveFailed": "无法保存此聊天的文件夹",
     "readsFrom": "运行环境",
     "writable": "可读写",
     "footnote": "此文件夹可直接被 agent 读写，其做出的修改可在 diff 面板查看。",

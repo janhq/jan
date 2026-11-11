@@ -259,6 +259,7 @@
     "createNewProject": "建立新專案",
     "deleteProjectDialog": {
       "title": "刪除專案",
+      "permanentDelete": "這將永久刪除「{{projectName}}」及其所有對話。此操作無法復原。",
       "permanentDeleteWarning": "此操作將永久刪除專案內的所有執行緒！",
       "saveThreadsAdvice": "要儲存執行緒，請在刪除前將它們移至您的執行緒清單或另一個專案。",
       "starredWarning": "您在專案內仍有已加星號的執行緒。",
@@ -413,6 +414,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "尚未產生任何內容。對話中建立的檔案會顯示在這裡。",
+  "workspace": {
+    "chatFootnote": "Jan 可以自由讀取此資料夾，在其中進行任何編輯或執行任何指令前都會先詢問你。",
+    "saveFailed": "無法儲存此聊天的資料夾"
+  },
+  "budget": {
+    "stoppedTokens": "已停止：此對話已達到權杖預算上限。"
   },
   "artifacts": "成品",
   "skills": "技能",
