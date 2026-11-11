@@ -331,6 +331,90 @@
           "markdownDescription": "Denies the cancel_thread_bash command without any pre-configured scope."
         },
         {
+          "description": "Enables the consent_answer command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-consent-answer",
+          "markdownDescription": "Enables the consent_answer command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the consent_answer command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-consent-answer",
+          "markdownDescription": "Denies the consent_answer command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the consent_cancel_thread command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-consent-cancel-thread",
+          "markdownDescription": "Enables the consent_cancel_thread command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the consent_cancel_thread command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-consent-cancel-thread",
+          "markdownDescription": "Denies the consent_cancel_thread command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the consent_consume command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-consent-consume",
+          "markdownDescription": "Enables the consent_consume command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the consent_consume command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-consent-consume",
+          "markdownDescription": "Denies the consent_consume command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the consent_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-consent-request",
+          "markdownDescription": "Enables the consent_request command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the consent_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-consent-request",
+          "markdownDescription": "Denies the consent_request command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the consent_revoke command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-consent-revoke",
+          "markdownDescription": "Enables the consent_revoke command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the consent_revoke command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-consent-revoke",
+          "markdownDescription": "Denies the consent_revoke command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the consent_saved command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-consent-saved",
+          "markdownDescription": "Enables the consent_saved command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the consent_saved command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-consent-saved",
+          "markdownDescription": "Denies the consent_saved command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the consent_set_allow_all_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-consent-set-allow-all-mcp",
+          "markdownDescription": "Enables the consent_set_allow_all_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the consent_set_allow_all_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-consent-set-allow-all-mcp",
+          "markdownDescription": "Denies the consent_set_allow_all_mcp command without any pre-configured scope."
+        },
+        {
           "description": "Enables the execute_tool command without any pre-configured scope.",
           "type": "string",
           "const": "allow-execute-tool",
@@ -715,10 +799,10 @@
           "markdownDescription": "Denies the workspace_path command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-copy-to-thread`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-skill-invoke`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-blackboard-write`\n- `allow-attachment-import`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-session-monitor-ids`\n- `allow-stop-session-monitors`\n- `allow-cancel-thread-bash`\n- `allow-preview-register-root`\n- `allow-preview-unregister-root`\n- `allow-open-artifact`",
+          "description": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-copy-to-thread`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-skill-invoke`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-blackboard-write`\n- `allow-attachment-import`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-session-monitor-ids`\n- `allow-stop-session-monitors`\n- `allow-cancel-thread-bash`\n- `allow-preview-register-root`\n- `allow-preview-unregister-root`\n- `allow-open-artifact`\n- `allow-consent-request`\n- `allow-consent-answer`\n- `allow-consent-consume`\n- `allow-consent-cancel-thread`\n- `allow-consent-saved`\n- `allow-consent-revoke`\n- `allow-consent-set-allow-all-mcp`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-copy-to-thread`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-skill-invoke`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-blackboard-write`\n- `allow-attachment-import`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-session-monitor-ids`\n- `allow-stop-session-monitors`\n- `allow-cancel-thread-bash`\n- `allow-preview-register-root`\n- `allow-preview-unregister-root`\n- `allow-open-artifact`"
+          "markdownDescription": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-copy-to-thread`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-skill-invoke`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-blackboard-write`\n- `allow-attachment-import`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-session-monitor-ids`\n- `allow-stop-session-monitors`\n- `allow-cancel-thread-bash`\n- `allow-preview-register-root`\n- `allow-preview-unregister-root`\n- `allow-open-artifact`\n- `allow-consent-request`\n- `allow-consent-answer`\n- `allow-consent-consume`\n- `allow-consent-cancel-thread`\n- `allow-consent-saved`\n- `allow-consent-revoke`\n- `allow-consent-set-allow-all-mcp`"
         }
       ]
     }

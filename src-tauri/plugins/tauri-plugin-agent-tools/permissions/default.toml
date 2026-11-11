@@ -36,4 +36,11 @@ permissions = [
     "allow-preview-register-root",
     "allow-preview-unregister-root",
     "allow-open-artifact",
+    "allow-consent-request",
+    "allow-consent-answer",
+    "allow-consent-consume",
+    "allow-consent-cancel-thread",
+    "allow-consent-saved",
+    "allow-consent-revoke",
+    "allow-consent-set-allow-all-mcp",
 ]

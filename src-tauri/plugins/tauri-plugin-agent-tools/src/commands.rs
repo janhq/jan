@@ -822,6 +822,10 @@ fn resolve_workspace_root(
     }
 }
 
+/// Built-in tools that can change a folder attached to a chat: asked for on
+/// every call, never saved.
+const CHAT_FOLDER_ASKED: [&str; 3] = ["write", "edit", crate::tools::SHELL_TOOL];
+
 /// Execute one built-in tool.
 ///
 /// The gate decides, not the caller. `write` and `edit` resolve to `Prompt` and
@@ -971,21 +975,35 @@ async fn execute_tool_inner(
     // A chat thread's folder comes from its record; one passed by the caller
     // is refused rather than ignored, so a caller that believes it attached a
     // folder learns it did not.
-    let (read_only_project, writable) = match scope.unwrap_or_default() {
-        WorkspaceScope::Thread => match chat_folder_record(Path::new(&data_folder), &thread_id)? {
-            Some(_) if read_only_project.is_some() || project_writable == Some(true) => {
-                return Err(
-                    "a chat's folder is the one attached to the conversation; it cannot be \
-                     passed per call"
-                        .to_string()
-                        .into(),
-                );
-            }
-            Some((folder, writable)) => (folder, writable),
-            None => (read_only_project, project_writable.unwrap_or(false)),
-        },
-        WorkspaceScope::Session => (read_only_project, project_writable.unwrap_or(false)),
+    let chat_record = match scope.unwrap_or_default() {
+        WorkspaceScope::Thread => chat_folder_record(Path::new(&data_folder), &thread_id)?,
+        WorkspaceScope::Session => None,
     };
+    let is_chat = chat_record.is_some();
+    let (read_only_project, writable) = match chat_record {
+        Some(_) if read_only_project.is_some() || project_writable == Some(true) => {
+            return Err(
+                "a chat's folder is the one attached to the conversation; it cannot be \
+                 passed per call"
+                    .to_string()
+                    .into(),
+            );
+        }
+        Some((folder, writable)) => (folder, writable),
+        None => (read_only_project, project_writable.unwrap_or(false)),
+    };
+    // With a folder attached to a chat, a call that can change it runs only on
+    // the user's answer for that one call (see `consent`).
+    if is_chat && read_only_project.is_some() && CHAT_FOLDER_ASKED.contains(&name.as_str())
+    {
+        crate::consent::store().consume(
+            &thread_id,
+            call_id.as_deref().unwrap_or_default(),
+            &name,
+            None,
+            crate::consent::ToolOrigin::Builtin,
+        )?;
+    }
     let attached = attach_folder(
         read_only_project.as_deref(),
         &sandbox,
@@ -1255,6 +1273,68 @@ fn output_sink(
             stopped.store(true, Ordering::Relaxed);
         }
     })
+}
+
+/// Whether a tool call needs the user's answer before it runs. `allowed`
+/// authorizes that one call; `ask` waits for [`consent_answer`].
+#[tauri::command]
+pub async fn consent_request(
+    request: crate::consent::ConsentRequest,
+) -> Result<crate::consent::Verdict, AgentToolsError> {
+    Ok(crate::consent::store().request(request))
+}
+
+/// Record the user's answer to an asked call; returns whether it may run.
+#[tauri::command]
+pub async fn consent_answer(
+    call_id: String,
+    answer: crate::consent::ConsentAnswer,
+) -> Result<bool, AgentToolsError> {
+    Ok(crate::consent::store().answer(&call_id, answer))
+}
+
+/// Use up the authorization of a call the webview executes itself (an
+/// extension's tool), so it is single-use like the calls Rust executes.
+#[tauri::command]
+pub async fn consent_consume(
+    thread_id: String,
+    call_id: String,
+    tool: String,
+    server: Option<String>,
+    origin: crate::consent::ToolOrigin,
+) -> Result<(), AgentToolsError> {
+    Ok(crate::consent::store().consume(&thread_id, &call_id, &tool, server.as_deref(), origin)?)
+}
+
+/// Deny a thread's pending asks and drop its unused authorizations (Stop);
+/// with `forget_grants` its thread-scoped grants too (the thread deleted).
+#[tauri::command]
+pub async fn consent_cancel_thread(
+    thread_id: String,
+    forget_grants: Option<bool>,
+) -> Result<(), AgentToolsError> {
+    crate::consent::store().cancel_thread(&thread_id, forget_grants.unwrap_or(false));
+    Ok(())
+}
+
+/// The configuration-level grants, for the settings page.
+#[tauri::command]
+pub async fn consent_saved() -> Result<crate::consent::SavedGrants, AgentToolsError> {
+    Ok(crate::consent::store().saved())
+}
+
+#[tauri::command]
+pub async fn consent_revoke(
+    kind: crate::consent::GrantKind,
+    name: String,
+) -> Result<bool, AgentToolsError> {
+    Ok(crate::consent::store().revoke(kind, &name))
+}
+
+#[tauri::command]
+pub async fn consent_set_allow_all_mcp(allow: bool) -> Result<(), AgentToolsError> {
+    crate::consent::store().set_allow_all_mcp(allow);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2530,14 +2610,31 @@ mod tests {
         std::fs::write(path, json!({ "id": id, "metadata": metadata }).to_string()).unwrap();
     }
 
-    async fn call(
+    /// One call as the chat makes it, the user having approved it when the
+    /// tool is one a chat asks for (`approve`).
+    async fn call_as(
         df: &str,
         id: &str,
         name: &str,
         args: serde_json::Value,
         folder: Option<&Path>,
         writable: Option<bool>,
+        approve: bool,
     ) -> Result<ToolResult, AgentToolsError> {
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+        let call_id = format!("call-{id}-{}", CALLS.fetch_add(1, Ordering::Relaxed));
+        if approve {
+            let store = crate::consent::store();
+            store.request(crate::consent::ConsentRequest {
+                thread_id: id.to_string(),
+                call_id: call_id.clone(),
+                tool: name.to_string(),
+                server: None,
+                origin: crate::consent::ToolOrigin::Builtin,
+                strict: true,
+            });
+            assert!(store.answer(&call_id, crate::consent::ConsentAnswer::AllowOnce));
+        }
         execute_tool(
             df.to_string(),
             id.to_string(),
@@ -2549,9 +2646,57 @@ mod tests {
             folder.map(|f| f.to_string_lossy().to_string()),
             writable,
             None,
-            None,
+            Some(call_id),
         )
         .await
+    }
+
+    async fn call(
+        df: &str,
+        id: &str,
+        name: &str,
+        args: serde_json::Value,
+        folder: Option<&Path>,
+        writable: Option<bool>,
+    ) -> Result<ToolResult, AgentToolsError> {
+        call_as(df, id, name, args, folder, writable, true).await
+    }
+
+    /// A call that can change a chat's folder runs only with the user's answer
+    /// for that call: none, or one given for another call, is refused.
+    #[tokio::test]
+    async fn a_chat_folder_write_needs_its_own_approval() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("chat_consent");
+        let id = "thread-chat-consent";
+        write_thread_record(&data, id, json!({ "folder": repo, "folderAccess": "write" }));
+
+        for name in ["write", "edit", "shell"] {
+            let args = match name {
+                "shell" => json!({"command": "touch made.txt"}),
+                "edit" => json!({"path": "a.md", "old_string": "a", "new_string": "b"}),
+                _ => json!({"path": "a.md", "content": "a"}),
+            };
+            let err = call_as(&df, id, name, args, None, None, false)
+                .await
+                .expect_err("an unapproved call is refused");
+            assert!(format!("{err:?}").contains("not been approved"), "{name}: {err:?}");
+        }
+        assert!(!repo.join("a.md").exists());
+        assert!(!repo.join("made.txt").exists());
+        // Reads still run unasked.
+        std::fs::write(repo.join("r.md"), b"r").unwrap();
+        let read = call_as(&df, id, "read", json!({"path": "r.md"}), None, None, false).await;
+        assert!(read.is_ok_and(|r| !r.is_error));
+        // With no folder attached nothing is asked.
+        write_thread_record(&data, id, json!({}));
+        let write =
+            call_as(&df, id, "write", json!({"path": "s.md", "content": "s"}), None, None, false).await;
+        assert!(write.is_ok_and(|r| !r.is_error));
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     /// The folder the user attached to a chat is used with no caller argument,
