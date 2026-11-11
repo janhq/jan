@@ -113,6 +113,26 @@ mod windows {
         for name in ["rel-a.txt", "rel-b.txt", "rel-c.txt"] {
             assert!(ws.join(name).is_file(), "{name} must be written inside the workspace");
         }
+        // `..` is the workspace's parent, which the container cannot write:
+        // the write must fail rather than land in the workspace and report
+        // success.
+        for (label, shell) in &shells[..2] {
+            let (code, out) =
+                rt.block_on(spawn_code(shell, &ws, "Set-Content -Path ..\\up.txt -Value x"));
+            assert_ne!(code, Some(0), "{label}: a write to .. must fail: {out}");
+            assert!(!ws.join("up.txt").exists(), "{label}: .. resolved to the workspace: {out}");
+            // The working directory is still the workspace, by its real path.
+            let (_, out) = rt.block_on(spawn_code(shell, &ws, "Convert-Path ."));
+            let real = proc::without_verbatim_prefix(&ws.canonicalize().unwrap());
+            assert!(
+                out.lines().any(|l| l
+                    .trim()
+                    .trim_end_matches('\\')
+                    .eq_ignore_ascii_case(&real.to_string_lossy())),
+                "{label}: the shell must start in {}: {out}",
+                real.display()
+            );
+        }
         // An error names the command, never the wrapper script around it.
         for (label, shell) in &shells[..2] {
             let (ok, out) = rt.block_on(spawn(shell, &ws, "Write-Error boom; exit 2"));
@@ -196,6 +216,14 @@ mod shell_tool {
                 "the model must be told why: {out}"
             );
         }
+
+        // PowerShell's start-up complaint that it cannot open the drive roots
+        // is not the command's output: the model read it as every command
+        // failing. A command's own error still comes through.
+        let out = shell("echo clean", json!({}));
+        assert!(!out.contains("InitializeDefaultDrives"), "start-up noise kept: {out}");
+        let out = shell("Write-Error own-error", json!({}));
+        assert!(out.contains("own-error"), "the command's own stderr was lost: {out}");
 
         // handlers::tests::bash_success_emits_exit_0_marker
         let out = shell("echo done", json!({}));
