@@ -706,7 +706,9 @@ async fn run_unit(
         }
     };
     // The leaf's own reason for giving up reads better than its exit code, so
-    // it leads the tail rather than being dropped for want of a field.
+    // it is kept rather than dropped for want of a field. It goes last
+    // because `last_lines` is oldest-first and this is the final thing the
+    // leaf said.
     if let Some(error) = leaf_error {
         last_lines.push(error);
     }

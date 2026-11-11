@@ -925,9 +925,11 @@ describe('MessageItem', () => {
   // #9642: a failed llama.cpp load is the one place the user is holding the
   // question the hardware check answers, so that is where it is offered.
   describe('failed model load', () => {
-    const show = () => {
+    const show = (model?: string) => {
       useMessageErrors.getState().setError('msg-1', 'failed to load model')
-      useMessageErrors.getState().setReport('msg-1', '## Model load failure')
+      useMessageErrors
+        .getState()
+        .setReport('msg-1', '## Model load failure', model)
       render(
         <MessageItem
           message={makeMsg() as any}
@@ -945,6 +947,17 @@ describe('MessageItem', () => {
       const link = screen.getByText('providers:diagnostics.checkThisModel')
       expect(link.getAttribute('data-search')).toBe(
         JSON.stringify({ diagnoseModel: 'm1' })
+      )
+    })
+
+    // The message is read long after the user moved on, so the link has to
+    // name the model that failed rather than whatever is selected now.
+    it('checks the model that failed, not the one selected since', () => {
+      show('qwen3-8b')
+      selectedModelRef.current = { id: 'something-else' }
+      const link = screen.getByText('providers:diagnostics.checkThisModel')
+      expect(link.getAttribute('data-search')).toBe(
+        JSON.stringify({ diagnoseModel: 'qwen3-8b' })
       )
     })
 

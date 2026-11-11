@@ -1,11 +1,22 @@
 import { create } from 'zustand'
 
+/** Diagnostics for one failed load, and the model that failed. */
+export type LoadReport = {
+  text: string
+  /**
+   * The model of the turn that failed, not whichever is selected now. A
+   * message is read long after the user has moved on, and a check offered
+   * from it has to be a check of the model it is reporting on.
+   */
+  model?: string
+}
+
 type MessageErrorsState = {
   errors: Record<string, string>
   /** Paste-ready diagnostics for a failed model load, by message id. */
-  reports: Record<string, string>
+  reports: Record<string, LoadReport>
   setError: (messageId: string, error: string) => void
-  setReport: (messageId: string, report: string) => void
+  setReport: (messageId: string, report: string, model?: string) => void
   clearError: (messageId: string) => void
   clearAll: () => void
   hydrate: (entries: Record<string, string>) => void
@@ -14,8 +25,10 @@ type MessageErrorsState = {
 export const useMessageErrors = create<MessageErrorsState>()((set) => ({
   errors: {},
   reports: {},
-  setReport: (messageId, report) =>
-    set((state) => ({ reports: { ...state.reports, [messageId]: report } })),
+  setReport: (messageId, report, model) =>
+    set((state) => ({
+      reports: { ...state.reports, [messageId]: { text: report, model } },
+    })),
   setError: (messageId, error) =>
     set((state) =>
       state.errors[messageId] === error

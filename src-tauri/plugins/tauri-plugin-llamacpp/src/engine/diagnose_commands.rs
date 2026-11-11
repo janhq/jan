@@ -58,6 +58,9 @@ struct RunningJob {
     /// Kills the root if it does not stop on its own. `None` until the pump
     /// task that owns the child exists.
     kill: Option<tokio::task::AbortHandle>,
+    /// The root's pid, which is also its process group id. Killing the group
+    /// is what reaches the leaves; see [`kill_process_group`].
+    pid: Option<u32>,
     /// Set by [`DiagnosticsState::stop`] before the root was spawned, so the
     /// stop is honoured rather than lost in that window.
     stopped: bool,
@@ -77,6 +80,7 @@ impl DiagnosticsState {
             id: id.to_string(),
             stdin: None,
             kill: None,
+            pid: None,
             stopped: false,
         });
         Ok(())
@@ -89,11 +93,13 @@ impl DiagnosticsState {
         id: &str,
         stdin: Option<tokio::process::ChildStdin>,
         kill: tokio::task::AbortHandle,
+        pid: Option<u32>,
     ) {
         if let Ok(mut current) = self.current.lock() {
             if let Some(job) = current.as_mut().filter(|job| job.id == id) {
                 job.stdin = if job.stopped { None } else { stdin };
                 job.kill = Some(kill);
+                job.pid = pid;
             }
         }
     }
@@ -122,10 +128,10 @@ impl DiagnosticsState {
         }
     }
 
-    fn kill_handle(&self, id: &str) -> Option<tokio::task::AbortHandle> {
+    fn kill_handle(&self, id: &str) -> Option<(tokio::task::AbortHandle, Option<u32>)> {
         let current = self.current.lock().ok()?;
         let job = current.as_ref()?;
-        (job.id == id).then(|| job.kill.clone())?
+        (job.id == id).then(|| job.kill.clone().map(|kill| (kill, job.pid)))?
     }
 }
 
@@ -241,6 +247,13 @@ pub async fn start_diagnostics<R: tauri::Runtime>(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     jan_utils::system::setup_windows_process_flags(&mut cmd);
+    // Its own process group, so the leaves it spawns can be killed with it.
+    // `kill_on_drop` and `Child::kill` both signal the root alone, and a root
+    // that had to be killed is by definition one that did not get to stop its
+    // own leaf -- which would then keep a device at full load, with the slot
+    // already handed to the next run.
+    #[cfg(unix)]
+    cmd.process_group(0);
     cmd.kill_on_drop(true);
 
     // Reserved before the spawn: a run that starts and only then finds the
@@ -257,6 +270,7 @@ pub async fn start_diagnostics<R: tauri::Runtime>(
         }
     };
 
+    let pid = child.id();
     let stdin = child.stdin.take();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -270,7 +284,7 @@ pub async fn start_diagnostics<R: tauri::Runtime>(
         stderr,
     ));
 
-    state.attach(&id, stdin, pump.abort_handle());
+    state.attach(&id, stdin, pump.abort_handle(), pid);
 
     Ok(DiagnosticsJob { id })
 }
@@ -287,12 +301,15 @@ pub async fn cancel_diagnostics<R: tauri::Runtime>(
     let state = state.inner().clone();
     tokio::spawn(async move {
         tokio::time::sleep(CANCEL_GRACE).await;
-        if let Some(kill) = state.kill_handle(&job) {
+        if let Some((kill, pid)) = state.kill_handle(&job) {
             log::warn!("hardware check {job} ignored its stop request; killing it");
             // Aborting drops the pump mid-read, so the terminal `done` it
             // would have emitted never happens; without this one the panel
             // waits forever on a run that is already dead.
             kill.abort();
+            // After the abort: dropping the child signals the root, and this
+            // reaches the leaf it left behind.
+            kill_process_group(pid);
             emit_event(
                 &app_handle,
                 &job,
@@ -309,6 +326,31 @@ pub async fn cancel_diagnostics<R: tauri::Runtime>(
         }
     });
     Ok(())
+}
+
+/// Kills a root and every leaf it spawned.
+///
+/// The leaves are grandchildren of this process, which neither `kill_on_drop`
+/// nor `Child::kill` reaches. On Unix the root leads its own process group
+/// (`process_group(0)` above), so one `killpg` takes the group. On Windows
+/// `CREATE_NEW_PROCESS_GROUP` is set but only console control events are
+/// deliverable to a group, which a windowless sidecar does not receive: a job
+/// object is what that would need, so there the leaf is left to its own
+/// `--family-timeout`.
+fn kill_process_group(pid: Option<u32>) {
+    #[cfg(unix)]
+    if let Some(pid) = pid {
+        use nix::sys::signal::{killpg, Signal};
+        use nix::unistd::Pid;
+        // ESRCH is the group already being gone, which is the goal.
+        if let Err(e) = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL) {
+            if e != nix::errno::Errno::ESRCH {
+                log::warn!("could not kill the hardware check's process group: {e}");
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = pid;
 }
 
 /// Publishes one event of one run on the shared channel.
@@ -392,7 +434,11 @@ async fn run_to_completion<R: tauri::Runtime>(
         });
     }
     if timed_out {
+        // Same reasoning as the cancel backstop: the root is being killed, so
+        // nothing of its own will stop the leaf it was running.
+        let pid = child.id();
         let _ = child.kill().await;
+        kill_process_group(pid);
     }
     state.release(&id);
 }
@@ -421,7 +467,7 @@ mod tests {
         let state = DiagnosticsState::default();
         state.reserve("a").unwrap();
         assert!(state.reserve("b").is_err(), "the slot is already reserved");
-        state.attach("a", None, abort_handle());
+        state.attach("a", None, abort_handle(), None);
         assert!(state.reserve("b").is_err(), "and stays held once attached");
     }
 
@@ -437,7 +483,7 @@ mod tests {
     async fn the_slot_reopens_once_the_run_releases_it() {
         let state = DiagnosticsState::default();
         state.reserve("a").unwrap();
-        state.attach("a", None, abort_handle());
+        state.attach("a", None, abort_handle(), None);
         state.release("a");
         state.reserve("b").expect("the slot should be free again");
     }
@@ -467,7 +513,7 @@ mod tests {
         let state = DiagnosticsState::default();
         state.reserve("a").unwrap();
         state.stop("a").unwrap();
-        state.attach("a", None, abort_handle());
+        state.attach("a", None, abort_handle(), None);
         let current = state.current.lock().unwrap();
         let job = current.as_ref().expect("still reserved");
         assert!(job.stopped, "the stop is remembered across the attach");
@@ -479,7 +525,7 @@ mod tests {
         let state = DiagnosticsState::default();
         state.reserve("a").unwrap();
         assert!(state.kill_handle("a").is_none());
-        state.attach("a", None, abort_handle());
+        state.attach("a", None, abort_handle(), None);
         assert!(state.kill_handle("a").is_some());
     }
 

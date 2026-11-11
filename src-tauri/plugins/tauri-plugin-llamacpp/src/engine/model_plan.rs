@@ -89,6 +89,11 @@ pub struct ModelShape {
     pub head_size_v: Option<u64>,
     /// 0 for a dense model. Non-zero means the graph contains `MUL_MAT_ID`.
     pub expert_count: u64,
+    /// At least one tensor type id was not one [`ggml_type_name`] knows, so
+    /// `weight_types` is an incomplete account of the file rather than a
+    /// wrong one. Narrowing `MUL_MAT` to what was recognised would then skip
+    /// the very kernel the model runs on.
+    pub unknown_weight_types: bool,
 }
 
 impl ModelShape {
@@ -115,6 +120,9 @@ impl ModelShape {
                 .filter_map(|id| ggml_type_name(*id))
                 .map(str::to_string)
                 .collect(),
+            unknown_weight_types: tensor_types
+                .iter()
+                .any(|id| ggml_type_name(*id).is_none()),
             head_size_k: number("attention.key_length").or(fallback),
             head_size_v: number("attention.value_length").or(fallback),
             expert_count: number("expert_count").unwrap_or(0),
@@ -166,10 +174,10 @@ const COMMON_HEAD_SIZES: &[u64] = &[64, 128];
 /// trailing comma of `type_a=<name>,` so `q4_0` cannot match `q4_0_whatever`
 /// and a short name cannot prefix a longer one.
 ///
-/// `None` when `types` is empty, which is the fail-open answer: a file whose
-/// tensor types could not be read runs `MUL_MAT` unfiltered rather than
-/// narrowed to the attention types, which would test none of the quantized
-/// kernels the file actually uses.
+/// `None` when `types` is empty: a file whose tensor types could not be read
+/// runs `MUL_MAT` unfiltered rather than narrowed to the attention types,
+/// which would test none of the quantized kernels it actually uses. See
+/// [`model_matmul_filter`] for the other half of that guard.
 fn matmul_filter(types: &[String]) -> Option<String> {
     if types.is_empty() {
         return None;
@@ -181,6 +189,21 @@ fn matmul_filter(types: &[String]) -> Option<String> {
         }
     }
     Some(format!("type_a=({}),", names.join("|")))
+}
+
+/// The `MUL_MAT` filter for one model, or `None` to run the family whole.
+///
+/// An empty `weight_types` is not the only way the list can fail to describe
+/// the file: `from_gguf` drops ids this build does not know, and every real
+/// gguf carries f32 norm tensors, so a model quantized to a type upstream
+/// added after this pin still yields a non-empty `[f32, ...]`. Filtering on
+/// that would run the attention kernels, skip the model's own, and report a
+/// pass. Either way the answer is to stop narrowing.
+fn model_matmul_filter(shape: &ModelShape) -> Option<String> {
+    if shape.unknown_weight_types {
+        return None;
+    }
+    matmul_filter(&shape.weight_types)
 }
 
 /// Upstream's `-p` for flash attention at one head geometry. `hsk` and `hsv`
@@ -228,15 +251,15 @@ pub fn quick_families() -> Vec<FamilyFilter> {
 ///
 /// Fails open at every step: an unreadable head size runs flash attention
 /// unfiltered rather than at a guessed geometry, and a file whose tensor types
-/// are all unknown runs `MUL_MAT` unfiltered. Over-running costs minutes;
-/// under-running costs the answer.
+/// are unreadable *or* only partly recognised runs `MUL_MAT` unfiltered.
+/// Over-running costs minutes; under-running costs the answer.
 pub fn model_families(shape: &ModelShape) -> Vec<FamilyFilter> {
     let mut out: Vec<FamilyFilter> = BASE_FAMILIES
         .iter()
         .map(|f| FamilyFilter::new(*f, None))
         .collect();
 
-    let matmul = matmul_filter(&shape.weight_types);
+    let matmul = model_matmul_filter(shape);
     out.push(FamilyFilter {
         family: "MUL_MAT".into(),
         params: matmul.clone(),
@@ -385,6 +408,40 @@ mod tests {
         assert_eq!(matmul.params, None);
     }
 
+    // The realistic shape of the hazard, and the one an empty-list guard alone
+    // misses: every gguf carries f32 norm tensors, so a model quantized to a
+    // type this build does not know still reports `[f32, ...]`. Filtering on
+    // that would run the attention kernels, skip the model's own, and call it
+    // a pass.
+    #[test]
+    fn a_weight_type_this_build_does_not_know_runs_matrix_math_unfiltered() {
+        let shape = ModelShape::from_gguf(
+            &meta(&[("general.architecture", "x")]),
+            // 0 is f32; 9999 is whatever upstream adds next.
+            &[0, 9999],
+        );
+        assert!(shape.unknown_weight_types);
+        assert_eq!(shape.weight_types, ["f32"]);
+
+        let families = model_families(&shape);
+        let matmul = filter_for(&families, "MUL_MAT").expect("MUL_MAT is planned");
+        assert_eq!(matmul.params, None);
+    }
+
+    #[test]
+    fn a_file_whose_types_are_all_recognised_is_still_narrowed() {
+        let shape = ModelShape::from_gguf(&meta(&[("general.architecture", "x")]), &[0, 12]);
+        assert!(!shape.unknown_weight_types);
+
+        let families = model_families(&shape);
+        let matmul = filter_for(&families, "MUL_MAT").expect("MUL_MAT is planned");
+        assert!(
+            matmul.params.as_deref().is_some_and(|p| p.contains("q4_K")),
+            "{:?}",
+            matmul.params
+        );
+    }
+
     #[test]
     fn flash_attention_is_pinned_to_the_models_own_head_size() {
         let families = model_families(&ModelShape {
@@ -464,6 +521,7 @@ mod tests {
                 head_size_v: Some(128),
                 expert_count: 0,
                 architecture: Some("qwen3".into()),
+                unknown_weight_types: false,
             }),
         };
         let json = serde_json::to_string(&plan).unwrap();

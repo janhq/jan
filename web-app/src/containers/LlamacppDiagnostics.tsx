@@ -325,10 +325,18 @@ export function LlamacppDiagnostics({
     if (busy && running) setDisturbed(true)
   }, [busy, running])
 
-  const devices = useMemo(
-    () => run?.devices.map((d) => d.device.name) ?? [],
-    [run]
-  )
+  // Accumulated, not taken from the last run alone: a run narrowed to one
+  // device reports only that device, which would shrink the list, hide the
+  // selector and pin every later run to it with no way back to 'all'.
+  const [devices, setDevices] = useState<string[]>([])
+  useEffect(() => {
+    const seen = run?.devices.map((d) => d.device.name) ?? []
+    if (seen.length === 0) return
+    setDevices((prev) => {
+      const merged = prev.concat(seen.filter((name) => !prev.includes(name)))
+      return merged.length === prev.length ? prev : merged
+    })
+  }, [run])
   const finished = run ? isFinished(run.status) : false
 
   const runPreset = (preset: 'quick' | 'full' | 'model') => {
@@ -495,7 +503,7 @@ export function LlamacppDiagnostics({
                     </span>
                   </div>
                 </DropdownMenuItem>
-                {devices.length > 1 && (
+                {(devices.length > 1 || device !== 'all') && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">

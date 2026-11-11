@@ -2328,8 +2328,18 @@ function ThreadDetail() {
     }
     useMessageErrors.getState().setError(targetId, errMessage)
     const reportTarget = targetId
+    // The turn's own model, not the one selected by the time anyone reads
+    // this: the check offered from the message has to be about the model
+    // that actually failed.
+    const failedTurn = turnModelOf(threadId)
+    const failedModel =
+      failedTurn.selectedProvider === 'llamacpp'
+        ? failedTurn.selectedModel?.id
+        : undefined
     void buildLoadDiagnosticsReport(error).then((report) => {
-      if (report) useMessageErrors.getState().setReport(reportTarget, report)
+      if (report) {
+        useMessageErrors.getState().setReport(reportTarget, report, failedModel)
+      }
     })
     const tm = useMessages.getState().getMessages(threadId).find(
       (m) => m.id === targetId

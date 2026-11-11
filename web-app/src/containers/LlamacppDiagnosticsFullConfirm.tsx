@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { IconAlertTriangle } from '@tabler/icons-react'
 import {
   getLoadedModels,
@@ -58,6 +58,13 @@ export function LlamacppDiagnosticsFullConfirm({
     }
   }, [open])
 
+  // Read inside `confirm`, which is awaiting when the close happens and would
+  // otherwise close over the `open` of the render it started in.
+  const openRef = useRef(open)
+  useEffect(() => {
+    openRef.current = open
+  }, [open])
+
   const confirm = async () => {
     if (unloadFirst && loaded.length > 0) {
       setWorking(true)
@@ -71,6 +78,10 @@ export function LlamacppDiagnosticsFullConfirm({
         }
       }
       setWorking(false)
+      // The dialog stays interactive while the unloads run, and closing it is
+      // the user withdrawing the request -- starting a multi-minute check
+      // anyway is the one thing Cancel must not do.
+      if (!openRef.current) return
     }
     onConfirm()
   }

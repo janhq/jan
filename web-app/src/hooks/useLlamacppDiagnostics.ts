@@ -322,6 +322,10 @@ export function useLlamacppDiagnostics() {
   // or, on a fast failure, its terminal event.
   const pending = useRef<DiagnosticsEvent[]>([])
   const awaitingId = useRef(false)
+  // Set once the panel is gone. A start in flight at that moment still gets
+  // its id back, and that run has to be cancelled too: it holds the single
+  // slot for as long as it runs, with nothing left to stop it.
+  const unmounted = useRef(false)
 
   useEffect(() => {
     let unlisten: (() => void) | undefined
@@ -356,11 +360,10 @@ export function useLlamacppDiagnostics() {
       // A run outlives this panel and cannot be reattached to on a remount,
       // so it would hold the single backend slot -- and every core -- with
       // nothing listening. Leaving the page is a cancel.
+      unmounted.current = true
       const id = job.current
       if (id && buffer.current && !isFinished(buffer.current.status)) {
-        void cancelDiagnostics(id).catch((e) =>
-          console.warn('cancel llamacpp diagnostics failed:', e)
-        )
+        abandon(id)
       }
     }
   }, [])
@@ -376,6 +379,12 @@ export function useLlamacppDiagnostics() {
       awaitingId.current = true
       try {
         const started = await startDiagnostics(preset, devices, {}, model)
+        // The panel can have gone while this was in flight, in which case the
+        // cleanup had no id to cancel and this is the first chance to.
+        if (unmounted.current) {
+          abandon(started.id)
+          return
+        }
         job.current = started.id
         buffer.current = emptyRun(started.id, preset)
         // Replayed in arrival order, so the run reads exactly as it would
@@ -420,4 +429,11 @@ export function useLlamacppDiagnostics() {
     start,
     cancel,
   }
+}
+
+/** Stops a run nothing is listening to any more. */
+function abandon(id: string) {
+  void cancelDiagnostics(id).catch((e) =>
+    console.warn('cancel llamacpp diagnostics failed:', e)
+  )
 }

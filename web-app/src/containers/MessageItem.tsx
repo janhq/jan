@@ -139,6 +139,11 @@ export const MessageItem = memo(
     const extensionAuthored = extensionAuthorOf(metadata) !== undefined
     const messageError = useMessageErrors((s) => s.errors[message.id])
     const loadReport = useMessageErrors((s) => s.reports[message.id])
+    // The failed turn's model when it was recorded; otherwise the current
+    // selection, which is all an older session has.
+    const diagnoseModel =
+      loadReport?.model ??
+      (selectedProvider === 'llamacpp' ? selectedModel?.id : undefined)
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
     // Machine-readable stamp for <time>; toISOString throws on an invalid date,
     // which a malformed stored value must not turn into a crashed message.
@@ -718,7 +723,7 @@ export const MessageItem = memo(
                 size="sm"
                 onClick={() => {
                   navigator.clipboard
-                    .writeText(loadReport)
+                    .writeText(loadReport.text)
                     .then(() =>
                       toast.success(t('model-errors:diagnosticsCopied'))
                     )
@@ -737,13 +742,11 @@ export const MessageItem = memo(
                 say about this message. The check itself lives on the provider
                 page; this carries the model over rather than being a second
                 place a minutes-long run can start from. */}
-            {loadReport &&
-              selectedProvider === 'llamacpp' &&
-              selectedModel?.id && (
+            {loadReport && diagnoseModel && (
                 <Link
                   to={route.settings.providers}
                   params={{ providerName: 'llamacpp' }}
-                  search={{ diagnoseModel: selectedModel.id }}
+                  search={{ diagnoseModel }}
                   className="shrink-0 whitespace-nowrap text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                 >
                   {t('providers:diagnostics.checkThisModel')}

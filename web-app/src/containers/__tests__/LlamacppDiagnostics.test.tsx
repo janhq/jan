@@ -289,6 +289,29 @@ describe('LlamacppDiagnostics', () => {
     expect(cancelDiagnostics).toHaveBeenCalledWith(JOB)
   })
 
+  it('stops a run whose id arrives after the panel is gone', async () => {
+    // The start call is still in flight at unmount, so the cleanup has no id
+    // to cancel; the run exists all the same and holds the single slot.
+    const user = userEvent.setup()
+    let settle: (v: { id: string }) => void = () => {}
+    startDiagnostics.mockReturnValue(
+      new Promise<{ id: string }>((r) => {
+        settle = r
+      })
+    )
+    const { unmount } = render(<LlamacppDiagnostics />)
+    await user.click(screen.getByRole('button', { name: /diagnostics\.run$/ }))
+    await waitFor(() => expect(startDiagnostics).toHaveBeenCalled())
+
+    unmount()
+    await act(async () => {
+      settle({ id: JOB })
+      await new Promise((r) => setTimeout(r, 50))
+    })
+
+    expect(cancelDiagnostics).toHaveBeenCalledWith(JOB)
+  })
+
   it('does not cancel a run that already finished', async () => {
     const user = userEvent.setup()
     const { unmount } = render(<LlamacppDiagnostics />)
@@ -317,6 +340,49 @@ describe('LlamacppDiagnostics', () => {
       ).not.toBeInTheDocument()
     )
     expect(screen.queryByText('STALE')).not.toBeInTheDocument()
+  })
+
+  // A run narrowed to one device reports only that device. Sourcing the
+  // selector from the last run alone would then hide it and leave `device`
+  // pinned, with no way back to every device.
+  it('keeps a way back to all devices after a single-device run', async () => {
+    const user = userEvent.setup()
+    render(<LlamacppDiagnostics deviceHint="CUDA0" />)
+    await user.click(screen.getByRole('button', { name: /diagnostics\.run$/ }))
+    await waitFor(() =>
+      expect(startDiagnostics).toHaveBeenCalledWith(
+        'quick',
+        ['CUDA0'],
+        {},
+        undefined
+      )
+    )
+    await push(START, DEVICE, {
+      job: JOB,
+      event: 'done',
+      ok: true,
+      cancelled: false,
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: 'providers:diagnostics.runOptions' })
+    )
+    await user.click(
+      await screen.findByText('providers:diagnostics.allDevices')
+    )
+    // The button reads "run again" once a run has finished.
+    await user.click(
+      screen.getByRole('button', { name: 'providers:diagnostics.runAgain' })
+    )
+
+    await waitFor(() =>
+      expect(startDiagnostics).toHaveBeenLastCalledWith(
+        'quick',
+        [],
+        {},
+        undefined
+      )
+    )
   })
 
   it('refuses to start while the engine is loading or replying', async () => {
