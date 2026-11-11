@@ -143,21 +143,33 @@ describe('diagnosticsSuggestions', () => {
     expect(advice?.values).toEqual({ device: 'CUDA0', count: 1 })
   })
 
+  // The advice reads "while the uncompressed ones passed", so it belongs to
+  // the run where *every* failure is a compressed one. When plain kernels
+  // fail too the quantization is not what singles this machine out, and a
+  // differently compressed download will not help.
   it('blames the compression only when the uncompressed kernels passed', () => {
+    const onlyQuantized = build([
+      device('CUDA0'),
+      failingCase('CUDA0', 'MUL_MAT', 'type_a=q4_K,m=4096'),
+      summary('CUDA0', { failed: 1, ok: 100 }),
+    ])
+    expect(ids(onlyQuantized)).toContain('useAnotherQuantization')
+
     const mixed = build([
       device('CUDA0'),
       failingCase('CUDA0', 'MUL_MAT', 'type_a=q4_K,m=4096'),
       failingCase('CUDA0', 'MUL_MAT', 'type_a=f16,m=4096'),
-      summary('CUDA0', { failed: 2 }),
+      summary('CUDA0', { failed: 2, ok: 100 }),
     ])
-    expect(ids(mixed)).toContain('useAnotherQuantization')
+    expect(ids(mixed)).not.toContain('useAnotherQuantization')
 
-    const everything = build([
+    // Nothing passed, so nothing supports "the uncompressed ones passed".
+    const nothingPassed = build([
       device('CUDA0'),
       failingCase('CUDA0', 'MUL_MAT', 'type_a=q4_K,m=4096'),
-      summary('CUDA0', { failed: 1 }),
+      summary('CUDA0', { failed: 1, ok: 0 }),
     ])
-    expect(ids(everything)).not.toContain('useAnotherQuantization')
+    expect(ids(nothingPassed)).not.toContain('useAnotherQuantization')
   })
 
   it('offers the offload note for an accelerator, as advice not a fault', () => {

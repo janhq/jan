@@ -338,6 +338,20 @@ describe('stripLocalPaths', () => {
     )
   })
 
+  // `\w` is ASCII-only, so these fell through to the pass that stops at a
+  // space and the surname stayed in the report.
+  it('takes names outside ASCII, accented or apostrophed', () => {
+    expect(stripLocalPaths('C:\\Users\\Jos\u00e9 Garc\u00eda\\AppData')).toBe(
+      '~\\AppData'
+    )
+    expect(stripLocalPaths("C:\\Users\\Se\u00e1n O'Brien\\AppData")).toBe(
+      '~\\AppData'
+    )
+    expect(stripLocalPaths('/Users/\u674e\u660e/Library/jan')).toBe('~/Library/jan')
+    // Decomposed, as macOS stores it: 'e' plus a combining acute.
+    expect(stripLocalPaths('/Users/Jose\u0301 Garcia/Library')).toBe('~/Library')
+  })
+
   it('still strips a home directory with nothing after it', () => {
     expect(stripLocalPaths('cannot read /home/alice')).toBe('cannot read ~')
   })

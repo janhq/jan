@@ -133,10 +133,12 @@ export function diagnosticsSuggestions(
         })
       }
 
-      // Only when the plain kernels are fine: with everything failing, the
-      // quantization is not what singles this machine out.
+      // Only when the plain kernels are fine, which is what the advice says:
+      // every failure is a compressed-weight one and something uncompressed
+      // passed. With plain kernels failing too, the quantization is not what
+      // singles this machine out and a different download will not help.
       const quantized = quantizedFailures(run, name)
-      if (quantized > 0 && quantized < device.failed) {
+      if (quantized > 0 && quantized === device.failed && device.ok > 0) {
         out.push({
           id: 'useAnotherQuantization',
           device: name,

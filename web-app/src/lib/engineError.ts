@@ -243,14 +243,25 @@ export function engineFailure(messageKey: string, error: unknown): Error {
  * whitespace left the surname behind. The first pass takes a name of any
  * length as long as a separator follows it, which is what tells a path from
  * the prose around it; the second takes a trailing name with nothing after
- * it. The character class is deliberately narrow so a sentence like
- * "/home/bob failed, see ..." cannot be swallowed whole by the first.
+ * it.
+ *
+ * `NAME` is letters in any script rather than `\w`, which is ASCII-only and
+ * so dropped `José García` and `Seán O'Brien` back onto the second pass,
+ * putting the surname straight back in the report. `\p{M}` is there because
+ * macOS stores those names decomposed, as a letter plus a combining accent.
+ * It stays narrow all the same -- no comma, colon or slash -- so a sentence
+ * like "/home/bob failed, see ..." cannot be swallowed whole by the first.
  */
+const NAME = String.raw`[\p{L}\p{M}\p{N} ._'-]`
+
 export function stripLocalPaths(text: string): string {
   return text
-    .replace(/\/(?:home|Users)\/[\w .-]+?(?=\/)/g, '~')
+    .replace(new RegExp(String.raw`/(?:home|Users)/${NAME}+?(?=/)`, 'gu'), '~')
     .replace(/\/(?:home|Users)\/[^/\s"'`:;,)]+/g, '~')
-    .replace(/[A-Za-z]:\\Users\\[\w .-]+?(?=\\)/g, '~')
+    .replace(
+      new RegExp(String.raw`[A-Za-z]:\\Users\\${NAME}+?(?=\\)`, 'gu'),
+      '~'
+    )
     .replace(/[A-Za-z]:\\Users\\[^\\\s"'`:;,)]+/g, '~')
 }
 
