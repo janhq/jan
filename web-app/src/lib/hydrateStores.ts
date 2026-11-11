@@ -9,7 +9,6 @@ import {
 } from '@/hooks/useAnalytic'
 import { useHardware } from '@/hooks/useHardware'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
@@ -45,7 +44,6 @@ const secondaryStores = [
   useProductAnalyticPrompt,
   useHardware,
   useLocalApiServer,
-  useToolApproval,
   useToolAvailable,
   useDownloadStore,
   useProxyConfig,

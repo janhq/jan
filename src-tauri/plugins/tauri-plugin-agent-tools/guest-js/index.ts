@@ -21,6 +21,23 @@ export {
   WorkspaceCopy,
   WorkspaceScope,
 } from './types'
+import type {
+  ConsentAnswer,
+  ConsentRequest,
+  ConsentVerdict,
+  GrantKind,
+  SavedGrants,
+  ToolOrigin,
+} from './types'
+
+export type {
+  ConsentAnswer,
+  ConsentRequest,
+  ConsentVerdict,
+  GrantKind,
+  SavedGrants,
+  ToolOrigin,
+}
 
 /**
  * Every call takes the Jan data folder, because the plugin derives its
@@ -566,4 +583,74 @@ export async function stopSessionMonitors(threadId: string): Promise<void> {
  */
 export async function cancelThreadBash(threadId: string): Promise<void> {
   await invoke('plugin:agent-tools|cancel_thread_bash', { threadId })
+}
+
+/**
+ * Whether a tool call needs the user's answer before it runs. Rust keeps the
+ * grants and the one-use authorization its executor takes; `allowed` means the
+ * call is authorized, `ask` that it waits for {@link consentAnswer}.
+ */
+export async function consentRequest(
+  request: ConsentRequest
+): Promise<ConsentVerdict> {
+  return await invoke('plugin:agent-tools|consent_request', { request })
+}
+
+/** Record the user's answer to an asked call; resolves whether it may run. */
+export async function consentAnswer(
+  callId: string,
+  answer: ConsentAnswer
+): Promise<boolean> {
+  return await invoke('plugin:agent-tools|consent_answer', { callId, answer })
+}
+
+/**
+ * Use up the authorization of a call the webview runs itself (an extension's
+ * tool). Rejects when the call was not approved as exactly this call.
+ */
+export async function consentConsume(
+  threadId: string,
+  callId: string,
+  tool: string,
+  server: string | undefined,
+  origin: ToolOrigin
+): Promise<void> {
+  await invoke('plugin:agent-tools|consent_consume', {
+    threadId,
+    callId,
+    tool,
+    server,
+    origin,
+  })
+}
+
+/**
+ * Deny a thread's pending asks and drop its unused authorizations; with
+ * `forgetGrants` its thread-scoped grants too.
+ */
+export async function consentCancelThread(
+  threadId: string,
+  forgetGrants = false
+): Promise<void> {
+  await invoke('plugin:agent-tools|consent_cancel_thread', {
+    threadId,
+    forgetGrants,
+  })
+}
+
+/** The saved, configuration-level grants. */
+export async function consentSaved(): Promise<SavedGrants> {
+  return await invoke('plugin:agent-tools|consent_saved')
+}
+
+/** Remove one saved grant; resolves whether it existed. */
+export async function consentRevoke(
+  kind: GrantKind,
+  name: string
+): Promise<boolean> {
+  return await invoke('plugin:agent-tools|consent_revoke', { kind, name })
+}
+
+export async function consentSetAllowAllMcp(allow: boolean): Promise<void> {
+  await invoke('plugin:agent-tools|consent_set_allow_all_mcp', { allow })
 }
