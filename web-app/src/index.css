@@ -83,8 +83,14 @@
 /* Chat message zoom. --font-size-base is set inline on this element; the scale
    has to be redeclared here because the :root copies substitute the root's
    --font-size-base before inheriting, so overriding it alone changes nothing
-   for rules reading var(--text-*) (markdown.css). */
+   for rules reading var(--text-*) (markdown.css).
+
+   font-size is set here for the same reason: body's text-sm resolves to a
+   fixed length at the root, and message text with no text-* class of its own
+   (paragraphs, lists, the user bubble) inherits that length, so without this
+   the zoom reached only the elements that carry a class. */
 .message-zoom {
+  font-size: var(--text-sm);
   --text-xs: calc(var(--font-size-base) * 0.75);
   --text-sm: calc(var(--font-size-base) * 0.875);
   --text-base: var(--font-size-base);
