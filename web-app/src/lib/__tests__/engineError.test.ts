@@ -326,56 +326,52 @@ describe('stripLocalPaths', () => {
     ).toBe('~/a ~/b ~\\c')
   })
 
-  // A Windows profile folder is named after the person, so it very often has
-  // a space in it. Stopping at whitespace left the surname in a report meant
-  // to be pasted in public.
-  it('takes the whole name when the profile folder has a space', () => {
-    expect(stripLocalPaths('C:\\Users\\Jo Smith\\AppData\\jan')).toBe(
-      '~\\AppData\\jan'
-    )
-    expect(stripLocalPaths('/Users/Jo Smith/Library/jan')).toBe(
-      '~/Library/jan'
-    )
+  it('still strips a home directory with nothing after it', () => {
+    expect(stripLocalPaths('cannot open /home/alice')).toBe('cannot open ~')
   })
 
-  // `\w` is ASCII-only, so these fell through to the pass that stops at a
-  // space and the surname stayed in the report.
-  it('takes names outside ASCII, accented or apostrophed', () => {
-    expect(stripLocalPaths('C:\\Users\\Jos\u00e9 Garc\u00eda\\AppData')).toBe(
-      '~\\AppData'
-    )
-    expect(stripLocalPaths("C:\\Users\\Se\u00e1n O'Brien\\AppData")).toBe(
-      '~\\AppData'
-    )
-    expect(stripLocalPaths('/Users/\u674e\u660e/Library/jan')).toBe('~/Library/jan')
-    // Decomposed, as macOS stores it: 'e' plus a combining acute.
-    expect(stripLocalPaths('/Users/Jose\u0301 Garcia/Library')).toBe('~/Library')
-  })
-
-  // The space in the name class made the first pass reach for the next '/'
-  // anywhere on the line, taking the words in between with it and making an
-  // unrelated system path look like it sat under the user's home.
-  it('does not reach across prose to a later absolute path', () => {
+  // The shape-guessing fallback stops at whitespace, so it can neither eat
+  // the prose between two paths nor turn an unrelated path into one under
+  // the home directory.
+  it('never reaches across prose into another path', () => {
     expect(
       stripLocalPaths('cannot open /home/bob and /usr/lib/libggml.so')
     ).toBe('cannot open ~ and /usr/lib/libggml.so')
+    expect(stripLocalPaths('cannot open /home/bob and models/x.gguf')).toBe(
+      'cannot open ~ and models/x.gguf'
+    )
     expect(
       stripLocalPaths('C:\\Users\\bob and C:\\Windows\\System32\\x.dll')
     ).toBe('~ and C:\\Windows\\System32\\x.dll')
   })
 
-  it('still strips a home directory with nothing after it', () => {
-    expect(stripLocalPaths('cannot read /home/alice')).toBe('cannot read ~')
+  // Knowing the directory is what makes a name with a space safe: there is no
+  // rule over the text alone that tells `/home/Jo Smith/lib` apart from
+  // `/home/bob and models/x.gguf`.
+  it('takes a spaced or non-ASCII profile name when the home is known', () => {
+    expect(
+      stripLocalPaths(
+        'C:\\Users\\Jo Smith\\AppData\\jan',
+        'C:\\Users\\Jo Smith'
+      )
+    ).toBe('~\\AppData\\jan')
+    expect(
+      stripLocalPaths('/Users/Jos\u00e9 Garc\u00eda/Library/jan', '/Users/Jos\u00e9 Garc\u00eda')
+    ).toBe('~/Library/jan')
+    expect(
+      stripLocalPaths("/home/Se\u00e1n O'Brien/models", "/home/Se\u00e1n O'Brien/")
+    ).toBe('~/models')
   })
 
-  // The space-tolerant pass is anchored on a following separator precisely so
-  // it cannot run off into the sentence around the path.
-  it('does not swallow the prose after a path', () => {
-    expect(stripLocalPaths('/home/bob failed, see the log')).toBe(
-      '~ failed, see the log'
-    )
-    expect(stripLocalPaths('C:\\Users\\bob failed, see the log')).toBe(
-      '~ failed, see the log'
-    )
+  it('matches the home directory written with either separator', () => {
+    expect(
+      stripLocalPaths('C:/Users/Jo Smith/jan', 'C:\\Users\\Jo Smith')
+    ).toBe('~/jan')
+  })
+
+  it('leaves the prose alone even when a home is known', () => {
+    expect(
+      stripLocalPaths('cannot open /home/Jo Smith and models/x.gguf', '/home/Jo Smith')
+    ).toBe('cannot open ~ and models/x.gguf')
   })
 })

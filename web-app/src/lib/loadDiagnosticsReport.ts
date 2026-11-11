@@ -1,5 +1,6 @@
 import { formatLoadDiagnostics } from '@/lib/engineError'
 import { getCoworkEnvironment } from '@/lib/coworkEnv'
+import { localHomeDir } from '@/lib/localHome'
 
 /**
  * The paste-ready report for a failed engine load, with this app's version and
@@ -9,9 +10,13 @@ import { getCoworkEnvironment } from '@/lib/coworkEnv'
 export async function buildLoadDiagnosticsReport(
   error: unknown
 ): Promise<string | undefined> {
-  const env = await getCoworkEnvironment()
+  const [env, home] = await Promise.all([
+    getCoworkEnvironment(),
+    localHomeDir(),
+  ])
   return formatLoadDiagnostics(error, {
     appVersion: env.appVersion ?? undefined,
     os: [env.os, env.arch].filter(Boolean).join(' ') || undefined,
+    home,
   })
 }

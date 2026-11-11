@@ -233,49 +233,43 @@ export function engineFailure(messageKey: string, error: unknown): Error {
   return wrapped
 }
 
+/** Escapes a literal for use inside a regular expression. */
+function quoteRegExp(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /**
  * Replaces the user's home directory wherever a path shows up, so a pasted
  * report does not name them. The engine logs full model and library paths,
  * which is where these come from.
  *
- * Two passes per platform, because a profile folder may contain spaces --
- * `C:\Users\Jo Smith` is an ordinary Windows path, and stopping the name at
- * whitespace left the surname behind. The first pass takes a name of any
- * length as long as a separator follows it, which is what tells a path from
- * the prose around it; the second takes a trailing name with nothing after
- * it.
+ * `home` is the real directory, from [`localHomeDir`](./localHome), and when
+ * it is known this is an exact replacement with nothing to get wrong. Pass it
+ * wherever it can be had.
  *
- * `NAME` is letters in any script rather than `\w`, which is ASCII-only and
- * so dropped `José García` and `Seán O'Brien` back onto the second pass,
- * putting the surname straight back in the report. `\p{M}` is there because
- * macOS stores those names decomposed, as a letter plus a combining accent.
- *
- * Allowing spaces is what makes the first pass ambiguous against prose, so
- * the match must *end* on a non-space (`NAME_END`): a path segment never
- * does, but the words between two paths do. Without that,
- * `"cannot open /home/bob and /usr/lib/libggml.so"` reached the `/` of
- * `/usr` and came out as `"cannot open ~/usr/lib/libggml.so"` -- the words
- * in between lost, and a system path made to look like it sits under the
- * user's home.
+ * The fallback is a guess at the *shape* of a path, and it deliberately stops
+ * the name at whitespace. A profile folder may well contain a space, but no
+ * rule over the text alone separates `/home/Jo Smith/lib` from
+ * `/home/bob and models/x.gguf`: three attempts at spanning the space each
+ * ended up swallowing the prose between two paths instead. Under-stripping a
+ * surname is the lesser harm only because the exact pass above is what
+ * actually covers the user's own home on the desktop, which is the only place
+ * these reports are produced.
  */
-const NAME = String.raw`[\p{L}\p{M}\p{N} ._'-]`
-/** `NAME` minus the space; a path segment cannot end in one. */
-const NAME_END = String.raw`[\p{L}\p{M}\p{N}._'-]`
-
-export function stripLocalPaths(text: string): string {
-  return text
-    .replace(
-      new RegExp(String.raw`/(?:home|Users)/${NAME}*?${NAME_END}(?=/)`, 'gu'),
-      '~'
-    )
+export function stripLocalPaths(text: string, home?: string | null): string {
+  let out = text
+  if (home) {
+    const trimmed = home.replace(/[/\\]+$/, '')
+    if (trimmed) {
+      // Both separators: a Windows path reaches the report either way.
+      const variants = [trimmed, trimmed.replace(/\//g, '\\'), trimmed.replace(/\\/g, '/')]
+      for (const variant of new Set(variants)) {
+        out = out.replace(new RegExp(quoteRegExp(variant), 'gi'), '~')
+      }
+    }
+  }
+  return out
     .replace(/\/(?:home|Users)\/[^/\s"'`:;,)]+/g, '~')
-    .replace(
-      new RegExp(
-        String.raw`[A-Za-z]:\\Users\\${NAME}*?${NAME_END}(?=\\)`,
-        'gu'
-      ),
-      '~'
-    )
     .replace(/[A-Za-z]:\\Users\\[^\\\s"'`:;,)]+/g, '~')
 }
 
@@ -291,7 +285,7 @@ const fence = (text: string): string =>
  */
 export function formatLoadDiagnostics(
   error: unknown,
-  context: { appVersion?: string; os?: string } = {}
+  context: { appVersion?: string; os?: string; home?: string | null } = {}
 ): string | undefined {
   const engineError = parseEngineError(error)
   const d = engineError?.diagnostics
@@ -336,5 +330,5 @@ export function formatLoadDiagnostics(
       fence(d.log)
     )
   }
-  return stripLocalPaths(lines.join('\n'))
+  return stripLocalPaths(lines.join('\n'), context.home)
 }

@@ -13,6 +13,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 import { groupForOp, hasCpuFallback } from '@/lib/diagnosticsGroups'
 import { formatDiagnosticsReport } from '@/lib/diagnosticsReport'
+import { localHomeDir } from '@/lib/localHome'
 import type { DiagnosticsRun } from '@/hooks/useLlamacppDiagnostics'
 import { groupLabelKeys, VERDICT_STYLES } from './llamacppDiagnosticsStatus'
 
@@ -87,7 +88,11 @@ export function LlamacppDiagnosticsDialog({
   const copyAll = async () => {
     try {
       await navigator.clipboard.writeText(
-        formatDiagnosticsReport(run, {}, { allCases: true })
+        formatDiagnosticsReport(
+          run,
+          { home: await localHomeDir() },
+          { allCases: true }
+        )
       )
       toast.success(t('providers:diagnostics.copied'))
     } catch {

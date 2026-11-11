@@ -28,6 +28,7 @@ import {
   type DiagnosticsGroup,
 } from '@/lib/diagnosticsGroups'
 import { formatDiagnosticsReport } from '@/lib/diagnosticsReport'
+import { localHomeDir } from '@/lib/localHome'
 import {
   diagnosticsSuggestions,
   type DiagnosticsSuggestion,
@@ -382,7 +383,9 @@ export function LlamacppDiagnostics({
   const copy = async () => {
     if (!run) return
     try {
-      await navigator.clipboard.writeText(formatDiagnosticsReport(run))
+      await navigator.clipboard.writeText(
+        formatDiagnosticsReport(run, { home: await localHomeDir() })
+      )
       toast.success(t('providers:diagnostics.copied'))
     } catch {
       toast.error(t('providers:diagnostics.copyFailed'))

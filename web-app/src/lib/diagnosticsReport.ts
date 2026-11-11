@@ -31,7 +31,10 @@ function memory(device: DiagnosticsDeviceRun): string {
     : `, ${gib(free)} free of ${gib(total)}`
 }
 
-function deviceSection(device: DiagnosticsDeviceRun): string[] {
+function deviceSection(
+  device: DiagnosticsDeviceRun,
+  home?: string | null
+): string[] {
   const verdict = deviceVerdict(tallyOf(device))
   const lines = [
     `### ${device.device.name} - ${VERDICT_TEXT[verdict]}`,
@@ -88,7 +91,7 @@ function deviceSection(device: DiagnosticsDeviceRun): string[] {
     lines.push('', `**${family.family}: ${family.status}**`)
     if (family.exit) lines.push(`- Exit: ${family.exit}`)
     for (const line of family.lastLines) {
-      lines.push(`- \`${stripLocalPaths(line)}\``)
+      lines.push(`- \`${stripLocalPaths(line, home)}\``)
     }
   }
   return lines
@@ -97,6 +100,8 @@ function deviceSection(device: DiagnosticsDeviceRun): string[] {
 export interface DiagnosticsReportContext {
   appVersion?: string
   os?: string
+  /** The real home directory, so paths are stripped by knowing, not guessing. */
+  home?: string | null
 }
 
 /**
@@ -126,13 +131,13 @@ export function formatDiagnosticsReport(
   lines.push(`- Result: ${run.status}`)
   // Stripped like every other engine-sourced string here: a spawn or exit
   // failure quotes the worker's path, which is under the user's home.
-  if (run.error) lines.push(`- Stopped: ${stripLocalPaths(run.error)}`)
+  if (run.error) lines.push(`- Stopped: ${stripLocalPaths(run.error, context.home)}`)
   if (run.backendModules.length > 0) {
     lines.push(`- Backend modules: ${run.backendModules.join(', ')}`)
   }
 
   for (const device of run.devices) {
-    lines.push('', ...deviceSection(device))
+    lines.push('', ...deviceSection(device, context.home))
   }
 
   const failures = run.cases.filter((c) => c.status === 'fail')
@@ -148,7 +153,7 @@ export function formatDiagnosticsReport(
     for (const c of shown) {
       const error = c.error ?? c.detail ?? ''
       lines.push(
-        `| ${c.device} | ${c.op} | \`${c.params}\` | ${c.status} | ${stripLocalPaths(error).replace(/\|/g, '\\|').replace(/\n/g, ' ')} |`
+        `| ${c.device} | ${c.op} | \`${c.params}\` | ${c.status} | ${stripLocalPaths(error, context.home).replace(/\|/g, '\\|').replace(/\n/g, ' ')} |`
       )
     }
     if (options.allCases && run.casesTruncated) {
