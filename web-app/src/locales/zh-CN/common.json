@@ -1,4 +1,11 @@
 {
+  "htmlArtifact": {
+    "code": "代码",
+    "preview": "预览",
+    "previewStreaming": "生成完成后可用",
+    "unresolvedAssets_one": "1 个引用的资源无法在预览内加载：相对路径没有供解析的 base URL。",
+    "unresolvedAssets_other": "{{count}} 个引用的资源无法在预览内加载：相对路径没有供解析的 base URL。"
+  },
   "assistants": "助手",
   "hardware": "硬件",
   "mcp-servers": "MCP 服务",
@@ -6,20 +13,36 @@
   "https_proxy": "HTTPS 代理",
   "extensions": "扩展",
   "attachments": "附件",
+  "remote_access": "远程访问",
+  "integrations": "集成",
   "experimental": "实验性",
+  "claude_code": "Claude Code",
+  "web_search": "网页搜索",
+  "shell": "Shell",
+  "browse": "网页浏览",
+  "moreControls": "更多控制",
+  "starting": "正在开始...",
+  "activeSuffix": "（可用）",
   "general": "通用",
   "settings": "设置",
   "modelProviders": "模型提供商",
   "localProviders": "本地",
   "remoteProviders": "远程",
-  "manageProviders": "Manage providers",
-  "hiddenProviders": "{{count}} disabled",
+  "manageProviders": "管理提供商",
+  "hiddenProviders": "{{count}} 不可用",
+  "hideProvider": "隐藏提供商",
+  "showProvider": "显示提供商",
   "interface": "外观",
   "appearance": "外观",
   "privacy": "隐私",
   "keyboardShortcuts": "快捷键",
-  "newChat": "新建聊天",
-  "newAgentChat": "新建智能体聊天",
+  "home": "主页",
+  "cowork": "Cowork",
+  "newSession": "新对话",
+  "artifacts": "交付",
+  "customize": "自定义",
+  "newChat": "新对话",
+  "newAgentChat": "新 agent 对话",
   "chats": "聊天",
   "favorites": "收藏",
   "recents": "最近",
@@ -62,7 +85,39 @@
   "deny": "拒绝",
   "start": "开始",
   "stop": "停止",
-  "preview": "预览",
+  "preview": {
+    "loading": "打开中...",
+    "unsupported": "Jan 不支持显示此类型文件。请于其他软件内打开。",
+    "outside": "此文件未在当前工作区内。",
+    "tooLarge": "文件过大，无法预览。请于其他软件内打开。",
+    "reload": "重载",
+    "allowNetwork": "允许联网",
+    "unsandboxed": "不使用沙箱运行: 读取已保存的数据和本地文件。",
+    "unresolvedRefs_one": "本页用到的 1 个文件无法在预览内加载。请于浏览器内打开查看。",
+    "unresolvedRefs_other": "本页用到的 {{count}} 个文件无法在预览内加载。请于浏览器内打开查看。",
+    "externalRefs_one": "本页加载的 1 个在线资源被屏蔽。开启 \"允许联网\" 以加载它。",
+    "externalRefs_other": "本页加载的 {{count}} 个在线资源被屏蔽。开启 \"允许联网\" 以加载它们。",
+    "scriptErrors_one": "本页返回了 1 个错误：{{message}}",
+    "scriptErrors_other": "本页返回了 {{count}} 个错误。第一个：{{message}}"
+  },
+  "changes": {
+    "title": "Agent 更改",
+    "empty": "由 Agent 编辑的文件将于此处显示。",
+    "a11y": "Agent 更改：编辑 {{files}} 个文件，添加 {{additions}} 个, 删除 {{deletions}} 个"
+  },
+  "modelPanel": {
+    "title": "模型设置",
+    "a11y": "打开模型设置",
+    "contextTooltip": "上下文窗口：{{value}} / {{max}} tokens"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "技能 '{{name}}' 当前不可用",
+    "kind": {
+      "skill": "技能",
+      "command": "指令",
+      "model": "模型"
+    }
+  },
   "compactWidth": "紧凑宽度",
   "fullWidth": "全宽",
   "dark": "深色",
@@ -74,10 +129,10 @@
   "newThread": "新会话",
   "noResultsFound": "未找到结果",
   "noThreadsYet": "暂无会话",
-  "noThreadsYetDesc": "开始新的对话以在此处查看您的会话历史记录。",
+  "noThreadsYetDesc": "开始一个新的对话以在此查看对话历史。",
   "downloads": "下载",
   "downloading": "下载中",
-  "uploadingAttachments": "正在上传附件…",
+  "uploadingAttachments": "上传附件中...",
   "cancelDownload": "取消下载",
   "downloadCancelled": "下载已取消",
   "downloadComplete": "下载完成",
@@ -101,12 +156,12 @@
   "conversationNotAvailableDescription": "您尝试访问的对话不可用或已被删除。",
   "temporaryChat": "临时聊天",
   "temporaryChatTooltip": "临时聊天不会出现在您的历史记录中",
-  "generateAiResponse": "生成AI响应",
+  "generateAiResponse": "生成 AI 响应",
   "outOfContextError": {
     "truncateInput": "截断输入",
     "title": "上下文错误",
-    "description": "此聊天正在达到AI的内存限制，就像白板被填满一样。我们可以扩展内存窗口（称为上下文大小），以便它记住更多内容，但这可能会使用更多计算机内存。我们也可以截断输入，这意味着它将忘记一些聊天历史记录以为新消息腾出空间。",
-    "increaseContextSizeDescription": "您想要增加上下文大小吗？",
+    "description": "此对话即将达到 AI 的内存上限（称之为上下文大小），您可使用更多内存扩展此上限以使 AI 记住更多内容。您也可截断输入，AI 将忘记一些对话记录为新消息腾出空间。",
+    "increaseContextSizeDescription": "是否增加上下文大小？",
     "increaseContextSize": "增加上下文大小"
   },
   "customAvatar": "自定义头像",
@@ -122,7 +177,7 @@
   "threadTitle": "会话标题",
   "deleteAllThreads": "删除所有会话",
   "allThreadsUnfavorited": "所有会话已取消收藏",
-  "deleteAllThreadsConfirm": "您确定要删除所有会话吗？此操作无法撤销。",
+  "deleteAllThreadsConfirm": "是否确认删除所有会话？此操作将无法撤销。",
   "addProvider": "添加提供商",
   "addOpenAIProvider": "添加 OpenAI 提供商",
   "enterNameForProvider": "为您的提供商输入一个名称",
@@ -140,7 +195,7 @@
   "apiKeyRequired": "需要 API 密钥",
   "enterTrustedHosts": "输入受信任的主机",
   "placeholder": {
-    "chatInput": "随便问我什么..."
+    "chatInput": "向我提问..."
   },
   "confirm": "确认",
   "continue": "继续",
@@ -148,7 +203,7 @@
   "error": "错误",
   "success": "成功",
   "warning": "警告",
-  "noResultsFoundDesc": "我们找不到任何与您的搜索匹配的聊天。请尝试其他关键字。",
+  "noResultsFoundDesc": "未找到任何匹配项。请尝试其他关键字。",
   "searchModels": "搜索模型...",
   "searchStyles": "搜索样式...",
   "createAssistant": "创建助手",
@@ -207,7 +262,7 @@
   },
   "deleteModel": {
     "title": "删除模型：{{modelId}}",
-    "description": "您确定要删除此模型吗？此操作无法撤销。",
+    "description": "确定删除此模型？此操作无法撤销。",
     "success": "模型 {{modelId}} 已被永久删除。",
     "cancel": "取消",
     "delete": "删除"
@@ -217,7 +272,7 @@
     "description": "删除此提供商及其所有模型。此操作无法撤销。",
     "success": "提供商 {{provider}} 已被永久删除。",
     "confirmTitle": "删除提供商：{{provider}}",
-    "confirmDescription": "您确定要删除此提供商吗？此操作无法撤销。",
+    "confirmDescription": "确定删除此提供商？此操作无法撤销。",
     "cancel": "取消",
     "delete": "删除"
   },
@@ -228,7 +283,7 @@
   },
   "projects": {
     "title": "项目",
-    "new": "新建项目",
+    "new": "新项目",
     "addProject": "添加项目",
     "editProject": "编辑项目",
     "deleteProject": "删除项目",
@@ -238,15 +293,15 @@
     "noProjectsYetDesc": "创建您的第一个项目来组织对话。",
     "projectNotFound": "未找到项目",
     "projectNotFoundDesc": "您正在查找的项目不存在。",
-    "deleteProjectConfirm": "您确定要删除此项目吗？此操作无法撤销。",
-    "addToProject": "添加到项目",
+    "deleteProjectConfirm": "确定删除此项目？此操作无法撤销。",
+    "addToProject": "移动到项目",
     "removeFromProject": "从项目中删除",
     "noConversationsIn": "{{projectName}} 中还没有对话",
     "startNewConversation": "在下方开始与 {{projectName}} 的新对话",
     "conversationsIn": "{{projectName}} 中的对话",
     "conversationsDescription": "点击任何对话以继续聊天，或在下方开始新的对话。",
-    "thread": "线程",
-    "threads": "线程",
+    "thread": "对话",
+    "threads": "对话",
     "updated": "已更新：",
     "collapseProject": "收起项目",
     "expandProject": "展开项目",
@@ -260,11 +315,11 @@
     "createNewProject": "创建新项目",
     "deleteProjectDialog": {
       "title": "删除项目",
-      "permanentDelete": "这将永久删除所有线程。",
-      "permanentDeleteWarning": "此操作将永久删除项目内的所有线程！",
+      "permanentDelete": "这将永久删除所有对话。",
+      "permanentDeleteWarning": "此操作将永久删除项目内的所有对话！",
       "deleteEmptyProject": "此操作将删除项目\"{{projectName}}\"。",
-      "saveThreadsAdvice": "要保存线程，请在删除前将它们移动到您的线程列表或另一个项目中。",
-      "starredWarning": "您在项目中仍有收藏的线程。",
+      "saveThreadsAdvice": "要保存对话，请在删除前将它们移动到您的对话列表或另一个项目中。",
+      "starredWarning": "您在项目中仍有收藏的对话。",
       "deleteButton": "删除",
       "successWithName": "项目\"{{projectName}}\"删除成功",
       "successWithoutName": "项目删除成功",
@@ -286,7 +341,7 @@
   "dialogs": {
     "changeDataFolder": {
       "title": "更改数据文件夹位置",
-      "description": "您确定要更改数据文件夹位置吗？这将把您的所有数据移动到新位置并重新启动应用程序。",
+      "description": "是否确定更改数据文件夹位置？此操作将把您的所有数据移至新位置并重启本应用。",
       "currentLocation": "当前位置：",
       "newLocation": "新位置：",
       "cancel": "取消",
@@ -297,7 +352,7 @@
       "description": "所有会话将被删除。此操作无法撤销。"
     },
     "deleteThread": {
-      "description": "您确定要删除此对话吗？此操作无法撤销。"
+      "description": "确定删除此对话？此操作无法撤销。"
     },
     "editMessage": {
       "title": "编辑消息"
@@ -381,7 +436,7 @@
     },
     "projectDeleted": {
       "title": "项目已删除",
-      "description": "项目\"{{projectName}}\"删除成功"
+      "description": "项目\"{{projectName}}\"已成功删除"
     },
     "projectAlreadyExists": {
       "title": "项目已存在",
@@ -392,19 +447,143 @@
       "description": "删除项目失败。请重试。"
     },
     "threadAssignedToProject": {
-      "title": "线程已分配",
-      "description": "线程已成功分配到\"{{projectName}}\""
+      "title": "对话已移动",
+      "description": "对话已成功移动到\"{{projectName}}\""
     },
     "threadRemovedFromProject": {
-      "title": "线程已移除",
-      "description": "线程已成功从\"{{projectName}}\"中移除"
+      "title": "对话已移除",
+      "description": "对话已成功从\"{{projectName}}\"中移除"
     }
   },
   "llamacppBusyOnExit": {
-    "title": "llama.cpp is still busy",
-    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
-    "forceQuit": "Force quit",
-    "forcing": "Force quitting…",
-    "shuttingDown": "Shutting down…"
-  }
+    "title": "llama.cpp 仍处于繁忙",
+    "description": "一个或多个模型卸载超时。强制退出会终止 llama.cpp，有可能将截断正输出的回复。",
+    "forceQuit": "强制退出",
+    "forcing": "正强制退出...",
+    "shuttingDown": "关闭中..."
+  },
+  "duration": {
+    "seconds": "{{count}} 秒",
+    "minutes": "{{count}} 分",
+    "hours": "{{count}} 时"
+  },
+  "collapse": "折叠",
+  "expand": "展开",
+  "todoPanelTitle": "进度",
+  "todoPanelEmpty": "未有待办事项。",
+  "backgroundTasks": "后台任务",
+  "subagentsRunning_one": "{{count}} 个子 agent 正运行",
+  "subagentsRunning_other": "{{count}} 个子 agents 正运行",
+  "monitorsRunning_one": "{{count}} 个监控 agent 正运行",
+  "monitorsRunning_other": "{{count}} 个监控 agents 正运行",
+  "backgroundRunning_one": "{{count}} 个后台任务正运行",
+  "backgroundRunning_other": "{{count}} 个后台任务正运行",
+  "monitors": "监控 agents",
+  "monitorPolling": "轮询",
+  "monitorMatched": "已匹配",
+  "monitorTimedOut": "超时",
+  "monitorStopped": "停止",
+  "monitorEnded": "结束",
+  "coworkWatching_one": "正在监视 {{count}} 个监控 agent...",
+  "coworkWatching_other": "正在监视 {{count}} 个监控 agents...",
+  "coworkWaitingBackground": "等待后台任务...",
+  "noBackgroundTasks": "未有后台任务。",
+  "running": "运行中",
+  "queued": "正排队",
+  "waiting": "正等待",
+  "finished": "已完成",
+  "subagentPhase": "步骤 {{phase}}",
+  "subagentWaiting": "等待",
+  "viewTranscript": "查看运行记录",
+  "taskWorking": "运行中...",
+  "taskNoOutput": "该子 agent 未输出可见内容。",
+  "subagentToolUses_one": "使用了 {{count}} 个工具",
+  "subagentToolUses_other": "使用了 {{count}} 个工具",
+  "artifactGroupCode": "代码",
+  "artifactGroupImage": "图片",
+  "artifactGroupDocument": "文档",
+  "artifactGroupVideo": "视频",
+  "artifactGroupAudio": "音频",
+  "artifactOpenPreview": "打开预览",
+  "artifactOpenExternal": "打开",
+  "artifactMoreActions": "更多操作",
+  "artifactShowInFolder": "显示于文件夹内",
+  "skillsUsedLabel": "技能使用",
+  "skillsUsed": "使用的技能：{{skills}}",
+  "artifactsAll": "所有",
+  "artifactsEmpty": "未有任何交付。Cowork 的产物将显示在这里。",
+  "artifactsNoMatch": "未有对应的交付。",
+  "artifactsSearch": "搜索交付",
+  "artifactsShowMore": "展示剩余 {{count}} 项",
+  "workspace": {
+    "readsFrom": "运行环境",
+    "writable": "可读写",
+    "footnote": "此文件夹可直接被 agent 读写，其做出的修改可在 diff 面板查看。",
+    "footnoteEmpty": "挂载一个文件夹，以便 agent 加入你的项目。Agent 可读写其中文件。",
+    "attach": "挂载文件夹",
+    "change": "修改文件夹",
+    "detach": "卸载文件夹",
+    "open": "打开",
+    "reveal": "显示",
+    "unavailable": "工作区尚不可用",
+    "missing": "当前工作区文件夹 {{folder}} 不可用。请选择另一文件夹。",
+    "openFailed": "无法打开工作区",
+    "revealFailed": "无法显示工作区",
+    "a11yWithFolder": "项目文件夹 {{folder}} 已载入且可读写。可以更改或卸载。",
+    "a11yNoFolder": "未有任何项目文件载入。请挂载一个。"
+  },
+  "coworkEmpty": {
+    "title": "今天干些什么？",
+    "subtitleSandbox": "向 Jan 布置任务。Jan 将读写文件、运行命令，分步骤自主完成任务。",
+    "subtitleFolder": "向 Jan 布置任务。Jan 将直接在 {{folder}} 中工作——自主读写其中的文件。",
+    "try": "灵感",
+    "sandbox": {
+      "first": "写个 Python 脚本，按修改日期重命名文件",
+      "second": "根据我复制的 CSV 文件，构建单页看板",
+      "third": "为我描述的项目写 README"
+    },
+    "folder": {
+      "first": "解释一下 {{folder}} 的结构",
+      "second": "将 {{folder}} 中的所有 TODO 整理出来并按板块分组",
+      "third": "给 {{folder}} 中我指定的模块写测试用例"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "未有任何终端",
+    "a11y": "命令运行功能不可用。点击查看详情。",
+    "title": "命令运行功能不可用",
+    "body": "Jan 只在系统能够隔离 agent 时允许其运行 shell 命令。此处尚未有任何可用的沙盒，因而 agent 仅可读写与编辑工作区文件，但无法运行任何命令。",
+    "fixLinux": "Linux 使用 bubblewrap。将其安装后，重启 Jan。",
+    "fixMac": "macOS 使用 /usr/bin/sandbox-exec 中的内置沙盒。确保其可用后，重启 Jan。",
+    "fixWindows": "Windows 使用 AppContainer。重启 Jan 再试。",
+    "recheck": "重新检测"
+  },
+  "planMode": {
+    "label": "规划",
+    "tooltipOff": "规划模式—— agent 仅阅读并提出建议，而非写入文件。",
+    "tooltipOn": "正处于规划模式。关闭此项以使 agent 能够写入文件。",
+    "onAnnounce": "规划模式开启",
+    "placeholder": "询问一个计划。Agent 将不会修改任何文件。"
+  },
+  "budget": {
+    "stoppedSteps": "于第 {{max}} 步处停止——此 agent 并未完成。",
+    "keepGoing": "继续",
+    "stoppedTokens": "已终止——此对话将超出 token 预算。",
+    "compact": "压缩",
+    "newSession": "新对话"
+  },
+  "run": {
+    "stopped": "已终止。",
+    "failed": "此运行提前终止。",
+    "tryAgain": "重试"
+  },
+  "modelNoTools": "{{model}} 无法调用工具，因而无法作为 agent。请选择支持调用工具的模型。",
+  "askContinue": "继续",
+  "askNext": "下个问题",
+  "askPrev": "上个问题",
+  "askRecommended": "建议",
+  "askSelectedCount": "已选 {{count}} 个",
+  "askSomethingElse": "其他",
+  "askSomethingElsePlaceholder": "键入您自己的回答",
+  "submit": "提交"
 }
