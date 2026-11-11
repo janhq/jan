@@ -408,6 +408,9 @@ pub async fn get_server_summaries(
 ///   (`ToolWithServer::generation`). A call to a server that has since been
 ///   replaced is refused instead of running on the new process
 /// * `arguments` - Optional map of argument names to values
+/// * `thread_id`, `call_id` - The conversation and tool call the user approved
+///   (`tauri_plugin_agent_tools::consent`). The call runs only on that
+///   approval, given for this tool on the server that is about to run it
 /// * `cancellation_token` - Optional token to allow cancellation from JS side
 /// * `max_output_chars` - Optional caller-derived per-result character budget
 ///   (the desktop chat derives one from the active model's context window);
@@ -424,6 +427,8 @@ pub async fn call_tool(
     server_name: Option<String>,
     server_generation: Option<u64>,
     arguments: Option<Map<String, Value>>,
+    thread_id: Option<String>,
+    call_id: Option<String>,
     cancellation_token: Option<String>,
     max_output_chars: Option<u64>,
 ) -> Result<CallToolResult, String> {
@@ -469,6 +474,17 @@ pub async fn call_tool(
     };
 
     log::info!("Found tool {tool_name} in server {srv_name}");
+
+    if let Err(e) = tauri_plugin_agent_tools::consent::store().consume(
+        thread_id.as_deref().unwrap_or_default(),
+        call_id.as_deref().unwrap_or_default(),
+        &tool_name,
+        Some(srv_name),
+        tauri_plugin_agent_tools::consent::ToolOrigin::Mcp,
+    ) {
+        cleanup_cancellation_token(&state, &cancellation_token).await;
+        return Err(e);
+    }
 
     // Call the tool with timeout and cancellation support
     let mut params = CallToolRequestParams::new(tool_name.clone());
