@@ -249,17 +249,31 @@ export function engineFailure(messageKey: string, error: unknown): Error {
  * so dropped `José García` and `Seán O'Brien` back onto the second pass,
  * putting the surname straight back in the report. `\p{M}` is there because
  * macOS stores those names decomposed, as a letter plus a combining accent.
- * It stays narrow all the same -- no comma, colon or slash -- so a sentence
- * like "/home/bob failed, see ..." cannot be swallowed whole by the first.
+ *
+ * Allowing spaces is what makes the first pass ambiguous against prose, so
+ * the match must *end* on a non-space (`NAME_END`): a path segment never
+ * does, but the words between two paths do. Without that,
+ * `"cannot open /home/bob and /usr/lib/libggml.so"` reached the `/` of
+ * `/usr` and came out as `"cannot open ~/usr/lib/libggml.so"` -- the words
+ * in between lost, and a system path made to look like it sits under the
+ * user's home.
  */
 const NAME = String.raw`[\p{L}\p{M}\p{N} ._'-]`
+/** `NAME` minus the space; a path segment cannot end in one. */
+const NAME_END = String.raw`[\p{L}\p{M}\p{N}._'-]`
 
 export function stripLocalPaths(text: string): string {
   return text
-    .replace(new RegExp(String.raw`/(?:home|Users)/${NAME}+?(?=/)`, 'gu'), '~')
+    .replace(
+      new RegExp(String.raw`/(?:home|Users)/${NAME}*?${NAME_END}(?=/)`, 'gu'),
+      '~'
+    )
     .replace(/\/(?:home|Users)\/[^/\s"'`:;,)]+/g, '~')
     .replace(
-      new RegExp(String.raw`[A-Za-z]:\\Users\\${NAME}+?(?=\\)`, 'gu'),
+      new RegExp(
+        String.raw`[A-Za-z]:\\Users\\${NAME}*?${NAME_END}(?=\\)`,
+        'gu'
+      ),
       '~'
     )
     .replace(/[A-Za-z]:\\Users\\[^\\\s"'`:;,)]+/g, '~')

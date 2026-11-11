@@ -352,6 +352,18 @@ describe('stripLocalPaths', () => {
     expect(stripLocalPaths('/Users/Jose\u0301 Garcia/Library')).toBe('~/Library')
   })
 
+  // The space in the name class made the first pass reach for the next '/'
+  // anywhere on the line, taking the words in between with it and making an
+  // unrelated system path look like it sat under the user's home.
+  it('does not reach across prose to a later absolute path', () => {
+    expect(
+      stripLocalPaths('cannot open /home/bob and /usr/lib/libggml.so')
+    ).toBe('cannot open ~ and /usr/lib/libggml.so')
+    expect(
+      stripLocalPaths('C:\\Users\\bob and C:\\Windows\\System32\\x.dll')
+    ).toBe('~ and C:\\Windows\\System32\\x.dll')
+  })
+
   it('still strips a home directory with nothing after it', () => {
     expect(stripLocalPaths('cannot read /home/alice')).toBe('cannot read ~')
   })
