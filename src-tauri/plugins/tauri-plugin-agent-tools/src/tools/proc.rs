@@ -197,9 +197,14 @@ const POWERSHELL_CORE_ASSEMBLIES: &str = "'Microsoft.PowerShell.Commands.Managem
 ///   the path; relative paths, `Get-ChildItem` and, on 5.1, every external
 ///   program then fail. The session first moves to the process's working
 ///   directory by its real path. Only if that is refused does it fall back to
-///   a `JanWs:` drive rooted there, which needs no parent access, so the drive
-///   is never used where a real path works. Under the drive, `$PWD` and
-///   `Resolve-Path` read `JanWs:\...`, which a native program cannot open;
+///   a `JanWs:` drive, which needs no parent access, so the drive is never
+///   used where a real path works. The drive is rooted at the workspace's
+///   parent, not the workspace: a drive root's `..` is the root itself, so
+///   rooted at the workspace `..\x` silently wrote into the workspace and
+///   reported success. From the parent, `..` names the real parent and the
+///   container's write there is refused. Only a workspace that is itself a
+///   drive root, with no parent, gets the drive at the workspace. Under the
+///   drive, `$PWD` and `Resolve-Path` read `JanWs:\...`, which a native program cannot open;
 ///   [`ShellKind::syntax_note`] tells the model to pass `Convert-Path` output
 ///   instead, which is the real path.
 ///
@@ -214,7 +219,7 @@ pub fn powershell_script(command: &str) -> String {
          try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{}}\n\
          $OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n\
          $JanWs = [Environment]::CurrentDirectory\n\
-         try {{ Set-Location -LiteralPath $JanWs -ErrorAction Stop }} catch {{ try {{ $null = New-PSDrive -Name JanWs -PSProvider FileSystem -Root $JanWs -Scope Global -ErrorAction Stop; Set-Location JanWs:\\ }} catch {{}} }}\n\
+         try {{ Set-Location -LiteralPath $JanWs -ErrorAction Stop }} catch {{ try {{ $JanUp = [System.IO.Path]::GetDirectoryName($JanWs); if (-not $JanUp) {{ throw 'drive root' }}; $null = New-PSDrive -Name JanWs -PSProvider FileSystem -Root $JanUp -Scope Global -ErrorAction Stop; Set-Location -LiteralPath ('JanWs:\\' + [System.IO.Path]::GetFileName($JanWs)) -ErrorAction Stop }} catch {{ try {{ Remove-PSDrive -Name JanWs -Scope Global -ErrorAction SilentlyContinue; $null = New-PSDrive -Name JanWs -PSProvider FileSystem -Root $JanWs -Scope Global -ErrorAction Stop; Set-Location JanWs:\\ }} catch {{}} }} }}\n\
          $global:LASTEXITCODE = $null\n\
          $JanExit = $null\n\
          function jan_cmd {{\n\
@@ -225,6 +230,66 @@ pub fn powershell_script(command: &str) -> String {
          if ($null -eq $JanExit) {{ $JanExit = if ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 0 }} }}\n\
          $host.SetShouldExit($JanExit)\n"
     )
+}
+
+/// What Windows PowerShell prints on stderr when its FileSystem provider cannot
+/// open a drive root, which inside the AppContainer is every start: the token
+/// cannot read `C:\`. It is printed while the runspace opens, before the
+/// script runs, so nothing in [`powershell_script`] can stop it, and it says
+/// nothing about the command. Left in, it led every result and models read it
+/// as the command failing.
+const POWERSHELL_DRIVE_NOISE: &[u8] =
+    b"Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.";
+
+/// Drops [`POWERSHELL_DRIVE_NOISE`] from the start of a shell's stderr and
+/// passes everything else through unchanged. Only the first line is held back,
+/// and only until it is complete, so a command's own errors are never touched
+/// and arrive no later than the line after it.
+#[derive(Default)]
+pub struct StderrStartupFilter {
+    pending: Vec<u8>,
+    decided: bool,
+}
+
+impl StderrStartupFilter {
+    /// The bytes of `chunk` that belong in the output.
+    pub fn feed(&mut self, chunk: &[u8]) -> Vec<u8> {
+        if self.decided {
+            return chunk.to_vec();
+        }
+        self.pending.extend_from_slice(chunk);
+        match self.pending.iter().position(|&b| b == b'\n') {
+            Some(end) => self.decide(end + 1),
+            // A first line longer than the noise cannot be the noise.
+            None if self.pending.len() > POWERSHELL_DRIVE_NOISE.len() + 2 => {
+                self.decided = true;
+                std::mem::take(&mut self.pending)
+            }
+            None => Vec::new(),
+        }
+    }
+
+    /// Whatever is still held once the stream ends.
+    pub fn finish(&mut self) -> Vec<u8> {
+        if self.decided {
+            return Vec::new();
+        }
+        let end = self.pending.len();
+        self.decide(end)
+    }
+
+    fn decide(&mut self, line_end: usize) -> Vec<u8> {
+        self.decided = true;
+        let mut rest = std::mem::take(&mut self.pending);
+        let mut line = &rest[..line_end];
+        while let [head @ .., b'\r' | b'\n' | b' '] = line {
+            line = head;
+        }
+        if line == POWERSHELL_DRIVE_NOISE {
+            rest.drain(..line_end);
+        }
+        rest
+    }
 }
 
 /// The text appended, unescaped, after [`CMD_ARGS`]. cmd does its own quote
@@ -1330,6 +1395,25 @@ mod shell_kind_tests {
         assert!(setup.contains("function jan_cmd {"), "runs inside the function");
         assert!(rest.contains("elseif ($LASTEXITCODE) { $LASTEXITCODE }"), "real code after it");
         assert!(rest.contains("$host.SetShouldExit($JanExit)"), "exit without dropping output");
+    }
+
+    /// Only PowerShell's drive complaint, as the whole first line, is dropped:
+    /// however the pipe splits it, and never a command's own error.
+    #[test]
+    fn stderr_filter_drops_only_the_startup_drive_line() {
+        let run = |chunks: &[&[u8]]| {
+            let mut f = StderrStartupFilter::default();
+            let mut out: Vec<u8> = chunks.iter().flat_map(|c| f.feed(c)).collect();
+            out.extend(f.finish());
+            String::from_utf8(out).unwrap()
+        };
+        let noise = [POWERSHELL_DRIVE_NOISE, b"\r\n"].concat();
+        assert_eq!(run(&[&noise]), "");
+        assert_eq!(run(&[&noise[..20], &noise[20..], b"real error\r\n"]), "real error\r\n");
+        assert_eq!(run(&[POWERSHELL_DRIVE_NOISE]), "", "no trailing newline");
+        assert_eq!(run(&[b"boom\n", &noise]), format!("boom\n{}", String::from_utf8_lossy(&noise)));
+        assert_eq!(run(&[b"fatal: ", b"not a repo\n"]), "fatal: not a repo\n");
+        assert_eq!(run(&[b"partial"]), "partial");
     }
 
     /// The syntax note names the language for every non-POSIX shell and is
