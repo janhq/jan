@@ -124,7 +124,9 @@ export function formatDiagnosticsReport(
   lines.push(`- Preset: ${run.preset}`)
   if (run.model) lines.push(`- Model: ${run.model}`)
   lines.push(`- Result: ${run.status}`)
-  if (run.error) lines.push(`- Stopped: ${run.error}`)
+  // Stripped like every other engine-sourced string here: a spawn or exit
+  // failure quotes the worker's path, which is under the user's home.
+  if (run.error) lines.push(`- Stopped: ${stripLocalPaths(run.error)}`)
   if (run.backendModules.length > 0) {
     lines.push(`- Backend modules: ${run.backendModules.join(', ')}`)
   }

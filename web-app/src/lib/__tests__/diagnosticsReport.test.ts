@@ -238,6 +238,26 @@ describe('formatDiagnosticsReport', () => {
     expect(md).toContain('~/jan/libggml-cuda.so')
   })
 
+  // The stop reason is engine-sourced like the rest: a spawn failure quotes
+  // the worker's own path, which lives under the user's home.
+  it('strips the home directory out of the stop reason too', () => {
+    const md = formatDiagnosticsReport(
+      build([
+        START,
+        DEVICE,
+        {
+          event: 'done',
+          ok: false,
+          cancelled: false,
+          error:
+            'could not start /home/bob/.local/share/jan/jan-llama-worker: No such file',
+        },
+      ] as Omit<DiagnosticsEvent, 'job'>[])
+    )
+    expect(md).not.toContain('/home/bob')
+    expect(md).toContain('~/.local/share/jan/jan-llama-worker')
+  })
+
   it('calls out quantized failures, which every local model hits', () => {
     expect(formatDiagnosticsReport(run())).toContain(
       '1 of the failures are quantized kernels'

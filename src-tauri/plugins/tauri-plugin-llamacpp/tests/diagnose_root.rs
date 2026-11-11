@@ -668,7 +668,20 @@ async fn the_shape_filter_reaches_the_leaf_argv() {
     }
     .units()
     .remove(0);
-    let args = LeafSpec::new(PathBuf::from("worker")).args(&unit);
+    let args = LeafSpec::new(PathBuf::from("worker")).args(&unit, Duration::from_secs(600));
     let at = args.iter().position(|a| a == "--params").expect("--params");
     assert_eq!(args[at + 1], "type_a=(q4_K|f16),");
+}
+
+// The leaf arms its own deadline from this, which is the only thing that ends
+// an orphan on a platform where the plugin cannot kill a grandchild.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_leaf_is_told_the_deadline_it_has_to_enforce() {
+    let unit = plan(&["ADD"]).units().remove(0);
+    let args = LeafSpec::new(PathBuf::from("worker")).args(&unit, Duration::from_secs(42));
+    let at = args
+        .iter()
+        .position(|a| a == "--family-timeout")
+        .expect("--family-timeout reaches the leaf");
+    assert_eq!(args[at + 1], "42");
 }

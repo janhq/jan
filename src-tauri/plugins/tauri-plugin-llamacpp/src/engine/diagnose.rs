@@ -266,7 +266,7 @@ impl LeafSpec {
 
     /// The argv a leaf is started with, which is also what
     /// `jan-llama-worker` parses.
-    pub fn args(&self, unit: &DiagUnit) -> Vec<String> {
+    pub fn args(&self, unit: &DiagUnit, family_timeout: Duration) -> Vec<String> {
         let mut args = vec!["--diagnose-run".to_string()];
         args.push(unit.device.clone());
         args.push("--mode".into());
@@ -287,11 +287,15 @@ impl LeafSpec {
         }
         args.push("--workers".into());
         args.push(unit.request.workers.max(1).to_string());
+        // Passed so the leaf can end itself if this root dies without
+        // killing it. Enforced here too, which is what normally stops it.
+        args.push("--family-timeout".into());
+        args.push(family_timeout.as_secs().to_string());
         args
     }
 
-    fn command(&self, unit: &DiagUnit) -> Command {
-        self.base_command(&self.args(unit))
+    fn command(&self, unit: &DiagUnit, family_timeout: Duration) -> Command {
+        self.base_command(&self.args(unit, family_timeout))
     }
 
     fn base_command(&self, args: &[String]) -> Command {
@@ -593,7 +597,7 @@ async fn run_unit(
     timeout: Duration,
     emit: &mut impl FnMut(RootEvent),
 ) -> UnitOutcome {
-    let mut child = match spec.command(unit).spawn() {
+    let mut child = match spec.command(unit, timeout).spawn() {
         Ok(c) => c,
         Err(e) => {
             return UnitOutcome {
@@ -801,7 +805,7 @@ mod tests {
             },
         };
         assert_eq!(
-            spec.args(&unit),
+            spec.args(&unit, DEFAULT_FAMILY_TIMEOUT),
             vec![
                 "--diagnose-run",
                 "Vulkan0",
@@ -813,6 +817,8 @@ mod tests {
                 "m=4096",
                 "--workers",
                 "8",
+                "--family-timeout",
+                "600",
             ]
         );
     }
@@ -821,7 +827,7 @@ mod tests {
     fn a_probe_argv_omits_the_filters_it_has_none_of() {
         let spec = LeafSpec::new(PathBuf::from("worker"));
         let units = plan(vec![device("CPU")], vec![], true).units();
-        let args = spec.args(&units[0]);
+        let args = spec.args(&units[0], DEFAULT_FAMILY_TIMEOUT);
         assert!(!args.iter().any(|a| a == "--op" || a == "--params"));
         assert_eq!(args[3], "support");
     }

@@ -275,9 +275,18 @@ async fn main() {
             }
             return;
         }
-        Mode::DiagnoseDevices => return print_diagnose_devices(),
-        Mode::DiagnoseOps => return print_diagnose_ops(),
-        Mode::DiagnoseRun(device) => return diagnose_leaf(device, &args.diag),
+        Mode::DiagnoseDevices => {
+            arm_leaf_deadline(diagnose::PROBE_TIMEOUT);
+            return print_diagnose_devices();
+        }
+        Mode::DiagnoseOps => {
+            arm_leaf_deadline(diagnose::PROBE_TIMEOUT);
+            return print_diagnose_ops();
+        }
+        Mode::DiagnoseRun(device) => {
+            arm_leaf_deadline(args.diag.family_timeout);
+            return diagnose_leaf(device, &args.diag);
+        }
         Mode::Diagnose => unreachable!("handled above, before ggml is loaded"),
         Mode::Serve => {}
     }
@@ -430,6 +439,35 @@ fn diag_root_fail(msg: String) -> ! {
 /// Exit code for a leaf whose reader is gone. Distinct from [`DIAG_EXIT`]
 /// because nothing is left to read either one.
 const DIAG_EXIT_NO_READER: i32 = 9;
+
+/// Exit code for a leaf that outlived the deadline the root gave it.
+const DIAG_EXIT_DEADLINE: i32 = 10;
+
+/// How long after the root's own limit a leaf waits before ending itself. The
+/// root kills an overrunning leaf at the limit exactly, so this only ever
+/// fires when there is no root left to do it.
+const LEAF_DEADLINE_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Ends this leaf if it is still alive well after the root would have killed
+/// it.
+///
+/// The backstop for an orphan: on Windows the plugin cannot kill a
+/// grandchild (see `engine::diagnose_commands::kill_process_group`), and a
+/// leaf wedged inside a driver call writes nothing, so the broken-stdout exit
+/// in [`print_event`] never gets a chance to fire. A plain OS thread is what
+/// makes this work -- it keeps running while the main thread is blocked
+/// inside ggml, which is the state being bounded.
+fn arm_leaf_deadline(limit: std::time::Duration) {
+    let deadline = limit + LEAF_DEADLINE_GRACE;
+    std::thread::spawn(move || {
+        std::thread::sleep(deadline);
+        eprintln!(
+            "jan-llama-worker: no root took this leaf down within {}s; exiting",
+            deadline.as_secs()
+        );
+        std::process::exit(DIAG_EXIT_DEADLINE);
+    });
+}
 
 /// stdout is a pipe to the root, so it is block-buffered; a run that streams
 /// has to flush each line or the UI sees nothing until the leaf exits.
