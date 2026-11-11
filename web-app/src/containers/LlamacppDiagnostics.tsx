@@ -297,6 +297,36 @@ function Suggestions({
  * `Show all cases` carries every case, its parameters and its error for
  * someone filing a bug. Nothing is sent anywhere.
  */
+/**
+ * One preset in the run menu.
+ *
+ * The duration sits under the name rather than beside it: the two were a
+ * `justify-between` row, and at the menu's width "15 minutes or more per
+ * device" left the name too little room, so it broke mid-label ("Full /
+ * check") and the rows came out ragged. Stacked, every row is the same
+ * height whatever a translation does to the hint.
+ */
+function PresetItem({
+  label,
+  hint,
+  onSelect,
+}: {
+  label: string
+  hint: string
+  onSelect: () => void
+}) {
+  return (
+    <DropdownMenuItem onSelect={onSelect}>
+      <div className="flex w-full flex-col gap-0.5">
+        <span>{label}</span>
+        <span className="text-xs leading-snug text-muted-foreground">
+          {hint}
+        </span>
+      </div>
+    </DropdownMenuItem>
+  )
+}
+
 export function LlamacppDiagnostics({
   busy = false,
   deviceHint,
@@ -478,31 +508,22 @@ export function LlamacppDiagnostics({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-64">
                 {modelHint && (
-                  <DropdownMenuItem onSelect={() => runPreset('model')}>
-                    <div className="flex w-full items-baseline justify-between gap-3">
-                      <span>{t('providers:diagnostics.model')}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {t('providers:diagnostics.modelHint')}
-                      </span>
-                    </div>
-                  </DropdownMenuItem>
+                  <PresetItem
+                    label={t('providers:diagnostics.model')}
+                    hint={t('providers:diagnostics.modelHint')}
+                    onSelect={() => runPreset('model')}
+                  />
                 )}
-                <DropdownMenuItem onSelect={() => runPreset('quick')}>
-                  <div className="flex w-full items-baseline justify-between gap-3">
-                    <span>{t('providers:diagnostics.quick')}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {t('providers:diagnostics.quickHint')}
-                    </span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setConfirmFull(true)}>
-                  <div className="flex w-full items-baseline justify-between gap-3">
-                    <span>{t('providers:diagnostics.full')}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {t('providers:diagnostics.fullHint')}
-                    </span>
-                  </div>
-                </DropdownMenuItem>
+                <PresetItem
+                  label={t('providers:diagnostics.quick')}
+                  hint={t('providers:diagnostics.quickHint')}
+                  onSelect={() => runPreset('quick')}
+                />
+                <PresetItem
+                  label={t('providers:diagnostics.full')}
+                  hint={t('providers:diagnostics.fullHint')}
+                  onSelect={() => setConfirmFull(true)}
+                />
                 {(devices.length > 1 || device !== 'all') && (
                   <>
                     <DropdownMenuSeparator />
