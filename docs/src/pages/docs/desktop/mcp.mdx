@@ -112,8 +112,9 @@ While powerful, MCP is an evolving standard, and its use requires careful consid
 tool or a malicious prompt could potentially lead to unintended actions or data exposure. Jan's implementation
 focuses on user-managed permissions to mitigate this risk — you must approve each tool call individually. Approval
 panels appear **inline inside the tool card** in the chat, showing the exact arguments the model wants to pass
-before you accept or deny. You can also enable **Allow All MCP Tool Permission** in Settings to pre-approve all
-tools (**Allow All MCP Tool Permissions** in Settings → MCP Servers).
+before you accept or deny. **Allow in thread** lasts until you close Jan; only **Always allow** is saved, and every
+saved permission is listed under **Saved tool permissions** in Settings → MCP Servers, where you can revoke it. You can
+also enable **Allow All MCP Tool Permissions** there to pre-approve all MCP tools.
 * **Standard Maturity:** As a relatively new protocol, best practices or sensible defaults are still being
 established. Users should be aware of potential issues like prompt injection, where an input could be crafted to
 misuse a tool's capabilities.
