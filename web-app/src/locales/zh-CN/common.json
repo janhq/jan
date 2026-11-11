@@ -738,5 +738,12 @@
       "show": "显示原始文件夹"
     }
   },
-  "deleteThreadFailed": "无法删除此对话。重启后它可能会重新出现。"
+  "deleteThreadFailed": "无法删除此对话。重启后它可能会重新出现。",
+  "continueAsTask": {
+    "action": "作为任务继续",
+    "title": "将此聊天作为任务继续?",
+    "description": "Jan 会保留此对话,并将其作为 Cowork 任务继续。任务可以在自己的工作区中使用工具、写入文件和运行命令,而无需在每一步询问。它无法再改回聊天。",
+    "descriptionFolder": "Jan 会保留此对话,并将其作为 Cowork 任务继续。任务可以在 {{folder}} 中编辑文件和运行命令,而无需在每次更改时询问。它无法再改回聊天。",
+    "confirm": "作为任务继续"
+  }
 }

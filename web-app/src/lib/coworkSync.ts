@@ -11,6 +11,12 @@ import {
   __resetCoworkRunCloseForTests,
 } from '@/hooks/useCoworkRun'
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
+import { isCoworkThread } from '@/lib/threadMode'
+import { convertThreadMessagesToUIMessages } from '@/lib/messages'
+import {
+  closeUnfinishedToolCalls,
+  uiMessagesToCoworkTurns,
+} from '@/lib/coworkTurns'
 import { useThreads } from '@/hooks/useThreads'
 import { flushMessageWrites } from '@/hooks/useMessages'
 import { getServiceHub } from '@/hooks/useServiceHub'
@@ -138,6 +144,52 @@ export async function flushCoworkDeletes(): Promise<void> {
     deleteFailure = null
     throw failure
   }
+}
+
+/**
+ * Continue a chat as a Cowork task, in place: the same thread, its transcript
+ * converted once into the task's own records. Nothing is copied, so the
+ * conversation stays one row in the history list and one messages.jsonl.
+ *
+ * The chat's pending message writes are drained first, so a late chat write
+ * cannot land after the conversion. Resolves once the thread is saved as a
+ * task; a failed save keeps retrying in the background and rejects here.
+ */
+export async function continueChatAsTask(threadId: string): Promise<void> {
+  if (startPromise) await startPromise
+  const p = persistence
+  if (!p) throw new Error('Cowork sync is not running')
+  const thread = useThreads.getState().threads[threadId]
+  if (!thread || isCoworkThread(thread)) return
+  await flushMessageWrites()
+  const records = await getServiceHub().messages().fetchMessages(threadId)
+  const messages = closeUnfinishedToolCalls(
+    convertThreadMessagesToUIMessages(records).filter(
+      (m) => m.role === 'user' || m.role === 'assistant' || m.role === 'system'
+    )
+  )
+  if (messages.length === 0) throw new Error('This chat has no messages yet')
+  const meta = thread.metadata ?? {}
+  const session: CoworkSession = {
+    id: threadId,
+    title: thread.title,
+    ...(thread.model && { model: thread.model }),
+    folder: typeof meta.folder === 'string' && meta.folder ? meta.folder : null,
+    ...((meta.folderAccess === 'read' || meta.folderAccess === 'write') && {
+      folderAccess: meta.folderAccess,
+    }),
+    ...(meta.project && { project: meta.project }),
+    turns: uiMessagesToCoworkTurns(messages),
+    messages,
+    updated: Date.now(),
+  }
+  // The write-through subscription schedules the write; the thread already
+  // exists, so it is updated in place rather than created.
+  useCoworkSessions.setState((s) => ({
+    sessions: [session, ...s.sessions.filter((x) => x.id !== threadId)],
+    currentId: threadId,
+  }))
+  await p.flushSession(threadId)
 }
 
 /** Everything the window must drain before it may go away. */

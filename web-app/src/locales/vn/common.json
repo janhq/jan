@@ -558,5 +558,12 @@
       "show": "Hiện thư mục gốc"
     }
   },
-  "deleteThreadFailed": "Không thể xóa cuộc trò chuyện. Nó có thể xuất hiện lại sau khi khởi động lại."
+  "deleteThreadFailed": "Không thể xóa cuộc trò chuyện. Nó có thể xuất hiện lại sau khi khởi động lại.",
+  "continueAsTask": {
+    "action": "Tiếp tục dưới dạng tác vụ",
+    "title": "Tiếp tục cuộc trò chuyện này dưới dạng tác vụ?",
+    "description": "Jan giữ cuộc trò chuyện này và tiếp tục nó dưới dạng tác vụ Cowork. Tác vụ có thể dùng công cụ, ghi tệp và chạy lệnh trong không gian làm việc riêng mà không hỏi ở mỗi bước. Không thể chuyển lại thành cuộc trò chuyện.",
+    "descriptionFolder": "Jan giữ cuộc trò chuyện này và tiếp tục nó dưới dạng tác vụ Cowork. Tác vụ có thể sửa tệp và chạy lệnh trong {{folder}} mà không hỏi ở mỗi thay đổi. Không thể chuyển lại thành cuộc trò chuyện.",
+    "confirm": "Tiếp tục dưới dạng tác vụ"
+  }
 }

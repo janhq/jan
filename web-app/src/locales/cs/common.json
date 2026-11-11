@@ -564,5 +564,12 @@
       "show": "Zobrazit původní složku"
     }
   },
-  "deleteThreadFailed": "Konverzaci nebylo možné smazat. Po restartu se může znovu objevit."
+  "deleteThreadFailed": "Konverzaci nebylo možné smazat. Po restartu se může znovu objevit.",
+  "continueAsTask": {
+    "action": "Pokračovat jako úkol",
+    "title": "Pokračovat v tomto chatu jako úkol?",
+    "description": "Jan tuto konverzaci zachová a bude v ní pokračovat jako v úkolu Cowork. Úkol může používat nástroje, zapisovat soubory a spouštět příkazy ve svém vlastním pracovním prostoru bez ptaní u každého kroku. Zpět na chat ho převést nelze.",
+    "descriptionFolder": "Jan tuto konverzaci zachová a bude v ní pokračovat jako v úkolu Cowork. Úkol může upravovat soubory a spouštět příkazy ve složce {{folder}} bez ptaní u každé změny. Zpět na chat ho převést nelze.",
+    "confirm": "Pokračovat jako úkol"
+  }
 }

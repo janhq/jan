@@ -1,4 +1,4 @@
-import { Check, Folder, FolderPlus } from 'lucide-react'
+import { Check, Folder, FolderPlus, ListChecks } from 'lucide-react'
 import {
   DropdownMenuGroup,
   DropdownMenuItem,
@@ -18,6 +18,8 @@ type Props = {
   /** Absent on a surface whose project is fixed (a project page). */
   onSelectProject?: (project: ThreadFolder) => void
   onAddProject?: () => void
+  /** An existing chat only: hand the conversation to the Cowork runner. */
+  onContinueAsTask?: () => void
 }
 
 /**
@@ -31,6 +33,7 @@ export function CoworkComposerMenu({
   onAttachFolder,
   onSelectProject,
   onAddProject,
+  onContinueAsTask,
 }: Props) {
   const { t } = useTranslation()
   const canPickProject = !!onSelectProject || !!onAddProject
@@ -40,6 +43,12 @@ export function CoworkComposerMenu({
         <DropdownMenuItem onSelect={onAttachFolder}>
           <FolderPlus className="size-4 text-muted-foreground" />
           {t('common:homeMode.addFolderAction')}
+        </DropdownMenuItem>
+      )}
+      {onContinueAsTask && (
+        <DropdownMenuItem onSelect={onContinueAsTask}>
+          <ListChecks className="size-4 text-muted-foreground" />
+          {t('common:continueAsTask.action')}
         </DropdownMenuItem>
       )}
       {canPickProject && (

@@ -128,6 +128,9 @@ import {
 } from '@/lib/chatFolder'
 import { useChatFolder } from '@/hooks/useChatFolder'
 import { CoworkComposerMenu } from '@/containers/CoworkComposerMenu'
+import { ContinueAsTaskDialog } from '@/containers/dialogs/ContinueAsTaskDialog'
+import { continueChatAsTask } from '@/lib/coworkSync'
+import { route } from '@/constants/routes'
 import { CoworkWorkspacePill } from '@/containers/CoworkWorkspacePill'
 import { getExtensionHost } from '@/lib/extensions/host'
 import { extensionAuthorOf } from '@/lib/extensions/authorship'
@@ -585,6 +588,15 @@ function ThreadDetail() {
 
   useTools()
   const chatFolder = useChatFolder(threadId)
+  const taskRouter = useRouter()
+  const [continueAsTaskOpen, setContinueAsTaskOpen] = useState(false)
+  const continueAsTask = useCallback(async () => {
+    await continueChatAsTask(threadId)
+    void taskRouter.navigate({
+      to: route.coworkSession,
+      params: { sessionId: threadId },
+    } as never)
+  }, [threadId, taskRouter])
 
   // Get attachments for this thread
   const attachmentsKey = threadId ?? NEW_THREAD_ATTACHMENT_KEY
@@ -2736,8 +2748,17 @@ function ThreadDetail() {
             chatStatus={effectiveStatus}
             toolsRunning={toolsRunning}
             menuWorkspace={
-              chatFolder.available && !chatFolder.folder ? (
-                <CoworkComposerMenu onAttachFolder={chatFolder.attach} />
+              chatFolder.available ? (
+                <CoworkComposerMenu
+                  onAttachFolder={chatFolder.folder ? undefined : chatFolder.attach}
+                  onContinueAsTask={
+                    chatMessages.length > 0 &&
+                    effectiveStatus === 'ready' &&
+                    !toolsRunning
+                      ? () => setContinueAsTaskOpen(true)
+                      : undefined
+                  }
+                />
               ) : undefined
             }
             surfaceControls={
@@ -2750,6 +2771,12 @@ function ThreadDetail() {
                 />
               ) : undefined
             }
+          />
+          <ContinueAsTaskDialog
+            open={continueAsTaskOpen}
+            onOpenChange={setContinueAsTaskOpen}
+            folder={chatFolder.folder}
+            onConfirm={continueAsTask}
           />
         </ConversationColumn>
       </div>

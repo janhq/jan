@@ -561,5 +561,12 @@
       "show": "Mostra la carpeta original"
     }
   },
-  "deleteThreadFailed": "No s'ha pogut suprimir la conversa. És possible que torni a aparèixer després de reiniciar."
+  "deleteThreadFailed": "No s'ha pogut suprimir la conversa. És possible que torni a aparèixer després de reiniciar.",
+  "continueAsTask": {
+    "action": "Continua com a tasca",
+    "title": "Vols continuar aquest xat com a tasca?",
+    "description": "Jan conserva aquesta conversa i la continua com a tasca de Cowork. Una tasca pot fer servir eines, escriure fitxers i executar ordres al seu propi espai de treball sense preguntar a cada pas. No es pot tornar a convertir en xat.",
+    "descriptionFolder": "Jan conserva aquesta conversa i la continua com a tasca de Cowork. Una tasca pot editar fitxers i executar ordres a {{folder}} sense preguntar a cada canvi. No es pot tornar a convertir en xat.",
+    "confirm": "Continua com a tasca"
+  }
 }

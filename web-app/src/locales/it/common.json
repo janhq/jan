@@ -653,5 +653,12 @@
       "show": "Mostra cartella originale"
     }
   },
-  "deleteThreadFailed": "Impossibile eliminare la conversazione. Potrebbe ricomparire dopo un riavvio."
+  "deleteThreadFailed": "Impossibile eliminare la conversazione. Potrebbe ricomparire dopo un riavvio.",
+  "continueAsTask": {
+    "action": "Continua come attività",
+    "title": "Continuare questa chat come attività?",
+    "description": "Jan mantiene questa conversazione e la continua come attività Cowork. Un'attività può usare strumenti, scrivere file ed eseguire comandi nel proprio spazio di lavoro senza chiedere a ogni passo. Non può tornare a essere una chat.",
+    "descriptionFolder": "Jan mantiene questa conversazione e la continua come attività Cowork. Un'attività può modificare file ed eseguire comandi in {{folder}} senza chiedere a ogni modifica. Non può tornare a essere una chat.",
+    "confirm": "Continua come attività"
+  }
 }
