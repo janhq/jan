@@ -47,7 +47,16 @@ impl FakeLeaf {
                 script.push_str(&format!("echo {line} 1>&2\r\n"));
             }
             if self.sleep > 0 {
-                script.push_str(&format!("timeout /t {} /nobreak > nul\r\n", self.sleep));
+                // Not `timeout /t`: it reads the console and exits at once
+                // with "Input redirection is not supported" when stdin is a
+                // pipe, which is exactly how the root starts a leaf. The leaf
+                // then never sleeps, and the tests that need one still running
+                // (hung, cancelled, deadline) see a crash instead. `ping`
+                // touches no console; -n counts pings, so it waits n-1 times.
+                script.push_str(&format!(
+                    "ping -n {} 127.0.0.1 > nul\r\n",
+                    self.sleep + 1
+                ));
             }
             script.push_str(&format!("exit /b {}\r\n", self.exit));
         } else {
