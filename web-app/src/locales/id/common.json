@@ -492,8 +492,7 @@
     "addToProject": "Tambahkan ke proyek",
     "newProject": "Proyek Baru",
     "noProjects": "Belum ada proyek",
-    "addFolderAction": "Tambahkan folder",
-    "startFailed": "Tidak dapat memulai percakapan. Pesan Anda masih ada di kotak."
+    "addFolderAction": "Tambahkan folder"
   },
   "conversationScope": {
     "folderSelectModel": "Pilih model yang mendukung alat sebelum menambahkan akses folder.",

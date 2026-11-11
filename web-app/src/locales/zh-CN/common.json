@@ -672,8 +672,7 @@
     "addToProject": "添加到项目",
     "newProject": "新建项目",
     "noProjects": "暂无项目",
-    "addFolderAction": "添加文件夹",
-    "startFailed": "无法开始对话。您的消息仍保留在输入框中。"
+    "addFolderAction": "添加文件夹"
   },
   "conversationScope": {
     "folderSelectModel": "添加文件夹访问权限前，请先选择支持工具的模型。",

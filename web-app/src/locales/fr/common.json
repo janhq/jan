@@ -496,8 +496,7 @@
     "addToProject": "Ajouter à un projet",
     "newProject": "Nouveau projet",
     "noProjects": "Aucun projet pour le moment",
-    "addFolderAction": "Ajouter un dossier",
-    "startFailed": "Impossible de démarrer la conversation. Votre message est toujours dans la zone de saisie."
+    "addFolderAction": "Ajouter un dossier"
   },
   "conversationScope": {
     "folderSelectModel": "Sélectionnez un modèle compatible avec les outils avant d’ajouter l’accès à un dossier.",

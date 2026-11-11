@@ -48,14 +48,14 @@ function Index() {
   const { setCurrentThreadId } = useThreads()
   useTools()
 
-  // One home flow: every new conversation is an ordinary chat unless the user
-  // explicitly attaches a folder, which starts it on the Cowork runner (see
-  // useFolderDraft). No mode selector, no hidden classifier. The project is
-  // route-local intent so it never leaks into the next draft.
+  // One home flow: every new conversation is an ordinary chat. Attaching a
+  // folder only gives that chat the folder (see useFolderDraft). No mode
+  // selector, no hidden classifier. The project is route-local intent so it
+  // never leaks into the next draft.
   const { project, setProject } = useHomeScope()
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
   const { addFolder, folders: projects } = useThreadManagement()
-  const workspace = useFolderDraft(project)
+  const workspace = useFolderDraft()
 
   const hasValidProviders = hasUsableProvider(providers)
 
@@ -115,7 +115,8 @@ function Index() {
                   onAddProject={() => setProjectDialogOpen(true)}
                 />
               }
-              onFolderDraft={workspace.onFolderDraft}
+              draftFolder={workspace.folder}
+              onDraftFolderUsed={workspace.detach}
             />
           </div>
           <DraftWorkspacePill

@@ -562,8 +562,7 @@
     "addToProject": "Añadir a un proyecto",
     "newProject": "Nuevo proyecto",
     "noProjects": "Aún no hay proyectos",
-    "addFolderAction": "Añadir carpeta",
-    "startFailed": "No se pudo iniciar la conversación. Tu mensaje sigue en el cuadro de texto."
+    "addFolderAction": "Añadir carpeta"
   },
   "conversationScope": {
     "folderSelectModel": "Selecciona un modelo compatible con herramientas antes de añadir acceso a una carpeta.",
