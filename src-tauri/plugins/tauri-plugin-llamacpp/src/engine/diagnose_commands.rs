@@ -334,14 +334,15 @@ pub async fn cancel_diagnostics<R: tauri::Runtime>(
 /// nor `Child::kill` reaches. On Unix the root leads its own process group
 /// (`process_group(0)` above), so one `killpg` takes the group.
 ///
-/// **Windows is not covered.** `CREATE_NEW_PROCESS_GROUP` is set, but only
-/// console control events are deliverable to a group and a windowless sidecar
-/// receives none; a job object is what that needs. The leaf has no deadline of
-/// its own to fall back on either -- `--family-timeout` is enforced by the
-/// root's own `tokio::time::timeout`, which dies with it. What bounds it there
-/// is the leaf exiting when a write to its stdout fails (`print_event`), so
-/// one still streaming cases stops at its next event; one hung inside a driver
-/// call prints nothing and outlives the run.
+/// **Windows is not covered, but the leaf is bounded anyway.**
+/// `CREATE_NEW_PROCESS_GROUP` is set, but only console control events are
+/// deliverable to a group and a windowless sidecar receives none; a job object
+/// is what killing the tree there would need. Nothing is left running
+/// indefinitely regardless: the leaf exits when a write to its stdout fails
+/// (`print_event`), and failing that it ends itself at the deadline the root
+/// passed down (`arm_leaf_deadline`, `--family-timeout` plus a grace), which
+/// also covers one wedged inside a driver call with nothing to print. The
+/// difference from Unix is how long that takes, not whether it happens.
 fn kill_process_group(pid: Option<u32>) {
     #[cfg(unix)]
     if let Some(pid) = pid {

@@ -290,14 +290,6 @@ function Suggestions({
 }
 
 /**
- * The hardware check, on the llama.cpp provider page beside the engine panel.
- *
- * Two readers at once. The default view answers "is my machine the problem?"
- * in a sentence per device and never shows a ggml op name; the dialog behind
- * `Show all cases` carries every case, its parameters and its error for
- * someone filing a bug. Nothing is sent anywhere.
- */
-/**
  * One preset in the run menu.
  *
  * The duration sits under the name rather than beside it: the two were a
@@ -327,6 +319,14 @@ function PresetItem({
   )
 }
 
+/**
+ * The hardware check, on the llama.cpp provider page beside the engine panel.
+ *
+ * Two readers at once. The default view answers "is my machine the problem?"
+ * in a sentence per device and never shows a ggml op name; the dialog behind
+ * `Show all cases` carries every case, its parameters and its error for
+ * someone filing a bug. Nothing is sent anywhere.
+ */
 export function LlamacppDiagnostics({
   busy = false,
   deviceHint,
