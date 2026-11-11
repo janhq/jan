@@ -157,6 +157,11 @@
     "hostSsl": "SSL hostitele",
     "hostSslDesc": "Ověřit SSL certifikáty cílových hostitelů."
   },
+  "cowork": {
+    "title": "Agent",
+    "description": "Co Jan může dělat ve vašem počítači: jeho izolovaný shell a k tomu vzpomínky a dovednosti trvale uložené ve složce dat Janu.",
+    "networkDesc": "Povolí příkazům shellu přístup k síti, například k instalaci balíčků nebo stažení repozitáře. Ve výchozím nastavení zapnuto. Sandbox stále omezuje, ke kterým souborům mají příkazy přístup."
+  },
   "localApiServer": {
     "title": "Lokální API server",
     "description": "Spusťte lokálně server kompatibilní s OpenAI.",

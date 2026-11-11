@@ -151,6 +151,11 @@
     "hostSsl": "Máy chủ SSL",
     "hostSslDesc": "Xác thực chứng chỉ SSL của các máy chủ đích."
   },
+  "cowork": {
+    "title": "Agent",
+    "description": "Những gì Jan có thể làm trên máy tính của bạn: shell trong sandbox, cùng với ký ức và kỹ năng được lưu vĩnh viễn trong thư mục dữ liệu Jan.",
+    "networkDesc": "Cho phép lệnh shell truy cập mạng, chẳng hạn để cài gói hoặc tải một kho mã. Bật theo mặc định. Sandbox vẫn giới hạn những tệp mà lệnh có thể truy cập."
+  },
   "localApiServer": {
     "title": "Máy chủ API cục bộ",
     "description": "Chạy máy chủ tương thích với OpenAI cục bộ.",

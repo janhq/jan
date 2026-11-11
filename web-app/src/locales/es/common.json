@@ -290,6 +290,7 @@
     "processButton": "Añadir",
     "deleteProjectDialog": {
       "title": "Eliminar proyecto",
+      "permanentDelete": "Esto eliminará permanentemente \"{{projectName}}\" y todas sus conversaciones. Esta acción no se puede deshacer.",
       "permanentDeleteWarning": "¡Esta acción eliminará permanentemente TODOS los hilos dentro del proyecto!",
       "saveThreadsAdvice": "Para guardar hilos, muévelos a tu lista de hilos o a otro proyecto antes de eliminar.",
       "starredWarning": "Aún tienes hilos destacados dentro del proyecto.",
@@ -483,6 +484,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "Aún no se ha generado nada. Los archivos creados en tus conversaciones aparecen aquí.",
+  "workspace": {
+    "chatFootnote": "Jan lee esta carpeta libremente y te pregunta antes de cada edición o comando que se ejecute en ella.",
+    "saveFailed": "No se pudo guardar la carpeta de este chat"
+  },
+  "budget": {
+    "stoppedTokens": "Detenido: esta conversación alcanzó su límite de tokens."
   },
   "artifacts": "Artefactos",
   "skills": "Habilidades",

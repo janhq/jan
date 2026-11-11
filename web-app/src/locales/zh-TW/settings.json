@@ -151,6 +151,11 @@
     "hostSsl": "主機 SSL",
     "hostSslDesc": "驗證目標主機的 SSL 憑證。"
   },
+  "cowork": {
+    "title": "Agent",
+    "description": "Jan 能在你的電腦上做的事：它的沙箱 shell，以及永久保存在 Jan 資料夾中的記憶和技能。",
+    "networkDesc": "允許 shell 指令連上網路，例如安裝套件或取得儲存庫。預設為開啟。沙箱仍會限制指令能存取哪些檔案。"
+  },
   "localApiServer": {
     "title": "本機 API 伺服器",
     "description": "在本機執行與 OpenAI 相容的伺服器。",

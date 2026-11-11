@@ -261,6 +261,7 @@
     "projectNotFoundDesc": "Projekt, którego szukasz nie istnieje lub został usunięty.",
     "deleteProjectDialog": {
       "title": "Usuń Projekt",
+      "permanentDelete": "Spowoduje to trwałe usunięcie „{{projectName}}\" i wszystkich jego rozmów. Tej operacji nie można cofnąć.",
       "description": "Na pewno chcesz usunąć ten projekt? Tej operacji nie można cofnąć.",
       "permanentDeleteWarning": "Ta operacja spowoduje trwałe usunięcie WSZYSTKICH wątków w projekcie!",
       "saveThreadsAdvice": "Aby zapisać wątki, przenieś je do listy wątków lub innego projektu przed usunięciem.",
@@ -413,6 +414,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "Nic jeszcze nie powstało. Pliki utworzone w rozmowach pojawią się tutaj.",
+  "workspace": {
+    "chatFootnote": "Jan swobodnie odczytuje ten folder i pyta Cię przed każdą edycją lub poleceniem uruchamianym w nim.",
+    "saveFailed": "Nie udało się zapisać folderu dla tego czatu"
+  },
+  "budget": {
+    "stoppedTokens": "Zatrzymano: ta rozmowa osiągnęła limit tokenów."
   },
   "artifacts": "Artefakty",
   "skills": "Umiejętności",
