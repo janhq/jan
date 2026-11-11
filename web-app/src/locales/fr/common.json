@@ -562,5 +562,12 @@
       "show": "Afficher le dossier d'origine"
     }
   },
-  "deleteThreadFailed": "Impossible de supprimer la discussion. Elle pourrait réapparaître après un redémarrage."
+  "deleteThreadFailed": "Impossible de supprimer la discussion. Elle pourrait réapparaître après un redémarrage.",
+  "continueAsTask": {
+    "action": "Continuer en tâche",
+    "title": "Continuer cette discussion en tâche ?",
+    "description": "Jan conserve cette conversation et la poursuit en tâche Cowork. Une tâche peut utiliser des outils, écrire des fichiers et exécuter des commandes dans son propre espace de travail sans demander à chaque étape. Elle ne peut pas redevenir une discussion.",
+    "descriptionFolder": "Jan conserve cette conversation et la poursuit en tâche Cowork. Une tâche peut modifier des fichiers et exécuter des commandes dans {{folder}} sans demander à chaque modification. Elle ne peut pas redevenir une discussion.",
+    "confirm": "Continuer en tâche"
+  }
 }

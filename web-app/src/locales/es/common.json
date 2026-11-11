@@ -628,5 +628,12 @@
       "show": "Mostrar la carpeta original"
     }
   },
-  "deleteThreadFailed": "No se pudo eliminar la conversación. Es posible que vuelva a aparecer tras reiniciar."
+  "deleteThreadFailed": "No se pudo eliminar la conversación. Es posible que vuelva a aparecer tras reiniciar.",
+  "continueAsTask": {
+    "action": "Continuar como tarea",
+    "title": "¿Continuar este chat como tarea?",
+    "description": "Jan conserva esta conversación y la continúa como tarea de Cowork. Una tarea puede usar herramientas, escribir archivos y ejecutar comandos en su propio espacio de trabajo sin preguntar en cada paso. No se puede volver a convertir en chat.",
+    "descriptionFolder": "Jan conserva esta conversación y la continúa como tarea de Cowork. Una tarea puede editar archivos y ejecutar comandos en {{folder}} sin preguntar en cada cambio. No se puede volver a convertir en chat.",
+    "confirm": "Continuar como tarea"
+  }
 }
