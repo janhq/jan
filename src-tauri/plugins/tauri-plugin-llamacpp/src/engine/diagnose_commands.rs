@@ -61,6 +61,10 @@ struct RunningJob {
     /// The root's pid, which is also its process group id. Killing the group
     /// is what reaches the leaves; see [`kill_process_group`].
     pid: Option<u32>,
+    /// Windows' equivalent: dropping this asks the OS to end everything still
+    /// in the job, the root and its leaves alike. `()` elsewhere, where the
+    /// process group does the work.
+    job: Option<ProcessJob>,
     /// Set by [`DiagnosticsState::stop`] before the root was spawned, so the
     /// stop is honoured rather than lost in that window.
     stopped: bool,
@@ -81,6 +85,7 @@ impl DiagnosticsState {
             stdin: None,
             kill: None,
             pid: None,
+            job: None,
             stopped: false,
         });
         Ok(())
@@ -94,12 +99,14 @@ impl DiagnosticsState {
         stdin: Option<tokio::process::ChildStdin>,
         kill: tokio::task::AbortHandle,
         pid: Option<u32>,
+        confined: Option<ProcessJob>,
     ) {
         if let Ok(mut current) = self.current.lock() {
             if let Some(job) = current.as_mut().filter(|job| job.id == id) {
                 job.stdin = if job.stopped { None } else { stdin };
                 job.kill = Some(kill);
                 job.pid = pid;
+                job.job = confined;
             }
         }
     }
@@ -271,6 +278,7 @@ pub async fn start_diagnostics<R: tauri::Runtime>(
     };
 
     let pid = child.id();
+    let confined = confine_child(&child);
     let stdin = child.stdin.take();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -284,7 +292,7 @@ pub async fn start_diagnostics<R: tauri::Runtime>(
         stderr,
     ));
 
-    state.attach(&id, stdin, pump.abort_handle(), pid);
+    state.attach(&id, stdin, pump.abort_handle(), pid, confined);
 
     Ok(DiagnosticsJob { id })
 }
@@ -328,21 +336,43 @@ pub async fn cancel_diagnostics<R: tauri::Runtime>(
     Ok(())
 }
 
+/// What holds a process tree together for the OS to collect.
+#[cfg(windows)]
+type ProcessJob = worker::reap::Job;
+#[cfg(not(windows))]
+type ProcessJob = ();
+
+/// Puts the root in a kill-on-close job object, so Windows ends its leaves
+/// when the job handle drops.
+///
+/// The same primitive the serving worker uses. Unix needs nothing here: the
+/// root leads its own process group and [`kill_process_group`] takes it.
+fn confine_child(child: &tokio::process::Child) -> Option<ProcessJob> {
+    #[cfg(windows)]
+    {
+        child.raw_handle().and_then(worker::reap::confine)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = child;
+        None
+    }
+}
+
 /// Kills a root and every leaf it spawned.
 ///
 /// The leaves are grandchildren of this process, which neither `kill_on_drop`
 /// nor `Child::kill` reaches. On Unix the root leads its own process group
 /// (`process_group(0)` above), so one `killpg` takes the group.
 ///
-/// **Windows is not covered, but the leaf is bounded anyway.**
-/// `CREATE_NEW_PROCESS_GROUP` is set, but only console control events are
-/// deliverable to a group and a windowless sidecar receives none; a job object
-/// is what killing the tree there would need. Nothing is left running
-/// indefinitely regardless: the leaf exits when a write to its stdout fails
-/// (`print_event`), and failing that it ends itself at the deadline the root
-/// passed down (`arm_leaf_deadline`, `--family-timeout` plus a grace), which
-/// also covers one wedged inside a driver call with nothing to print. The
-/// difference from Unix is how long that takes, not whether it happens.
+/// On Windows the job object does it instead, and not from here: the tree
+/// dies when the run's [`ProcessJob`] drops, which is why `RunningJob` holds
+/// one (`CREATE_NEW_PROCESS_GROUP` is set, but only console control events
+/// reach a group and a windowless sidecar receives none). Two backstops sit
+/// under that for a leaf the OS somehow leaves behind: it exits when a write
+/// to its stdout fails (`print_event`), and failing that it ends itself at
+/// the deadline the root passed down (`arm_leaf_deadline`), which is the one
+/// that covers a leaf wedged in a driver call with nothing to print.
 fn kill_process_group(pid: Option<u32>) {
     #[cfg(unix)]
     if let Some(pid) = pid {
@@ -473,7 +503,7 @@ mod tests {
         let state = DiagnosticsState::default();
         state.reserve("a").unwrap();
         assert!(state.reserve("b").is_err(), "the slot is already reserved");
-        state.attach("a", None, abort_handle(), None);
+        state.attach("a", None, abort_handle(), None, None);
         assert!(state.reserve("b").is_err(), "and stays held once attached");
     }
 
@@ -489,7 +519,7 @@ mod tests {
     async fn the_slot_reopens_once_the_run_releases_it() {
         let state = DiagnosticsState::default();
         state.reserve("a").unwrap();
-        state.attach("a", None, abort_handle(), None);
+        state.attach("a", None, abort_handle(), None, None);
         state.release("a");
         state.reserve("b").expect("the slot should be free again");
     }
@@ -519,7 +549,7 @@ mod tests {
         let state = DiagnosticsState::default();
         state.reserve("a").unwrap();
         state.stop("a").unwrap();
-        state.attach("a", None, abort_handle(), None);
+        state.attach("a", None, abort_handle(), None, None);
         let current = state.current.lock().unwrap();
         let job = current.as_ref().expect("still reserved");
         assert!(job.stopped, "the stop is remembered across the attach");
@@ -531,7 +561,7 @@ mod tests {
         let state = DiagnosticsState::default();
         state.reserve("a").unwrap();
         assert!(state.kill_handle("a").is_none());
-        state.attach("a", None, abort_handle(), None);
+        state.attach("a", None, abort_handle(), None, None);
         assert!(state.kill_handle("a").is_some());
     }
 

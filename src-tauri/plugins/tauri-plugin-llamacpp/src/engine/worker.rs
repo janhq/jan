@@ -534,7 +534,7 @@ impl std::fmt::Debug for WorkerHandle {
 /// A job object whose last handle dies with this process is the one reaping the
 /// OS will do on our behalf. Unix gets this from `process_group(0)`.
 #[cfg(windows)]
-mod reap {
+pub(crate) mod reap {
     use std::os::windows::io::RawHandle;
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::{
@@ -544,7 +544,7 @@ mod reap {
     };
 
     /// Closing this kills every process still in the job.
-    pub struct Job(HANDLE);
+    pub(crate) struct Job(HANDLE);
 
     // The handle is opaque to everything but `Drop`, which owns it exclusively.
     unsafe impl Send for Job {}
@@ -558,7 +558,7 @@ mod reap {
 
     /// Best effort: a Jan already confined to a job that forbids nesting should
     /// lose the reaping guarantee, not the engine.
-    pub fn confine(child: RawHandle) -> Option<Job> {
+    pub(crate) fn confine(child: RawHandle) -> Option<Job> {
         let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
         if job.is_null() {
             log::warn!("could not create a job object for the worker");

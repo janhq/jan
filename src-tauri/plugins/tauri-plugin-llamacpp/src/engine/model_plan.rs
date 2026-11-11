@@ -89,11 +89,12 @@ pub struct ModelShape {
     pub head_size_v: Option<u64>,
     /// 0 for a dense model. Non-zero means the graph contains `MUL_MAT_ID`.
     pub expert_count: u64,
-    /// At least one tensor type id was not one [`ggml_type_name`] knows, so
-    /// `weight_types` is an incomplete account of the file rather than a
-    /// wrong one. Narrowing `MUL_MAT` to what was recognised would then skip
-    /// the very kernel the model runs on.
-    pub unknown_weight_types: bool,
+    /// `weight_types` does not describe the whole model, so narrowing
+    /// `MUL_MAT` to it would skip the very kernel the model runs on. Two
+    /// causes, both of which leave the list looking perfectly ordinary:
+    /// a tensor type id [`ggml_type_name`] does not know, and a sharded
+    /// model, whose later splits are never opened.
+    pub incomplete_weight_types: bool,
 }
 
 impl ModelShape {
@@ -120,9 +121,10 @@ impl ModelShape {
                 .filter_map(|id| ggml_type_name(*id))
                 .map(str::to_string)
                 .collect(),
-            unknown_weight_types: tensor_types
+            incomplete_weight_types: tensor_types
                 .iter()
-                .any(|id| ggml_type_name(*id).is_none()),
+                .any(|id| ggml_type_name(*id).is_none())
+                || is_split_model(metadata),
             head_size_k: number("attention.key_length").or(fallback),
             head_size_v: number("attention.value_length").or(fallback),
             expert_count: number("expert_count").unwrap_or(0),
@@ -191,16 +193,30 @@ fn matmul_filter(types: &[String]) -> Option<String> {
     Some(format!("type_a=({}),", names.join("|")))
 }
 
+/// Whether this file is one shard of a sharded model.
+///
+/// `split.count` is what `llama-gguf-split` writes, and only the first shard
+/// is ever opened here, so for any other value the tensor list is the first
+/// shard's alone. A model whose quantization differs between shards would
+/// otherwise be narrowed to the types of the one shard that was read.
+fn is_split_model(metadata: &HashMap<String, String>) -> bool {
+    metadata
+        .get("split.count")
+        .and_then(|v| v.parse::<u64>().ok())
+        .is_some_and(|n| n > 1)
+}
+
 /// The `MUL_MAT` filter for one model, or `None` to run the family whole.
 ///
 /// An empty `weight_types` is not the only way the list can fail to describe
 /// the file: `from_gguf` drops ids this build does not know, and every real
 /// gguf carries f32 norm tensors, so a model quantized to a type upstream
-/// added after this pin still yields a non-empty `[f32, ...]`. Filtering on
-/// that would run the attention kernels, skip the model's own, and report a
-/// pass. Either way the answer is to stop narrowing.
+/// added after this pin still yields a non-empty `[f32, ...]`. A sharded
+/// model is the same story from the other end -- the list is complete for
+/// the shard that was read and silent about the rest. Filtering on either
+/// would run some kernels, skip the model's own, and report a pass.
 fn model_matmul_filter(shape: &ModelShape) -> Option<String> {
-    if shape.unknown_weight_types {
+    if shape.incomplete_weight_types {
         return None;
     }
     matmul_filter(&shape.weight_types)
@@ -420,7 +436,7 @@ mod tests {
             // 0 is f32; 9999 is whatever upstream adds next.
             &[0, 9999],
         );
-        assert!(shape.unknown_weight_types);
+        assert!(shape.incomplete_weight_types);
         assert_eq!(shape.weight_types, ["f32"]);
 
         let families = model_families(&shape);
@@ -431,7 +447,7 @@ mod tests {
     #[test]
     fn a_file_whose_types_are_all_recognised_is_still_narrowed() {
         let shape = ModelShape::from_gguf(&meta(&[("general.architecture", "x")]), &[0, 12]);
-        assert!(!shape.unknown_weight_types);
+        assert!(!shape.incomplete_weight_types);
 
         let families = model_families(&shape);
         let matmul = filter_for(&families, "MUL_MAT").expect("MUL_MAT is planned");
@@ -440,6 +456,31 @@ mod tests {
             "{:?}",
             matmul.params
         );
+    }
+
+    // Only the first shard is ever opened, so its type list says nothing
+    // about the rest of the model -- and unlike an unknown id, it looks
+    // entirely ordinary.
+    #[test]
+    fn a_sharded_model_runs_matrix_math_unfiltered() {
+        let shape = ModelShape::from_gguf(
+            &meta(&[("general.architecture", "x"), ("split.count", "4")]),
+            &[0, 12],
+        );
+        assert!(shape.incomplete_weight_types);
+
+        let families = model_families(&shape);
+        let matmul = filter_for(&families, "MUL_MAT").expect("MUL_MAT is planned");
+        assert_eq!(matmul.params, None);
+    }
+
+    #[test]
+    fn a_single_file_model_is_not_mistaken_for_a_shard() {
+        let shape = ModelShape::from_gguf(
+            &meta(&[("general.architecture", "x"), ("split.count", "1")]),
+            &[0, 12],
+        );
+        assert!(!shape.incomplete_weight_types);
     }
 
     #[test]
@@ -521,7 +562,7 @@ mod tests {
                 head_size_v: Some(128),
                 expert_count: 0,
                 architecture: Some("qwen3".into()),
-                unknown_weight_types: false,
+                incomplete_weight_types: false,
             }),
         };
         let json = serde_json::to_string(&plan).unwrap();

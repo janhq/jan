@@ -306,8 +306,9 @@ impl LeafSpec {
             .stderr(Stdio::piped());
         #[cfg(windows)]
         {
-            use std::os::windows::process::CommandExt;
-            // CREATE_NO_WINDOW: a leaf must not flash a console on the desktop.
+            // CREATE_NO_WINDOW: a leaf must not flash a console on the
+            // desktop. `creation_flags` is tokio's own, so std's `CommandExt`
+            // is not imported for it.
             cmd.creation_flags(0x0800_0000);
         }
         cmd.kill_on_drop(true);
