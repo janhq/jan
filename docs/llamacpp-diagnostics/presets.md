@@ -101,12 +101,22 @@ against a real stand-in process),
 a real answer, not a vacuous one), and two UI tests that assert a narrowed run
 testing nothing never renders as a pass.
 
-`model_plan` additionally fails **open** at every step: an unreadable head size
-runs flash attention unfiltered rather than at a guessed geometry, and a file
-whose tensor types are all unknown runs `MUL_MAT` unfiltered rather than
-narrowed to the attention types, which would exercise none of the quantized
-kernels the file actually uses. Over-running costs minutes; under-running costs
-the answer.
+`model_plan` additionally fails **open** at every step. An unreadable head size
+runs flash attention unfiltered rather than at a guessed geometry, and
+`MUL_MAT` runs unfiltered whenever the tensor list does not describe the whole
+model (`ModelShape::incomplete_weight_types`), which is three cases:
+
+- **no readable types at all**, where a filter would match nothing;
+- **any single unrecognised type id**, which is the realistic one. `from_gguf`
+  drops ids this build does not know and every gguf carries f32 norm tensors,
+  so a model quantized to a type added upstream after this pin still yields a
+  perfectly ordinary-looking `[f32, ...]`;
+- **a sharded model** (`split.count > 1`), where only the first split is ever
+  opened, so the list is complete for that shard and silent about the rest.
+
+The last two are the dangerous ones precisely because the list looks normal.
+Narrowing on it would run the attention kernels, skip the model's own, and
+report a pass. Over-running costs minutes; under-running costs the answer.
 
 ## Why `--test-file` is not used
 

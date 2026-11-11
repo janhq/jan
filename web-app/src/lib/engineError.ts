@@ -237,10 +237,20 @@ export function engineFailure(messageKey: string, error: unknown): Error {
  * Replaces the user's home directory wherever a path shows up, so a pasted
  * report does not name them. The engine logs full model and library paths,
  * which is where these come from.
+ *
+ * Two passes per platform, because a profile folder may contain spaces --
+ * `C:\Users\Jo Smith` is an ordinary Windows path, and stopping the name at
+ * whitespace left the surname behind. The first pass takes a name of any
+ * length as long as a separator follows it, which is what tells a path from
+ * the prose around it; the second takes a trailing name with nothing after
+ * it. The character class is deliberately narrow so a sentence like
+ * "/home/bob failed, see ..." cannot be swallowed whole by the first.
  */
 export function stripLocalPaths(text: string): string {
   return text
+    .replace(/\/(?:home|Users)\/[\w .-]+?(?=\/)/g, '~')
     .replace(/\/(?:home|Users)\/[^/\s"'`:;,)]+/g, '~')
+    .replace(/[A-Za-z]:\\Users\\[\w .-]+?(?=\\)/g, '~')
     .replace(/[A-Za-z]:\\Users\\[^\\\s"'`:;,)]+/g, '~')
 }
 

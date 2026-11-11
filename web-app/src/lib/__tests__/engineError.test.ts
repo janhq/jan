@@ -325,4 +325,31 @@ describe('stripLocalPaths', () => {
       stripLocalPaths('/home/alice/a /Users/bob/b C:\\Users\\carol\\c')
     ).toBe('~/a ~/b ~\\c')
   })
+
+  // A Windows profile folder is named after the person, so it very often has
+  // a space in it. Stopping at whitespace left the surname in a report meant
+  // to be pasted in public.
+  it('takes the whole name when the profile folder has a space', () => {
+    expect(stripLocalPaths('C:\\Users\\Jo Smith\\AppData\\jan')).toBe(
+      '~\\AppData\\jan'
+    )
+    expect(stripLocalPaths('/Users/Jo Smith/Library/jan')).toBe(
+      '~/Library/jan'
+    )
+  })
+
+  it('still strips a home directory with nothing after it', () => {
+    expect(stripLocalPaths('cannot read /home/alice')).toBe('cannot read ~')
+  })
+
+  // The space-tolerant pass is anchored on a following separator precisely so
+  // it cannot run off into the sentence around the path.
+  it('does not swallow the prose after a path', () => {
+    expect(stripLocalPaths('/home/bob failed, see the log')).toBe(
+      '~ failed, see the log'
+    )
+    expect(stripLocalPaths('C:\\Users\\bob failed, see the log')).toBe(
+      '~ failed, see the log'
+    )
+  })
 })
