@@ -40,7 +40,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
 
 import { isCoworkClosing, registerCoworkRunForClose } from '@/hooks/useCoworkRun'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
-import { startCoworkSync, __resetCoworkSyncForTests } from '../coworkSync'
+import { relaunchAfterSave, startCoworkSync, __resetCoworkSyncForTests } from '../coworkSync'
 import { transcriptFromThreadMessages } from '../coworkThreadMessages'
 
 type CloseEvent = { event: string; id: number; payload: null }
@@ -199,5 +199,24 @@ describe('Cowork close with the installed Tauri API', () => {
     expect(invoke).not.toHaveBeenCalledWith('plugin:window|destroy', expect.anything(), undefined)
     await dispatchClose(closeEvent)
     expect(invoke).toHaveBeenCalledWith('plugin:window|destroy', { label: 'main' }, undefined)
+  })
+  it('saves pending writes before a deliberate relaunch', async () => {
+    await startCoworkSync()
+    const relaunch = vi.fn()
+    storage.flush.mockImplementationOnce(async () => {
+      expect(relaunch).not.toHaveBeenCalled()
+    })
+    await relaunchAfterSave(relaunch)
+    expect(storage.flush).toHaveBeenCalled()
+    expect(relaunch).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not relaunch when the save fails', async () => {
+    await startCoworkSync()
+    storage.flush.mockRejectedValueOnce(new Error('disk full'))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const relaunch = vi.fn()
+    await relaunchAfterSave(relaunch)
+    expect(relaunch).not.toHaveBeenCalled()
   })
 })
