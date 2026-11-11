@@ -15,6 +15,10 @@ pub fn get_data_dir(data_folder: &Path) -> PathBuf {
     data_folder.join(THREADS_DIR)
 }
 
+/// Prefix of a thread directory a delete has moved aside before removing it.
+/// `.` is never part of a valid thread id, so no listing reads it as a thread.
+pub const DELETING_PREFIX: &str = ".deleting-";
+
 /// Names Windows maps to a device in every directory, in any case and also
 /// with an extension (`nul.txt`). Checked on every OS so an id accepted on one
 /// works on all of them.
