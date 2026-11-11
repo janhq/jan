@@ -873,8 +873,7 @@
     "addToProject": "Add to a project",
     "newProject": "New project",
     "noProjects": "No projects yet",
-    "addFolderAction": "Add folder",
-    "startFailed": "Could not start the conversation. Your message is still in the box."
+    "addFolderAction": "Add folder"
   },
   "conversationScope": {
     "folderSelectModel": "Select a tool-capable model before adding folder access.",

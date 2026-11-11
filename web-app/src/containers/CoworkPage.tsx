@@ -76,13 +76,6 @@ import { CoworkPlanToggle } from '@/containers/CoworkPlanToggle'
 import { CoworkEmptyState } from '@/containers/CoworkEmptyState'
 import { CoworkSessionNotice } from '@/containers/CoworkSessionNotice'
 import { usePrompt } from '@/hooks/usePrompt'
-import { useChatAttachments } from '@/hooks/useChatAttachments'
-import {
-  claimCoworkHandoff,
-  clearCoworkHandoff,
-  peekCoworkHandoff,
-  releaseCoworkHandoff,
-} from '@/lib/coworkHandoff'
 import { awaitsModel } from '@/lib/agentActivity'
 import { artifactsFromParts, artifactsFromTurns } from '@/lib/coworkArtifacts'
 import { sessionAttachments } from '@/lib/coworkFiles'
@@ -1160,65 +1153,7 @@ export function CoworkPage() {
   const runRequestRef = useRef(runRequest)
   runRequestRef.current = runRequest
 
-  // First prompt handed over from the home composer (the folder bridge). Read
-  // without removing and cleared only once the run is accepted: runRequest
-  // refuses (no usable model, no tool support) before it claims the session,
-  // and a refused first prompt must come back to the composer instead of
-  // vanishing. `claim` makes the effect safe to run twice (StrictMode), so the
-  // prompt is never sent twice.
-  const sessionId = session?.id
   const sessionUnavailable = !!session?.unavailable
-  useEffect(() => {
-    if (!sessionId || sessionUnavailable || isCoworkClosing()) return
-    const handoff = peekCoworkHandoff(sessionId)
-    if (!handoff || !claimCoworkHandoff(sessionId)) return
-    let accepted = false
-    void runRequestRef
-      .current(
-        handoff.text,
-        {
-          media: handoff.files,
-          files: handoff.documents
-            ?.filter((d): d is Attachment & { path: string } => !!d.path)
-            .map((d) => ({
-              name: d.name,
-              path: d.path,
-              fileType: d.fileType,
-              size: d.size,
-            })),
-        },
-        sessionId,
-        () => {
-          accepted = true
-          clearCoworkHandoff(sessionId)
-        }
-      )
-      .then(() => {
-        if (accepted) return
-        // Refused: hand the draft back and let a later attempt start fresh.
-        usePrompt.getState().setPrompt(handoff.draft ?? handoff.text)
-        useChatAttachments.getState().setAttachments(sessionId, [
-          ...(handoff.documents ?? []),
-          ...(handoff.files ?? []).map(
-            (file, index): Attachment => ({
-              name: `Attachment ${index + 1}`,
-              type: file.mediaType.startsWith('audio/')
-                ? 'audio'
-                : file.mediaType.startsWith('video/')
-                  ? 'video'
-                  : 'image',
-              mimeType: file.mediaType,
-              dataUrl: file.url,
-              ...(file.mediaType === 'audio/mpeg'
-                ? { audioFormat: 'mp3' as const }
-                : {}),
-            })
-          ),
-        ])
-        clearCoworkHandoff(sessionId)
-        releaseCoworkHandoff(sessionId)
-      })
-  }, [sessionId, sessionUnavailable])
 
   /**
    * `/compact`: summarize everything but the recent tail into one system

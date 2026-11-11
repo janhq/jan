@@ -493,8 +493,7 @@
     "addToProject": "Adicionar a um projeto",
     "newProject": "Novos Projetos",
     "noProjects": "Nenhum projeto ainda",
-    "addFolderAction": "Adicionar pasta",
-    "startFailed": "Não foi possível iniciar a conversa. Sua mensagem continua na caixa de texto."
+    "addFolderAction": "Adicionar pasta"
   },
   "conversationScope": {
     "folderSelectModel": "Selecione um modelo compatível com ferramentas antes de adicionar acesso a uma pasta.",

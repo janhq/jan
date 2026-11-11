@@ -41,7 +41,6 @@ vi.mock('@/hooks/useFolderDraft', () => ({
     folder: h.folder,
     attach: vi.fn(),
     detach: vi.fn(),
-    onFolderDraft: vi.fn(),
   }),
 }))
 

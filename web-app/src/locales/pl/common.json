@@ -492,8 +492,7 @@
     "addToProject": "Dodaj do projektu",
     "newProject": "Nowy projekt",
     "noProjects": "Brak projektów",
-    "addFolderAction": "Dodaj folder",
-    "startFailed": "Nie udało się rozpocząć rozmowy. Twoja wiadomość nadal jest w polu tekstowym."
+    "addFolderAction": "Dodaj folder"
   },
   "conversationScope": {
     "folderSelectModel": "Wybierz model obsługujący narzędzia, zanim dodasz dostęp do folderu.",

@@ -45,7 +45,9 @@ type ThreadState = {
     title?: string,
     assistant?: Assistant,
     projectMetadata?: { id: string; name: string; updated_at: number },
-    isTemporary?: boolean
+    isTemporary?: boolean,
+    /** A folder the conversation starts with; saved with the thread itself. */
+    folder?: string
   ) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
@@ -412,7 +414,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     title,
     assistant,
     projectMetadata,
-    isTemporary
+    isTemporary,
+    folder
   ) => {
     const newThread: Thread = {
       id: isTemporary ? TEMPORARY_CHAT_ID : ulid(),
@@ -420,10 +423,13 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       model,
       updated: Date.now() / 1000,
       assistants: assistant ? [assistant] : [],
-      ...(projectMetadata &&
+      ...((projectMetadata || folder) &&
         !isTemporary && {
           metadata: {
-            project: projectMetadata,
+            ...(projectMetadata && { project: projectMetadata }),
+            // Same shape setThreadFolder writes, in the record that creates
+            // the thread, so it never exists without the folder it began with.
+            ...(folder && { folder, folderAccess: 'write' }),
           },
         }),
       ...(isTemporary && {

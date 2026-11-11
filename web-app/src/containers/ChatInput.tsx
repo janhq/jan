@@ -109,10 +109,6 @@ import {
 } from '@/lib/path-references'
 import { FilePickerPopover } from '@/components/FilePickerPopover'
 import { ContributedMenuItems } from '@/containers/extensions/ContributedMenuItems'
-import type {
-  FolderDraftOutcome,
-  FolderDraftSubmission,
-} from '@/lib/startCoworkFromDraft'
 
 type ChatInputProps = {
   className?: string
@@ -179,13 +175,12 @@ type ChatInputProps = {
    */
   menuWorkspace?: ReactNode
   /**
-   * Home-style surfaces only. Called instead of creating a chat thread when
-   * the draft carries a folder, so the surface can start the conversation on
-   * the runner that can use it. `'chat'` falls through to an ordinary chat.
+   * Home-style surfaces only: the folder the draft carries. The chat thread the
+   * draft creates starts with it attached, and `onDraftFolderUsed` lets the
+   * surface drop it from the next draft.
    */
-  onFolderDraft?: (
-    submission: FolderDraftSubmission
-  ) => Promise<FolderDraftOutcome> | FolderDraftOutcome
+  draftFolder?: string | null
+  onDraftFolderUsed?: () => void
 }
 
 // Video containers llama-server can decode via ffmpeg/ffprobe into frames.
@@ -224,7 +219,8 @@ const ChatInput = memo(function ChatInput({
   tokenSource,
   highlightedPrefix,
   menuWorkspace,
-  onFolderDraft,
+  draftFolder,
+  onDraftFolderUsed,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
@@ -672,8 +668,6 @@ const ChatInput = memo(function ChatInput({
     }
   }
 
-  const folderStarting = useRef(false)
-
   const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
@@ -759,31 +753,6 @@ const ChatInput = memo(function ChatInput({
           params: { threadId: TEMPORARY_CHAT_ID },
         })
       } else {
-        // A draft with a folder starts on the Cowork runner (the surface decides
-        // and navigates); anything else is an ordinary chat thread.
-        if (onFolderDraft) {
-          if (folderStarting.current) return
-          folderStarting.current = true
-          try {
-            const { files, documents } = collectMedia()
-            const outcome = await onFolderDraft({
-              text: effectivePrompt,
-              draft: prompt,
-              files,
-              documents,
-            })
-            if (outcome === 'refused') return
-            if (outcome === 'started') {
-              setPrompt('')
-              // The run owns its copies now (handoff), so the draft's go.
-              clearAttachmentsForThread(attachmentsKey)
-              return
-            }
-          } finally {
-            folderStarting.current = false
-          }
-        }
-
         // Get project metadata and assistant if projectId is provided
         let projectMetadata:
           | { id: string; name: string; updated_at: number }
@@ -819,8 +788,11 @@ const ChatInput = memo(function ChatInput({
           },
           prompt, // Use prompt as thread title
           assistant,
-          projectMetadata
+          projectMetadata,
+          false,
+          draftFolder ?? undefined
         )
+        if (draftFolder) onDraftFolderUsed?.()
 
         // Transfer agent mode from home screen to the new thread
         if (isAgentMode) {

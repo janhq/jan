@@ -48,9 +48,8 @@ function ProjectPageContent() {
 
   // Find the project
   const project = getFolderById(projectId)
-  // A folder attached here starts the project's next conversation on the Cowork
-  // runner, filed under this project.
-  const workspace = useFolderDraft(project)
+  // A folder attached here is given to the project's next chat.
+  const workspace = useFolderDraft()
 
   // Find the assigned assistant
   const projectAssistant = useMemo(() => {
@@ -142,7 +141,8 @@ function ProjectPageContent() {
                   onAttachFolder={workspace.available ? workspace.attach : undefined}
                 />
               }
-              onFolderDraft={workspace.onFolderDraft}
+              draftFolder={workspace.folder}
+              onDraftFolderUsed={workspace.detach}
             />
             <DraftWorkspacePill
               folder={workspace.folder}

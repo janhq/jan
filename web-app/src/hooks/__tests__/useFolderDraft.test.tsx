@@ -7,15 +7,12 @@ const h = vi.hoisted(() => ({
   tauri: true,
   cowork: true,
   model: { id: 'm', capabilities: ['tools'] } as unknown,
-  navigate: vi.fn(),
-  start: vi.fn(),
   info: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
   useLocation: ({ select }: { select: (l: { searchStr: string }) => string }) =>
     select({ searchStr: h.searchStr }),
-  useRouter: () => ({ navigate: h.navigate }),
 }))
 vi.mock('sonner', () => ({ toast: { info: h.info, error: vi.fn() } }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -30,13 +27,8 @@ vi.mock('@/hooks/useServiceHub', () => ({
 }))
 vi.mock('@/lib/coworkSync', () => ({ supportsCowork: () => h.tauri }))
 vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.cowork }))
-vi.mock('@/lib/startCoworkFromDraft', () => ({
-  startCoworkFromDraft: (...args: unknown[]) => h.start(...args),
-}))
 
 import { useFolderDraft } from '../useFolderDraft'
-
-const submission = { text: 'hi', draft: 'hi' }
 
 describe('useFolderDraft', () => {
   beforeEach(() => {
@@ -45,39 +37,15 @@ describe('useFolderDraft', () => {
     h.tauri = true
     h.cowork = true
     h.model = { id: 'm', capabilities: ['tools'] }
-    h.start.mockReset().mockReturnValue('started')
     h.info.mockReset()
   })
 
-  it('is an ordinary chat while no folder is attached', () => {
-    const { result } = renderHook(() => useFolderDraft())
-    expect(result.current.onFolderDraft(submission)).toBe('chat')
-    expect(h.start).not.toHaveBeenCalled()
-  })
-
-  it('starts a cowork conversation with the attached folder, then forgets it', async () => {
+  it('holds the folder the user picked until it is detached', async () => {
     const { result } = renderHook(() => useFolderDraft())
     await act(async () => result.current.attach())
     expect(result.current.folder).toBe('/home/u/app')
-    let outcome = ''
-    act(() => {
-      outcome = result.current.onFolderDraft(submission)
-    })
-    expect(outcome).toBe('started')
-    expect(h.start).toHaveBeenCalledWith(
-      expect.objectContaining({ folder: '/home/u/app', submission })
-    )
+    act(() => result.current.detach())
     expect(result.current.folder).toBeNull()
-  })
-
-  it('keeps the folder when the run was refused', async () => {
-    h.start.mockReturnValue('refused')
-    const { result } = renderHook(() => useFolderDraft())
-    await act(async () => result.current.attach())
-    act(() => {
-      result.current.onFolderDraft(submission)
-    })
-    expect(result.current.folder).toBe('/home/u/app')
   })
 
   it('does not offer a folder to a model without tools', async () => {
@@ -108,7 +76,6 @@ describe('useFolderDraft', () => {
     const { result } = renderHook(() => useFolderDraft())
     await act(async () => result.current.attach())
     expect(result.current.folder).toBeNull()
-    expect(result.current.onFolderDraft(submission)).toBe('chat')
     expect(h.info).toHaveBeenCalledWith('common:conversationScope.temporary')
   })
 
@@ -116,7 +83,6 @@ describe('useFolderDraft', () => {
     h.tauri = false
     const { result } = renderHook(() => useFolderDraft())
     expect(result.current.available).toBe(false)
-    expect(result.current.onFolderDraft(submission)).toBe('chat')
   })
 
   it('is unavailable on builds that do not ship Cowork, even with a folder picked', async () => {
@@ -125,7 +91,5 @@ describe('useFolderDraft', () => {
     expect(result.current.available).toBe(false)
     await act(async () => result.current.attach())
     expect(result.current.folder).toBeNull()
-    expect(result.current.onFolderDraft(submission)).toBe('chat')
-    expect(h.start).not.toHaveBeenCalled()
   })
 })

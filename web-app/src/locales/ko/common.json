@@ -561,8 +561,7 @@
     "addToProject": "프로젝트에 추가",
     "newProject": "새 프로젝트",
     "noProjects": "아직 프로젝트가 없어요",
-    "addFolderAction": "폴더 추가",
-    "startFailed": "대화를 시작할 수 없어요. 메시지는 입력창에 그대로 남아 있어요."
+    "addFolderAction": "폴더 추가"
   },
   "conversationScope": {
     "folderSelectModel": "폴더 접근 권한을 추가하기 전에 도구를 사용할 수 있는 모델을 선택하세요.",

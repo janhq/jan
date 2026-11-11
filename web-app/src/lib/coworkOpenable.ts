@@ -1,6 +1,5 @@
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
-import { peekCoworkHandoff } from '@/lib/coworkHandoff'
 
 /**
  * Whether `/cowork/$sessionId` shows this session rather than redirecting home.
@@ -8,7 +7,7 @@ import { peekCoworkHandoff } from '@/lib/coworkHandoff'
  * instead of navigating to a redirect that looks like a dead click.
  *
  * An untouched session is not a different start surface: the unified composer
- * stays home unless its first prompt is being handed off or a run is active.
+ * stays home unless a run is active.
  */
 export function canOpenCoworkSession(sessionId: string): boolean {
   const session = useCoworkSessions
@@ -19,7 +18,6 @@ export function canOpenCoworkSession(sessionId: string): boolean {
   return (
     session.turns.length > 0 ||
     session.messages.length > 0 ||
-    !!useCoworkRun.getState().runId[sessionId] ||
-    !!peekCoworkHandoff(sessionId)
+    !!useCoworkRun.getState().runId[sessionId]
   )
 }
