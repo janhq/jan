@@ -65,8 +65,11 @@ import { cleanupThreadWorkspace } from '@/lib/agentTools'
 /**
  * How long startup waits for the Cowork migration. Past it the app renders and
  * the migration keeps running; the sessions are re-loaded when it finishes.
+ * Small enough that the window is up within the 3 s startup budget (about
+ * 0.8 s of native startup comes first); a small history still finishes inside
+ * it, so its rows never change after the first render.
  */
-export const COWORK_MIGRATION_BUDGET_MS = 3000
+export const COWORK_MIGRATION_BUDGET_MS = 1000
 
 let persistence: CoworkPersistence | null = null
 let unsubscribe: (() => void) | null = null
