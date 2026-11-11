@@ -17,12 +17,15 @@ need a bump: readers are required to ignore an `event` they do not know
 | `family_start` | `device`, `family`, `mode` |
 | `case` | `device`, `family`, then the leaf's own result flattened in: `backend`, `op`, `params`, `mode`, `status`, `error?`, `detail?` |
 | `family_end` | `device`, `family`, `status`, `ok`, `failed`, `not_supported`, `millis`, `exit?`, `last_lines[]`, `unparsed[]` |
-| `summary` | `device`, `ok`, `failed`, `not_supported`, `families_crashed`, `families_hung`, `families_no_cases` |
+| `summary` | `device`, `ok`, `failed`, `not_supported`, `families_crashed`, `families_hung`, `families_no_cases`, `families_cancelled` |
 | `done` | `ok`, `cancelled`, `inconclusive`, `error?` |
 
 Order: one `start`, a `device` per device, then `family_start` / `case`\* /
 `family_end` per unit (device-major), then a `summary` per device, then exactly
-one `done`. A run always ends with `done`, including when cancelled.
+one `done`. A run always ends with `done`, including when cancelled, when the
+root could not start at all (`diag_root_fail` writes one before exiting, so the
+reason reaches the stream rather than only the root's stderr), and when the
+supervisor has to kill a root that ignored its stop request.
 
 `case` is flattened rather than nested so a reader handles one flat object
 instead of reaching through a wrapper. `DiagCase` is the same struct the leaf
@@ -77,4 +80,4 @@ alone never fails a family.
 | Schema | Change |
 |---|---|
 | 1 | Initial contract. |
-| 2 | Added `FamilyStatus::no_cases`, `summary.families_no_cases`, `done.inconclusive`, `start.model`. |
+| 2 | Added `FamilyStatus::no_cases`, `summary.families_no_cases`, `summary.families_cancelled`, `done.inconclusive`, `start.model`. Every added field is `#[serde(default)]`, so an older root still parses. |

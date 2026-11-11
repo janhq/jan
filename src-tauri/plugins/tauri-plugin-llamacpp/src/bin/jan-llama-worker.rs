@@ -225,9 +225,15 @@ fn device_identities() -> serde_json::Value {
 
 #[tokio::main]
 async fn main() {
+    // Before `parse_args`, since a failure to parse is one of the reasons the
+    // root never starts and the supervisor reads reasons off stdout alone.
+    let diagnosing = std::env::args().any(|a| a == "--diagnose");
     let args = match parse_args() {
         Ok(a) => a,
         Err(e) => {
+            if diagnosing {
+                diag_root_fail(e);
+            }
             eprintln!("jan-llama-worker: {e}");
             std::process::exit(2);
         }
@@ -237,6 +243,9 @@ async fn main() {
     // common_params and llama_context_params cross the boundary by value and
     // their layout has changed repeatedly upstream.
     if let Err(e) = assert_pinned_version() {
+        if diagnosing {
+            diag_root_fail(e);
+        }
         eprintln!("jan-llama-worker: {e}");
         std::process::exit(3);
     }
@@ -397,6 +406,22 @@ fn diag_fail(msg: String) -> ! {
     std::process::exit(DIAG_EXIT);
 }
 
+/// The same, for the root, whose stdout *is* the event stream. Every run ends
+/// with a `done`, so a setup failure reports its reason there rather than only
+/// on a stderr the user never sees.
+fn diag_root_fail(msg: String) -> ! {
+    let done = diagnose::RootEvent::Done {
+        ok: false,
+        cancelled: false,
+        inconclusive: false,
+        error: Some(msg.clone()),
+    };
+    if let Ok(line) = serde_json::to_string(&done) {
+        print_event(&line);
+    }
+    diag_fail(msg)
+}
+
 /// stdout is a pipe to the root, so it is block-buffered; a run that streams
 /// has to flush each line or the UI sees nothing until the leaf exits.
 fn print_event(line: &str) {
@@ -458,16 +483,16 @@ fn diagnose_leaf(device: &str, diag: &DiagArgs) {
 /// Picks the work, then supervises one leaf per device and family.
 async fn diagnose_root(diag: &DiagArgs) {
     let exe = std::env::current_exe()
-        .unwrap_or_else(|e| diag_fail(format!("could not find my own path: {e}")));
+        .unwrap_or_else(|e| diag_root_fail(format!("could not find my own path: {e}")));
     let spec = diagnose::LeafSpec::new(exe);
 
     let (mut devices, backend_modules) = diagnose::probe_devices(&spec)
         .await
-        .unwrap_or_else(|e| diag_fail(e));
+        .unwrap_or_else(|e| diag_root_fail(e));
     if !diag.devices.is_empty() {
         devices.retain(|d| diag.devices.iter().any(|name| name == &d.name));
         if devices.is_empty() {
-            diag_fail(format!("no ggml device named {}", diag.devices.join(", ")));
+            diag_root_fail(format!("no ggml device named {}", diag.devices.join(", ")));
         }
     }
 
@@ -476,7 +501,7 @@ async fn diagnose_root(diag: &DiagArgs) {
     // diagnostic must not give.
     let tested = diagnose::probe_families(&spec)
         .await
-        .unwrap_or_else(|e| diag_fail(e));
+        .unwrap_or_else(|e| diag_root_fail(e));
     let wanted: Vec<FamilyFilter> = match (&diag.plan, diag.preset) {
         (Some(plan), _) => plan.families.clone(),
         (None, diagnose::DiagPreset::Full) => tested
@@ -485,7 +510,7 @@ async fn diagnose_root(diag: &DiagArgs) {
             .collect(),
         (None, diagnose::DiagPreset::Quick) => model_plan::quick_families(),
         (None, diagnose::DiagPreset::Model) => {
-            diag_fail("--diagnose-preset model needs a --diagnose-plan".to_string())
+            diag_root_fail("--diagnose-preset model needs a --diagnose-plan".to_string())
         }
     };
     let asked = wanted.len();
@@ -494,7 +519,7 @@ async fn diagnose_root(diag: &DiagArgs) {
     // support probe alone would then report a clean run. Refuse rather than
     // answer "your hardware is fine" having checked nothing.
     if families.is_empty() && asked > 0 {
-        diag_fail(format!(
+        diag_root_fail(format!(
             "none of the {asked} requested op families exist in llama.cpp {}",
             PINNED_TAG
         ));

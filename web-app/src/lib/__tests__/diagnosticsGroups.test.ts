@@ -15,6 +15,7 @@ const tally = (over: Partial<DeviceTally> = {}): DeviceTally => ({
   crashed: 0,
   hung: 0,
   noCases: 0,
+  cancelled: 0,
   complete: true,
   canOffload: true,
   ...over,
@@ -144,6 +145,24 @@ describe('deviceVerdict', () => {
     expect(deviceVerdict(tally({ noCases: 1, notSupported: 300 }))).toBe(
       'inconclusive'
     )
+  })
+
+  // Same hazard as `noCases`, from the other direction: a run stopped by the
+  // user or by its deadline leaves the families it did reach passing, and the
+  // ones it never reached unaccounted for.
+  it('never calls a device passed while part of the check never ran', () => {
+    expect(deviceVerdict(tally({ cancelled: 1 }))).toBe('inconclusive')
+    expect(deviceVerdict(tally({ cancelled: 1, notSupported: 300 }))).toBe(
+      'inconclusive'
+    )
+  })
+
+  it('a real failure still outranks a cancelled family', () => {
+    expect(deviceVerdict(tally({ cancelled: 1, failed: 2 }))).toBe('failed')
+  })
+
+  it('does not pass a device whose summary has not arrived', () => {
+    expect(deviceVerdict(tally({ complete: false }))).toBe('inconclusive')
   })
 
   it('a real failure still outranks an untested family', () => {

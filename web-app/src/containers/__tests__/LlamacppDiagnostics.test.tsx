@@ -77,6 +77,7 @@ describe('LlamacppDiagnostics', () => {
   beforeEach(() => {
     startDiagnostics.mockReset()
     cancelDiagnostics.mockReset()
+    cancelDiagnostics.mockResolvedValue(undefined)
     startDiagnostics.mockResolvedValue({ id: JOB })
     vi.useRealTimers()
   })
@@ -249,6 +250,55 @@ describe('LlamacppDiagnostics', () => {
     })
     await user.click(stop)
     expect(cancelDiagnostics).toHaveBeenCalledWith(JOB)
+  })
+
+  // The backend spawns the root, and starts pumping its events, before the
+  // reply to `start_diagnostics` crosses back into the webview, so the first
+  // events of a run arrive while its id is still unknown here.
+  it('keeps the events that arrive before the run reports its id', async () => {
+    const user = userEvent.setup()
+    let settle: (v: { id: string }) => void = () => {}
+    startDiagnostics.mockReturnValue(
+      new Promise<{ id: string }>((r) => {
+        settle = r
+      })
+    )
+    render(<LlamacppDiagnostics />)
+    await user.click(screen.getByRole('button', { name: /diagnostics\.run$/ }))
+    await waitFor(() => expect(startDiagnostics).toHaveBeenCalled())
+
+    // Emitted while the start call is still in flight.
+    await push(START, DEVICE)
+    await act(async () => {
+      settle({ id: JOB })
+      await new Promise((r) => setTimeout(r, 250))
+    })
+
+    expect(await screen.findByText('NVIDIA RTX 3090')).toBeInTheDocument()
+  })
+
+  it('stops a run the user walked away from', async () => {
+    const user = userEvent.setup()
+    const { unmount } = render(<LlamacppDiagnostics />)
+    await user.click(screen.getByRole('button', { name: /diagnostics\.run$/ }))
+    await waitFor(() => expect(startDiagnostics).toHaveBeenCalled())
+    await push(START)
+
+    // Nobody is left to read it, and it holds the single backend slot.
+    unmount()
+    expect(cancelDiagnostics).toHaveBeenCalledWith(JOB)
+  })
+
+  it('does not cancel a run that already finished', async () => {
+    const user = userEvent.setup()
+    const { unmount } = render(<LlamacppDiagnostics />)
+    await user.click(screen.getByRole('button', { name: /diagnostics\.run$/ }))
+    await waitFor(() => expect(startDiagnostics).toHaveBeenCalled())
+    await push(START)
+    await push({ job: JOB, event: 'done', ok: true, cancelled: false })
+
+    unmount()
+    expect(cancelDiagnostics).not.toHaveBeenCalled()
   })
 
   it('ignores events from a run that has been superseded', async () => {

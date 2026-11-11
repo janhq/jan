@@ -126,8 +126,25 @@ second concurrent run would make both unreliable and the timings meaningless.
 A job id is still carried because events from a superseded run can be in flight
 when a new one starts.
 
-A terminal `done` is emitted on every path, including a root that could not be
-started, so a listener never waits forever.
+**The slot is reserved before the root is spawned**, and the spawned process is
+attached to it afterwards. Spawning first and claiming second is what lets a
+refused run exist: its caller is told the slot is taken while the root it
+already started keeps streaming on the shared channel. A stop that arrives in
+that window is remembered (`RunningJob::stopped`) and closes the new stdin as
+soon as it exists, rather than being lost against the `None` that stood in for
+it.
+
+A terminal `done` is emitted on every path, so a listener never waits forever:
+a root that could not be started, a root that stopped answering, and the
+cancel backstop -- which aborts the pump task that would otherwise have emitted
+it, and so must emit one itself.
+
+The frontend hook is the other half of that contract. A run outlives the panel
+and cannot be reattached to, so unmounting cancels an unfinished one rather
+than leaving it holding the slot with nobody listening; and because the root
+starts streaming before the `start_diagnostics` reply reaches the webview, the
+events that arrive before the job id is known are held and replayed against it
+instead of being dropped.
 
 ## Tests
 

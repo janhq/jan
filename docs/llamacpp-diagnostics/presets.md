@@ -63,7 +63,9 @@ Two guards, because the two dimensions fail at different times.
 wanted list with `--diagnose-ops` on *every* preset, so a family upstream has
 renamed or dropped is left out rather than passing vacuously. If the
 intersection is empty the root exits with an error rather than running the
-support probe alone and reporting a clean result.
+support probe alone and reporting a clean result. That error is written as a
+`done` event on stdout as well as to stderr, so the panel names the reason
+instead of reporting a bare early exit.
 
 **Shapes, after the run.** These cannot be checked ahead of time, so the guard
 is at the other end. `run_unit` classifies a leaf that exited cleanly, emitted
@@ -79,6 +81,13 @@ FamilyStatus::NoCases
   -> deviceVerdict 'inconclusive'
 ```
 
+A family the run never reached travels the same way. A cancel or a passed
+deadline leaves the families after it `FamilyStatus::Cancelled`, counted on
+`summary.families_cancelled`, and `deviceVerdict` reads that -- along with a
+device whose `summary` has not arrived at all -- as `inconclusive` too. The
+families that did run say nothing about the ones that did not, so a partial
+device must not report "Working correctly".
+
 The verdict ordering is `failed` > `inconclusive` > `fallback` > `passed`: a
 real failure still outranks an untested family, and an untested family always
 outranks a pass.
@@ -91,8 +100,10 @@ testing nothing never renders as a pass.
 
 `model_plan` additionally fails **open** at every step: an unreadable head size
 runs flash attention unfiltered rather than at a guessed geometry, and a file
-whose tensor types are all unknown runs `MUL_MAT` with the attention types
-alone. Over-running costs minutes; under-running costs the answer.
+whose tensor types are all unknown runs `MUL_MAT` unfiltered rather than
+narrowed to the attention types, which would exercise none of the quantized
+kernels the file actually uses. Over-running costs minutes; under-running costs
+the answer.
 
 ## Why `--test-file` is not used
 

@@ -52,20 +52,50 @@ pub struct DiagnosticsState {
 struct RunningJob {
     id: String,
     /// Dropping this closes the root's stdin, which is how it is asked to stop.
+    /// `None` until the root is spawned, and again once it has been asked to
+    /// stop.
     stdin: Option<tokio::process::ChildStdin>,
-    /// Kills the root if it does not stop on its own.
-    kill: tokio::task::AbortHandle,
+    /// Kills the root if it does not stop on its own. `None` until the pump
+    /// task that owns the child exists.
+    kill: Option<tokio::task::AbortHandle>,
+    /// Set by [`DiagnosticsState::stop`] before the root was spawned, so the
+    /// stop is honoured rather than lost in that window.
+    stopped: bool,
 }
 
 impl DiagnosticsState {
-    /// Claims the single slot, or reports who holds it.
-    fn claim(&self, job: RunningJob) -> Result<(), String> {
+    /// Claims the single slot for `id` before anything is spawned, or reports
+    /// who holds it. The process is attached afterwards with [`Self::attach`]:
+    /// spawning first would leave a second run streaming its events after its
+    /// caller was told the slot was taken.
+    fn reserve(&self, id: &str) -> Result<(), String> {
         let mut current = self.current.lock().map_err(|_| poisoned())?;
         if current.is_some() {
             return Err("a hardware check is already running".to_string());
         }
-        *current = Some(job);
+        *current = Some(RunningJob {
+            id: id.to_string(),
+            stdin: None,
+            kill: None,
+            stopped: false,
+        });
         Ok(())
+    }
+
+    /// Hands the spawned root to the slot `id` reserved. A stop that arrived
+    /// during the spawn closes the new stdin at once rather than being lost.
+    fn attach(
+        &self,
+        id: &str,
+        stdin: Option<tokio::process::ChildStdin>,
+        kill: tokio::task::AbortHandle,
+    ) {
+        if let Ok(mut current) = self.current.lock() {
+            if let Some(job) = current.as_mut().filter(|job| job.id == id) {
+                job.stdin = if job.stopped { None } else { stdin };
+                job.kill = Some(kill);
+            }
+        }
     }
 
     /// Releases the slot if `id` still holds it. A run that finished after
@@ -85,6 +115,7 @@ impl DiagnosticsState {
                 // Closing stdin is the documented stop; the kill is the
                 // backstop for a root wedged somewhere it cannot read it.
                 job.stdin.take();
+                job.stopped = true;
                 Ok(())
             }
             _ => Err(format!("no hardware check with id {id} is running")),
@@ -94,7 +125,7 @@ impl DiagnosticsState {
     fn kill_handle(&self, id: &str) -> Option<tokio::task::AbortHandle> {
         let current = self.current.lock().ok()?;
         let job = current.as_ref()?;
-        (job.id == id).then(|| job.kill.clone())
+        (job.id == id).then(|| job.kill.clone())?
     }
 }
 
@@ -212,11 +243,20 @@ pub async fn start_diagnostics<R: tauri::Runtime>(
     jan_utils::system::setup_windows_process_flags(&mut cmd);
     cmd.kill_on_drop(true);
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("could not start {}: {e}", exe.display()))?;
-
+    // Reserved before the spawn: a run that starts and only then finds the
+    // slot taken would still be streaming its events on the shared channel
+    // while its caller was told it never started.
     let id = new_job_id();
+    state.reserve(&id)?;
+
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            state.release(&id);
+            return Err(format!("could not start {}: {e}", exe.display()));
+        }
+    };
+
     let stdin = child.stdin.take();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -230,11 +270,7 @@ pub async fn start_diagnostics<R: tauri::Runtime>(
         stderr,
     ));
 
-    state.claim(RunningJob {
-        id: id.clone(),
-        stdin,
-        kill: pump.abort_handle(),
-    })?;
+    state.attach(&id, stdin, pump.abort_handle());
 
     Ok(DiagnosticsJob { id })
 }
@@ -242,7 +278,8 @@ pub async fn start_diagnostics<R: tauri::Runtime>(
 /// Asks a run to stop. Returns once the request is made, not once it lands:
 /// the terminal `done` event is what says the run is over.
 #[tauri::command]
-pub async fn cancel_diagnostics(
+pub async fn cancel_diagnostics<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
     state: State<'_, Arc<DiagnosticsState>>,
     job: String,
 ) -> Result<(), String> {
@@ -252,11 +289,37 @@ pub async fn cancel_diagnostics(
         tokio::time::sleep(CANCEL_GRACE).await;
         if let Some(kill) = state.kill_handle(&job) {
             log::warn!("hardware check {job} ignored its stop request; killing it");
+            // Aborting drops the pump mid-read, so the terminal `done` it
+            // would have emitted never happens; without this one the panel
+            // waits forever on a run that is already dead.
             kill.abort();
+            emit_event(
+                &app_handle,
+                &job,
+                RootEvent::Done {
+                    ok: false,
+                    cancelled: true,
+                    inconclusive: false,
+                    error: Some(
+                        "the hardware check did not stop when asked and was closed".to_string(),
+                    ),
+                },
+            );
             state.release(&job);
         }
     });
     Ok(())
+}
+
+/// Publishes one event of one run on the shared channel.
+fn emit_event<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>, job: &str, event: RootEvent) {
+    let payload = DiagnosticsEvent {
+        job: job.to_string(),
+        event,
+    };
+    if let Err(e) = app_handle.emit(DIAGNOSTICS_EVENT, payload) {
+        log::warn!("emit {DIAGNOSTICS_EVENT} failed: {e}");
+    }
 }
 
 /// Reads the root to the end, republishing each line. Always emits a terminal
@@ -280,15 +343,7 @@ async fn run_to_completion<R: tauri::Runtime>(
         });
     }
 
-    let emit = |event: RootEvent| {
-        let payload = DiagnosticsEvent {
-            job: id.clone(),
-            event,
-        };
-        if let Err(e) = app_handle.emit(DIAGNOSTICS_EVENT, payload) {
-            log::warn!("emit {DIAGNOSTICS_EVENT} failed: {e}");
-        }
-    };
+    let emit = |event: RootEvent| emit_event(&app_handle, &id, event);
 
     let mut saw_done = false;
     let read = async {
@@ -346,48 +401,86 @@ async fn run_to_completion<R: tauri::Runtime>(
 mod tests {
     use super::*;
 
-    fn job(id: &str) -> RunningJob {
-        RunningJob {
-            id: id.to_string(),
-            stdin: None,
-            kill: tokio::spawn(std::future::pending::<()>()).abort_handle(),
-        }
+    fn abort_handle() -> tokio::task::AbortHandle {
+        tokio::spawn(std::future::pending::<()>()).abort_handle()
     }
 
     #[tokio::test]
     async fn a_second_run_is_refused_while_one_is_in_flight() {
         let state = DiagnosticsState::default();
-        state.claim(job("a")).unwrap();
-        let err = state.claim(job("b")).unwrap_err();
+        state.reserve("a").unwrap();
+        let err = state.reserve("b").unwrap_err();
         assert!(err.contains("already running"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn the_slot_is_held_from_before_the_root_is_spawned() {
+        // The window the reservation closes: a second start arriving between
+        // the spawn and the attach must still be refused, or two roots stream
+        // on one channel.
+        let state = DiagnosticsState::default();
+        state.reserve("a").unwrap();
+        assert!(state.reserve("b").is_err(), "the slot is already reserved");
+        state.attach("a", None, abort_handle());
+        assert!(state.reserve("b").is_err(), "and stays held once attached");
+    }
+
+    #[tokio::test]
+    async fn a_failed_spawn_hands_the_slot_back() {
+        let state = DiagnosticsState::default();
+        state.reserve("a").unwrap();
+        state.release("a");
+        state.reserve("b").expect("the slot should be free again");
     }
 
     #[tokio::test]
     async fn the_slot_reopens_once_the_run_releases_it() {
         let state = DiagnosticsState::default();
-        state.claim(job("a")).unwrap();
+        state.reserve("a").unwrap();
+        state.attach("a", None, abort_handle());
         state.release("a");
-        state.claim(job("b")).expect("the slot should be free again");
+        state.reserve("b").expect("the slot should be free again");
     }
 
     #[tokio::test]
     async fn a_finished_run_cannot_release_the_one_that_replaced_it() {
         let state = DiagnosticsState::default();
-        state.claim(job("a")).unwrap();
+        state.reserve("a").unwrap();
         state.release("a");
-        state.claim(job("b")).unwrap();
+        state.reserve("b").unwrap();
         // "a" finishing late must not clear "b".
         state.release("a");
-        assert!(state.claim(job("c")).is_err(), "b still holds the slot");
+        assert!(state.reserve("c").is_err(), "b still holds the slot");
     }
 
     #[tokio::test]
     async fn only_the_running_job_can_be_stopped() {
         let state = DiagnosticsState::default();
-        state.claim(job("a")).unwrap();
+        state.reserve("a").unwrap();
         let err = state.stop("b").unwrap_err();
         assert!(err.contains("no hardware check"), "{err}");
         state.stop("a").expect("the running job stops");
+    }
+
+    #[tokio::test]
+    async fn a_stop_during_the_spawn_is_not_lost() {
+        let state = DiagnosticsState::default();
+        state.reserve("a").unwrap();
+        state.stop("a").unwrap();
+        state.attach("a", None, abort_handle());
+        let current = state.current.lock().unwrap();
+        let job = current.as_ref().expect("still reserved");
+        assert!(job.stopped, "the stop is remembered across the attach");
+        assert!(job.stdin.is_none(), "and the new stdin is closed at once");
+    }
+
+    #[tokio::test]
+    async fn there_is_nothing_to_kill_before_the_root_is_attached() {
+        let state = DiagnosticsState::default();
+        state.reserve("a").unwrap();
+        assert!(state.kill_handle("a").is_none());
+        state.attach("a", None, abort_handle());
+        assert!(state.kill_handle("a").is_some());
     }
 
     #[test]

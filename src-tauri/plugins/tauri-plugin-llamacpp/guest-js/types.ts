@@ -310,6 +310,8 @@ export type DiagnosticsEvent = DiagnosticsEventBase &
         families_hung: number
         /** Families whose filter matched no case, so they tested nothing. */
         families_no_cases?: number
+        /** Families the run never reached, because it was cancelled or timed out. */
+        families_cancelled?: number
       }
     | {
         event: 'done'

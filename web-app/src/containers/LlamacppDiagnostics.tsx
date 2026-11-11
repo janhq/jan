@@ -116,9 +116,11 @@ function DeviceRow({
     : verdict === 'failed'
       ? t('providers:diagnostics.verdictFailedDetail', { count: device.failed })
       : verdict === 'inconclusive'
-        ? t('providers:diagnostics.verdictInconclusiveDetail', {
-            count: device.noCases,
-          })
+        ? device.noCases > 0
+          ? t('providers:diagnostics.verdictInconclusiveDetail', {
+              count: device.noCases,
+            })
+          : t('providers:diagnostics.verdictPartialDetail')
         : verdict === 'fallback'
           ? t('providers:diagnostics.verdictFallbackDetail', {
               count: unsupportedOps(device).length,

@@ -26,6 +26,14 @@ const PASSING_CASE_LIMIT = 5000
  */
 const FLUSH_INTERVAL_MS = 150
 
+/**
+ * Events held while a run's id is still unknown. The window is one IPC
+ * round trip, but the stream peaks in the thousands of events per second, so
+ * it is bounded; the events past the cap are cases, which [`DiagnosticsRun`]
+ * caps anyway.
+ */
+const PENDING_EVENT_LIMIT = 5000
+
 export interface DiagnosticsCase {
   device: string
   family: string
@@ -57,6 +65,8 @@ export interface DiagnosticsDeviceRun {
   hung: number
   /** Families whose shape filter matched no case, so they tested nothing. */
   noCases: number
+  /** Families the run never reached, because it was cancelled or timed out. */
+  cancelled: number
   /**
    * Per-op support, keyed by op name. Counted from every case event rather
    * than from `cases`, which is capped -- a long run would otherwise
@@ -181,6 +191,7 @@ export function applyDiagnosticsEvent(
         crashed: 0,
         hung: 0,
         noCases: 0,
+        cancelled: 0,
         opSupport: {},
         complete: false,
       })
@@ -261,6 +272,7 @@ export function applyDiagnosticsEvent(
         device.crashed = event.families_crashed
         device.hung = event.families_hung
         device.noCases = event.families_no_cases ?? 0
+        device.cancelled = event.families_cancelled ?? 0
         device.complete = true
       }
       break
@@ -303,6 +315,13 @@ export function useLlamacppDiagnostics() {
   const buffer = useRef<DiagnosticsRun | null>(null)
   const job = useRef<string | null>(null)
   const dirty = useRef(false)
+  // The backend starts the root, and its event pump, before the reply to
+  // `startDiagnostics` reaches the webview, so the first events of a run can
+  // arrive while its id is still unknown. They are held here and replayed
+  // against the id once it lands; dropping them costs the run its device list
+  // or, on a fast failure, its terminal event.
+  const pending = useRef<DiagnosticsEvent[]>([])
+  const awaitingId = useRef(false)
 
   useEffect(() => {
     let unlisten: (() => void) | undefined
@@ -313,7 +332,12 @@ export function useLlamacppDiagnostics() {
       setRun({ ...buffer.current })
     }
     onDiagnosticsEvent((event) => {
-      if (!buffer.current || event.job !== job.current) return
+      if (!buffer.current || event.job !== job.current) {
+        if (awaitingId.current && pending.current.length < PENDING_EVENT_LIMIT) {
+          pending.current.push(event)
+        }
+        return
+      }
       applyDiagnosticsEvent(buffer.current, event)
       dirty.current = true
       if (event.event === 'done') flush()
@@ -329,6 +353,15 @@ export function useLlamacppDiagnostics() {
       disposed = true
       clearInterval(timer)
       unlisten?.()
+      // A run outlives this panel and cannot be reattached to on a remount,
+      // so it would hold the single backend slot -- and every core -- with
+      // nothing listening. Leaving the page is a cancel.
+      const id = job.current
+      if (id && buffer.current && !isFinished(buffer.current.status)) {
+        void cancelDiagnostics(id).catch((e) =>
+          console.warn('cancel llamacpp diagnostics failed:', e)
+        )
+      }
     }
   }, [])
 
@@ -339,10 +372,19 @@ export function useLlamacppDiagnostics() {
       model?: string
     ) => {
       setStarting(true)
+      pending.current = []
+      awaitingId.current = true
       try {
         const started = await startDiagnostics(preset, devices, {}, model)
         job.current = started.id
         buffer.current = emptyRun(started.id, preset)
+        // Replayed in arrival order, so the run reads exactly as it would
+        // have had the id been known from the first event.
+        for (const event of pending.current) {
+          if (event.job === started.id) {
+            applyDiagnosticsEvent(buffer.current, event)
+          }
+        }
         setRun({ ...buffer.current })
       } catch (e) {
         job.current = null
@@ -354,6 +396,8 @@ export function useLlamacppDiagnostics() {
           finishedAt: Date.now(),
         })
       } finally {
+        awaitingId.current = false
+        pending.current = []
         setStarting(false)
       }
     },

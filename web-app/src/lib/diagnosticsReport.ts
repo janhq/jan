@@ -5,13 +5,14 @@ import {
   tallyOf,
 } from '@/lib/diagnosticsGroups'
 
-/** Ops whose example parameters are quoted; enough to diagnose, not a dump. */
-const REPORTED_OPS = 3
 import {
   unsupportedOps,
   type DiagnosticsDeviceRun,
   type DiagnosticsRun,
 } from '@/hooks/useLlamacppDiagnostics'
+
+/** Ops whose example parameters are quoted; enough to diagnose, not a dump. */
+const REPORTED_OPS = 3
 
 /**
  * A markdown report of a hardware check, for pasting into an issue.
@@ -25,7 +26,7 @@ import {
 const VERDICT_TEXT: Record<string, string> = {
   passed: 'all checks passed',
   fallback: 'all checks passed, some ops run on the CPU',
-  inconclusive: 'INCOMPLETE - some families matched no test case',
+  inconclusive: 'INCOMPLETE - some families were not checked',
   failed: 'FAILED',
   unknown: 'did not finish',
 }

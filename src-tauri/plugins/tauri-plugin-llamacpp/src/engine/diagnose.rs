@@ -231,6 +231,11 @@ pub enum RootEvent {
         /// Families whose filter matched no case, so they tested nothing.
         #[serde(default)]
         families_no_cases: usize,
+        /// Families the run never reached, because it was cancelled or passed
+        /// its deadline. Reported so a device whose remaining families were
+        /// dropped is not read as a clean pass on the ones that did run.
+        #[serde(default)]
+        families_cancelled: usize,
     },
     /// Always last. `ok` is false if any case failed or any family did not
     /// complete.
@@ -385,6 +390,7 @@ struct DeviceFaults {
     crashed: usize,
     hung: usize,
     no_cases: usize,
+    cancelled: usize,
 }
 
 /// Why a run stopped early, if it did.
@@ -472,6 +478,7 @@ pub async fn run<F>(
             FamilyStatus::Crashed => device.2.crashed += 1,
             FamilyStatus::Hung => device.2.hung += 1,
             FamilyStatus::NoCases => device.2.no_cases += 1,
+            FamilyStatus::Cancelled => device.2.cancelled += 1,
             _ => {}
         }
         // A family that tested nothing has not failed, so it must not read as
@@ -505,6 +512,7 @@ pub async fn run<F>(
             families_crashed: faults.crashed,
             families_hung: faults.hung,
             families_no_cases: faults.no_cases,
+            families_cancelled: faults.cancelled,
         });
     }
 

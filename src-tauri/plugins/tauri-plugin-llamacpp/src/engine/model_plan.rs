@@ -165,14 +165,22 @@ const COMMON_HEAD_SIZES: &[u64] = &[64, 128];
 /// Upstream's `-p` for a matmul over `types`: an alternation anchored on the
 /// trailing comma of `type_a=<name>,` so `q4_0` cannot match `q4_0_whatever`
 /// and a short name cannot prefix a longer one.
+///
+/// `None` when `types` is empty, which is the fail-open answer: a file whose
+/// tensor types could not be read runs `MUL_MAT` unfiltered rather than
+/// narrowed to the attention types, which would test none of the quantized
+/// kernels the file actually uses.
 fn matmul_filter(types: &[String]) -> Option<String> {
+    if types.is_empty() {
+        return None;
+    }
     let mut names: Vec<&str> = types.iter().map(String::as_str).collect();
     for always in ALWAYS_MATMUL_TYPES {
         if !names.contains(always) {
             names.push(always);
         }
     }
-    (!names.is_empty()).then(|| format!("type_a=({}),", names.join("|")))
+    Some(format!("type_a=({}),", names.join("|")))
 }
 
 /// Upstream's `-p` for flash attention at one head geometry. `hsk` and `hsv`
@@ -370,11 +378,11 @@ mod tests {
 
     #[test]
     fn a_file_with_no_readable_types_runs_matrix_math_unfiltered() {
-        // Fails open: a filter of nothing would match nothing, and the run
-        // would report matrix math as fine without testing it.
+        // Fails open: narrowing to the attention types alone would run none of
+        // the quantized kernels the file uses and still report a clean pass.
         let families = model_families(&ModelShape::default());
         let matmul = filter_for(&families, "MUL_MAT").expect("MUL_MAT is planned");
-        assert_eq!(matmul.params.as_deref(), Some("type_a=(f32|f16),"));
+        assert_eq!(matmul.params, None);
     }
 
     #[test]

@@ -225,6 +225,7 @@
     "checkThisModel": "Check why this model failed",
     "verdictInconclusive": "Not fully checked",
     "verdictInconclusiveDetail": "{{count}} parts of the check matched no test on this build of llama.cpp, so they were not checked. Run the full check to cover them.",
+    "verdictPartialDetail": "This check stopped before every part of it had run on this device, so the parts that did pass are not the whole answer. Run it again to finish.",
     "inconclusiveNotice": "Some parts of this check tested nothing, so it is not a clean result. Run the full check to cover them.",
     "suggestionsTitle": "What to try",
     "suggestionEvidence": "Based on: {{groups}}",

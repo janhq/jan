@@ -377,10 +377,54 @@ async fn cancel_ends_the_run_and_marks_what_never_ran() {
         "the family in flight and every family after it are cancelled"
     );
     assert_eq!(done(&events), (false, true));
+    // Counted on the summary, or a device whose remaining families were
+    // dropped reads as a clean pass on the ones that did run.
+    let cancelled = events.iter().find_map(|e| match e {
+        RootEvent::Summary {
+            families_cancelled, ..
+        } => Some(*families_cancelled),
+        _ => None,
+    });
+    assert_eq!(cancelled, Some(3));
     assert!(
         started.elapsed() < Duration::from_secs(30),
         "cancel must not wait out the family timeout"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_partly_cancelled_device_reports_what_never_ran() {
+    // The case the summary has to carry: one family passed and the rest were
+    // dropped, so the device is neither failed nor a clean pass.
+    let dir = tempfile::tempdir().unwrap();
+    let leaf = FakeLeaf {
+        stdout: vec![result_line("ADD", "ok"), done_line(true)],
+        sleep: 1,
+        ..Default::default()
+    }
+    .write(dir.path(), "quick-then-cancelled");
+
+    // Each family takes about a second, so the deadline lands with the early
+    // ones finished and the late ones never started.
+    let mut p = plan(&["ADD", "MUL", "SUB", "DIV", "SCALE"]);
+    p.family_timeout = Duration::from_secs(60);
+    p.deadline = Duration::from_millis(3000);
+
+    let events = collect(&p, leaf).await;
+
+    let summary = events.iter().find_map(|e| match e {
+        RootEvent::Summary {
+            ok,
+            failed,
+            families_cancelled,
+            ..
+        } => Some((*ok, *failed, *families_cancelled)),
+        _ => None,
+    });
+    let (ok, failed, cancelled) = summary.expect("the device is summarized");
+    assert!(ok > 0, "the families that ran passed");
+    assert_eq!(failed, 0);
+    assert!(cancelled > 0, "and the rest are reported as never run");
 }
 
 #[tokio::test(flavor = "multi_thread")]

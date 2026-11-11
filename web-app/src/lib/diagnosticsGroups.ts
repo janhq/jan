@@ -172,6 +172,12 @@ export interface DeviceTally {
    * answer a diagnostic must not give, so it outranks a pass.
    */
   noCases: number
+  /**
+   * Families the run never reached, because it was cancelled or passed its
+   * deadline. Like [`noCases`] it outranks a pass: the families that did run
+   * say nothing about the ones that did not.
+   */
+  cancelled: number
   /** False while families are still running, which makes the verdict partial. */
   complete: boolean
   /**
@@ -212,7 +218,14 @@ export function hasCpuFallback(kind: DiagnosticsDeviceKind): boolean {
 export function deviceVerdict(tally: DeviceTally): DeviceVerdict {
   if (tally.failed > 0 || tally.crashed > 0 || tally.hung > 0) return 'failed'
   if (tally.ok === 0) return 'unknown'
-  if (tally.noCases > 0) return 'inconclusive'
+  // A partial device is inconclusive for the same reason a family that tested
+  // nothing is: a run cut short by the user or by its deadline has no evidence
+  // about the families it never reached, and reporting the ones it did reach
+  // as a clean bill of health is the wrong answer this verdict exists to
+  // prevent.
+  if (tally.noCases > 0 || tally.cancelled > 0 || !tally.complete) {
+    return 'inconclusive'
+  }
   if (tally.notSupported > 0 && tally.canOffload) return 'fallback'
   return 'passed'
 }
@@ -230,6 +243,7 @@ export function tallyOf(device: DiagnosticsDeviceRun): DeviceTally {
     crashed: device.crashed,
     hung: device.hung,
     noCases: device.noCases,
+    cancelled: device.cancelled,
     complete: device.complete,
     canOffload: hasCpuFallback(device.device.type),
   }
