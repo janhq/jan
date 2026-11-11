@@ -502,7 +502,7 @@ async function finishLateMigration(
   }
 }
 
-export type CoworkImportRetry =
+type CoworkImportRetry =
   | { imported: true }
   | { imported: false; error: string }
 
@@ -587,30 +587,29 @@ async function hidesOnClose(): Promise<boolean> {
   }
 }
 
+/** Save every pending write without holding anything up; failures are logged. */
+function flushInBackground(failureMessage: string) {
+  void flushAllWrites().then((writes) => {
+    const failed = writes.find((r) => r.status === 'rejected')
+    if (failed?.status === 'rejected') {
+      console.warn(`[cowork] ${failureMessage}:`, failed.reason)
+    }
+  })
+}
+
 async function installCloseHandlers() {
   if (closeListenersInstalled) return
   closeListenersInstalled = true
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') {
-        void flushAllWrites().then((writes) => {
-          const failed = writes.find((r) => r.status === 'rejected')
-          if (failed?.status === 'rejected') {
-            console.warn('[cowork] background flush failed:', failed.reason)
-          }
-        })
-      }
+      if (document.visibilityState === 'hidden')
+        flushInBackground('background flush failed')
     })
   }
   if (typeof window === 'undefined') return
-  window.addEventListener('beforeunload', () => {
-    void flushAllWrites().then((writes) => {
-      const failed = writes.find((r) => r.status === 'rejected')
-      if (failed?.status === 'rejected') {
-        console.warn('[cowork] unload flush failed:', failed.reason)
-      }
-    })
-  })
+  window.addEventListener('beforeunload', () =>
+    flushInBackground('unload flush failed')
+  )
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     const appWindow = getCurrentWindow()
@@ -620,12 +619,7 @@ async function installCloseHandlers() {
       // the background, and prevent the destroy() that would quit the app.
       if (await hidesOnClose()) {
         event.preventDefault()
-        void flushAllWrites().then((writes) => {
-          const failed = writes.find((r) => r.status === 'rejected')
-          if (failed?.status === 'rejected') {
-            console.warn('[cowork] flush on hide failed:', failed.reason)
-          }
-        })
+        flushInBackground('flush on hide failed')
         return
       }
       // A real close quits the app. Awaiting here holds it until every queued
