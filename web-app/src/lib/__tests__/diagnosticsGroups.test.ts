@@ -165,6 +165,18 @@ describe('deviceVerdict', () => {
     expect(deviceVerdict(tally({ complete: false }))).toBe('inconclusive')
   })
 
+  // A narrowed run that matched no case has no passes behind it either, so
+  // the zero-pass check must not claim it first: "Not checked" would say the
+  // run never happened when it finished having covered nothing it named.
+  it('calls a run that tested nothing inconclusive, not unchecked', () => {
+    expect(deviceVerdict(tally({ ok: 0, noCases: 1 }))).toBe('inconclusive')
+  })
+
+  it('still reports nothing when nothing ran at all', () => {
+    expect(deviceVerdict(tally({ ok: 0, cancelled: 2 }))).toBe('unknown')
+    expect(deviceVerdict(tally({ ok: 0, complete: false }))).toBe('unknown')
+  })
+
   it('a real failure still outranks an untested family', () => {
     expect(deviceVerdict(tally({ noCases: 1, failed: 2 }))).toBe('failed')
   })

@@ -427,13 +427,25 @@ fn diag_root_fail(msg: String) -> ! {
     diag_fail(msg)
 }
 
+/// Exit code for a leaf whose reader is gone. Distinct from [`DIAG_EXIT`]
+/// because nothing is left to read either one.
+const DIAG_EXIT_NO_READER: i32 = 9;
+
 /// stdout is a pipe to the root, so it is block-buffered; a run that streams
 /// has to flush each line or the UI sees nothing until the leaf exits.
+///
+/// A failed write means the root is gone, and this process is then an orphan
+/// holding a device with nobody to report to, so it stops. On Unix the broken
+/// pipe would raise SIGPIPE and end it anyway; Windows has no such signal,
+/// which is where this is load-bearing -- the plugin cannot kill a
+/// grandchild there (see `kill_process_group`). It does not bound a leaf hung
+/// inside a driver call, which by definition prints nothing.
 fn print_event(line: &str) {
     use std::io::Write;
     let mut out = std::io::stdout().lock();
-    let _ = writeln!(out, "{line}");
-    let _ = out.flush();
+    if writeln!(out, "{line}").and_then(|()| out.flush()).is_err() {
+        std::process::exit(DIAG_EXIT_NO_READER);
+    }
 }
 
 fn print_diagnose_devices() {

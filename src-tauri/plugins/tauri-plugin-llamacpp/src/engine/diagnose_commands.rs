@@ -332,11 +332,16 @@ pub async fn cancel_diagnostics<R: tauri::Runtime>(
 ///
 /// The leaves are grandchildren of this process, which neither `kill_on_drop`
 /// nor `Child::kill` reaches. On Unix the root leads its own process group
-/// (`process_group(0)` above), so one `killpg` takes the group. On Windows
-/// `CREATE_NEW_PROCESS_GROUP` is set but only console control events are
-/// deliverable to a group, which a windowless sidecar does not receive: a job
-/// object is what that would need, so there the leaf is left to its own
-/// `--family-timeout`.
+/// (`process_group(0)` above), so one `killpg` takes the group.
+///
+/// **Windows is not covered.** `CREATE_NEW_PROCESS_GROUP` is set, but only
+/// console control events are deliverable to a group and a windowless sidecar
+/// receives none; a job object is what that needs. The leaf has no deadline of
+/// its own to fall back on either -- `--family-timeout` is enforced by the
+/// root's own `tokio::time::timeout`, which dies with it. What bounds it there
+/// is the leaf exiting when a write to its stdout fails (`print_event`), so
+/// one still streaming cases stops at its next event; one hung inside a driver
+/// call prints nothing and outlives the run.
 fn kill_process_group(pid: Option<u32>) {
     #[cfg(unix)]
     if let Some(pid) = pid {

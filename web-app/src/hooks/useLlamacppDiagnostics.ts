@@ -322,12 +322,17 @@ export function useLlamacppDiagnostics() {
   // or, on a fast failure, its terminal event.
   const pending = useRef<DiagnosticsEvent[]>([])
   const awaitingId = useRef(false)
-  // Set once the panel is gone. A start in flight at that moment still gets
+  // True while the panel is gone. A start in flight at that moment still gets
   // its id back, and that run has to be cancelled too: it holds the single
   // slot for as long as it runs, with nothing left to stop it.
   const unmounted = useRef(false)
 
   useEffect(() => {
+    // Cleared on every mount, not just the first. StrictMode mounts, cleans
+    // up and mounts again in development, so a flag only ever set would stay
+    // set for the life of the component and abandon every run started after
+    // it.
+    unmounted.current = false
     let unlisten: (() => void) | undefined
     let disposed = false
     const flush = () => {

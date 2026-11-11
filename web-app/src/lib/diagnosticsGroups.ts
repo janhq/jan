@@ -217,13 +217,18 @@ export function hasCpuFallback(kind: DiagnosticsDeviceKind): boolean {
  */
 export function deviceVerdict(tally: DeviceTally): DeviceVerdict {
   if (tally.failed > 0 || tally.crashed > 0 || tally.hung > 0) return 'failed'
+  // Before the `ok === 0` check below: a narrowed run whose filter matched no
+  // case has no passes behind it either, and "Not checked" would say the run
+  // never happened when in fact it finished and covered nothing it named.
+  if (tally.noCases > 0) return 'inconclusive'
+  // Nothing ran at all -- still going, or stopped before the first case. That
+  // really is "not checked", which is why this sits above the partial test.
   if (tally.ok === 0) return 'unknown'
-  // A partial device is inconclusive for the same reason a family that tested
-  // nothing is: a run cut short by the user or by its deadline has no evidence
-  // about the families it never reached, and reporting the ones it did reach
-  // as a clean bill of health is the wrong answer this verdict exists to
-  // prevent.
-  if (tally.noCases > 0 || tally.cancelled > 0 || !tally.complete) {
+  // A partial device is inconclusive for the same reason: a run cut short by
+  // the user or by its deadline has no evidence about the families it never
+  // reached, and reporting the ones it did reach as a clean bill of health is
+  // the wrong answer this verdict exists to prevent.
+  if (tally.cancelled > 0 || !tally.complete) {
     return 'inconclusive'
   }
   if (tally.notSupported > 0 && tally.canOffload) return 'fallback'

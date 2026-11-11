@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -16,9 +17,14 @@ const { startDiagnostics, cancelDiagnostics, onDiagnosticsEvent, emit } =
       startDiagnostics: vi.fn(),
       cancelDiagnostics: vi.fn(),
       getLoadedModels: vi.fn(),
+      // Returns a real unlisten, as the plugin does: a no-op one leaves two
+      // live listeners under StrictMode and every event applies twice.
       onDiagnosticsEvent: vi.fn(async (h: (e: unknown) => void) => {
         handlers.push(h)
-        return () => {}
+        return () => {
+          const i = handlers.indexOf(h)
+          if (i >= 0) handlers.splice(i, 1)
+        }
       }),
       emit: (event: unknown) => handlers.forEach((h) => h(event)),
     }
@@ -310,6 +316,26 @@ describe('LlamacppDiagnostics', () => {
     })
 
     expect(cancelDiagnostics).toHaveBeenCalledWith(JOB)
+  })
+
+  // StrictMode re-runs the effect on the *same* instance: mount, clean up,
+  // mount again, with the refs surviving. A flag the cleanup sets and nothing
+  // clears would therefore abandon every run for the life of the component --
+  // which is every run in a development build.
+  it('still runs under StrictMode, which mounts the effect twice', async () => {
+    const user = userEvent.setup()
+    render(
+      <StrictMode>
+        <LlamacppDiagnostics />
+      </StrictMode>
+    )
+
+    await user.click(screen.getByRole('button', { name: /diagnostics\.run$/ }))
+    await waitFor(() => expect(startDiagnostics).toHaveBeenCalled())
+    await push(START, DEVICE)
+
+    expect(cancelDiagnostics).not.toHaveBeenCalled()
+    expect(await screen.findByText('NVIDIA RTX 3090')).toBeInTheDocument()
   })
 
   it('does not cancel a run that already finished', async () => {
