@@ -8,7 +8,9 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 
-use super::utils::{get_messages_path, get_thread_metadata_path};
+use super::utils::{
+    get_data_dir, get_messages_path, get_thread_dir, get_thread_metadata_path, DELETING_PREFIX,
+};
 
 // Global per-thread locks for message file writes
 pub static MESSAGE_LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
@@ -16,6 +18,33 @@ pub static MESSAGE_LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = Onc
 /// Check if the platform should use SQLite (mobile platforms)
 pub fn should_use_sqlite() -> bool {
     cfg!(any(target_os = "android", target_os = "ios"))
+}
+
+/// Removes a thread's directory. The app calls it under the thread lock.
+///
+/// The directory is first renamed aside, which either succeeds whole or leaves
+/// the thread untouched: on Windows a file another program holds open fails it,
+/// and the error is reported with every file still in place. Removing a
+/// directory in place could instead fail halfway and leave a thread without
+/// some of its files. Once renamed the thread is gone; what the removal cannot
+/// delete (a file whose ACL forbids it) stays under the hidden name and is
+/// retried by the next `list_threads`. A thread that does not exist is not an
+/// error.
+pub fn remove_thread_dir(data_folder: &Path, thread_id: &str) -> Result<(), String> {
+    let thread_dir = get_thread_dir(data_folder, thread_id)?;
+    let aside = get_data_dir(data_folder)
+        .join(format!("{DELETING_PREFIX}{thread_id}-{}", uuid::Uuid::new_v4()));
+    match fs::rename(&thread_dir, &aside) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("could not delete thread {thread_id}: {e}")),
+    }
+    if let Err(e) = fs::remove_dir_all(&aside) {
+        log::warn!(
+            "thread {thread_id} deleted; some of its files remain until the next listing: {e}"
+        );
+    }
+    Ok(())
 }
 
 /// Get a lock for a specific thread to ensure thread-safe message file operations
