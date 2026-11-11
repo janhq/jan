@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 /// Server-name prefix of the tools an extension contributes. An MCP server the
 /// user named this way is never trusted whole: that trust would also cover the
 /// real extension's tools.
-pub const EXTENSION_SERVER_PREFIX: &str = "ext:";
+const EXTENSION_SERVER_PREFIX: &str = "ext:";
 
 /// Who serves a tool, as the caller resolved it when the call arrived.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -125,7 +125,7 @@ pub struct ConsentStore {
 /// The name a grant is recorded under. A tool with a server is keyed by it as
 /// well, so a grant never covers a same-named tool of another server; MCP keys
 /// carry an `mcp:` namespace so no extension can spell one.
-pub fn grant_key(tool: &str, server: Option<&str>, origin: ToolOrigin) -> String {
+fn grant_key(tool: &str, server: Option<&str>, origin: ToolOrigin) -> String {
     match (server, origin) {
         (None, _) => tool.to_string(),
         (Some(server), ToolOrigin::Extension) => format!("{server}/{tool}"),

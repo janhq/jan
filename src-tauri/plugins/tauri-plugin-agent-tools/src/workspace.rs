@@ -1530,7 +1530,7 @@ const COPY_MARKER_PREFIX: &str = ".copied-";
 /// How long a copied workspace is protected from the thread sweep while no
 /// thread lists it. The Cowork migration copies before it commits thread.json,
 /// and may still be running when the startup sweep reads the thread list.
-pub const COPY_GRACE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+const COPY_GRACE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
 
 fn copy_staging_dir(jan_data_folder: &Path, id: &str) -> Result<PathBuf, String> {
     Ok(threads_dir(jan_data_folder).join(format!("{COPY_STAGING_PREFIX}{}", thread_segment(id)?)))
