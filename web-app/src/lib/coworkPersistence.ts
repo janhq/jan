@@ -200,14 +200,14 @@ export function sessionFromThread(
  * (`sessionToSidecar`, what the migration and older builds write) still holds
  * the transcript arrays itself.
  */
-export type CoworkStateSidecar = {
+type CoworkStateSidecar = {
   version: 2
   subagents?: CoworkSession['subagents']
   lastUsage?: CoworkSession['lastUsage']
   todos?: CoworkSession['todos']
 }
 
-export function sessionToStateSidecar(s: CoworkSession): CoworkStateSidecar {
+function sessionToStateSidecar(s: CoworkSession): CoworkStateSidecar {
   return {
     version: 2,
     ...(s.subagents !== undefined && { subagents: s.subagents }),

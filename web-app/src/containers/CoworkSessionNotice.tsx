@@ -10,11 +10,10 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { backendStorage } from '@/lib/backendStorage'
 import { exportCoworkSession } from '@/lib/coworkExport'
 import { retryCoworkImport } from '@/lib/coworkSync'
+import type { CopyLeftOut } from '@/lib/migrateCoworkSessions'
 
 /** Ids whose "files left out" notice the user closed (JSON array). */
-export const COWORK_LEFT_OUT_DISMISSED_KEY = 'cowork_left_out_dismissed'
-
-type LeftOut = { skipped: number; unreadable: number }
+const COWORK_LEFT_OUT_DISMISSED_KEY = 'cowork_left_out_dismissed'
 
 const readDismissed = async (): Promise<string[]> => {
   try {
@@ -52,7 +51,7 @@ export function CoworkSessionNotice({
       (session &&
         (
           s.threads[session.id]?.metadata?.migratedFrom as
-            | { leftOut?: LeftOut }
+            | { leftOut?: CopyLeftOut }
             | undefined
         )?.leftOut) ||
       undefined

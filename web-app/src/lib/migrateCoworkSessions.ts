@@ -107,7 +107,7 @@ export type CopyLeftOut = { skipped: number; unreadable: number }
  * migration writes anything: it holds the only copy of the old sessions, and
  * the file is rewritten whole on every settings change.
  */
-export const COWORK_SETTINGS_BACKUP_LABEL = 'pre-cowork-migration'
+const COWORK_SETTINGS_BACKUP_LABEL = 'pre-cowork-migration'
 
 type MigrationDeps = { copyWorkspace?: CopyWorkspace }
 

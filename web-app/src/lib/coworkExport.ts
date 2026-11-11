@@ -3,7 +3,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import type { Invoke } from '@/lib/migrateCoworkSessions'
 
 /** Data-folder-relative directory exports land in. */
-export const COWORK_EXPORT_DIR = 'cowork-exports'
+const COWORK_EXPORT_DIR = 'cowork-exports'
 
 /**
  * Save one Cowork session, exactly as the app holds it, to
