@@ -564,5 +564,12 @@
       "show": "Pokaż oryginalny folder"
     }
   },
-  "deleteThreadFailed": "Nie udało się usunąć rozmowy. Może pojawić się ponownie po restarcie."
+  "deleteThreadFailed": "Nie udało się usunąć rozmowy. Może pojawić się ponownie po restarcie.",
+  "continueAsTask": {
+    "action": "Kontynuuj jako zadanie",
+    "title": "Kontynuować ten czat jako zadanie?",
+    "description": "Jan zachowa tę rozmowę i będzie ją kontynuować jako zadanie Cowork. Zadanie może używać narzędzi, zapisywać pliki i uruchamiać polecenia we własnym obszarze roboczym bez pytania przy każdym kroku. Nie można go z powrotem zmienić w czat.",
+    "descriptionFolder": "Jan zachowa tę rozmowę i będzie ją kontynuować jako zadanie Cowork. Zadanie może edytować pliki i uruchamiać polecenia w {{folder}} bez pytania przy każdej zmianie. Nie można go z powrotem zmienić w czat.",
+    "confirm": "Kontynuuj jako zadanie"
+  }
 }

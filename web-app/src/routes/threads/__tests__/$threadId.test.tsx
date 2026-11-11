@@ -198,6 +198,7 @@ vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: any) => ({ ...config, id: '/threads/$threadId' }),
   useParams: () => ({ threadId: h.routeParams.threadId }),
   useSearch: () => ({ threadModel: undefined }),
+  useRouter: () => ({ navigate: vi.fn() }),
 }))
 
 vi.mock('@/containers/HeaderPage', () => ({
@@ -460,6 +461,10 @@ vi.mock('@/hooks/useChatFolder', () => ({
   }),
 }))
 vi.mock('@/containers/CoworkComposerMenu', () => ({ CoworkComposerMenu: () => null }))
+vi.mock('@/containers/dialogs/ContinueAsTaskDialog', () => ({
+  ContinueAsTaskDialog: () => null,
+}))
+vi.mock('@/lib/coworkSync', () => ({ continueChatAsTask: vi.fn() }))
 vi.mock('@/containers/CoworkWorkspacePill', () => ({ CoworkWorkspacePill: () => null }))
 const consent = vi.hoisted(() => ({ consume: vi.fn() }))
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({

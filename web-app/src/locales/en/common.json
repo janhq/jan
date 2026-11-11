@@ -939,5 +939,12 @@
       "show": "Show original folder"
     }
   },
-  "deleteThreadFailed": "Could not delete the conversation. It may come back after a restart."
+  "deleteThreadFailed": "Could not delete the conversation. It may come back after a restart.",
+  "continueAsTask": {
+    "action": "Continue as task",
+    "title": "Continue this chat as a task?",
+    "description": "Jan keeps this conversation and continues it as a Cowork task. A task can run tools, write files and run commands in its own workspace without asking for each step. You cannot switch it back to a chat.",
+    "descriptionFolder": "Jan keeps this conversation and continues it as a Cowork task. A task can edit files and run commands in {{folder}} without asking for each change. You cannot switch it back to a chat.",
+    "confirm": "Continue as task"
+  }
 }

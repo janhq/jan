@@ -558,5 +558,12 @@
       "show": "Tampilkan folder asli"
     }
   },
-  "deleteThreadFailed": "Tidak dapat menghapus percakapan. Percakapan ini mungkin muncul kembali setelah dimulai ulang."
+  "deleteThreadFailed": "Tidak dapat menghapus percakapan. Percakapan ini mungkin muncul kembali setelah dimulai ulang.",
+  "continueAsTask": {
+    "action": "Lanjutkan sebagai tugas",
+    "title": "Lanjutkan obrolan ini sebagai tugas?",
+    "description": "Jan menyimpan percakapan ini dan melanjutkannya sebagai tugas Cowork. Tugas dapat menggunakan alat, menulis file, dan menjalankan perintah di ruang kerjanya sendiri tanpa bertanya di setiap langkah. Tugas tidak dapat diubah kembali menjadi obrolan.",
+    "descriptionFolder": "Jan menyimpan percakapan ini dan melanjutkannya sebagai tugas Cowork. Tugas dapat mengedit file dan menjalankan perintah di {{folder}} tanpa bertanya di setiap perubahan. Tugas tidak dapat diubah kembali menjadi obrolan.",
+    "confirm": "Lanjutkan sebagai tugas"
+  }
 }
