@@ -315,6 +315,7 @@
     "uploadingFiles": "Caricamento file in corso…",
     "deleteProjectDialog": {
       "title": "Elimina progetto",
+      "permanentDelete": "Questa azione eliminerà definitivamente \"{{projectName}}\" e tutte le sue conversazioni. Non può essere annullata.",
       "permanentDeleteWarning": "Questa azione eliminerà definitivamente TUTTE le conversazioni all'interno del progetto!",
       "saveThreadsAdvice": "Per salvare le conversazioni, spostale nell'elenco delle conversazioni o in un altro progetto prima di procedere con l'eliminazione.",
       "starredWarning": "Hai ancora conversazioni preferite all'interno del progetto.",
@@ -508,6 +509,14 @@
     "forceQuit": "Uscita forzata",
     "forcing": "Chiusura forzata in corso…",
     "shuttingDown": "Arresto in corso…"
+  },
+  "artifactsEmpty": "Ancora nessun risultato. I file creati nelle tue conversazioni compaiono qui.",
+  "workspace": {
+    "chatFootnote": "Jan legge liberamente questa cartella e ti chiede conferma prima di ogni modifica o comando eseguito al suo interno.",
+    "saveFailed": "Impossibile salvare la cartella di questa chat"
+  },
+  "budget": {
+    "stoppedTokens": "Interrotto: questa conversazione ha raggiunto il suo budget di token."
   },
   "artifacts": "Artefatti",
   "skills": "Competenze",

@@ -159,6 +159,11 @@
     "hostSsl": "SSL de l’amfitrió",
     "hostSslDesc": "Valida els certificats SSL dels hosts de destinació."
   },
+  "cowork": {
+    "title": "Agent",
+    "description": "El que Jan pot fer al teu ordinador: el seu shell aïllat, a més dels records i les habilitats que es guarden permanentment a la carpeta de dades de Jan.",
+    "networkDesc": "Permet que les ordres del shell accedeixin a la xarxa, per exemple per instal·lar paquets o obtenir un repositori. Activat per defecte. L'entorn aïllat continua limitant quins fitxers poden tocar les ordres."
+  },
   "localApiServer": {
     "title": "Servidor API local",
     "description": "Executa localment un servidor compatible amb OpenAI.",

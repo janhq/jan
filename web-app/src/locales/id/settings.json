@@ -151,6 +151,11 @@
     "hostSsl": "Host SSL",
     "hostSslDesc": "Validasi sertifikat SSL dari host tujuan."
   },
+  "cowork": {
+    "title": "Agent",
+    "description": "Apa yang dapat dilakukan Jan di komputer Anda: shell yang terisolasi, serta memori dan skill yang disimpan permanen di folder data Jan Anda.",
+    "networkDesc": "Izinkan perintah shell mengakses jaringan, misalnya untuk memasang paket atau mengambil repositori. Aktif secara default. Sandbox tetap membatasi file mana yang dapat disentuh perintah."
+  },
   "localApiServer": {
     "title": "Server API Lokal",
     "description": "Jalankan server yang kompatibel dengan OpenAI secara lokal.",

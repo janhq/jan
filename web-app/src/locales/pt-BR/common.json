@@ -265,6 +265,7 @@
     "projectNotFoundDesc": "O projeto que você está procurando não existe ou foi removido.",
     "deleteProjectDialog": {
       "title": "Remover Projeto",
+      "permanentDelete": "Isso excluirá permanentemente \"{{projectName}}\" e todas as suas conversas. Esta ação não pode ser desfeita.",
       "permanentDeleteWarning": "Esta ação removerá permanentemente TODAS as conversas dentro do projeto!",
       "saveThreadsAdvice": "Para salvar conversas, mova-as para sua lista de conversas ou outro projeto antes de remover.",
       "starredWarning": "Você ainda tem conversas favoritadas dentro do projeto.",
@@ -414,6 +415,14 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "artifactsEmpty": "Nada produzido ainda. Os arquivos criados nas suas conversas aparecem aqui.",
+  "workspace": {
+    "chatFootnote": "O Jan lê esta pasta livremente e pede sua permissão antes de cada edição ou comando executado nela.",
+    "saveFailed": "Não foi possível salvar a pasta deste chat"
+  },
+  "budget": {
+    "stoppedTokens": "Interrompido: esta conversa atingiu o limite de tokens."
   },
   "artifacts": "Artefatos",
   "skills": "Habilidades",
