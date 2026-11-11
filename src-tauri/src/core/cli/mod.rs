@@ -48,8 +48,10 @@ use crate::core::agent::session_log::{
 use crate::core::app::commands::resolve_jan_data_folder;
 use crate::core::threads::{
     constants::THREADS_FILE,
-    helpers::{read_messages_from_file, update_thread_metadata},
-    utils::{ensure_data_dirs, get_data_dir, get_thread_dir, get_thread_metadata_path},
+    helpers::{read_messages_from_file, remove_thread_dir, update_thread_metadata},
+    utils::{
+        ensure_data_dirs, get_data_dir, get_thread_dir, get_thread_metadata_path, DELETING_PREFIX,
+    },
 };
 
 // ── Thread operations ──────────────────────────────────────────────────────
@@ -66,7 +68,12 @@ pub fn list_threads_in(base: &std::path::Path) -> Result<Vec<serde_json::Value>,
     }
     for entry in fs::read_dir(&data_dir).map_err(|e| e.to_string())? {
         let path = entry.map_err(|e| e.to_string())?.path();
-        if path.is_dir() {
+        // A deleted thread whose files could not all be removed yet.
+        let deleting = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with(DELETING_PREFIX));
+        if path.is_dir() && !deleting {
             let metadata_path = path.join(THREADS_FILE);
             if metadata_path.exists() {
                 let data = fs::read_to_string(&metadata_path).map_err(|e| e.to_string())?;
@@ -365,13 +372,8 @@ pub fn cli_list_messages_in(
 
 /// Delete a thread directory.
 pub fn cli_delete_thread(thread_id: &str) -> Result<(), String> {
-    use std::fs;
-
     let data_folder = resolve_jan_data_folder();
-    let thread_dir = get_thread_dir(&data_folder, thread_id)?;
-    if thread_dir.exists() {
-        fs::remove_dir_all(thread_dir).map_err(|e| e.to_string())?;
-    }
+    remove_thread_dir(&data_folder, thread_id)?;
     crate::core::agent::git::cleanup_snapshot_index(thread_id);
     Ok(())
 }

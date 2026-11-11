@@ -6,7 +6,7 @@ use super::helpers::{
 };
 use super::utils::{
     ensure_data_dirs, ensure_thread_dir_exists, get_data_dir, get_messages_path, get_thread_dir,
-    get_thread_metadata_path, validate_thread_id, PERMANENT_PREFIX,
+    get_thread_metadata_path, validate_thread_id, DELETING_PREFIX, PERMANENT_PREFIX,
 };
 use crate::core::app::commands::get_jan_data_folder_path;
 use futures_util::future;
@@ -974,26 +974,65 @@ async fn test_create_thread_refuses_an_invalid_id_and_mints_one_when_missing() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn test_delete_thread_reports_a_failed_removal() {
+async fn test_delete_thread_failing_to_move_keeps_every_file() {
     use std::os::unix::fs::PermissionsExt;
     let (app, data_dir) = mock_app_with_temp_data_dir();
     let mut thread = create_test_thread("Locked");
     thread["id"] = json!("locked-thread");
     create_thread(app.handle().clone(), thread).await.unwrap();
-    let dir = data_dir.join(THREADS_DIR).join("locked-thread");
-    std::fs::create_dir_all(dir.join("inner")).unwrap();
-    std::fs::write(dir.join("inner/file"), "x").unwrap();
-    // Removing entries of a read-only directory fails.
-    std::fs::set_permissions(dir.join("inner"), std::fs::Permissions::from_mode(0o500)).unwrap();
+    let threads = data_dir.join(THREADS_DIR);
+    let dir = threads.join("locked-thread");
+    std::fs::write(dir.join("cowork.json"), "{}").unwrap();
+    // Renaming an entry of a read-only directory fails, like a file held open
+    // on Windows.
+    std::fs::set_permissions(&threads, std::fs::Permissions::from_mode(0o500)).unwrap();
     let result = delete_thread(app.handle().clone(), "locked-thread".to_string()).await;
-    std::fs::set_permissions(dir.join("inner"), std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::set_permissions(&threads, std::fs::Permissions::from_mode(0o700)).unwrap();
     assert!(result.is_err(), "{result:?}");
+    for file in [THREADS_FILE, "cowork.json"] {
+        assert!(dir.join(file).exists(), "{file} survives a failed delete");
+    }
+}
 
-    // A thread that is already gone is not an error.
-    delete_thread(app.handle().clone(), "locked-thread".to_string())
+#[cfg(unix)]
+#[tokio::test]
+async fn test_delete_thread_with_an_undeletable_file_still_removes_the_thread() {
+    use std::os::unix::fs::PermissionsExt;
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Stuck");
+    thread["id"] = json!("stuck-thread");
+    create_thread(app.handle().clone(), thread).await.unwrap();
+    let threads = data_dir.join(THREADS_DIR);
+    let inner = threads.join("stuck-thread").join("inner");
+    std::fs::create_dir_all(&inner).unwrap();
+    std::fs::write(inner.join("file"), "x").unwrap();
+    // Removing entries of a read-only directory fails.
+    std::fs::set_permissions(&inner, std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    delete_thread(app.handle().clone(), "stuck-thread".to_string())
         .await
         .unwrap();
-    delete_thread(app.handle().clone(), "locked-thread".to_string())
+    let leftovers = || {
+        std::fs::read_dir(&threads)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.file_name().unwrap().to_str().unwrap().starts_with(DELETING_PREFIX))
+            .collect::<Vec<_>>()
+    };
+    let stuck = leftovers();
+    assert_eq!(stuck.len(), 1);
+    assert!(!threads.join("stuck-thread").exists());
+    let listed = list_threads(app.handle().clone()).await.unwrap();
+    assert!(listed.iter().all(|t| t["id"] != "stuck-thread"));
+
+    // Once the file can be removed, the next listing finishes the delete.
+    std::fs::set_permissions(stuck[0].join("inner"), std::fs::Permissions::from_mode(0o700))
+        .unwrap();
+    list_threads(app.handle().clone()).await.unwrap();
+    assert!(leftovers().is_empty());
+
+    // A thread that is already gone is not an error.
+    delete_thread(app.handle().clone(), "stuck-thread".to_string())
         .await
         .unwrap();
 }
