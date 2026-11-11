@@ -161,6 +161,35 @@ describe('ModelFactory - coverage', () => {
     expect(model).toBeDefined()
   })
 
+  it('sends the API key as Authorization and custom headers alongside it', async () => {
+    const { createOpenAICompatible } = await import('@ai-sdk/openai-compatible')
+    await ModelFactory.createModel(
+      'model-1',
+      mkProvider('groq', {
+        custom_header: [{ header: 'x-portkey-api-key', value: 'pk-1' }],
+      }),
+      {}
+    )
+    const config = vi.mocked(createOpenAICompatible).mock.calls.at(-1)![0]
+    expect(config.headers).toEqual({
+      'x-portkey-api-key': 'pk-1',
+      Authorization: 'Bearer test-key',
+    })
+  })
+
+  it('keeps a custom Authorization header instead of overwriting it with the API key', async () => {
+    const { createOpenAICompatible } = await import('@ai-sdk/openai-compatible')
+    await ModelFactory.createModel(
+      'model-1',
+      mkProvider('groq', {
+        custom_header: [{ header: 'authorization', value: 'Basic gateway' }],
+      }),
+      {}
+    )
+    const config = vi.mocked(createOpenAICompatible).mock.calls.at(-1)![0]
+    expect(config.headers).toEqual({ authorization: 'Basic gateway' })
+  })
+
   it('creates anthropic model with multiple API keys for rotation', async () => {
     const model = await ModelFactory.createModel(
       'claude-3',

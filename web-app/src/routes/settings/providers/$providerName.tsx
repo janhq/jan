@@ -21,6 +21,7 @@ import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { SecretInput } from '@/components/ui/secret-input'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -50,6 +51,14 @@ import {
   fetchTopRemoteModels,
 } from '@/lib/remoteModelCatalog'
 import {
+  type CustomHeaderRow,
+  customHeaderRowsFor,
+  customHeadersEqual,
+  emptyCustomHeaderRow,
+  isValidHeaderName,
+  normalizeCustomHeaders,
+} from '@/lib/provider-custom-headers'
+import {
   refreshFailureText,
   withUnreachableErrors,
 } from '@/lib/provider-unreachable'
@@ -77,6 +86,9 @@ function ProviderDetail() {
   const [importingModel, setImportingModel] = useState<string | null>(null)
   const [apiKeysDraft, setApiKeysDraft] = useState('')
   const [baseUrlDraft, setBaseUrlDraft] = useState('')
+  const [customHeadersDraft, setCustomHeadersDraft] = useState<
+    CustomHeaderRow[]
+  >([emptyCustomHeaderRow()])
   const [showAdvancedApiKeys, setShowAdvancedApiKeys] = useState(false)
   const [isTestingKeys, setIsTestingKeys] = useState(false)
   const [keyCheckResults, setKeyCheckResults] = useState<
@@ -261,6 +273,24 @@ function ProviderDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerName, provider?.base_url])
 
+  const customHeadersProviderRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!provider) return
+    if (provider.provider === 'llamacpp' || provider.provider === 'mlx') return
+    const switched = customHeadersProviderRef.current !== providerName
+    customHeadersProviderRef.current = providerName
+    // Reload the rows when another provider is shown or the stored headers
+    // changed elsewhere; keep rows the user is still typing (a blank or
+    // not-yet-valid row) when the store already matches what they have.
+    setCustomHeadersDraft((rows) =>
+      !switched &&
+      customHeadersEqual(normalizeCustomHeaders(rows), provider.custom_header)
+        ? rows
+        : customHeaderRowsFor(provider.custom_header)
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerName, JSON.stringify(provider?.custom_header ?? [])])
+
   const autoCatalogAttempted = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (!provider) return
@@ -344,6 +374,40 @@ function ProviderDetail() {
     if (next === (provider.base_url ?? '')) return
     updateProvider(providerName, { ...provider, base_url: next })
   }, [baseUrlDraft, provider, providerName, updateProvider])
+
+  // Headers are stored on the provider itself (`custom_header`), which the
+  // request builders and the local API server registration already read, so
+  // committing the draft is all it takes for them to be sent.
+  const commitCustomHeadersDraft = useCallback(() => {
+    if (!provider) return
+    const next = normalizeCustomHeaders(customHeadersDraft)
+    if (customHeadersEqual(next, provider.custom_header)) return
+    updateProvider(providerName, { ...provider, custom_header: next })
+  }, [customHeadersDraft, provider, providerName, updateProvider])
+
+  const setCustomHeaderRow = (
+    index: number,
+    patch: Partial<CustomHeaderRow>
+  ) => {
+    setCustomHeadersDraft((rows) =>
+      rows.map((row, i) => (i === index ? { ...row, ...patch } : row))
+    )
+  }
+
+  const addCustomHeaderRow = () => {
+    setCustomHeadersDraft((rows) => [...rows, emptyCustomHeaderRow()])
+  }
+
+  const removeCustomHeaderRow = (index: number) => {
+    // Removing is a click, not a blur, so persist the result right away.
+    const rows = customHeadersDraft.filter((_, i) => i !== index)
+    const nextRows = rows.length > 0 ? rows : [emptyCustomHeaderRow()]
+    setCustomHeadersDraft(nextRows)
+    if (!provider) return
+    const next = normalizeCustomHeaders(nextRows)
+    if (customHeadersEqual(next, provider.custom_header)) return
+    updateProvider(providerName, { ...provider, custom_header: next })
+  }
 
   const rawApiKeyLines = apiKeysDraft.split(/\r?\n/)
   const primaryKeyDraft = (rawApiKeyLines[0] ?? '').trim()
@@ -1014,6 +1078,98 @@ function ProviderDetail() {
                           </div>
                         </div>
                       )}
+                    </div>
+
+                    <div
+                      className="space-y-2 mt-4 pt-4 border-t border-border/40"
+                      data-testid="custom-headers"
+                    >
+                      <div className="space-y-1">
+                        <h2 className="font-medium text-foreground text-base">
+                          {t('providers:customHeaders.title')}
+                        </h2>
+                        <p className="text-sm text-muted-foreground leading-normal">
+                          {t('providers:customHeaders.description')}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        {customHeadersDraft.map((row, idx) => {
+                          const name = row.header.trim()
+                          const invalidName =
+                            name.length > 0 && !isValidHeaderName(name)
+                          return (
+                            <div
+                              key={idx}
+                              className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)_2rem] gap-x-2 gap-y-1 items-center"
+                            >
+                              <Input
+                                className="font-mono"
+                                placeholder={t(
+                                  'providers:customHeaders.namePlaceholder'
+                                )}
+                                aria-label={t(
+                                  'providers:customHeaders.namePlaceholder'
+                                )}
+                                aria-invalid={invalidName || undefined}
+                                value={row.header}
+                                onChange={(e) =>
+                                  setCustomHeaderRow(idx, {
+                                    header: e.target.value,
+                                  })
+                                }
+                                onBlur={commitCustomHeadersDraft}
+                                spellCheck={false}
+                                autoComplete="off"
+                              />
+                              <SecretInput
+                                className="font-mono"
+                                placeholder={t(
+                                  'providers:customHeaders.valuePlaceholder'
+                                )}
+                                aria-label={t(
+                                  'providers:customHeaders.valuePlaceholder'
+                                )}
+                                value={row.value}
+                                onChange={(e) =>
+                                  setCustomHeaderRow(idx, {
+                                    value: e.target.value,
+                                  })
+                                }
+                                onBlur={commitCustomHeadersDraft}
+                                spellCheck={false}
+                                autoComplete="off"
+                              />
+                              <div className="flex justify-end">
+                                <Button
+                                  size="icon-xs"
+                                  variant="outline"
+                                  onClick={() => removeCustomHeaderRow(idx)}
+                                  title={t('providers:customHeaders.removeHeader')}
+                                  aria-label={t(
+                                    'providers:customHeaders.removeHeader'
+                                  )}
+                                >
+                                  -
+                                </Button>
+                              </div>
+                              {invalidName && (
+                                <div className="col-span-3 text-xs text-destructive">
+                                  {t('providers:customHeaders.invalidName')}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={addCustomHeaderRow}
+                          >
+                            + {t('providers:customHeaders.addHeader')}
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </Card>
                 )}

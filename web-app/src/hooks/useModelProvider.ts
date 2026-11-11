@@ -217,6 +217,11 @@ export const useModelProvider = create<ModelProviderState>()(
               api_key_fallbacks:
                 existingProvider?.api_key_fallbacks ?? provider.api_key_fallbacks,
               base_url: existingProvider?.base_url || provider.base_url,
+              // Custom request headers are user settings edited on the
+              // provider page; a refresh of the predefined list must not
+              // reset them to the shipped defaults.
+              custom_header:
+                existingProvider?.custom_header ?? provider.custom_header,
               active: existingProvider ? existingProvider?.active : true,
             }
           })
