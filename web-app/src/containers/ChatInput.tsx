@@ -2355,7 +2355,13 @@ const ChatInput = memo(function ChatInput({
             />
             <div className="relative z-20 w-full px-2 pt-2 pb-3">
               <div className="flex flex-nowrap items-center justify-between gap-2 w-full @max-[360px]/composer:gap-1">
-                <div className="px-1 flex flex-nowrap items-center gap-1 flex-1 min-w-0 @max-[520px]/composer:flex-none">
+                <div
+                  className={cn(
+                    'px-1 flex flex-nowrap items-center gap-1 flex-1 min-w-0',
+                    // Only the bare menu row may claim its full width when narrow; surface controls must keep shrinking so they wrap.
+                    !surfaceControls && '@max-[520px]/composer:flex-none'
+                  )}
+                >
                   <div className={cn('px-1 flex flex-nowrap items-center gap-1')}>
                     {/* All actions stay in this menu when narrow composers hide inline shortcuts. */}
                     <DropdownMenu
@@ -2796,8 +2802,9 @@ const ChatInput = memo(function ChatInput({
                     </div>
                   </div>
                   {surfaceControls && (
-                    // A surface's own controls (Cowork's plan toggle, folder chip) have no menu entry yet, so they stay inline.
-                    <div className="flex shrink-0 items-center gap-1">
+                    // A surface's own controls (Cowork's plan toggle, folder chip) have no menu entry yet, so they stay inline and wrap onto
+                    // more rows instead of pushing the model picker and send button out of the composer.
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
                       {surfaceControls}
                     </div>
                   )}
