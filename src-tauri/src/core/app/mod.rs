@@ -9,3 +9,6 @@ pub mod paths;
 // Desktop settings.json store, driven by Tauri commands + a flush thread.
 #[cfg(not(feature = "cli"))]
 pub mod settings_store;
+// Saved tool grants, kept in the settings store.
+#[cfg(not(feature = "cli"))]
+pub mod tool_grants;

@@ -411,6 +411,10 @@ pub fn run() {
     tauri_plugin_agent_tools::tools::hooks::set_resolver(std::sync::Arc::new(|project| {
         crate::core::agent::hooks_config::resolve_hooks_for(project)
     }));
+    // Where the configuration-level tool grants ("Allow always") are saved.
+    tauri_plugin_agent_tools::consent::store().set_persistence(std::sync::Arc::new(
+        crate::core::app::tool_grants::SettingsGrants,
+    ));
 
     let builder = tauri::Builder::default();
     // Shadowed rather than mutated: under `e2e` the plugin below is the only
