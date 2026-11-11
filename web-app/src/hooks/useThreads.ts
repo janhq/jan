@@ -61,6 +61,12 @@ type ThreadState = {
   ) => Promise<Assistant | undefined>
   updateThreadTimestamp: (threadId: string) => void
   updateThread: (threadId: string, updates: Partial<Thread>) => void
+  /**
+   * Attach a folder to a chat thread, or detach it with `null`. Resolves once
+   * the record is on disk, because that record is what the tools read when
+   * they run: a send right after attaching must find the folder there.
+   */
+  setThreadFolder: (threadId: string, folder: string | null) => Promise<void>
   deleteAllThreadsByProject: (projectId: string) => void
   searchIndex: Fzf<Thread[]> | null
 }
@@ -590,6 +596,34 @@ export const useThreads = create<ThreadState>()((set, get) => ({
             selector: (item: Thread) => item.title ?? '',
           }
         ),
+      }
+    })
+  },
+  setThreadFolder: async (threadId, folder) => {
+    const thread = get().threads[threadId]
+    if (!thread) return
+    const metadata = { ...thread.metadata }
+    if (folder) {
+      metadata.folder = folder
+      metadata.folderAccess = 'write'
+    } else {
+      delete metadata.folder
+      delete metadata.folderAccess
+    }
+    await getServiceHub()
+      .threads()
+      .updateThread({ ...thread, metadata, updated: Date.now() / 1000 })
+    // Applied onto the thread as it is now: other metadata may have changed
+    // while the write was in flight.
+    set((state) => {
+      const current = state.threads[threadId]
+      if (!current) return state
+      const next = { ...current.metadata }
+      delete next.folder
+      delete next.folderAccess
+      if (folder) Object.assign(next, { folder, folderAccess: 'write' })
+      return {
+        threads: { ...state.threads, [threadId]: { ...current, metadata: next } },
       }
     })
   },

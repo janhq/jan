@@ -121,6 +121,14 @@ import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
+import {
+  CHAT_FOLDER_TOOL_NAMES,
+  chatFolderOf,
+  chatToolNeedsApproval,
+} from '@/lib/chatFolder'
+import { useChatFolder } from '@/hooks/useChatFolder'
+import { CoworkComposerMenu } from '@/containers/CoworkComposerMenu'
+import { CoworkWorkspacePill } from '@/containers/CoworkWorkspacePill'
 import { getExtensionHost } from '@/lib/extensions/host'
 import { extensionAuthorOf } from '@/lib/extensions/authorship'
 import { ServiceKeys } from '@janhq/core'
@@ -272,6 +280,12 @@ const SHELL_DISABLED_TOOL_ERROR =
   'Shell is turned off: the user disabled it, so this command was not run. ' +
   'Do not call the shell again in this chat; use another approach or tell the user it is needed.'
 
+// Recorded for a call to a file tool (read, write, ...) in a chat with no folder
+// attached, e.g. one issued before the user detached it.
+const NO_FOLDER_TOOL_ERROR =
+  'No folder is attached to this chat, so this call was not run. ' +
+  'Do not call the file tools again unless the user attaches a folder.'
+
 // Recorded for a call to a built-in web tool while the user has web search off
 // and no MCP server provides a tool of that name.
 const WEB_DISABLED_TOOL_ERROR =
@@ -357,21 +371,38 @@ function turnModelOf(threadId: string) {
   )
 }
 
-// How a call to a chat agent tool name is served. The switch is enforced where
-// the command would run, not only where the tool is offered: a call can still
-// arrive from replayed history or from a turn in flight when it flips. Such a
-// call is refused outright, before any approval prompt, because a prompt for a
-// tool the user turned off could save a permission for it. With the switch off
-// the built-in is not offered, so an MCP tool of the same name is the user's
-// own: it is served as an MCP tool and prompts like any other.
-function chatShellRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
-  if (!CHAT_AGENT_TOOL_NAMES.has(toolName)) return 'other'
-  if (useChatShell.getState().shellEnabled) return 'builtin'
+// How a call to a built-in chat agent tool name is served. The shell switch and
+// the attached folder are enforced where the command would run, not only where
+// the tool is offered: a call can still arrive from replayed history or from a
+// turn in flight when they change. Such a call is refused outright, before any
+// approval prompt, because a prompt for a tool the user turned off could save a
+// permission for it. When the built-in is not offered, an MCP tool of the same
+// name is the user's own: it is served as an MCP tool and prompts like any
+// other.
+function chatAgentRoute(
+  toolName: string,
+  threadId: string
+): 'builtin' | 'disabled' | 'other' {
+  let offered: boolean
+  if (CHAT_FOLDER_TOOL_NAMES.has(toolName)) {
+    offered = chatFolderOf(threadId) !== null
+  } else if (CHAT_AGENT_TOOL_NAMES.has(toolName)) {
+    offered = useChatShell.getState().shellEnabled
+  } else {
+    return 'other'
+  }
+  if (offered) return 'builtin'
   return useAppState.getState().mcpToolNames.has(toolName) ? 'other' : 'disabled'
 }
 
-function isDisabledChatAgentTool(toolName: string): boolean {
-  return chatShellRoute(toolName) === 'disabled'
+function disabledChatAgentToolError(
+  toolName: string,
+  threadId: string
+): string | null {
+  if (chatAgentRoute(toolName, threadId) !== 'disabled') return null
+  return CHAT_FOLDER_TOOL_NAMES.has(toolName)
+    ? NO_FOLDER_TOOL_ERROR
+    : SHELL_DISABLED_TOOL_ERROR
 }
 
 // How a call to a built-in web tool name is served. Same contract as the shell:
@@ -389,26 +420,31 @@ function webRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
 }
 
 // Internal tools never prompt: RAG and the native web tools are Jan's own, and
-// the built-in shell is gated in Rust (execute_tool refuses anything needing
-// approval), so only workspace-confined calls ever reach here. The web tools
-// do prompt on a turn an extension's provider serves: there the model is the
-// extension's, and a free `web_fetch` would reach any host its network grants
-// leave out.
+// the built-in tools are gated in Rust (execute_tool refuses anything needing
+// approval), so only workspace-confined calls ever reach here. Two exceptions
+// ask. The web tools on a turn an extension's provider serves: there the model
+// is the extension's, and a free `web_fetch` would reach any host its network
+// grants leave out. And with a folder attached, every call that can change it
+// (write, edit, shell): the folder is the user's own files, not a scratch space.
 function isAutoAllowedTool(toolName: string, threadId: string): boolean {
   return (
     useAppState.getState().ragToolNames.has(toolName) ||
     (webRoute(toolName) === 'builtin' && !turnOnExtensionProvider(threadId)) ||
-    chatShellRoute(toolName) === 'builtin'
+    (chatAgentRoute(toolName, threadId) === 'builtin' &&
+      !chatToolNeedsApproval(toolName, threadId))
   )
 }
 
-// Every call the model an extension serves makes is asked for on its own:
-// neither "allow all MCP" nor a grant given on another turn covers it.
+// Asked for on its own, with neither "allow all MCP" nor a saved grant covering
+// it: every call the model an extension serves makes, and a built-in call that
+// changes the attached folder (no "allow always" for writing the user's files).
 function approvalOptions(
   threadId: string,
+  toolName: string,
   origin: ToolOrigin['origin']
 ): ApprovalOptions {
-  return turnOnExtensionProvider(threadId)
+  const builtin = chatAgentRoute(toolName, threadId) === 'builtin'
+  return turnOnExtensionProvider(threadId) || builtin
     ? { strict: true, origin }
     : { origin }
 }
@@ -545,6 +581,7 @@ function ThreadDetail() {
   const currentThread = useRef<string | undefined>(undefined)
 
   useTools()
+  const chatFolder = useChatFolder(threadId)
 
   // Get attachments for this thread
   const attachmentsKey = threadId ?? NEW_THREAD_ATTACHMENT_KEY
@@ -989,12 +1026,13 @@ function ThreadDetail() {
               continue
             }
 
-            if (isDisabledChatAgentTool(toolName)) {
+            const disabledError = disabledChatAgentToolError(toolName, threadId)
+            if (disabledError) {
               record({
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                errorText: SHELL_DISABLED_TOOL_ERROR,
+                errorText: disabledError,
               })
               continue
             }
@@ -1011,7 +1049,7 @@ function ThreadDetail() {
                       toolName,
                       threadId,
                       origin.server,
-                      approvalOptions(threadId, origin.origin)
+                      approvalOptions(threadId, toolName, origin.origin)
                     ))
             approvalsOf(threadId).delete(toolCall.toolCallId)
             // Only an explicit Stop skips the result. Deleting the thread also
@@ -1070,7 +1108,7 @@ function ThreadDetail() {
                   return await executeWebTool(toolName, toolCall.input, {
                     maxOutputChars,
                   })
-                } else if (chatShellRoute(toolName) === 'builtin') {
+                } else if (chatAgentRoute(toolName, threadId) === 'builtin') {
                   // Chat's shell runs with the sandbox network closed: the
                   // default `allowNetwork = false` is the contract here, not an
                   // accident.
@@ -1283,7 +1321,7 @@ function ThreadDetail() {
       sessionData.tools.push(toolCall)
       if (
         !isAutoAllowedTool(toolCall.toolName, threadId) &&
-        !isDisabledChatAgentTool(toolCall.toolName) &&
+        !disabledChatAgentToolError(toolCall.toolName, threadId) &&
         webRoute(toolCall.toolName) !== 'disabled' &&
         !approvalsOf(threadId).has(toolCall.toolCallId)
       ) {
@@ -1296,7 +1334,7 @@ function ThreadDetail() {
               toolCall.toolName,
               threadId,
               origin.server,
-              approvalOptions(threadId, origin.origin)
+              approvalOptions(threadId, toolCall.toolName, origin.origin)
             ),
           origin,
         })
@@ -2682,6 +2720,21 @@ function ThreadDetail() {
             onStop={handleStop}
             chatStatus={effectiveStatus}
             toolsRunning={toolsRunning}
+            menuWorkspace={
+              chatFolder.available && !chatFolder.folder ? (
+                <CoworkComposerMenu onAttachFolder={chatFolder.attach} />
+              ) : undefined
+            }
+            surfaceControls={
+              chatFolder.folder ? (
+                <CoworkWorkspacePill
+                  folder={chatFolder.folder}
+                  onAttach={chatFolder.attach}
+                  onDetach={chatFolder.detach}
+                  footnote={t('common:workspace.chatFootnote')}
+                />
+              ) : undefined
+            }
           />
         </ConversationColumn>
       </div>

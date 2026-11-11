@@ -450,6 +450,23 @@ vi.mock('@/lib/agentTools', () => ({
   CHAT_AGENT_TOOL_NAMES: new Set(['shell']),
   executeAgentTool: shell.execute,
 }))
+const folder = vi.hoisted(() => ({ path: null as string | null }))
+vi.mock('@/lib/chatFolder', () => ({
+  CHAT_FOLDER_TOOL_NAMES: new Set(['read', 'ls', 'find', 'grep', 'write', 'edit']),
+  chatFolderOf: () => folder.path,
+  chatToolNeedsApproval: (name: string) =>
+    folder.path !== null && ['write', 'edit', 'shell'].includes(name),
+}))
+vi.mock('@/hooks/useChatFolder', () => ({
+  useChatFolder: () => ({
+    available: false,
+    folder: null,
+    attach: vi.fn(),
+    detach: vi.fn(),
+  }),
+}))
+vi.mock('@/containers/CoworkComposerMenu', () => ({ CoworkComposerMenu: () => null }))
+vi.mock('@/containers/CoworkWorkspacePill', () => ({ CoworkWorkspacePill: () => null }))
 vi.mock('@/hooks/useToolApproval', () => ({ useToolApproval: h.useToolApprovalMock }))
 vi.mock('@/hooks/useToolApprovalRequests', () => ({
   useToolApprovalRequests: h.useToolApprovalRequestsMock,
@@ -1602,6 +1619,90 @@ describe('ThreadDetail route', () => {
       expect(shell.execute).not.toHaveBeenCalled()
       expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(
         expect.objectContaining({ toolCallId: 'sh4', state: 'output-error' })
+      )
+    })
+  })
+
+  // #9649: a folder attached to the chat. Reads run on it without asking; every
+  // call that can change it asks on its own, and the answer is never saved.
+  describe('a chat with an attached folder', () => {
+    const call = (id: string, toolName: string) => ({
+      toolCall: { toolCallId: id, toolName, input: { path: 'a.md' } },
+    })
+    const finish = () =>
+      (h as any).capturedOnFinish({
+        message: {
+          id: 'a-folder',
+          role: 'assistant',
+          parts: [{ type: 'text', text: '' }],
+          metadata: { finishReason: 'tool-calls' },
+        },
+        isAbort: false,
+      })
+    const run = async (...calls: ReturnType<typeof call>[]) => {
+      renderComponent()
+      for (const c of calls) {
+        await act(async () => {
+          await (h as any).capturedOnToolCall(c)
+        })
+      }
+      await act(async () => {
+        await finish()
+      })
+    }
+
+    beforeEach(() => {
+      shell.enabled = true
+      shell.execute.mockClear()
+      folder.path = '/Users/me/project'
+    })
+    afterEach(() => {
+      folder.path = null
+    })
+
+    it('reads the folder without asking', async () => {
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
+      await run(call('f1', 'read'))
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).toHaveBeenCalledWith('read', { path: 'a.md' }, expect.anything())
+    })
+
+    it('asks before every write, edit or command, with no grant saved', async () => {
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      await run(call('f2', 'write'), call('f3', 'shell'))
+      for (const [id, name] of [['f2', 'write'], ['f3', 'shell']]) {
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+          id,
+          name,
+          expect.anything(),
+          undefined,
+          { strict: true, origin: 'mcp' }
+        )
+      }
+      expect(shell.execute).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not write when the user declines', async () => {
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
+      await run(call('f4', 'edit'))
+      expect(shell.execute).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+        expect.objectContaining({ toolCallId: 'f4', state: 'output-error' })
+      )
+    })
+
+    it('refuses a file tool, without asking, once no folder is attached', async () => {
+      folder.path = null
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      await run(call('f5', 'write'))
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolCallId: 'f5',
+          state: 'output-error',
+          errorText: expect.stringMatching(/No folder is attached/),
+        })
       )
     })
   })
