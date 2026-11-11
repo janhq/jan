@@ -82,3 +82,32 @@ export type MonitorUpdate = {
   text: string
   matched: boolean
 }
+
+/** Who serves a tool call a consent decision is asked for. */
+export type ToolOrigin = 'mcp' | 'extension' | 'builtin'
+
+export interface ConsentRequest {
+  threadId: string
+  callId: string
+  tool: string
+  server?: string
+  origin: ToolOrigin
+  /** Ask whatever a grant says, and save nothing from the answer. */
+  strict?: boolean
+}
+
+/** `allowed` authorizes the one call; `ask` waits for the user's answer. */
+export type ConsentVerdict = 'allowed' | 'ask'
+
+export type ConsentAnswer = 'allow-once' | 'allow-thread' | 'allow-always' | 'deny'
+
+/** Configuration-level grants: the only ones saved between launches. */
+export interface SavedGrants {
+  allowAllMcp: boolean
+  /** MCP servers trusted whole. */
+  servers: string[]
+  /** Tools trusted on their own, by grant key (`mcp:<server>/<tool>`, `<ext server>/<tool>`). */
+  tools: string[]
+}
+
+export type GrantKind = 'server' | 'tool'
