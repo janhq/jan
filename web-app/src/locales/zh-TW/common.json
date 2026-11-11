@@ -492,8 +492,7 @@
     "addToProject": "加入專案",
     "newProject": "新專案",
     "noProjects": "尚無專案",
-    "addFolderAction": "新增資料夾",
-    "startFailed": "無法開始對話。你的訊息仍保留在輸入框中。"
+    "addFolderAction": "新增資料夾"
   },
   "conversationScope": {
     "folderSelectModel": "新增資料夾存取權之前，請先選擇支援工具的模型。",
@@ -559,5 +558,12 @@
       "show": "顯示原始資料夾"
     }
   },
-  "deleteThreadFailed": "無法刪除對話。重新啟動後它可能會再次出現。"
+  "deleteThreadFailed": "無法刪除對話。重新啟動後它可能會再次出現。",
+  "continueAsTask": {
+    "action": "以任務繼續",
+    "title": "要將此聊天以任務繼續嗎?",
+    "description": "Jan 會保留此對話,並將其作為 Cowork 任務繼續。任務可以在自己的工作區中使用工具、寫入檔案和執行命令,而不必在每一步詢問。它無法再改回聊天。",
+    "descriptionFolder": "Jan 會保留此對話,並將其作為 Cowork 任務繼續。任務可以在 {{folder}} 中編輯檔案和執行命令,而不必在每次變更時詢問。它無法再改回聊天。",
+    "confirm": "以任務繼續"
+  }
 }

@@ -493,8 +493,7 @@
     "addToProject": "Adicionar a um projeto",
     "newProject": "Novos Projetos",
     "noProjects": "Nenhum projeto ainda",
-    "addFolderAction": "Adicionar pasta",
-    "startFailed": "Não foi possível iniciar a conversa. Sua mensagem continua na caixa de texto."
+    "addFolderAction": "Adicionar pasta"
   },
   "conversationScope": {
     "folderSelectModel": "Selecione um modelo compatível com ferramentas antes de adicionar acesso a uma pasta.",
@@ -560,5 +559,12 @@
       "show": "Mostrar pasta original"
     }
   },
-  "deleteThreadFailed": "Não foi possível apagar a conversa. Ela pode voltar depois que o app for reiniciado."
+  "deleteThreadFailed": "Não foi possível apagar a conversa. Ela pode voltar depois que o app for reiniciado.",
+  "continueAsTask": {
+    "action": "Continuar como tarefa",
+    "title": "Continuar este chat como tarefa?",
+    "description": "O Jan mantém esta conversa e a continua como uma tarefa do Cowork. Uma tarefa pode usar ferramentas, gravar arquivos e executar comandos no próprio espaço de trabalho sem perguntar a cada etapa. Ela não pode voltar a ser um chat.",
+    "descriptionFolder": "O Jan mantém esta conversa e a continua como uma tarefa do Cowork. Uma tarefa pode editar arquivos e executar comandos em {{folder}} sem perguntar a cada alteração. Ela não pode voltar a ser um chat.",
+    "confirm": "Continuar como tarefa"
+  }
 }

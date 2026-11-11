@@ -587,8 +587,7 @@
     "addToProject": "Aggiungi a un progetto",
     "newProject": "Nuovo progetto",
     "noProjects": "Ancora nessun progetto",
-    "addFolderAction": "Aggiungi cartella",
-    "startFailed": "Impossibile avviare la conversazione. Il tuo messaggio è ancora nella casella."
+    "addFolderAction": "Aggiungi cartella"
   },
   "conversationScope": {
     "folderSelectModel": "Seleziona un modello che supporta gli strumenti prima di aggiungere l'accesso a una cartella.",
@@ -654,5 +653,12 @@
       "show": "Mostra cartella originale"
     }
   },
-  "deleteThreadFailed": "Impossibile eliminare la conversazione. Potrebbe ricomparire dopo un riavvio."
+  "deleteThreadFailed": "Impossibile eliminare la conversazione. Potrebbe ricomparire dopo un riavvio.",
+  "continueAsTask": {
+    "action": "Continua come attività",
+    "title": "Continuare questa chat come attività?",
+    "description": "Jan mantiene questa conversazione e la continua come attività Cowork. Un'attività può usare strumenti, scrivere file ed eseguire comandi nel proprio spazio di lavoro senza chiedere a ogni passo. Non può tornare a essere una chat.",
+    "descriptionFolder": "Jan mantiene questa conversazione e la continua come attività Cowork. Un'attività può modificare file ed eseguire comandi in {{folder}} senza chiedere a ogni modifica. Non può tornare a essere una chat.",
+    "confirm": "Continua come attività"
+  }
 }

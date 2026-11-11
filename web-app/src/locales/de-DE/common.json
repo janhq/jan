@@ -493,8 +493,7 @@
     "addToProject": "Zu einem Projekt hinzufügen",
     "newProject": "Neues Projekt",
     "noProjects": "Noch keine Projekte",
-    "addFolderAction": "Ordner hinzufügen",
-    "startFailed": "Die Unterhaltung konnte nicht gestartet werden. Deine Nachricht steht weiterhin im Eingabefeld."
+    "addFolderAction": "Ordner hinzufügen"
   },
   "conversationScope": {
     "folderSelectModel": "Wähle ein Modell mit Werkzeugunterstützung, bevor du Ordnerzugriff hinzufügst.",
@@ -560,5 +559,12 @@
       "show": "Ursprünglichen Ordner anzeigen"
     }
   },
-  "deleteThreadFailed": "Die Unterhaltung konnte nicht gelöscht werden. Sie wird nach einem Neustart möglicherweise wieder angezeigt."
+  "deleteThreadFailed": "Die Unterhaltung konnte nicht gelöscht werden. Sie wird nach einem Neustart möglicherweise wieder angezeigt.",
+  "continueAsTask": {
+    "action": "Als Aufgabe fortsetzen",
+    "title": "Diesen Chat als Aufgabe fortsetzen?",
+    "description": "Jan behält diese Unterhaltung und setzt sie als Cowork-Aufgabe fort. Eine Aufgabe kann Werkzeuge ausführen, Dateien schreiben und Befehle in ihrem eigenen Arbeitsbereich ausführen, ohne bei jedem Schritt zu fragen. Sie kann nicht wieder in einen Chat umgewandelt werden.",
+    "descriptionFolder": "Jan behält diese Unterhaltung und setzt sie als Cowork-Aufgabe fort. Eine Aufgabe kann Dateien in {{folder}} bearbeiten und dort Befehle ausführen, ohne bei jeder Änderung zu fragen. Sie kann nicht wieder in einen Chat umgewandelt werden.",
+    "confirm": "Als Aufgabe fortsetzen"
+  }
 }

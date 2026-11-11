@@ -492,8 +492,7 @@
     "addToProject": "Přidat do projektu",
     "newProject": "Nový projekt",
     "noProjects": "Zatím žádné projekty",
-    "addFolderAction": "Přidat složku",
-    "startFailed": "Konverzaci nebylo možné zahájit. Vaše zpráva zůstala v poli."
+    "addFolderAction": "Přidat složku"
   },
   "conversationScope": {
     "folderSelectModel": "Před přidáním přístupu ke složce vyberte model, který umí používat nástroje.",
@@ -565,5 +564,12 @@
       "show": "Zobrazit původní složku"
     }
   },
-  "deleteThreadFailed": "Konverzaci nebylo možné smazat. Po restartu se může znovu objevit."
+  "deleteThreadFailed": "Konverzaci nebylo možné smazat. Po restartu se může znovu objevit.",
+  "continueAsTask": {
+    "action": "Pokračovat jako úkol",
+    "title": "Pokračovat v tomto chatu jako úkol?",
+    "description": "Jan tuto konverzaci zachová a bude v ní pokračovat jako v úkolu Cowork. Úkol může používat nástroje, zapisovat soubory a spouštět příkazy ve svém vlastním pracovním prostoru bez ptaní u každého kroku. Zpět na chat ho převést nelze.",
+    "descriptionFolder": "Jan tuto konverzaci zachová a bude v ní pokračovat jako v úkolu Cowork. Úkol může upravovat soubory a spouštět příkazy ve složce {{folder}} bez ptaní u každé změny. Zpět na chat ho převést nelze.",
+    "confirm": "Pokračovat jako úkol"
+  }
 }

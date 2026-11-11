@@ -91,6 +91,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
       createMessage: (message: unknown) => messageStore.create(message),
       modifyMessage: async (message: unknown) => message,
       deleteMessage: async () => {},
+      fetchMessages: async (threadId: string) => backend.logs.get(threadId) ?? [],
     }),
   }),
 }))
@@ -142,6 +143,7 @@ import {
   retryCoworkImport,
   COWORK_MIGRATION_BUDGET_MS,
   COWORK_CLOSE_FAILURES_BEFORE_FORCE,
+  continueChatAsTask,
   __resetCoworkSyncForTests,
 } from '../coworkSync'
 import {
@@ -209,6 +211,79 @@ describe('coworkSync', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+  })
+
+  describe('continueChatAsTask', () => {
+    const text = (id: string, role: string, value: string) => ({
+      id,
+      thread_id: 'c',
+      object: 'thread.message',
+      role,
+      status: 'ready',
+      created_at: 1_700_000_000,
+      completed_at: 1_700_000_000,
+      content: [{ type: 'text', text: { value, annotations: [] } }],
+    })
+    const chatThread = {
+      id: 'c',
+      object: 'thread',
+      title: 'Fix the build',
+      assistants: [{ id: 'jan', name: 'Jan', model: { id: 'm', engine: 'p' } }],
+      created: 1_700_000_000,
+      updated: 1_700_000_100,
+      metadata: { folder: '/repo', folderAccess: 'write', is_favorite: true },
+    }
+
+    beforeEach(() => {
+      backend.threads.set('c', JSON.parse(JSON.stringify(chatThread)))
+      backend.logs.set('c', [
+        text('u1', 'user', 'why does it fail?'),
+        text('a1', 'assistant', 'A missing import.'),
+      ])
+      useThreads.setState({
+        threads: {
+          c: {
+            ...chatThread,
+            model: { id: 'm', provider: 'p' },
+            isFavorite: true,
+          } as any,
+        },
+      })
+    })
+
+    it('turns the same thread into a task, with no second thread or transcript', async () => {
+      await startCoworkSync()
+      await continueChatAsTask('c')
+
+      expect([...backend.threads.keys()]).toEqual(['c'])
+      const record = backend.threads.get('c')
+      expect(record.metadata).toMatchObject({
+        mode: 'cowork',
+        folder: '/repo',
+        folderAccess: 'write',
+        is_favorite: true,
+      })
+      expect(record.title).toBe('Fix the build')
+      expect(record.created).toBe(chatThread.created)
+      expect(stored('c')!.turns.map((t) => [t.role, t.content])).toEqual([
+        ['user', 'why does it fail?'],
+        ['assistant', 'A missing import.'],
+      ])
+      expect(useThreads.getState().threads['c'].metadata?.mode).toBe('cowork')
+      expect(useCoworkSessions.getState().currentId).toBe('c')
+    })
+
+    it('reopens as the same task after a restart', async () => {
+      await startCoworkSync()
+      await continueChatAsTask('c')
+      __resetCoworkSyncForTests()
+      useCoworkSessions.setState({ sessions: [], currentId: null })
+      await startCoworkSync()
+      const session = useCoworkSessions.getState().sessions.find((s) => s.id === 'c')
+      expect(session?.folder).toBe('/repo')
+      expect(session?.messages.map((m) => m.role)).toEqual(['user', 'assistant'])
+      expect(session?.turns).toHaveLength(2)
+    })
   })
 
   describe('startup', () => {

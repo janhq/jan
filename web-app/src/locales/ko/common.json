@@ -561,8 +561,7 @@
     "addToProject": "프로젝트에 추가",
     "newProject": "새 프로젝트",
     "noProjects": "아직 프로젝트가 없어요",
-    "addFolderAction": "폴더 추가",
-    "startFailed": "대화를 시작할 수 없어요. 메시지는 입력창에 그대로 남아 있어요."
+    "addFolderAction": "폴더 추가"
   },
   "conversationScope": {
     "folderSelectModel": "폴더 접근 권한을 추가하기 전에 도구를 사용할 수 있는 모델을 선택하세요.",
@@ -628,5 +627,12 @@
       "show": "원래 폴더 보기"
     }
   },
-  "deleteThreadFailed": "대화를 삭제할 수 없어요. 앱을 다시 시작하면 다시 나타날 수 있어요."
+  "deleteThreadFailed": "대화를 삭제할 수 없어요. 앱을 다시 시작하면 다시 나타날 수 있어요.",
+  "continueAsTask": {
+    "action": "작업으로 계속",
+    "title": "이 채팅을 작업으로 계속할까요?",
+    "description": "Jan은 이 대화를 유지하고 Cowork 작업으로 계속합니다. 작업은 단계마다 묻지 않고 자체 작업 공간에서 도구를 사용하고 파일을 쓰고 명령을 실행할 수 있습니다. 다시 채팅으로 바꿀 수 없습니다.",
+    "descriptionFolder": "Jan은 이 대화를 유지하고 Cowork 작업으로 계속합니다. 작업은 변경할 때마다 묻지 않고 {{folder}}의 파일을 편집하고 명령을 실행할 수 있습니다. 다시 채팅으로 바꿀 수 없습니다.",
+    "confirm": "작업으로 계속"
+  }
 }
