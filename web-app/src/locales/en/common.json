@@ -729,6 +729,7 @@
     "readsFrom": "Works in",
     "writable": "read & write",
     "footnote": "The agent reads and edits this folder directly. Review what changed in the diff panel.",
+    "chatFootnote": "Jan reads this folder freely and asks you before every edit or command that runs in it.",
     "footnoteEmpty": "Attach a folder to let the agent work on your project. It can read and edit files inside it.",
     "attach": "Attach a folder",
     "change": "Change folder",
@@ -739,6 +740,7 @@
     "missing": "The workspace folder {{folder}} is no longer available. Choose a different folder.",
     "openFailed": "Couldn't open workspace",
     "revealFailed": "Couldn't reveal workspace",
+    "saveFailed": "Couldn't save the folder for this chat",
     "a11yWithFolder": "Project folder {{folder}}, attached with read and write access. Change or detach it.",
     "a11yNoFolder": "No project folder attached. Attach one."
   },

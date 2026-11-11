@@ -18,6 +18,9 @@ type Props = {
   gitBranch?: string | null
   onAttach: () => void
   onDetach: () => void
+  /** Replaces the default access note for an attached folder: chat asks
+   * before every change, Cowork does not. */
+  footnote?: string
 }
 
 /**
@@ -37,6 +40,7 @@ export function CoworkWorkspacePill({
   gitBranch,
   onAttach,
   onDetach,
+  footnote,
 }: Props) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -162,7 +166,7 @@ export function CoworkWorkspacePill({
 
         <p className="text-xs text-muted-foreground">
           {folder
-            ? t('common:workspace.footnote')
+            ? (footnote ?? t('common:workspace.footnote'))
             : t('common:workspace.footnoteEmpty')}
         </p>
 
