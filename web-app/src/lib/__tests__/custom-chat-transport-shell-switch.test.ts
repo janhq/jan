@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   shellEnabled: true,
   sandbox: true,
   schemas: vi.fn(),
+  threads: {} as Record<string, unknown>,
 }))
 
 vi.mock('@/hooks/useChatShell', () => ({
@@ -44,7 +45,7 @@ vi.mock('@/hooks/useAssistant', () => ({
   useAssistant: { getState: () => ({ currentAssistant: null }) },
 }))
 vi.mock('@/hooks/useThreads', () => ({
-  useThreads: { getState: () => ({ threads: {} }) },
+  useThreads: { getState: () => ({ threads: h.threads }) },
 }))
 vi.mock('@/hooks/useAttachments', () => ({
   useAttachments: { getState: () => ({ enabled: false }) },
@@ -75,17 +76,14 @@ describe('chat shell switch (#9222)', () => {
   beforeEach(() => {
     h.shellEnabled = true
     h.sandbox = true
+    h.threads = {}
     h.schemas.mockReset()
-    h.schemas.mockResolvedValue([
-      {
+    h.schemas.mockResolvedValue(
+      ['shell', 'read', 'write', 'memory'].map((name) => ({
         type: 'function',
-        function: {
-          name: 'shell',
-          description: 'run',
-          parameters: { type: 'object' },
-        },
-      },
-    ])
+        function: { name, description: 'run', parameters: { type: 'object' } },
+      }))
+    )
     transport = new CustomChatTransport('sys', 'thread-1')
   })
 
@@ -114,5 +112,24 @@ describe('chat shell switch (#9222)', () => {
     h.shellEnabled = false
     await transport.refreshTools()
     expect(Object.keys(transport.getTools())).not.toContain('shell')
+  })
+
+  // #9649: a folder the user attached to the thread adds the file tools, and
+  // the prompt names it; the shell switch still governs the shell alone.
+  it('offers the file tools on an attached folder, and only then', async () => {
+    await transport.refreshTools()
+    expect(Object.keys(transport.getTools()).sort()).toEqual(['shell'])
+
+    h.shellEnabled = false
+    h.threads = { 'thread-1': { metadata: { folder: '/Users/me/project' } } }
+    await transport.refreshTools()
+    expect(Object.keys(transport.getTools()).sort()).toEqual(['read', 'write'])
+    const prompt = transport.buildAgentToolsSystemInstruction()
+    expect(prompt).toContain('/Users/me/project')
+    expect(prompt).not.toContain('# Shell')
+
+    h.threads = {}
+    await transport.refreshTools()
+    expect(Object.keys(transport.getTools())).toEqual([])
   })
 })
