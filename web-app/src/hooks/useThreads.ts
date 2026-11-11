@@ -151,7 +151,9 @@ const deleteThreadEverywhere = (threadId: string, thread: Thread | undefined) =>
     .deleteThread(threadId)
     .catch((error) => {
       console.error(`Could not delete thread ${threadId}:`, error)
+      // Same id as the dialog's "deleted" toast, so this replaces it.
       toast.error(i18n.t('common:deleteThreadFailed'), {
+        id: 'delete-thread',
         description: String(error),
       })
     })
