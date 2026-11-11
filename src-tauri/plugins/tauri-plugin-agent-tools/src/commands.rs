@@ -761,6 +761,39 @@ fn attach_folder(
     Ok(vec![root])
 }
 
+/// The folder a chat conversation has attached, read from its own record
+/// (`<data>/threads/<id>/thread.json`, `metadata.folder` and
+/// `metadata.folderAccess`) rather than taken from the caller, so a webview
+/// request cannot widen what the user attached.
+///
+/// `None` when the id has no chat record: a Cowork thread (`metadata.mode` is
+/// `"cowork"`), whose runner still passes its folder per call, and an id with no
+/// thread.json yet (a Cowork session or subagent before its first write). A
+/// chat thread always has its record before its first message is sent.
+fn chat_folder_record(
+    data_folder: &Path,
+    thread_id: &str,
+) -> Result<Option<(Option<String>, bool)>, AgentToolsError> {
+    let path = workspace::committed_thread_json(data_folder, thread_id);
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("could not read the conversation record: {e}").into()),
+    };
+    let record: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("could not read the conversation record: {e}"))?;
+    let metadata = record.get("metadata");
+    let field = |key: &str| metadata.and_then(|m| m.get(key)).and_then(|v| v.as_str());
+    if field("mode") == Some("cowork") {
+        return Ok(None);
+    }
+    let folder = field("folder")
+        .map(str::trim)
+        .filter(|f| !f.is_empty())
+        .map(str::to_string);
+    Ok(Some((folder, field("folderAccess") != Some("read"))))
+}
+
 /// Pick the workspace root a tool call resolves relative paths against, plus the
 /// side roots it may read and write.
 ///
@@ -935,7 +968,24 @@ async fn execute_tool_inner(
         .map(PathBuf::from);
     let skill_project: Option<PathBuf> =
         project_dir.as_deref().map(workspace::project_store);
-    let writable = project_writable.unwrap_or(false);
+    // A chat thread's folder comes from its record; one passed by the caller
+    // is refused rather than ignored, so a caller that believes it attached a
+    // folder learns it did not.
+    let (read_only_project, writable) = match scope.unwrap_or_default() {
+        WorkspaceScope::Thread => match chat_folder_record(Path::new(&data_folder), &thread_id)? {
+            Some(_) if read_only_project.is_some() || project_writable == Some(true) => {
+                return Err(
+                    "a chat's folder is the one attached to the conversation; it cannot be \
+                     passed per call"
+                        .to_string()
+                        .into(),
+                );
+            }
+            Some((folder, writable)) => (folder, writable),
+            None => (read_only_project, project_writable.unwrap_or(false)),
+        },
+        WorkspaceScope::Session => (read_only_project, project_writable.unwrap_or(false)),
+    };
     let attached = attach_folder(
         read_only_project.as_deref(),
         &sandbox,
@@ -2470,6 +2520,120 @@ mod tests {
         assert!(format!("{err:?}").contains("overlaps"), "{err:?}");
 
         let _ = std::fs::remove_dir_all(&data);
+    }
+
+    // ---- a chat's folder comes from its own record -------------------------
+
+    fn write_thread_record(data: &Path, id: &str, metadata: serde_json::Value) {
+        let path = workspace::committed_thread_json(data, id);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, json!({ "id": id, "metadata": metadata }).to_string()).unwrap();
+    }
+
+    async fn call(
+        df: &str,
+        id: &str,
+        name: &str,
+        args: serde_json::Value,
+        folder: Option<&Path>,
+        writable: Option<bool>,
+    ) -> Result<ToolResult, AgentToolsError> {
+        execute_tool(
+            df.to_string(),
+            id.to_string(),
+            None,
+            name.to_string(),
+            args,
+            None,
+            None,
+            folder.map(|f| f.to_string_lossy().to_string()),
+            writable,
+            None,
+            None,
+        )
+        .await
+    }
+
+    /// The folder the user attached to a chat is used with no caller argument,
+    /// writable unless recorded read-only, and is the root for relative paths.
+    #[tokio::test]
+    async fn a_chat_uses_the_folder_its_record_names() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("chat_record");
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+        let id = "thread-chat-record";
+        write_thread_record(&data, id, json!({ "folder": repo, "folderAccess": "write" }));
+
+        let read = call(&df, id, "read", json!({"path": "main.rs"}), None, None)
+            .await
+            .unwrap();
+        assert!(read.content.contains("fn main"), "{}", read.content);
+        let write = call(&df, id, "write", json!({"path": "notes.md", "content": "hi"}), None, None)
+            .await
+            .unwrap();
+        assert!(!write.is_error, "{}", write.content);
+        assert_eq!(std::fs::read_to_string(repo.join("notes.md")).unwrap(), "hi");
+
+        // Recorded read-only: readable, never written.
+        write_thread_record(&data, id, json!({ "folder": repo, "folderAccess": "read" }));
+        let abs = repo.join("main.rs").to_string_lossy().to_string();
+        let read = call(&df, id, "read", json!({"path": abs}), None, None).await.unwrap();
+        assert!(read.content.contains("fn main"), "{}", read.content);
+        let err = call(&df, id, "write", json!({"path": repo.join("x.md"), "content": "x"}), None, None)
+            .await
+            .expect_err("a read-only record refuses writes");
+        assert!(format!("{err:?}").contains("read-only"), "{err:?}");
+        assert!(!repo.join("x.md").exists());
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The caller cannot widen a chat: a folder it passes is refused, and a chat
+    /// with no folder recorded cannot reach one.
+    #[tokio::test]
+    async fn a_chat_refuses_a_folder_the_caller_passes() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("chat_caller");
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+        let id = "thread-chat-caller";
+        write_thread_record(&data, id, json!({}));
+        let abs = json!({"path": repo.join("main.rs")});
+
+        let err = call(&df, id, "read", abs.clone(), Some(&repo), None)
+            .await
+            .expect_err("a caller-supplied folder is refused for a chat");
+        assert!(format!("{err:?}").contains("attached to the conversation"), "{err:?}");
+        assert!(call(&df, id, "read", json!({"path": "x"}), None, Some(true)).await.is_err());
+        let read = call(&df, id, "read", abs, None, None).await;
+        assert!(
+            read.is_err() || read.as_ref().unwrap().is_error,
+            "no folder is attached: {read:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// A Cowork thread keeps passing its folder per call.
+    #[tokio::test]
+    async fn a_cowork_thread_keeps_the_callers_folder() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("cowork_caller");
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+        let id = "thread-cowork-caller";
+        write_thread_record(&data, id, json!({ "mode": "cowork", "folder": "/elsewhere" }));
+
+        let read = call(&df, id, "read", json!({"path": "main.rs"}), Some(&repo), Some(true))
+            .await
+            .unwrap();
+        assert!(read.content.contains("fn main"), "{}", read.content);
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
     }
     // ---- live output streaming ---------------------------------------------
 

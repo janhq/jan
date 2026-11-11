@@ -1517,7 +1517,7 @@ fn copy_is_protected(jan_data_folder: &Path, id: &str) -> bool {
 }
 
 /// `<data>/threads/<id>/thread.json`: the thread store's commit marker.
-fn committed_thread_json(jan_data_folder: &Path, id: &str) -> PathBuf {
+pub(crate) fn committed_thread_json(jan_data_folder: &Path, id: &str) -> PathBuf {
     jan_data_folder.join("threads").join(id).join("thread.json")
 }
 
