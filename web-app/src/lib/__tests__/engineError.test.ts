@@ -363,6 +363,15 @@ describe('stripLocalPaths', () => {
     ).toBe('~/models')
   })
 
+  // A bare substring replace turned `/home/bobby` into `~by`, and having
+  // eaten the `/home/` the fallback could no longer recognise what was left.
+  it('does not match a longer name that merely starts with the home', () => {
+    expect(stripLocalPaths('/home/bobby/x.gguf', '/home/bob')).toBe('~/x.gguf')
+    expect(
+      stripLocalPaths('C:\\Users\\bobby\\x.gguf', 'C:\\Users\\bob')
+    ).toBe('~\\x.gguf')
+  })
+
   it('matches the home directory written with either separator', () => {
     expect(
       stripLocalPaths('C:/Users/Jo Smith/jan', 'C:\\Users\\Jo Smith')

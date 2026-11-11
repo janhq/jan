@@ -168,7 +168,9 @@ export function formatDiagnosticsReport(
   if (quantized.length > 0) {
     lines.push(
       '',
-      `${quantized.length} of the failures are quantized kernels, which every local model uses.`
+      quantized.length === 1
+        ? '1 of the failures is in a quantized kernel, which every local model uses.'
+        : `${quantized.length} of the failures are in quantized kernels, which every local model uses.`
     )
   }
 

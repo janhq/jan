@@ -260,7 +260,7 @@ describe('formatDiagnosticsReport', () => {
 
   it('calls out quantized failures, which every local model hits', () => {
     expect(formatDiagnosticsReport(run())).toContain(
-      '1 of the failures are quantized kernels'
+      '1 of the failures is in a quantized kernel'
     )
   })
 

@@ -264,7 +264,13 @@ export function stripLocalPaths(text: string, home?: string | null): string {
       // Both separators: a Windows path reaches the report either way.
       const variants = [trimmed, trimmed.replace(/\//g, '\\'), trimmed.replace(/\\/g, '/')]
       for (const variant of new Set(variants)) {
-        out = out.replace(new RegExp(quoteRegExp(variant), 'gi'), '~')
+        // Anchored on a boundary, or home `/home/bob` would rewrite
+        // `/home/bobby/x` to `~by/x` -- and having eaten the `/home/` the
+        // fallback below could no longer recognise what was left.
+        out = out.replace(
+          new RegExp(`${quoteRegExp(variant)}(?![\\p{L}\\p{M}\\p{N}._'-])`, 'giu'),
+          '~'
+        )
       }
     }
   }

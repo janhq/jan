@@ -24,6 +24,24 @@ describe('useMessageErrors reports', () => {
     expect(useMessageErrors.getState().reports.m1.model).toBeUndefined()
   })
 
+  // The report describes the failure it was built for; a different failure on
+  // the same message may carry no diagnostics at all.
+  it('drops a stale report when the error changes', () => {
+    const s = useMessageErrors.getState()
+    s.setError('m1', 'boom')
+    s.setReport('m1', '## Model load failure', 'llama-3-8b')
+    useMessageErrors.getState().setError('m1', 'a different failure')
+    expect(useMessageErrors.getState().reports.m1).toBeUndefined()
+  })
+
+  it('keeps the report when the same error is set again', () => {
+    const s = useMessageErrors.getState()
+    s.setError('m1', 'boom')
+    s.setReport('m1', 'r')
+    useMessageErrors.getState().setError('m1', 'boom')
+    expect(useMessageErrors.getState().reports.m1).toBeDefined()
+  })
+
   it('drops reports when errors are hydrated from storage', () => {
     useMessageErrors.getState().setReport('m1', 'r')
     useMessageErrors.getState().hydrate({ m2: 'x' })

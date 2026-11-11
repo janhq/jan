@@ -1,6 +1,6 @@
 import { isPlatformTauri } from '@/lib/platform'
 
-let cached: string | null | undefined
+let pending: Promise<string | null> | undefined
 
 /**
  * The user's home directory, or `null` where there is nothing to ask.
@@ -14,17 +14,22 @@ let cached: string | null | undefined
  *
  * Cached: it cannot change while the app is running.
  */
-export async function localHomeDir(): Promise<string | null> {
-  if (cached !== undefined) return cached
-  cached = null
-  if (isPlatformTauri()) {
-    try {
-      const { homeDir } = await import('@tauri-apps/api/path')
-      // Trailing separator dropped so it joins the same way on both families.
-      cached = (await homeDir()).replace(/[/\\]+$/, '') || null
-    } catch {
-      // Web build or a missing plugin: the heuristic is all there is.
-    }
+export function localHomeDir(): Promise<string | null> {
+  // The *promise* is cached, not a provisional answer: a second caller during
+  // the lookup would otherwise be handed `null` and fall back to the weaker
+  // heuristic, which is exactly the case this exists to avoid.
+  pending ??= lookUp()
+  return pending
+}
+
+async function lookUp(): Promise<string | null> {
+  if (!isPlatformTauri()) return null
+  try {
+    const { homeDir } = await import('@tauri-apps/api/path')
+    // Trailing separator dropped so it joins the same way on both families.
+    return (await homeDir()).replace(/[/\\]+$/, '') || null
+  } catch {
+    // Web build or a missing plugin: the heuristic is all there is.
+    return null
   }
-  return cached
 }

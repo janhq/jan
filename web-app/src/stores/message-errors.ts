@@ -30,11 +30,15 @@ export const useMessageErrors = create<MessageErrorsState>()((set) => ({
       reports: { ...state.reports, [messageId]: { text: report, model } },
     })),
   setError: (messageId, error) =>
-    set((state) =>
-      state.errors[messageId] === error
-        ? state
-        : { errors: { ...state.errors, [messageId]: error } }
-    ),
+    set((state) => {
+      if (state.errors[messageId] === error) return state
+      // A different error on the same message: the old report describes the
+      // old failure, and the new one may have no diagnostics at all, so it
+      // must not be left behind offering stale advice.
+      const reports = { ...state.reports }
+      delete reports[messageId]
+      return { errors: { ...state.errors, [messageId]: error }, reports }
+    }),
   clearError: (messageId) =>
     set((state) => {
       if (!(messageId in state.errors)) return state
