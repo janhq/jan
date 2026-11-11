@@ -281,7 +281,12 @@ export async function executeAgentTool(
    * Cowork passes its attached folder; chat leaves it unset, keeping its skills
    * global-only. Memory and skill writes stay on the permanent store regardless.
    */
-  skillProject?: string | null
+  skillProject?: string | null,
+  /**
+   * The model's tool call id. A chat call that changes an attached folder runs
+   * only on the user's approval of this id (agent-tools `consent`).
+   */
+  callId?: string
 ): Promise<AgentToolResult> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -300,7 +305,8 @@ export async function executeAgentTool(
       allowNetwork,
       readOnlyProject ?? undefined,
       projectWritable,
-      scope
+      scope,
+      callId
     )
     if (result.isError) return { error: result.content }
     // The store changed, so the recall injections must not keep serving the

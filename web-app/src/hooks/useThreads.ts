@@ -17,6 +17,7 @@ import {
   deleteCoworkConversation,
   hasCoworkSession,
 } from '@/lib/coworkDelete'
+import { consentCancelThread } from '@janhq/tauri-plugin-agent-tools-api'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -134,6 +135,8 @@ export const isDeletedByDeleteAll = (thread: Thread): boolean =>
  */
 const deleteThreadEverywhere = (threadId: string, thread: Thread | undefined) => {
   forgetMessageWrites(threadId)
+  // Grants given for this conversation end with it.
+  void consentCancelThread(threadId, true).catch(() => {})
   if (isCoworkThread(thread) && hasCoworkSession(threadId)) {
     deleteCoworkConversation(threadId)
     return

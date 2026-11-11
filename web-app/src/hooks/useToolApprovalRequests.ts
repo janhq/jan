@@ -1,6 +1,10 @@
 import { create } from 'zustand'
-import { useToolApproval } from './useToolApproval'
-import { EXTENSION_SERVER_PREFIX } from '@/lib/extensions/tools'
+import {
+  consentAnswer,
+  consentCancelThread,
+  consentRequest,
+  type ToolOrigin,
+} from '@janhq/tauri-plugin-agent-tools-api'
 
 export type PendingApproval = {
   toolCallId: string
@@ -20,7 +24,8 @@ export type ApprovalOptions = {
    * Ask, whatever "allow all MCP" or a saved grant says, and save no grant
    * from the answer. For a call made by a model an extension serves
    * (janhq/jan-internal#517): grants were given to the user's own models,
-   * and must not cover one that can send the extension's data anywhere.
+   * and must not cover one that can send the extension's data anywhere. And
+   * for a built-in call that changes a folder attached to the chat.
    */
   strict?: boolean
   /**
@@ -30,7 +35,7 @@ export type ApprovalOptions = {
    * Absent means MCP, so nothing is ever let in as an extension's by
    * accident.
    */
-  origin?: 'extension' | 'mcp'
+  origin?: ToolOrigin
 }
 
 /**
@@ -44,9 +49,9 @@ export type ApprovalDecision =
   | 'deny'
 
 type ToolApprovalRequestsState = {
-  // In-flight per-tool-call approval prompts. Kept out of the persisted
-  // useToolApproval store so approval churn never flushes to disk (the
-  // resolve callbacks are non-serializable anyway).
+  // In-flight per-tool-call approval prompts. The grants and the one-use
+  // authorization each answer gives live in Rust (agent-tools `consent`);
+  // the executors refuse a call it did not authorize.
   pending: Record<string, PendingApproval>
 
   requestApproval: (
@@ -60,49 +65,34 @@ type ToolApprovalRequestsState = {
   clearPendingForThread: (threadId: string) => void
 }
 
-/**
- * The name a grant is recorded under. A tool with a server is keyed by it
- * as well, so a grant can never cover a same-named tool of another
- * extension or MCP server. Extension and MCP tools get separate namespaces
- * (`ext:` and `mcp:`) chosen by origin, so neither can spell the other's
- * key whatever the server or tool is called.
- */
-const approvalKey = (
-  toolName: string,
-  serverName: string | undefined,
-  extension: boolean
-) => {
-  if (!serverName) return toolName
-  return extension
-    ? `${serverName}/${toolName}`
-    : `mcp:${serverName}/${toolName}`
-}
-
 export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
   (set, get) => ({
     pending: {},
 
-    requestApproval: (toolCallId, toolName, threadId, serverName, options) => {
+    requestApproval: async (
+      toolCallId,
+      toolName,
+      threadId,
+      serverName,
+      options
+    ) => {
       const strict = options?.strict ?? false
-      const extension = options?.origin === 'extension'
+      const origin = options?.origin ?? 'mcp'
+      // A store that cannot be reached cannot authorize anything: denied.
+      const verdict = await consentRequest({
+        threadId,
+        callId: toolCallId,
+        tool: toolName,
+        server: serverName,
+        origin,
+        strict,
+      }).catch((error) => {
+        console.error('Tool approval request failed:', error)
+        return null
+      })
+      if (verdict === 'allowed') return true
+      if (verdict === null) return false
       return new Promise<boolean>((resolve) => {
-        const settings = useToolApproval.getState()
-        // The shortcut is for MCP; extension tools always go through approval.
-        if (!strict && settings.allowAllMCPPermissions && !extension) {
-          resolve(true)
-          return
-        }
-        if (
-          !strict &&
-          settings.isToolApproved(
-            threadId,
-            approvalKey(toolName, serverName, extension),
-            serverName
-          )
-        ) {
-          resolve(true)
-          return
-        }
         set((s) => ({
           pending: {
             ...s.pending,
@@ -112,7 +102,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
               threadId,
               serverName,
               strict,
-              extension,
+              extension: origin === 'extension',
               resolve,
             },
           },
@@ -123,40 +113,25 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
     resolveApproval: (toolCallId, decision) => {
       const entry = get().pending[toolCallId]
       if (!entry) return
-      const approval = useToolApproval.getState()
-      const key = approvalKey(
-        entry.toolName,
-        entry.serverName,
-        entry.extension
-      )
-      if (entry.strict) {
-        // Answers this call only; nothing is saved.
-      } else if (decision === 'allow-thread') {
-        approval.approveToolForThread(entry.threadId, key)
-      } else if (decision === 'allow-always') {
-        // An MCP server is trusted whole. An extension is not: an update can
-        // add tools, and those must ask before they first run. An MCP server
-        // the user named `ext:<id>` is not trusted whole either: that trust
-        // would also cover the real extension <id>'s tools.
-        if (
-          entry.serverName &&
-          !entry.serverName.startsWith(EXTENSION_SERVER_PREFIX) &&
-          !entry.extension
-        ) {
-          approval.approveServer(entry.serverName)
-        } else {
-          approval.approveToolEverywhere(key)
-        }
-      }
       set((s) => {
         const next = { ...s.pending }
         delete next[toolCallId]
         return { pending: next }
       })
-      entry.resolve(decision !== 'deny')
+      // Rust records the grant the answer gives and says whether the call
+      // may run; a failed round-trip is a denial.
+      consentAnswer(toolCallId, decision)
+        .catch((error) => {
+          console.error('Tool approval answer failed:', error)
+          return false
+        })
+        .then(entry.resolve)
     },
 
     clearPendingForThread: (threadId) => {
+      // Also ends authorizations given but not yet used, so a call approved
+      // before Stop cannot run after it.
+      void consentCancelThread(threadId).catch(() => {})
       const { pending } = get()
       const stranded = Object.values(pending).filter(
         (entry) => entry.threadId === threadId
