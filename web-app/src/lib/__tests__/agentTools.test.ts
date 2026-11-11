@@ -205,7 +205,8 @@ describe('agentTools', () => {
       false,
       undefined,
       false,
-      'thread'
+      'thread',
+      undefined
     )
   })
 
@@ -231,7 +232,8 @@ describe('agentTools', () => {
       true,
       undefined,
       false,
-      'thread'
+      'thread',
+      undefined
     )
   })
 
@@ -265,7 +267,8 @@ describe('agentTools', () => {
       false,
       undefined,
       false,
-      'thread'
+      'thread',
+      undefined
     )
   })
 
@@ -289,7 +292,8 @@ describe('agentTools', () => {
       false,
       '/home/u/repo',
       false,
-      'thread'
+      'thread',
+      undefined
     )
   })
 
@@ -334,7 +338,8 @@ describe('agentTools', () => {
       true,
       '/repo',
       true,
-      'session'
+      'session',
+      undefined
     )
   })
 
@@ -392,7 +397,8 @@ describe('agentTools', () => {
       false,
       undefined,
       false,
-      'thread'
+      'thread',
+      undefined
     )
   })
 
