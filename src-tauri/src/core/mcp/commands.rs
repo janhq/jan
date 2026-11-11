@@ -459,10 +459,15 @@ pub async fn call_tool(
     let (srv_name, service) = match target {
         Ok(target) => target,
         Err(CallTargetError::Refused(e)) => {
+            log::warn!("MCP call to tool {tool_name} refused: {e}");
             cleanup_cancellation_token(&state, &cancellation_token).await;
             return Err(e);
         }
         Err(CallTargetError::Disconnected(names)) => {
+            log::warn!(
+                "MCP call to tool {tool_name} not run: server(s) [{}] disconnected",
+                names.join(", ")
+            );
             state.mcp_reconnect_notify.notify_waiters();
             cleanup_cancellation_token(&state, &cancellation_token).await;
             return Err(format!(
@@ -482,6 +487,7 @@ pub async fn call_tool(
         Some(srv_name),
         tauri_plugin_agent_tools::consent::ToolOrigin::Mcp,
     ) {
+        log::warn!("MCP call to tool {tool_name} on {srv_name} not approved: {e}");
         cleanup_cancellation_token(&state, &cancellation_token).await;
         return Err(e);
     }
