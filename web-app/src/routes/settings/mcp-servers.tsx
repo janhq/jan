@@ -23,7 +23,7 @@ import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { twMerge } from 'tailwind-merge'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useToolApproval } from '@/hooks/useToolApproval'
+import { useToolGrants } from '@/hooks/useToolGrants'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
@@ -107,8 +107,21 @@ function MCPServersDesktop() {
     getServerConfig,
     saveSettings,
   } = useMCPServers()
-  const { allowAllMCPPermissions, setAllowAllMCPPermissions } =
-    useToolApproval()
+  const {
+    allowAllMcp,
+    servers: trustedServers,
+    tools: trustedTools,
+    load: loadToolGrants,
+    setAllowAllMcp,
+    revoke: revokeToolGrant,
+  } = useToolGrants()
+  useEffect(() => {
+    void loadToolGrants()
+  }, [loadToolGrants])
+  const savedGrants = [
+    ...trustedServers.map((name) => ({ kind: 'server' as const, name })),
+    ...trustedTools.map((name) => ({ kind: 'tool' as const, name })),
+  ]
 
   const [open, setOpen] = useState(false)
   const [editingKey, setEditingKey] = useState<string | null>(null)
@@ -584,10 +597,53 @@ function MCPServersDesktop() {
                   actions={
                     <div className="shrink-0 ml-4">
                       <Switch
-                        checked={allowAllMCPPermissions}
-                        onCheckedChange={setAllowAllMCPPermissions}
+                        checked={allowAllMcp}
+                        onCheckedChange={(allow) =>
+                          void setAllowAllMcp(allow).catch((error) =>
+                            toast.error(String(error))
+                          )
+                        }
                       />
                     </div>
+                  }
+                />
+                <CardItem
+                  title={t('mcp-servers:savedPermissions')}
+                  description={
+                    savedGrants.length === 0 ? (
+                      t('mcp-servers:savedPermissionsEmpty')
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        <span>{t('mcp-servers:savedPermissionsDesc')}</span>
+                        <ul className="mt-1 flex flex-col gap-1">
+                          {savedGrants.map(({ kind, name }) => (
+                            <li
+                              key={`${kind}:${name}`}
+                              className="flex items-center justify-between gap-2"
+                            >
+                              <span className="truncate font-mono text-xs text-foreground">
+                                {kind === 'server'
+                                  ? t('mcp-servers:savedPermissionServer', {
+                                      name,
+                                    })
+                                  : name}
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  void revokeToolGrant(kind, name).catch(
+                                    (error) => toast.error(String(error))
+                                  )
+                                }
+                              >
+                                {t('mcp-servers:revokePermission')}
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )
                   }
                 />
                 <CardItem
