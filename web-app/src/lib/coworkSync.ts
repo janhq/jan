@@ -683,6 +683,26 @@ async function saveBeforeExit(): Promise<boolean> {
 }
 
 /**
+ * Relaunch after saving. Rust skips its save hold for restart exits (the
+ * factory reset must not wait on a save), so the callers that restart the app
+ * on purpose (update install, data folder move) save here first. On a failed
+ * save the app stays up with the same explanation and way out as a quit.
+ */
+export async function relaunchAfterSave(
+  relaunch: () => Promise<void> | void
+): Promise<void> {
+  if (await saveBeforeExit()) {
+    await relaunch()
+    return
+  }
+  reportExitSaveFailure('quit', () => {
+    void Promise.resolve(relaunch()).catch((error) => {
+      console.warn('[cowork] could not relaunch:', error)
+    })
+  })
+}
+
+/**
  * Keeping the app open is the default (data loss is worse than a stuck
  * window), but the user must always see why it did not close or quit, and
  * after repeated failures get an explicit way out that names the cost.
