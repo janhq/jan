@@ -149,7 +149,7 @@ pub async fn create_thread<R: Runtime>(
 /// Stable prefix of errors meaning the thread no longer exists on disk. The web
 /// layer matches it to tell a deleted thread (stop writing, mark unavailable)
 /// from a transient failure (keep dirty, retry).
-pub const THREAD_MISSING_ERROR_CODE: &str = "thread_missing";
+const THREAD_MISSING_ERROR_CODE: &str = "thread_missing";
 
 fn thread_missing_error(detail: impl std::fmt::Display) -> String {
     format!("{THREAD_MISSING_ERROR_CODE}: {detail}")

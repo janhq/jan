@@ -152,7 +152,7 @@ impl ResumeRequest {
 }
 /// Whether a saved thread was started in the desktop's Cowork mode
 /// (`metadata.mode == "cowork"`; absent means chat).
-pub fn is_cowork_thread(t: &serde_json::Value) -> bool {
+fn is_cowork_thread(t: &serde_json::Value) -> bool {
     t.get("metadata")
         .and_then(|m| m.get("mode"))
         .and_then(|v| v.as_str())
