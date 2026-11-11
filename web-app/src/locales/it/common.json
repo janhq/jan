@@ -587,8 +587,7 @@
     "addToProject": "Aggiungi a un progetto",
     "newProject": "Nuovo progetto",
     "noProjects": "Ancora nessun progetto",
-    "addFolderAction": "Aggiungi cartella",
-    "startFailed": "Impossibile avviare la conversazione. Il tuo messaggio è ancora nella casella."
+    "addFolderAction": "Aggiungi cartella"
   },
   "conversationScope": {
     "folderSelectModel": "Seleziona un modello che supporta gli strumenti prima di aggiungere l'accesso a una cartella.",

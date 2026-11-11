@@ -495,8 +495,7 @@
     "addToProject": "Afegeix a un projecte",
     "newProject": "Projecte nou",
     "noProjects": "Encara no hi ha cap projecte",
-    "addFolderAction": "Afegeix una carpeta",
-    "startFailed": "No s'ha pogut iniciar la conversa. El teu missatge encara és al quadre de text."
+    "addFolderAction": "Afegeix una carpeta"
   },
   "conversationScope": {
     "folderSelectModel": "Selecciona un model compatible amb eines abans d'afegir accés a una carpeta.",

@@ -492,8 +492,7 @@
     "addToProject": "加入專案",
     "newProject": "新專案",
     "noProjects": "尚無專案",
-    "addFolderAction": "新增資料夾",
-    "startFailed": "無法開始對話。你的訊息仍保留在輸入框中。"
+    "addFolderAction": "新增資料夾"
   },
   "conversationScope": {
     "folderSelectModel": "新增資料夾存取權之前，請先選擇支援工具的模型。",

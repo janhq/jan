@@ -827,54 +827,34 @@ describe('ChatInput', () => {
     })
   })
 
-  describe('onFolderDraft (home composer with a folder)', () => {
+  describe('draftFolder (home composer with a folder)', () => {
     const submit = () =>
       fireEvent.keyDown(getTextarea(), { key: 'Enter' })
 
-    it('hands the draft over and creates no chat thread when the surface starts it', async () => {
+    it('creates the chat thread with the folder attached, then lets the surface forget it', async () => {
       promptState = 'work on this'
-      const onFolderDraft = vi.fn().mockResolvedValue('started')
-      renderInput({ onSubmit: undefined, onFolderDraft })
-      submit()
-      await waitFor(() => expect(onFolderDraft).toHaveBeenCalledTimes(1))
-      expect(onFolderDraft).toHaveBeenCalledWith({
-        text: 'work on this',
-        draft: 'work on this',
-        files: undefined,
-        documents: undefined,
-      })
-      expect(createThreadMock).not.toHaveBeenCalled()
-      expect(clearAttachmentsMock).toHaveBeenCalled()
-    })
-
-    it('keeps the attachments and creates no thread when the surface refuses', async () => {
-      promptState = 'work on this'
-      const onFolderDraft = vi.fn().mockResolvedValue('refused')
-      renderInput({ onSubmit: undefined, onFolderDraft })
-      submit()
-      await waitFor(() => expect(onFolderDraft).toHaveBeenCalledTimes(1))
-      expect(createThreadMock).not.toHaveBeenCalled()
-      expect(clearAttachmentsMock).not.toHaveBeenCalled()
-    })
-
-    it('falls through to an ordinary chat thread when there is no folder', async () => {
-      promptState = 'just chat'
       createThreadMock.mockResolvedValue({ id: 'new-thread' })
-      const onFolderDraft = vi.fn().mockResolvedValue('chat')
-      renderInput({ onSubmit: undefined, onFolderDraft })
+      const onDraftFolderUsed = vi.fn()
+      renderInput({
+        onSubmit: undefined,
+        draftFolder: '/home/u/app',
+        onDraftFolderUsed,
+      })
       submit()
       await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
-      expect(onFolderDraft).toHaveBeenCalledTimes(1)
+      expect(createThreadMock.mock.calls[0][5]).toBe('/home/u/app')
+      expect(onDraftFolderUsed).toHaveBeenCalledTimes(1)
     })
 
-    it('is not consulted by a surface that submits through onSubmit', async () => {
-      promptState = 'in a thread'
-      const onSubmit = vi.fn()
-      const onFolderDraft = vi.fn().mockResolvedValue('started')
-      renderInput({ onSubmit, onFolderDraft })
+    it('creates an ordinary chat thread when there is no folder', async () => {
+      promptState = 'just chat'
+      createThreadMock.mockResolvedValue({ id: 'new-thread' })
+      const onDraftFolderUsed = vi.fn()
+      renderInput({ onSubmit: undefined, draftFolder: null, onDraftFolderUsed })
       submit()
-      await waitFor(() => expect(onSubmit).toHaveBeenCalled())
-      expect(onFolderDraft).not.toHaveBeenCalled()
+      await waitFor(() => expect(createThreadMock).toHaveBeenCalledTimes(1))
+      expect(createThreadMock.mock.calls[0][5]).toBeUndefined()
+      expect(onDraftFolderUsed).not.toHaveBeenCalled()
     })
   })
 

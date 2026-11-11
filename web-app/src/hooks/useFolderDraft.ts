@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { useLocation, useRouter } from '@tanstack/react-router'
+import { useLocation } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -7,28 +7,22 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { isTemporaryChatSearch } from '@/constants/chat'
 import { supportsCowork } from '@/lib/coworkSync'
 import { isCoworkEnabled } from '@/lib/version'
-import {
-  startCoworkFromDraft,
-  type FolderDraftOutcome,
-  type FolderDraftSubmission,
-} from '@/lib/startCoworkFromDraft'
-import type { ThreadFolder } from '@/services/projects/types'
 
 /**
  * The folder half of a home-style draft (home and project pages). The folder is
- * route-local intent: it never carries over to another conversation, and a
- * temporary chat ignores it (it keeps no workspace).
+ * route-local intent: the chat the draft creates starts with it attached
+ * (see useChatFolder for a folder on an existing chat), it never carries over
+ * to the next draft, and a temporary chat ignores it (it keeps no workspace).
  */
-export function useFolderDraft(project?: ThreadFolder | null) {
+export function useFolderDraft() {
   const { t } = useTranslation()
-  const router = useRouter()
   const serviceHub = useServiceHub()
   const selectedModel = useModelProvider((s) => s.selectedModel)
   const [folder, setFolder] = useState<string | null>(null)
   const searchStr = useLocation({ select: (location) => location.searchStr })
   const isTemporaryChat = isTemporaryChatSearch(searchStr)
   // Folders need the desktop host; the browser build never offers one, and
-  // builds without Cowork have no runner to hand the task to.
+  // builds without the agent tools have nothing to run on it.
   const available = supportsCowork() && isCoworkEnabled()
   const activeFolder = available && !isTemporaryChat ? folder : null
 
@@ -50,29 +44,15 @@ export function useFolderDraft(project?: ThreadFolder | null) {
     setFolder(picked)
   }, [isTemporaryChat, selectedModel, serviceHub, t])
 
-  const onFolderDraft = useCallback(
-    (submission: FolderDraftSubmission): FolderDraftOutcome => {
-      if (!activeFolder) return 'chat'
-      const outcome = startCoworkFromDraft({
-        folder: activeFolder,
-        project,
-        submission,
-        navigate: (options) => router.navigate(options as never),
-      })
-      if (outcome === 'started') setFolder(null)
-      return outcome
-    },
-    [activeFolder, project, router]
-  )
+  const detach = useCallback(() => setFolder(null), [])
 
   return useMemo(
     () => ({
       available,
       folder: activeFolder,
       attach: () => void attach(),
-      detach: () => setFolder(null),
-      onFolderDraft,
+      detach,
     }),
-    [available, activeFolder, attach, onFolderDraft]
+    [available, activeFolder, attach, detach]
   )
 }

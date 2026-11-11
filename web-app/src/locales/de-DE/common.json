@@ -493,8 +493,7 @@
     "addToProject": "Zu einem Projekt hinzufügen",
     "newProject": "Neues Projekt",
     "noProjects": "Noch keine Projekte",
-    "addFolderAction": "Ordner hinzufügen",
-    "startFailed": "Die Unterhaltung konnte nicht gestartet werden. Deine Nachricht steht weiterhin im Eingabefeld."
+    "addFolderAction": "Ordner hinzufügen"
   },
   "conversationScope": {
     "folderSelectModel": "Wähle ein Modell mit Werkzeugunterstützung, bevor du Ordnerzugriff hinzufügst.",

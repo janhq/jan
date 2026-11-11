@@ -492,8 +492,7 @@
     "addToProject": "Thêm vào dự án",
     "newProject": "Dự án Mới",
     "noProjects": "Chưa có dự án nào",
-    "addFolderAction": "Thêm thư mục",
-    "startFailed": "Không thể bắt đầu cuộc trò chuyện. Tin nhắn của bạn vẫn còn trong ô nhập."
+    "addFolderAction": "Thêm thư mục"
   },
   "conversationScope": {
     "folderSelectModel": "Hãy chọn một mô hình hỗ trợ công cụ trước khi thêm quyền truy cập thư mục.",
