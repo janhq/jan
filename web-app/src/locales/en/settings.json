@@ -302,6 +302,8 @@
     "checkingForUpdates": "Checking for updates...",
     "autoUpdateCheck": "Automatic Update Check",
     "autoUpdateCheckDesc": "Automatically check for updates on startup and periodically.",
+    "closeToTray": "Close button minimizes to the system tray",
+    "closeToTrayDesc": "Keep Jan running in the system tray when you close the window, instead of quitting. Open or quit Jan from the tray icon. If your desktop does not show tray icons (for example GNOME without an AppIndicator extension), launch Jan again to bring the window back.",
     "copied": "Copied",
     "copyPath": "Copy Path",
     "changeLocation": "Change Location",
