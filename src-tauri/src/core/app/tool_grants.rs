@@ -13,8 +13,8 @@ use tauri_plugin_agent_tools::consent::{GrantsPersistence, SavedGrants};
 
 use super::settings_store::{settings_get, settings_remove, settings_set};
 
-pub const TOOL_GRANTS_KEY: &str = "tool-grants";
-pub const LEGACY_TOOL_APPROVAL_KEY: &str = "tool-approval";
+const TOOL_GRANTS_KEY: &str = "tool-grants";
+const LEGACY_TOOL_APPROVAL_KEY: &str = "tool-approval";
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
