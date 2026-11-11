@@ -6,15 +6,16 @@ use uuid::Uuid;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use super::db;
 use super::helpers::{
-    get_lock_for_thread, read_messages_from_file, should_use_sqlite, sweep_stale_temps,
-    update_thread_metadata, write_atomic, write_atomic_durable, write_messages_to_file,
-    STALE_TEMP_AGE,
+    get_lock_for_thread, read_messages_from_file, remove_thread_dir, should_use_sqlite,
+    sweep_stale_temps, update_thread_metadata, write_atomic, write_atomic_durable,
+    write_messages_to_file, STALE_TEMP_AGE,
 };
 use super::{
     constants::THREADS_FILE,
     utils::{
         ensure_data_dirs, ensure_thread_dir_exists, get_data_dir, get_messages_path,
-        get_thread_dir, get_thread_metadata_path, validate_thread_id, PERMANENT_PREFIX,
+        get_thread_dir, get_thread_metadata_path, validate_thread_id, DELETING_PREFIX,
+        PERMANENT_PREFIX,
     },
 };
 use crate::core::app::commands::get_jan_data_folder_path;
@@ -46,17 +47,23 @@ pub async fn list_threads<R: Runtime>(
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         if path.is_dir() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            // What a delete moved aside but could not fully remove: retried here.
+            if name.starts_with(DELETING_PREFIX) {
+                let _ = fs::remove_dir_all(&path);
+                continue;
+            }
             // A write killed mid-replace leaves its temp file in the thread.
             // Swept here, at listing (startup), and only when no write of this
             // process holds the thread; the age bound spares any other writer.
-            if let Some(id) = path.file_name().and_then(|n| n.to_str()) {
-                let lock = get_lock_for_thread(id).await;
-                let guard = lock.try_lock();
-                if guard.is_ok() {
-                    sweep_stale_temps(&path, STALE_TEMP_AGE, now);
-                }
-                drop(guard);
+            let lock = get_lock_for_thread(name).await;
+            let guard = lock.try_lock();
+            if guard.is_ok() {
+                sweep_stale_temps(&path, STALE_TEMP_AGE, now);
             }
+            drop(guard);
             let thread_metadata_path = path.join(THREADS_FILE);
             if thread_metadata_path.exists() {
                 let data = fs::read_to_string(&thread_metadata_path).map_err(|e| e.to_string())?;
@@ -342,7 +349,10 @@ pub async fn modify_thread<R: Runtime>(
     write_atomic(&path, data.as_bytes())
 }
 
-/// Deletes a thread and all its associated files by removing its directory.
+/// Deletes a thread and all its associated files (see `remove_thread_dir`).
+/// A failed delete is reported with the thread intact: the caller would
+/// otherwise drop the conversation from the UI while its files return on
+/// restart.
 #[tauri::command]
 pub async fn delete_thread<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
@@ -357,18 +367,11 @@ pub async fn delete_thread<R: Runtime>(
     let data_folder = get_jan_data_folder_path(app_handle);
     // `get_thread_dir` validates the id before anything is keyed on it. The
     // lock orders the removal against an in-flight write-through (sidecar,
-    // messages, modify), which would otherwise race `remove_dir_all`.
-    let thread_dir = get_thread_dir(&data_folder, &thread_id)?;
+    // messages, modify), which would otherwise race the rename.
+    get_thread_dir(&data_folder, &thread_id)?;
     let lock = get_lock_for_thread(&thread_id).await;
     let _guard = lock.lock().await;
-    // A failed removal is reported: the caller would otherwise drop the
-    // conversation from the UI while its files stay and return on restart.
-    match fs::remove_dir_all(&thread_dir) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(format!("could not delete thread {thread_id}: {e}")),
-    }
-    Ok(())
+    remove_thread_dir(&data_folder, &thread_id)
 }
 
 /// Lists all messages for a given thread by reading and parsing its messages.jsonl file.
