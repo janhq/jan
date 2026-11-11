@@ -65,7 +65,10 @@ renamed or dropped is left out rather than passing vacuously. If the
 intersection is empty the root exits with an error rather than running the
 support probe alone and reporting a clean result. That error is written as a
 `done` event on stdout as well as to stderr, so the panel names the reason
-instead of reporting a bare early exit.
+instead of reporting a bare early exit. The probe leaves are the exception:
+their stdout is one JSON document the root parses, so they report on stderr
+alone and `diagnose::probe` folds their last stderr lines into the error the
+root then emits as its own `done`.
 
 **Shapes, after the run.** These cannot be checked ahead of time, so the guard
 is at the other end. `run_unit` classifies a leaf that exited cleanly, emitted

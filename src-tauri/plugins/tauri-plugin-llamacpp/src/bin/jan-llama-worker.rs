@@ -401,6 +401,11 @@ async fn main() {
 /// failing case exits 0: its verdict is in the event stream.
 const DIAG_EXIT: i32 = 8;
 
+/// For the probe leaves (`--diagnose-devices`, `--diagnose-ops`), whose stdout
+/// is a single JSON document the root parses -- an event line printed there
+/// would corrupt it. Their reason still reaches the user: a nonzero exit makes
+/// `diagnose::probe` fold the last stderr lines into its error, and the root
+/// then reports that through [`diag_root_fail`].
 fn diag_fail(msg: String) -> ! {
     eprintln!("jan-llama-worker: {msg}");
     std::process::exit(DIAG_EXIT);

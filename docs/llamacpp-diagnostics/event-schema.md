@@ -27,6 +27,15 @@ root could not start at all (`diag_root_fail` writes one before exiting, so the
 reason reaches the stream rather than only the root's stderr), and when the
 supervisor has to kill a root that ignored its stop request.
 
+`summary.ok` and `summary.failed` count the **test** units alone. The support
+probe asks `ggml_backend_supports_op` over the whole op list and reports every
+supported case as `ok` without computing or comparing anything, so counting it
+as a pass would tell the user that cases passed which were never run.
+`summary.not_supported` is the mirror image: the probe is authoritative when it
+ran, because it covers the whole op list rather than the families this run
+happened to test, and adding both sources would bill every probed case twice.
+With no probe, the test units are the only source.
+
 `case` is flattened rather than nested so a reader handles one flat object
 instead of reaching through a wrapper. `DiagCase` is the same struct the leaf
 serializes, so the two cannot drift.

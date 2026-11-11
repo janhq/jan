@@ -28,12 +28,18 @@ struct FakeLeaf {
     exit: i32,
 }
 
+/// Argument that makes a stand-in leaf exit at once, printing nothing. Used to
+/// wait out `ETXTBSY` below; the real argv starts with `--diagnose-run`, so a
+/// leaf never sees it in anger.
+const PREFLIGHT: &str = "--jan-preflight";
+
 impl FakeLeaf {
     fn write(&self, dir: &Path, name: &str) -> PathBuf {
         let path = dir.join(format!("{name}{}", if cfg!(windows) { ".cmd" } else { ".sh" }));
         let mut script = String::new();
         if cfg!(windows) {
             script.push_str("@echo off\r\n");
+            script.push_str(&format!("if \"%1\"==\"{PREFLIGHT}\" exit /b 0\r\n"));
             for line in &self.stdout {
                 script.push_str(&format!("echo {line}\r\n"));
             }
@@ -46,6 +52,7 @@ impl FakeLeaf {
             script.push_str(&format!("exit /b {}\r\n", self.exit));
         } else {
             script.push_str("#!/bin/sh\n");
+            script.push_str(&format!("[ \"$1\" = \"{PREFLIGHT}\" ] && exit 0\n"));
             for line in &self.stdout {
                 script.push_str(&format!("echo '{line}'\n"));
             }
@@ -63,7 +70,31 @@ impl FakeLeaf {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
+        wait_until_executable(&path);
         path
+    }
+}
+
+/// Runs the script once, harmlessly, until the OS agrees it may be executed.
+///
+/// `cargo test` runs these tests on threads of one process, so another test's
+/// `fork` can inherit this file's still-open write descriptor and hold it
+/// across the window before that child `exec`s. Executing it then fails with
+/// `ETXTBSY` ("Text file busy"), which the root reports as a crashed family
+/// and the test reads as a real failure -- intermittently, on whichever test
+/// loses the race. Once a preflight succeeds the descriptor has drained, and
+/// nothing reopens the file for writing, so every later spawn is safe.
+fn wait_until_executable(path: &Path) {
+    for _ in 0..200 {
+        match std::process::Command::new(path).arg(PREFLIGHT).output() {
+            Ok(_) => return,
+            Err(e) if e.raw_os_error() == Some(26) => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            // Anything else is the test's own problem and will surface with a
+            // better message when the root tries to run it.
+            Err(_) => return,
+        }
     }
 }
 
@@ -390,6 +421,66 @@ async fn cancel_ends_the_run_and_marks_what_never_ran() {
         started.elapsed() < Duration::from_secs(30),
         "cancel must not wait out the family timeout"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_support_probe_does_not_inflate_the_pass_count() {
+    // The probe asks `ggml_backend_supports_op` over the whole op list and
+    // reports every supported case as `ok` without computing anything, so a
+    // summary that adds it tells the user cases passed that never ran. The
+    // leaf is one script, so both units report the same three cases: the
+    // separation has to come from the unit's mode, not from the leaf.
+    let dir = tempfile::tempdir().unwrap();
+    let leaf = FakeLeaf {
+        stdout: vec![
+            result_line("ADD", "ok"),
+            result_line("ADD", "ok"),
+            result_line("ADD", "not_supported"),
+            done_line(true),
+        ],
+        ..Default::default()
+    }
+    .write(dir.path(), "probe-and-test");
+
+    let mut p = plan(&["ADD"]);
+    p.support_probe = true;
+
+    let events = collect(&p, leaf).await;
+
+    let summary = events.iter().find_map(|e| match e {
+        RootEvent::Summary {
+            ok,
+            failed,
+            not_supported,
+            ..
+        } => Some((*ok, *failed, *not_supported)),
+        _ => None,
+    });
+    assert_eq!(
+        summary,
+        Some((2, 0, 1)),
+        "the pass count is the test unit's alone, and the probe is the one \
+         source of not-supported rather than both being added"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_with_no_probe_still_reports_what_it_could_not_run() {
+    // With no probe, the test units are the only source there is.
+    let dir = tempfile::tempdir().unwrap();
+    let leaf = FakeLeaf {
+        stdout: vec![result_line("ADD", "not_supported"), done_line(true)],
+        ..Default::default()
+    }
+    .write(dir.path(), "unsupported");
+
+    let events = collect(&plan(&["ADD"]), leaf).await;
+
+    let not_supported = events.iter().find_map(|e| match e {
+        RootEvent::Summary { not_supported, .. } => Some(*not_supported),
+        _ => None,
+    });
+    assert_eq!(not_supported, Some(1));
 }
 
 #[tokio::test(flavor = "multi_thread")]

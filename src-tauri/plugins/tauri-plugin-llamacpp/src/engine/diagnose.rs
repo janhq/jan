@@ -393,6 +393,48 @@ struct DeviceFaults {
     cancelled: usize,
 }
 
+/// One device's running totals.
+///
+/// The test units and the support probe are kept apart because they answer
+/// different questions and a single tally conflates them. The probe asks
+/// `ggml_backend_supports_op` over the whole op list and reports every
+/// supported case as `ok` without computing anything, so folding it into the
+/// pass count inflates "Passed X of Y" with cases that were never run, and
+/// adding both `not_supported` counts bills every probed case twice.
+#[derive(Default)]
+struct DeviceRollup {
+    test: DiagTally,
+    probe: DiagTally,
+    probed: bool,
+    faults: DeviceFaults,
+}
+
+impl DeviceRollup {
+    fn add(&mut self, mode: DiagMode, tally: &DiagTally) {
+        let into = if mode == DiagMode::Support {
+            self.probed = true;
+            &mut self.probe
+        } else {
+            &mut self.test
+        };
+        into.ok += tally.ok;
+        into.failed += tally.failed;
+        into.not_supported += tally.not_supported;
+    }
+
+    /// What the device does not implement. The probe is authoritative when it
+    /// ran -- it covers the whole op list rather than the families this run
+    /// happened to test -- and the test units are the only source when it did
+    /// not.
+    fn not_supported(&self) -> usize {
+        if self.probed {
+            self.probe.not_supported
+        } else {
+            self.test.not_supported
+        }
+    }
+}
+
 /// Why a run stopped early, if it did.
 enum Interrupt {
     Cancelled,
@@ -434,11 +476,11 @@ pub async fn run<F>(
     let mut any_inconclusive = false;
     // One entry per device, in the order the units visit them, which
     // `DiagnosePlan::units` keeps device-major.
-    let mut per_device: Vec<(String, DiagTally, DeviceFaults)> = Vec::new();
+    let mut per_device: Vec<(String, DeviceRollup)> = Vec::new();
 
     for unit in &units {
         if per_device.last().map(|d| d.0.as_str()) != Some(unit.device.as_str()) {
-            per_device.push((unit.device.clone(), DiagTally::default(), DeviceFaults::default()));
+            per_device.push((unit.device.clone(), DeviceRollup::default()));
         }
         emit(RootEvent::FamilyStart {
             device: unit.device.clone(),
@@ -471,14 +513,12 @@ pub async fn run<F>(
         };
 
         let device = per_device.last_mut().expect("pushed above");
-        device.1.ok += outcome.tally.ok;
-        device.1.failed += outcome.tally.failed;
-        device.1.not_supported += outcome.tally.not_supported;
+        device.1.add(unit.request.mode, &outcome.tally);
         match outcome.status {
-            FamilyStatus::Crashed => device.2.crashed += 1,
-            FamilyStatus::Hung => device.2.hung += 1,
-            FamilyStatus::NoCases => device.2.no_cases += 1,
-            FamilyStatus::Cancelled => device.2.cancelled += 1,
+            FamilyStatus::Crashed => device.1.faults.crashed += 1,
+            FamilyStatus::Hung => device.1.faults.hung += 1,
+            FamilyStatus::NoCases => device.1.faults.no_cases += 1,
+            FamilyStatus::Cancelled => device.1.faults.cancelled += 1,
             _ => {}
         }
         // A family that tested nothing has not failed, so it must not read as
@@ -503,16 +543,18 @@ pub async fn run<F>(
         });
     }
 
-    for (device, tally, faults) in per_device {
+    for (device, rollup) in per_device {
         emit(RootEvent::Summary {
             device,
-            ok: tally.ok,
-            failed: tally.failed,
-            not_supported: tally.not_supported,
-            families_crashed: faults.crashed,
-            families_hung: faults.hung,
-            families_no_cases: faults.no_cases,
-            families_cancelled: faults.cancelled,
+            // The test units alone: these are the cases that were computed and
+            // compared, which is what a pass count has to mean.
+            ok: rollup.test.ok,
+            failed: rollup.test.failed,
+            not_supported: rollup.not_supported(),
+            families_crashed: rollup.faults.crashed,
+            families_hung: rollup.faults.hung,
+            families_no_cases: rollup.faults.no_cases,
+            families_cancelled: rollup.faults.cancelled,
         });
     }
 
