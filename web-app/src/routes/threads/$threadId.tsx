@@ -112,7 +112,7 @@ import {
 } from '@/lib/chatFinish'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
-import { useToolApproval } from '@/hooks/useToolApproval'
+import { consentConsume } from '@janhq/tauri-plugin-agent-tools-api'
 import {
   useToolApprovalRequests,
   type ApprovalOptions,
@@ -438,13 +438,16 @@ function isAutoAllowedTool(toolName: string, threadId: string): boolean {
 // Asked for on its own, with neither "allow all MCP" nor a saved grant covering
 // it: every call the model an extension serves makes, and a built-in call that
 // changes the attached folder (no "allow always" for writing the user's files).
+// Rust refuses such a built-in call unless this one call was approved.
 function approvalOptions(
   threadId: string,
   toolName: string,
   origin: ToolOrigin['origin']
 ): ApprovalOptions {
-  const builtin = chatAgentRoute(toolName, threadId) === 'builtin'
-  return turnOnExtensionProvider(threadId) || builtin
+  if (chatAgentRoute(toolName, threadId) === 'builtin') {
+    return { strict: true, origin: 'builtin' }
+  }
+  return turnOnExtensionProvider(threadId)
     ? { strict: true, origin }
     : { origin }
 }
@@ -1115,7 +1118,13 @@ function ThreadDetail() {
                   const agentResult = await executeAgentTool(
                     toolName,
                     toolCall.input,
-                    threadId
+                    threadId,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    toolCall.toolCallId
                   )
                   // The diff is display-only, so it goes to the runtime store
                   // rather than into `result`: anything in `result` reaches the
@@ -1139,7 +1148,16 @@ function ThreadDetail() {
                 } else if (extensionTool) {
                   // Contributed tools always prompt (they are never in
                   // isAutoAllowedTool); Stop cancels the call in the
-                  // extension's worker, not only here.
+                  // extension's worker, not only here. The extension host
+                  // runs it, so the approval is used up here, as Rust uses
+                  // up the ones for the calls it runs.
+                  await consentConsume(
+                    threadId,
+                    toolCall.toolCallId,
+                    toolName,
+                    origin.server,
+                    'extension'
+                  )
                   return await getExtensionHost().callTool(
                     extensionTool.extensionId,
                     extensionTool.name,
@@ -1160,6 +1178,8 @@ function ThreadDetail() {
                     serverGeneration: origin.mcpGeneration,
                     arguments: toolCall.input,
                     maxOutputChars,
+                    threadId,
+                    callId: toolCall.toolCallId,
                   })
                   const cancel = () => void call.cancel().catch(() => {})
                   stopSignal.addEventListener('abort', cancel, { once: true })
@@ -1806,11 +1826,6 @@ function ThreadDetail() {
 
           // Update thread metadata if documents were embedded
           if (result.hasEmbeddedDocuments) {
-            const toolApproval = useToolApproval.getState()
-            const ragTools = useAppState.getState().ragToolNames
-            for (const toolName of ragTools) {
-              toolApproval.approveToolForThread(threadId, toolName)
-            }
             // Merge into the thread's metadata as it is now, not as it was at
             // send: replacing it drops `metadata.project` and detaches the
             // thread from its project, and a stale copy reverts a project move

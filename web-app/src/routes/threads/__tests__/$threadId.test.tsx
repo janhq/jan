@@ -135,14 +135,9 @@ const h = vi.hoisted(() => {
   useToolAvailableMock.getState = () => toolAvailableState
 
   const toolApprovalState: any = {
-    approveToolForThread: vi.fn(),
     clearPendingForThread: vi.fn(),
     requestApproval: vi.fn().mockResolvedValue(true),
   }
-  const useToolApprovalMock: any = (selector: any) => selector(toolApprovalState)
-  useToolApprovalMock.getState = () => toolApprovalState
-  // Transient approval store shares the same backing object so existing
-  // toolApprovalState.requestApproval / clearPendingForThread refs keep working.
   const useToolApprovalRequestsMock: any = (selector: any) =>
     selector(toolApprovalState)
   useToolApprovalRequestsMock.getState = () => toolApprovalState
@@ -187,7 +182,6 @@ const h = vi.hoisted(() => {
     toolAvailableState,
     useToolAvailableMock,
     toolApprovalState,
-    useToolApprovalMock,
     useToolApprovalRequestsMock,
     agentModeState,
     useAgentModeMock,
@@ -467,7 +461,10 @@ vi.mock('@/hooks/useChatFolder', () => ({
 }))
 vi.mock('@/containers/CoworkComposerMenu', () => ({ CoworkComposerMenu: () => null }))
 vi.mock('@/containers/CoworkWorkspacePill', () => ({ CoworkWorkspacePill: () => null }))
-vi.mock('@/hooks/useToolApproval', () => ({ useToolApproval: h.useToolApprovalMock }))
+const consent = vi.hoisted(() => ({ consume: vi.fn() }))
+vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
+  consentConsume: consent.consume,
+}))
 vi.mock('@/hooks/useToolApprovalRequests', () => ({
   useToolApprovalRequests: h.useToolApprovalRequestsMock,
 }))
@@ -1614,8 +1611,11 @@ describe('ThreadDetail route', () => {
       await act(async () => {
         await finish()
       })
-      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
       expect(callTool).toHaveBeenCalledTimes(1)
+      // The backend runs it only on the approval of this call.
+      expect(callTool).toHaveBeenCalledWith(
+        expect.objectContaining({ threadId: 'thread-1', callId: 'sh4' })
+      )
       expect(shell.execute).not.toHaveBeenCalled()
       expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(
         expect.objectContaining({ toolCallId: 'sh4', state: 'output-error' })
@@ -1664,7 +1664,7 @@ describe('ThreadDetail route', () => {
       h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
       await run(call('f1', 'read'))
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
-      expect(shell.execute).toHaveBeenCalledWith('read', { path: 'a.md' }, expect.anything())
+      expect(shell.execute.mock.calls[0].slice(0, 2)).toEqual(['read', { path: 'a.md' }])
     })
 
     it('asks before every write, edit or command, with no grant saved', async () => {
@@ -1676,7 +1676,19 @@ describe('ThreadDetail route', () => {
           name,
           expect.anything(),
           undefined,
-          { strict: true, origin: 'mcp' }
+          { strict: true, origin: 'builtin' }
+        )
+        // The call id rides along: Rust runs the call only on its approval.
+        expect(shell.execute).toHaveBeenCalledWith(
+          name,
+          expect.anything(),
+          expect.anything(),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          id
         )
       }
       expect(shell.execute).toHaveBeenCalledTimes(2)
@@ -2957,6 +2969,14 @@ describe('ThreadDetail route', () => {
           'thread-1',
           'ext:acme.one',
           { origin: 'extension' }
+        )
+        // The host runs it, so the approval is used up before it does.
+        expect(consent.consume).toHaveBeenCalledWith(
+          'thread-1',
+          'te1',
+          wireName,
+          'ext:acme.one',
+          'extension'
         )
         expect(extensionHost.callTool).toHaveBeenCalledWith(
           'acme.one',

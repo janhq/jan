@@ -2,7 +2,7 @@
  * Default MCP Service - Generic implementation with minimal returns
  */
 
-import { MCPTool, MCPToolCallResult } from '@janhq/core'
+import { MCPTool } from '@janhq/core'
 import type { MCPServerConfig } from '@/hooks/useMCPServers'
 import type {
   MCPService,
@@ -43,21 +43,11 @@ export class DefaultMCPService implements MCPService {
     return []
   }
 
-  async callTool(args: {
-    toolName: string
-    arguments: object
-    maxOutputChars?: number
-  }): Promise<MCPToolCallResult> {
-    console.log('callTool called with args:', args)
-    return {
-      error: '',
-      content: []
-    }
-  }
-
   callToolWithCancellation(args: {
     toolName: string
     arguments: object
+    threadId: string
+    callId: string
     cancellationToken?: string
   }): ToolCallWithCancellationResult {
     console.log('callToolWithCancellation called with args:', args)
