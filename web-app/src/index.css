@@ -13,6 +13,37 @@
   --normal-text: var(--popover-foreground);
   --normal-border: color-mix(in oklch, var(--border) 55%, var(--primary));
 }
+/* Toast close (X) button: a quiet icon button inside the toast's top-end
+   corner instead of sonner's default bubble hanging off the top-start corner.
+   The selector out-ranks sonner's theme and richColors close-button rules. */
+.toaster[data-sonner-toaster]
+  [data-sonner-toast][data-styled='true']
+  [data-close-button].toast-close-button {
+  inset-inline-start: auto;
+  inset-inline-end: 0.5rem;
+  top: 0.875rem;
+  transform: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 4px);
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  transition:
+    opacity 150ms,
+    background-color 150ms;
+}
+.toaster[data-sonner-toaster]
+  [data-sonner-toast][data-styled='true']
+  [data-close-button].toast-close-button:hover,
+.toaster[data-sonner-toaster]
+  [data-sonner-toast][data-styled='true']
+  [data-close-button].toast-close-button:focus-visible {
+  opacity: 1;
+  background: color-mix(in oklch, currentColor 12%, transparent);
+  border: 0;
+}
 @import '@/styles/font.css';
 @import '@/styles/markdown.css';
 @source '../node_modules/streamdown/dist/**/*.js';
